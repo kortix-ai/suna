@@ -14,7 +14,7 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
-import webProxyRouter from './routes/web-proxy'
+import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
 import {
@@ -182,7 +182,17 @@ export function buildOpencodeApp(
 
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
-  app.route('/web-proxy', webProxyRouter)
+  //
+  // Blocked loopback ports keep it off our own control plane: reaching the
+  // daemon or opencode through here would tunnel past every path-keyed control
+  // apps/api applies on the way in (agent authorization, connector gate, run
+  // cap, prompt idempotency, secret-grant re-mint).
+  app.route(
+    '/web-proxy',
+    createWebProxyRouter({
+      blockedSelfPorts: new Set([cfg.servicePort, cfg.opencodeInternalPort]),
+    }),
+  )
 
   // /file/* — the daemon owns the ENTIRE file API: reads (GET / list,
   // /content, /raw, /status) and writes (upload, delete, mkdir, rename). We do

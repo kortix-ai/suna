@@ -135,6 +135,11 @@ function useInvalidateAll(projectIdArg?: string) {
     qc.invalidateQueries({ queryKey: gitStatusKeys.all });
     qc.invalidateQueries({ queryKey: ['project-files', 'version-diff', projectId] });
     qc.invalidateQueries({ queryKey: ['project', 'session', projectId] });
+    // Landing a CR on the base ref is the one thing that happens INSIDE the app
+    // that can make an open session's compiled agent config stale. The
+    // freshness query is deliberately not polled — this is what tells it to
+    // look again, so the chip appears on merge rather than on next focus.
+    qc.invalidateQueries({ queryKey: ['session-config', projectId] });
   };
 }
 

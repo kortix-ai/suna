@@ -2,7 +2,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CreditTransactions from '@/features/billing/credit-transactions';
-import { SessionCostExplorer } from '@/features/billing/session-cost-explorer';
+import { CostExplorer } from '@/features/billing/cost-explorer/cost-explorer';
 
 export function TransactionsTab() {
   return (
@@ -12,7 +12,7 @@ export function TransactionsTab() {
         <TabsTrigger value="credit-ledger">Credit ledger</TabsTrigger>
       </TabsList>
       <TabsContent value="session-costs">
-        <SessionCostExplorer />
+        <CostExplorer />
       </TabsContent>
       <TabsContent value="credit-ledger">
         <CreditTransactions />

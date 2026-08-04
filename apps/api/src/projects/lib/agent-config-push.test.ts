@@ -8,6 +8,7 @@
 // session merged past days ago kept running the agents it booted with, with no
 // documented way to reconcile the two short of starting a new session.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realCompile from './compile-agent-config';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
 
@@ -32,7 +33,10 @@ const SESSION_ROW = {
 };
 let activeSandbox: { externalId: string; config: Record<string, unknown> } | null = SANDBOX_ROW;
 
+// Spread: the module also exports `agentConfigEtag`, which sandbox-env-sync now
+// imports. A partial mock silently drops it and the module fails to load.
 mock.module('./compile-agent-config', () => ({
+  ...realCompile,
   resolveCompiledAgentConfigForSession: async (_project: unknown, baseRef?: string | null) => {
     compileCalls.push({ ref: baseRef });
     if (compileThrows) throw compileThrows;

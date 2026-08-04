@@ -34,7 +34,10 @@ import {
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
 } from '../../projects/session-title-generate';
-import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import {
+  KORTIX_SERVICE_CALL_HEADER,
+  KORTIX_USER_CONTEXT_HEADER,
+} from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -52,7 +55,7 @@ import {
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
 import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
-import { carriesSessionData } from '../session-data-ports';
+import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -72,7 +75,13 @@ const preview = new Hono<{
 // Accept-Encoding is forced to identity (raw byte passthrough).
 // Cookies may contain the caller's raw __preview_session credential and must
 // never reach arbitrary user-controlled apps running inside the sandbox.
-const STRIP_FORWARD_HEADERS = new Set([
+// `x-kortix-service-call` marks a DIRECT platform→daemon call. The daemon gates
+// its destructive branch reset on it precisely because it cannot appear here:
+// we authenticate every forwarded request with the sandbox's own service key, so
+// the daemon cannot tell a user's request from ours by the bearer alone. Strip
+// it for the same reason we strip `authorization` — a caller must not be able to
+// hand themselves platform authority by naming a header.
+export const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
   'cookie',
@@ -80,6 +89,7 @@ const STRIP_FORWARD_HEADERS = new Set([
   'x-request-id',
   'accept-encoding',
   'content-length',
+  KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
 
 function jsonProxyError(body: Record<string, unknown>, status: number, origin?: string): Response {
@@ -714,6 +724,34 @@ export function shouldAutoResumeStoppedSandbox(
   }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
 }
+/**
+ * Is this a proxied attempt at the daemon's DESTRUCTIVE branch reset?
+ *
+ * `/kortix/refresh?base=1` runs `git checkout -B <branch> <sha>` in the box, and
+ * the branch IS the session id — so it discards every commit the session made
+ * and deletes the files they added. Its one legitimate caller is the
+ * warm-session workspace refresh at session create, which calls the daemon
+ * directly and never comes through here.
+ *
+ * The PATH stays open on purpose: a plain `/kortix/refresh` is the SDK's
+ * `restart` mode and users legitimately reach it. Only the flag is refused.
+ *
+ * Pure + exported so the gate is unit-tested without provisioning a box — the
+ * same reason `shouldAutoResumeStoppedSandbox` is.
+ */
+export function isProxiedBaseReset(
+  upstreamPort: number,
+  remainingPath: string,
+  queryString: string,
+): boolean {
+  if (!carriesSessionData(upstreamPort)) return false;
+  // Strip the in-box `/proxy/{port}` prefix, as the connector gate does — a
+  // request that reaches the daemon that way is the same request.
+  const path = remainingPath.replace(/^\/proxy\/\d+(?=\/)/, '');
+  if (!/^\/kortix\/refresh(?:$|[/?#])/.test(path)) return false;
+  return new URLSearchParams(queryString).get('base') === '1';
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -778,7 +816,7 @@ export async function forwardToSandbox(
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    carriesSessionData(upstreamPort) &&
+    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -795,6 +833,31 @@ export async function forwardToSandbox(
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
   if (carriesSessionData(upstreamPort) && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
+  }
+  // `/kortix/refresh?base=1` force-resets the session's branch onto the base tip
+  // — `git checkout -B <branch> <sha>`, where the branch IS the session id — so
+  // it discards every commit the session made and deletes the files they added.
+  //
+  // The path itself must stay open: the SDK's `restart` mode is a plain
+  // `/kortix/refresh`, and users legitimately reach it. Only the destructive
+  // flag is refused, and refused HERE because this is the layer that knows the
+  // request came from a user at all. Its one legitimate caller is the
+  // warm-session workspace refresh at session create, which calls the daemon
+  // directly and never traverses this proxy.
+  //
+  // The daemon enforces this independently (it also demands the stripped
+  // service-call header) — a destructive primitive should not depend on a remote
+  // allowlist staying correct.
+  if (isProxiedBaseReset(upstreamPort, remainingPath, queryString)) {
+    console.warn(`[PREVIEW] Refused base=1 branch reset on ${sandboxId} from a proxied caller`);
+    return jsonProxyError(
+      {
+        error: 'base reset is not available through the sandbox proxy',
+        code: 'BASE_RESET_FORBIDDEN',
+      },
+      403,
+      origin,
+    );
   }
   // A turn whose required connectors cannot serve it is refused HERE — before the
   // sandbox is woken, before the dedupe claim, before the title is generated from
@@ -1437,7 +1500,7 @@ export async function resolvePreviewWsUpstream(opts: {
   // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
   // side, one function further down the file.
   if (
-    carriesSessionData(upstreamPort) &&
+    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,

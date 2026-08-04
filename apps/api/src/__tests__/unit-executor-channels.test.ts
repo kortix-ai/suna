@@ -674,7 +674,6 @@ describe('handleCall — channel (email)', () => {
       loadDefaultMode: async () => 'allow_all',
       enforcePolicies: true,
       recordExecution: async () => 'execution-1',
-      waitForApprovalDecision: async () => 'timeout',
       attachmentStore: {
         stage: async () => {
           throw new Error('not used');

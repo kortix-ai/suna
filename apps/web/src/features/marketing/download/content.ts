@@ -15,6 +15,9 @@
  *     terminal block says "macOS & Linux · WSL on Windows".
  *  4. There is no Chrome extension in this repo — no manifest, no app. The page
  *     must not advertise one, not even as "coming soon".
+ *  5. NEITHER mobile app is publicly installable. iOS is on TestFlight and
+ *     Android is on a Play internal track, so both store URLs are dead ends for
+ *     the public. The rows carry a status instead of a link — see MOBILE_ROWS.
  */
 
 import type { DesktopOs, MobileOs } from './detect-os';
@@ -26,6 +29,8 @@ export const hero = {
 
 export type CardCopy = { title: string; description: string };
 export type RowCopy = { label: string; hint: string; href: string };
+/** A platform with no public build yet, so there is nothing to link to. */
+export type ComingSoonRowCopy = { label: string; hint: string };
 
 export const DESKTOP_CARD: CardCopy = {
   title: 'Desktop app',
@@ -49,17 +54,21 @@ export const DESKTOP_ROWS: Record<DesktopOs, RowCopy> = {
   linux: { label: 'Linux', hint: 'AppImage · x86_64', href: '/download/linux' },
 };
 
-export const MOBILE_ROWS: Record<MobileOs, RowCopy> = {
-  ios: {
-    label: 'iPhone and iPad',
-    hint: 'App Store',
-    href: 'https://apps.apple.com/ie/app/kortix/id6754448524',
-  },
-  android: {
-    label: 'Android',
-    hint: 'Google Play',
-    href: 'https://play.google.com/store/apps/details?id=com.kortix.app',
-  },
+/** The chip both mobile rows carry in place of a Download button. */
+export const MOBILE_STATUS = 'Coming soon';
+
+/**
+ * NO `href`. Both store listings exist, but neither is public: iOS ships to
+ * TestFlight and Android to a Play internal track. Linking them sends a visitor
+ * to a page they cannot install from, which is worse than saying "not yet".
+ *
+ * `hint` still names the store each build will land in, so the row stays useful
+ * as a statement of intent. Restore the links only when both listings are
+ * publicly downloadable — and then the type change is the reminder.
+ */
+export const MOBILE_ROWS: Record<MobileOs, ComingSoonRowCopy> = {
+  ios: { label: 'iPhone and iPad', hint: 'App Store' },
+  android: { label: 'Android', hint: 'Google Play' },
 };
 
 export const TERMINAL = {

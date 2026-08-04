@@ -566,13 +566,47 @@ async function checkoutSessionBranch(
 
 async function checkoutLocalSessionBranch(target: string, branch: string): Promise<void> {
   await clearStaleGitLock(target)
-  const local = await execGit([
-    '-C',
-    target,
-    'checkout',
-    '-B',
-    branch,
+
+  // `-B` with no start point RESETS the branch to whatever HEAD is. That is
+  // right exactly once — creating the session branch on a fresh baked checkout —
+  // and destructive every other time, because this runs on EVERY daemon boot
+  // where /workspace/.git already exists.
+  //
+  // The damage needs no attacker and no unusual behaviour: the agent moves HEAD
+  // off the session branch (a `git checkout main` to diff against base is
+  // ordinary), then the box reboots in place — the idle reaper and the proxy's
+  // auto-resume both do that with no user action at all — and every commit the
+  // session made is force-reset away. `git checkout -B` exits 0 and prints only
+  // "Switched to and reset branch", so nothing surfaces; the commits survive
+  // solely in a reflog the user is never told about.
+  //
+  // The guard that was meant to prevent re-materializing the wrong content
+  // (`mismatched`, keyed on cfg.sessionFresh + cfg.baseSha) cannot help here:
+  // KORTIX_SESSION_FRESH and KORTIX_BASE_SHA have no producer left in apps/api,
+  // so it is always false and this line always runs.
+  //
+  // So: only CREATE. If the ref already exists, a plain checkout moves HEAD to
+  // it and cannot move the ref.
+  const exists = await execGit([
+    '-C', target, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`,
   ])
+  if (exists.code === 0) {
+    const switched = await execGit(['-C', target, 'checkout', branch])
+    if (switched.code !== 0) {
+      // Deliberately NOT falling back to `-B`: that fallback is the data loss.
+      // A session left on another branch still boots and still has its files;
+      // a reset one has lost commits. Loud, and non-fatal.
+      logger.error('[git] could not switch to the existing session branch; leaving HEAD as-is', {
+        branch,
+        stderr: switched.stderr,
+      })
+      return
+    }
+    logger.info('[git] switched to existing session branch', { branch })
+    return
+  }
+
+  const local = await execGit(['-C', target, 'checkout', '-B', branch])
   if (local.code !== 0) {
     throw new Error(`failed to create local session branch ${branch}: ${local.stderr}`)
   }
@@ -1119,17 +1153,39 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     'origin',
     `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
   ])
-  if (fetched.code !== 0) throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
+  // A session branch that was never pushed has NO remote ref, and that is the
+  // ordinary state of a session which has not proposed its changes yet — the
+  // branch is created locally at boot and only reaches origin when the user
+  // proposes. Treating it as a failure made `POST /kortix/refresh` answer 500
+  // for exactly those sessions, which is the common case: reload is offered by
+  // the stale-config notice, and a brand-new session is the one most likely to
+  // be told its config moved.
+  //
+  // Verified live on dev against a freshly provisioned session:
+  //   git fetch refresh failed: fatal: couldn't find remote ref refs/heads/<session-id>
+  //
+  // There is nothing upstream to fast-forward from, so skip the pull and let
+  // the rest of the refresh — notably the config-dir sync, which reads the BASE
+  // ref, not this branch — carry on. Any other fetch failure is still fatal.
+  const missingRemoteBranch =
+    fetched.code !== 0 && /couldn't find remote ref/i.test(fetched.stderr)
+  if (fetched.code !== 0 && !missingRemoteBranch) {
+    throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
+  }
 
-  const pulled = await gitWithAuth(cloneCredential, authRepoUrl, [
-    '-C',
-    target,
-    'pull',
-    '--ff-only',
-    'origin',
-    branch,
-  ])
-  if (pulled.code !== 0) throw new Error(`git pull refresh failed: ${pulled.stderr}`)
+  if (missingRemoteBranch) {
+    logger.info('[git] session branch is not on the remote yet; nothing to pull', { branch })
+  } else {
+    const pulled = await gitWithAuth(cloneCredential, authRepoUrl, [
+      '-C',
+      target,
+      'pull',
+      '--ff-only',
+      'origin',
+      branch,
+    ])
+    if (pulled.code !== 0) throw new Error(`git pull refresh failed: ${pulled.stderr}`)
+  }
 
   const after = await readRepoInfo(target)
   if (!after) throw new Error('project repo disappeared after refresh')
@@ -1178,4 +1234,121 @@ export async function syncWorkspaceToBase(
   if (!after) throw new Error('project repo disappeared after base sync')
   logger.info('[git] synced workspace to latest base', { base, branch, before: before.commit, after: after.commit })
   return { before, after }
+}
+
+/**
+ * Every git call in the config-dir sync runs with pathspec magic OFF.
+ *
+ * `opencode.config_dir` is repo-controlled, it becomes a pathspec, and git
+ * honours magic like `:(top)*` even after `--`. Without this, a manifest could
+ * turn "sync the agent config directory" into `git checkout <base> -- ':(top)*'`
+ * — a rewrite of the whole working tree. Verified against the real primitives:
+ * the magic form rewrites files outside the directory, the literalized form
+ * does not.
+ *
+ * `resolveOpencodeConfigDirRelative` also rejects non-literal values, so this is
+ * the second of two independent guards. It is the one that holds even if a
+ * future caller passes a path from somewhere else.
+ */
+const LITERAL = { env: { GIT_LITERAL_PATHSPECS: '1' } } as const
+
+export interface ConfigDirSyncResult {
+  /** True only when files were actually replaced from the base ref. */
+  synced: boolean
+  /** Why nothing was replaced. Absent on success. */
+  skipped?:
+    | 'no tracked config dir'
+    | 'already matches base'
+    | 'local changes'
+    | 'local commits'
+    | 'not in base'
+    | 'fetch failed'
+    | 'checkout failed'
+}
+
+/**
+ * Bring ONLY the opencode config directory up to the base ref.
+ *
+ * This is the operation `reload` actually needs, and the reason it exists is a
+ * measured one: opencode is spawned with `OPENCODE_CONFIG_DIR` pointing INTO the
+ * working tree, and the agent `.md` files there beat the compiled config we push
+ * as JSON. So pushing the compiled config alone moves the etag and changes
+ * nothing the agent reads — verified on dev, where the marker was present in
+ * `~/.config/kortix-opencode.json` and absent from `/config` and `/agent`.
+ *
+ * Distinct from `syncWorkspaceToBase` in the one way that matters: that resets
+ * the BRANCH (`git checkout -B <branch> <sha>`), which discards any commit the
+ * session has made. This touches a single pathspec and never moves a ref, so
+ * commits, other files, and the branch itself are untouched.
+ *
+ * It refuses rather than overwrites. If the session has edited its own agent
+ * config — uncommitted, or committed on top of base — that is work, and a button
+ * labelled "reload config" has no business discarding it. The caller reports the
+ * skip so the user is told the agent did NOT change.
+ *
+ * Leaves the update UNSTAGED: `git checkout <sha> -- <path>` writes the index
+ * too, so the index is reset afterwards. The result is a plain working-tree
+ * modification, and its diff against base is empty by construction — so a change
+ * request opened from this session carries nothing extra.
+ */
+export async function syncOpencodeConfigDirToBase(
+  cfg: Config,
+  relConfigDir: string | null,
+  baseSha?: string,
+): Promise<ConfigDirSyncResult> {
+  if (!relConfigDir) return { synced: false, skipped: 'no tracked config dir' }
+  const target = cfg.projectTarget
+  const base = cfg.defaultBranch
+  const cloneCredential = await resolveCloneCredential(cfg)
+
+  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+    '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
+  ])
+  if (fetched.code !== 0) {
+    logger.warn('[git] config-dir sync: fetch failed', { stderr: fetched.stderr })
+    return { synced: false, skipped: 'fetch failed' }
+  }
+  const ref = baseSha ?? `refs/remotes/origin/${base}`
+
+  // "Already base" is checked FIRST, and the order is load-bearing rather than
+  // cosmetic. A successful sync leaves the working tree matching base while HEAD
+  // still carries the old content, so the directory is legitimately dirty
+  // afterwards. Checking dirtiness first made every reload after the first one
+  // refuse with 'local changes' — the guard could not tell the user's edit from
+  // our own previous one. Comparing against base instead answers the question
+  // that actually matters, and it cannot mask a real edit: content that differs
+  // from base falls through to the guards below.
+  const diff = await execGit(['-C', target, 'diff', '--quiet', ref, '--', relConfigDir], LITERAL)
+  if (diff.code === 0) return { synced: false, skipped: 'already matches base' }
+
+  // Uncommitted edits under the config dir — including untracked files, which
+  // `git checkout` would silently leave behind in a half-updated directory.
+  const dirty = await execGit(['-C', target, 'status', '--porcelain', '--', relConfigDir], LITERAL)
+  if (dirty.code === 0 && dirty.stdout.trim().length > 0) {
+    return { synced: false, skipped: 'local changes' }
+  }
+
+  // Commits this session made on top of base that touch the config dir. Without
+  // this a session that edited and COMMITTED its agent would have that silently
+  // reverted by a reload.
+  const ahead = await execGit(
+    ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
+    LITERAL,
+  )
+  if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
+    return { synced: false, skipped: 'local commits' }
+  }
+
+  const checkout = await execGit(['-C', target, 'checkout', ref, '--', relConfigDir], LITERAL)
+  if (checkout.code !== 0) {
+    // The most likely cause is that base has no such directory at all.
+    const missing = /did not match any file|pathspec/i.test(checkout.stderr)
+    logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
+    return { synced: false, skipped: missing ? 'not in base' : 'checkout failed' }
+  }
+  // Un-stage: leave a plain working-tree change, not a staged one.
+  await execGit(['-C', target, 'reset', '-q', '--', relConfigDir], LITERAL)
+
+  logger.info('[git] synced opencode config dir to base', { dir: relConfigDir, ref })
+  return { synced: true }
 }

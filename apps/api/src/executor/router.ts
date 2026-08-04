@@ -541,9 +541,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
     }
     const args =
-      body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
-    // A retry of a call already awaiting approval (the sandbox polls to pause
-    // indefinitely) — wait on THIS execution instead of stacking a new one.
+      body?.args && typeof body.args === 'object'
+        ? (body.args as Record<string, unknown>)
+        : {};
+    // Compatibility hint from older clients. The gateway may reuse the named
+    // pending row, but it returns immediately and never polls that execution.
     const approvalExecutionId =
       typeof body?.approval_execution_id === 'string' ? body.approval_execution_id : null;
     const result = await handleCall(deps.makeGatewayDeps(p), {
@@ -567,6 +569,9 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
             reason: result.reason,
             execution_id: result.executionId ?? null,
             retryable: result.retryable ?? false,
+            approval_url: result.approvalUrl ?? null,
+            approval_summary: result.approvalSummary ?? null,
+            approval_instructions: result.approvalInstructions ?? null,
           },
           202,
         );

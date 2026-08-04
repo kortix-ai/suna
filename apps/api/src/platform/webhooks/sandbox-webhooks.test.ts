@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
+import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 const cfg: { DAYTONA_WEBHOOK_SECRET?: string; PLATINUM_WEBHOOK_SECRET?: string } = {};
 let stoppedCalls: string[] = [];
@@ -14,7 +15,11 @@ mock.module('../../billing/services/webhook-concurrency', () => ({
     return true;
   },
 }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../projects/sandbox-reaper', () => ({
+  ...realSandboxReaper,
   reconcileSandboxStoppedByExternalId: async (externalId: string) => {
     stoppedCalls.push(externalId);
     return true;

@@ -203,6 +203,10 @@ describe('release wiring', () => {
       packageJson.scripts.build,
       /^node scripts\/validate-production-supabase-env\.mjs && /,
     );
+    assert.match(
+      packageJson.scripts.build,
+      /NODE_OPTIONS="\$\{NODE_OPTIONS:---max-old-space-size=6144\}" next build$/,
+    );
   });
 
   it('blocks the GitHub release and banner clear on deployed frontend proof', async () => {

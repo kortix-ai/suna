@@ -1148,18 +1148,31 @@ export function CommandPalette() {
     });
   }, [close]);
 
+  // A rejected promise is not guaranteed to carry an Error, and a toast reading
+  // "undefined" is worse than a generic one.
+  const reloadErrorMessage = (err: unknown): string =>
+    err instanceof Error && err.message ? err.message : 'Restart failed';
+
   const handleRestartConfig = useCallback(() => {
     close();
     systemReload('dispose-only')
-      .then(() => successToast('Config reloaded'))
-      .catch(() => errorToast('Restart failed'));
+      .then((r) =>
+        r.success
+          ? successToast('Config reloaded')
+          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the reload'),
+      )
+      .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
   }, [close]);
 
   const handleRestartFull = useCallback(() => {
     close();
     systemReload('full')
-      .then(() => successToast('Full restart initiated'))
-      .catch(() => errorToast('Restart failed'));
+      .then((r) =>
+        r.success
+          ? successToast('Workspace pulled and runtime restarted')
+          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the restart'),
+      )
+      .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
   }, [close]);
 
   const actionHandlers: Record<string, () => void> = useMemo(

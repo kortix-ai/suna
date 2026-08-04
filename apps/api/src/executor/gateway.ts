@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { buildArgsPreview, summarizeArgsPreview } from './args-preview';
+import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import type { ExecutorAttachmentStore } from './attachments';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
@@ -31,7 +31,12 @@ import {
  * (router.ts) wires real DB/secret deps. `enforcePolicies` exists for back-compat
  * with the original allow-all engine; production sets it true.
  */
-import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
+import {
+  type DefaultMode,
+  type Policy,
+  resolveEffectiveAction,
+} from './policy';
+import { executorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 
@@ -92,6 +97,8 @@ export interface ExecutionRecord {
   sessionId: string | null;
   status: 'ok' | 'error' | 'denied' | 'pending_approval';
   risk: Risk | null;
+  /** SHA-256 of connector + action + exact execution arguments. */
+  requestDigest?: string | null;
   resultSummary: Record<string, unknown> | null;
 }
 
@@ -135,39 +142,29 @@ export interface GatewayDeps {
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
-  /** Records the audit row; returns the new execution id (or null on failure)
-   *  so the caller can wait on a human decision for a gated call. */
+  /** Records the audit row; returns the new execution id used in the approval URL. */
   recordExecution(rec: ExecutionRecord): Promise<string | null>;
-  /** Block until a `pending_approval` execution is resolved, or `timeoutMs`
-   *  elapses. Lets the gateway HOLD a require_approval call so the agent's turn
-   *  pauses in-session (instead of erroring + retrying) and resumes on approve. */
-  waitForApprovalDecision?(
-    executionId: string,
-    timeoutMs: number,
-    expect?: { sessionId: string | null; connectorId: string; actionPath: string },
-  ): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'>;
-  /** @deprecated NO LONGER CONSULTED for a decision — session-wide grants were
-   *  removed (see the "SESSION-WIDE GRANTS" note in handleCall for why). Kept on
-   *  interface so historical grant rows remain readable for display/audit. */
-  isSessionToolApproved?(
-    sessionId: string,
-    connectorId: string,
-    actionPath: string,
-  ): Promise<boolean>;
-  /** Approval carry-over: atomically claim a RECENT human approve of this
-   *  (session, connector, action) whose gated call nobody is waiting on
-   *  anymore — the holder timed out / the sandbox client has no poll loop —
-   *  so the NEXT attempt runs instead of re-asking. Returns true when a grant
-   *  was claimed (each approve is consumable exactly once). */
+  /** Approval carry-over: atomically claim a recent human approval for this
+   *  exact request. The callback asks the session to continue, and its next
+   *  attempt consumes the approval once instead of creating another gate. */
   consumeApprovedExecution?(input: {
-    sessionId: string;
+    sessionId: string | null;
+    actingUserId: string;
     connectorId: string;
     actionPath: string;
+    requestDigest: string;
   }): Promise<boolean>;
-  /** Mark an approve as consumed by the in-flight held/poll request that just
-   *  resumed on it, so the same grant can't ALSO be carried over by a later
-   *  fresh call (best-effort — a failure only risks one extra silent run). */
-  markApprovalConsumed?(executionId: string): Promise<void>;
+  /** Reuse a legacy client's pending row only when it identifies this exact
+   *  session-bound request. Prevents a caller from relabeling another approval. */
+  isPendingApprovalExecution?(input: {
+    executionId: string;
+    projectId: string;
+    sessionId: string | null;
+    actingUserId: string;
+    connectorId: string;
+    actionPath: string;
+    requestDigest: string;
+  }): Promise<boolean>;
   /**
    * Mint the standalone page URL where a human signs in and decides. Injected
    * (rather than imported) so the gateway stays unit-testable without config or
@@ -260,9 +257,8 @@ export interface CallInput {
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
   args?: Record<string, unknown>;
-  /** Set on a retry of a call already awaiting approval: wait on THIS execution
-   *  rather than recording a new pending row. Powers the sandbox's poll loop
-   *  that pauses the run indefinitely (short holds, re-issued) until a decision. */
+  /** @deprecated Older clients can identify an existing pending row. The
+   *  gateway never blocks or polls it. */
   approvalExecutionId?: string | null;
 }
 
@@ -272,10 +268,9 @@ export type CallResult =
   | {
       status: 'pending_approval';
       reason: string;
-      /** The execution awaiting a decision — the caller re-issues the call with
-       *  this id to keep waiting (poll loop). */
+      /** The execution awaiting a human decision. */
       executionId?: string | null;
-      /** true = still unresolved after the hold; poll again to keep pausing. */
+      /** Always false. The decision returns through the session callback. */
       retryable?: boolean;
       /**
        * Standalone page where a human signs in and decides. Handed to the agent
@@ -286,17 +281,13 @@ export type CallResult =
       approvalUrl?: string | null;
       /** One-line redacted "what is this?" — safe to paste alongside the link. */
       approvalSummary?: string | null;
+      /** Agent instruction for the asynchronous handoff. */
+      approvalInstructions?: string | null;
     }
   | { status: 'error'; reason: string };
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
-
-// How long the gateway holds a require_approval call waiting for a human
-// decision before giving up (leaving it pending for the async inbox). Kept
-// safely under the sandbox executor client's 60s request timeout, with headroom
-// for the actual connector call to run once approved.
-const APPROVAL_WAIT_MS = 45_000;
 
 async function resolveConnectorForCall(
   deps: GatewayDeps,
@@ -462,6 +453,17 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
+  const requestDigest = executorRequestDigest(
+    input.connectorSlug,
+    input.actionPath,
+    executionArgs,
+    {
+      profileId: connector.profileId ?? null,
+      provider: connector.provider,
+      baseUrl: connector.baseUrl,
+      binding: action.binding,
+    },
+  );
 
   // Layered enforcement: project → connector profile → risk default.
   if (deps.enforcePolicies !== false) {
@@ -473,7 +475,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // Built once per gated call: the redacted preview goes in the audit row and
     // the one-liner rides alongside the link, so an out-of-band relay ("approve
     // this: <url>") is still specific about what is being approved.
-    const argsPreview = buildArgsPreview(executionArgs);
+    const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
+    const argsPreview = argsPreviewDetails.preview;
     // Keys are OMITTED when empty rather than set to null: the pending_approval
     // result is a wire shape other code compares against, and a key that carries
     // no information shouldn't change it.
@@ -490,6 +493,13 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return {
         ...(url ? { approvalUrl: url } : {}),
         ...(summary ? { approvalSummary: summary } : {}),
+        ...(url
+          ? {
+              approvalInstructions: input.sessionId
+                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
+                : 'Share approval_url with a human. Retry this exact call once they approve it.',
+            }
+          : {}),
       };
     };
 
@@ -509,13 +519,22 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       argsAvailable: true,
     });
     if (decision.action === 'block') {
-      await audit(deps, input, connector, 'denied', action.risk, {
-        reason: 'policy_block',
-        policy_source: decision.source,
-        // A block is only auditable if you can see WHAT was blocked — otherwise
-        // "denied gmail.send_email" can't be told apart from a false positive.
-        args_preview: argsPreview,
-      });
+      await audit(
+        deps,
+        input,
+        connector,
+        'denied',
+        action.risk,
+        {
+          reason: 'policy_block',
+          policy_source: decision.source,
+          args_preview_complete: argsPreviewDetails.complete,
+          // A block is only auditable if you can see WHAT was blocked — otherwise
+          // "denied gmail.send_email" can't be told apart from a false positive.
+          args_preview: argsPreview,
+        },
+        requestDigest,
+      );
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
@@ -530,112 +549,69 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // Deliberately dropped at the ENFORCEMENT point, not just in the UI: rows
       // written before this change still exist in session_tool_approvals, and
       // reading them would keep those old grants silently bypassing the gate.
-      // `isSessionToolApproved` is left on GatewayDeps (still used to display
-      // history) but is no longer consulted for a decision.
+      // Historical session grants remain in the ledger for audit only. No
+      // runtime dependency can consult them for authorization.
       //
-      // What REMAINS below is approval carry-over, which is a different thing:
-      // it claims a human's approval of THIS very call when the gated request
-      // that asked is no longer waiting (the 45s hold expired). It authorises
-      // one already-approved call, not future ones.
-      // Approval carry-over: the human approved this exact (session, connector,
-      // action) recently, but the gated call that asked is no longer waiting —
-      // the 45s hold expired and the client never re-polled (e.g. an older
-      // sandbox CLI without the pause loop), so the approve stamped a row nobody
-      // consumed. Claim that grant now: this fresh attempt IS the approved call,
-      // run it instead of stacking a second ask for the same thing.
-      const carriedOver =
-        input.sessionId &&
-        !input.approvalExecutionId &&
-        deps.consumeApprovedExecution
-          ? await deps.consumeApprovedExecution({
-              sessionId: input.sessionId,
+      // Approval carry-over claims one human approval for the exact request
+      // digest after the decision callback asks the session to continue.
+      const carriedOver = deps.consumeApprovedExecution
+        ? await deps.consumeApprovedExecution({
+              sessionId: input.sessionId ?? null,
+              actingUserId: input.subject.userId,
               connectorId: connector.connectorId,
               // The audit-row form (see audit() below), NOT the relative form.
               actionPath: `${input.connectorSlug}.${input.actionPath}`,
-            })
-          : false;
+              requestDigest,
+          })
+        : false;
       if (carriedOver) {
         await audit(deps, input, connector, 'ok', action.risk, {
           reason: 'approval_carryover',
           policy_source: decision.source,
         });
       } else {
-        // A retry from the sandbox's poll loop passes the existing execution id —
-        // wait on THAT row instead of stacking a new pending one each poll. First
-        // call records a fresh pending row.
+        // Older clients can pass an existing id. Preserve that row instead of
+        // stacking another one, but never poll it. New clients make one request
+        // and wait for the server-side session callback.
+        const reuseExisting =
+          input.approvalExecutionId && deps.isPendingApprovalExecution
+            ? await deps.isPendingApprovalExecution({
+                executionId: input.approvalExecutionId,
+                projectId: input.projectId,
+                sessionId: input.sessionId ?? null,
+                actingUserId: input.subject.userId,
+                connectorId: connector.connectorId,
+                actionPath: `${input.connectorSlug}.${input.actionPath}`,
+                requestDigest,
+              })
+            : false;
         const executionId =
-          input.approvalExecutionId ??
-          (await audit(deps, input, connector, 'pending_approval', action.risk, {
-            reason: 'policy_require_approval',
-            policy_source: decision.source,
-            // WITHOUT THIS the approval prompt can name the tool but not its
-            // target — a human was being asked to authorise `gmail.send_email`
-            // with no way to see who it emails. Redacted (see args-preview.ts):
-            // credential-shaped fields never reach the audit trail.
-            args_preview: argsPreview,
-          }));
-        // HOLD the call so the agent's turn pauses in-session — the sandbox's
-        // synchronous executor.call blocks on this request instead of erroring.
-        // Bounded under the client's 60s timeout: on approve we fall through and
-        // run the action; on deny we return a clean refusal the agent continues
-        // past; on TIMEOUT we return `retryable` + the execution id so the sandbox
-        // re-issues the call and keeps pausing INDEFINITELY (like a question).
-        // Unattended (no session) never waits.
-        if (executionId && input.sessionId && deps.waitForApprovalDecision) {
-          const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS, {
-            sessionId: input.sessionId,
-            connectorId: connector.connectorId,
-            actionPath: `${input.connectorSlug}.${input.actionPath}`,
-          });
-          if (outcome === 'mismatch') {
-            // The supplied approvalExecutionId does not belong to THIS
-            // (session, connector, action). Never honor another row's approval —
-            // open a fresh pending gate that a human must actually resolve.
-            const freshId = await audit(deps, input, connector, 'pending_approval', action.risk, {
+          (reuseExisting ? input.approvalExecutionId : null) ??
+          (await audit(
+            deps,
+            input,
+            connector,
+            'pending_approval',
+            action.risk,
+            {
               reason: 'policy_require_approval',
               policy_source: decision.source,
+              args_preview_complete: argsPreviewDetails.complete,
+              // WITHOUT THIS the approval prompt can name the tool but not its
+              // target — a human was being asked to authorise `gmail.send_email`
+              // with no way to see who it emails. Redacted (see args-preview.ts):
+              // credential-shaped fields never reach the audit trail.
               args_preview: argsPreview,
-            });
-            return {
-              status: 'pending_approval',
-              reason: 'policy_require_approval',
-              executionId: freshId ?? undefined,
-              retryable: true,
-              ...approvalExtras(freshId),
-            };
-          }
-          if (outcome === 'denied') {
-            // Mark the decision as consumed by this live waiter — the resolve
-            // endpoint's server-side resume uses that marker to know the turn
-            // already got the answer in-band (no follow-up prompt needed).
-            if (deps.markApprovalConsumed) {
-              await deps.markApprovalConsumed(executionId).catch(() => {});
-            }
-            return { status: 'denied', reason: 'denied_by_user' };
-          }
-          if (outcome === 'timeout') {
-            return {
-              status: 'pending_approval',
-              reason: 'policy_require_approval',
-              executionId,
-              retryable: true,
-              ...approvalExtras(executionId),
-            };
-          }
-          // approved → fall through to execute the call below. Mark the grant
-          // consumed so a LATER fresh call can't also carry it over.
-          if (deps.markApprovalConsumed) {
-            await deps.markApprovalConsumed(executionId).catch(() => {});
-          }
-        } else {
-          return {
-            status: 'pending_approval',
-            reason: 'policy_require_approval',
-            executionId,
-            retryable: false,
-            ...approvalExtras(executionId),
-          };
-        }
+            },
+            requestDigest,
+          ));
+        return {
+          status: 'pending_approval',
+          reason: 'policy_require_approval',
+          executionId,
+          retryable: false,
+          ...approvalExtras(executionId),
+        };
       }
     }
   }
@@ -891,6 +867,7 @@ async function audit(
   status: ExecutionRecord['status'],
   risk: Risk | null,
   summary: Record<string, unknown> | null,
+  requestDigest?: string | null,
 ): Promise<string | null> {
   try {
     return await deps.recordExecution({
@@ -903,6 +880,7 @@ async function audit(
       sessionId: input.sessionId ?? null,
       status,
       risk,
+      requestDigest: requestDigest ?? null,
       resultSummary: summary,
     });
   } catch {

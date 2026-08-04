@@ -42,6 +42,12 @@ function fakeOpencode(onRestart: () => void): Opencode {
     getPid: () => 123,
     getInternalUrl: () => 'http://127.0.0.1:1',
     restart: async () => onRestart(),
+    // The env route calls reloadConfig now; both paths mean "the new config was
+    // applied", which is what this counts.
+    reloadConfig: async () => {
+      onRestart()
+      return 'restarted' as const
+    },
   } as unknown as Opencode
 }
 

@@ -4,7 +4,7 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
-import type { Opencode } from '../opencode'
+import { requiresRespawn, type Opencode } from '../opencode'
 import type { ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -31,6 +31,10 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // behaviour did not, and nothing short of a new session reconciled the two.
   // Same mechanism as the model above — accept it, then restart.
   'KORTIX_COMPILED_AGENT_CONFIG',
+  // Its content hash, echoed by /kortix/health so a client can ask what this box
+  // is really running. Pushed with the config; allowlisted so the two cannot
+  // drift apart on a live update.
+  'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
 ])
 
 function bearerToken(header: string | undefined): string | null {
@@ -171,12 +175,32 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           writeAgentEnvFile(projectEnv)
         }
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
-          logger.info('[env] model-affecting env changed; restarting opencode', {
+          // reloadConfig, not restart: opencode re-reads its config file in
+          // place via /global/dispose in ~51ms, against ~8s for a respawn
+          // (measured on the pinned 1.17.11). It falls back to a restart on its
+          // own if dispose is unavailable, so this is never less correct — only
+          // faster, and it does not sever an in-flight turn when dispose wins.
+          // Some values are consumed by `spawnChild` OUTSIDE the config file —
+          // the deny-list shapes the child's env, and the Codex/OpenCode auth
+          // secrets are materialized into ~/.local/share/opencode/auth.json. A
+          // dispose re-reads the config file and touches neither, so it would
+          // leave the OLD subscription credential on disk while reporting
+          // success. That was a real regression from the dispose fast path:
+          // connecting a ChatGPT account confirmed in the UI and the next turn
+          // still ran on the account it replaced.
+          //
+          // Keyed on the value DELTA, not the allowlist — `result.names` is the
+          // full set, so using it would respawn on every push for any project
+          // that merely has one of these secrets.
+          const mustRespawn = requiresRespawn([...opencodeEnvNames, ...result.changedNames])
+          const how = await opencode.reloadConfig({ mustRespawn })
+          logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
             opencodeEnvNames,
+            how,
+            mustRespawn,
           })
-          await opencode.restart()
         }
 
         return c.json({

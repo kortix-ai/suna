@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realAccess from '../projects/lib/access';
 
 // Stage A of the Slack access-flow redesign: connecting your Kortix account is
 // decoupled from having access, and a connected-but-no-access user requests
@@ -26,7 +27,11 @@ mock.module('../shared/db', () => ({
 }));
 
 // lookupEmailsByUserIds hits Supabase — mock it so the 'created' path stays offline.
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../projects/lib/access', () => ({
+  ...realAccess,
   lookupEmailsByUserIds: async () => new Map<string, string | null>(),
   grantProjectRole: async () => {},
   ensureOrgMembership: async () => 'member',

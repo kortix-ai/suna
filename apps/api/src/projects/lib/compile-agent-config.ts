@@ -32,6 +32,7 @@
  * read/parse/compile failure) resolves to `null`, which is the "v1 byte-for-
  * byte unaffected" contract the session-env wiring depends on.
  */
+import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
   manifestCandidatePaths,
@@ -49,7 +50,12 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
-import { type GitBackedProject, readManifestFromRepo, readRepoFile } from '../git';
+import {
+  isRepoFileNotFoundError,
+  readManifestFromRepo,
+  readRepoFile,
+  type GitBackedProject,
+} from '../git';
 
 /** OpenCode's per-agent `AgentConfig` — the compiled shape for one `agent.<name>` entry. */
 export interface OpencodeAgentConfig {
@@ -381,6 +387,26 @@ function applySkillsGovernance(
  * `KORTIX_COMPILED_AGENT_CONFIG` carries), or `null` for a v1 project / no
  * manifest / any failure.
  */
+/**
+ * A short content hash of a compiled agent config — the thing a session can
+ * compare to answer "am I running the latest?".
+ *
+ * The compiled JSON already exists at every point that matters (boot, push,
+ * recompile), so hashing it costs nothing and needs no new storage. Content, not
+ * a commit sha: `refreshWarmSessionWorkspace` advances a box's commit while
+ * deliberately skipping the restart, so a sandbox can report the newest commit
+ * while running config compiled days earlier. Two commits that do not touch any
+ * agent also produce the same config, and calling that "stale" would send people
+ * reloading for nothing.
+ *
+ * 16 hex chars — enough that a collision is not a practical concern for an
+ * equality check, short enough to read in a CLI line.
+ */
+export function agentConfigEtag(compiled: string | null | undefined): string | null {
+  if (!compiled) return null;
+  return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
+}
+
 export async function resolveCompiledAgentConfigForSession(
   project: GitBackedProject,
   /**
@@ -418,8 +444,20 @@ export async function resolveCompiledAgentConfigForSession(
         try {
           agentMdFiles[path] = await readRepoFile(project, path, ref);
         } catch (err) {
+          // A MISSING file is an expected client condition: the manifest may
+          // declare an agent that carries no behavior file, and that agent
+          // simply compiles without one.
+          //
+          // Anything else — a git operation error, a blip through the proxy — is
+          // not, and swallowing it silently compiles the agent with NO prompt,
+          // model, or permissions. That is a lobotomised agent reported as a
+          // successful reload, with a fresh etag saying it is current. Rethrow
+          // so the outer catch returns null: the session keeps the config it has
+          // and `stale` reads null ("could not tell") rather than a confident
+          // and wrong "up to date".
+          if (!isRepoFileNotFoundError(err)) throw err;
           console.warn(
-            `[compile-agent-config] project ${project.projectId}: failed to read agent "${name}"'s behavior file "${path}": ${(err as Error).message}`,
+            `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${path}"`,
           );
         }
       }),

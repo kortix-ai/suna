@@ -1561,7 +1561,7 @@ if (action?.risk !== 'write') {
     },
     {
       type: 'p',
-      text: 'And here is the shape Poetic targets — read, branch, act — written as a Kortix skill script. Note what is not in it: no API key, no retry-until-it-works, no prompt. The branching is a plain `if`. The credential is resolved server-side and never enters the sandbox. And a write can pause indefinitely for a human without the script losing its place:',
+      text: 'And here is the shape Poetic targets — read, branch, act — written as a Kortix skill script. Note what is not in it: no API key, no polling loop, no prompt. The branching is a plain `if`. The credential is resolved server-side and never enters the sandbox. A gated write returns an authenticated approval URL, ends the request, and resumes the Kortix session through a durable callback after one human decision:',
     },
     {
       type: 'code',
@@ -1581,18 +1581,14 @@ for (const dispute of open.data?.disputes ?? []) {
   // 2. Branch. Ordinary TypeScript — diffable, and testable with no agent.
   if (dispute.amount_cents > 500_00) continue;
 
-  // 3. Act. A gated write returns pending_approval and waits for a human.
-  let result: ExecutorCallResult = await executor.call('stripe', 'close_dispute', {
+  // 3. Act. A gated write returns one approval handoff immediately.
+  const result: ExecutorCallResult = await executor.call('stripe', 'close_dispute', {
     dispute: dispute.id,
   });
 
-  while (result.status === 'pending_approval' && result.retryable) {
-    result = await executor.call(
-      'stripe',
-      'close_dispute',
-      { dispute: dispute.id },
-      { approvalExecutionId: result.execution_id },
-    );
+  if (result.status === 'pending_approval') {
+    console.log(result.approval_url);
+    break; // Kortix resumes this session after the human approves or denies.
   }
 
   if (!result.ok) throw new Error(\`close_dispute \${dispute.id}: \${result.reason}\`);
@@ -1600,7 +1596,7 @@ for (const dispute of open.data?.disputes ?? []) {
     },
     {
       type: 'callout',
-      text: 'Both snippets above type-check under `strict` against the published `@kortix/executor-sdk` source, and the package’s own unit suite is 18 tests covering route selection, the call envelope, error mapping and catalog flattening. The approval pause, the risk classification and the audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
+      text: 'Both snippets above type-check under `strict` against the published `@kortix/executor-sdk` source, and the package’s own unit suite covers route selection, the call envelope, error mapping and catalog flattening. The approval handoff, risk classification and audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
     },
     {
       type: 'p',
@@ -1857,7 +1853,7 @@ triggers:
     },
     {
       type: 'p',
-      text: 'The credential never travels. The machine carries exactly one project-scoped Kortix token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask holds the call open instead of failing it, and the agent resumes exactly where it stopped.',
+      text: 'The credential never travels. The machine carries exactly one project-scoped Kortix token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask returns a signed approval URL immediately. One human decision sends a durable callback into the session, and only the exact approved request can run.',
     },
     { type: 'h2', text: '03 · Any model. Keep your keys.' },
     {

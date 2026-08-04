@@ -31,8 +31,14 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
+import {
+  SessionConfigIndicator,
+  SessionConfigReloadConfirm,
+} from '@/features/session/header/session-config-indicator';
+import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
+  ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
   CodeSimpleIcon as Code2,
   DotsThreeOutlineIcon,
@@ -156,6 +162,12 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
+  // Hoisted so the chip and the ⋯ item share one pending state and one confirm
+  // dialog. `canShare` is the client mirror of the reload route's own gate
+  // (session owner or project manager) — the IAM leaf both member and editor
+  // hold would still 403 here.
+  const reloadConfig = useReloadSessionConfig(projectId!, projectSessionId!);
+
   // Mobile-only action-panel toggle — see its render site below.
   const isActionPanelOpen = useIsActionPanelOpen();
   const toggleActionPanel = useToggleActionPanel();
@@ -221,6 +233,16 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession && (
+              <SessionConfigIndicator
+                projectId={projectId!}
+                sessionId={projectSessionId!}
+                reload={reloadConfig.reload}
+                isPending={reloadConfig.isPending}
+                canReload={canShare}
+              />
+            )}
 
             <div className="hidden items-center gap-1.5 lg:flex">
               {DEV_TOOLS.map(({ view, label, Icon }) => (
@@ -369,6 +391,20 @@ export function SessionSiteHeader({
                       {restartMutation.isPending ? <Loading /> : <RotateCcw />}
                       Restart
                     </DropdownMenuItem>
+                    {canShare && (
+                      // Always available, unlike the chip — which is silent
+                      // whenever staleness could not be established. Sits next
+                      // to Restart so the difference is legible: Restart reboots
+                      // the same config, this one fetches a new one.
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        disabled={reloadConfig.isPending}
+                        onClick={() => reloadConfig.reload()}
+                      >
+                        {reloadConfig.isPending ? <Loading /> : <ArrowsClockwiseIcon />}
+                        Reload config
+                      </DropdownMenuItem>
+                    )}
                     {canStop && (
                       <DropdownMenuItem
                         className="cursor-pointer"
@@ -424,6 +460,15 @@ export function SessionSiteHeader({
 
       {isProjectSession && (
         <>
+          {/* Mounted here, not inside the chip: a successful reload can make
+              the chip unmount, and a dialog that disappears mid-question is
+              worse than no dialog. */}
+          <SessionConfigReloadConfirm
+            busyReason={reloadConfig.busyReason}
+            isPending={reloadConfig.isPending}
+            onConfirm={() => reloadConfig.reload({ force: true })}
+            onDismiss={reloadConfig.clearBusy}
+          />
           <ShareSessionModal
             projectId={projectId!}
             session={projectSession}

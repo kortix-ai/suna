@@ -61,6 +61,13 @@ function fakeOpencode(
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
     restart: async () => hooks.restart?.(),
+    // The env route calls reloadConfig now, which applies config in place via
+    // dispose and falls back to restart. Both land here so a test counting
+    // "was the new config applied" keeps counting exactly that.
+    reloadConfig: async () => {
+      hooks.restart?.()
+      return 'restarted' as const
+    },
   } as unknown as Opencode
 }
 
@@ -593,11 +600,14 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
-  it('lets the API service bearer reach /kortix/refresh', async () => {
+  // `base=1` needs the DIRECT-call header as well as the bearer. The bearer
+  // alone proves nothing about the hop: the preview proxy authenticates the
+  // user traffic it relays with this very token. See KORTIX_SERVICE_CALL_HEADER.
+  it('lets a direct API call reach /kortix/refresh?base=1', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&restart=0', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
     })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
@@ -609,7 +619,7 @@ describe('daemon proxy auth gate', () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
     })
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
@@ -729,7 +739,7 @@ describe('daemon proxy auth gate', () => {
         `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
         },
       )
 
@@ -789,7 +799,7 @@ describe('daemon proxy auth gate', () => {
         `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
         },
       )
 

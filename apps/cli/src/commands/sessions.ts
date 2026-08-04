@@ -13,6 +13,7 @@ import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './ses
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
+import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -36,15 +37,21 @@ Subcommands:
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
-                                    Backend overrides (require a backend token —
-                                    see docs/KORTIX_AS_A_BACKEND_GUIDE.md):
+                                    Session access at creation:
                                     --secret <id>           narrow injected
-                                      secrets to these identifiers (repeatable).
+                                      secrets to these identifiers (repeatable;
+                                      backend token required).
                                     --no-secrets            inject zero project
-                                      secrets into the session.
+                                      secrets into the session (backend token
+                                      required).
                                     --connector <alias>=<authorization-id>
                                       bind a connector authorization
                                       (repeatable).
+                                    --no-connectors          use no connector
+                                      authorizations.
+                                    --require-connector <alias>
+                                      require a connected authorization before
+                                      provisioning (repeatable).
                                     --context <key>=<value>  runtime context
                                       (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
@@ -73,9 +80,25 @@ Subcommands:
                                     stripped. --since <7d>, --json.
                                     Aliases: review, summary.
   info <session-id>                 Show one session. --json.
+  scope <session-id>                Read or replace the session's secret and
+                                    connector access. Changes apply to the next
+                                    prompt. --secret, --no-secrets,
+                                    --inherit-secrets, --connector,
+                                    --no-connectors, --require-connector,
+                                    --no-required-connectors, --json.
+                                    Alias: access.
   preview <session-id> [port]       Print a clickable preview URL for a port
                                     in the session's sandbox (default 3000).
                                     Root-served (assets work). --port, --json.
+  reload <session-id>               Pull the repo and recompile the session's
+                                    agent config from git, into the RUNNING
+                                    sandbox — the way to pick up a merged
+                                    agent change without starting over.
+                                    Restarts the agent runtime, so it refuses
+                                    mid-turn unless you pass --force.
+                                    --no-repo skips the git pull.
+                                    --status only reports whether the session
+                                    is behind, changing nothing. --json.
   restart <session-id>              Restart (re-provision) a session.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
@@ -132,6 +155,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'answer') {
     return runSessionsAnswer(argv.slice(1));
   }
+  if (sub === 'scope' || sub === 'access') {
+    return runSessionsScope(argv.slice(1));
+  }
   const rest = argv.slice(1);
   // None of the subcommands below (ls/new/info/preview/restart/rename/rm/
   // open) own dedicated help text or parse -h/--help themselves, so without
@@ -184,6 +210,8 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts, json);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
+    case 'reload':
+      return sessionsReload(rest[0], rest.slice(1), ctxOpts);
     case 'rename':
       return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
@@ -205,6 +233,7 @@ export type SessionOverrides = {
   model?: string;
   secrets?: string[];
   connectors?: Record<string, { authorization_id: string }>;
+  requiredConnectors?: string[];
   runtimeContext?: Record<string, string>;
 };
 
@@ -223,16 +252,28 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   // from omitting the field (agent's normal set); --no-secrets expresses it.
   if (secrets.length) out.secrets = secrets;
   else if (noSecrets) out.secrets = [];
-  for (const pair of takeFlagValues(argv, ['--connector'])) {
+  const connectorPairs = takeFlagValues(argv, ['--connector']);
+  const noConnectors = takeFlagBool(argv, ['--no-connectors']);
+  if (connectorPairs.length && noConnectors) {
+    throw new Error('pass either --connector <alias>=<authorization-id> or --no-connectors, not both');
+  }
+  for (const pair of connectorPairs) {
     const eq = pair.indexOf('=');
-    if (eq <= 0) throw new Error(`--connector expects alias=authorization_id, got "${pair}"`);
+    if (eq <= 0 || eq === pair.length - 1) {
+      throw new Error(`--connector expects alias=authorization_id, got "${pair}"`);
+    }
     (out.connectors ??= {})[pair.slice(0, eq)] = {
       authorization_id: pair.slice(eq + 1),
     };
   }
+  if (noConnectors) out.connectors = {};
+  const requiredConnectors = takeFlagValues(argv, ['--require-connector']);
+  if (requiredConnectors.length) out.requiredConnectors = [...new Set(requiredConnectors)];
   for (const pair of takeFlagValues(argv, ['--context'])) {
     const eq = pair.indexOf('=');
-    if (eq <= 0) throw new Error(`--context expects key=value, got "${pair}"`);
+    if (eq <= 0 || eq === pair.length - 1) {
+      throw new Error(`--context expects key=value, got "${pair}"`);
+    }
     (out.runtimeContext ??= {})[pair.slice(0, eq)] = pair.slice(eq + 1);
   }
   return out;
@@ -298,7 +339,10 @@ async function sessionsNew(
   if (agent) body.agent_name = agent;
   if (overrides.model) body.opencode_model = overrides.model;
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
-  if (overrides.connectors) body.connector_bindings = overrides.connectors;
+  if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;
+  if (overrides.requiredConnectors !== undefined) {
+    body.require_connectors = overrides.requiredConnectors;
+  }
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);
@@ -550,6 +594,107 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
   }
   process.stdout.write(`${status.ok(`Restarting ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`);
   return 0;
+}
+
+/**
+ * Reload a running session's config.
+ *
+ * The gap this closes: merging an agent change left every open session running
+ * the config it booted with, and nothing short of a new session picked it up —
+ * `git pull` updates the working tree but the compiled agent config never came
+ * from there, and restarting re-read the same env.
+ */
+async function sessionsReload(
+  sessionId: string | undefined,
+  args: string[],
+  opts: CtxOpts,
+): Promise<number> {
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n`);
+    return 2;
+  }
+  const json = args.includes('--json');
+  const statusOnly = args.includes('--status');
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions reload ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId } = located.located;
+
+  if (statusOnly) {
+    try {
+      const state = await client.get<{
+        running_etag: string | null;
+        latest_etag: string | null;
+        stale: boolean | null;
+        sandbox_reachable: boolean;
+      }>(`/projects/${projectId}/sessions/${sessionId}/config`);
+      if (json) {
+        process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+        return 0;
+      }
+      if (state.stale === null) {
+        // Never claim "up to date" when the answer is "could not ask".
+        process.stdout.write(
+          `${status.warn(
+            state.sandbox_reachable
+              ? 'This project has no compiled agent config to compare.'
+              : 'Sandbox unreachable — cannot tell whether this session is current.',
+          )}\n`,
+        );
+        return 0;
+      }
+      process.stdout.write(
+        state.stale
+          ? `${status.warn(`Behind — running ${C.bold}${state.running_etag}${C.reset}, latest is ${C.bold}${state.latest_etag}${C.reset}. Run \`kortix sessions reload ${shortId(sessionId)}\`.`)}\n`
+          : `${status.ok(`Up to date (${state.running_etag}).`)}\n`,
+      );
+      return 0;
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+
+  try {
+    const result = await client.post<{
+      applied: boolean;
+      previous_etag: string | null;
+      etag: string | null;
+      repo_refreshed: boolean;
+      agent_files?: string;
+      detail: string;
+    }>(`/projects/${projectId}/sessions/${sessionId}/reload`, {
+      refresh_repo: !args.includes('--no-repo'),
+      force: args.includes('--force'),
+    });
+    if (json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    if (!result.applied) {
+      process.stdout.write(`${status.warn(result.detail)}\n`);
+      return 0;
+    }
+    // `detail` is the server's sentence and it is the only thing entitled to say
+    // whether the AGENT changed. This line used to hardcode "The next prompt
+    // runs the new config" for every applied reload, which was false whenever
+    // the session's agent files were left alone — the etag moved and the agent
+    // did not. The etag transition is still worth printing; the claim is not
+    // ours to make.
+    //
+    // Only two outcomes deserve a warning. An earlier version keyed off a
+    // boolean and warned on `already-current` and `not-applicable`, which are
+    // plain successes.
+    const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
+    const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
+    const line = `Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${etags}\n  ${result.detail}`;
+    process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }
 
 async function sessionsRename(

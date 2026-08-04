@@ -4,9 +4,9 @@ Handles the multi-file boilerplate: comments.xml, commentsExtended.xml,
 commentsIds.xml, commentsExtensible.xml, plus relationships and content types.
 
 Usage:
-    uv run --with lxml comment.py <unpacked_dir> <comment_id> <text>
-    uv run --with lxml comment.py <unpacked_dir> <comment_id> <text> --parent <parent_id>
-    uv run --with lxml comment.py <unpacked_dir> <comment_id> <text> --author "Jane Smith"
+    python3 comment.py <unpacked_dir> <comment_id> <text>
+    python3 comment.py <unpacked_dir> <comment_id> <text> --parent <parent_id>
+    python3 comment.py <unpacked_dir> <comment_id> <text> --author "Jane Smith"
 
 Text must be pre-escaped XML (e.g., &amp; for &, &#x2019; for smart apostrophe).
 

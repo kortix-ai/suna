@@ -241,7 +241,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions ls` | List every session on the project. |
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
-| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes); a timeout is a hard failure (exit 1), not a silent success. Use `--secret <id>` (repeatable) or `--no-secrets` to narrow project-secret delivery; these flags require a backend token. Use `--connector <alias>=<authorization-id>` to select connector authorizations. Use `--context <key>=<value>` for non-secret runtime context. |
+| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode REST compatibility process in the sandbox. Alias: `attach`. |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
@@ -250,6 +250,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions approve <id> [<req-id>] [--always] [--reject] [--message "<text>"]` | Answer a permission prompt. |
 | `kortix sessions answer <id> [<req-id>] [--option <v>]... [--text "<text>"] [--reject]` | Answer a question prompt. |
 | `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review. Aliases: `review`, `summary`. |
+| `kortix sessions scope <id> [scope options] [--json]` | Read or replace Secret and Connector access. Alias: `access`. Use `--secret <id>`, `--no-secrets`, or `--inherit-secrets` for Secrets. Use `--connector <alias>=<authorization-id>` or `--no-connectors` for Connector bindings. Use `--require-connector <alias>` or `--no-required-connectors` for required Connectors. Provided categories replace their current values. Omitted categories remain unchanged. Changes apply to the next prompt. Removed Secret values remain in existing context if the session already read them. |
 | `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable preview URL for a sandbox port. Default port: `3000`. |
 | `kortix sessions restart <id>` | Restart the session's sandbox. |
 | `kortix sessions rename <id> <name>` | Set a session's name. Pass `""` to clear it. |
@@ -396,7 +397,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | --- | --- |
 | `kortix executor discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix executor describe <connector>.<action>` | Show a tool's input schema. |
-| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. The legacy split form remains supported. |
+| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
 | `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix executor rm <slug>` | Remove a connector from the project. |
 | `kortix executor connect <slug>` | Mint a connect link for a human. |

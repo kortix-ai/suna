@@ -45,10 +45,15 @@ describe('the live-env allowlist', () => {
     expect(runtimeEnvAllowlist().length).toBeLessThan(10)
   })
 
-  test('an allowlisted change with refreshModels restarts opencode', () => {
+  test('an allowlisted change with refreshModels APPLIES the config', () => {
     // Accepting the value alone changes nothing: opencode reads its config only
-    // at spawn. Without this the push would silently no-op until the next boot.
-    expect(ENV_ROUTE).toContain('await opencode.restart()')
+    // at spawn, and there is no config file watcher (measured — see
+    // opencode.ts's tryDisposeReload). Without this the push would silently
+    // no-op until the next boot.
+    //
+    // reloadConfig, not restart: it re-reads in place via dispose (~51ms) and
+    // falls back to a restart by itself, so this is never less correct.
+    expect(ENV_ROUTE).toContain('await opencode.reloadConfig({ mustRespawn })')
     expect(ENV_ROUTE).toContain(
       'if (body.refreshModels === true && (result.changed || opencodeEnvChanged))',
     )

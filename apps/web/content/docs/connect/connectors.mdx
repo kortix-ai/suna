@@ -70,6 +70,26 @@ destructive actions. Set `sensitive: true` to make `require_approval` the
 connector profile's unmatched-action default, including reads. Explicit project
 or connector-profile rules still apply first.
 
+### Approve one governed call
+
+`require_approval` creates one decision for one connector call. The Executor
+returns `202 pending_approval` with `approval_url`, `approval_summary`, and
+`execution_id`. It does not keep an HTTP request open.
+
+Share `approval_url` with any teammate. The URL identifies the request but does
+not grant authority. The page requires a signed-in Kortix account. Kortix then
+verifies that the account can access and approve actions in the project.
+
+The approval page shows the redacted parameters that the connector will receive.
+Approve or deny the call once. Kortix sends the decision back into the session
+through a durable callback. An approval applies only to the exact request
+digest. A changed recipient, subject, body, channel, URL, or other parameter
+requires a new decision.
+
+Open the session's **Audit** panel to use the same parameter view. Historical
+entries remain read-only. There is no session-wide approval option. Use an
+explicit `always_run` policy only when a connector action must run unattended.
+
 ## Connect with OAuth
 
 <Steps>

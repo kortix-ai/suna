@@ -32,6 +32,8 @@ import {
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PYTHON_PACKAGE_FLOOR,
+  PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
@@ -465,6 +467,36 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `    && UV_PYTHON_DOWNLOADS=automatic uv python install --default ${PYTHON_VERSION} \\`,
     `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)' \\`,
     `    && python3 -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')})'`,
+    '',
+    // The Python package floor: everything the starter skills import, baked
+    // into the managed interpreter so bare `python3` works with zero runtime
+    // resolution. `uv run --with` re-downloads wheels from PyPI on first use in
+    // EVERY fresh sandbox — on the session hot path, network-dependent — so the
+    // floor exists precisely to keep skill scripts off that path; `uv run
+    // --with` remains the documented escape hatch for packages OUTSIDE the
+    // floor only. `--break-system-packages` overrides uv's externally-managed
+    // marker on the interpreter it just installed — this is OUR frozen
+    // build-time interpreter, not a distro Python; nothing upgrades it after
+    // this layer. python-playwright is pinned to the SAME version as the Node
+    // playwright that bakes Chromium below, so both resolve the identical
+    // browser revision under PLAYWRIGHT_BROWSERS_PATH.
+    // The install targets the managed interpreter by EXPLICIT PATH, never by
+    // discovery: `--system` skips uv-managed interpreters by design, and the
+    // apt floor above drags in Ubuntu's distro python3 via LibreOffice — so
+    // `--system` resolved /usr/bin/python3, where `kortix` cannot write, and
+    // the v39 bake failed on every provider (dev, 2026-08-03). The local-repro
+    // gap: a test container without the apt floor has no distro python, so
+    // `--system` happens to fall back to the managed shim and "passes".
+    // The import check is a single-line `python3 -c` on purpose: E2B's
+    // Dockerfile parser reads a heredoc body's first line as an instruction
+    // and aborts the build.
+    'RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\',
+    ...Object.entries(PYTHON_PACKAGE_FLOOR).map(
+      ([pkg, version]) => `        "${pkg}==${version}" \\`,
+    ),
+    `    && python3 -c 'import importlib; [importlib.import_module(m) for m in ${JSON.stringify(
+      Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS).sort(),
+    )}]; print("python package floor OK")'`,
     '',
     // Install pnpm's versioned standalone release artifact after verifying the
     // repository-controlled checksum. pnpm then owns the JavaScript runtime

@@ -4,7 +4,10 @@ import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
 } from '../../projects/lib/secret-grant';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
+  STRIP_FORWARD_HEADERS,
+  isProxiedBaseReset,
   longTurnTimeoutResponse,
   secretGrantErrorResponse,
   shouldAutoResumeStoppedSandbox,
@@ -165,5 +168,76 @@ describe('secretGrantErrorResponse', () => {
       'https://app.kortix.ai',
     );
     expect(res?.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+  });
+});
+
+// The daemon's `base=1` force-resets the session's branch onto the base tip —
+// `git checkout -B <branch> <sha>`, where the branch IS the session id — so it
+// discards every commit the session made.
+//
+// It must not be reachable from user traffic, and the bearer token cannot
+// enforce that on its own: this proxy authenticates everything it forwards,
+// including an ordinary user's request, with the target sandbox's own service
+// key. So the daemon sees an identical `Authorization` either way, and the
+// refusal has to happen at the layer that knows a user is on the other end.
+describe('isProxiedBaseReset', () => {
+  test('refuses the destructive flag on the daemon port', () => {
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'base=1')).toBe(true);
+  });
+
+  test('refuses it on opencode 4096 too, which Daytona does not reroute', () => {
+    // Gating on 8000 alone left the direct-:4096 Daytona path open — the same
+    // drift that made the session-visibility gate a cross-end-user leak.
+    expect(isProxiedBaseReset(4096, '/kortix/refresh', 'base=1')).toBe(true);
+  });
+
+  test('refuses it behind the in-box /proxy/{port} prefix', () => {
+    expect(isProxiedBaseReset(8000, '/proxy/8000/kortix/refresh', 'base=1')).toBe(true);
+  });
+
+  test('refuses it regardless of where the flag sits in the query', () => {
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'restart=0&base=1&base_sha=abc')).toBe(
+      true,
+    );
+  });
+
+  test('leaves an ordinary refresh alone', () => {
+    // The SDK's `restart` mode is a bare POST to this path. Blocking the path
+    // rather than the flag would break it.
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', '')).toBe(false);
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'restart=0&config_dir=1')).toBe(false);
+  });
+
+  test('does not fire on a lookalike value', () => {
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'base=0')).toBe(false);
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'base_sha=deadbeef')).toBe(false);
+  });
+
+  test('does not fire on a lookalike path', () => {
+    expect(isProxiedBaseReset(8000, '/kortix/refresh-status', 'base=1')).toBe(false);
+    expect(isProxiedBaseReset(8000, '/kortix/env', 'base=1')).toBe(false);
+  });
+
+  test('ignores ports that are not the session data path', () => {
+    // A user's own app on :3000 owns its query strings; this gate is about the
+    // daemon's control surface, not arbitrary traffic.
+    expect(isProxiedBaseReset(3000, '/kortix/refresh', 'base=1')).toBe(false);
+  });
+});
+
+// The daemon distinguishes a direct platform call from a proxied one by a header
+// this proxy strips. If that name ever falls out of the strip list, a caller can
+// set it themselves and the daemon's gate opens.
+describe('the service-call header cannot be injected through the proxy', () => {
+  test('it is stripped from forwarded requests', () => {
+    expect(STRIP_FORWARD_HEADERS.has(KORTIX_SERVICE_CALL_HEADER.toLowerCase())).toBe(true);
+  });
+
+  test('the strip list is matched case-insensitively, as headers are', () => {
+    // Headers arrive in whatever case the client sent; the forward loop
+    // lowercases before testing membership, so the entry must be lowercase.
+    for (const name of STRIP_FORWARD_HEADERS) {
+      expect(name).toBe(name.toLowerCase());
+    }
   });
 });

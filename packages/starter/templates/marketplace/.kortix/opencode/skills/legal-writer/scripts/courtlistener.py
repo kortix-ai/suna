@@ -6,18 +6,18 @@ Millions of legal opinions across federal and state courts.
 
 Usage:
     # Search for cases
-    uv run courtlistener.py search "qualified immunity police"
-    uv run courtlistener.py search "breach of contract damages" --court "scotus"
-    uv run courtlistener.py search "first amendment speech" --after 2020
+    python3 courtlistener.py search "qualified immunity police"
+    python3 courtlistener.py search "breach of contract damages" --court "scotus"
+    python3 courtlistener.py search "first amendment speech" --after 2020
 
     # Get a specific opinion by ID
-    uv run courtlistener.py opinion 12345
+    python3 courtlistener.py opinion 12345
 
     # Get citation details
-    uv run courtlistener.py cite 12345
+    python3 courtlistener.py cite 12345
 
     # Format a citation in Bluebook style
-    uv run courtlistener.py bluebook 12345
+    python3 courtlistener.py bluebook 12345
 
 API docs: https://www.courtlistener.com/api/rest/v4/
 Auth: Set COURTLISTENER_API_TOKEN env var (free account at courtlistener.com)

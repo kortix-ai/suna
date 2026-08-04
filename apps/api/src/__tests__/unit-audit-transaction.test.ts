@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as realRequestContext from '../lib/request-context';
 
 const calls: string[] = [];
 let auditFails = false;
@@ -60,7 +61,13 @@ mock.module('../shared/audit-webhooks', () => ({
   dispatchAuditEvent: () => calls.push('dispatch'),
 }));
 
-mock.module('../lib/request-context', () => ({ getRequestContext: () => null }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+mock.module('../lib/request-context', () => ({
+  ...realRequestContext,
+  getRequestContext: () => null,
+}));
 
 const { runAuditedTransaction } = await import('../shared/audit');
 

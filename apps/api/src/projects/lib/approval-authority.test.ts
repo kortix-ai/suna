@@ -13,6 +13,7 @@ describe('mayResolveApproval', () => {
       targetSessionOrigin: 'backend',
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
+      callerAuthType: 'supabase',
       callerSessionId: 'my-own-session',
     });
     expect(result).toEqual({ allowed: false, reason: 'session_bound_caller' });
@@ -24,6 +25,7 @@ describe('mayResolveApproval', () => {
       targetSessionOrigin: 'backend',
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
+      callerAuthType: 'supabase',
       callerSessionId: 'some-other-session',
     });
     expect(result.allowed).toBe(false);
@@ -37,6 +39,7 @@ describe('mayResolveApproval', () => {
       targetSessionOrigin: 'backend',
       targetSessionCreatedBy: WRAPPER,
       callerUserId: WRAPPER,
+      callerAuthType: 'supabase',
       callerSessionId: null,
     });
     expect(result).toEqual({ allowed: false, reason: 'not_launcher_or_manager' });
@@ -48,6 +51,7 @@ describe('mayResolveApproval', () => {
       targetSessionOrigin: 'user',
       targetSessionCreatedBy: HUMAN,
       callerUserId: HUMAN,
+      callerAuthType: 'supabase',
       callerSessionId: null,
     });
     expect(result.allowed).toBe(true);
@@ -60,6 +64,7 @@ describe('mayResolveApproval', () => {
         targetSessionOrigin: 'user',
         targetSessionCreatedBy: HUMAN,
         callerUserId: 'someone-else',
+        callerAuthType: 'supabase',
         callerSessionId: null,
       }).allowed,
     ).toBe(false);
@@ -73,6 +78,7 @@ describe('mayResolveApproval', () => {
           targetSessionOrigin: origin,
           targetSessionCreatedBy: WRAPPER,
           callerUserId: 'manager',
+          callerAuthType: 'supabase',
           callerSessionId: null,
         }).allowed,
       ).toBe(true);
@@ -91,6 +97,7 @@ describe('mayResolveApproval', () => {
         targetSessionOrigin: 'backend',
         targetSessionCreatedBy: WRAPPER,
         callerUserId: WRAPPER,
+        callerAuthType: 'supabase',
         callerSessionId: 's1',
       }),
     ).toEqual({ allowed: false, reason: 'session_bound_caller' });
@@ -134,35 +141,28 @@ describe('maySeeSessionApprovals', () => {
   });
 });
 
-describe('a service-account bearer may still resolve — deliberately', () => {
-  test('the wrapper backend can relay its end-user approval decision', () => {
-    // In KaaB the end-user has no Kortix identity, so the ONLY path for their
-    // decision to reach this endpoint is relayed by the wrapper's backend.
-    // Refusing service accounts would make require_approval unusable for the
-    // exact product it exists to serve.
-    //
-    // Safe because an agent can never hold an SA bearer: the sandbox gets a
-    // session-bound PAT, the per-agent SA's secret is hashed and DISCARDED at
-    // creation, and /v1/accounts/* is refused for project-scoped tokens.
+describe('non-human credentials cannot resolve approvals', () => {
+  test('a service-account bearer cannot relay a decision', () => {
     expect(
       mayResolveApproval({
         isManager: true,
         targetSessionOrigin: 'backend',
         targetSessionCreatedBy: WRAPPER,
         callerUserId: 'wrapper-service-account-id',
+        callerAuthType: 'service_account',
         callerSessionId: null,
       }).allowed,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test('a service account WITHOUT manager rights still cannot resolve', () => {
-    // Allowing the operator is not the same as allowing every non-human caller.
     expect(
       mayResolveApproval({
         isManager: false,
         targetSessionOrigin: 'backend',
         targetSessionCreatedBy: WRAPPER,
         callerUserId: 'some-service-account',
+        callerAuthType: 'service_account',
         callerSessionId: null,
       }).allowed,
     ).toBe(false);
@@ -181,6 +181,7 @@ describe('the browser human (regression: the Supabase sessionId collision)', () 
       targetSessionOrigin: 'backend',
       targetSessionCreatedBy: WRAPPER,
       callerUserId: HUMAN,
+      callerAuthType: 'supabase',
       callerSessionId: null,
     });
     expect(result).toEqual({ allowed: true });
@@ -209,6 +210,7 @@ describe('the browser human (regression: the Supabase sessionId collision)', () 
         targetSessionOrigin: 'backend',
         targetSessionCreatedBy: WRAPPER,
         callerUserId: WRAPPER,
+        callerAuthType: 'supabase',
         callerSessionId: 'sess-real-kortix-session',
       }).allowed,
     ).toBe(false);
