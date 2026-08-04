@@ -34,6 +34,7 @@ import {
   shouldPollProjectSessions,
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
@@ -364,10 +365,13 @@ function ProjectSessionRow({
     <div className="group/session-list block">
       <div
         className={cn(
-          'dark:hover:bg-sidebar-accent/50 hover:bg-sidebar-foreground/7 relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
+          // --session-row-surface paints the row AND the title fade in the same
+          // style pass. Do not transition background — transition-colors made the
+          // fill ease for 150ms while the fade snapped, which read as a flicker.
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-[color] duration-150',
           isActive
-            ? 'dark:bg-sidebar-accent/50 bg-sidebar-foreground/8 text-sidebar-foreground font-medium'
-            : 'text-muted-foreground hover:text-sidebar-foreground',
+            ? 'text-sidebar-foreground bg-[var(--session-row-surface)] font-medium [--session-row-surface:var(--sidebar-border)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',
         )}
       >
         <Link
@@ -379,12 +383,7 @@ function ProjectSessionRow({
         >
           <SessionStatusDot status={session.status} reviewCount={reviewCount} />
 
-          <span
-            title={displayTitle}
-            className={cn('min-w-0 flex-1 truncate text-sm', isActive && 'font-medium')}
-          >
-            {displayTitle}
-          </span>
+          <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
           {childCount > 0 && (
             <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
@@ -394,8 +393,8 @@ function ProjectSessionRow({
         </Link>
 
         <div className="flex shrink-0 items-center gap-0">
-          <span className="flex size-4 shrink-0 items-center justify-center">
-            {SourceIcon && (
+          {SourceIcon && (
+            <span className="flex size-4 shrink-0 items-center justify-center">
               <Hint
                 side="top"
                 label={
@@ -406,8 +405,8 @@ function ProjectSessionRow({
                   <SourceIcon className="size-3" />
                 </span>
               </Hint>
-            )}
-          </span>
+            </span>
+          )}
 
           <div className="relative w-10 min-w-10 shrink-0">
             {activity && (

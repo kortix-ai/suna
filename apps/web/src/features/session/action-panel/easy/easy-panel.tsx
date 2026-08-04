@@ -37,7 +37,20 @@ export function EasyPanel() {
     panel;
 
   return (
-    <div className="flex flex-col gap-3">
+    // A fill-and-scroll column, not a scrolling stack.
+    //
+    // The stack used to scroll as one: Outputs, Context and Preview sat at
+    // their natural heights and the column scrolled past all three. Expanding
+    // Outputs to two hundred files therefore pushed Context and Preview
+    // entirely below the fold — present, but unreachable without scrolling
+    // through everything above them.
+    //
+    // Now the column owns the height (`h-full`) and hands the leftover to
+    // exactly one card. Outputs is the one that yields (`fill`); Context and
+    // Preview keep `shrink-0` and stay on screen at their full height, always.
+    // `min-h-0` is what lets this shrink at all — a flex container defaults to
+    // its content's minimum height and would otherwise refuse.
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <OutputsCard
         outputs={files}
         defaultExpanded={outputsDefaultOpen}
