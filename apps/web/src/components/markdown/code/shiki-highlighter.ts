@@ -2,6 +2,7 @@ import {
   normalizeLanguage,
   shikiWasmAvailable,
 } from '@/components/markdown/unified-markdown-utils';
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName } from '@/lib/code-theme';
 import { SHIKI_THEMES } from '@/lib/shiki-theme';
 import { cn } from '@/lib/utils';
 import {
@@ -13,12 +14,10 @@ import {
 } from 'shiki';
 
 // ─── Shiki highlighting ──────────────────────────────────────────────────────
-// One engine, two palettes. Markdown code uses the bundled `github-dark` /
-// `github-light` pair; surfaces that sit beside a diff or the CodeMirror editor
-// use the Pierre pair from `@/lib/shiki-theme`, so restyling one never touches
-// the other. The palette is a parameter — see `CodeTheme` below.
-export const SHIKI_THEME_DARK = 'github-dark';
-export const SHIKI_THEME_LIGHT = 'github-light';
+// One engine, one palette. Every code surface in the app renders under the same
+// pair — see `@/lib/code-theme`, which also explains why the constants live in a
+// module of their own rather than here.
+export { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT, type CodeThemeName };
 
 // A theme is either a bundled name (already known to Shiki) or a TextMate
 // registration object that carries its own `name`.
