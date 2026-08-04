@@ -2269,6 +2269,13 @@ export function SessionChat({
   useEffect(() => {
     setOlderPullFailed(false);
   }, [sessionId]);
+  // Set below, once the virtualizer exists. A windowed transcript unmounts the
+  // anchor node when a prepend shifts the window, so the node-based restore
+  // silently no-ops; this re-finds the same turn by id and scrolls to its new
+  // index. Held in a ref because the virtualizer is declared further down —
+  // naming it in this callback's dependency array would be a TDZ error.
+  const restoreAnchorByTurnId = useRef<((turnId: string) => boolean) | null>(null);
+
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
     const anchor = node ? captureTurnScrollAnchor(node) : null;
@@ -2281,7 +2288,12 @@ export function SessionChat({
     }
     if (!node) return;
     requestAnimationFrame(() => {
-      restoreTurnScrollAnchor(node, anchor);
+      // Node-based restore first: exact, and the only option when not windowed.
+      if (restoreTurnScrollAnchor(node, anchor)) return;
+      // It returned false, meaning the captured node is gone — the prepend
+      // shifted the window and the virtualizer unmounted it. Fall back to the
+      // id, which survives the prepend even though the node does not.
+      if (anchor?.turnId) restoreAnchorByTurnId.current?.(anchor.turnId);
     });
   }, [loadOlder, scrollRef]);
   const olderSentinelRef = useRef<HTMLDivElement>(null);
@@ -2467,6 +2479,20 @@ export function SessionChat({
     // useAutoScroll still finds the last [data-turn-id] to size its spacer.
     overscan: 8,
   });
+  // Wire the older-history anchor fallback now that the virtualizer exists.
+  // Null when not windowed, so the node-based restore stays the only path
+  // there — it is exact, and cheaper.
+  restoreAnchorByTurnId.current = isTranscriptVirtualized
+    ? (turnId: string) => {
+        const index = findTurnIndexById(turns, turnId);
+        // -1 means the turn is gone entirely. Scrolling to index 0 would throw
+        // the reader to the top of the thread, which is worse than not moving.
+        if (index < 0) return false;
+        turnVirtualizer.scrollToIndex(index, { align: 'start' });
+        return true;
+      }
+    : null;
+
   const virtualTurnItems = isTranscriptVirtualized ? turnVirtualizer.getVirtualItems() : [];
   // Re-arms the minimap's IntersectionObserver when the mounted set changes.
   // Undefined when not windowed, so that path behaves exactly as before.
@@ -3776,6 +3802,13 @@ export function SessionChat({
                                 key={virtualRow.key}
                                 data-index={virtualRow.index}
                                 data-turn-id={turn.userMessage.info.id}
+                                // Marks the TRUE final turn. useAutoScroll
+                                // sizes its bottom spacer from this element,
+                                // and "last node in the DOM" is not the same
+                                // thing once turns are windowed.
+                                data-last-turn={
+                                  virtualRow.index === turns.length - 1 ? '' : undefined
+                                }
                                 ref={turnVirtualizer.measureElement}
                                 // Gap is padding, never margin: measureElement
                                 // reads getBoundingClientRect, which excludes
@@ -3800,6 +3833,7 @@ export function SessionChat({
                           <div
                             key={turn.userMessage.info.id}
                             data-turn-id={turn.userMessage.info.id}
+                            data-last-turn={turnIndex === turns.length - 1 ? '' : undefined}
                             className={cn(
                               '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
                               turnIndex === 0 ? '' : 'mt-12',

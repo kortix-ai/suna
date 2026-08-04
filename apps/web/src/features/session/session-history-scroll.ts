@@ -1,6 +1,15 @@
 export interface TurnScrollAnchor {
   element: HTMLElement;
   viewportTop: number;
+  /**
+   * The anchored turn's id.
+   *
+   * `element` is only usable while that node stays mounted. A windowed
+   * transcript unmounts it as soon as the prepend shifts the window, and then
+   * `restoreTurnScrollAnchor` can do nothing. The id survives the prepend, so
+   * the caller can resolve the turn's NEW index and scroll to that instead.
+   */
+  turnId: string | null;
 }
 
 export function captureTurnScrollAnchor(container: HTMLElement): TurnScrollAnchor | null {
@@ -13,6 +22,7 @@ export function captureTurnScrollAnchor(container: HTMLElement): TurnScrollAncho
   return {
     element,
     viewportTop: element.getBoundingClientRect().top,
+    turnId: element.getAttribute('data-turn-id'),
   };
 }
 

@@ -71,10 +71,33 @@ const BOTTOM_THRESHOLD = 80;
 
 const TURN_TOP_OFFSET = 24;
 
-/** scrollTop that puts the last [data-turn-id] at TURN_TOP_OFFSET from viewport top. */
+/**
+ * The transcript's TRUE final turn, or null when it is not mounted.
+ *
+ * Deliberately not `querySelectorAll('[data-turn-id]')` then taking the last
+ * one. A windowed transcript only mounts turns near the viewport, so the last
+ * node in the DOM is the last *mounted* turn — which is the real final turn
+ * only while the reader is at the tail. Sizing the spacer from a mid-thread
+ * turn moves scrollHeight underneath the reader.
+ *
+ * `data-last-turn` is set on the final index by both render paths, so its
+ * absence is meaningful: the tail is not mounted, and callers should fall
+ * back rather than measure the wrong element.
+ */
+function findLastTurn(contentEl: HTMLDivElement): HTMLElement | null {
+  return contentEl.querySelector<HTMLElement>('[data-last-turn]');
+}
+
+/** Whether any turn at all is mounted — distinguishes "empty thread" from
+ *  "windowed and scrolled away from the tail". */
+function hasMountedTurn(contentEl: HTMLDivElement): boolean {
+  return !!contentEl.querySelector('[data-turn-id]');
+}
+
+/** scrollTop that puts the last turn at TURN_TOP_OFFSET from viewport top.
+ *  Null when the final turn is not mounted — callers must handle that. */
 function measureTarget(scrollEl: HTMLDivElement, contentEl: HTMLDivElement): number | null {
-  const turns = contentEl.querySelectorAll<HTMLElement>('[data-turn-id]');
-  const last = turns[turns.length - 1];
+  const last = findLastTurn(contentEl);
   if (!last) return null;
   const sr = scrollEl.getBoundingClientRect();
   const tr = last.getBoundingClientRect();
@@ -153,8 +176,16 @@ export function useAutoScroll({
     if (!el || !content || !spacer) return;
 
     const vh = el.clientHeight;
-    const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
-    const last = turns[turns.length - 1];
+    const last = findLastTurn(content);
+    // Windowed transcript with the reader scrolled away from the tail: the
+    // true final turn is unmounted. Recomputing from whatever happens to be
+    // mounted would size the spacer from a mid-thread turn, and the spacer is
+    // real layout at the bottom of the content — so scrollHeight would move
+    // under the reader every time the window shifts mid-scroll. Keep the
+    // current value instead: a stale spacer is stable, a wrong one moves the
+    // page. `hasMountedTurn` distinguishes this from an empty thread, which
+    // still legitimately wants a full-viewport spacer.
+    if (!last && hasMountedTurn(content)) return;
     let h = last ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET) : vh;
 
     // Cap the spacer ONLY on fresh loads of an existing conversation (no
@@ -209,7 +240,14 @@ export function useAutoScroll({
     const content = contentRef.current;
     if (!el || !content) return true;
     const target = measureTarget(el, content);
-    if (target === null) return true;
+    if (target === null) {
+      // Windowed and scrolled away from the tail — the final turn is not
+      // mounted, so it cannot be measured. Returning `true` here would claim
+      // we are at the bottom while the reader is mid-thread, which hides the
+      // scroll-to-bottom button and re-enables auto-follow. Fall back to the
+      // classic check. With no turns at all, `true` is still right.
+      return hasMountedTurn(content) ? isNearScrollEnd(el) : true;
+    }
     return el.scrollTop >= target - BOTTOM_THRESHOLD;
   }, []);
 
@@ -226,7 +264,10 @@ export function useAutoScroll({
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     const target = measureTarget(el, content);
-    if (target !== null) el.scrollTop = target;
+    // Null means the final turn is unmounted (windowed, scrolled up). Jump to
+    // the absolute bottom instead of doing nothing; that mounts the tail, and
+    // the follow-up recalc then parks it precisely.
+    el.scrollTop = target ?? el.scrollHeight - el.clientHeight;
     // Release the guard after a frame so the instant scroll settles.
     programmaticScrollTimer.current = setTimeout(() => {
       programmaticScrollRef.current = false;
@@ -245,7 +286,11 @@ export function useAutoScroll({
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     const target = measureTarget(el, content);
-    if (target !== null) el.scrollTo({ top: target, behavior: 'smooth' });
+    // Same fallback as scrollToEnd: an unmounted tail must still be reachable.
+    el.scrollTo({
+      top: target ?? el.scrollHeight - el.clientHeight,
+      behavior: 'smooth',
+    });
     // Release the guard after smooth scroll completes (~400ms is typical).
     programmaticScrollTimer.current = setTimeout(() => {
       programmaticScrollRef.current = false;
