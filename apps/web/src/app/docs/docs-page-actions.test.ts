@@ -83,6 +83,68 @@ describe('docs page actions', () => {
     expect(source).toContain('Copy Markdown');
     expect(source).toContain('Copied');
   });
+
+  /**
+   * The requested shape: one `justify-between` row with Copy Markdown + Open
+   * grouped at the left and Edit on GitHub pushed to the far right. Layout is
+   * the easiest thing to regress without anyone noticing, so it is pinned by
+   * position, not just by the presence of a class name.
+   */
+  test('lays the row out as justify-between with Edit on GitHub last', () => {
+    expect(source).toContain('justify-between');
+
+    const copyAt = source.indexOf('<CopyMarkdownButton');
+    const dropdownAt = source.indexOf('<DropdownMenu>');
+    const editAt = source.lastIndexOf('Edit on GitHub');
+
+    expect(copyAt).toBeGreaterThan(-1);
+    expect(dropdownAt).toBeGreaterThan(copyAt);
+    expect(editAt).toBeGreaterThan(dropdownAt);
+  });
+
+  test('anchors the dropdown to the trigger start, since the trigger sits at the left edge', () => {
+    expect(source).toContain('align="start"');
+    expect(source).not.toContain('align="end"');
+  });
+});
+
+describe('docs page renders the actions under the description', () => {
+  const PAGE = resolve(WEB_ROOT, 'src/app/docs/[[...slug]]/page.tsx');
+
+  /**
+   * The actions act on the page the reader has just been introduced to, so they
+   * sit under the title/description — not back up in the breadcrumb slot, which
+   * is where they first landed.
+   */
+  test('mounts DocsPageActions between DocsDescription and DocsBody', () => {
+    const source = readFileSync(PAGE, 'utf8');
+
+    const descriptionAt = source.indexOf('<DocsDescription>');
+    const actionsAt = source.indexOf('<DocsPageActions');
+    const bodyAt = source.indexOf('<DocsBody');
+
+    expect(descriptionAt).toBeGreaterThan(-1);
+    expect(actionsAt).toBeGreaterThan(descriptionAt);
+    expect(bodyAt).toBeGreaterThan(actionsAt);
+  });
+
+  test('does not render the actions inside the breadcrumb slot', () => {
+    const source = readFileSync(PAGE, 'utf8');
+    const slotStart = source.indexOf('breadcrumb={{');
+    const slotEnd = source.indexOf('<DocsTitle>');
+    // Guard the markers themselves: if either moves, this test must fail loudly
+    // rather than silently slice an empty string and assert nothing.
+    expect(slotStart).toBeGreaterThan(-1);
+    expect(slotEnd).toBeGreaterThan(slotStart);
+
+    const breadcrumbSlot = source.slice(slotStart, slotEnd);
+
+    // Match the JSX tag, not the bare name: this slot's own comment explains
+    // where the actions moved TO, and a name-only assertion would fail that
+    // comment. Same rule as files-route-contract.test.ts — constrain the
+    // behaviour, not the vocabulary.
+    expect(breadcrumbSlot).not.toContain('<DocsPageActions');
+  });
 });
 
 describe('docs server entries never reference the client Icon namespace', () => {

@@ -51,10 +51,12 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
       tableOfContent={{ style: 'clerk' }}
       footer={{ enabled: false }}
       breadcrumb={{
-        // Replaces the built-in breadcrumb so the same row can carry the
-        // edit link: section trail on the left, "Edit on GitHub" on the right.
+        // Replaces the built-in breadcrumb to render the section trail in this
+        // app's type and spacing. It used to also carry the "Edit on GitHub"
+        // link on the right; that now lives in DocsPageActions below the
+        // description, so this row is the trail and nothing else.
         component: (
-          <div className="flex flex-row items-center justify-between gap-4">
+          <div className="flex flex-row items-center gap-4">
             <span className="text-fd-muted-foreground flex min-w-0 items-center gap-1.5 text-sm">
               {breadcrumbs.map((item, i) => {
                 const itemClassName = cn(
@@ -80,13 +82,20 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                 );
               })}
             </span>
-            <DocsPageActions markdownPath={markdownPath} githubUrl={editUrl} pageUrl={pageUrl} />
           </div>
         ),
       }}
     >
       <DocsTitle>{page.data.title}</DocsTitle>
       {page.data.description && <DocsDescription>{page.data.description}</DocsDescription>}
+      {/* Below the description, not up in the breadcrumb row: these act on the
+          page the reader has just been introduced to, so they belong under it. */}
+      <DocsPageActions
+        className="mt-4 mb-2"
+        markdownPath={markdownPath}
+        githubUrl={editUrl}
+        pageUrl={pageUrl}
+      />
       <DocsBody className="text-[15px]">
         <MDX
           components={{

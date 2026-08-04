@@ -31,10 +31,13 @@ export function DocsPageActions({
   markdownPath,
   githubUrl,
   pageUrl,
+  className,
 }: {
   markdownPath: string;
   githubUrl: string;
   pageUrl: string;
+  /** Spacing is the caller's business — this component owns the row, not its margins. */
+  className?: string;
 }) {
   const prompt = `Read ${pageUrl} so I can ask questions about it.`;
   const encodedPrompt = encodeURIComponent(prompt);
@@ -68,29 +71,36 @@ export function DocsPageActions({
     },
   ];
 
+  // One row, two ends: the page's own actions (copy / open) sit under the
+  // description where the reader's eye already is, and the contributor action
+  // (edit) is pushed to the far edge so it never competes with them.
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
-      <CopyMarkdownButton markdownPath={markdownPath} />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs" className="gap-1.5">
-            Open
-            <CaretDownIcon className="size-3" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {openActions.map(({ key, label, href, icon: ItemIcon }) => (
-            <DropdownMenuItem key={key} asChild>
-              <a href={href} target="_blank" rel="noreferrer noopener">
-                <ItemIcon className="size-3.5" />
-                <span className="min-w-0 flex-1">{label}</span>
-                <ArrowSquareOutIcon className="text-muted-foreground size-3.5" />
-              </a>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <Button asChild variant="outline" size="xs" className="gap-1.5">
+    <div className={cn('flex items-center justify-between gap-3', className)}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <CopyMarkdownButton markdownPath={markdownPath} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="xs" className="gap-1.5">
+              Open
+              <CaretDownIcon className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          {/* Left-aligned: the trigger now sits at the row's left edge, so
+              anchoring the menu to its end would open it away from the button. */}
+          <DropdownMenuContent align="start">
+            {openActions.map(({ key, label, href, icon: ItemIcon }) => (
+              <DropdownMenuItem key={key} asChild>
+                <a href={href} target="_blank" rel="noreferrer noopener">
+                  <ItemIcon className="size-3.5" />
+                  <span className="min-w-0 flex-1">{label}</span>
+                  <ArrowSquareOutIcon className="text-muted-foreground size-3.5" />
+                </a>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <Button asChild variant="outline" size="xs" className="shrink-0 gap-1.5">
         <a href={githubUrl} target="_blank" rel="noreferrer noopener">
           <Icon.Github className="size-3.5" />
           Edit on GitHub
