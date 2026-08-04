@@ -5,6 +5,8 @@ import {
   canDrainQueue,
   createDrainMachine,
   rearmDrainMachine,
+  shouldClearPause,
+  shouldQueueInsteadOfSend,
   stepDrainMachine,
   type QueueDrainGates,
 } from './message-queue-boundary';
@@ -63,6 +65,53 @@ describe('canDrainQueue', () => {
     // indicator. Reading it as "the turn ended" is root cause 2, so the gate
     // type must not even offer it.
     expect(Object.keys(CLEAR)).not.toContain('isBusy');
+  });
+});
+
+describe('shouldQueueInsteadOfSend', () => {
+  test('sends directly on an idle session with an empty queue', () => {
+    expect(
+      shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 0, hasInFlight: false }),
+    ).toBe(false);
+  });
+
+  test('queues while the agent is running', () => {
+    expect(shouldQueueInsteadOfSend({ isBusy: true, pendingCount: 0, hasInFlight: false })).toBe(
+      true,
+    );
+  });
+
+  test('queues behind anything already waiting, even when the session reads idle', () => {
+    // The settle window is up to 700ms of idle-looking time with messages
+    // still queued. Sending here would jump the line.
+    expect(shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 1, hasInFlight: false })).toBe(
+      true,
+    );
+  });
+
+  test('queues while a claimed message is on the wire', () => {
+    // Between claiming and the server reporting busy, isBusy is false. Sending
+    // here puts two prompts in flight at once.
+    expect(shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 0, hasInFlight: true })).toBe(
+      true,
+    );
+  });
+});
+
+describe('shouldClearPause', () => {
+  test('a new queued message resumes a queue paused by stop', () => {
+    // Without this, pressing stop wedges the queue permanently: every later
+    // message queues behind one that never drains.
+    expect(shouldClearPause(1, 2)).toBe(true);
+  });
+
+  test('draining does not resume it', () => {
+    expect(shouldClearPause(2, 1)).toBe(false);
+    expect(shouldClearPause(1, 0)).toBe(false);
+  });
+
+  test('no change does not resume it', () => {
+    expect(shouldClearPause(2, 2)).toBe(false);
   });
 });
 

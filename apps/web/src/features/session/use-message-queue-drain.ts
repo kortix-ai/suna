@@ -29,6 +29,7 @@ import {
   QUEUE_SETTLE_MS,
   createDrainMachine,
   rearmDrainMachine,
+  shouldClearPause,
   stepDrainMachine,
   type DrainMachine,
   type QueueDrainGates,
@@ -167,7 +168,16 @@ export function useMessageQueueDrain({
   const pendingCount = useMessageQueueStore(
     (s) => (s.queues[sessionId]?.pending.length ?? 0) + (s.queues[sessionId]?.failed.length ?? 0),
   );
+  const previousCountRef = useRef(pendingCount);
   useEffect(() => {
+    // Queueing something new lifts a pause left by the stop button. Without
+    // this, stop wedges the queue forever: everything typed afterwards lands
+    // behind messages that never drain. Whatever the stop meant, it did not
+    // mean "discard what I type from now on".
+    if (shouldClearPause(previousCountRef.current, pendingCount)) {
+      pausedRef.current = false;
+    }
+    previousCountRef.current = pendingCount;
     tick();
   }, [tick, pendingCount]);
 

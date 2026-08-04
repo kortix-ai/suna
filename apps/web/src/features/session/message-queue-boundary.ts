@@ -67,6 +67,41 @@ export function canDrainQueue(gates: QueueDrainGates): boolean {
   );
 }
 
+/**
+ * Whether a message the user just submitted should join the queue rather than
+ * go straight out.
+ *
+ * `isBusy` alone is not enough, and the gap is easy to miss. It is false during
+ * the settle window, and false in the moment between claiming a message and the
+ * server reporting the session busy. Submitting in either window sends the new
+ * message *ahead* of everything already waiting — and, in the second case,
+ * puts two prompts on the wire at once.
+ *
+ * So: anything waiting or in flight means this one waits too, however idle the
+ * session looks this instant. Jumping the line is what "Stop & send" is for,
+ * and that is a button, not a timing accident.
+ */
+export function shouldQueueInsteadOfSend(input: {
+  isBusy: boolean;
+  pendingCount: number;
+  hasInFlight: boolean;
+}): boolean {
+  return input.isBusy || input.pendingCount > 0 || input.hasInFlight;
+}
+
+/**
+ * Whether pressing stop should stop auto-sending.
+ *
+ * Paired with `shouldClearPause` below, and they have to agree: pausing without
+ * a way back means every message typed after a stop queues behind a queue that
+ * never moves. That wedge is worse than the interruption the pause prevents.
+ */
+export function shouldClearPause(previousQueueSize: number, nextQueueSize: number): boolean {
+  // Adding to the queue is the user saying "I want this sent". Whatever the
+  // stop meant, it did not mean this.
+  return nextQueueSize > previousQueueSize;
+}
+
 export interface DrainMachine {
   /**
    * Whether a busy period has been observed since the last dispatch. This is

@@ -35,6 +35,7 @@ import { resolveComposerResetOnSend } from './composer-reset';
 import { AttachmentPreview } from './composer/attachment-preview';
 import { ComposerToolbar } from './composer/composer-toolbar';
 import { MentionPopover } from './composer/mention-popover';
+import { shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { QueuedMessages, type QueuedMessageView } from './composer/queued-messages';
 import { SlashCommandPopover } from './composer/slash-command-popover';
 import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
@@ -813,12 +814,23 @@ function SessionChatInputImpl({
       }
     }
 
-    // While the agent is busy, hold the message client-side instead of
-    // sending it straight through — mirrors Claude Code/Codex's "queued
-    // while busy" behavior. The parent flushes it at the next safe boundary
-    // (a tool call finishing, or the turn going idle) rather than
-    // interleaving it into the live turn.
-    if (isBusy && onQueueMessage) {
+    // Hold the message client-side instead of sending it straight through —
+    // mirrors Claude Code/Codex's "queued while busy" behaviour. The parent
+    // releases it when the turn genuinely ends.
+    //
+    // The condition is NOT just `isBusy`. That flag is false during the drain's
+    // settle window and in the gap between claiming a message and the server
+    // reporting the session busy — submitting in either window would send this
+    // message ahead of ones already waiting, or put two prompts on the wire at
+    // once. Anything queued or in flight means this one waits too.
+    if (
+      onQueueMessage &&
+      shouldQueueInsteadOfSend({
+        isBusy,
+        pendingCount: queuedMessages?.length ?? 0,
+        hasInFlight: queueInFlightId != null,
+      })
+    ) {
       onQueueMessage(trimmed, filesToSend, mentionsToSend);
       return;
     }
@@ -848,6 +860,8 @@ function SessionChatInputImpl({
     onSend,
     isBusy,
     onQueueMessage,
+    queuedMessages,
+    queueInFlightId,
     onCommand,
     stagedCommand,
     attachedFiles,
