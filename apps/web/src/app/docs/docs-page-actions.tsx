@@ -8,12 +8,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/features/icon/icon';
-import { CheckIcon, FileTextIcon } from '@/lib/icons/ssr';
+import { CheckIcon } from '@/lib/icons/ssr';
 import { cn } from '@/lib/utils';
 // `docs-page-actions.tsx` is 'use client', so — unlike page.tsx/layout.tsx —
 // it is the one place in the docs surface allowed to dot into the client
 // `Icon` namespace directly.
-import { ArrowSquareOutIcon, CaretDownIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, CaretDownIcon, MarkdownLogoIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -45,7 +45,7 @@ export function DocsPageActions({
 
   const openActions: OpenAction[] = [
     { key: 'github', label: 'Open in GitHub', href: githubUrl, icon: Icon.Github },
-    { key: 'markdown', label: 'View as Markdown', href: markdownPath, icon: FileTextIcon },
+    { key: 'markdown', label: 'View as Markdown', href: markdownPath, icon: MarkdownLogoIcon },
     {
       key: 'kortix',
       label: 'Open in Kortix',
