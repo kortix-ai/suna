@@ -13,6 +13,16 @@
  * billing), no UI primitives. Plain markup keeps the prefetched payload small,
  * which is the entire point of the boundary.
  *
+ * A `loading.tsx` boundary covers its own segment plus every descendant segment
+ * that has no `loading.tsx` of its own. `files/` has one, so it is unaffected.
+ * `sessions/`, `sessions/[sessionId]`, `customize/`, and `customize/[section]`
+ * do not, so this ProjectHome-shaped skeleton also paints during navigation
+ * into a session or into customize. This is known and deliberate, not an
+ * oversight — adding a `sessions/loading.tsx` is an explicit non-goal here. If
+ * this skeleton ever reads wrong on session navigation, the fix is a
+ * `sessions/loading.tsx` that mirrors the session shell's frame instead of
+ * ProjectHome's, not a change to this file.
+ *
  * The outer container mirrors ProjectHome's root so the handover does not shift
  * layout. project-loading-contract.test.ts pins both properties.
  */

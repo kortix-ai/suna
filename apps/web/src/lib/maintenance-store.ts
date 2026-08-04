@@ -121,19 +121,6 @@ async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceCo
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Middleware calls getMaintenanceConfig() on every non-public request, and in
- * the App Router every client-side navigation is an RSC request that runs
- * middleware. Uncached, that put a `no-store` fetch (2s timeout ceiling) plus an
- * Edge Config read on the critical path of EVERY page-to-page transition.
- *
- * A 5s TTL takes that off the critical path without making the flag unusable: a
- * blocking lockdown engages up to 5s later per serverless instance, and an admin
- * toggle stays immediate because setMaintenanceConfig() invalidates synchronously.
- *
- * `inFlight` coalesces: a burst of concurrent navigations on a cold cache shares
- * one upstream read instead of issuing one each.
- */
 const CONFIG_TTL_MS = 5_000;
 let cachedConfig: { value: MaintenanceConfig; expiresAt: number } | null = null;
 let inFlight: Promise<MaintenanceConfig> | null = null;
@@ -148,6 +135,25 @@ export function __resetMaintenanceCacheForTests(): void {
   invalidateMaintenanceCache();
 }
 
+/**
+ * Middleware calls getMaintenanceConfig() on every non-public request, and in
+ * the App Router every client-side navigation is an RSC request that runs
+ * middleware. Uncached, that put a `no-store` fetch (2s timeout ceiling) plus an
+ * Edge Config read on the critical path of EVERY page-to-page transition.
+ *
+ * A 5s TTL takes that off the critical path without making the flag unusable:
+ * staleness is bounded to <=5s per runtime instance, everywhere — including
+ * immediately after an admin toggle. setMaintenanceConfig() does call
+ * invalidateMaintenanceCache(), but that only clears the cache in the process
+ * that handled the write: the Node runtime, via
+ * app/(system)/api/maintenance/route.ts. It cannot reach the cache that
+ * matters for navigation, which lives in middleware.ts — a separate bundle
+ * Next.js compiles for the Edge runtime, replicated per POP. The 5s TTL, not
+ * the invalidation, is the real bound on admin-toggle latency.
+ *
+ * `inFlight` coalesces: a burst of concurrent navigations on a cold cache shares
+ * one upstream read instead of issuing one each.
+ */
 export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
   // The memory-store path does no I/O, so caching it would only add staleness.
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };
@@ -227,10 +233,9 @@ export async function setMaintenanceConfig(
   config: MaintenanceConfig,
   accessToken: string,
 ): Promise<MaintenanceConfig> {
-  invalidateMaintenanceCache();
-
   if (!process.env.EDGE_CONFIG) {
     memoryStore = { ...config };
+    invalidateMaintenanceCache();
     return { ...memoryStore };
   }
 
@@ -239,5 +244,6 @@ export async function setMaintenanceConfig(
     accessToken,
   });
   await writeEdgeConfig(saved);
+  invalidateMaintenanceCache();
   return saved;
 }
