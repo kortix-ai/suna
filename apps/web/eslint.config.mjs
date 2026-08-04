@@ -152,7 +152,7 @@ const eslintConfig = [
        apps/web/.gitignore). It ships its own `@ts-nocheck` intentionally
        (skips type checking a generated re-export barrel) and is
        regenerated on every `next dev`/`next build`, so there is nothing to
-       fix here; exclude it like the other generated dirs below. */
+       fix here; exclude it from linting entirely. */
     ignores: ['.source/**'],
   },
   {
@@ -160,9 +160,9 @@ const eslintConfig = [
        dependency bump) ships the "React Compiler" rule set enabled by
        default. As of 2026-08-04 that flags 402 pre-existing findings
        across 175 files in this codebase — none introduced by the Next 16
-       upgrade (see docs/../task-4-report.md). Downgraded to warnings here
-       pending a dedicated audit; this is NOT a decision to accept them
-       permanently. Breakdown at the time of downgrade:
+       upgrade. Downgraded to warnings here pending a dedicated audit; this
+       is NOT a decision to accept them permanently. Breakdown at the time
+       of downgrade:
        react-hooks/set-state-in-effect (211), react-hooks/refs (120),
        react-hooks/preserve-manual-memoization (21), react-hooks/purity (16),
        react-hooks/static-components (11), react-hooks/immutability (10),

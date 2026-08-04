@@ -1222,9 +1222,6 @@ importers:
       '@embedpdf/pdfium':
         specifier: 2.14.4
         version: 2.14.4
-      '@eslint/eslintrc':
-        specifier: ^3
-        version: 3.3.5
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema

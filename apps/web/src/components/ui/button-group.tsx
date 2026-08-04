@@ -44,25 +44,22 @@ function ButtonGroupText({
 }: React.ComponentProps<"div"> & {
   asChild?: boolean
 }) {
+  const cls = cn(
+    "flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
+    className
+  )
+
   // Not the `ref`-cleanup-branding pattern seen elsewhere in this change:
   // Slot.Root's prop type declares `onChange` as `ChangeEventHandler<HTMLElement>`
   // (element-generic) while native `"div"` declares it as
-  // `FormEventHandler<HTMLDivElement>` — a real, pre-existing type
-  // incompatibility between the two arms of this union, unrelated to
-  // React/@types/react version. Cast to the standard `React.ElementType`
-  // escape hatch for polymorphic `asChild` components (same runtime value,
-  // just tells TS not to unify both arms' exact prop signatures).
-  const Comp = (asChild ? Slot.Root : "div") as React.ElementType<React.ComponentProps<"div">>
-
-  return (
-    <Comp
-      className={cn(
-        "flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    />
-  )
+  // `FormEventHandler<HTMLDivElement>` — incompatible in both directions,
+  // so no cast can unify a single shared `Comp` variable without erasing
+  // checking. Branch instead so each arm is checked against the props it
+  // actually receives. The Slot.Root arm below still reports a real
+  // `tsc` error on `onChange` (`ComponentProps<"div">` accepts it,
+  // `Slot.Root` doesn't) — known, unresolved, not a fresh regression.
+  if (asChild) return <Slot.Root className={cls} {...props} />
+  return <div className={cls} {...props} />
 }
 
 function ButtonGroupSeparator({
