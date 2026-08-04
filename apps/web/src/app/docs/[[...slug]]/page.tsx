@@ -65,9 +65,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                 );
                 return (
                   <Fragment key={i}>
-                    {i !== 0 && (
-                      <ChevronRight className="size-3.5 shrink-0" />
-                    )}
+                    {i !== 0 && <ChevronRight className="size-3.5 shrink-0" />}
                     {item.url ? (
                       <Link
                         href={item.url}
@@ -86,16 +84,15 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
         ),
       }}
     >
-      <DocsTitle>{page.data.title}</DocsTitle>
-      {page.data.description && <DocsDescription>{page.data.description}</DocsDescription>}
-      {/* Below the description, not up in the breadcrumb row: these act on the
-          page the reader has just been introduced to, so they belong under it. */}
-      <DocsPageActions
-        className="mt-4 mb-2"
-        markdownPath={markdownPath}
-        githubUrl={editUrl}
-        pageUrl={pageUrl}
-      />
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <DocsTitle>{page.data.title}</DocsTitle>
+          {page.data.description && (
+            <DocsDescription className="mb-2">{page.data.description}</DocsDescription>
+          )}
+        </div>
+        <DocsPageActions markdownPath={markdownPath} githubUrl={editUrl} pageUrl={pageUrl} />
+      </div>
       <DocsBody className="text-[15px]">
         <MDX
           components={{

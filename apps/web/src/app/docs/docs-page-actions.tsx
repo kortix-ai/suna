@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 // it is the one place in the docs surface allowed to dot into the client
 // `Icon` namespace directly.
 import { ArrowSquareOutIcon, CaretDownIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type OpenAction = {
@@ -46,6 +47,12 @@ export function DocsPageActions({
     { key: 'github', label: 'Open in GitHub', href: githubUrl, icon: Icon.Github },
     { key: 'markdown', label: 'View as Markdown', href: markdownPath, icon: FileTextIcon },
     {
+      key: 'kortix',
+      label: 'Open in Kortix',
+      href: `/projects/start?q=${encodedPrompt}`,
+      icon: Icon.Kortix,
+    },
+    {
       key: 'chatgpt',
       label: 'Open in ChatGPT',
       href: `https://chatgpt.com/?q=${encodedPrompt}`,
@@ -63,24 +70,20 @@ export function DocsPageActions({
       href: `cursor://anysphere.cursor-deeplink/prompt?text=${encodedPrompt}`,
       icon: Icon.Cursor,
     },
-    {
-      key: 'kortix',
-      label: 'Open in Kortix',
-      href: `/projects/start?q=${encodedPrompt}`,
-      icon: Icon.Kortix,
-    },
   ];
 
   // One row, two ends: the page's own actions (copy / open) sit under the
   // description where the reader's eye already is, and the contributor action
   // (edit) is pushed to the far edge so it never competes with them.
+  // On narrow viewports labels shorten and the row may wrap — full labels
+  // return at `sm` and up.
   return (
-    <div className={cn('flex items-center justify-between gap-3', className)}>
+    <div className={cn('flex flex-wrap items-center justify-between gap-x-3 gap-y-2', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
         <CopyMarkdownButton markdownPath={markdownPath} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="xs" className="gap-1.5">
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
               Open
               <CaretDownIcon className="size-3" />
             </Button>
@@ -89,22 +92,23 @@ export function DocsPageActions({
               anchoring the menu to its end would open it away from the button. */}
           <DropdownMenuContent align="start">
             {openActions.map(({ key, label, href, icon: ItemIcon }) => (
-              <DropdownMenuItem key={key} asChild>
-                <a href={href} target="_blank" rel="noreferrer noopener">
+              <DropdownMenuItem key={key} asChild className="group">
+                <Link href={href} target="_blank" rel="noreferrer noopener">
                   <ItemIcon className="size-3.5" />
                   <span className="min-w-0 flex-1">{label}</span>
-                  <ArrowSquareOutIcon className="text-muted-foreground size-3.5" />
-                </a>
+                  <ArrowSquareOutIcon className="text-muted-foreground size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+                </Link>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <Button asChild variant="outline" size="xs" className="shrink-0 gap-1.5">
-        <a href={githubUrl} target="_blank" rel="noreferrer noopener">
+      <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
+        <Link href={githubUrl} target="_blank" rel="noreferrer noopener">
           <Icon.Github className="size-3.5" />
-          Edit on GitHub
-        </a>
+          <span className="sm:hidden">Edit</span>
+          <span className="hidden sm:inline">Edit on GitHub</span>
+        </Link>
       </Button>
     </div>
   );
@@ -144,17 +148,20 @@ function CopyMarkdownButton({ markdownPath }: { markdownPath: string }) {
   return (
     <Button
       variant="outline"
-      size="xs"
-      className={cn('gap-1.5', state === 'copying' && 'cursor-wait')}
+      size="sm"
+      className={cn('shrink-0 gap-1.5', state === 'copying' && 'cursor-wait')}
       onClick={handleClick}
       disabled={state === 'copying'}
     >
+      {state === 'copied' ? <CheckIcon className="size-3.5" /> : <Icon.Copy className="size-3.5" />}
       {state === 'copied' ? (
-        <CheckIcon className="size-3.5" />
+        'Copied'
       ) : (
-        <Icon.Copy className="size-3.5" />
+        <>
+          <span className="sm:hidden">Copy</span>
+          <span className="hidden sm:inline">Copy Markdown</span>
+        </>
       )}
-      {state === 'copied' ? 'Copied' : 'Copy Markdown'}
     </Button>
   );
 }

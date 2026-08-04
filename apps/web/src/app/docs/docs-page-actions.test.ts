@@ -75,13 +75,25 @@ describe('docs page actions', () => {
   test('keeps the "Edit on GitHub" button, moved verbatim from page.tsx', () => {
     expect(source).toContain('Edit on GitHub');
     expect(source).toContain('variant="outline"');
-    expect(source).toContain('size="xs"');
+    expect(source).toContain('size="sm"');
   });
 
   test('copies markdown to the clipboard and shows a transient "Copied" state', () => {
     expect(source).toContain('navigator.clipboard.writeText');
     expect(source).toContain('Copy Markdown');
     expect(source).toContain('Copied');
+  });
+
+  /**
+   * Narrow viewports shorten the long labels and allow the row to wrap so the
+   * three buttons never overflow the docs content column.
+   */
+  test('shortens labels below sm and allows the action row to wrap', () => {
+    expect(source).toContain('flex-wrap');
+    expect(source).toContain('sm:hidden');
+    expect(source).toContain('hidden sm:inline');
+    expect(source).toContain('>Copy</span>');
+    expect(source).toContain('>Edit</span>');
   });
 
   /**
@@ -119,7 +131,8 @@ describe('docs page renders the actions under the description', () => {
   test('mounts DocsPageActions between DocsDescription and DocsBody', () => {
     const source = readFileSync(PAGE, 'utf8');
 
-    const descriptionAt = source.indexOf('<DocsDescription>');
+    // Match the component tag even when it carries props (e.g. className).
+    const descriptionAt = source.search(/<DocsDescription[\s>]/);
     const actionsAt = source.indexOf('<DocsPageActions');
     const bodyAt = source.indexOf('<DocsBody');
 
