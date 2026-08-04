@@ -32,7 +32,7 @@ describe('project home loading boundary', () => {
   });
 
   test('default-exports a component', () => {
-    expect(readFileSync(LOADING, 'utf8')).toContain('export default function');
+    expect(readFileSync(LOADING, 'utf8')).toContain('export default function ProjectHomeLoading(');
   });
 
   test('imports no heavy feature module', () => {
