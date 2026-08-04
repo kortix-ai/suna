@@ -38,6 +38,10 @@ Subcommands:
                                     chat. Surface the URL (web: fill-in
                                     modal, Slack: tappable link).
                                     --scope runtime|connector  --expires <min>
+  sync                              Force a re-push of all project secrets to
+                                    this session's sandbox. Use after setting
+                                    a secret via the intake link or after a
+                                    secret was updated mid-session.
   unset IDENTIFIER [IDENTIFIER …]   Remove one or more secrets (by identifier).
 
 Which agents may use a secret is governed by that agent's \`secrets\` grant in
@@ -78,6 +82,8 @@ export async function runSecrets(argv: string[]): Promise<number> {
     case 'request':
     case 'req':
       return secretsRequest(rest, ctxOpts, json);
+    case 'sync':
+      return secretsSync(ctxOpts, json);
     case 'unset':
     case 'rm':
     case 'remove':
@@ -415,4 +421,36 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   }
   process.stdout.write(`\n  ${C.dim}${okCount}/${names.length} removed${C.reset}\n\n`);
   return okCount === names.length ? 0 : 1;
+}
+
+/**
+ * Force a re-push of all project secrets to this session's sandbox daemon.
+ * Use after setting a secret via the intake link or when secrets are missing
+ * from the agent's shell environment despite being set in the store.
+ *
+ * The backend's propagateProjectSecretsToActiveSandboxes fans out to every
+ * active sandbox. This command triggers the same propagation by calling the
+ * project's secret-propagation endpoint.
+ */
+async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  try {
+    const result = await ctx.client.post<{ ok: boolean; synced: number }>(
+      `/projects/${ctx.projectId}/secrets/sync`,
+      {},
+    );
+    if (json) {
+      emitJson(result);
+      return 0;
+    }
+    process.stdout.write(
+      `\n${status.ok(`Synced ${result.synced ?? 'all'} secret(s) to active sandboxes.`)}\n` +
+        `  ${C.dim}If secrets are still missing, source /dev/shm/kortix/agent-env.sh or restart the session.${C.reset}\n\n`,
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }

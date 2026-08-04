@@ -64,12 +64,14 @@ describe('setup-link token codec', () => {
 
   test('expired token resolves to 410', () => {
     // Build a token by hand with an exp in the past (mint clamps TTL ≥ 1 min).
+    // Must be more than 60s in the past to exceed the clock-skew buffer.
     const payload = {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
       scope: 'runtime',
+      sid: null,
       uid: null,
-      exp: Date.now() - 1000,
+      exp: Date.now() - 120_000,
       nonce: 'x',
       pid: PROJECT_A,
     };
@@ -108,5 +110,41 @@ describe('setup-link token codec', () => {
       if (r.ok) continue;
       expect(r.status).toBe(404);
     }
+  });
+
+  test('secret link carries session id (sid) for callback', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'AGENT_KORTIX_GITHUB_TOKEN' }],
+      scope: 'runtime',
+      uid: 'user-1',
+      sid: 'ses_abc123',
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBe('ses_abc123');
+  });
+
+  test('secret link sid defaults to null when not provided', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBeNull();
+  });
+
+  test('default TTL is 24 hours (1440 minutes)', () => {
+    const before = Date.now();
+    const { expiresAt } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const ttlMs = expiresAt - before;
+    expect(ttlMs).toBeGreaterThan(24 * 60 * 60 * 1000 - 5000);
+    expect(ttlMs).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
   });
 });

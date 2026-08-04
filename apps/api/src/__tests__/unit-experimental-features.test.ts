@@ -23,6 +23,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('teams')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
+    expect(isExperimentalFeatureKey('meta_agent')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);

@@ -156,6 +156,15 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'meta_agent',
+    name: 'Meta Agent',
+    description:
+      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(
