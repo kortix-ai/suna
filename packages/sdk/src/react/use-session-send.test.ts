@@ -66,6 +66,7 @@ import {
   abandonOptimisticSend,
   applyOptimisticAbort,
   beginOptimisticSend,
+  markOptimisticSendDispatched,
   recoverFromSendFailure,
   replayStartStash,
   sendAndRecover,
@@ -91,6 +92,48 @@ describe('beginOptimisticSend', () => {
   test('adds no parts for empty/whitespace-only text', () => {
     beginOptimisticSend('sess-1', 'msg-1', '   ');
     expect(useSyncStore.getState().parts['msg-1'] ?? []).toHaveLength(0);
+  });
+});
+
+describe('markOptimisticSendDispatched', () => {
+  test('lets the server echo supersede the optimistic message', () => {
+    // The bug this exists for: a host that calls `beginOptimisticSend` and
+    // then POSTs by hand leaves the message `pending` forever, so nothing the
+    // server echoes back can supersede it — and the user sees their own
+    // message twice for the whole turn. `sync-store.ts` calls that host
+    // "a host that does not exist"; `apps/web`'s session composer is it.
+    beginOptimisticSend('sess-1', 'msg-client', 'hello there', ['prt-1']);
+    markOptimisticSendDispatched('sess-1', 'msg-client');
+
+    // The server persists the user message before its parts, so the echo
+    // carries no part id to correlate on — the dispatched flag is the only
+    // thing that can pair them.
+    useSyncStore.getState().hydrate('sess-1', [
+      {
+        info: { id: 'msg-server', sessionID: 'sess-1', role: 'user', time: { created: 1 } } as never,
+        parts: [],
+      },
+    ]);
+
+    const ids = useSyncStore.getState().messages['sess-1']?.map((m) => m.id) ?? [];
+    expect(ids).toEqual(['msg-server']);
+  });
+
+  test('an unmarked message is left alone — it may still be uploading', () => {
+    // Never mark on the host's behalf. A message the server was never told
+    // about cannot be a copy of anything it returns, and deleting it would
+    // lose text the user typed.
+    beginOptimisticSend('sess-1', 'msg-client', 'hello there', ['prt-1']);
+
+    useSyncStore.getState().hydrate('sess-1', [
+      {
+        info: { id: 'msg-server', sessionID: 'sess-1', role: 'user', time: { created: 1 } } as never,
+        parts: [],
+      },
+    ]);
+
+    const ids = useSyncStore.getState().messages['sess-1']?.map((m) => m.id) ?? [];
+    expect(ids).toContain('msg-client');
   });
 });
 

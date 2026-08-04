@@ -385,7 +385,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     <span className="text-muted-foreground shrink-0 font-mono text-sm tabular-nums">
                       #{cr.number}
                     </span>
-                    <span className="line-clamp-2 min-w-0 break-words">{cr.title}</span>
+                    <span className="line-clamp-2 min-w-0 wrap-break-word">{cr.title}</span>
                   </ModalTitle>
                   <StatusBadge status={cr.status} />
                 </div>
@@ -609,7 +609,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     </div>
                     <div className="border-border space-y-2.5 border-t p-3">
                       {cr?.description && (
-                        <div className="text-muted-foreground text-sm break-words [&_pre]:overflow-x-auto">
+                        <div className="text-muted-foreground text-sm wrap-break-word [&_pre]:overflow-x-auto">
                           <UnifiedMarkdown content={cr.description} />
                         </div>
                       )}

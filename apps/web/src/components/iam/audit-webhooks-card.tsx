@@ -169,7 +169,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
                   <span>Last delivered {relative(h.last_delivered_at)}</span>
                 </div>
                 {h.last_error && (
-                  <p className="text-kortix-red mt-1 text-xs break-words">
+                  <p className="text-kortix-red mt-1 text-xs wrap-break-word">
                     {relative(h.last_error_at)}: {h.last_error}
                   </p>
                 )}

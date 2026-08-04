@@ -2978,6 +2978,7 @@
     "kortixKeys",
     "loadSessionTranscriptMessages",
     "logRuntimeEvent",
+    "markOptimisticSendDispatched",
     "mergeProjectSecretConnectedProviders",
     "mergeProviderLists",
     "migrateLegacyStash",
@@ -5964,6 +5965,20 @@
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
     "toInternalUrl"
+  ],
+  "./message-queue": [
+    "QueuedMessage",
+    "QueuedMessageInput",
+    "SessionQueue",
+    "claimNext",
+    "completeInFlight",
+    "createSessionQueue",
+    "editQueued",
+    "enqueue",
+    "failInFlight",
+    "removeQueued",
+    "reorderQueued",
+    "retryFailed"
   ],
   "./turns": [
     "COST_MARKUP",

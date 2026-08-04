@@ -15,7 +15,7 @@ export function UserBubble({ text }: { text: string }) {
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
       <div className="bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex w-fit max-w-full flex-col rounded-lg px-3 py-2.5">
-        <div className="text-[0.9rem] leading-[22px] font-medium break-words whitespace-pre-wrap select-text">
+        <div className="text-[0.9rem] leading-5.5 font-medium wrap-break-word whitespace-pre-wrap select-text">
           {text}
         </div>
       </div>

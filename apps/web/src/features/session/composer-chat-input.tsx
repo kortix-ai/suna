@@ -7,6 +7,7 @@ import { SessionScopeToolbar } from '@/features/session/scope/session-scope-tool
 import {
   type AttachedFile,
   SessionChatInput,
+  type SessionChatInputProps,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { useRuntimeConfig } from '@kortix/sdk/react';
@@ -53,8 +54,14 @@ export function ComposerChatInput({
   boundAgentName,
   clearOnSend,
   queuedMessages,
+  failedQueuedMessages,
+  queueInFlightId,
   onQueueMessage,
   onRemoveQueuedMessage,
+  onEditQueuedMessage,
+  onReorderQueuedMessage,
+  onSendQueuedMessageNow,
+  onRetryQueuedMessage,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -84,9 +91,15 @@ export function ComposerChatInput({
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
   /** Queued-while-busy support, passed straight through to SessionChatInput. */
-  queuedMessages?: { id: string; text: string }[];
+  queuedMessages?: SessionChatInputProps['queuedMessages'];
+  failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
+  queueInFlightId?: SessionChatInputProps['queueInFlightId'];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
+  onEditQueuedMessage?: (id: string, text: string) => void;
+  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
+  onSendQueuedMessageNow?: (id: string) => void;
+  onRetryQueuedMessage?: (id: string) => void;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -158,8 +171,14 @@ export function ComposerChatInput({
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
       queuedMessages={queuedMessages}
+      failedQueuedMessages={failedQueuedMessages}
+      queueInFlightId={queueInFlightId}
       onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
+      onEditQueuedMessage={onEditQueuedMessage}
+      onReorderQueuedMessage={onReorderQueuedMessage}
+      onSendQueuedMessageNow={onSendQueuedMessageNow}
+      onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
       isSending={isSending}
