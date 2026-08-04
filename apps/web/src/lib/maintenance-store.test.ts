@@ -39,9 +39,11 @@ process.env.EDGE_CONFIG = 'https://edge-config.example.test?token=redacted';
 process.env.EDGE_CONFIG_ID = 'ecfg_test';
 process.env.VERCEL_API_TOKEN = 'vercel-test-token';
 
-const { getMaintenanceConfig, setMaintenanceConfig } = await import('./maintenance-store');
+const { getMaintenanceConfig, setMaintenanceConfig, __resetMaintenanceCacheForTests } =
+  await import('./maintenance-store');
 
 beforeEach(() => {
+  __resetMaintenanceCacheForTests();
   databaseConfig = {
     level: 'none',
     title: '',
@@ -120,5 +122,47 @@ describe('maintenance store', () => {
     expect(saved.updatedAt).toBe('database-saved');
     expect(edgeConfig).toEqual(saved);
     expect(events).toEqual(['database-write', 'edge-write', 'edge-read-consistent']);
+  });
+
+  test('serves a cached config within the TTL window', async () => {
+    const first = await getMaintenanceConfig();
+    events = [];
+
+    const second = await getMaintenanceConfig();
+
+    expect(second).toEqual(first);
+    expect(events).toEqual([]);
+  });
+
+  test('coalesces concurrent reads into a single upstream read', async () => {
+    const [a, b, c] = await Promise.all([
+      getMaintenanceConfig(),
+      getMaintenanceConfig(),
+      getMaintenanceConfig(),
+    ]);
+
+    expect(a).toEqual(databaseConfig);
+    expect(b).toEqual(databaseConfig);
+    expect(c).toEqual(databaseConfig);
+    expect(events.filter((event) => event === 'database-read')).toHaveLength(1);
+  });
+
+  test('setMaintenanceConfig invalidates the cache immediately', async () => {
+    await getMaintenanceConfig();
+
+    await setMaintenanceConfig(
+      {
+        level: 'blocking',
+        title: 'Lockdown',
+        message: 'Paused.',
+        updatedAt: 'request-time',
+      },
+      'admin-token',
+    );
+    events = [];
+
+    await getMaintenanceConfig();
+
+    expect(events).toContain('database-read');
   });
 });

@@ -19,7 +19,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@/features/*": ["./src/features/*"],
-      "@/.source": ["./.source"]
+      "@/.source": ["./.source/server"]
     }
   },
   "include": [

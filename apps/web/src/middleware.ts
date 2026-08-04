@@ -128,12 +128,6 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
   );
 }
 
-// Routes that require authentication but are related to billing/setup
-const BILLING_ROUTES: string[] = [];
-
-// Routes that require authentication and active subscription
-const PROTECTED_ROUTES = ['/projects', '/accounts', '/invites', '/admin'];
-
 // Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
@@ -489,11 +483,6 @@ export async function middleware(request: NextRequest) {
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
       return redirectPreservingSession(url);
-    }
-
-    // ── Billing-related routes (activate-trial, etc.) ────────────────────
-    if (BILLING_ROUTES.some((route) => pathname.startsWith(route))) {
-      return supabaseResponse;
     }
 
     return supabaseResponse;
