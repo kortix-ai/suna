@@ -38,13 +38,23 @@ const ALLOWED = new Set<string>([SHIKI_THEME_DARK, SHIKI_THEME_LIGHT]);
 const FORBIDDEN = [...bundledThemesInfo.map((theme) => theme.id), 'pierre-dark', 'pierre-light']
   .filter((id) => !ALLOWED.has(id) && !AMBIGUOUS.has(id));
 
-// shiki-highlighter.test.ts quotes a real bundled id, 'github-dark', inside an
-// '@ts-expect-error' directive to prove the type lock rejects a
-// foreign-but-real theme, not just a typo — see that file's "the lock"
-// describe block. Exempting that one file (not the id via AMBIGUOUS) keeps
-// 'github-dark' guarded everywhere else, including source.config.ts, which is
-// exactly where it drifted in before Task 1.
-const PROBE_FILE = join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts');
+// Files allowed to name a forbidden theme, and exactly which ids each may name.
+// Scoped to the (file, id) pair on purpose: any OTHER theme id in these files
+// is still a hit, so an exemption cannot quietly widen into a blind spot.
+const EXEMPT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  // shiki-highlighter.test.ts quotes a real bundled id, 'github-dark', inside
+  // an '@ts-expect-error' directive to prove the type lock rejects a
+  // foreign-but-real theme, not just a typo — see that file's "the lock"
+  // describe block. 'github-dark' stays forbidden everywhere else, including
+  // source.config.ts, which is exactly where it drifted in before Task 1.
+  [join(WEB_ROOT, 'src/components/markdown/code/shiki-highlighter.test.ts'), new Set(['github-dark'])],
+  // This file quotes 'pierre-dark' / 'pierre-light' as literals while building
+  // FORBIDDEN above, and 'github-dark' while explaining the entry above this
+  // one — so it always matches its own source. That is this guard quoting
+  // itself, not app code naming a second palette. Every other forbidden id is
+  // still a hit here too.
+  [import.meta.path, new Set(['pierre-dark', 'pierre-light', 'github-dark'])],
+]);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -60,26 +70,14 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 
 describe('no second palette', () => {
   test('no source file names a Shiki theme other than min-dark / min-light', () => {
-    const files = [...sourceFiles(join(WEB_ROOT, 'src')), join(WEB_ROOT, 'source.config.ts')].filter(
-      (file) =>
-        // Excluding this file's own path, not its content: FORBIDDEN's literal
-        // ['pierre-dark', 'pierre-light'] construction above necessarily quotes
-        // those exact ids, so this file always matches itself. That is a
-        // self-reference in the guard's own definition, not app code naming a
-        // second palette — scanning every OTHER file, including this one's
-        // sibling code-theme.ts, still catches the real drift.
-        file !== import.meta.path &&
-        // Excluding the one file that deliberately quotes 'github-dark' as a
-        // real-but-foreign theme id to prove the type lock rejects it — see
-        // the PROBE_FILE comment above. 'github-dark' stays forbidden in every
-        // other file scanned, including source.config.ts.
-        file !== PROBE_FILE,
-    );
+    const files = [...sourceFiles(join(WEB_ROOT, 'src')), join(WEB_ROOT, 'source.config.ts')];
     const hits: string[] = [];
 
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
       for (const id of FORBIDDEN) {
+        if (EXEMPT.get(file)?.has(id)) continue;
+
         // Quoted on both sides, which also matches backticked prose in comments.
         // That is deliberate: a comment naming a dead theme is the exact rot that
         // let source.config.ts drift while claiming to mirror the constants.
