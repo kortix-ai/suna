@@ -24,6 +24,11 @@ interface ChatMinimapProps {
   turns: Turn[];
   scrollRef: React.RefObject<HTMLDivElement>;
   contentRef: React.RefObject<HTMLDivElement>;
+  /** Key of the turn ids currently MOUNTED, when the transcript is windowed.
+   *  A windowed transcript mounts and unmounts turns as the reader scrolls,
+   *  and an observer armed once would never see the ones that arrive later.
+   *  Undefined when every turn is mounted, which leaves behavior unchanged. */
+  renderedIdsKey?: string;
 }
 
 function MinimapCard({ item }: { item: MinimapItem }) {
@@ -51,7 +56,12 @@ function MinimapCard({ item }: { item: MinimapItem }) {
   );
 }
 
-export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
+export function ChatMinimap({
+  turns,
+  scrollRef,
+  contentRef,
+  renderedIdsKey,
+}: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // Which row the pointer (or keyboard focus) is on, and which row the card is
@@ -132,7 +142,11 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
     });
 
     return () => observer.disconnect();
-  }, [scrollRef, contentRef, idsKey]);
+    // `renderedIdsKey` re-arms the observer when a windowed transcript mounts
+    // or unmounts turns. It changes only when the mounted SET changes, never
+    // on a streamed token — so this keeps the property `idsKey` was chosen
+    // for above: no re-arming per token.
+  }, [scrollRef, contentRef, idsKey, renderedIdsKey]);
 
   const handleJump = useCallback(
     (id: string) => {

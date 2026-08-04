@@ -18,6 +18,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
@@ -33,6 +34,12 @@ import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { sessionTurnPropsAreEqual } from './turn/session-turn-memo';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
+import {
+  TRANSCRIPT_ESTIMATED_TURN_HEIGHT,
+  findTurnIndexById,
+  renderedTurnIdsKey,
+  shouldVirtualizeTranscript,
+} from './turn/turn-virtualizer';
 import { UserMessage } from './turn/user-message';
 
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
@@ -2439,6 +2446,83 @@ export function SessionChat({
     return null;
   }, [messages]);
   const planAnchorId = useMemo(() => planAnchorMessageId(messages ?? []), [messages]);
+
+  // ---- Windowed transcript (@tanstack/react-virtual) ----
+  // Only long threads are windowed. Auto-scroll, the scroll anchor, the
+  // minimap observer and jump-to-message all find turns via
+  // `[data-turn-id]` in the DOM, and were written when every turn was
+  // mounted. Below the threshold nothing changes for them; above it the
+  // transcript stops mounting turns it is not showing. Same gate, and the
+  // same reasoning, as shouldVirtualizeMarketplacePagedGrid.
+  const isTranscriptVirtualized = shouldVirtualizeTranscript(turns.length);
+  const turnVirtualizer = useVirtualizer({
+    count: turns.length,
+    enabled: isTranscriptVirtualized,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => TRANSCRIPT_ESTIMATED_TURN_HEIGHT,
+    // Key on the user message id, not the index: loading an older page
+    // prepends turns and shifts every index, and a positional key would
+    // remount the whole window.
+    getItemKey: (index) => turns[index]?.userMessage.info.id ?? index,
+    // Wide enough that the newest turns stay mounted while streaming, so
+    // useAutoScroll still finds the last [data-turn-id] to size its spacer.
+    overscan: 8,
+  });
+  const virtualTurnItems = isTranscriptVirtualized ? turnVirtualizer.getVirtualItems() : [];
+  // Re-arms the minimap's IntersectionObserver when the mounted set changes.
+  // Undefined when not windowed, so that path behaves exactly as before.
+  const mountedTurnIdsKey = isTranscriptVirtualized
+    ? renderedTurnIdsKey(virtualTurnItems.map((item) => String(item.key)))
+    : undefined;
+
+  // One turn body, shared by the windowed and plain paths so the two cannot
+  // drift visually. Returns the turn's contents only — each path supplies its
+  // own wrapper, because the windowed wrapper doubles as the measured element.
+  const renderTurnContent = (turn: Turn, turnIndex: number) => {
+    // Check if this turn is a compaction summary
+    const hasCompaction =
+      turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
+      turn.assistantMessages.some((msg) => msg.parts.some((p) => p.type === 'compaction'));
+
+    return (
+      <>
+        {/* Compaction divider — shown before the first turn after compaction */}
+        {hasCompaction && (
+          <div className="my-3 flex items-center gap-3 py-4">
+            <div className="bg-border h-px flex-1" />
+            <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+              <Layers className="text-muted-foreground size-3.5" />
+              <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                Compaction
+              </span>
+            </div>
+            <div className="bg-border h-px flex-1" />
+          </div>
+        )}
+        <SessionTurn
+          turn={turn}
+          isLastUserTurn={turn.userMessage.info.id === lastUserMessageId}
+          isPlanAnchor={turn.userMessage.info.id === planAnchorId}
+          sessionId={sessionId}
+          sessionStatus={sessionStatus}
+          permissions={pendingPermissions}
+          questions={pendingQuestions}
+          agentNames={agentNames}
+          isFirstTurn={turnIndex === 0}
+          isBusy={isBusy}
+          isCompaction={hasCompaction}
+          providers={providers}
+          commandMessages={commandMessagesRef.current}
+          commands={commands}
+          disableToolNavigation={disableToolNavigation}
+          onPermissionReply={handlePermissionReply}
+          onRewind={handleRewind}
+          rewindDisabled={!!readOnly || !sessionState || isBusy || sessionState.rewindPending}
+        />
+      </>
+    );
+  };
+
   const hasAnyMessages = turns.length > 0;
   const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
@@ -2599,6 +2683,22 @@ export function SessionChat({
     const scrollEl = scrollRef.current;
     if (!contentEl || !scrollEl) return;
 
+    // Windowed: the turn being jumped to is usually NOT mounted, so the DOM
+    // query below would return null and silently drop the jump. Ask the
+    // virtualizer to bring that index into view instead. No `behavior:
+    // 'smooth'` — TanStack documents smooth scrolling as unreliable once
+    // sizes are measured rather than fixed.
+    if (isTranscriptVirtualized) {
+      const index = findTurnIndexById(turns, targetMessageId);
+      if (index >= 0) {
+        turnVirtualizer.scrollToIndex(index, { align: 'start' });
+        clearJumpTarget();
+        return;
+      }
+      // -1 means the id is not a turn anchor at all. Fall through to the DOM
+      // path, which handles that case and clears the target.
+    }
+
     const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${targetMessageId}"]`);
     if (!target) {
       clearJumpTarget();
@@ -2610,7 +2710,15 @@ export function SessionChat({
     const offset = targetRect.top - scrollRect.top + scrollEl.scrollTop - 24;
     scrollEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
     clearJumpTarget();
-  }, [targetMessageId, clearJumpTarget, contentRef, scrollRef]);
+  }, [
+    targetMessageId,
+    clearJumpTarget,
+    contentRef,
+    scrollRef,
+    isTranscriptVirtualized,
+    turns,
+    turnVirtualizer,
+  ]);
 
   // Reset on session change
   useEffect(() => {
@@ -3647,22 +3755,45 @@ export function SessionChat({
                       </div>
                     )}
                     <ToolActivateContext.Provider value={toolActivate}>
-                      {turns.map((turn, turnIndex) => {
-                        // Check if this turn is a compaction summary
-                        const hasCompaction =
-                          turn.assistantMessages.some(
-                            (msg) => (msg.info as any).summary === true,
-                          ) ||
-                          turn.assistantMessages.some((msg) =>
-                            msg.parts.some((p) => p.type === 'compaction'),
-                          );
-
-                        // Notification-only early-return removed: it rendered the
-                        // user's pty_* card but skipped turn.assistantMessages,
-                        // hiding every subsequent assistant response in that turn.
-                        // Fall through to the normal turn renderer instead.
-
-                        return (
+                      {/* Notification-only early-return removed: it rendered the
+                      user's pty_* card but skipped turn.assistantMessages,
+                      hiding every subsequent assistant response in that turn.
+                      Fall through to the normal turn renderer instead. */}
+                      {isTranscriptVirtualized ? (
+                        // Windowed: only the turns near the viewport are mounted.
+                        // The container carries the full projected height so the
+                        // scrollbar, the bottom spacer and useAutoScroll's
+                        // scrollHeight arithmetic all still see the whole thread.
+                        <div className="relative w-full" style={{ height: turnVirtualizer.getTotalSize() }}>
+                          {virtualTurnItems.map((virtualRow) => {
+                            const turn = turns[virtualRow.index];
+                            if (!turn) return null;
+                            return (
+                              <div
+                                key={virtualRow.key}
+                                data-index={virtualRow.index}
+                                data-turn-id={turn.userMessage.info.id}
+                                ref={turnVirtualizer.measureElement}
+                                // Gap is padding, never margin: measureElement
+                                // reads getBoundingClientRect, which excludes
+                                // margins, so a margin here would be missing
+                                // from every offset the virtualizer computes.
+                                // No content-visibility/contain-intrinsic-size
+                                // either — the fake intrinsic height would be
+                                // measured instead of the real one.
+                                className={cn(
+                                  'absolute top-0 left-0 w-full',
+                                  virtualRow.index === 0 ? '' : 'pt-12',
+                                )}
+                                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                              >
+                                {renderTurnContent(turn, virtualRow.index)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        turns.map((turn, turnIndex) => (
                           <div
                             key={turn.userMessage.info.id}
                             data-turn-id={turn.userMessage.info.id}
@@ -3671,44 +3802,10 @@ export function SessionChat({
                               turnIndex === 0 ? '' : 'mt-12',
                             )}
                           >
-                            {/* Compaction divider — shown before the first turn after compaction */}
-                            {hasCompaction && (
-                              <div className="my-3 flex items-center gap-3 py-4">
-                                <div className="bg-border h-px flex-1" />
-                                <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                                  <Layers className="text-muted-foreground size-3.5" />
-                                  <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                                    Compaction
-                                  </span>
-                                </div>
-                                <div className="bg-border h-px flex-1" />
-                              </div>
-                            )}
-                            <SessionTurn
-                              turn={turn}
-                              isLastUserTurn={turn.userMessage.info.id === lastUserMessageId}
-                              isPlanAnchor={turn.userMessage.info.id === planAnchorId}
-                              sessionId={sessionId}
-                              sessionStatus={sessionStatus}
-                              permissions={pendingPermissions}
-                              questions={pendingQuestions}
-                              agentNames={agentNames}
-                              isFirstTurn={turnIndex === 0}
-                              isBusy={isBusy}
-                              isCompaction={hasCompaction}
-                              providers={providers}
-                              commandMessages={commandMessagesRef.current}
-                              commands={commands}
-                              disableToolNavigation={disableToolNavigation}
-                              onPermissionReply={handlePermissionReply}
-                              onRewind={handleRewind}
-                              rewindDisabled={
-                                !!readOnly || !sessionState || isBusy || sessionState.rewindPending
-                              }
-                            />
+                            {renderTurnContent(turn, turnIndex)}
                           </div>
-                        );
-                      })}
+                        ))
+                      )}
                     </ToolActivateContext.Provider>
 
                     {/* Busy indicator when no turns yet but session is busy */}
@@ -3794,6 +3891,7 @@ export function SessionChat({
                 turns={turns}
                 scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
                 contentRef={contentRef as React.RefObject<HTMLDivElement>}
+                renderedIdsKey={mountedTurnIdsKey}
               />
 
               {/* Scroll to bottom FAB */}
