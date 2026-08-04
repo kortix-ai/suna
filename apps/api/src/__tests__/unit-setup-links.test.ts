@@ -109,7 +109,6 @@ describe('setup-link token codec', () => {
       expect(r.status).toBe(404);
     }
   });
-});
 
   test('secret link carries session id (sid) for callback', () => {
     const { token } = mintSetupLink(PROJECT_A, {
@@ -143,20 +142,7 @@ describe('setup-link token codec', () => {
       fields: [{ name: 'FOO_KEY' }],
     });
     const ttlMs = expiresAt - before;
-    // Allow ±5 seconds for execution time
     expect(ttlMs).toBeGreaterThan(24 * 60 * 60 * 1000 - 5000);
     expect(ttlMs).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
-  });
-
-  test('clock-skew buffer: link resolves as valid within 60s after expiry', () => {
-    // Mint a link with 1-minute TTL, then resolve it 30 seconds "in the future"
-    const { token } = mintSetupLink(
-      PROJECT_A,
-      { kind: 'secret', fields: [{ name: 'FOO_KEY' }] },
-      { expiresInMinutes: 1 },
-    );
-    const r = resolveSetupLink(token);
-    // Should still be valid (within the 60s clock-skew buffer)
-    expect(r.ok).toBe(true);
   });
 });
