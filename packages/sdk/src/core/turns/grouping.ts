@@ -25,6 +25,19 @@ interface TextPartLike extends PartLike {
 // Turn grouping
 // ============================================================================
 
+/** True when two turns hold the exact same message object references. */
+function turnHasSameMessages<M extends MessageWithPartsLike>(
+  a: TurnLike<M>,
+  b: TurnLike<M>,
+): boolean {
+  if (a.userMessage !== b.userMessage) return false;
+  if (a.assistantMessages.length !== b.assistantMessages.length) return false;
+  for (let i = 0; i < a.assistantMessages.length; i++) {
+    if (a.assistantMessages[i] !== b.assistantMessages[i]) return false;
+  }
+  return true;
+}
+
 /**
  * Group messages into turns: each turn starts with a user message followed
  * by 0+ assistant messages.
@@ -32,9 +45,15 @@ interface TextPartLike extends PartLike {
  * Uses parentID-based linking (matching SolidJS session-turn.tsx:272-292):
  * assistant messages are associated with their parent user message via
  * `parentID`. Falls back to sequential ordering when parentID is absent.
+ *
+ * Pass `previous` (the array returned by the last call) to opt into turn
+ * identity reuse: any turn whose messages are all reference-unchanged is
+ * handed back as the exact same object, so per-turn memoization survives a
+ * streamed token that only touches the last turn.
  */
 export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
   messages: readonly M[],
+  previous?: readonly TurnLike<M>[],
 ): TurnLike<M>[] {
   const turns: TurnLike<M>[] = [];
   const turnsByUserMsgId = new Map<string, TurnLike<M>>();
@@ -97,12 +116,50 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
     turns.push(syntheticTurn);
   }
 
+  // Identity reconcile: hand back the previous object for any turn whose
+  // messages are all reference-unchanged. Keyed by user message id so a
+  // prepended older page (which shifts every index) still matches.
+  if (previous && previous.length > 0) {
+    const previousByUserId = new Map<string, TurnLike<M>>();
+    for (const turn of previous) previousByUserId.set(turn.userMessage.info.id, turn);
+
+    for (let i = 0; i < turns.length; i++) {
+      const prior = previousByUserId.get(turns[i].userMessage.info.id);
+      if (prior && turnHasSameMessages(prior, turns[i])) turns[i] = prior;
+    }
+  }
+
   return turns;
 }
 
 // ============================================================================
 // Part collection helpers
 // ============================================================================
+
+/**
+ * Reuse previous message-wrapper objects where nothing inside them changed.
+ *
+ * `buildMessages` re-wraps every message on any delta, so untouched messages
+ * get a fresh `{ info, parts }` object even though both inner refs survive.
+ * That fresh wrapper defeats every downstream identity check. This restores
+ * identity for the untouched ones, keyed by message id so reordering and
+ * older-page prepends still match.
+ */
+export function reuseMessageIdentities<M extends MessageWithPartsLike>(
+  next: readonly M[],
+  previous: readonly M[] | undefined,
+): M[] {
+  if (!previous || previous.length === 0) return next.slice();
+
+  const previousById = new Map<string, M>();
+  for (const message of previous) previousById.set(message.info.id, message);
+
+  return next.map((message) => {
+    const prior = previousById.get(message.info.id);
+    if (prior && prior.info === message.info && prior.parts === message.parts) return prior;
+    return message;
+  });
+}
 
 /** Collect all parts from a turn's assistant messages. */
 export function collectTurnParts<M extends MessageWithPartsLike>(

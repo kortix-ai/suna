@@ -25,6 +25,7 @@ import {
   getToolInfo,
   getTurnCost,
   groupMessagesIntoTurns,
+  reuseMessageIdentities,
   stripAnsi,
 } from './index';
 
@@ -126,6 +127,59 @@ describe('groupMessagesIntoTurns', () => {
     const turns = groupMessagesIntoTurns(messages);
     expect(turns[0].userMessage.custom).toBe(0);
     expect(turns[0].assistantMessages[0].custom).toBe(1);
+  });
+
+  test('reuses the previous turn object when its messages are unchanged', () => {
+    const u1 = userMsg('u1');
+    const a1 = assistantMsg('a1', 'u1');
+
+    const first = groupMessagesIntoTurns([u1, a1]);
+    const second = groupMessagesIntoTurns([u1, a1], first);
+
+    expect(second[0]).toBe(first[0]);
+  });
+
+  test('returns a fresh turn object when an assistant message is appended', () => {
+    const u1 = userMsg('u1');
+    const a1 = assistantMsg('a1', 'u1');
+    const first = groupMessagesIntoTurns([u1, a1]);
+
+    const a2 = assistantMsg('a2', 'u1');
+    const second = groupMessagesIntoTurns([u1, a1, a2], first);
+
+    expect(second[0]).not.toBe(first[0]);
+  });
+
+  test('keeps untouched turns stable while a later turn streams', () => {
+    const u1 = userMsg('u1');
+    const a1 = assistantMsg('a1', 'u1');
+    const u2 = userMsg('u2');
+    const a2 = assistantMsg('a2', 'u2');
+    const first = groupMessagesIntoTurns([u1, a1, u2, a2]);
+
+    const a2b = assistantMsg('a2b', 'u2');
+    const second = groupMessagesIntoTurns([u1, a1, u2, a2, a2b], first);
+
+    expect(second[0]).toBe(first[0]); // settled turn — identity survives
+    expect(second[1]).not.toBe(first[1]); // streaming turn — identity changes
+  });
+
+  test('one delta changes exactly one turn identity in a 200-turn thread', () => {
+    const messages: MessageWithPartsLike[] = [];
+    for (let i = 0; i < 200; i++) {
+      messages.push(userMsg(`u${i}`));
+      messages.push(assistantMsg(`a${i}`, `u${i}`));
+    }
+
+    const first = groupMessagesIntoTurns(messages);
+    const delta = assistantMsg('a199b', 'u199');
+    const second = groupMessagesIntoTurns([...messages, delta], first);
+
+    const changed = second.filter((turn, i) => turn !== first[i]).length;
+
+    // Before this change it is 200: every turn is reallocated, so every turn's
+    // useMemo misses and every SessionTurn re-renders on a single token.
+    expect(changed).toBe(1);
   });
 });
 
@@ -560,5 +614,33 @@ describe('stripAnsi', () => {
     const start = performance.now();
     stripAnsi(malicious);
     expect(performance.now() - start).toBeLessThan(1000);
+  });
+});
+
+describe('reuseMessageIdentities', () => {
+  test('returns the previous wrapper when info and parts refs are unchanged', () => {
+    const info = { id: 'u1', role: 'user' };
+    const parts: MessageWithPartsLike['parts'] = [];
+    const previous = [{ info, parts }];
+    const next = [{ info, parts }]; // fresh wrapper, identical inner refs
+
+    const out = reuseMessageIdentities(next, previous);
+
+    expect(out[0]).toBe(previous[0]);
+  });
+
+  test('returns the new wrapper when the parts array ref changed', () => {
+    const info = { id: 'u1', role: 'user' };
+    const previous = [{ info, parts: [] }];
+    const next = [{ info, parts: [] }]; // different parts array ref
+
+    const out = reuseMessageIdentities(next, previous);
+
+    expect(out[0]).toBe(next[0]);
+  });
+
+  test('passes everything through when there is no previous list', () => {
+    const next = [userMsg('u1')];
+    expect(reuseMessageIdentities(next, undefined)[0]).toBe(next[0]);
   });
 });

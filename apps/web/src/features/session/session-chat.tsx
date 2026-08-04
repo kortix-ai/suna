@@ -21,7 +21,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SystemNotificationCard,
@@ -31,6 +31,7 @@ import {
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
+import { sessionTurnPropsAreEqual } from './turn/session-turn-memo';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 
@@ -139,7 +140,6 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isLastUserMessage,
   isReasoningPart,
   isTextPart,
   isToolPart,
@@ -465,9 +465,12 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // Session Turn — core turn component
 // ============================================================================
 
-interface SessionTurnProps {
+export interface SessionTurnProps {
   turn: Turn;
-  allMessages: MessageWithParts[];
+  /** True when this turn's user message is the last user message in the session. */
+  isLastUserTurn: boolean;
+  /** True when this turn's user message is the plan anchor. */
+  isPlanAnchor: boolean;
   sessionId: string;
   sessionStatus: import('@/ui').SessionStatus | undefined;
   permissions: PermissionRequest[];
@@ -557,9 +560,10 @@ export function SessionReportCard({
   );
 }
 
-function SessionTurn({
+function SessionTurnImpl({
   turn,
-  allMessages,
+  isLastUserTurn,
+  isPlanAnchor,
   sessionId,
   sessionStatus,
   permissions,
@@ -602,24 +606,16 @@ function SessionTurn({
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
   );
-  const isLast = useMemo(
-    () => isLastUserMessage(turn.userMessage.info.id, allMessages),
-    [turn.userMessage.info.id, allMessages],
-  );
-  // The plan belongs to the turn that WROTE it, not to whichever turn happens
-  // to be last — see turn/plan-anchor.ts.
-  const ownsPlan = useMemo(
-    () => planAnchorMessageId(allMessages) === turn.userMessage.info.id,
-    [turn.userMessage.info.id, allMessages],
-  );
+  // `isLastUserTurn` and `isPlanAnchor` arrive as props: both used to be derived
+  // here from the whole message array — see SessionChat's hoisted memos.
   // A turn is "working" when:
   // 1. The session status says busy/retry (via getWorkingState), OR
   // 2. This is the last turn AND the parent component says isBusy (e.g. we
   //    just sent a message but sessionStatus hasn't updated to busy yet).
   //    This covers the race between sending and the server acknowledging.
   const working = useMemo(
-    () => getWorkingState(sessionStatus, isLast) || (isLast && isBusy),
-    [sessionStatus, isLast, isBusy],
+    () => getWorkingState(sessionStatus, isLastUserTurn) || (isLastUserTurn && isBusy),
+    [sessionStatus, isLastUserTurn, isBusy],
   );
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -669,12 +665,12 @@ function SessionTurn({
       : responseRaw.trim() || abortedTextFallback;
   // Retry info (only on last turn)
   const retryInfo = useMemo(
-    () => (isLast ? getRetryInfo(sessionStatus) : undefined),
-    [sessionStatus, isLast],
+    () => (isLastUserTurn ? getRetryInfo(sessionStatus) : undefined),
+    [sessionStatus, isLastUserTurn],
   );
   const retryMessage = useMemo(
-    () => (isLast ? getRetryMessage(sessionStatus) : undefined),
-    [sessionStatus, isLast],
+    () => (isLastUserTurn ? getRetryMessage(sessionStatus) : undefined),
+    [sessionStatus, isLastUserTurn],
   );
 
   // Cost info (only when not working)
@@ -1175,7 +1171,7 @@ function SessionTurn({
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
             sessionId={sessionId}
-            ownsPlan={ownsPlan}
+            ownsPlan={isPlanAnchor}
             onRewind={onRewind}
             rewindDisabled={rewindDisabled}
           />
@@ -1424,6 +1420,18 @@ function SessionTurn({
     </div>
   );
 }
+
+/**
+ * A long thread is a long list of turns, and a streamed delta only ever touches
+ * the last one. `groupMessagesIntoTurns` now returns the previous turn object
+ * for every turn whose messages did not change, so an identity check on the
+ * props is enough to keep the other N-1 turns out of the render pass.
+ *
+ * The comparator lives in ./turn/session-turn-memo so it can be unit-tested —
+ * see the note in that file.
+ */
+const SessionTurn = memo(SessionTurnImpl, sessionTurnPropsAreEqual);
+SessionTurn.displayName = 'SessionTurn';
 
 // ============================================================================
 // Main SessionChat Component
@@ -2407,7 +2415,30 @@ export function SessionChat({
       }
     };
   }, []);
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  // Feed the previous grouping back in so every turn whose messages are
+  // unchanged keeps its object identity — that identity is what the SessionTurn
+  // memo compares. Writing the ref during render is deliberate and safe here:
+  // the call is idempotent, so StrictMode's double-invoke feeds the first
+  // result back in as `previous` and gets identical objects out.
+  const previousTurnsRef = useRef<Turn[]>([]);
+  const turns = useMemo(() => {
+    const next = messages ? groupMessagesIntoTurns(messages, previousTurnsRef.current) : [];
+    previousTurnsRef.current = next;
+    return next;
+  }, [messages]);
+  // Both ids below were derived inside SessionTurn from the full message array.
+  // That array is a fresh reference on every streamed delta, so every turn
+  // recomputed them on every delta. Derive them once here and pass booleans.
+  const lastUserMessageId = useMemo(() => {
+    if (!messages) return null;
+    // Same rule as `isLastUserMessage` in @kortix/sdk: the last message whose
+    // role is 'user', with no other filtering.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'user') return messages[i].info.id;
+    }
+    return null;
+  }, [messages]);
+  const planAnchorId = useMemo(() => planAnchorMessageId(messages ?? []), [messages]);
   const hasAnyMessages = turns.length > 0;
   const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
@@ -3640,7 +3671,8 @@ export function SessionChat({
                             )}
                             <SessionTurn
                               turn={turn}
-                              allMessages={messages!}
+                              isLastUserTurn={turn.userMessage.info.id === lastUserMessageId}
+                              isPlanAnchor={turn.userMessage.info.id === planAnchorId}
                               sessionId={sessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}

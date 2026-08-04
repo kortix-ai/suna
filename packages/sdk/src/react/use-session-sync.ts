@@ -22,6 +22,7 @@ import {
 } from '../browser/session-sync/session-transcript-cache';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { type MessageWithParts, useSyncStore } from '../browser/stores/sync-store';
+import { reuseMessageIdentities } from '../core/turns/grouping';
 import { useCurrentRuntime } from './use-current-runtime';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
@@ -76,10 +77,13 @@ function buildMessages(
   }
 
   const partRefs = msgs.map((message) => parts[message.id]);
-  const result = msgs.map((info) => ({
+  const rebuilt = msgs.map((info) => ({
     info,
     parts: parts[info.id] ?? [],
   }));
+  // Untouched messages keep their previous wrapper object, so downstream
+  // identity checks (turns, memo comparators) can actually match.
+  const result = reuseMessageIdentities(rebuilt, cached?.result);
   messageCache.set(sessionId, { msgs, partRefs, result });
   touchMessageCache(sessionId);
   return result;
