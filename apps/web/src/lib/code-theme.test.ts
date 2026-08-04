@@ -68,9 +68,22 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// Defensive: none of the 65 current bundled Shiki theme ids contains a regex
+// metacharacter, so this has no live bug today. Escaping guards against a
+// future id (e.g. one with a `.` or `+`) silently changing what the pattern
+// below matches.
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 describe('no second palette', () => {
   test('no source file names a Shiki theme other than min-dark / min-light', () => {
-    const files = [...sourceFiles(join(WEB_ROOT, 'src')), join(WEB_ROOT, 'source.config.ts')];
+    // Both root configs are scanned on top of `src/`: `source.config.ts` and
+    // `next.config.ts` configure MDX/Shiki from outside `src/`, which is
+    // exactly where the original drift lived, so they need the same guard.
+    const files = [
+      ...sourceFiles(join(WEB_ROOT, 'src')),
+      join(WEB_ROOT, 'source.config.ts'),
+      join(WEB_ROOT, 'next.config.ts'),
+    ];
     const hits: string[] = [];
 
     for (const file of files) {
@@ -81,7 +94,7 @@ describe('no second palette', () => {
         // Quoted on both sides, which also matches backticked prose in comments.
         // That is deliberate: a comment naming a dead theme is the exact rot that
         // let source.config.ts drift while claiming to mirror the constants.
-        if (new RegExp(`['"\`]${id}['"\`]`).test(source)) {
+        if (new RegExp(`['"\`]${escapeRegExp(id)}['"\`]`).test(source)) {
           hits.push(`${file.slice(WEB_ROOT.length + 1)} -> ${id}`);
         }
       }
