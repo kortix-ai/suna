@@ -26,6 +26,7 @@ export function KeyboardShortcutsTab() {
     { label: 'Command palette', keys: 'Ctrl+K' },
     { label: 'Toggle left sidebar', keys: 'Ctrl+B' },
     { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
+    { label: 'Toggle session action panel', keys: `${modLabel}+I` },
   ];
 
   return (

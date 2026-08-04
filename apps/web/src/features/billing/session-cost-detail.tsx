@@ -149,7 +149,7 @@ export function SessionCostDetailContent({
         ].map(([label, value]) => (
           <div key={label} className="bg-popover px-3 py-2.5">
             <p className="text-muted-foreground text-xs">{label}</p>
-            <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{value}</p>a
+            <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{value}</p>
           </div>
         ))}
       </div>

@@ -441,3 +441,283 @@ describe("stream-cache (via applyEvent message.part.updated / message.part.delta
 		expect(readCache("ses_1")?.text).toBe("Hello world");
 	});
 });
+
+// ============================================================================
+// hydrate() vs. an in-flight optimistic send.
+//
+// The supersede rule used to be EXISTENTIAL: "if this page contains any real
+// user message at all, every optimistic user message is a duplicate". In an
+// ongoing conversation that is always true — the page is full of earlier
+// turns — so a message sent one second ago, which the server has provably
+// never received, was deleted along with its text.
+//
+// The window is wide open by construction: the rehydrate that calls this only
+// runs for sessions whose status is `busy`, and `beginOptimisticSend` is what
+// sets `busy`. The act of sending armed the thing that deleted the send.
+//
+// The rule is now identity-based. See `hydrate` in sync-store.ts.
+// ============================================================================
+
+describe("useSyncStore — hydrate vs. an un-acked optimistic send", () => {
+	test("a message the server has never seen survives a hydrate of PRIOR turns", () => {
+		const store = useSyncStore.getState();
+		// The conversation already has one completed user turn on the server.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_server_001"), parts: [textPart("prt_s1", "msg_server_001", "first message")] },
+		]);
+
+		// The user sends a NEW message with a big attachment. The optimistic add
+		// happens BEFORE the upload, so this state lasts the whole upload.
+		store.optimisticAdd("ses_1", userMessage("msg_optimistic_new"), [
+			textPart("prt_o1", "msg_optimistic_new", "here is the zip"),
+		]);
+		store.setStatus("ses_1", { type: "busy" });
+
+		// Mid-upload, an SSE gap rehydrates every BUSY session. The page contains
+		// only the PRIOR turn — the prompt has not been sent yet.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_server_001"), parts: [textPart("prt_s1", "msg_server_001", "first message")] },
+		]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id);
+		expect(ids).toContain("msg_optimistic_new");
+		// The text must survive too — a surviving bubble with no text is the
+		// same bug wearing a different shirt.
+		expect(useSyncStore.getState().parts["msg_optimistic_new"]?.[0]).toMatchObject({
+			text: "here is the zip",
+		});
+	});
+
+	test("several messages in flight each survive independently", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_server_001"), parts: [] }]);
+		store.optimisticAdd("ses_1", userMessage("msg_opt_a"), [textPart("prt_a", "msg_opt_a", "one")]);
+		store.optimisticAdd("ses_1", userMessage("msg_opt_b"), [textPart("prt_b", "msg_opt_b", "two")]);
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_server_001"), parts: [] }]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id);
+		expect(ids).toContain("msg_opt_a");
+		expect(ids).toContain("msg_opt_b");
+	});
+
+	test("an optimistic message in ANOTHER session is untouched", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_2", userMessage("msg_opt_other", "ses_2"), [
+			textPart("prt_other", "msg_opt_other", "other session", "ses_2"),
+		]);
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_server_001"), parts: [] }]);
+
+		expect(useSyncStore.getState().messages["ses_2"]?.map((m) => m.id)).toContain("msg_opt_other");
+	});
+
+	// The regression guard. `hydrate`'s supersede branch exists to stop a
+	// double bubble once the server HAS echoed the message; identity-based
+	// correlation must not trade one bug for the other.
+	test("a genuinely echoed message IS superseded — no double bubble", () => {
+		const store = useSyncStore.getState();
+		// Optimistic send using a client-generated part id, which apps/web sends
+		// with the prompt precisely so the echo updates the same part.
+		store.optimisticAdd("ses_1", userMessage("msg_client_id"), [
+			textPart("prt_shared", "msg_client_id", "hello"),
+		]);
+
+		// The server echoes it back under ITS id, carrying the same part id.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_server_echo"), parts: [textPart("prt_shared", "msg_server_echo", "hello")] },
+		]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toContain("msg_server_echo");
+		expect(ids).not.toContain("msg_client_id");
+		expect(ids.filter((id) => id === "msg_server_echo")).toHaveLength(1);
+	});
+
+	test("a DISPATCHED message is superseded by an echo with no parts yet, and its text is bridged", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client_id"), [
+			textPart("prt_shared", "msg_client_id", "hello"),
+		]);
+		// The prompt actually went out. An echo cannot exist otherwise, which is
+		// why this must precede it.
+		store.markOptimisticDispatched("ses_1", "msg_client_id");
+
+		// Parts persistence lags the message: the server has the user message
+		// but no parts for it yet, so there is no part id to correlate on. Without
+		// the bridge this renders an empty bubble, which is why the bridge exists.
+		store.hydrate("ses_1", [{ info: userMessage("msg_server_echo"), parts: [] }]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).not.toContain("msg_client_id");
+		expect(useSyncStore.getState().parts["msg_server_echo"]?.[0]).toMatchObject({ text: "hello" });
+	});
+
+	test("a PENDING message is never consumed by an unrelated new user message", () => {
+		// The other-tab case. A message this tab has not POSTed cannot be a copy
+		// of anything the server returns, so the ordinal fallback must not pair
+		// it with a message someone else sent.
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_uploading"), [
+			textPart("prt_mine", "msg_uploading", "still uploading my zip"),
+		]);
+		// Deliberately NOT dispatched — the upload is still running.
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_from_other_tab"), parts: [textPart("prt_theirs", "msg_from_other_tab", "sent elsewhere")] },
+		]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toContain("msg_uploading");
+		expect(ids).toContain("msg_from_other_tab");
+		expect(useSyncStore.getState().parts["msg_uploading"]?.[0]).toMatchObject({
+			text: "still uploading my zip",
+		});
+	});
+
+	test("with two dispatched sends, each bridges to its OWN echo", () => {
+		// The first-match bridge would graft one message's text onto the other's
+		// bubble. `supersededBy` names the exact echo each one lost to.
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_c1"), [textPart("prt_p1", "msg_c1", "first")]);
+		store.optimisticAdd("ses_1", userMessage("msg_c2"), [textPart("prt_p2", "msg_c2", "second")]);
+		store.markOptimisticDispatched("ses_1", "msg_c1");
+		store.markOptimisticDispatched("ses_1", "msg_c2");
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_e1"), parts: [textPart("prt_p1", "msg_e1", "first")] },
+			{ info: userMessage("msg_e2"), parts: [] },
+		]);
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).not.toContain("msg_c1");
+		expect(ids).not.toContain("msg_c2");
+		// msg_c1 matched msg_e1 exactly by part id; msg_c2 took the remaining echo.
+		expect(useSyncStore.getState().parts["msg_e2"]?.[0]).toMatchObject({ text: "second" });
+	});
+});
+
+// ============================================================================
+// The SAME existential bug, on the OTHER path.
+//
+// `hydrate` was one of two places that dropped optimistic user messages. The
+// other is the `message.updated` SSE handler, which removes EVERY optimistic
+// user message in the session the moment ANY real one arrives. With one send
+// in flight that is correct and is why it exists — it swaps the bubble
+// atomically so the user never sees it blink. With two in flight it takes the
+// innocent one with it.
+// ============================================================================
+
+describe("useSyncStore — message.updated vs. a second send still in flight", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	test("confirming ONE message does not delete another that is still uploading", () => {
+		const store = useSyncStore.getState();
+		// Two sends: the first is plain text, the second carries a big attachment
+		// and is still uploading.
+		store.optimisticAdd("ses_1", userMessage("msg_client_a"), [
+			textPart("prt_a", "msg_client_a", "first"),
+		]);
+		store.optimisticAdd("ses_1", userMessage("msg_client_b"), [
+			textPart("prt_b", "msg_client_b", "here is the zip"),
+		]);
+
+		// The server confirms only the FIRST one.
+		store.applyEvent(userMessageUpdated("msg_server_a"));
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toContain("msg_server_a");
+		expect(ids).toContain("msg_client_b");
+		expect(useSyncStore.getState().parts["msg_client_b"]?.[0]).toMatchObject({
+			text: "here is the zip",
+		});
+	});
+
+	test("a PENDING upload is not consumed by ANOTHER tab's confirmation", () => {
+		// The generous fallback ("exactly one in flight, so retire it") had a
+		// hole: a second tab sending on the same session produces a
+		// message.updated for a message that is not ours, and the one message
+		// we DO have in flight is still uploading. `hydrate` protects this
+		// case; the SSE path must too, and it fires first in practice.
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_uploading"), [
+			textPart("prt_mine", "msg_uploading", "still uploading my zip"),
+		]);
+		// Deliberately NOT dispatched — the upload is still running.
+
+		store.applyEvent(userMessageUpdated("msg_from_other_tab"));
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toContain("msg_uploading");
+		expect(ids).toContain("msg_from_other_tab");
+		expect(useSyncStore.getState().parts["msg_uploading"]?.[0]).toMatchObject({
+			text: "still uploading my zip",
+		});
+	});
+
+	test("the single-send swap still happens atomically — no double bubble", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client_only"), [
+			textPart("prt_only", "msg_client_only", "hello"),
+		]);
+		// A confirmation cannot exist for a message that was never sent.
+		store.markOptimisticDispatched("ses_1", "msg_client_only");
+
+		store.applyEvent(userMessageUpdated("msg_server_only"));
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toContain("msg_server_only");
+		expect(ids).not.toContain("msg_client_only");
+	});
+});
+
+// ============================================================================
+// Optimistic tracking is per session, like every other field in this store.
+// ============================================================================
+
+describe("useSyncStore — optimistic tracking is session-scoped", () => {
+	// `clearSession` cleared the session's messages but left its ids in the
+	// module-global tracking set, so they accumulated for the lifetime of the
+	// tab. `hasOptimisticMessages` cannot see the leak — it is gated on the
+	// message list, which IS cleared — so the observable consequence is the
+	// one below: `hydrate` skips parts for any id it believes is optimistic
+	// (`if (optimisticIds.has(mid)) continue`), and a leaked id makes it skip
+	// a real server message forever.
+	test("a cleared session's ids do not make hydrate skip a real message elsewhere", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_collide", "ses_1"), [
+			textPart("prt_old", "msg_collide", "stale optimistic text", "ses_1"),
+		]);
+		store.clearSession("ses_1");
+
+		// A DIFFERENT session receives a real server message that happens to
+		// carry the same id. Its parts must land.
+		store.hydrate("ses_2", [
+			{
+				info: userMessage("msg_collide", "ses_2"),
+				parts: [textPart("prt_real", "msg_collide", "real server text", "ses_2")],
+			},
+		]);
+
+		expect(useSyncStore.getState().parts["msg_collide"]?.[0]).toMatchObject({
+			text: "real server text",
+		});
+	});
+
+	test("clearing one session leaves another session's optimistic message alone", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_a", "ses_1"), []);
+		store.optimisticAdd("ses_2", userMessage("msg_b", "ses_2"), []);
+
+		store.clearSession("ses_1");
+
+		expect(useSyncStore.getState().hasOptimisticMessages("ses_2")).toBe(true);
+		expect(useSyncStore.getState().messages["ses_2"]?.map((m) => m.id)).toContain("msg_b");
+	});
+});

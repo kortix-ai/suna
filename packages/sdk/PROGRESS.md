@@ -5685,3 +5685,320 @@ SDK gates:
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+### 2026-08-03 — send reliability: `hydrate` deleted un-acked optimistic messages
+
+Bug work, not part of the **Now** chain. Tracked in Linear as JAY-285 (project
+*Assistant Turn UX*); no Linear identifiers appear in code, branches, or commits.
+
+**The defect.** `hydrate`'s supersede rule was EXISTENTIAL:
+
+```ts
+const incomingHasUserMessage = incoming.some(
+  (m) => m.role === "user" && !optimisticIds.has(m.id),
+);
+// …later: if (incomingHasUserMessage && m.role === "user") → drop it
+```
+
+Read plainly: *"if this page holds any real user message at all, every optimistic
+user message is a duplicate."* In an ongoing conversation that is always true —
+the page is full of earlier turns — so a message sent one second ago, which the
+server had provably never received, was deleted along with its text.
+
+The window was wide open by construction: the rehydrate that calls `hydrate` runs
+only for sessions whose status is `busy`
+(`react/use-opencode-events/index.ts:214`), and `beginOptimisticSend` is what sets
+`busy`. **Sending armed the thing that deleted the send.** With an upload in front
+of the prompt, that window is the whole upload — which is how it was reported: a
+large attachment, and no user bubble at all until the upload finished.
+
+**The fix.** Correlation is now identity-based, in two passes:
+
+1. **Part id** — hosts generate the text part id up front and send it WITH the
+   prompt so the echo updates the same part. That makes it an identity match, not
+   a guess.
+2. **Ordinal fallback** — only for an echo whose parts the server has not
+   persisted yet, and only among messages already marked `dispatched`. A message
+   that has not been POSTed cannot be a duplicate of anything the server holds, so
+   it is never eligible. This is what stops another tab's message from consuming
+   this tab's in-flight bubble.
+
+Candidate echoes are additionally restricted to real user messages **not already
+in the store** — history cannot supersede the present. That single condition is
+what fixes the reported bug; the rest makes the supersede path honest.
+
+The parts bridge now follows the established pairing (`supersededBy`) instead of
+grafting onto "whichever real user message came first", which could attach one
+message's text to another's bubble with two sends in flight.
+
+**Public surface:** one additive action, `markOptimisticDispatched(messageID)` on
+the sync store. No renames, no removals. Called from `sendAndRecover`,
+`replayStartStash`, and `useSession.sendParts` (which resolves the message via
+part ids, since hosts own their own message ids).
+
+**Gates**
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1396 pass`, `0 fail`, `5985 expect() calls`
+  across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0` — *"OK: @kortix/sdk
+  imports and constructs from a packed tarball"*.
+- `apps/web` consumer check: `bun test src/features/session src/components/markdown`
+  → `1087 pass`, `0 fail` across `99` files.
+
+**Tests added** — 6 in `browser/stores/sync-store.test.ts`, RED before the fix:
+un-acked message survives a hydrate of prior turns; several in flight survive
+independently; another session untouched; a genuinely echoed message IS
+superseded (double-bubble guard); a dispatched message pairs with a parts-lagging
+echo and bridges its text; a PENDING message is never consumed by an unrelated
+new user message.
+
+**Status:** code COMPLETE, not committed (the user commits).
+
+**SDK package shippable to production: YES.**
+
+**Bug fix verified end to end: NOT YET.** The store logic is proven by unit tests,
+but the reported failure is a race between a store write and a slow upload. It has
+not been exercised against a live sandbox with a real multi-MB attachment, and
+that is the only proof that matters for the user-visible symptom.
+
+### 2026-08-03 — upload: timeouts are not transient, and the deadline follows the body
+
+Bug work, not part of the **Now** chain. Linear JAY-286 (*Assistant Turn UX*).
+Continues the send-reliability thread from the entry above.
+
+**The defect.** `Upload failed: signal timed out` on a real attachment, after a
+wait roughly three times longer than it needed to be.
+
+`uploadWithRetry` (`core/files/client.ts`) discriminated correctly on STATUS
+(`isTransient`: 408/429/502/503/504) but not on a thrown request — that path
+retried everything, including `AbortSignal.timeout()`. So a body too large for
+the flat 30s deadline blew that same deadline on all three attempts. Re-sending
+an identical body against an identical budget cannot succeed; the retries bought
+only a longer wait for the same answer.
+
+The 30s itself came from `withDefaultTimeout` (`platform/auth-core.ts:78`), the
+platform-wide default applied to every request. That is a hang detector for a
+JSON call. Against a 30 MB attachment it is a throughput limit, and the
+attachment loses — a 200 KB screenshot and a 30 MB zip were on the same budget.
+
+**The fix.**
+
+1. `isUnretryableThrow` — `TimeoutError` (the deadline) and `AbortError` (a
+   deliberate cancel) break the retry loop instead of feeding it. The status
+   path is unchanged; it was already right.
+2. `uploadTimeoutMsForBytes(bytes)` — the deadline scales with the body,
+   clamped to `[30s, 15min]` over a deliberately pessimistic ~256 KB/s floor.
+   Erring long costs a late error message; erring short costs an upload that
+   would have succeeded.
+3. `authenticatedFetch` gains an optional `timeoutMs` so a caller can say so.
+   A caller-supplied `init.signal` still composes; first to fire wins.
+
+**Public surface:** two additive names — `uploadTimeoutMsForBytes` (from
+`./files`) and the `timeoutMs` option on `authenticatedFetch`. Both snapshots
+regenerated deliberately; the diff adds one name and removes none. The export is
+justified by JAY-287, which needs the deadline to render a sensible upload
+affordance — flagged for review rather than assumed.
+
+**Gates**
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1403 pass`, `0 fail`, `5997 expect() calls`
+  across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `bun test src/features/session src/components/markdown src/features/files`
+  → `1116 pass`, `0 fail` across `105` files.
+
+**Tests added** — 7 in `core/files/client.test.ts`, RED before the fix: a timed-out
+upload fails after ONE attempt not three; an aborted upload is not retried; a
+transient network throw IS still retried; a transient STATUS is still retried;
+a large upload's deadline exceeds the flat 30s; the deadline is bounded at both
+ends and monotonic between; an unknown-size body still gets a usable deadline.
+The suite's own wall clock fell 5.25s → 2.06s once the retry sleeps stopped
+firing, which is the fix visible in the clock.
+
+**Deliberately NOT done in this task:** upload progress events. They need
+`XMLHttpRequest` or a streamed request body (plain `fetch` + `FormData` emits
+none), and they have no consumer until JAY-287 gives them somewhere to render.
+Left on the ticket rather than folded in — see *Found work mid-task*.
+
+**Status:** code COMPLETE, not committed (the user commits).
+
+**SDK package shippable to production: YES.**
+
+**Bug fix verified end to end: NOT YET.** Retry/deadline behaviour is proven by
+unit tests against a mocked `globalThis.fetch`. No upload has been run against a
+live sandbox at a real size, and the Platinum edge 128 KiB inbound body ceiling
+has not been checked on this path — if it applies, chunking is still required and
+the real fix lives in the external platinum repo.
+
+### 2026-08-03 — the same bug on the SSE path, and session-scoped optimistic ids
+
+Linear JAY-290 (*Assistant Turn UX*), plus a **gap in JAY-285 found while doing
+it**. Third entry in the send-reliability thread.
+
+**Found: `hydrate` was not the only place with the existential rule.** The
+`message.updated` SSE handler removed EVERY optimistic user message in the
+session the moment ANY real one arrived:
+
+```ts
+const optIds = msgs.filter((m) => m.role === "user" && optimisticIds.has(m.id))
+```
+
+With one send in flight that is correct, and is the whole point of the branch —
+it swaps the bubble in a single `set()` so the user never sees it blink. With
+two in flight it took the innocent one with it: confirm the plain message and
+the one still uploading its attachment vanished too. Same defect, different
+path, and JAY-285's acceptance was not actually met while it stood.
+
+Now: ONE confirmation retires ONE message. Correlation is part-id first, as in
+`hydrate`. The fallback is deliberately generous — with exactly one optimistic
+message in flight there is nothing to be ambiguous about, so it is retired
+regardless of `dispatched`. Requiring the flag unconditionally would leave a
+host that hand-rolls a send with a permanent double bubble, which is worse and
+more visible than the bug being fixed. Only with two or more does `dispatched`
+break the tie. At `message.updated` time the confirmed message usually has no
+parts in the store yet (those arrive separately), so this fallback — not the
+part-id match — is the live path here.
+
+**JAY-290: optimistic tracking is session-keyed.** `optimisticIds` and
+`dispatchedOptimisticIds` were process-wide `Set<string>` shared by every
+session in the tab, and `clearSession` never released their entries, so ids
+accumulated for the lifetime of the tab. Both are now
+`Map<sessionID, Set<messageID>>`, released by `clearSession`.
+
+Note on the test: `hasOptimisticMessages` cannot observe the leak — it is gated
+on the message list, which WAS cleared — so the first three tests written for
+this passed trivially. **A test that has never failed is not a test**, so they
+were replaced with one that exercises the real consequence: `hydrate` skips
+parts for any id it believes is optimistic, and a leaked id made it skip a real
+server message forever. That one goes red on the old code.
+
+**Public surface:** `markOptimisticDispatched` gained a `sessionID` first
+argument. Added earlier the same day and never released, so this is a
+correction, not a break.
+
+**Gates**
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1407 pass`, `0 fail` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `1116 pass`, `0 fail` across `105` files.
+
+**Tests added** — 4: confirming one message does not delete another still
+uploading; the single-send swap is still atomic (no double bubble); a cleared
+session's ids do not make `hydrate` skip a real message elsewhere; clearing one
+session leaves another's optimistic message alone.
+
+**Status:** code COMPLETE, not committed (the user commits).
+
+**SDK package shippable to production: YES.**
+
+**Send reliability verified end to end: NOT YET.** Three code paths are now
+correct under unit test. None has been exercised against a live sandbox.
+
+### 2026-08-03 — send queue: one prompt at a time, in order
+
+Linear JAY-287 (*Assistant Turn UX*). Fourth entry in the send-reliability
+thread. Product decision from the user: **queue, do not reject.**
+
+**Finding that shaped the design.** The runtime already has native queueing.
+The opencode client exposes two `prompt` methods:
+
+- `session.promptAsync` → `/session/{id}/prompt_async` — what Kortix calls
+  today. No `delivery` field.
+- `session.prompt` (v2) → `/api/session/{id}/prompt` — *"Durably admit one
+  session input and schedule agent-loop execution"* — with
+  `delivery?: 'steer' | 'queue'`, plus `session.next.prompted` /
+  `session.next.prompt.admitted` events carrying `admittedSeq`/`promotedSeq`.
+
+So the server can already do this durably, and we are on the older endpoint that
+cannot express it. Moving to the v2 protocol is the better long-term answer but
+is a protocol migration touching the send path AND the event stream
+(`session.next.*` is a different event family) — deliberately deferred, tracked
+in Linear, and called out in the module doc so the next reader does not
+rediscover it.
+
+**Unresolved, and it needs a live sandbox.** Whether `/prompt_async` already
+orders prompts that arrive mid-run is NOT determinable from this repo — the
+opencode server runs inside the sandbox; only its client is vendored. The queue
+is therefore designed to be correct either way: ordering is guaranteed HERE, not
+assumed of the server.
+
+**Built:** `core/session/send-queue.ts` — framework-free, timer-free, no polling.
+`isBusy` is injected; draining is driven by the caller reporting the session went
+idle. FIFO per session, one dispatch in flight at a time, a failed send reports
+`failed` and the queue moves on rather than wedging, and an idle-instant submit
+still queues behind anything already waiting (ordering beats latency).
+
+**On TDD:** these tests passed on first run, which by rule 1 means they had
+proven nothing. Verified them by mutation instead — removing the line-jump guard
+failed 1 test, letting `drain` ignore `isBusy` failed 2. Both restored. Recorded
+because "wrote the module then the tests" is a deviation from RED-first and
+should not be silently normalised.
+
+**Public surface:** unchanged. `send-queue.ts` is not exported from any barrel
+yet — it stays internal until something consumes it, so no snapshot moved.
+
+**Gates**
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1419 pass`, `0 fail` across `118` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Status:** queue core COMPLETE. **NOT yet wired** — the SDK send path and the
+`apps/web` bubble still need to consume it, and the `SendPhase` per-message state
+still needs somewhere to live. Nothing user-visible changes until that lands.
+
+**SDK package shippable to production: YES** (additive, inert, nothing imports it).
+
+**JAY-287 shippable: NO — half built by design.**
+
+### 2026-08-03 — self-review found the fixed bug reintroduced via the SSE fallback
+
+Autonomous review pass over the day's own diff. No new feature work; one real
+defect found and closed.
+
+**What was wrong.** The `message.updated` fallback added earlier the same day
+read: *"with exactly ONE optimistic message in flight there is nothing to be
+ambiguous about, so retire it"* — regardless of `dispatched`.
+
+That has a hole. A SECOND TAB on the same session produces a `message.updated`
+for a message that is not ours, while the one message we do have in flight may
+still be uploading. The single-in-flight rule handed the other tab's
+confirmation our un-sent message and deleted it — **exactly the bug this whole
+change set exists to fix, through a side door.** `hydrate` already protected
+this case (there is a test); the SSE path did not, and it fires first in
+practice.
+
+**Why the generosity was wrong.** The argument for it was that a host calling
+`beginOptimisticSend` and then POSTing by hand, never marking dispatch, would
+keep its bubble forever. That is checkable rather than hypothetical:
+`optimisticAdd` has exactly ONE caller, and every send path through this SDK
+(`sendAndRecover`, `replayStartStash`, `useSession.sendParts`) marks dispatch.
+Losing a message the user typed is worse than a double bubble on a host that
+does not exist. The fallback now requires `dispatched`, matching `hydrate`.
+
+The stale fixture went with it: the single-send test never dispatched, which a
+server confirmation cannot happen without. Same correction as the parts-lagging
+`hydrate` fixture earlier — noted rather than quietly adjusted.
+
+**Also reviewed, no change needed:** the `role !== "user"` branch in `hydrate`'s
+optimistic loop is defensive-only (`optimisticAdd`'s single caller always builds
+a user message), so the `deferredOptimistic` ordering concern it raises cannot
+occur in practice. `claimable` and `unmatchedOptimisticUsers` are both in
+chronological order, so the ordinal pairing is sound.
+
+**Gates**
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1420 pass`, `0 fail` across `118` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `1189 pass`, `0 fail` across `118` files.
+
+**Tests added** — 1, RED first: a PENDING upload is not consumed by another
+tab's confirmation.
+
+**Status:** review pass COMPLETE. JAY-287 still half built (queue core exists,
+nothing calls it) — unchanged this tick, by choice: wiring the live send path
+unattended risks a wrong drain signal stranding messages, which is worse than
+the bug being fixed.
