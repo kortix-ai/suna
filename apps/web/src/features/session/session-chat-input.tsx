@@ -1275,7 +1275,7 @@ function SessionChatInputImpl({
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
+                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal wrap-break-word whitespace-pre-wrap sm:text-sm"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span

@@ -404,7 +404,7 @@ function ErrorView({
         )}
       </div>
 
-      <p className="text-muted-foreground/60 max-w-[320px] text-center text-xs leading-relaxed break-words">
+      <p className="text-muted-foreground/60 max-w-[320px] text-center text-xs leading-relaxed wrap-break-word">
         {message}
       </p>
 

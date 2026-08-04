@@ -336,7 +336,7 @@ function ToolRow({ row }: { row: FeedRow }) {
           <Timestamp at={entry.at} className="ml-auto" />
         </div>
         {entry.text && (
-          <div className="text-muted-foreground mt-0.5 font-mono text-xs break-words">
+          <div className="text-muted-foreground mt-0.5 font-mono text-xs wrap-break-word">
             {entry.text}
           </div>
         )}
