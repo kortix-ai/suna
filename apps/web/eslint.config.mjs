@@ -1,14 +1,6 @@
-import { dirname } from 'path';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypescript from 'eslint-config-next/typescript';
 
 const sdkBoundaryBaseline = JSON.parse(
   readFileSync(new URL('./src/sdk-boundary-baseline.json', import.meta.url), 'utf8'),
@@ -24,7 +16,8 @@ const sdkBoundaryLegacyFiles = [
 const sdkBoundaryShimFiles = ['src/lib/iam-client.ts'];
 
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
