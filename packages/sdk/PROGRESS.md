@@ -12,6 +12,27 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-04 — session `auth-cache-link-prefetch` claim
+
+No **Now** task claimed. This is a narrow browser cache identity fix.
+
+Scope:
+
+- Resolve the offline transcript cache scope once per authenticated browser session.
+- Invalidate the resolved scope when the host clears the session cache.
+- Preserve all published names, signatures, and cache key formats.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ## Who may edit what
 
 | Section                     | Agents may…                                            | Agents may **not**…                                                                                         |
