@@ -33,6 +33,34 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
 ---
 
+### 2026-08-04 — session `auth-cache-link-prefetch` completion
+
+The IndexedDB transcript cache now memoizes one authenticated user scope across
+stream writes. `clearSessionIDBCache()` invalidates the scope before clearing
+pending writes and IndexedDB, so sign-out and account changes cannot reuse it.
+Null scopes are not retained, which preserves late authentication hydration.
+
+RED:
+
+- Four concurrent `saveSessionToIDB()` calls performed `4` identity reads; the
+  regression expected `1`.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1456 pass`, `2 skip`, `0 fail`, and
+  `6133 expect()` calls across `120` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+No public export name, signature, cache key, or public-surface snapshot changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ## Who may edit what
 
 | Section                     | Agents may…                                            | Agents may **not**…                                                                                         |
