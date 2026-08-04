@@ -2977,6 +2977,7 @@
     "kortixKeys",
     "loadSessionTranscriptMessages",
     "logRuntimeEvent",
+    "markOptimisticSendDispatched",
     "mergeProjectSecretConnectedProviders",
     "mergeProviderLists",
     "migrateLegacyStash",

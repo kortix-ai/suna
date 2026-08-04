@@ -158,6 +158,7 @@ import {
   applyOptimisticAbort,
   ascendingId,
   beginOptimisticSend,
+  markOptimisticSendDispatched,
   classifySendError,
   clearStartStash,
   formatModelString,
@@ -2949,6 +2950,20 @@ export function SessionChat({
       // retries, and re-sends nothing — losing the message they typed, which is
       // a worse outcome than the refusal they started with.
       lastSubmittedRef.current = { parts: mappedParts, options };
+
+      // The prompt is going out, so the optimistic message stops being
+      // `pending`. This is what lets the server's echo — which arrives under a
+      // DIFFERENT id — supersede it instead of rendering beside it.
+      //
+      // `useSession.sendParts` normally marks dispatch by correlating the
+      // client-generated part ids carried with the prompt. We strip those ids
+      // on purpose (see the note above `mappedParts`: client ids can sort
+      // before server ids under clock skew and make the server's loop exit
+      // early), so there is nothing for it to correlate on and the mark never
+      // happened. The result was every message rendering twice for the whole
+      // turn, until the session went idle and the optimistic sweep ran.
+      markOptimisticSendDispatched(sessionId, messageID);
+
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
       const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
