@@ -58,7 +58,12 @@ export function StepHarness(): ReactNode {
           }
         >
           <div className="bg-background px-4 py-3">
-            <pre className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
+            {/* `overflow-x-auto` makes this a scrollable region, and a region
+                a pointer can scroll but a keyboard cannot is a WCAG 2.1.1
+                failure (axe `scrollable-region-focusable`, serious). The
+                snippet holds no interactive child to carry focus, so the
+                container takes the tab stop itself and arrow keys scroll it. */}
+            <pre tabIndex={0} className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
               <code>
                 {CONFIG.map((entry, index) => (
                   <div

@@ -87,7 +87,11 @@ export function StepSourceOfTruth(): ReactNode {
       <div className="grid gap-3 sm:grid-cols-2">
         <Panel title="kortix.yaml" count="omit a grant and it is none">
           <div className="bg-background px-4 py-3">
-            <pre className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
+            {/* Same scrollable-region tab stop as step-harness: axe only flags
+                the panel that actually overflows at the audited viewport, so
+                the identical sibling is fixed too rather than left to trip the
+                gate at the next breakpoint. */}
+            <pre tabIndex={0} className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
               <code>
                 {MANIFEST.map((entry, index) => (
                   <div
