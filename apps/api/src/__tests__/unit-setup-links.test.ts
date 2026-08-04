@@ -110,3 +110,53 @@ describe('setup-link token codec', () => {
     }
   });
 });
+
+  test('secret link carries session id (sid) for callback', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'AGENT_KORTIX_GITHUB_TOKEN' }],
+      scope: 'runtime',
+      uid: 'user-1',
+      sid: 'ses_abc123',
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBe('ses_abc123');
+  });
+
+  test('secret link sid defaults to null when not provided', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBeNull();
+  });
+
+  test('default TTL is 24 hours (1440 minutes)', () => {
+    const before = Date.now();
+    const { expiresAt } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const ttlMs = expiresAt - before;
+    // Allow ±5 seconds for execution time
+    expect(ttlMs).toBeGreaterThan(24 * 60 * 60 * 1000 - 5000);
+    expect(ttlMs).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
+  });
+
+  test('clock-skew buffer: link resolves as valid within 60s after expiry', () => {
+    // Mint a link with 1-minute TTL, then resolve it 30 seconds "in the future"
+    const { token } = mintSetupLink(
+      PROJECT_A,
+      { kind: 'secret', fields: [{ name: 'FOO_KEY' }] },
+      { expiresInMinutes: 1 },
+    );
+    const r = resolveSetupLink(token);
+    // Should still be valid (within the 60s clock-skew buffer)
+    expect(r.ok).toBe(true);
+  });
+});

@@ -46,7 +46,7 @@ interface BasePayload {
 }
 
 export type SetupLinkPayload =
-  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope })
+  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
   | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
   /**
    * A human-in-the-loop APPROVAL for one gated executor call.
