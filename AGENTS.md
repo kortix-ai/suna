@@ -381,9 +381,18 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
 
 ### Frontend type/lint gate
-- `apps/web` `tsc --noEmit` emits ~1500 BOGUS `TS2786` / `IntrinsicAttributes`
-  errors from a React 19↔18 types mismatch — ignore those; grep for YOUR files.
-- `npx eslint <files>` should be clean.
+- `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
+  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
+  `features/file-viewer/preview-fit.test.tsx`,
+  `features/session/action-panel/easy/easy-panel-logic.test.ts`).
+  The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
+  types mismatch (two copies of `@types/react` in one program — `packages/sdk`
+  had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,
+  treat it as a genuine duplicate-`@types/react` regression and investigate —
+  do not wave it through.
+- `npx eslint <files>` should be clean of errors. `eslint .` across the whole
+  app currently reports ~455 warnings, mostly `react-hooks/*` React Compiler
+  rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
 

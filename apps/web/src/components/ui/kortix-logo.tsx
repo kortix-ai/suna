@@ -1,9 +1,10 @@
 import { cn } from '@/lib/utils';
-import type { SVGProps } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 
 export type KortixLogoVariant = 'icon' | 'brandmark';
 
-interface KortixLogoProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height' | 'viewBox'> {
+interface KortixLogoProps
+  extends Omit<ComponentPropsWithoutRef<'svg'>, 'width' | 'height' | 'viewBox'> {
   /** Pixel height. The brandmark scales its width to match; the icon is square. */
   size?: number;
   /** `icon` = the Kortix symbol alone; `brandmark` = symbol + wordmark lockup. */
