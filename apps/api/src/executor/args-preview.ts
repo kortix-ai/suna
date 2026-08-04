@@ -27,9 +27,8 @@
  * Pure and unit-tested: no db, no io, no config.
  */
 
-/** Values longer than this are truncated (chars). Generous enough that a
- *  subject line or a short body reads in full. */
-const MAX_STRING = 200;
+/** Preserve complete normal email bodies and connector text parameters. */
+const MAX_STRING = 20_000;
 /** Strings at or above this length with no whitespace are treated as opaque
  *  blobs (base64/token-shaped) and described, not sampled. */
 const OPAQUE_BLOB_MIN = 96;
@@ -40,7 +39,7 @@ const MAX_OBJECT_KEYS = 24;
 /** How deep to walk before collapsing to a type marker. */
 const MAX_DEPTH = 3;
 /** Hard cap on the serialised preview (chars). Keeps audit rows small. */
-const MAX_TOTAL_CHARS = 4_000;
+const MAX_TOTAL_CHARS = 64_000;
 
 export const REDACTED = '[redacted]';
 
@@ -77,7 +76,7 @@ const SECRET_SEGMENTS = new Set([
   'seed',
   'mnemonic',
   'refresh',
-  'access',
+  'accesskey',
 ]);
 
 /**
@@ -140,9 +139,17 @@ function isOpaqueBlob(value: string): boolean {
   return !/\s/.test(value);
 }
 
-function previewString(value: string): string {
-  if (isOpaqueBlob(value)) return describeBlob(value);
+interface PreviewState {
+  complete: boolean;
+}
+
+function previewString(value: string, state: PreviewState): string {
+  if (isOpaqueBlob(value)) {
+    state.complete = false;
+    return describeBlob(value);
+  }
   if (value.length <= MAX_STRING) return value;
+  state.complete = false;
   return `${value.slice(0, MAX_STRING)}… [+${value.length - MAX_STRING} chars]`;
 }
 
@@ -153,11 +160,11 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-function previewValue(value: unknown, depth: number): unknown {
+function previewValue(value: unknown, depth: number, state: PreviewState): unknown {
   if (value === null) return null;
   switch (typeof value) {
     case 'string':
-      return previewString(value);
+      return previewString(value, state);
     case 'number':
       return Number.isFinite(value) ? value : String(value);
     case 'boolean':
@@ -174,26 +181,37 @@ function previewValue(value: unknown, depth: number): unknown {
       break;
   }
 
-  if (depth >= MAX_DEPTH) return Array.isArray(value) ? '[array]' : '[object]';
+  if (depth >= MAX_DEPTH) {
+    state.complete = false;
+    return Array.isArray(value) ? '[array]' : '[object]';
+  }
 
   if (Array.isArray(value)) {
-    const items = value.slice(0, MAX_ARRAY_ITEMS).map((item) => previewValue(item, depth + 1));
+    const items = value
+      .slice(0, MAX_ARRAY_ITEMS)
+      .map((item) => previewValue(item, depth + 1, state));
     if (value.length > MAX_ARRAY_ITEMS) {
+      state.complete = false;
       items.push(`… [+${value.length - MAX_ARRAY_ITEMS} more]`);
     }
     return items;
   }
 
-  if (isPlainRecord(value)) return previewRecord(value, depth + 1);
+  if (isPlainRecord(value)) return previewRecord(value, depth + 1, state);
 
   // Dates and other well-known wrappers are useful; anything else that isn't a
   // plain object is NOT walked (a class instance can hide getters with side
   // effects, and its shape is not ours to publish).
   if (value instanceof Date) return value.toISOString();
+  state.complete = false;
   return '[object]';
 }
 
-function previewRecord(input: Record<string, unknown>, depth: number): Record<string, unknown> {
+function previewRecord(
+  input: Record<string, unknown>,
+  depth: number,
+  state: PreviewState,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const keys = Object.keys(input);
   for (const key of keys.slice(0, MAX_OBJECT_KEYS)) {
@@ -201,11 +219,12 @@ function previewRecord(input: Record<string, unknown>, depth: number): Record<st
       out[key] = REDACTED;
       continue;
     }
-    const previewed = previewValue(input[key], depth);
+    const previewed = previewValue(input[key], depth, state);
     if (previewed === undefined) continue;
     out[key] = previewed;
   }
   if (keys.length > MAX_OBJECT_KEYS) {
+    state.complete = false;
     out['…'] = `[+${keys.length - MAX_OBJECT_KEYS} more fields]`;
   }
   return out;
@@ -218,24 +237,38 @@ function previewRecord(input: Record<string, unknown>, depth: number): Record<st
  * field dropped), so callers can omit the key entirely rather than persisting
  * an empty object.
  */
-export function buildArgsPreview(args: unknown): Record<string, unknown> | null {
-  if (!isPlainRecord(args)) return null;
-  let preview = previewRecord(args, 1);
-  if (Object.keys(preview).length === 0) return null;
+export interface ArgsPreviewDetails {
+  preview: Record<string, unknown> | null;
+  complete: boolean;
+}
+
+export function buildArgsPreviewDetails(args: unknown): ArgsPreviewDetails {
+  if (!isPlainRecord(args)) return { preview: null, complete: false };
+  const state: PreviewState = { complete: true };
+  let preview = previewRecord(args, 1, state);
+  if (Object.keys(preview).length === 0) return { preview: null, complete: true };
 
   // Total-size backstop: drop keys from the end until it fits. Done on the
   // finished preview (not per-field) so the cap holds regardless of shape.
   let serialised = safeStringify(preview);
-  if (serialised.length <= MAX_TOTAL_CHARS) return preview;
+  if (serialised.length <= MAX_TOTAL_CHARS) return { preview, complete: state.complete };
 
   const entries = Object.entries(preview);
+  state.complete = false;
   while (entries.length > 0 && serialised.length > MAX_TOTAL_CHARS) {
     entries.pop();
     preview = Object.fromEntries(entries);
     preview['…'] = '[truncated]';
     serialised = safeStringify(preview);
   }
-  return Object.keys(preview).length > 0 ? preview : null;
+  return {
+    preview: Object.keys(preview).length > 0 ? preview : null,
+    complete: state.complete,
+  };
+}
+
+export function buildArgsPreview(args: unknown): Record<string, unknown> | null {
+  return buildArgsPreviewDetails(args).preview;
 }
 
 function safeStringify(value: unknown): string {

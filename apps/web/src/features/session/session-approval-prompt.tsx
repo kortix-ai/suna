@@ -84,25 +84,24 @@ export function SessionApprovalPrompt() {
     id: string;
     sessionId: string;
   }>();
-  // Poll a touch faster than the panel/nudge — this is the blocking gate the
-  // user is actively waiting on.
+  // Poll faster while the callback decision is pending.
   const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
 
   const pending = (data?.actions ?? []).filter(isPendingAction);
   if (pending.length === 0) return null;
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
-        <ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
-        <span className="text-foreground text-xs font-semibold tracking-tight">
+    <div className="bg-popover border-kortix-orange/25 mb-2 overflow-hidden rounded-md border">
+      <div className="border-kortix-orange/20 flex items-center gap-2 border-b px-3 py-2">
+        <ShieldAlert className="text-kortix-orange size-4" />
+        <span className="text-foreground text-xs font-medium">
           {pending.length === 1
             ? 'The agent needs your approval'
             : `${pending.length} actions need your approval`}
         </span>
-        <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
+        <span className="text-muted-foreground text-xs">— waiting for one decision</span>
       </div>
-      <ul className="divide-y divide-amber-500/15">
+      <ul className="divide-border divide-y">
         {pending.map((a) => {
           const summary = argsSummary(a);
           return (
@@ -120,16 +119,14 @@ export function SessionApprovalPrompt() {
                   ) : null}
                 </div>
                 {summary ? (
-                  <p className="text-foreground/80 mt-0.5 truncate font-mono text-[11px]">
-                    {summary}
-                  </p>
+                  <p className="text-foreground/80 mt-0.5 truncate font-mono text-xs">{summary}</p>
                 ) : null}
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
+                <p className="text-muted-foreground mt-0.5 text-xs">
                   Requested {relativeTime(a.at)}
                 </p>
               </div>
               {a.approval_url ? (
-                <Button size="xs" variant="default" className="shrink-0" asChild>
+                <Button size="sm" variant="default" className="shrink-0" asChild>
                   {/* Plain anchor, not next/link: the same absolute URL is what
                       gets relayed out-of-band, so there is one link shape. */}
                   <a href={a.approval_url}>
@@ -138,7 +135,7 @@ export function SessionApprovalPrompt() {
                   </a>
                 </Button>
               ) : (
-                <span className="text-muted-foreground shrink-0 text-[11px]">
+                <span className="text-muted-foreground shrink-0 text-xs">
                   Open the Audit panel to decide
                 </span>
               )}

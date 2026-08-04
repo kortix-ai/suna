@@ -13,6 +13,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realComputeMetering from '../../billing/services/compute-metering';
 
 type UpdateCall = { table: unknown; updates: Record<string, unknown>; inTransaction: boolean };
 
@@ -62,7 +63,11 @@ mock.module('../../sandbox-proxy', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   pauseComputeSession: async (sandboxId: string) => {
     events.push(`pause:${sandboxId}`);
   },
@@ -146,6 +151,7 @@ describe('applyStoppedState', () => {
 
   test('a billing failure never blocks the stop', async () => {
     mock.module('../../billing/services/compute-metering', () => ({
+      ...realComputeMetering,
       pauseComputeSession: async () => {
         throw new Error('wallet unreachable');
       },
@@ -159,6 +165,7 @@ describe('applyStoppedState', () => {
     } finally {
       console.warn = warn;
       mock.module('../../billing/services/compute-metering', () => ({
+        ...realComputeMetering,
         pauseComputeSession: async (sandboxId: string) => {
           events.push(`pause:${sandboxId}`);
         },

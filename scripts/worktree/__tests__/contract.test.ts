@@ -7,6 +7,9 @@ const REPO = join(import.meta.dir, '..', '..', '..');
 const dbPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'db', 'package.json'), 'utf8')) as {
   scripts?: Record<string, string>;
 };
+const rootPkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
+  devDependencies?: Record<string, string>;
+};
 const LIB_DIR = join(import.meta.dir, '..', 'lib');
 const libSrc = readdirSync(LIB_DIR)
   .filter((f) => f.endsWith('.ts'))
@@ -53,6 +56,18 @@ describe('dependency contract — every external binary the worktree spawns is d
     for (const bin of spawned) {
       expect(allowed.has(bin), `lib.ts spawns "${bin}" but it is not in DEPS/allowed`).toBe(true);
     }
+  });
+});
+
+describe('supabase CLI contract', () => {
+  test('the repository pins a CLI version that supports the configured PostgreSQL 17 stack', () => {
+    const config = readFileSync(join(REPO, 'supabase', 'config.toml'), 'utf8');
+    expect(config).toMatch(/major_version\s*=\s*17/);
+
+    const version = rootPkg.devDependencies?.supabase;
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const versionNumber = version!.split('.').reduce((score, part) => score * 1000 + Number(part), 0);
+    expect(versionNumber).toBeGreaterThanOrEqual(2_111_000);
   });
 });
 

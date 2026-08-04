@@ -1,5 +1,5 @@
 TESTS := tests
-NPM := npm --prefix $(TESTS)
+TEST_RUN := cd $(TESTS) && bun run
 
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
@@ -12,8 +12,8 @@ help: ## Show this help
 	 | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install all test dependencies (node deps + Playwright browsers)
-	$(NPM) install
-	cd $(TESTS) && npx playwright install --with-deps chromium || true
+	cd $(TESTS) && bun install --frozen-lockfile
+	cd $(TESTS) && bunx playwright install --with-deps chromium || true
 
 ## ---- one-shot lanes ---------------------------------------------------------
 fast: lint typecheck unit contract api-coverage ## Fast local loop: no live services
@@ -40,56 +40,56 @@ ci-release: ## Pre-release full gate
 lint: ## Lint all workspaces (best-effort)
 	pnpm -r --if-present lint || true
 typecheck: ## TypeScript type-check the test suite
-	$(NPM) run typecheck
+	$(TEST_RUN) typecheck
 unit: ## Unit tests (vitest)
-	$(NPM) run test:unit:cov
+	$(TEST_RUN) test:unit:cov
 integration: ## Integration tests (vitest + testcontainers)
-	$(NPM) run test:integration
+	$(TEST_RUN) test:integration
 api: ## API tests (ke2e REST suite)
-	$(NPM) run test:api
+	$(TEST_RUN) test:api
 api-coverage: ## API route coverage gate (no live target)
-	$(NPM) run coverage
+	$(TEST_RUN) coverage
 contract: ## Consumer-driven contract tests (Pact)
-	$(NPM) run test:contract
+	$(TEST_RUN) test:contract
 smoke: ## Smoke / liveness checks
-	$(NPM) run test:smoke
+	$(TEST_RUN) test:smoke
 e2e: ## End-to-end UI tests (Playwright)
-	$(NPM) run test:e2e
+	$(TEST_RUN) test:e2e
 visual: ## Visual regression (Playwright snapshots)
-	$(NPM) run test:visual
+	$(TEST_RUN) test:visual
 a11y: ## Accessibility tests (axe + Playwright)
-	$(NPM) run test:a11y
+	$(TEST_RUN) test:a11y
 performance: ## Performance / load (k6, Docker)
-	$(NPM) run test:perf
+	$(TEST_RUN) test:perf
 perf-regression: ## Fail if k6 p95/error-rate regressed >10% vs committed baseline
-	$(NPM) run test:perf:regression
+	$(TEST_RUN) test:perf:regression
 security: ## Static security scans (SAST/deps/secrets/container)
-	$(NPM) run test:security
+	$(TEST_RUN) test:security
 security-fast: ## Fast static security (SAST/deps/secrets — no app image build)
-	$(NPM) run test:security:fast
+	$(TEST_RUN) test:security:fast
 security-dast: ## Dynamic security scan + API fuzz (needs TARGET_URL)
-	$(NPM) run test:security:dast
+	$(TEST_RUN) test:security:dast
 pentest: ## Enterprise black-box pentest probes (needs PENTEST_TARGET_URL)
-	$(NPM) run test:pentest
+	$(TEST_RUN) test:pentest
 strix: ## OSS agentic source/pentest scan (needs LLM_API_KEY)
 	bash $(TESTS)/security/strix/run.sh
 migration: ## Database migration tests (throwaway Postgres)
-	$(NPM) run test:migration
+	$(TEST_RUN) test:migration
 infra: ## Infrastructure / IaC tests (tflint/checkov/kubeconform)
-	$(NPM) run test:infra
+	$(TEST_RUN) test:infra
 chaos: ## Chaos / resilience (Toxiproxy, Docker)
-	$(NPM) run test:chaos
+	$(TEST_RUN) test:chaos
 mutation: ## Mutation testing (Stryker)
-	$(NPM) run test:mutation
+	$(TEST_RUN) test:mutation
 
 ## ---- reporting & gates ------------------------------------------------------
 coverage: ## Unit tests with coverage report
-	$(NPM) run test:unit:cov
+	$(TEST_RUN) test:unit:cov
 gates: ## Evaluate quality gates over test-results/
-	$(NPM) run quality-gates
+	$(TEST_RUN) quality-gates
 report: ## Build the Allure report + catalog from latest results
-	$(NPM) run allure
-	$(NPM) run catalog
+	$(TEST_RUN) allure
+	$(TEST_RUN) catalog
 publish: ## History-carried Allure report + archive to S3 (set S3_BUCKET; local-only without it)
 	bash $(TESTS)/scripts/publish-allure.sh
 portal-up: ## Start the local Allure portal (localhost:5051)

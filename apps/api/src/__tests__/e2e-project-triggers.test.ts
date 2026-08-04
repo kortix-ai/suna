@@ -286,7 +286,14 @@ mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+// `await import`, not a top-level `import`: the latter hoists above the
+// process.env writes here, and the barrel pulls in config, which reads them once.
+const realProviders = await import('../platform/providers');
 mock.module('../platform/providers', () => ({
+  ...realProviders,
   getProvider: () => ({ requiresPublicCallback: false }),
 }));
 

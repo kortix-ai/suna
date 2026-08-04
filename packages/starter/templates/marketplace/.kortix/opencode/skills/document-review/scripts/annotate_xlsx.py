@@ -2,7 +2,7 @@
 """Annotate an XLSX with review issues as cell comments.
 
 Usage:
-    uv run --with openpyxl annotate_xlsx.py input.xlsx output.xlsx
+    python3 annotate_xlsx.py input.xlsx output.xlsx
 
 Reads issues from document_review_state.json in the working directory.
 Uses openpyxl Comments attached to cells containing the

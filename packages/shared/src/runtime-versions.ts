@@ -10,6 +10,7 @@ export type RuntimeVersions = {
   uvSha256Amd64: string;
   uvSha256Arm64: string;
   python: string;
+  pythonPackages: Record<string, string>;
   bun: string;
   bunSha256Amd64: string;
   bunSha256Arm64: string;
@@ -30,6 +31,25 @@ export const UV_VERSION = RUNTIME_VERSIONS.uv;
 export const UV_SHA256_AMD64 = RUNTIME_VERSIONS.uvSha256Amd64;
 export const UV_SHA256_ARM64 = RUNTIME_VERSIONS.uvSha256Arm64;
 export const PYTHON_VERSION = RUNTIME_VERSIONS.python;
+export const PYTHON_PACKAGE_FLOOR = RUNTIME_VERSIONS.pythonPackages;
+export const PYTHON_PACKAGE_FLOOR_IMPORTS: Record<string, string> = {
+  lxml: 'lxml',
+  'markitdown[pptx]': 'markitdown',
+  openpyxl: 'openpyxl',
+  pandas: 'pandas',
+  pdf2docx: 'pdf2docx',
+  pdf2image: 'pdf2image',
+  pdfplumber: 'pdfplumber',
+  pillow: 'PIL',
+  playwright: 'playwright',
+  pymupdf: 'fitz',
+  pypdf: 'pypdf',
+  pypdfium2: 'pypdfium2',
+  pytesseract: 'pytesseract',
+  'python-docx': 'docx',
+  'python-pptx': 'pptx',
+  reportlab: 'reportlab',
+};
 export const BUN_VERSION = RUNTIME_VERSIONS.bun;
 export const BUN_SHA256_AMD64 = RUNTIME_VERSIONS.bunSha256Amd64;
 export const BUN_SHA256_ARM64 = RUNTIME_VERSIONS.bunSha256Arm64;

@@ -45,7 +45,7 @@ export interface QueuedContinueSessionPayload {
  * after 5 attempts. Survives the enqueueing pod dying, unlike a detached
  * promise. `availableAt` in the future = a scheduled grace window.
  */
-export async function enqueueContinueSessionCommand(input: {
+export interface EnqueueContinueSessionCommandInput {
   source: SessionInvocationSource;
   projectId: string;
   accountId: string;
@@ -57,14 +57,17 @@ export async function enqueueContinueSessionCommand(input: {
   availableAt?: Date;
   /** Dedupe key — a repeat enqueue (double-resolve race) is a no-op. */
   idempotencyKey?: string | null;
-}): Promise<void> {
+}
+
+/** Build one durable callback row. Exported for transaction-bound outbox writes. */
+export function buildContinueSessionCommandValues(input: EnqueueContinueSessionCommandInput) {
   const now = new Date();
   const payload: QueuedContinueSessionPayload = {
     text: input.text,
     executionId: input.executionId ?? null,
     triggerSlug: input.triggerSlug ?? null,
   };
-  const values = {
+  return {
     commandType: 'continue_session',
     source: input.source,
     status: 'queued' as const,
@@ -78,6 +81,12 @@ export async function enqueueContinueSessionCommand(input: {
     availableAt: input.availableAt ?? now,
     updatedAt: now,
   };
+}
+
+export async function enqueueContinueSessionCommand(
+  input: EnqueueContinueSessionCommandInput,
+): Promise<void> {
+  const values = buildContinueSessionCommandValues(input);
   if (!input.idempotencyKey) {
     await db.insert(sessionLifecycleCommands).values(values);
     return;
@@ -295,6 +304,8 @@ export async function claimDueLifecycleCommands(input: {
   workerId: string;
   limit: number;
   now?: Date;
+  /** Claim only the callback with this durable idempotency key. */
+  idempotencyKey?: string;
   /** Claim only commands that came due before this instant (default: now).
    *  Lets the starvation reconciler target rows the scheduler drain should
    *  have taken long ago, without racing it for freshly-due ones. */
@@ -307,6 +318,9 @@ export async function claimDueLifecycleCommands(input: {
     .where(
       and(
         eq(sessionLifecycleCommands.status, 'queued'),
+        input.idempotencyKey
+          ? eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey)
+          : undefined,
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
         or(isNull(sessionLifecycleCommands.lockedUntil), lte(sessionLifecycleCommands.lockedUntil, now)),
       ),

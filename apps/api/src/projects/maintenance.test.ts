@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realSandboxReaper from './sandbox-reaper';
+import * as realAttachments from '../executor/attachments';
 
 // maintenance.ts pulls in the real config module (which validates the real,
 // dotenvx-encrypted process.env and calls process.exit on a bare `bun test`
@@ -9,6 +12,7 @@ import { describe, expect, mock, test } from 'bun:test';
 mock.module('../config', () => ({ config: {} }));
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
 mock.module('../executor/attachments', () => ({
+  ...realAttachments,
   cleanupExpiredExecutorAttachments: async () => ({ deleted: 0, errors: 0 }),
 }));
 // sweepExpiredSessionBranches() (unlike the other maintenance subtasks) isn't
@@ -32,7 +36,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
 }));
@@ -69,6 +77,7 @@ mock.module('./session-lifecycle/undelivered-prompts', () => ({
 }));
 
 mock.module('./sandbox-reaper', () => ({
+  ...realSandboxReaper,
   reapAndReconcileSandboxes: () => reapAndReconcileSandboxesImpl(),
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
   reconcileStuckActiveSessions: async () => ({

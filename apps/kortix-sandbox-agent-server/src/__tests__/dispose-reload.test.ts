@@ -80,7 +80,12 @@ describe('tryDisposeReload', () => {
     // gateway-mode toggle leaves those keys exactly as they were — routing around
     // the gateway's budgets and logging, or failing to restore BYOK.
     const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
-    expect(ENV_ROUTE).toContain("opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')")
+    // The route used to inline `opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')`.
+    // The invariant is unchanged; the mechanism moved into `requiresRespawn`,
+    // which also covers the auth carriers a dispose cannot rewrite — and keys
+    // off the value DELTA rather than the full allowlist.
+    expect(ENV_ROUTE).toContain('requiresRespawn(')
+    expect(ENV_ROUTE).toContain('result.changedNames')
     expect(ENV_ROUTE).toContain('reloadConfig({ mustRespawn })')
     // And the supervisor must honour it BEFORE trying dispose.
     const reload = OPENCODE_SRC.split('async reloadConfig(')[1]?.split('\n    },')[0]
@@ -97,5 +102,56 @@ describe('tryDisposeReload', () => {
     const disposeAt = (reload as string).indexOf('tryDisposeReload()')
     const restartAt = (reload as string).indexOf('this.restart()')
     expect(disposeAt).toBeLessThan(restartAt)
+  })
+})
+
+/**
+ * Which env changes the dispose fast path is NOT allowed to handle.
+ *
+ * A dispose re-reads the opencode CONFIG FILE in place. It never re-runs
+ * `spawnChild`, so everything spawn does with the env besides writing that file
+ * survives untouched — including `materializeOpencodeAuth`, which writes
+ * `~/.local/share/opencode/auth.json`.
+ *
+ * That made the fast path a credential bug. Connecting a ChatGPT/Codex account
+ * changes `CODEX_AUTH_JSON`; before the fast path this route did a full
+ * restart, which respawned and re-materialized. After it, the dispose left the
+ * OLD auth.json on disk and opencode kept authenticating with the account the
+ * user had just replaced — while the UI confirmed the new one.
+ */
+import { requiresRespawn, RESPAWN_REQUIRED_ENV_NAMES } from '../opencode'
+
+describe('requiresRespawn', () => {
+  test('the auth carriers force a respawn — a dispose cannot rewrite auth.json', () => {
+    expect(requiresRespawn(['CODEX_AUTH_JSON'])).toBe(true)
+    expect(requiresRespawn(['OPENCODE_AUTH_JSON'])).toBe(true)
+  })
+
+  test('the deny-list still forces one — dispose cannot re-shape the child env', () => {
+    expect(requiresRespawn(['KORTIX_OPENCODE_DENY_ENV'])).toBe(true)
+  })
+
+  test('an ordinary secret takes the fast path', () => {
+    // ~51ms vs ~8s, and it does not sever an in-flight turn. Respawning for
+    // every secret would make the fast path pointless.
+    expect(requiresRespawn(['STRIPE_SECRET_KEY', 'DATABASE_URL'])).toBe(false)
+    expect(requiresRespawn([])).toBe(false)
+  })
+
+  test('one carrier among many ordinary names still forces it', () => {
+    expect(requiresRespawn(['STRIPE_SECRET_KEY', 'CODEX_AUTH_JSON', 'FOO'])).toBe(true)
+  })
+
+  test('every name spawnChild consumes outside the config file is listed', () => {
+    // The guard against someone adding a third spawn-time consumer and only
+    // discovering it when a user reports stale credentials.
+    const SPAWN_SRC = OPENCODE_SRC.split('async function spawnChild(')[1]?.split('\n  }\n')[0] ?? ''
+    expect(SPAWN_SRC).toContain('materializeOpencodeAuth(env)')
+    expect(SPAWN_SRC).toContain('withoutDeniedProviderEnv(env)')
+    expect([...RESPAWN_REQUIRED_ENV_NAMES].sort()).toEqual([
+      'CODEX_AUTH_JSON',
+      'KORTIX_OPENCODE_DENY_ENV',
+      'OPENCODE_AUTH_JSON',
+    ])
   })
 })

@@ -70,6 +70,11 @@ describe('refreshWarmSessionWorkspace', () => {
     expect(new Headers(requests[0]?.init.headers).get('x-provider-token')).toBe(
       'provider-key',
     );
+    // The daemon refuses `base=1` without this. It marks the call as DIRECT —
+    // the preview proxy strips the header from everything it relays, so a user
+    // cannot present it, and the service key alone does not prove the hop
+    // (the proxy authenticates user traffic with that same key).
+    expect(new Headers(requests[0]?.init.headers).get('x-kortix-service-call')).toBe('1');
     expect(result).toEqual({
       status: 'updated',
       before_sha: 'before-sha',

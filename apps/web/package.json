@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --turbopack --port ${WEB_PORT:-3000}",
     "dev:staging-env": "NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --overload -f .env.staging -- next dev --turbopack --port ${WEB_PORT:-3000}",
-    "build": "node scripts/validate-production-supabase-env.mjs && node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && next build",
+    "build": "node scripts/validate-production-supabase-env.mjs && node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=6144}\" next build",
     "start": "next start",
     "lint": "next lint",
     "catalog:enrich": "bun scripts/enrich-llm-catalog-capabilities.ts",

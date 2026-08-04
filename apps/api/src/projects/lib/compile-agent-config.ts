@@ -50,7 +50,12 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
-import { type GitBackedProject, readManifestFromRepo, readRepoFile } from '../git';
+import {
+  isRepoFileNotFoundError,
+  readManifestFromRepo,
+  readRepoFile,
+  type GitBackedProject,
+} from '../git';
 
 /** OpenCode's per-agent `AgentConfig` — the compiled shape for one `agent.<name>` entry. */
 export interface OpencodeAgentConfig {
@@ -439,8 +444,20 @@ export async function resolveCompiledAgentConfigForSession(
         try {
           agentMdFiles[path] = await readRepoFile(project, path, ref);
         } catch (err) {
+          // A MISSING file is an expected client condition: the manifest may
+          // declare an agent that carries no behavior file, and that agent
+          // simply compiles without one.
+          //
+          // Anything else — a git operation error, a blip through the proxy — is
+          // not, and swallowing it silently compiles the agent with NO prompt,
+          // model, or permissions. That is a lobotomised agent reported as a
+          // successful reload, with a fresh etag saying it is current. Rethrow
+          // so the outer catch returns null: the session keeps the config it has
+          // and `stale` reads null ("could not tell") rather than a confident
+          // and wrong "up to date".
+          if (!isRepoFileNotFoundError(err)) throw err;
           console.warn(
-            `[compile-agent-config] project ${project.projectId}: failed to read agent "${name}"'s behavior file "${path}": ${(err as Error).message}`,
+            `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${path}"`,
           );
         }
       }),

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSecrets } from '@kortix/db';
 import { Hono } from 'hono';
+import * as realAccess from '../projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -118,7 +119,11 @@ const databaseMock = {
 
 mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../projects/lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: USER_ID,

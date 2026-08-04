@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realExecutorSync from './sync';
 
 let storedConnectors: Record<string, unknown>[] = [];
 let commitCalls = 0;
@@ -112,7 +113,11 @@ mock.module('../projects/index', () => ({
     }
   },
 }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('./sync', () => ({
+  ...realExecutorSync,
   syncProjectConnectors: async () => {
     syncCalls += 1;
     return { synced: storedConnectors.length, errors: [] };

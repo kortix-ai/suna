@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 
+import { ApiError, MODEL_NOT_SERVABLE_CODE } from '../core/http/api-client';
+import { platformConfig } from '../core/http/config';
 import {
   clearModelDefault,
   getModelDefaults,
@@ -83,6 +85,31 @@ export function useModelDefaults(
       model: string;
     }) => setModelDefault(projectId as string, input),
     onSuccess: invalidate,
+    // The model-defaults PUT can reject with a TYPED 409 `model_not_servable`
+    // (the user picked a model their account can't use — free-tier managed
+    // model, disconnected BYOK provider). That's an EXPECTED UI validation
+    // state, not a server defect: `makeRequest` already drops it from Sentry
+    // (see `MODEL_NOT_SERVABLE_CODE`), but every call site fires-and-forgets
+    // the returned promise (`void setXxxDefault(...)`), so without an
+    // `onError` here the rejected `mutateAsync` becomes an UNHANDLED rejection
+    // → Sentry's `onunhandledrejection` (Better Stack pattern `ed07f6c5…`).
+    // Branch on the typed code and surface a user-facing toast via the
+    // platform seam; swallow the rejection so the `void` call sites stay
+    // quiet. A non-`model_not_servable` failure still toasts (and is reported
+    // to Sentry by `makeRequest`, since it isn't classified silent).
+    onError: (error: unknown) => {
+      const message =
+        error instanceof ApiError && error.code === MODEL_NOT_SERVABLE_CODE
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not set the default model';
+      try {
+        platformConfig().onToast?.('error', message);
+      } catch {
+        // Never let the toast sink break the error path.
+      }
+    },
   });
   const clearMutation = useMutation({
     mutationFn: (params: {

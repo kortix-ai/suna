@@ -34,6 +34,36 @@ const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
+/**
+ * Env values `spawnChild` consumes OUTSIDE the opencode config file.
+ *
+ * A dispose reload re-reads the config file in place — it never re-runs
+ * `spawnChild`, so anything spawn does with the env besides writing that file
+ * survives untouched. These two are materialized into
+ * `~/.local/share/opencode/auth.json`, so a dispose leaves the OLD subscription
+ * credential on disk and opencode keeps authenticating with it.
+ *
+ * That is a regression the dispose fast path introduced: this path used to be a
+ * full restart, which respawned and re-materialized. The symptom is quiet and
+ * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
+ * next turn still runs on the account they replaced.
+ *
+ * `KORTIX_OPENCODE_DENY_ENV` belongs to the same family (`withoutDeniedProviderEnv`
+ * strips native provider keys at spawn) and is included for the same reason.
+ */
+export const RESPAWN_REQUIRED_ENV_NAMES = [
+  CODEX_AUTH_JSON_SECRET,
+  OPENCODE_AUTH_JSON_SECRET,
+  'KORTIX_OPENCODE_DENY_ENV',
+] as const
+
+/** Does this env delta need a full respawn rather than a dispose? */
+export function requiresRespawn(changedNames: readonly string[]): boolean {
+  return changedNames.some((name) =>
+    (RESPAWN_REQUIRED_ENV_NAMES as readonly string[]).includes(name),
+  )
+}
+
 /** True when OpenCode uses the single synthetic `kortix` LLM provider. */
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
@@ -1222,7 +1252,21 @@ export function createOpencodeSupervisor(
       try {
         await spawnChild(bin)
       } catch (err) {
-        logger.error('[opencode] initial spawn failed', err)
+        // A failed spawn produces NO process, so no 'exit' ever fires and the
+        // crash path that normally rescues opencode never runs. Left as a bare
+        // log, this permanently killed the session: `restart()` stops the
+        // WORKING opencode first, so a spawn that then fails — a full disk, a
+        // PID/memory ceiling — leaves the box reporting `starting` forever with
+        // every prompt 503ing, while `/kortix/env` answered ok:true and the
+        // reload reported success. Recovering needed a whole new session, with
+        // nothing anywhere saying the restart was what killed it.
+        //
+        // `scheduleUnplannedRespawn` is exactly the right recovery and already
+        // self-reschedules with backoff up to 30s; the planned path simply
+        // never called it.
+        logger.error('[opencode] spawn failed; scheduling respawn', err)
+        state = 'down'
+        scheduleUnplannedRespawn()
       }
       scheduleReadinessProbe()
     },
@@ -1274,6 +1318,40 @@ export function createOpencodeSupervisor(
       await this.stop('SIGTERM')
       restartDelayMs = 500
       await this.start()
+      // A PLANNED restart strands its turn exactly like a crash does, and only
+      // the crash path was cleaning up: `proc.on('exit')` returns early while
+      // `stopping` is set — which `stop()` sets and this goes through — so
+      // `onUnplannedRespawn`, and with it the orphaned-turn finalize, never
+      // fired for a restart we asked for.
+      //
+      // A turn ends only when opencode emits `session.idle`/`session.error` over
+      // SSE. The opencode we just killed emits neither, so the last assistant
+      // message stays incomplete and every client streaming it spins forever.
+      // `reload --force` is the sharpest case: it exists precisely to reload
+      // DURING a turn, and its confirmation tells the user it "ends the turn
+      // that's running right now" — then left it spinning instead of ended.
+      // `/kortix/refresh` (restart on by default) and `sessions restart` reach
+      // the same place.
+      //
+      // Unconditional because `finalizeOrphanedTurn` already distinguishes: it
+      // aborts only a last message that is an assistant turn with no completion
+      // time, and leaves a completed turn, a user-last session, and an empty one
+      // alone. Readiness is awaited first for the reason the crash path
+      // documents — firing before opencode listens makes the hook read "no turn
+      // to finalize" and silently do nothing in the exact case it exists for.
+      if (!options.onUnplannedRespawn) return
+      const ready = await waitUntilReady(RESPAWN_FINALIZE_TIMEOUT_MS)
+      if (!ready) {
+        logger.warn('[opencode] restarted but never became ready; orphaned turn left as-is')
+        return
+      }
+      try {
+        options.onUnplannedRespawn()
+      } catch (err) {
+        logger.warn('[opencode] post-restart finalize hook threw', {
+          err: (err as Error).message,
+        })
+      }
     },
 
     /**

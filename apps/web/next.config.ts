@@ -5,7 +5,7 @@ import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
-import './scripts/build-content-timestamps.mjs';
+import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
 
@@ -21,9 +21,9 @@ import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.
 // which public-content.ts reads at runtime with a graceful fallback to
 // `undefined` when absent. Runs here (belt-and-suspenders, same pattern as
 // viewer-wasm) so any path that invokes `next build`/`next dev` directly
-// regenerates the manifest. Tolerates failure: a missing git binary or .git
-// directory writes an empty manifest and the public index falls back to the
-// prior `undefined` behavior rather than crashing the build.
+// regenerates the manifest. A missing git binary, shallow clone, or write
+// failure leaves the committed manifest in place rather than blocking a build.
+refreshContentTimestamps();
 
 // --- Viewer wasm asset guarantee ------------------------------------------
 // Document viewers (PDF/DOCX/XLSX) fetch their wasm engines from `public/`

@@ -48,6 +48,23 @@ export interface ApiResponse<T = any> {
  */
 export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
 
+/**
+ * Stable error code the platform API returns (HTTP 409) when a user tries to
+ * set a model their account can't use — e.g. a managed model on a free tier,
+ * or a BYOK model whose provider isn't connected. The API emits this from the
+ * model-defaults PUT (`apps/api/src/projects/routes/r4.ts`) and the channel
+ * binding model set (`apps/api/src/projects/routes/channel-bindings.ts`) via
+ * `isModelServableForAccount`. This is an EXPECTED condition — a UI validation
+ * error, not a server bug — so `makeRequest` classifies a 409 carrying this
+ * code as SILENT to `onError` (Sentry) but still returns the `ApiError` so the
+ * caller (`useModelDefaults`'s `setMutation` `onError`) can branch on `.code`
+ * and show a user-facing toast. A genuine 409 (no typed `model_not_servable`
+ * code) still reports to Sentry. Must stay in sync with the API-side
+ * `code: 'model_not_servable'` strings. Mirrors `FEATURE_NOT_SUPPORTED_CODE`
+ * (PR #5240) and the billing-gate 402 / no-compaction-model classification.
+ */
+export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -283,7 +300,24 @@ async function makeRequest<T = any>(
       const isFeatureNotSupported =
         response.status === 501 && errorData?.code === FEATURE_NOT_SUPPORTED_CODE;
 
-      if (showErrors && !isFeatureNotSupported) {
+      // Expected "this model isn't available for this account" state — the
+      // backend returns a TYPED 409 with `code: 'model_not_servable'` (from
+      // `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+      // `channel-bindings.ts`) when a user picks a model their account can't
+      // use (free-tier managed model, disconnected BYOK provider). This is a UI
+      // validation error, not a server defect, so it must NEVER page Better
+      // Stack — a bare `ApiError: Model "…" is not available for this account`
+      // previously leaked to Sentry as an unhandled-looking rejection (pattern
+      // `ed07f6c5…`) because the model-defaults `useMutation` had no `onError`
+      // and the call sites fire-and-forget the promise. Treat it as SILENT
+      // here: skip `onError` (Sentry), but still return the `ApiError` so the
+      // `useModelDefaults` `setMutation` `onError` can branch on `.code ===
+      // 'model_not_servable'` and show a user-facing toast. A genuine 409 (no
+      // typed code) still reports. Same shape as `isFeatureNotSupported`.
+      const isModelNotServable =
+        response.status === 409 && errorData?.code === MODEL_NOT_SERVABLE_CODE;
+
+      if (showErrors && !isFeatureNotSupported && !isModelNotServable) {
         platformConfig().onError?.(error, errorContext);
       }
 

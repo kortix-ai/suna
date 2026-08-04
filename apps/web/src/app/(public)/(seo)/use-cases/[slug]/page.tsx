@@ -23,6 +23,7 @@ import {
 } from '@/components/use-cases/mdx';
 import { UseTemplateButton } from '@/components/use-cases/template-install-dialog';
 import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card';
+import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { resolveAuthor } from '@/lib/blog';
@@ -43,7 +44,7 @@ const mdxComponents = {
         {children}
       </a>
     ),
-  img: (props: any) => <img loading="lazy" {...props} />,
+  img: UseCaseMdxImage,
   // Case-study kit — authors compose these directly in the .mdx body.
   KeyFacts,
   Fact,

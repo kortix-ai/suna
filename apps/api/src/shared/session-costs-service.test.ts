@@ -3,6 +3,7 @@ import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@ko
 import { Column, SQL, type SQLWrapper, Table, getTableColumns, is, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { CostSort } from './cost-window';
+import * as realAccess from '../projects/lib/access';
 
 type QueryRecord = {
   fields: Record<string, unknown>;
@@ -225,7 +226,11 @@ mock.module('./db', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../projects/lib/access', () => ({
+  ...realAccess,
   resolveSessionOwnerIdentities: async (ownerIds: string[]) =>
     new Map(
       ownerIds.map((ownerId) => [

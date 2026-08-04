@@ -19,7 +19,7 @@
 import { ExecutorError } from '@kortix/executor-sdk';
 import {
   addConnector,
-  callPausingForApproval,
+  callWithApprovalHandoff,
   executorClient,
   mintConnectLink,
   removeConnector,
@@ -153,10 +153,9 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       if (rawArgs) {
         try { parsed = JSON.parse(rawArgs); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
       }
-      // PAUSES for human approval instead of returning `pending_approval`
-      // immediately — this is the agent's primary path, and the turn must
-      // resume the moment the human approves (never "type continue").
-      const result = await callPausingForApproval(executor, slug, action, parsed);
+      // A gated call returns its authenticated approval URL immediately. The
+      // server sends the decision back into the session after a human acts.
+      const result = await callWithApprovalHandoff(executor, slug, action, parsed);
       out(result);
       break;
     }
@@ -223,7 +222,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
           connectors: 'kortix executor connectors — list connectors + tools this session can use',
           discover: 'kortix executor discover "<intent>" — search tools by natural language',
           describe: 'kortix executor describe <connector>.<action> — show a tool\'s input schema',
-          call: 'kortix executor call <connector>.<action> \'<json-args>\' — run a tool',
+          call: 'kortix executor call <connector>.<action> \'<json-args>\' — run a tool or return its approval link',
           add: 'kortix executor add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
           rm: 'kortix executor rm <slug> — remove a connector from the project',
           connect: 'kortix executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',

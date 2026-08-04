@@ -21,24 +21,13 @@
  * point of a human-in-the-loop gate, so it is refused outright rather than
  * narrowed to "its own session".
  *
- * A direct SERVICE-ACCOUNT bearer is deliberately still allowed, and that is a
- * considered decision rather than an oversight:
- *
- *  - The agent can never hold one. The sandbox receives KORTIX_CLI_TOKEN, a PAT
- *    carrying `sessionId` (session-sandbox.ts), and the per-agent service
- *    account's secret is generated, hashed and DISCARDED at creation
- *    ("plaintext `secret` intentionally discarded — identity-only",
- *    repositories/service-accounts.ts). Service-account routes live under
- *    /v1/accounts/*, which enforceTokenProjectScope refuses for a
- *    project/session-scoped token. So there is no path from inside a sandbox to
- *    an SA bearer.
- *  - It is the WRAPPER'S OWN backend credential — the operator. In
- *    Kortix-as-a-Backend the only way an end-user's approval decision can reach
- *    this endpoint is relayed by that backend, because the end-user has no
- *    Kortix identity. Refusing it would make require_approval unusable for the
- *    exact product this exists to serve.
+ * Only a Supabase-authenticated Kortix user can resolve an approval. PATs,
+ * API keys, service accounts, and session credentials are automated principals.
  */
-export type ApprovalRefusal = 'session_bound_caller' | 'not_launcher_or_manager';
+export type ApprovalRefusal =
+  | 'non_human_caller'
+  | 'session_bound_caller'
+  | 'not_launcher_or_manager';
 
 export function mayResolveApproval(input: {
   /** True when the caller holds project-manager rights. */
@@ -49,10 +38,15 @@ export function mayResolveApproval(input: {
   targetSessionCreatedBy: string | null;
   /** The acting user. */
   callerUserId: string;
+  /** Authentication mechanism for the current request. */
+  callerAuthType: string | null;
   /** The caller's OWN session when its credential is bound to one (a sandbox
    *  token). Non-null means an automated caller. */
   callerSessionId: string | null;
 }): { allowed: true } | { allowed: false; reason: ApprovalRefusal } {
+  if (input.callerAuthType !== 'supabase') {
+    return { allowed: false, reason: 'non_human_caller' };
+  }
   // ORDER MATTERS. The session-bound check runs FIRST, before the manager
   // branch, because an agent's token inherits the role of the user who minted
   // it — and in Kortix-as-a-Backend that is the wrapper's own account, which is
