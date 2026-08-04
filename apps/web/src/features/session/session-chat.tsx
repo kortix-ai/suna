@@ -2493,19 +2493,26 @@ export function SessionChat({
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
+  // Depend on the method, not the whole sessionState object. useSession returns
+  // a bare object literal with no useMemo, so `sessionState` is a fresh
+  // reference every render — which re-identified this callback and defeated
+  // <SessionTurn>'s memo for every turn. `answerPermission` is a module-level
+  // function (no `this`), so this reference flips undefined -> fn once when the
+  // session resolves and is stable from then on.
+  const answerPermission = sessionState?.answerPermission;
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
-      if (sessionState) {
-        await sessionState.answerPermission(requestId, reply);
+      if (answerPermission) {
+        await answerPermission(requestId, reply);
       } else {
         await replyToPermission(requestId, reply);
         removePermission(requestId);
       }
     },
-    [sessionState, removePermission],
+    [answerPermission, removePermission],
   );
 
   const handleQuestionReply = useCallback(
@@ -2624,6 +2631,14 @@ export function SessionChat({
   // This frontend useEffect was causing double-billing once opencode.jsonc
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
+
+  // Stable across renders so <SessionTurn>'s memo comparator can return true.
+  // This used to be an inline arrow at the call site, which allocated a new
+  // function every render and therefore re-rendered every turn on every
+  // streamed token. setRewindTarget is a useState setter, so deps are empty.
+  const handleRewind = useCallback((messageId: string, text: string) => {
+    setRewindTarget({ messageId, text });
+  }, []);
 
   const handleConfirmRewind = useCallback(async () => {
     if (!sessionState || !rewindTarget) return;
@@ -3686,7 +3701,7 @@ export function SessionChat({
                               commands={commands}
                               disableToolNavigation={disableToolNavigation}
                               onPermissionReply={handlePermissionReply}
-                              onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                              onRewind={handleRewind}
                               rewindDisabled={
                                 !!readOnly || !sessionState || isBusy || sessionState.rewindPending
                               }
