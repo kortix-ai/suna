@@ -44,7 +44,15 @@ function ButtonGroupText({
 }: React.ComponentProps<"div"> & {
   asChild?: boolean
 }) {
-  const Comp = asChild ? Slot.Root : "div"
+  // Not the `ref`-cleanup-branding pattern seen elsewhere in this change:
+  // Slot.Root's prop type declares `onChange` as `ChangeEventHandler<HTMLElement>`
+  // (element-generic) while native `"div"` declares it as
+  // `FormEventHandler<HTMLDivElement>` — a real, pre-existing type
+  // incompatibility between the two arms of this union, unrelated to
+  // React/@types/react version. Cast to the standard `React.ElementType`
+  // escape hatch for polymorphic `asChild` components (same runtime value,
+  // just tells TS not to unify both arms' exact prop signatures).
+  const Comp = (asChild ? Slot.Root : "div") as React.ElementType<React.ComponentProps<"div">>
 
   return (
     <Comp

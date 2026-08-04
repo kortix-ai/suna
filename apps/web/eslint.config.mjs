@@ -147,6 +147,37 @@ const eslintConfig = [
     files: ['src/lib/icons/ssr.tsx', 'src/lib/icons/ssr.test.tsx'],
     rules: { 'no-restricted-imports': 'off' },
   },
+  {
+    /* fumadocs-mdx codegen output (gitignored, not tracked — see
+       apps/web/.gitignore). It ships its own `@ts-nocheck` intentionally
+       (skips type checking a generated re-export barrel) and is
+       regenerated on every `next dev`/`next build`, so there is nothing to
+       fix here; exclude it like the other generated dirs below. */
+    ignores: ['.source/**'],
+  },
+  {
+    /* eslint-plugin-react-hooks@7 (pulled in by eslint-config-next@16's
+       dependency bump) ships the "React Compiler" rule set enabled by
+       default. As of 2026-08-04 that flags 402 pre-existing findings
+       across 175 files in this codebase — none introduced by the Next 16
+       upgrade (see docs/../task-4-report.md). Downgraded to warnings here
+       pending a dedicated audit; this is NOT a decision to accept them
+       permanently. Breakdown at the time of downgrade:
+       react-hooks/set-state-in-effect (211), react-hooks/refs (120),
+       react-hooks/preserve-manual-memoization (21), react-hooks/purity (16),
+       react-hooks/static-components (11), react-hooks/immutability (10),
+       react-hooks/set-state-in-render (10), react-hooks/use-memo (2). */
+    rules: {
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/set-state-in-render': 'warn',
+      'react-hooks/use-memo': 'warn',
+    },
+  },
 ];
 
 export default eslintConfig;

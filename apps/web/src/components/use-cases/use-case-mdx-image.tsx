@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -8,7 +8,7 @@ export function UseCaseMdxImage({
   loading = 'lazy',
   className,
   ...props
-}: ComponentProps<'img'>) {
+}: ComponentPropsWithoutRef<'img'>) {
   if (!src || typeof src !== 'string') return null;
 
   return (
