@@ -80,10 +80,17 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     // overrides keep applying.
     expect(html).toContain('data-component="tool-trigger"');
 
-    // Scalloped shell chrome — outer strip + concentric inner radius.
-    expect(html).toContain('bg-border');
-    expect(html).toContain('rounded-xl');
-    expect(html).toContain('rounded-t-xl');
+    // Scalloped shell chrome: the tab and the content plane share one
+    // `bg-secondary` fill, joined by the concave edge that makes the tab read
+    // as raised out of the panel instead of stacked on top of it.
+    expect(html).toContain('bg-secondary');
+    expect(html).toContain('rounded-t-lg');
+    expect(html).toContain('M0 0C0 32 16 64 38 64L0 64Z');
+
+    // This fixture has no inline toolbar, so the content plane's top-right is
+    // exposed and rounds itself; the left tab covers the top-left.
+    expect(html).toContain('rounded-b-lg');
+    expect(html).toContain('rounded-tr-lg');
 
     // Left tab label is the payload's resolved title (mirrors `showLabel`-style
     // precedence: title > description > basename/domain, never a raw path/URL).
