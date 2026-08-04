@@ -180,6 +180,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html
       lang={htmlLang}
       translate="no"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
       className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
