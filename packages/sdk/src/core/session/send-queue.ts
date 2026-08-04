@@ -18,6 +18,16 @@
  *
  * Framework-free and timer-free: `isBusy` is injected and draining is driven by
  * the caller telling it the session went idle. Nothing here polls.
+ *
+ * **Superseded for host use by `./message-queue`.** This module owns dispatch
+ * (it holds closures and calls them), which is exactly what a host cannot
+ * persist, reorder, or edit — a `dispatch` closure does not survive a page
+ * reload. `message-queue.ts` keeps the same one-at-a-time and never-jump-the-
+ * line guarantees but expresses them as pure transitions over serializable
+ * data, so the queue can be stored, reordered, and rewritten by the user.
+ *
+ * This module stays exported and tested: it is published API. New host code
+ * should reach for `message-queue` instead.
  */
 
 /** Where a queued send has got to. Drives the label on the user's bubble. */

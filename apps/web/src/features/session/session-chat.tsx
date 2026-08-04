@@ -28,6 +28,8 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
+import type { QueueDrainGates } from './message-queue-boundary';
+import { useMessageQueueDrain } from './use-message-queue-drain';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
@@ -68,7 +70,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast, infoToast } from '@/components/ui/toast';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
@@ -105,9 +107,11 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
-  usePendingFilesStore,
-  usePendingQueueStore,
-} from '@/stores/session-composer-handoff-store';
+  useMessageQueueStore,
+  type WebQueuedMessage,
+  type WebSessionQueue,
+} from '@/stores/message-queue-store';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
   useSessionPrefill,
@@ -405,12 +409,48 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 // Message parsing exported to message-parsing.tsx
 // ============================================================================
 
-/** A message typed while the agent was busy, held client-side until a safe boundary. */
-interface QueuedMessage {
-  id: string;
-  text: string;
-  files?: AttachedFile[];
-  mentions?: TrackedMention[];
+/** Stable empty queue, so a session with nothing queued does not hand the
+ *  selector a fresh array on every render. */
+const EMPTY_SESSION_QUEUE: WebSessionQueue = Object.freeze({
+  pending: [],
+  failed: [],
+  inFlightId: null,
+});
+
+/** How long "Stop & send" will wait for the server to confirm the abort before
+ *  sending anyway. Long enough for a normal round-trip, short enough that a
+ *  wedged status never strands the user's click. */
+const ABORT_SETTLE_TIMEOUT_MS = 5000;
+
+/**
+ * Resolve once the server stops reporting this session as running.
+ *
+ * "Stop & send" issues an abort and then a prompt. Sending on a fixed delay
+ * races the abort — the prompt can arrive while the old turn is still winding
+ * down. Subscribing to the status the server actually reports is the only
+ * version of this that is not a guess.
+ */
+function waitForSessionIdle(sessionId: string): Promise<void> {
+  const isIdle = () => {
+    const status = useSessionStateStore.getState().sessionStatus[sessionId];
+    return !status || (status.type !== 'busy' && status.type !== 'retry');
+  };
+  if (isIdle()) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    let unsubscribe: (() => void) | undefined;
+    const finish = () => {
+      clearTimeout(timer);
+      unsubscribe?.();
+      resolve();
+    };
+    const timer = setTimeout(finish, ABORT_SETTLE_TIMEOUT_MS);
+    unsubscribe = useSessionStateStore.subscribe(() => {
+      if (isIdle()) finish();
+    });
+    // The status may have settled between the check above and the subscribe.
+    if (isIdle()) finish();
+  });
 }
 
 // ============================================================================
@@ -2080,44 +2120,107 @@ export function SessionChat({
   }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
   // Client-side message queue — mirrors Claude Code / Codex: a message typed
-  // while the agent is mid-turn is held here instead of being sent straight
-  // through (the OpenCode server would happily accept it immediately, but
-  // interleaving it into a live turn reads badly). It's flushed one at a time
-  // at the next safe boundary: either a tool call finishing, or the turn
-  // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
-  // drain effect below.
-  // Seeded with anything queued in the instant shell while the computer was
-  // still booting (same handoff lifecycle as pending-files-store) — the drain
-  // effect below flushes it once the auto-sent first prompt hits a boundary.
-  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
-  useEffect(() => {
-    const pendingMessages = usePendingQueueStore.getState().consumePendingQueue();
-    if (pendingMessages.length === 0) return;
+  // while the agent is mid-turn is held instead of being sent straight through
+  // (the OpenCode server would accept it immediately, but interleaving it into
+  // a live turn is exactly the reported bug).
+  //
+  // The state lives in `useMessageQueueStore` — per session and persisted —
+  // not here. As component state it died silently on every session-tab switch,
+  // and the ref that mirrored it lagged by a commit, which is how the same
+  // message could be sent twice. Release timing is `useMessageQueueDrain`,
+  // mounted after `handleSend` below.
+  const sessionQueue = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_SESSION_QUEUE;
+  const queuedMessages = sessionQueue.pending;
+  const failedQueuedMessages = sessionQueue.failed;
 
-    // The instant-shell messages predate messages queued after this component
-    // commits, so retain their position at the front of the queue.
-    setQueuedMessages((currentMessages) => [...pendingMessages, ...currentMessages]);
-  }, []);
-  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
-  useEffect(() => {
-    queuedMessagesRef.current = queuedMessages;
-  }, [queuedMessages]);
-  // Local, never-sent-to-server counter — separate from `ascendingId`, whose
-  // prefix union ('msg' | 'prt') is meaningful for server-compatible message
-  // ordering and shouldn't grow a prefix for a purely client-side draft id.
-  const queuedIdCounterRef = useRef(0);
+  // Anything queued in the instant shell while the computer was still booting
+  // is already here — the shell writes into this same store under this same
+  // session id, so there is no handoff step to seed from and nothing to lose
+  // if this component mounts late.
 
   const handleQueueMessage = useCallback(
     (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      const id = `queued-${++queuedIdCounterRef.current}`;
-      setQueuedMessages((prev) => [...prev, { id, text, files, mentions }]);
+      // Capture the agent, model and variant AS THEY ARE NOW. A message queued
+      // under one model must not send under whatever is selected minutes later
+      // when its turn comes up — `handleSend`'s `overrides` parameter has
+      // always documented this and never received a value.
+      useMessageQueueStore.getState().enqueue(sessionId, {
+        text,
+        files,
+        mentions,
+        agent: lockedAgentName ?? local.agent.current?.name ?? null,
+        model: local.model.sendKey ?? null,
+        variant: local.model.variant.current ?? null,
+      });
     },
-    [],
+    [sessionId, lockedAgentName, local.agent, local.model],
   );
 
-  const handleRemoveQueuedMessage = useCallback((id: string) => {
-    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  const handleRemoveQueuedMessage = useCallback(
+    (id: string) => {
+      const store = useMessageQueueStore.getState();
+      const queue = store.getSessionQueue(sessionId);
+      const index = queue.pending.findIndex((m) => m.id === id);
+      const removed = queue.pending[index] ?? queue.failed.find((m) => m.id === id);
+      store.remove(sessionId, id);
+      if (!removed) return;
+
+      // Undo rather than a confirm dialog. A queue is something you curate —
+      // gating every removal behind a modal would make it unusable, and the
+      // thing being removed is a draft, not data. Reversible beats guarded.
+      infoToast('Removed from queue', {
+        duration: 5000,
+        button: (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const current = useMessageQueueStore.getState();
+              current.enqueue(sessionId, {
+                text: removed.text,
+                mentions: removed.mentions,
+                agent: removed.agent,
+                model: removed.model,
+                variant: removed.variant,
+              });
+              // Put it back where it was, not at the tail.
+              if (index >= 0) {
+                const restored = current.getSessionQueue(sessionId).pending;
+                const last = restored[restored.length - 1];
+                if (last) current.reorder(sessionId, last.id, index);
+              }
+            }}
+          >
+            Undo
+          </Button>
+        ),
+      });
+    },
+    [sessionId],
+  );
+
+  const handleEditQueuedMessage = useCallback(
+    (id: string, text: string) => {
+      const store = useMessageQueueStore.getState();
+      if (text.trim()) store.edit(sessionId, id, text);
+      else store.remove(sessionId, id);
+    },
+    [sessionId],
+  );
+
+  const handleReorderQueuedMessage = useCallback(
+    (id: string, toIndex: number) => {
+      useMessageQueueStore.getState().reorder(sessionId, id, toIndex);
+    },
+    [sessionId],
+  );
+
+  const handleRetryQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueueStore.getState().retry(sessionId, id);
+    },
+    [sessionId],
+  );
 
   // Stop polling when session goes idle (via SSE or polling fallback).
   // Grace period: if we sent a message recently (within 5s), don't stop polling
@@ -2927,56 +3030,59 @@ export function SessionChat({
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
 
-  // Drain the ENTIRE queue at once at the next safe boundary — a tool call
-  // finishing (status flips to 'completed' or 'error'), or the turn going
-  // idle (covers the case where a message was queued during what turns out
-  // to be the LAST tool call, with nothing after it to hit). Everything
-  // queued goes out together as soon as one boundary is hit; it does NOT
-  // trickle out one message per subsequent boundary. Tracks tool completions
-  // it's already reacted to in a ref so re-renders don't re-fire.
-  const seenCompletedToolIdsRef = useRef<Set<string>>(new Set());
-  const wasBusyForDrainRef = useRef(isBusy);
-  useEffect(() => {
-    let hitToolBoundary = false;
-    if (messages) {
-      const seen = seenCompletedToolIdsRef.current;
-      for (const m of messages) {
-        if (m.info.role !== 'assistant') continue;
-        for (const part of m.parts) {
-          if (part.type !== 'tool') continue;
-          const status = (part as ToolPart).state?.status;
-          if ((status === 'completed' || status === 'error') && !seen.has(part.id)) {
-            seen.add(part.id);
-            hitToolBoundary = true;
-          }
-        }
-      }
-    }
+  // Release queued messages, one per turn, only when the turn actually ended.
+  //
+  // What used to be here drained the WHOLE queue whenever any tool part flipped
+  // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
+  // fire mid-turn: a tool finishing means the agent is still working, and
+  // `isBusy` is a 300ms fade timer for the busy indicator. It also watched
+  // `messages`, so scrolling up to load older history counted as boundaries
+  // too. The drain now reads the server's own session status plus the gates
+  // that mean a human is being waited on, and nothing else.
+  const queueGates = useMemo<QueueDrainGates>(
+    () => ({
+      isServerBusy,
+      pendingSendInFlight,
+      isOptimisticCompacting,
+      hasIncompleteAssistant,
+      hasActiveQuestion,
+      hasPendingApproval,
+      pendingPermissionCount: pendingPermissions.length,
+      isPaused: false,
+      readOnly: !!readOnly,
+    }),
+    [
+      isServerBusy,
+      pendingSendInFlight,
+      isOptimisticCompacting,
+      hasIncompleteAssistant,
+      hasActiveQuestion,
+      hasPendingApproval,
+      pendingPermissions.length,
+      readOnly,
+    ],
+  );
 
-    const wasBusy = wasBusyForDrainRef.current;
-    wasBusyForDrainRef.current = isBusy;
-    const hitIdleBoundary = wasBusy && !isBusy;
+  const sendQueuedMessage = useCallback(
+    async (message: WebQueuedMessage) => {
+      // Files that did not survive being stored carry no data — send the text
+      // rather than a broken attachment. The composer shows the user that the
+      // attachments were dropped.
+      const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
+      await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
+        agent: message.agent,
+        model: message.model,
+        variant: message.variant,
+      });
+    },
+    [handleSend],
+  );
 
-    if (!hitToolBoundary && !hitIdleBoundary) return;
-
-    const queue = queuedMessagesRef.current;
-    if (queue.length === 0) return;
-
-    setQueuedMessages([]);
-    void (async () => {
-      const failed: QueuedMessage[] = [];
-      for (const item of queue) {
-        try {
-          await handleSend(item.text, item.files, item.mentions);
-        } catch {
-          failed.push(item);
-        }
-      }
-      // Send failures are already surfaced via commandError — put any back
-      // so the user doesn't silently lose the queued draft.
-      if (failed.length > 0) setQueuedMessages((cur) => [...failed, ...cur]);
-    })();
-  }, [messages, isBusy, handleSend]);
+  const queueDrain = useMessageQueueDrain({
+    sessionId,
+    gates: queueGates,
+    send: sendQueuedMessage,
+  });
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
@@ -2998,9 +3104,36 @@ export function SessionChat({
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
 
+    // Stopping means stop doing things, and that includes the queue. Without
+    // this the interrupt is followed a beat later by exactly the message the
+    // user was trying to get ahead of.
+    queueDrain.pause();
+
     if (sessionState) sessionState.cancel();
     else abortSession.mutate(sessionId);
-  }, [sessionId, sessionState, abortSession]);
+  }, [sessionId, sessionState, abortSession, queueDrain]);
+
+  /**
+   * "Stop & send" on a queued message: end the current turn, then send that one.
+   *
+   * The only path that interrupts a running turn, and it is labelled as such in
+   * the composer — automatic draining never does. Waits for the server to
+   * actually report idle rather than guessing with a fixed delay, so the prompt
+   * cannot race the abort it just issued.
+   */
+  const handleQueueSendNow = useCallback(
+    async (id: string) => {
+      const status = useSessionStateStore.getState().sessionStatus[sessionId];
+      const running = status?.type === 'busy' || status?.type === 'retry';
+      if (running) {
+        handleStop();
+        await waitForSessionIdle(sessionId);
+      }
+      queueDrain.resume();
+      await queueDrain.dispatchNow(id);
+    },
+    [sessionId, handleStop, queueDrain],
+  );
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -3811,8 +3944,14 @@ export function SessionChat({
                 }
                 isBusy={isBusy}
                 queuedMessages={queuedMessages}
+                failedQueuedMessages={failedQueuedMessages}
+                queueInFlightId={sessionQueue.inFlightId}
                 onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
+                onEditQueuedMessage={handleEditQueuedMessage}
+                onReorderQueuedMessage={handleReorderQueuedMessage}
+                onSendQueuedMessageNow={handleQueueSendNow}
+                onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}
                 agents={local.agent.list}

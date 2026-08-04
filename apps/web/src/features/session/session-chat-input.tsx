@@ -18,7 +18,6 @@ import { useRuntimeSessions } from '@kortix/sdk/react';
 
 import {
   ArrowUpLeftIcon as ArrowUpLeft,
-  ClockIcon as Clock,
   ArrowBendUpLeftIcon as Reply,
   TerminalWindowIcon as Terminal,
   XIcon as X,
@@ -36,6 +35,7 @@ import { resolveComposerResetOnSend } from './composer-reset';
 import { AttachmentPreview } from './composer/attachment-preview';
 import { ComposerToolbar } from './composer/composer-toolbar';
 import { MentionPopover } from './composer/mention-popover';
+import { QueuedMessages, type QueuedMessageView } from './composer/queued-messages';
 import { SlashCommandPopover } from './composer/slash-command-popover';
 import type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 import {
@@ -54,6 +54,9 @@ import { useModelConnectionGate } from './use-model-connection-gate';
 export { AgentSelector } from './composer/agent-selector';
 export type { AttachedFile, MentionItem, TrackedMention } from './composer/types';
 export type { ProviderListResponse };
+
+/** Stable empty list, so the memoized composer is not handed a fresh array. */
+const EMPTY_QUEUE: QueuedMessageView[] = [];
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -93,9 +96,19 @@ export interface SessionChatInputProps {
    * alongside `onQueueMessage`, submitting while busy enqueues instead of
    * sending immediately.
    */
-  queuedMessages?: { id: string; text: string }[];
+  queuedMessages?: QueuedMessageView[];
+  /** Sends that failed for good. Rendered below the queue with a retry — they
+   *  must never sit at the head holding up everything behind them. */
+  failedQueuedMessages?: QueuedMessageView[];
+  /** The queued message currently on the wire. Cannot be edited, moved or removed. */
+  queueInFlightId?: string | null;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
+  onEditQueuedMessage?: (id: string, text: string) => void;
+  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
+  /** Stop the running turn and send this queued message immediately. */
+  onSendQueuedMessageNow?: (id: string) => void;
+  onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
    * Render the stop button in its disabled state even without an `onStop` — used
@@ -211,8 +224,14 @@ function SessionChatInputImpl({
   onSend,
   isBusy = false,
   queuedMessages,
+  failedQueuedMessages,
+  queueInFlightId = null,
   onQueueMessage,
   onRemoveQueuedMessage,
+  onEditQueuedMessage,
+  onReorderQueuedMessage,
+  onSendQueuedMessageNow,
+  onRetryQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -1101,34 +1120,16 @@ function SessionChatInputImpl({
           {/* Inline chips: thread context, todos, queue — unified spacing */}
           {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
             <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
-              <AnimatePresence initial={false}>
-                {queuedMessages?.map((m) => (
-                  <motion.div
-                    key={m.id}
-                    layout
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 2 }}
-                    transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
-                  >
-                    <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
-                    <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                      {m.text.length > 120 ? `${m.text.slice(0, 120)}…` : m.text}
-                    </span>
-                    {onRemoveQueuedMessage && (
-                      <button
-                        type="button"
-                        onClick={() => onRemoveQueuedMessage(m.id)}
-                        className="text-muted-foreground hover:text-foreground -m-1.5 flex-shrink-0 rounded-full p-1.5 transition-[color,transform] active:scale-[0.96]"
-                        aria-label="Remove queued message"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    )}
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+              <QueuedMessages
+                messages={queuedMessages ?? EMPTY_QUEUE}
+                failed={failedQueuedMessages}
+                inFlightId={queueInFlightId}
+                onRemove={onRemoveQueuedMessage}
+                onEdit={onEditQueuedMessage}
+                onReorder={onReorderQueuedMessage}
+                onSendNow={onSendQueuedMessageNow}
+                onRetry={onRetryQueuedMessage}
+              />
               {replyTo && (
                 <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
@@ -1204,9 +1205,11 @@ function SessionChatInputImpl({
 
           <div className="flex max-h-[320px] translate-y-0 flex-col gap-1 px-3.5 opacity-100">
             <div className="relative w-full">
-              {/* Sending while the agent is busy already works — Enter (or the
-                  send button) posts straight to the server, which queues it
-                  per-session. No separate "Add to queue" affordance needed. */}
+              {/* Submitting while the agent is busy queues the message instead
+                  of sending it — see `handleSubmit`'s `onQueueMessage` branch.
+                  The queue renders above, with its own controls; there is no
+                  separate "add to queue" affordance because Enter already is
+                  one. (This comment used to claim the opposite.) */}
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden

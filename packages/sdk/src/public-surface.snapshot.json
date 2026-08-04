@@ -1881,6 +1881,17 @@
     "rewriteLocalhostUrl",
     "toInternalUrl"
   ],
+  "./message-queue": [
+    "claimNext",
+    "completeInFlight",
+    "createSessionQueue",
+    "editQueued",
+    "enqueue",
+    "failInFlight",
+    "removeQueued",
+    "reorderQueued",
+    "retryFailed"
+  ],
   "./turns": [
     "COST_MARKUP",
     "allDescendantIds",
