@@ -1,11 +1,5 @@
-import type { Metadata } from 'next';
 import { Card, CardContent } from '@/components/ui/card';
-import { marketingMetadata } from '@/lib/seo/metadata';
 
-export const metadata: Metadata = marketingMetadata('/legal/terms', {
-  title: 'Kortix Terms of Service',
-  description: 'Kortix Terms of Service — Version 2026-08-03',
-});
 
 export default function TermsPage() {
   return (
