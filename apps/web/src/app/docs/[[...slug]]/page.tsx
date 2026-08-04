@@ -14,7 +14,7 @@ import {
   GithubLogoIcon,
 } from '@/lib/icons/ssr';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
-import { findNeighbour } from 'fumadocs-core/server';
+import { findNeighbour } from 'fumadocs-core/page-tree';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { Card, Cards } from 'fumadocs-ui/components/card';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
