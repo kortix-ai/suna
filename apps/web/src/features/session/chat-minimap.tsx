@@ -4,6 +4,7 @@ import { CubeIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
+import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import type { Turn } from '@/ui';
 
 import { MENU_PANEL } from '@/components/ui/menu-recipe';
@@ -63,6 +64,19 @@ export function ChatMinimap({
   renderedIdsKey,
 }: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // The rail lives in the chat's left gutter, and that gutter only exists
+  // while the chat owns the whole column. The moment a detail opens on the
+  // right — terminal, browser, a file, a deck, a PDF — the reading column is
+  // squeezed and the rail is competing for width with the thing the reader
+  // just asked to look at. It also stops being useful: attention is on the
+  // detail, not on jumping around the transcript.
+  //
+  // `isSidePanelOpen` is the flag for exactly that panel (it is deliberately
+  // separate from `isActionPanelOpen`, which is the floating card overlay in
+  // the chat's TOP-RIGHT — that one leaves the left gutter alone, so it must
+  // not hide the rail).
+  const sidePanelOpen = useIsSidePanelOpen();
 
   // Which row the pointer (or keyboard focus) is on, and which row the card is
   // showing. They differ only while the card fades out — the card keeps its
@@ -166,7 +180,7 @@ export function ChatMinimap({
     [contentRef, scrollRef],
   );
 
-  if (items.length < 3) return null;
+  if (items.length < 3 || sidePanelOpen) return null;
 
   const shown = dashes[shownRow]?.item ?? dashes[0].item;
   const open = hoverRow !== null;

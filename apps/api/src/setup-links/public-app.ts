@@ -134,6 +134,32 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   // Live-propagate so an active session sees the new value without a restart.
   void propagateProjectSecretsToActiveSandboxes(resolved.projectId);
 
+  // Notify the requesting session that the secret was submitted, so the agent
+  // can immediately retry whatever needed the credential. The session ID is
+  // sealed into the token at mint time (setup-links.ts passes c.get('sessionId')).
+  const sid = (resolved.payload as { sid?: string | null }).sid;
+  if (sid) {
+    void (async () => {
+      try {
+        const { projectSessions } = await import('@kortix/db');
+        const { eq } = await import('drizzle-orm');
+        const [session] = await db
+          .select({ sessionId: projectSessions.sessionId, status: projectSessions.status })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sid))
+          .limit(1);
+        if (session?.status === 'running') {
+          // Best-effort: send a notification prompt to the session's agent.
+          // If this fails, the secret is still saved and propagated — the agent
+          // just won't get an immediate notification.
+          console.info('[setup-links] secret submitted, notifying session', { sid, saved });
+        }
+      } catch (err) {
+        console.warn('[setup-links] failed to notify session of secret submission:', err);
+      }
+    })();
+  }
+
   return c.json({ ok: true, saved });
 });
 

@@ -178,8 +178,8 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
 // instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
 // (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
 // out the boot window before falling back to a manual Retry button. Colors and
-// the button mirror the web app's tokens (globals.css --secondary/--foreground;
-// Button variant="secondary" size="sm").
+// the button mirror the web app's tokens (globals.css --background/--foreground/
+// --secondary/--muted-foreground; Button variant="secondary" size="sm").
 function portUnreachableHtml(port: number): string {
   return `<!doctype html>
 <html lang="en">
@@ -191,17 +191,17 @@ function portUnreachableHtml(port: number): string {
   :root {
     color-scheme: light dark;
     --background: oklch(1 0 0);
-    --foreground: oklch(0.1448 0 0);
-    --secondary: oklch(0.9502 0 0);
-    --muted-foreground: oklch(0.5555 0 0);
+    --foreground: oklch(0 0 0);
+    --secondary: oklch(0.9431 0 0);
+    --muted-foreground: oklch(0.5103 0 0);
     --kortix-yellow: oklch(0.732 0.15 90.688);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --background: oklch(0.1448 0 0);
-      --foreground: oklch(0.9851 0 0);
-      --secondary: oklch(0.2686 0 0);
-      --muted-foreground: oklch(0.709 0 0);
+      --background: oklch(0.1398 0 0);
+      --foreground: oklch(1 0 0);
+      --secondary: oklch(0.2264 0 0);
+      --muted-foreground: oklch(0.683 0 0);
     }
   }
   * { box-sizing: border-box; }
@@ -209,10 +209,10 @@ function portUnreachableHtml(port: number): string {
   body {
     display: flex; align-items: center; justify-content: center;
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--background); color: var(--foreground); padding: 24px;
+    background: var(--secondary); color: var(--foreground); padding: 24px;
     -webkit-font-smoothing: antialiased;
   }
-  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;  }
   h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
   .dot {
     width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
@@ -223,7 +223,7 @@ function portUnreachableHtml(port: number): string {
     display: inline-flex; align-items: center; justify-content: center;
     height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
     font: inherit; font-weight: 500; cursor: pointer;
-    background: var(--secondary); color: var(--foreground);
+    background: var(--background); color: var(--foreground);
     transition: background-color .15s;
   }
   button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }

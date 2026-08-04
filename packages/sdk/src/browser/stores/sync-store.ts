@@ -64,6 +64,18 @@ interface SyncState {
 		messageParts: Part[],
 	) => void;
 	optimisticRemove: (sessionID: string, messageID: string) => void;
+	/**
+	 * Mark an optimistic message as actually POSTed to the server.
+	 *
+	 * Until this is called the message is `pending`: the server has never been
+	 * told about it, so it cannot be a duplicate of anything the server returns.
+	 * {@link SyncState.hydrate} relies on that to tell "still uploading" apart
+	 * from "already echoed" — see the two-pass correlation there.
+	 *
+	 * Callers that never call this lose only the ordinal fallback; exact
+	 * part-id correlation still supersedes their messages normally.
+	 */
+	markOptimisticDispatched: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
 	/** True when the session's message list still holds an unconfirmed optimistic
 	 *  message — lets the SSE reconciler avoid idling+clearing a brand-new session
@@ -88,7 +100,50 @@ interface SyncState {
 // Store Implementation
 // Track optimistic message IDs so we can remove them when the server sends
 // the real user message (which has a different, server-generated ID).
-const optimisticIds = new Set<string>();
+// Keyed by session, like every other field in this store. It used to be one
+// process-wide `Set<string>` shared by every session in the tab, and
+// `clearSession` never released its entries — so ids accumulated for the
+// lifetime of the tab, and a leaked id made `hydrate` skip parts for any real
+// message that happened to reuse it (`if (isOptimistic(...)) continue`).
+const optimisticIds = new Map<string, Set<string>>();
+// Optimistic ids whose prompt has actually been POSTed. An optimistic message
+// starts `pending` (absent here) and becomes `dispatched` when the send goes
+// out. `hydrate` never lets a `pending` message be superseded by an ordinal
+// match: the server has not been told it exists, so nothing the server returns
+// can be a copy of it.
+const dispatchedOptimisticIds = new Map<string, Set<string>>();
+
+function trackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+	const bucket = store.get(sessionID);
+	if (bucket) bucket.add(messageID);
+	else store.set(sessionID, new Set([messageID]));
+}
+
+function untrackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+	const bucket = store.get(sessionID);
+	if (!bucket) return;
+	bucket.delete(messageID);
+	if (bucket.size === 0) store.delete(sessionID);
+}
+
+function hasTrackedId(
+	store: Map<string, Set<string>>,
+	sessionID: string,
+	messageID: string,
+): boolean {
+	return store.get(sessionID)?.has(messageID) ?? false;
+}
+
+/** Release every id this session was tracking — called from `clearSession`. */
+function forgetSessionIds(sessionID: string): void {
+	optimisticIds.delete(sessionID);
+	dispatchedOptimisticIds.delete(sessionID);
+}
+
+const isOptimistic = (sessionID: string, messageID: string) =>
+	hasTrackedId(optimisticIds, sessionID, messageID);
+const isDispatched = (sessionID: string, messageID: string) =>
+	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
 // Track message IDs where optimistic parts were bridged to the real message.
 // When the first real part arrives for a bridged message, the bridged parts
 // are cleared so optimistic and real parts don't co-exist (which would
@@ -299,7 +354,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		})),
 
 	optimisticAdd: (sessionID, message, messageParts) => {
-		optimisticIds.add(message.id);
+		trackId(optimisticIds, sessionID, message.id);
 		set((s) => {
 			const list = s.messages[sessionID] ?? [];
 			// Always append optimistic messages at the end of the list.
@@ -318,8 +373,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
+	markOptimisticDispatched: (sessionID, messageID) => {
+		if (isOptimistic(sessionID, messageID))
+			trackId(dispatchedOptimisticIds, sessionID, messageID);
+	},
+
 	optimisticRemove: (sessionID, messageID) => {
-		optimisticIds.delete(messageID);
+		untrackId(optimisticIds, sessionID, messageID);
+		untrackId(dispatchedOptimisticIds, sessionID, messageID);
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
@@ -342,10 +403,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const list = s.messages[sessionID];
 			if (!list) return s;
 			const optIds = list
-				.filter((m) => optimisticIds.has(m.id))
+				.filter((m) => isOptimistic(sessionID, m.id))
 				.map((m) => m.id);
 			if (optIds.length === 0) return s;
-			for (const id of optIds) optimisticIds.delete(id);
+			for (const id of optIds) {
+				untrackId(optimisticIds, sessionID, id);
+				untrackId(dispatchedOptimisticIds, sessionID, id);
+			}
 			const filtered = list.filter((m) => !optIds.includes(m.id));
 			const newParts = { ...s.parts };
 			for (const id of optIds) delete newParts[id];
@@ -358,6 +422,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	clearSession: (sessionID) =>
 		set((s) => {
+			// Release this session's optimistic tracking along with its messages.
+			// Skipping it is what let ids accumulate for the lifetime of the tab.
+			forgetSessionIds(sessionID);
 			const existingMessages = s.messages[sessionID] ?? [];
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
@@ -386,13 +453,44 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const merged: typeof existing = [];
 			const seen = new Set<string>();
 
-			// Check if incoming messages contain real user messages. When the
-			// server already has the user message, any optimistic (client-
-			// generated) user messages are duplicates and must be removed.
-			// Without this, hydrate() + optimistic coexist → visual double bubble.
-			const incomingHasUserMessage = incoming.some(
-				(m) => m.role === "user" && !optimisticIds.has(m.id),
+			// Which optimistic user messages has the server actually echoed?
+			//
+			// This test used to be EXISTENTIAL: "if this page holds any real user
+			// message at all, every optimistic user message is a duplicate". In an
+			// ongoing conversation that is always true — the page is full of
+			// earlier turns — so a message sent one second ago, which the server
+			// had provably never received, was deleted along with its text. The
+			// window was wide open by construction: the rehydrate that calls this
+			// only runs for sessions whose status is `busy`, and the optimistic
+			// add is what sets `busy`. Sending armed the thing that deleted the
+			// send.
+			//
+			// The rule is now identity-based, in two passes.
+			const existingIds = new Set(existing.map((m) => m.id));
+
+			// Pass 0 — candidate echoes. A real user message we have NEVER seen
+			// before may be the server's copy of something still in flight. One we
+			// already held is history, and history cannot supersede the present.
+			// This single condition is what fixes the reported bug.
+			const candidateEchoes = incoming.filter(
+				(m) =>
+					m.role === "user" &&
+					!isOptimistic(sessionID, m.id) &&
+					!existingIds.has(m.id),
 			);
+			const unclaimedEchoes = new Set(candidateEchoes.map((m) => m.id));
+
+			// Pass 1 — exact correlation by part id. Hosts generate the text part
+			// id up front and send it WITH the prompt precisely so the echo
+			// updates the same part, which makes this an identity match rather
+			// than a guess.
+			const echoByPartId = new Map<string, string>();
+			for (const echo of candidateEchoes) {
+				const entry = msgs.find((m) => m.info.id === echo.id);
+				for (const p of entry?.parts ?? []) {
+					if (p?.id) echoByPartId.set(p.id, echo.id);
+				}
+			}
 
 			// Start with all incoming messages
 			for (const m of incoming) {
@@ -404,15 +502,27 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// non-optimistic ones are inserted at their sorted position.
 			const deferredOptimistic: typeof existing = [];
 			const supersededOptimistic: string[] = [];
+			/** optimistic id → the incoming message that superseded it. */
+			const supersededBy = new Map<string, string>();
+			const unmatchedOptimisticUsers: typeof existing = [];
 			for (const m of existing) {
 				if (!seen.has(m.id)) {
-					if (optimisticIds.has(m.id)) {
-						// If the server already has a real user message, this
-						// optimistic user message is a duplicate — drop it.
-						if (incomingHasUserMessage && m.role === "user") {
-							supersededOptimistic.push(m.id);
-						} else {
+					if (isOptimistic(sessionID, m.id)) {
+						if (m.role !== "user") {
 							deferredOptimistic.push(m);
+							continue;
+						}
+						const echoId = (s.parts[m.id] ?? [])
+							.map((p) => echoByPartId.get(p.id))
+							.find((id): id is string => !!id);
+						if (echoId) {
+							supersededOptimistic.push(m.id);
+							supersededBy.set(m.id, echoId);
+							unclaimedEchoes.delete(echoId);
+						} else {
+							// Undecided until pass 2 — it may still pair with an
+							// echo whose parts the server has not persisted yet.
+							unmatchedOptimisticUsers.push(m);
 						}
 					} else {
 						const r = Binary.search(merged, m.id, (x) => x.id);
@@ -420,9 +530,32 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 			}
+
+			// Pass 2 — ordinal fallback, for an echo the server accepted but whose
+			// parts have not landed yet (no part ids to match on). Restricted to
+			// DISPATCHED messages: one that has not been POSTed cannot be a
+			// duplicate of anything the server holds, so it is never eligible.
+			// That restriction is what keeps a message sent from another tab from
+			// consuming this tab's in-flight bubble.
+			const claimable = candidateEchoes.filter((m) => unclaimedEchoes.has(m.id));
+			let next = 0;
+			for (const m of unmatchedOptimisticUsers) {
+				const echo = isDispatched(sessionID, m.id)
+					? claimable[next]
+					: undefined;
+				if (echo) {
+					next += 1;
+					supersededOptimistic.push(m.id);
+					supersededBy.set(m.id, echo.id);
+				} else {
+					deferredOptimistic.push(m);
+				}
+			}
+
 			// Clean up superseded optimistic IDs
 			for (const id of supersededOptimistic) {
-				optimisticIds.delete(id);
+				untrackId(optimisticIds, sessionID, id);
+				untrackId(dispatchedOptimisticIds, sessionID, id);
 			}
 			// Append surviving optimistic messages at the end
 			for (const m of deferredOptimistic) {
@@ -440,32 +573,26 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Mirrors the message.updated SSE handler (see above) — without
 			// this, a fetch/hydrate that races ahead of parts persistence
 			// would drop the user's text and render an empty bubble.
-			const realUserMsg = incoming.find(
-				(m) => m.role === "user" && !optimisticIds.has(m.id),
-			);
-			const realUserEntry = realUserMsg
-				? msgs.find((m) => m.info.id === realUserMsg.id)
-				: undefined;
-			const serverHasRealUserParts =
-				(realUserEntry?.parts?.length ?? 0) > 0;
-			let bridge: Part[] | undefined;
+			// Bridge along the pairing established above, not to "whichever real
+			// user message came first". With more than one message in flight the
+			// first-match version could graft one message's text onto another's
+			// bubble; `supersededBy` names the exact echo each optimistic message
+			// lost to.
 			for (const id of supersededOptimistic) {
-				if (!bridge && newParts[id]?.length) bridge = newParts[id];
+				const echoId = supersededBy.get(id);
+				const bridge = newParts[id];
 				delete newParts[id];
-			}
-			if (
-				bridge &&
-				realUserMsg &&
-				!serverHasRealUserParts &&
-				!newParts[realUserMsg.id]?.length
-			) {
-				newParts[realUserMsg.id] = bridge;
-				bridgedPartIds.add(realUserMsg.id);
+				if (!echoId || !bridge?.length) continue;
+				const echoEntry = msgs.find((m) => m.info.id === echoId);
+				const serverHasParts = (echoEntry?.parts?.length ?? 0) > 0;
+				if (serverHasParts || newParts[echoId]?.length) continue;
+				newParts[echoId] = bridge;
+				bridgedPartIds.add(echoId);
 			}
 			for (const m of msgs) {
 				if (!m?.info?.id) continue;
 				const mid = m.info.id;
-				if (optimisticIds.has(mid)) continue; // Don't touch optimistic parts
+				if (isOptimistic(sessionID, mid)) continue; // Don't touch optimistic parts
 
 				const inParts = m.parts
 					.filter((p) => !!p?.id)
@@ -520,6 +647,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	reset: () => {
 		optimisticIds.clear();
+		dispatchedOptimisticIds.clear();
 		bridgedPartIds.clear();
 		set({
 			messages: {},
@@ -535,7 +663,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	hasOptimisticMessages: (sessionID) => {
 		const list = get().messages[sessionID];
 		if (!list || list.length === 0) return false;
-		return list.some((m) => optimisticIds.has(m.id));
+		return list.some((m) => isOptimistic(sessionID, m.id));
 	},
 
 	getMessages: (sessionID) => {
@@ -560,15 +688,66 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
-				if (info.role === "user" && !optimisticIds.has(info.id)) {
+				if (info.role === "user" && !isOptimistic(info.sessionID, info.id)) {
 					const msgs = get().messages[info.sessionID];
 					if (msgs) {
-						const optIds = msgs
-							.filter((m) => m.role === "user" && optimisticIds.has(m.id))
-							.map((m) => m.id);
+						// ONE confirmation retires ONE optimistic message.
+						//
+						// This used to retire every optimistic user message in the
+						// session. With a single send in flight that is correct, and
+						// is the whole point of this branch — it swaps the bubble in
+						// one `set()` so the user never sees it blink. With two in
+						// flight it took the innocent one with it: confirm the plain
+						// message and the one still uploading its attachment vanished
+						// too. Same defect `hydrate` had, on the SSE path.
+						//
+						// Correlate the same way `hydrate` does: exact part id first
+						// (hosts send the client-generated id WITH the prompt), then
+						// the oldest dispatched message as a fallback for a
+						// confirmation that carries no parts yet.
+						const state = get();
+						const optimisticUsers = msgs.filter(
+							(m) => m.role === "user" && isOptimistic(info.sessionID, m.id),
+						);
+						const incomingPartIds = new Set(
+							(state.parts[info.id] ?? []).map((p) => p.id),
+						);
+						const byPartId = optimisticUsers.find((m) =>
+							(state.parts[m.id] ?? []).some((p) => incomingPartIds.has(p.id)),
+						);
+						// The fallback requires `dispatched`, matching `hydrate`.
+						//
+						// It briefly did not: "with exactly one optimistic message in
+						// flight there is nothing to be ambiguous about, so retire it".
+						// That had a hole. A SECOND TAB on the same session produces a
+						// `message.updated` for a message that is not ours, and the one
+						// message we do have in flight may still be uploading — so the
+						// single-in-flight rule handed the other tab's confirmation our
+						// un-sent message and deleted it. Exactly the bug this whole
+						// change set exists to fix, through a side door.
+						//
+						// The argument for being generous was that a host which calls
+						// `beginOptimisticSend` and then POSTs by hand, never marking
+						// dispatch, would keep its bubble forever. That is checkable
+						// rather than hypothetical: `optimisticAdd` has exactly one
+						// caller, and every send path through this SDK
+						// (`sendAndRecover`, `replayStartStash`, `useSession.sendParts`)
+						// marks dispatch. Losing a message the user typed is worse than
+						// a double bubble on a host that does not exist.
+						//
+						// Note this fallback is the LIVE path here, not part-id
+						// matching: at `message.updated` time the confirmed message
+						// usually has no parts in the store yet (they arrive separately
+						// via `message.part.updated`).
+						const matched =
+							byPartId ?? optimisticUsers.find((m) => isDispatched(info.sessionID, m.id));
+						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
 							// Clean up optimistic tracking
-							for (const id of optIds) optimisticIds.delete(id);
+							for (const id of optIds) {
+								untrackId(optimisticIds, info.sessionID, id);
+								untrackId(dispatchedOptimisticIds, info.sessionID, id);
+							}
 							// Atomic: remove optimistic + insert real in one set()
 							set((s) => {
 								const list = s.messages[info.sessionID] ?? [];
