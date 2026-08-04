@@ -147,9 +147,13 @@ function reviveMessage(raw: unknown): WebQueuedMessage | null {
     text: m.text,
     files: Array.isArray(m.files) ? m.files.map(() => ({ kind: 'lost' as const })) : undefined,
     mentions: Array.isArray(m.mentions) ? (m.mentions as TrackedMention[]) : undefined,
-    agent: typeof m.agent === 'string' ? m.agent : null,
-    model: isModel(m.model) ? m.model : null,
-    variant: typeof m.variant === 'string' ? m.variant : null,
+    // `null` and `undefined` are preserved separately on the way back out for
+    // the same reason they are on the way in — see `enqueue`. JSON keeps
+    // `null` and drops `undefined`, so a missing key correctly revives as
+    // `undefined` rather than being flattened to "send nothing".
+    agent: typeof m.agent === 'string' ? m.agent : m.agent === null ? null : undefined,
+    model: isModel(m.model) ? m.model : m.model === null ? null : undefined,
+    variant: typeof m.variant === 'string' ? m.variant : m.variant === null ? null : undefined,
     createdAt: typeof m.createdAt === 'number' ? m.createdAt : 0,
     attempts: typeof m.attempts === 'number' ? m.attempts : 0,
     ...(typeof m.lastError === 'string' ? { lastError: m.lastError } : {}),
@@ -214,9 +218,15 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
           text: input.text,
           files: input.files,
           mentions: input.mentions,
-          agent: input.agent ?? null,
-          model: input.model ?? null,
-          variant: input.variant ?? null,
+          // Passed through EXACTLY as given — `undefined` and `null` are not
+          // interchangeable downstream. `handleSend` reads `undefined` as "use
+          // whatever is selected when this sends" and `null` as "send no agent
+          // / model / variant at all". Coercing an uncaptured value to null
+          // strips the user's model from the send, and the instant shell
+          // enqueues without any of the three.
+          agent: input.agent,
+          model: input.model,
+          variant: input.variant,
           createdAt: Date.now(),
         }),
       ),

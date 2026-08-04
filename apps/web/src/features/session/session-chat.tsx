@@ -2149,9 +2149,13 @@ export function SessionChat({
         text,
         files,
         mentions,
-        agent: lockedAgentName ?? local.agent.current?.name ?? null,
-        model: local.model.sendKey ?? null,
-        variant: local.model.variant.current ?? null,
+        // `undefined` where nothing is selected yet, never `null`: it means
+        // "resolve this when the message actually sends". A session queued
+        // during boot has no model resolved yet, and `null` would lock that
+        // in as "send no model at all".
+        agent: lockedAgentName ?? local.agent.current?.name ?? undefined,
+        model: local.model.sendKey ?? undefined,
+        variant: local.model.variant.current ?? undefined,
       });
     },
     [sessionId, lockedAgentName, local.agent, local.model],

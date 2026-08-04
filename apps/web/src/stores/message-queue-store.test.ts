@@ -274,6 +274,38 @@ describe('transitions are delegated to the SDK reducer', () => {
     expect(queued.mentions).toEqual([mention]);
   });
 
+  test('leaves uncaptured agent/model/variant undefined, not null', () => {
+    // These are not interchangeable downstream. `handleSend` reads
+    // `undefined` as "use whatever is selected now" and `null` as "send
+    // nothing at all" — so coercing an uncaptured value to null silently
+    // strips the user's model from the send. The instant shell enqueues
+    // without any of the three, which is exactly this path.
+    useMessageQueueStore.getState().enqueue(A, { text: 'no config captured' });
+
+    const [queued] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(queued.agent).toBeUndefined();
+    expect(queued.model).toBeUndefined();
+    expect(queued.variant).toBeUndefined();
+  });
+
+  test('an explicit null survives as null — "no agent" is a real choice', () => {
+    useMessageQueueStore.getState().enqueue(A, { text: 'explicitly none', agent: null });
+
+    expect(useMessageQueueStore.getState().getSessionQueue(A).pending[0].agent).toBeNull();
+  });
+
+  test('a reload does not turn undefined config into null', () => {
+    useMessageQueueStore.getState().enqueue(A, { text: 'no config captured' });
+
+    useMessageQueueStore.setState({ queues: {}, hydrated: false });
+    useMessageQueueStore.getState().hydrate();
+
+    const [restored] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(restored.agent).toBeUndefined();
+    expect(restored.model).toBeUndefined();
+    expect(restored.variant).toBeUndefined();
+  });
+
   test('every queued message gets a distinct id and idempotency key', () => {
     const s = useMessageQueueStore.getState();
     s.enqueue(A, { text: 'one' });
