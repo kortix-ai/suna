@@ -1,5 +1,4 @@
 import { docsMdxComponents } from '@/components/markdown/docs-mdx-components';
-import { Button } from '@/components/ui/button';
 import { socialMetadata } from '@/lib/seo/metadata';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
@@ -8,11 +7,7 @@ import { cn } from '@/lib/utils';
 // namespace in '@/features/icon/icon' lives behind a 'use client' boundary, so
 // the RSC graph only ever sees an opaque client reference — dotting into it
 // (`Icon.Github`) yields `undefined` and crashes the render.
-import {
-  CaretLeftIcon as ChevronLeft,
-  CaretRightIcon as ChevronRight,
-  GithubLogoIcon,
-} from '@/lib/icons/ssr';
+import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight } from '@/lib/icons/ssr';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
 import { findNeighbour } from 'fumadocs-core/page-tree';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
@@ -26,6 +21,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fragment } from 'react';
 
+import { DocsPageActions } from '../docs-page-actions';
+
 export default async function Page(props: { params: Promise<{ slug?: string[] }> }) {
   const params = await props.params;
   const page = source.getPage(params.slug);
@@ -38,6 +35,14 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
   // `page.path` is the loader's virtualized path relative to the content
   // directory (e.g. `sdk/getting-started.mdx`).
   const editUrl = `https://github.com/kortix-ai/suna/blob/main/apps/web/content/docs/${page.path}`;
+  // Same derivation as `sourceDocuments()` in `@/lib/seo/public-content.ts`:
+  // strip the `.mdx` extension, then collapse a nested `<dir>/index` down to
+  // `<dir>` (a bare `index` — the docs root — has no leading slash to strip,
+  // so it passes through unchanged). `/markdown/[...path]/route.ts` 404s on
+  // anything that doesn't match a `sourceDocuments('docs')` record exactly.
+  const markdownSlug = page.path.replace(/\.mdx$/, '').replace(/\/index$/, '');
+  const markdownPath = `/markdown/docs/${markdownSlug}.md`;
+  const pageUrl = `${CANONICAL_ORIGIN}${page.url}`;
 
   return (
     <DocsPage
@@ -75,12 +80,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                 );
               })}
             </span>
-            <Button asChild variant="outline" size="xs" className="shrink-0 gap-1.5">
-              <a href={editUrl} target="_blank" rel="noreferrer noopener">
-                <GithubLogoIcon className="size-3.5" />
-                Edit on GitHub
-              </a>
-            </Button>
+            <DocsPageActions markdownPath={markdownPath} githubUrl={editUrl} pageUrl={pageUrl} />
           </div>
         ),
       }}
