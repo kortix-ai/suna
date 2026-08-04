@@ -64,12 +64,14 @@ describe('setup-link token codec', () => {
 
   test('expired token resolves to 410', () => {
     // Build a token by hand with an exp in the past (mint clamps TTL ≥ 1 min).
+    // Must be more than 60s in the past to exceed the clock-skew buffer.
     const payload = {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
       scope: 'runtime',
+      sid: null,
       uid: null,
-      exp: Date.now() - 1000,
+      exp: Date.now() - 120_000,
       nonce: 'x',
       pid: PROJECT_A,
     };
