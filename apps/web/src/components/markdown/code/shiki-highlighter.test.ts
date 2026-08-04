@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { Highlighter } from 'shiki';
 
 import {
   __testing,
   clampCode,
   highlightAsync,
   highlightSync,
-  MARKDOWN_THEME,
-  PIERRE_THEME,
   SHIKI_THEME_DARK,
   SHIKI_THEME_LIGHT,
   shikiKey,
@@ -16,16 +13,7 @@ import {
 const MAX = 50_000;
 const MARKER = '\n// ... (truncated for highlighting)';
 
-const {
-  shikiCache,
-  SHIKI_CACHE_MAX,
-  cacheHtml,
-  loadedLangs,
-  loadedThemes,
-  themeLoadPromises,
-  ensureThemeLoaded,
-  resolveCodeTheme,
-} = __testing;
+const { shikiCache, SHIKI_CACHE_MAX, cacheHtml, loadedLangs } = __testing;
 
 // The cache is module-level and shared with every other suite in the process.
 afterEach(() => {
@@ -185,124 +173,37 @@ describe('highlightSync', () => {
       loadedLangs.add('typescript');
     }
   });
+});
 
-  test('returns null for a theme the highlighter never loaded', async () => {
-    // Warm the singleton first, so the null below is about the theme and not
-    // about an uninitialised highlighter — the same trick the test above uses.
+describe('the single palette', () => {
+  test('both halves are built into the singleton, so neither needs an async round trip', async () => {
+    // Awaiting the async path is the only honest route to the initialised
+    // state: it resolves the same singleton promise highlightSync reads.
     expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_DARK)).toContain(
       '<pre',
     );
 
-    // Pierre is lazy on purpose: its TextMate JSON only reaches Shiki through
-    // ensureThemeLoaded, so a synchronous first paint has nothing to key on.
-    const pierreDark = resolveCodeTheme(PIERRE_THEME.dark).name;
-    expect(loadedThemes.has(pierreDark)).toBe(false);
-
-    expect(highlightSync('const x = 1;', 'typescript', PIERRE_THEME.dark)).toBeNull();
+    // Both themes ship in the singleton's `themes: []`, so neither half ever
+    // lazy-loads and both answer synchronously. This is what let the theme
+    // loader be deleted.
+    expect(highlightSync('const d = 1;', 'typescript', SHIKI_THEME_DARK)).toContain('<pre');
+    expect(highlightSync('const l = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain('<pre');
   });
-});
 
-describe('the two theme pairs', () => {
-  test('resolve to different names, so one cache key cannot serve both', () => {
+  test('the two halves do not share a cache entry', () => {
     const code = 'const a = 1;';
-    const markdown = resolveCodeTheme(MARKDOWN_THEME.dark).name;
-    const pierre = resolveCodeTheme(PIERRE_THEME.dark).name;
 
-    // Guards the assertion below against the two pairs ever being set equal,
-    // which would make it vacuous rather than false.
-    expect(markdown).not.toBe(pierre);
-    expect(shikiKey(code, 'typescript', markdown)).not.toBe(shikiKey(code, 'typescript', pierre));
-  });
-
-  test('a bundled name resolves to itself; a registration resolves to its own name', () => {
-    expect(resolveCodeTheme(SHIKI_THEME_DARK)).toEqual({
-      name: SHIKI_THEME_DARK,
-      input: SHIKI_THEME_DARK,
-    });
-
-    const registration = { name: 'Pair Probe', settings: [] };
-    expect(resolveCodeTheme(registration)).toEqual({ name: 'Pair Probe', input: registration });
-  });
-
-  test('the markdown pair is loaded eagerly — it is built into the singleton', () => {
-    expect(loadedThemes.has(resolveCodeTheme(MARKDOWN_THEME.dark).name)).toBe(true);
-    expect(loadedThemes.has(resolveCodeTheme(MARKDOWN_THEME.light).name)).toBe(true);
+    expect(shikiKey(code, 'typescript', SHIKI_THEME_DARK)).not.toBe(
+      shikiKey(code, 'typescript', SHIKI_THEME_LIGHT),
+    );
   });
 });
 
-describe('ensureThemeLoaded', () => {
-  /** A highlighter stub whose `loadTheme` resolves only when the test says so. */
-  function gatedHighlighter() {
-    let calls = 0;
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const h = {
-      loadTheme: () => {
-        calls++;
-        return gate;
-      },
-    } as unknown as Highlighter;
-    return { h, gate, release: () => release(), calls: () => calls };
-  }
-
-  test('a theme already in loadedThemes is never handed to loadTheme again', async () => {
-    const { h, calls } = gatedHighlighter();
-    expect(loadedThemes.has(SHIKI_THEME_DARK)).toBe(true);
-
-    await ensureThemeLoaded(h, SHIKI_THEME_DARK);
-    await ensureThemeLoaded(h, SHIKI_THEME_DARK);
-
-    expect(calls()).toBe(0);
-  });
-
-  test('concurrent calls for one theme share a single load, and it stays loaded after', async () => {
-    const { h, release, calls } = gatedHighlighter();
-    const theme = { name: 'Concurrent Probe', settings: [] };
-
-    const first = ensureThemeLoaded(h, theme);
-    const second = ensureThemeLoaded(h, theme);
-
-    // The second caller gets the in-flight promise itself, not a second load.
-    expect(second).toBe(first);
-    expect(calls()).toBe(1);
-    expect(themeLoadPromises.get('Concurrent Probe')).toBe(first);
-
-    release();
-    try {
-      await Promise.all([first, second]);
-
-      expect(calls()).toBe(1);
-      expect(loadedThemes.has('Concurrent Probe')).toBe(true);
-      // The in-flight entry is cleared, so a later failure can retry.
-      expect(themeLoadPromises.has('Concurrent Probe')).toBe(false);
-
-      // Idempotent: the fourth call short-circuits on the Set.
-      await ensureThemeLoaded(h, theme);
-      expect(calls()).toBe(1);
-    } finally {
-      loadedThemes.delete('Concurrent Probe');
-    }
-  });
-
-  test('a failed load leaves the theme unloaded and retryable', async () => {
-    let calls = 0;
-    const h = {
-      loadTheme: () => {
-        calls++;
-        return Promise.reject(new Error('no such theme'));
-      },
-    } as unknown as Highlighter;
-    const theme = { name: 'Broken Probe', settings: [] };
-
-    await ensureThemeLoaded(h, theme);
-
-    expect(calls).toBe(1);
-    expect(loadedThemes.has('Broken Probe')).toBe(false);
-    expect(themeLoadPromises.has('Broken Probe')).toBe(false);
-
-    await ensureThemeLoaded(h, theme);
-    expect(calls).toBe(2);
+describe('the lock', () => {
+  test('a foreign theme does not type-check', () => {
+    // @ts-expect-error - 'github-dark' is not in CodeThemeName. This directive
+    // is the regression test: if the parameter ever widens back to `string`,
+    // the line stops erroring, the directive goes unused, and tsc fails.
+    expect(highlightSync('const a = 1;', 'typescript', 'github-dark')).toBeNull();
   });
 });
