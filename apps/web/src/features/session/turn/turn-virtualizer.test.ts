@@ -2,27 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   TRANSCRIPT_ESTIMATED_TURN_HEIGHT,
-  TRANSCRIPT_VIRTUALIZE_THRESHOLD,
   findTurnIndexById,
   renderedTurnIdsKey,
-  shouldVirtualizeTranscript,
 } from './turn-virtualizer';
 
 const turn = (id: string) => ({ userMessage: { info: { id } } });
-
-describe('shouldVirtualizeTranscript', () => {
-  test('leaves short threads on the plain render path', () => {
-    expect(shouldVirtualizeTranscript(0)).toBe(false);
-    expect(shouldVirtualizeTranscript(1)).toBe(false);
-  });
-
-  // The boundary is the whole point of the gate: off by one here either
-  // windows a thread that did not need it, or leaves a long one unwindowed.
-  test('is exclusive at the threshold', () => {
-    expect(shouldVirtualizeTranscript(TRANSCRIPT_VIRTUALIZE_THRESHOLD)).toBe(false);
-    expect(shouldVirtualizeTranscript(TRANSCRIPT_VIRTUALIZE_THRESHOLD + 1)).toBe(true);
-  });
-});
 
 describe('findTurnIndexById', () => {
   const turns = [turn('u1'), turn('u2'), turn('u3')];

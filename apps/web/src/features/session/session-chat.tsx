@@ -38,7 +38,6 @@ import {
   TRANSCRIPT_ESTIMATED_TURN_HEIGHT,
   findTurnIndexById,
   renderedTurnIdsKey,
-  shouldVirtualizeTranscript,
 } from './turn/turn-virtualizer';
 import { UserMessage } from './turn/user-message';
 
@@ -2459,16 +2458,17 @@ export function SessionChat({
   const planAnchorId = useMemo(() => planAnchorMessageId(messages ?? []), [messages]);
 
   // ---- Windowed transcript (@tanstack/react-virtual) ----
-  // Only long threads are windowed. Auto-scroll, the scroll anchor, the
-  // minimap observer and jump-to-message all find turns via
-  // `[data-turn-id]` in the DOM, and were written when every turn was
-  // mounted. Below the threshold nothing changes for them; above it the
-  // transcript stops mounting turns it is not showing. Same gate, and the
-  // same reasoning, as shouldVirtualizeMarketplacePagedGrid.
-  const isTranscriptVirtualized = shouldVirtualizeTranscript(turns.length);
+  // EVERY message is windowed — there is no unwindowed path and no turn-count
+  // threshold. Only the turns near the viewport are mounted, so DOM size and
+  // memory stop growing with thread length.
+  //
+  // Auto-scroll, the scroll anchor, the minimap observer and jump-to-message
+  // all locate turns via `[data-turn-id]` and were written when every turn was
+  // mounted. Each has been adapted rather than avoided: the anchor falls back
+  // to a turn id, the spacer keys off `data-last-turn`, the minimap re-arms on
+  // the mounted set, and the jump resolves an index instead of querying.
   const turnVirtualizer = useVirtualizer({
     count: turns.length,
-    enabled: isTranscriptVirtualized,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => TRANSCRIPT_ESTIMATED_TURN_HEIGHT,
     // Key on the user message id, not the index: loading an older page
@@ -2480,25 +2480,20 @@ export function SessionChat({
     overscan: 8,
   });
   // Wire the older-history anchor fallback now that the virtualizer exists.
-  // Null when not windowed, so the node-based restore stays the only path
-  // there — it is exact, and cheaper.
-  restoreAnchorByTurnId.current = isTranscriptVirtualized
-    ? (turnId: string) => {
-        const index = findTurnIndexById(turns, turnId);
-        // -1 means the turn is gone entirely. Scrolling to index 0 would throw
-        // the reader to the top of the thread, which is worse than not moving.
-        if (index < 0) return false;
-        turnVirtualizer.scrollToIndex(index, { align: 'start' });
-        return true;
-      }
-    : null;
+  restoreAnchorByTurnId.current = (turnId: string) => {
+    const index = findTurnIndexById(turns, turnId);
+    // -1 means the turn is gone entirely. Scrolling to index 0 would throw the
+    // reader to the top of the thread, which is worse than not moving.
+    if (index < 0) return false;
+    turnVirtualizer.scrollToIndex(index, { align: 'start' });
+    return true;
+  };
 
-  const virtualTurnItems = isTranscriptVirtualized ? turnVirtualizer.getVirtualItems() : [];
+  const virtualTurnItems = turnVirtualizer.getVirtualItems();
   // Re-arms the minimap's IntersectionObserver when the mounted set changes.
-  // Undefined when not windowed, so that path behaves exactly as before.
-  const mountedTurnIdsKey = isTranscriptVirtualized
-    ? renderedTurnIdsKey(virtualTurnItems.map((item) => String(item.key)))
-    : undefined;
+  const mountedTurnIdsKey = renderedTurnIdsKey(
+    virtualTurnItems.map((item) => String(item.key)),
+  );
 
   // One turn body, shared by the windowed and plain paths so the two cannot
   // drift visually. Returns the turn's contents only — each path supplies its
@@ -2708,21 +2703,19 @@ export function SessionChat({
     const scrollEl = scrollRef.current;
     if (!contentEl || !scrollEl) return;
 
-    // Windowed: the turn being jumped to is usually NOT mounted, so the DOM
-    // query below would return null and silently drop the jump. Ask the
-    // virtualizer to bring that index into view instead. No `behavior:
-    // 'smooth'` — TanStack documents smooth scrolling as unreliable once
-    // sizes are measured rather than fixed.
-    if (isTranscriptVirtualized) {
-      const index = findTurnIndexById(turns, targetMessageId);
-      if (index >= 0) {
-        turnVirtualizer.scrollToIndex(index, { align: 'start' });
-        clearJumpTarget();
-        return;
-      }
-      // -1 means the id is not a turn anchor at all. Fall through to the DOM
-      // path, which handles that case and clears the target.
+    // The turn being jumped to is usually NOT mounted, so the DOM query below
+    // would return null and silently drop the jump. Ask the virtualizer to
+    // bring that index into view instead. No `behavior: 'smooth'` — TanStack
+    // documents smooth scrolling as unreliable once sizes are measured rather
+    // than fixed.
+    const jumpIndex = findTurnIndexById(turns, targetMessageId);
+    if (jumpIndex >= 0) {
+      turnVirtualizer.scrollToIndex(jumpIndex, { align: 'start' });
+      clearJumpTarget();
+      return;
     }
+    // -1 means the id is not a turn anchor at all. Fall through to the DOM
+    // path, which handles that case and clears the target.
 
     const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${targetMessageId}"]`);
     if (!target) {
@@ -2735,15 +2728,7 @@ export function SessionChat({
     const offset = targetRect.top - scrollRect.top + scrollEl.scrollTop - 24;
     scrollEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
     clearJumpTarget();
-  }, [
-    targetMessageId,
-    clearJumpTarget,
-    contentRef,
-    scrollRef,
-    isTranscriptVirtualized,
-    turns,
-    turnVirtualizer,
-  ]);
+  }, [targetMessageId, clearJumpTarget, contentRef, scrollRef, turns, turnVirtualizer]);
 
   // Reset on session change
   useEffect(() => {
@@ -3788,13 +3773,15 @@ export function SessionChat({
                       user's pty_* card but skipped turn.assistantMessages,
                       hiding every subsequent assistant response in that turn.
                       Fall through to the normal turn renderer instead. */}
-                      {isTranscriptVirtualized ? (
-                        // Windowed: only the turns near the viewport are mounted.
-                        // The container carries the full projected height so the
-                        // scrollbar, the bottom spacer and useAutoScroll's
-                        // scrollHeight arithmetic all still see the whole thread.
-                        <div className="relative w-full" style={{ height: turnVirtualizer.getTotalSize() }}>
-                          {virtualTurnItems.map((virtualRow) => {
+                      {/* Only the turns near the viewport are mounted. The
+                      container carries the full projected height so the
+                      scrollbar, the bottom spacer and useAutoScroll's
+                      scrollHeight arithmetic all still see the whole thread. */}
+                      <div
+                        className="relative w-full"
+                        style={{ height: turnVirtualizer.getTotalSize() }}
+                      >
+                        {virtualTurnItems.map((virtualRow) => {
                             const turn = turns[virtualRow.index];
                             if (!turn) return null;
                             return (
@@ -3827,22 +3814,7 @@ export function SessionChat({
                               </div>
                             );
                           })}
-                        </div>
-                      ) : (
-                        turns.map((turn, turnIndex) => (
-                          <div
-                            key={turn.userMessage.info.id}
-                            data-turn-id={turn.userMessage.info.id}
-                            data-last-turn={turnIndex === turns.length - 1 ? '' : undefined}
-                            className={cn(
-                              '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
-                              turnIndex === 0 ? '' : 'mt-12',
-                            )}
-                          >
-                            {renderTurnContent(turn, turnIndex)}
-                          </div>
-                        ))
-                      )}
+                      </div>
                     </ToolActivateContext.Provider>
 
                     {/* Busy indicator when no turns yet but session is busy */}

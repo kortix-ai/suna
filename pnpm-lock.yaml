@@ -868,7 +868,7 @@ importers:
         specifier: ^5.75.2
         version: 5.101.2(@tanstack/react-query@5.101.2)(react@19.1.0)
       '@tanstack/react-virtual':
-        specifier: ^3.13.12
+        specifier: ^3.14.5
         version: 3.14.5(react-dom@19.1.0)(react@19.1.0)
       '@tiptap/core':
         specifier: ^3.14.0

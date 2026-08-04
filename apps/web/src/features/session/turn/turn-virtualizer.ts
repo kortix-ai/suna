@@ -1,11 +1,14 @@
 /**
- * Pure decisions behind the windowed transcript.
+ * Pure helpers behind the windowed transcript.
  *
- * Windowing itself lives in `session-chat.tsx` via `@tanstack/react-virtual`,
- * but every *decision* it makes lives here as a plain function. That is
- * deliberate: apps/web renders tests through `renderToStaticMarkup`, which
- * cannot scroll, measure, or mount a virtualizer at all. Keeping the choices
- * pure is the only way any of this is verifiable without a browser.
+ * The transcript is ALWAYS windowed — there is no unwindowed path and no
+ * turn-count threshold. Every message renders through `@tanstack/react-virtual`.
+ *
+ * Windowing itself lives in `session-chat.tsx`, but the plain-data parts live
+ * here. That is deliberate: apps/web renders tests through
+ * `renderToStaticMarkup`, which cannot scroll, measure, or mount a virtualizer
+ * at all. Keeping these pure is the only way any of it is verifiable without a
+ * browser.
  *
  * No React, no DOM, no import from `session-chat.tsx`.
  */
@@ -24,25 +27,6 @@ interface TurnIdentityLike {
  * fresh invention. Real heights replace it via `measureElement`.
  */
 export const TRANSCRIPT_ESTIMATED_TURN_HEIGHT = 600;
-
-/**
- * Turn count above which the transcript switches to the windowed path.
- *
- * Below it the transcript renders exactly as it always has. Four separate
- * systems — auto-scroll, the scroll anchor, the minimap observer, and
- * jump-to-message — read turns straight out of the DOM and were written
- * assuming every turn is mounted. Windowing breaks that assumption, so the
- * gate keeps ordinary sessions on the path those systems were built for and
- * pays the risk only where the problem actually exists.
- *
- * Same shape, and the same reasoning, as `shouldVirtualizeMarketplacePagedGrid`.
- */
-export const TRANSCRIPT_VIRTUALIZE_THRESHOLD = 30;
-
-/** Whether a thread of this many turns should render windowed. */
-export function shouldVirtualizeTranscript(turnCount: number): boolean {
-  return turnCount > TRANSCRIPT_VIRTUALIZE_THRESHOLD;
-}
 
 /**
  * Index of the turn whose user message has this id, or `-1`.
