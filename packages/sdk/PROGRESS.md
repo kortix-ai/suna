@@ -6248,3 +6248,33 @@ preview — the host falls back to its own bounded wait.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-05 — session `preview-port-probe` review round
+
+Review of the host change found that `PREVIEW_PROBE_TIMEOUT_MS = 10_000` was
+badly chosen. A caller decides a port is dead from repeated misses inside a
+window of its own; `apps/web`'s window is also 10s, so ONE probe that stalled to
+its ceiling consumed the caller's entire sampling budget and the loop ended
+after a single sample.
+
+Lowered to `3_000` and re-justified in the source: the proxy's "nothing is
+listening" answer needs no upstream connection and returns in well under a
+second, so a short ceiling never delays a real verdict — it only stops a socket
+being held behind an app that accepted the connection and then stalled, which is
+itself already weak evidence the port is up. Three seconds leaves room for
+several samples inside any window worth having.
+
+- `bun test src/core/session/preview-probe.test.ts`: `21 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1516 pass`, `1 fail` — the same
+  pre-existing `fetchCostExportCsv` failure documented in the entry above.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+No export name changed, so both public-surface snapshots are byte-identical to
+the previous entry's. `version` untouched.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**

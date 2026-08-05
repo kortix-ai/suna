@@ -122,7 +122,10 @@ describe('probePreviewPort', () => {
     expect(requests).toHaveLength(0);
   });
 
-  test('the default timeout is bounded', () => {
-    expect(PREVIEW_PROBE_TIMEOUT_MS).toBe(10_000);
+  // Short on purpose: a caller decides a port is dead from repeated misses
+  // inside a window of its own, and a ceiling that approaches that window lets
+  // ONE stalled probe eat the caller's whole sampling budget.
+  test('the default timeout is short enough to leave a caller room for several samples', () => {
+    expect(PREVIEW_PROBE_TIMEOUT_MS).toBe(3_000);
   });
 });

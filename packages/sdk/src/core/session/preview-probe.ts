@@ -30,13 +30,22 @@
 export type PreviewPortProbe = 'reachable' | 'unreachable' | 'unknown';
 
 /**
- * Default ceiling on a single probe, ms. The proxy's "nothing is listening"
- * answer needs no upstream connection and returns immediately, so this bound
- * only exists to stop a probe holding a socket open behind an app that
- * accepted the connection and then stalled. A probe that outruns it resolves
- * `unknown` — it can never itself declare a port dead.
+ * Default ceiling on a single probe, ms.
+ *
+ * The proxy's "nothing is listening" answer needs no upstream connection and
+ * comes back in well under a second, so this bound never delays a real verdict.
+ * It exists for the opposite case: an app that accepted the connection and then
+ * stalled — which is itself already weak evidence the port is up, and holding
+ * the socket open longer cannot change that.
+ *
+ * Deliberately SHORT. A caller decides a port is dead from repeated misses
+ * inside some window of its own, and a probe whose ceiling approaches that
+ * window can consume the caller's entire sampling budget in ONE stalled
+ * sample. Three seconds leaves room for several samples inside any window
+ * worth having. A probe that outruns it resolves `unknown` and can never
+ * itself declare a port dead.
  */
-export const PREVIEW_PROBE_TIMEOUT_MS = 10_000;
+export const PREVIEW_PROBE_TIMEOUT_MS = 3_000;
 
 /**
  * The status-to-verdict rule, pure so it can be reasoned about without a
