@@ -25,7 +25,6 @@ const translatedTokenTerms = {
   pt: 'tokens',
   zh: 'token',
 } as const;
-const pricingHeroKey = 'autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8';
 const pricingHeadingKey = 'autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e';
 const pricingExplainerKey = 'autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6';
 
@@ -33,7 +32,6 @@ const pricingCopy = [
   pricingPageSource,
   calculatorSource,
   planSource,
-  englishTranslations.hardcodedUi[pricingHeroKey],
   englishTranslations.hardcodedUi[pricingHeadingKey],
   englishTranslations.hardcodedUi[pricingExplainerKey],
 ].join('\n');
@@ -51,6 +49,30 @@ describe('pricing model billing copy', () => {
     );
     expect(normalizedPricingCopy).toContain('Optional managed model usage is token-based');
     expect(normalizedPricingCopy).toContain('input, output, and cached tokens use Team credits');
+  });
+
+  test('leads with the compute-first heading', () => {
+    expect(englishTranslations.hardcodedUi[pricingHeadingKey]).toBe(
+      'Pay for the computer. Bring your own model.',
+    );
+    const h1Block = pricingPageSource.slice(
+      pricingPageSource.indexOf('<h1'),
+      pricingPageSource.indexOf('</h1>'),
+    );
+    expect(h1Block).toContain(pricingHeadingKey);
+  });
+
+  test('derives the hero hourly price from the pricing constants', () => {
+    expect(pricingPageSource).toContain('DEFAULT_COMPUTE_HOURLY_PRICE_USD.toFixed(2)');
+    expect(pricingPageSource).toContain('/ hour');
+    expect(pricingPageSource).toContain('estimateDefaultCompute(FREE_MONTHLY_CREDITS)');
+    expect(pricingPageSource).toContain('estimateDefaultCompute(TEAM_CREDITS_PER_SEAT)');
+  });
+
+  test('states per-second billing and zero idle cost with the price', () => {
+    expect(normalizedPricingCopy).toContain('Billed by the second');
+    expect(normalizedPricingCopy).toContain('$0 while idle');
+    expect(normalizedPricingCopy).toContain('2 vCPU · 4 GiB RAM · 20 GiB storage');
   });
 
   test('shows the rounded per-seat Agent Computer hours', () => {
@@ -73,7 +95,7 @@ describe('pricing model billing copy', () => {
         hardcodedUi: Record<string, string>;
       };
 
-      expect(translations.hardcodedUi[pricingHeroKey]).toContain('Agent Computer');
+      expect(translations.hardcodedUi[pricingHeadingKey]).toBeTruthy();
       expect(translations.hardcodedUi[pricingExplainerKey]).toContain(tokenTerm);
     }
   });

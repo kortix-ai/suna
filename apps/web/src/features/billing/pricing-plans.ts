@@ -26,6 +26,10 @@ export const PRICING_PLANS: PricingPlan[] = [
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
     ],
+    featureDetails: {
+      '200 credits / month for sandbox compute':
+        'About 10 hours on the default Agent Computer at $0.20/hour.',
+    },
   },
   {
     id: 'team',

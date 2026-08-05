@@ -7020,8 +7020,6 @@
     "autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0": "安装 CLI，运行",
     "autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670": "，然后部署您已使用的代理。",
     "autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9": "部署内部代理",
-    "autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521": "简单的按座位定价。按使用量付费。",
-    "autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8": "每个席位都包含完整平台和用于 Agent Computer 运行时间的每月额度。你可以使用自己的 API 密钥或连接 ChatGPT 来访问模型。托管模型仍可使用，并根据 token 用量消耗额度。",
     "autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e": "为计算机付费。使用你自己的模型。",
     "autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6": "Kortix 额度主要用于 Agent Computer 运行时间。使用自己的 API 密钥或 ChatGPT 订阅，可由模型提供商直接计费。可选托管模型会根据 token 用量消耗 Team 额度。",
     "autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add": "开始建造",
