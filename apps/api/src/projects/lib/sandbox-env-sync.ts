@@ -554,3 +554,79 @@ export async function pushSessionModelToSandbox(input: {
     return { applied: false, reason };
   }
 }
+
+/**
+ * Push THIS session's freshly re-scoped secret snapshot to its live sandbox.
+ *
+ * The PUT /scope route persisted the new `secretsAllowlist`. The per-prompt hot
+ * sync (`syncSandboxEnvForPrompt`) re-reads that column on the NEXT prompt and
+ * would eventually push it — but "eventually" is not "now": the per-prompt sync
+ * is path-gated (`shouldSyncProjectEnvBeforeProxy` only fires on
+ * `POST /session/:id/(prompt_async|message)` to the daemon port), so a prompt
+ * that takes the direct-opencode path, a session that is not prompted again
+ * right away, or any path that skips the gate leaves the sandbox running the
+ * OLD snapshot. The daemon's agent-env.sh keeps the stale `names`/env, opencode
+ * keeps its old PID, and every shell the agent spawns still sees the pre-scope
+ * secret set — silently, with the API having answered "Applies from the next
+ * prompt."
+ *
+ * Pushing here is idempotent and race-free with the per-prompt sync: both
+ * resolve the snapshot from the same DB row and POST set-semantics to the
+ * daemon, whose `apply` is revision-guarded — a duplicate push (here then on
+ * the next prompt) re-applies the same state and is a no-op the second time.
+ * `refreshModels: true` makes the daemon rewrite the live agent-env file AND
+ * restart opencode, so shells spawned AFTER the rescope see the new secret set
+ * instead of inheriting the old one via BASH_ENV.
+ *
+ * Best-effort by design, matching `pushSessionModelToSandbox`: a sandbox that is
+ * down or unreachable picks the new scope up on its next boot. Returns whether a
+ * live box actually took it, so the route can tell the caller whether the change
+ * is in effect NOW or only from the next turn.
+ */
+export async function pushSessionScopeToSandbox(input: {
+  projectId: string;
+  sessionId: string;
+}): Promise<{ applied: boolean; reason?: string }> {
+  try {
+    const [row] = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, input.sessionId),
+          eq(sessionSandboxes.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+
+    const config = (row.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+
+    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
+
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: SANDBOX_SERVICE_PORT,
+      transport: 'http',
+    });
+    await postEnvToDaemon({
+      previewUrl: url,
+      providerHeaders: headers,
+      serviceKey,
+      snapshot,
+      // Restarts opencode so shells spawned after the rescope inherit the new
+      // secret set instead of the old agent-env.sh via BASH_ENV.
+      refreshModels: true,
+    });
+    return { applied: true };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[env-sync] scope push failed for session ${input.sessionId}:`, reason);
+    return { applied: false, reason };
+  }
+}

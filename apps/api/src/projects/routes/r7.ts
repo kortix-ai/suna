@@ -39,7 +39,7 @@ import {
   modelChangeResult,
   validateModelChangeShape,
 } from '../lib/session-model-change';
-import { pushSessionModelToSandbox } from '../lib/sandbox-env-sync';
+import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
@@ -2671,9 +2671,24 @@ projectsApp.openapi(
       );
     }
 
-    // No push needed: the per-prompt hot sync re-reads secretsAllowlist and
-    // re-resolves the whole env on the NEXT prompt, and connector bindings are
-    // resolved server-side at call time. Pushing here would race that.
+    // Push the new secret snapshot to the live sandbox NOW, instead of waiting
+    // for the per-prompt hot sync. The hot sync (`syncSandboxEnvForPrompt`) is
+    // path-gated — it only fires on `POST /session/:id/(prompt_async|message)`
+    // to the daemon port — so a prompt that takes the direct-opencode path, a
+    // session not prompted again right away, or any path that skips the gate
+    // left the sandbox running the OLD snapshot: the daemon's agent-env.sh kept
+    // the stale `names`, opencode kept its PID, and every shell the agent spawned
+    // still saw the pre-scope secret set, while the API answered "Applies from
+    // the next prompt." Pushing here is idempotent and race-free with the
+    // per-prompt sync (both resolve from the same DB row; the daemon's `apply`
+    // is revision-guarded, so a duplicate push on the next prompt is a no-op).
+    // Connector bindings need no push — they resolve server-side at call time.
+    // Best-effort, like pushSessionModelToSandbox: a down/unreachable sandbox
+    // picks the new scope up on its next boot.
+    if (wantsSecrets && JSON.stringify(nextAllowlist) !== JSON.stringify(visible.row.secretsAllowlist ?? null)) {
+      await pushSessionScopeToSandbox({ projectId, sessionId });
+    }
+
     return c.json({
       secrets_allowlist: nextAllowlist,
       required_connectors: nextRequired,
