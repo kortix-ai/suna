@@ -41,23 +41,50 @@ describe('groupSessions — status mode', () => {
 });
 
 describe('groupSessions — activity mode', () => {
+  // Bucketing reads LOCAL calendar components (see session-grouping.ts), so
+  // both `now` and every fixture below must be built with local-constructed
+  // `new Date(y, m, d, ...)` rather than a fixed-UTC ISO literal. Mixing a
+  // UTC instant for `now` with UTC ISO fixtures drifts at the timezone
+  // boundary: at UTC+12 and above, a UTC-noon `now` has already rolled to
+  // the next local calendar day, so a "same UTC day" fixture reads as
+  // yesterday locally. Local-constructing both sides keeps the test
+  // self-consistent in any timezone.
+  const ACTIVITY_NOW = new Date(2026, 7, 6, 12, 0, 0).getTime();
+
   test('buckets by age against the injected now', () => {
     const grouped = groupSessions(
       [
-        makeSession({ session_id: 'a', created_at: '2026-08-06T09:00:00.000Z' }),
-        makeSession({ session_id: 'b', created_at: '2026-08-05T09:00:00.000Z' }),
-        makeSession({ session_id: 'c', created_at: '2026-08-02T09:00:00.000Z' }),
-        makeSession({ session_id: 'd', created_at: '2026-06-01T09:00:00.000Z' }),
+        makeSession({
+          session_id: 'a',
+          created_at: new Date(2026, 7, 6, 9, 0, 0).toISOString(),
+        }),
+        makeSession({
+          session_id: 'b',
+          created_at: new Date(2026, 7, 5, 9, 0, 0).toISOString(),
+        }),
+        makeSession({
+          session_id: 'c',
+          created_at: new Date(2026, 7, 2, 9, 0, 0).toISOString(),
+        }),
+        makeSession({
+          session_id: 'd',
+          created_at: new Date(2026, 5, 1, 9, 0, 0).toISOString(),
+        }),
       ],
-      { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: NOW },
+      { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today', 'yesterday', 'week', 'older']);
   });
 
   test('review state does not move a session out of its date bucket', () => {
     const grouped = groupSessions(
-      [makeSession({ session_id: 'a', created_at: '2026-08-06T09:00:00.000Z' })],
-      { mode: 'activity', order: 'activity', reviewCountBySession: { a: 3 }, now: NOW },
+      [
+        makeSession({
+          session_id: 'a',
+          created_at: new Date(2026, 7, 6, 9, 0, 0).toISOString(),
+        }),
+      ],
+      { mode: 'activity', order: 'activity', reviewCountBySession: { a: 3 }, now: ACTIVITY_NOW },
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
   });
