@@ -820,3 +820,53 @@ describe("useSyncStore — deltaActiveParts tracking is session-scoped", () => {
 		);
 	});
 });
+
+describe("useSyncStore — bridgedPartIds tracking is session-scoped", () => {
+	// bridgedPartIds used to be one process-wide Set<string> of message ids
+	// whose optimistic parts were bridged onto a real message. It was cleared
+	// only by reset() (which application code never calls) — clearSession did
+	// not touch it — so ids accumulated for the lifetime of the tab. If a
+	// LATER message in an unrelated session ever reused a leaked id,
+	// upsertPart's bridge-clearing branch fired for it anyway: the first real
+	// text part for that id wiped every part already stored under it, even
+	// though nothing was ever bridged in that session. Same leak class as
+	// optimisticIds ("optimistic tracking is session-scoped" above) and
+	// deltaActiveParts ("deltaActiveParts tracking is session-scoped" above).
+	test("clearing the bridging session stops a later, unrelated message that reuses its id from being wiped", () => {
+		const store = useSyncStore.getState();
+
+		// Session 1: an optimistic send bridges onto an echoed message with no
+		// parts yet — mirrors "a DISPATCHED message is superseded by an echo
+		// with no parts yet, and its text is bridged" above.
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		store.clearSession("ses_1");
+
+		// A completely different session's message happens to reuse the same
+		// id. It already has an unrelated (non-text) part before any text part
+		// for it arrives.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_2",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		// The first real text part for this id lands in ses_2. Nothing was
+		// ever bridged in ses_2, so this must append, not wipe the step part
+		// as if it were clearing session 1's stale bridge.
+		store.upsertPart(
+			"msg_reused",
+			textPart("prt_text", "msg_reused", "unrelated text", "ses_2"),
+		);
+
+		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_step");
+		expect(ids).toContain("prt_text");
+	});
+});

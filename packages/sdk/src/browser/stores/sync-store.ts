@@ -175,17 +175,34 @@ function forgetSessionIds(sessionID: string): void {
 	// deltaActiveParts for the lifetime of the tab — the exact leak class
 	// this function exists to prevent for optimisticIds above.
 	deltaActiveParts.delete(sessionID);
+	// Same leak class, on bridgedPartIds: it used to be released only by
+	// reset() (which application code never calls), not by clearSession, so
+	// a message id stayed "bridged" forever once bridged once. If a LATER
+	// message in a different session ever reused that id, upsertPart's
+	// bridge-clearing branch fired for it too, wiping every part already
+	// stored under it. See bridgedPartIds below.
+	bridgedPartIds.delete(sessionID);
 }
 
 const isOptimistic = (sessionID: string, messageID: string) =>
 	hasTrackedId(optimisticIds, sessionID, messageID);
 const isDispatched = (sessionID: string, messageID: string) =>
 	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
-// Track message IDs where optimistic parts were bridged to the real message.
-// When the first real part arrives for a bridged message, the bridged parts
-// are cleared so optimistic and real parts don't co-exist (which would
+// Track message IDs where optimistic parts were bridged to the real message,
+// keyed by session — same shape and same reason as optimisticIds above. When
+// the first real part arrives for a bridged message, the bridged parts are
+// cleared so optimistic and real parts don't co-exist (which would
 // double-render the user's text).
-const bridgedPartIds = new Set<string>();
+//
+// It used to be one process-wide Set<string> shared by every session in the
+// tab, cleared only by reset() — clearSession never released its entries, so
+// ids accumulated for the lifetime of the tab. A leaked id made upsertPart
+// treat any LATER message that reused it (in any session) as still-bridged:
+// the first real text part for that id wiped every part already stored under
+// it, even though nothing was ever bridged in that session. Keying by session
+// and releasing only the ending session's bucket (via forgetSessionIds)
+// fixes it.
+const bridgedPartIds = new Map<string, Set<string>>();
 
 // Track part IDs that have received at least one delta, keyed by session —
 // same shape and same reason as optimisticIds above. Used by upsertPart to
@@ -271,7 +288,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// that a real part has arrived — prevents double-rendering.
 			let list: Part[];
 			let bridgeCleared = false;
-			if (bridgedPartIds.has(messageID)) {
+			if (hasTrackedId(bridgedPartIds, partSessionID, messageID)) {
 				// Only retire the optimistic/bridged user text once a REAL text
 				// part with actual content arrives. A stray non-text part — or an
 				// empty text snapshot — must NOT wipe the bridge, otherwise the
@@ -282,7 +299,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					typeof incoming.text === "string" &&
 					incoming.text.length > 0;
 				if (incomingIsRealText) {
-					bridgedPartIds.delete(messageID);
+					untrackId(bridgedPartIds, partSessionID, messageID);
 					list = [];
 					bridgeCleared = true;
 				} else {
@@ -635,7 +652,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const serverHasParts = (echoEntry?.parts?.length ?? 0) > 0;
 				if (serverHasParts || newParts[echoId]?.length) continue;
 				newParts[echoId] = bridge;
-				bridgedPartIds.add(echoId);
+				trackId(bridgedPartIds, sessionID, echoId);
 			}
 			for (const m of msgs) {
 				if (!m?.info?.id) continue;
@@ -648,8 +665,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// If this message still carries bridged optimistic parts, a hydrate
 				// snapshot with real parts should replace them immediately. Otherwise
 				// reconcile-by-extras can keep both copies and duplicate user text.
-				if (bridgedPartIds.has(mid) && inParts.length > 0) {
-					bridgedPartIds.delete(mid);
+				if (hasTrackedId(bridgedPartIds, sessionID, mid) && inParts.length > 0) {
+					untrackId(bridgedPartIds, sessionID, mid);
 					newParts[mid] = inParts;
 					continue;
 				}
@@ -823,7 +840,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 								}
 								if (bridge && !newParts[info.id]?.length) {
 									newParts[info.id] = bridge;
-									bridgedPartIds.add(info.id);
+									trackId(bridgedPartIds, info.sessionID, info.id);
 								}
 								return {
 									messages: { ...s.messages, [info.sessionID]: next },
