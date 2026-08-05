@@ -1252,6 +1252,125 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		expect(isResident("ses_a")).toBe(true);
 	});
 
+	// A session whose agent is still running does not go quiet when it is
+	// evicted — its SSE frames keep arriving and put `messages[id]` straight
+	// back, holding only what streamed after the eviction. Coming back to it
+	// then found `sessionId in store.messages` true, so the disk repaint stood
+	// down and the user saw the fragment instead of their history. Before this
+	// branch that history was simply resident, so this is a regression in what
+	// the user sees, not a missed optimisation.
+	//
+	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// spawn-tool preview of a child session) has no reconcile of its own and is
+	// fed by SSE alone, so a child streaming before its preview mounts would
+	// lose the frames outright. The events stay; the repaint decision is what
+	// gets fixed.
+	describe("a session evicted while it is still streaming", () => {
+		function evict(sessionID: string): void {
+			seedSession(sessionID);
+			useSyncStore.getState().retainSession(sessionID)();
+			browseAway(RETENTION_BOUND + 1);
+			expect(isResident(sessionID)).toBe(false);
+		}
+
+		/** What the live SSE stream does to an evicted session: recreates its
+		 *  key with only the tail that arrived after the eviction. */
+		function streamInto(sessionID: string): void {
+			const store = useSyncStore.getState();
+			store.upsertMessage(sessionID, assistantMessage("msg_after", sessionID));
+			store.upsertPart(
+				"msg_after",
+				textPart("prt_after", "msg_after", "post-eviction", sessionID),
+				sessionID,
+			);
+		}
+
+		test("is marked, so the disk repaint still runs when the user returns", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			expect(isResident("ses_a")).toBe(true);
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(true);
+		});
+
+		test("a resident session that was never evicted is not marked", () => {
+			seedSession("ses_a");
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		test("the repaint clears the mark — hydrate is the authority again", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().retainSession("ses_a");
+			useSyncStore
+				.getState()
+				.hydrate("ses_a", [{ info: userMessage("msg_ses_a", "ses_a"), parts: [] }]);
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+			// The merge keeps the streamed tail and restores the history under it.
+			expect(useSyncStore.getState().messages["ses_a"].map((m) => m.id)).toEqual([
+				"msg_after",
+				"msg_ses_a",
+			]);
+		});
+
+		// `hydrate`'s ordinal fallback pairs an in-flight optimistic user message
+		// with the oldest unclaimed real one. Every message in the disk copy is
+		// unclaimed by definition, so repainting under a live send would retire
+		// the message the user just typed. The key-presence check used to make
+		// that unreachable (optimisticAdd creates the key); the mark has to.
+		test("a send in flight stands the repaint down rather than racing it", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore
+				.getState()
+				.optimisticAdd("ses_a", userMessage("msg_client", "ses_a"), [
+					textPart("prt_client", "msg_client", "just typed", "ses_a"),
+				]);
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		test("a deliberate clearSession is not something the cache may undo", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().clearSession("ses_a");
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		// Eviction takes the session out of the detach window, so the data SSE
+		// puts back had no path out of memory again — the leak this branch closes,
+		// reopened by the stream. The next mount of anything sweeps it.
+		test("is freed again on the next mount, not left resident forever", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+			expect(isResident("ses_a")).toBe(true);
+
+			seedSession("ses_next");
+			useSyncStore.getState().retainSession("ses_next");
+
+			expect(isResident("ses_a")).toBe(false);
+			expect(useSyncStore.getState().parts["msg_after"]).toBeUndefined();
+			// Still marked: it is still a session the user can come back to.
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(true);
+		});
+
+		test("the user returning is what stops the re-sweep, not luck", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().retainSession("ses_a");
+			seedSession("ses_next");
+			useSyncStore.getState().retainSession("ses_next");
+
+			expect(isResident("ses_a")).toBe(true);
+		});
+	});
+
 	test("reset() clears the retention bookkeeping along with the data", () => {
 		seedSession("ses_a");
 		const release = useSyncStore.getState().retainSession("ses_a");

@@ -113,6 +113,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       if (
         !shouldHydrateFromCache({
           storeHasSession: sessionId in store.messages,
+          storeSessionWasEvicted: store.wasTranscriptEvicted(sessionId),
           cachedMessageCount: cached.messages.length,
         })
       ) {

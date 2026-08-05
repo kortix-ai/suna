@@ -133,6 +133,25 @@ interface SyncState {
 	 */
 	retainSession: (sessionID: string) => () => void;
 	/**
+	 * True when this session's `messages` entry — if it has one at all — is a
+	 * post-eviction fragment rather than the transcript.
+	 *
+	 * Eviction deletes the key, and `use-session-sync.ts` reads its absence as
+	 * "the disk copy may repaint". A session whose agent is still running defeats
+	 * that on its own: its SSE frames put the key back within a second or two,
+	 * holding only what streamed after the eviction, so the user came back to the
+	 * fragment and had to `loadOlder` for everything before it.
+	 *
+	 * Answering this at the store is what makes the repaint decision correct
+	 * without dropping any event — dropping events for a session nobody has
+	 * mounted would blind the spawn-tool preview of a child session, which has no
+	 * reconcile of its own and is fed by SSE alone.
+	 *
+	 * Goes false again the moment anything re-establishes the session:
+	 * `hydrate` (the repaint, or a reconcile), `clearSession`, `optimisticAdd`.
+	 */
+	wasTranscriptEvicted: (sessionID: string) => boolean;
+	/**
 	 * Join this session's messages with their parts, memoized on the identity of
 	 * the arrays it read.
 	 *
@@ -338,6 +357,16 @@ function touchSessionMessageRows(
 const sessionConsumers = new Map<string, number>();
 /** Sessions at zero consumers, oldest first (Set preserves insertion order). */
 const detachedSessions = new Set<string>();
+/**
+ * Sessions whose transcript eviction freed, and which nothing authoritative has
+ * reloaded since. See {@link SyncState.wasTranscriptEvicted} for what reads it
+ * and {@link pruneDetachedSessions} for the second thing it is for.
+ *
+ * Holds ids, not data. It is cleared wholesale by `reset()`, and per-session by
+ * every path that re-establishes the session — `hydrate`, `clearSession`,
+ * `optimisticAdd`.
+ */
+const evictedSessions = new Set<string>();
 
 type SyncData = Pick<
 	SyncState,
@@ -415,7 +444,15 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
 
 /**
  * Prune the detached window down to {@link DETACHED_SESSION_LIMIT}, freeing the
- * oldest sessions past it. Returns the ids it freed.
+ * oldest sessions past it, plus any already-evicted session the live stream has
+ * since refilled. Returns the ids it freed.
+ *
+ * The second half is what keeps eviction from being a one-shot. Eviction takes
+ * a session OUT of the detach window, so an agent still running in it puts
+ * `messages[id]` back — through SSE, with nobody watching — and that data then
+ * has no path out of memory again. Re-checking {@link evictedSessions} on every
+ * prune gives it one: the next mount of any session sweeps it, exactly like the
+ * first time. It stays marked, because the user can still come back to it.
  *
  * Runs when a session is RETAINED, never when one is released. React runs every
  * passive destroy before any passive create in a commit, so pruning on release
@@ -459,13 +496,20 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
  * misses (idb-sync-cache-key.ts:6-9).
  */
-function pruneDetachedSessions(): string[] {
+function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 	const evicted: string[] = [];
 	while (detachedSessions.size > DETACHED_SESSION_LIMIT) {
 		const oldest: string | undefined = detachedSessions.values().next().value;
 		if (oldest === undefined) break;
 		detachedSessions.delete(oldest);
 		evicted.push(oldest);
+	}
+	// Refilled since it was last freed, and still nobody's. Gated on the key
+	// actually being back so a quiet evicted session never provokes a `set()`
+	// that changes nothing and re-renders every consumer of this store.
+	for (const sessionID of evictedSessions) {
+		if (sessionConsumers.has(sessionID) || detachedSessions.has(sessionID)) continue;
+		if (sessionID in messages) evicted.push(sessionID);
 	}
 	return evicted;
 }
@@ -672,6 +716,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	optimisticAdd: (sessionID, message, messageParts) => {
 		trackId(optimisticIds, sessionID, message.id);
+		// The user has typed into this session, so the disk repaint stands down.
+		// `hydrate`'s ordinal fallback pairs an in-flight optimistic message with
+		// the oldest unclaimed real user message, and EVERY message in a disk
+		// copy is unclaimed — a repaint landing mid-send would retire the message
+		// that was just typed. The key-presence check used to make that
+		// unreachable (this action creates the key); the mark has to.
+		evictedSessions.delete(sessionID);
 		set((s) => {
 			const list = s.messages[sessionID] ?? [];
 			// Always append optimistic messages at the end of the list.
@@ -742,6 +793,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Release this session's optimistic tracking along with its messages.
 			// Skipping it is what let ids accumulate for the lifetime of the tab.
 			forgetSessionIds(sessionID);
+			// Emptied on purpose (a cache-ownership conflict). The disk copy is
+			// exactly what must NOT come back, so drop any eviction mark with it.
+			evictedSessions.delete(sessionID);
 			const existingMessages = s.messages[sessionID] ?? [];
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
@@ -762,9 +816,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		detachedSessions.delete(sessionID);
 		sessionConsumers.set(sessionID, (sessionConsumers.get(sessionID) ?? 0) + 1);
 
-		const evicted = pruneDetachedSessions();
+		const evicted = pruneDetachedSessions(get().messages);
 		if (evicted.length > 0) {
-			for (const id of evicted) forgetSessionIds(id);
+			for (const id of evicted) {
+				forgetSessionIds(id);
+				evictedSessions.add(id);
+			}
 			set((s) => dropSessionData(s, evicted));
 		}
 
@@ -789,6 +846,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			detachedSessions.add(sessionID);
 		};
 	},
+
+	wasTranscriptEvicted: (sessionID) => evictedSessions.has(sessionID),
 
 	buildSessionMessages: (sessionID, msgs, parts) => {
 		if (!msgs || msgs.length === 0) return EMPTY_MESSAGE_ROWS;
@@ -827,6 +886,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	hydrate: (sessionID, msgs) =>
 		set((s) => {
+			// An authoritative load — the disk repaint itself, or a reconcile —
+			// re-establishes the session, so its entry is no longer a fragment.
+			evictedSessions.delete(sessionID);
 			const cmp = (a: string, b: string) =>
 				a < b ? -1 : a > b ? 1 : 0;
 			const incoming = msgs
@@ -1042,6 +1104,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		// otherwise a late unmount could free a session the next page opened.
 		sessionConsumers.clear();
 		detachedSessions.clear();
+		evictedSessions.clear();
 		sessionMessageRows.clear();
 		set({
 			messages: {},
