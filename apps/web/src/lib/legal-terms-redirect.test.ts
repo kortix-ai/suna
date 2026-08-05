@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { LEGAL_TERMS_DRIVE_BASE, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 
 describe('legalTermsRedirectUrl', () => {
-  describe('redirects Terms requests to the Drive folder', () => {
+  describe('redirects Terms requests to the Drive file', () => {
     const termsCases: Array<{ name: string; pathname: string; search: string }> = [
       { name: 'stable /legal/terms', pathname: '/legal/terms', search: '' },
       { name: 'stable /legal/terms with usp=sharing', pathname: '/legal/terms', search: '?usp=sharing' },
@@ -25,7 +25,7 @@ describe('legalTermsRedirectUrl', () => {
         const dest = legalTermsRedirectUrl(pathname, params);
         expect(dest).not.toBeNull();
         expect(dest!.origin).toBe('https://drive.google.com');
-        expect(dest!.pathname).toBe('/drive/folders/1UZuRrBGhzACGBgi2J47BS-I6VMNnqIHN');
+        expect(dest!.pathname).toBe('/file/d/1KJ4lLxz6LQosk0DZIosSAf01GK8PdQ54/view');
         // usp=sharing is always present and never overridden.
         expect(dest!.searchParams.get('usp')).toBe('sharing');
       });
@@ -112,7 +112,7 @@ describe('legalTermsRedirectUrl', () => {
 
   test('exposes the canonical Drive base URL', () => {
     expect(LEGAL_TERMS_DRIVE_BASE).toBe(
-      'https://drive.google.com/drive/folders/1UZuRrBGhzACGBgi2J47BS-I6VMNnqIHN',
+      'https://drive.google.com/file/d/1KJ4lLxz6LQosk0DZIosSAf01GK8PdQ54/view',
     );
   });
 });
