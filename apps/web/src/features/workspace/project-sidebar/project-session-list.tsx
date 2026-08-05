@@ -38,7 +38,6 @@ import {
   sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
-  sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
@@ -168,14 +167,16 @@ export function ProjectSessionList({
     },
   });
 
-  const sessions = sortSessionsByLastActivity(data ?? []);
+  // Unsorted on purpose: nothing here reads the order. The two consumers are
+  // `.length` and `.filter()`, and `groupSessionsForSidebar` sorts each section
+  // itself — sorting twice per render bought nothing.
+  const sessions = data ?? [];
   // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
   // this list only applies the chosen filter.
   const visibleSessions = sessions.filter(
     (session) =>
       matchesSessionFilter(session, filter) && matchesSessionStatusFilter(session, statusFilter),
   );
-  const grouped = groupSessionsForSidebar(visibleSessions, reviewSummary.needsYouBySession);
 
   const viewState = resolveSessionListViewState({
     isLoading,
@@ -224,6 +225,11 @@ export function ProjectSessionList({
       </div>
     );
   }
+
+  // Below the early returns: grouping is only ever read by the content state,
+  // and computing it above meant every loading/error/empty render paid for a
+  // result it threw away.
+  const grouped = groupSessionsForSidebar(visibleSessions, reviewSummary.needsYouBySession);
 
   return (
     <>
@@ -574,17 +580,23 @@ function ProjectSubsessionRow({
 
 /** Per-display-status paint. Green appears in exactly two rows — the two that
  *  mean live or actionable. `done` is muted on purpose: it is the change that
- *  drains the green out of a long list and makes the rest mean something. */
+ *  drains the green out of a long list and makes the rest mean something.
+ *
+ *  `glyph` is what separates the two muted states. Both used to be rings that
+ *  differed only by a dash pattern, and at 16px that is not a difference a user
+ *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
+ *  The check stays muted — a check is not a licence to go green. */
 const STATUS_DOT_STYLE: Record<
   SessionDisplayStatus,
-  { color: string; fill: boolean; dashed: boolean }
+  { color: string; glyph: 'ring' | 'check'; fill: boolean }
 > = {
-  'needs-you': { color: 'var(--kortix-green)', fill: true, dashed: false },
-  starting: { color: 'var(--kortix-yellow)', fill: false, dashed: false },
-  running: { color: 'var(--kortix-green)', fill: true, dashed: false },
-  done: { color: 'var(--muted-foreground)', fill: false, dashed: false },
-  stopped: { color: 'var(--muted-foreground)', fill: false, dashed: true },
-  failed: { color: 'var(--kortix-red)', fill: true, dashed: false },
+  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  // `starting` renders <Loading /> instead and never reads glyph/fill.
+  starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
+  running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
+  stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+  failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
 };
 
 function SessionStatusDot({
@@ -606,7 +618,7 @@ function SessionStatusDot({
       <div className="flex size-4 shrink-0 items-center justify-center">
         {display === 'starting' ? (
           // Loading is the only spinner in this codebase. The previous
-          // implementation span an SVG with animate-spin, which the rule bans.
+          // implementation spun an SVG with animate-spin, which the rule bans.
           <Loading variant="spokes" className="size-3.5 text-[var(--kortix-yellow)]" />
         ) : (
           <svg
@@ -618,17 +630,23 @@ function SessionStatusDot({
             className="flex shrink-0 items-center justify-center"
             aria-hidden
           >
-            <circle
-              cx="8"
-              cy="8"
-              r="6.3"
-              stroke="currentColor"
-              fill="none"
-              strokeWidth="1.5"
-              strokeDasharray={style.dashed ? '3 3.4' : undefined}
-            />
-            {style.fill && (
-              <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
+            {style.glyph === 'check' ? (
+              // Same 16px box, same 1.5 stroke, same currentColor as the rings,
+              // so the dot column stays optically aligned row to row.
+              <path
+                d="M4 8.4 L6.8 11.2 L12 5.2"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            ) : (
+              <>
+                <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+                {style.fill && (
+                  <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
+                )}
+              </>
             )}
           </svg>
         )}

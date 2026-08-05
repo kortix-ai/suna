@@ -1,12 +1,10 @@
 'use client';
 
 import {
-  availableSessionFilterOptions,
-  availableSessionStatusFilterOptions,
+  resolveSessionFilterMenu,
   SESSION_FILTER_OPTIONS,
   SESSION_STATUS_FILTER_OPTIONS,
   type SessionFilterValue,
-  type SessionStatusFilterValue,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
@@ -106,33 +104,28 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
-  // Empty = this project has one kind of session, so every filter would render
-  // the same list. The dropdown is dropped entirely rather than shown inert.
-  const filterOptions = useMemo(
-    () => availableSessionFilterOptions(filterSessions ?? []),
-    [filterSessions],
+  // Both dimensions resolve together: the counts are faceted (each menu counts
+  // what the OTHER filter lets through, because the list ANDs them) and the
+  // "persisted filter outlived its sessions" recovery runs in the same pass.
+  // An empty option list means the group would render the same list as "All",
+  // and is the signal to drop that group — both empty drops the whole menu.
+  // Until the query resolves, keep the persisted values and offer nothing:
+  // resolving against [] would reset the filter to "all" on every mount.
+  const { filterOptions, statusOptions, activeFilter, activeStatus } = useMemo(
+    () =>
+      filterSessions
+        ? resolveSessionFilterMenu(filterSessions, sessionFilter, sessionStatus)
+        : {
+            filterOptions: [],
+            statusOptions: [],
+            activeFilter: sessionFilter,
+            activeStatus: sessionStatus,
+          },
+    [filterSessions, sessionFilter, sessionStatus],
   );
-  const statusOptions = useMemo(
-    () => availableSessionStatusFilterOptions(filterSessions ?? []),
-    [filterSessions],
-  );
-  // A persisted filter outlives the sessions that justified it — delete the
-  // last Slack session while filtered to Slack and the menu disappears with no
-  // way back. Fall back to "all" once the loaded set says the filter is gone.
-  const activeFilter: SessionFilterValue =
-    filterSessions && !filterOptions.some((option) => option.value === sessionFilter)
-      ? 'all'
-      : sessionFilter;
   const activeFilterOption =
     SESSION_FILTER_OPTIONS.find((option) => option.value === activeFilter) ??
     SESSION_FILTER_OPTIONS[0];
-  // A persisted status outlives the sessions that justified it — filter to
-  // Failed, delete the last failed session, and the option vanishes with no
-  // way back.
-  const activeStatus: SessionStatusFilterValue =
-    filterSessions && !statusOptions.some((option) => option.value === sessionStatus)
-      ? 'all'
-      : sessionStatus;
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -333,6 +326,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   {(statusOptions.length > 0 || filterOptions.length > 0) && (
                     <DropdownMenu onOpenChange={holdPeek}>
                       <DropdownMenuContent align="start" className="w-44 p-1">
+                        {/* Each label is gated on ITS OWN group. A label with
+                            nothing under it is a header for an empty list —
+                            which is exactly what an all-chat project used to
+                            render, because SOURCE was gated on the STATUS
+                            group. The separator needs both groups present. */}
                         {statusOptions.length > 0 && (
                           <>
                             <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
@@ -350,11 +348,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                                 </span>
                               </DropdownMenuItem>
                             ))}
-                            {filterOptions.length > 0 && <DropdownMenuSeparator />}
-                            <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
-                              Source
-                            </DropdownMenuLabel>
                           </>
+                        )}
+                        {statusOptions.length > 0 && filterOptions.length > 0 && (
+                          <DropdownMenuSeparator />
+                        )}
+                        {filterOptions.length > 0 && (
+                          <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
+                            Source
+                          </DropdownMenuLabel>
                         )}
                         {filterOptions.map((option) => {
                           const OptionIcon = SESSION_FILTER_ICONS[option.value];

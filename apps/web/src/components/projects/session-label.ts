@@ -1,9 +1,18 @@
 import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk';
 
 /**
- * Canonical helpers for resolving a project session's display label and its
- * opencode session tree. Single source of truth — the sidebar, the session
- * list, and the tab bar must all render the SAME name for a session.
+ * Canonical, framework-free helpers for reading a project session the way the
+ * UI reads it. Single source of truth for four things:
+ *
+ * - the display LABEL and the opencode session tree (`sessionDisplayLabel`,
+ *   `rootOpenCodeSession`, `directSubsessions`) — the sidebar, the session
+ *   list, and the tab bar must all render the SAME name for a session;
+ * - the SOURCE a session came from, and the source filter over it;
+ * - the DISPLAY STATUS — the five user-facing states the seven-value sandbox
+ *   lifecycle collapses to — and the status filter over it;
+ * - the two-dimension filter MENU (`resolveSessionFilterMenu`), which resolves
+ *   both filters and both option lists together so the counts a menu promises
+ *   always match what the list renders.
  */
 
 /** The root opencode session a project session is pinned to (if synced). */
@@ -93,12 +102,6 @@ export function matchesSessionFilter(session: ProjectSession, filter: SessionFil
   return kind === filter;
 }
 
-/**
- * Human display label for a session. Precedence: the user-set rename
- * (custom_name) is AUTHORITATIVE and always wins. Then: server-resolved
- * session.name (OpenCode auto-title mirrored during session reads) → legacy
- * metadata.session_name → branch slice → short id.
- */
 export interface SessionFilterOption {
   value: SessionFilterValue;
   label: string;
@@ -106,30 +109,55 @@ export interface SessionFilterOption {
 }
 
 /**
- * Which filters a session set is worth offering, with their counts.
+ * The one option-list builder both filter dimensions use.
  *
- * A source filter earns a slot only when it matches at least one session — an
- * "Email 0" row is a dead end. And the menu as a whole only earns its place
- * when two or more sources are present: with a single source every option
- * renders the exact same list as "All", so the control does nothing. Returns
- * [] in that case, which is the signal to drop the dropdown entirely.
+ * Three rules, identical for source and status:
  *
- * "All" is prepended (never counted as a source) and counts every session,
- * including kinds no filter covers (e.g. telegram).
+ * 1. An option earns a slot only when it matches at least one session — an
+ *    "Email 0" row is a dead end.
+ * 2. …unless it is the ACTIVE option. A menu that drops the option the user is
+ *    currently filtered to leaves no way back, so the active option is always
+ *    listed, at its true count, even when that count is 0.
+ * 3. The group as a whole earns its place only at two or more listed options:
+ *    below that every option renders the exact same list as "All". `[]` is the
+ *    signal to drop the group entirely. Rule 3 is skipped whenever a non-"all"
+ *    option is active — again, the user needs the way back.
+ *
+ * "All" is prepended (never counted as an option itself) and counts every
+ * session in `sessions`, including kinds no option covers (e.g. telegram).
  */
-export function availableSessionFilterOptions(sessions: ProjectSession[]): SessionFilterOption[] {
-  const [allOption, ...sourceOptions] = SESSION_FILTER_OPTIONS;
-  const present = sourceOptions
+function buildFilterOptions<V extends string>(
+  declared: Array<{ value: V; label: string }>,
+  sessions: ProjectSession[],
+  matches: (session: ProjectSession, value: V) => boolean,
+  active: V,
+): Array<{ value: V; label: string; count: number }> {
+  const [allOption, ...rest] = declared;
+  const present = rest
     .map((option) => ({
       ...option,
-      count: sessions.filter((session) => matchesSessionFilter(session, option.value)).length,
+      count: sessions.filter((session) => matches(session, option.value)).length,
     }))
-    .filter((option) => option.count > 0);
+    .filter((option) => option.count > 0 || option.value === active);
 
-  if (present.length < 2) return [];
+  if (active === allOption.value && present.length < 2) return [];
   return [{ ...allOption, count: sessions.length }, ...present];
 }
 
+/** Which source filters a session set is worth offering, with their counts.
+ *  See `buildFilterOptions` for the rules. Counts the whole set — for the
+ *  faceted, ANDed-with-status counts the menu actually renders, use
+ *  `resolveSessionFilterMenu`. */
+export function availableSessionFilterOptions(sessions: ProjectSession[]): SessionFilterOption[] {
+  return buildFilterOptions(SESSION_FILTER_OPTIONS, sessions, matchesSessionFilter, 'all');
+}
+
+/**
+ * Human display label for a session. Precedence: the user-set rename
+ * (custom_name) is AUTHORITATIVE and always wins. Then: server-resolved
+ * session.name (OpenCode auto-title mirrored during session reads) → legacy
+ * metadata.session_name → branch slice → short id.
+ */
 export function sessionDisplayLabel(session: ProjectSession): string {
   const metadataName =
     typeof session.metadata?.session_name === 'string'
@@ -176,6 +204,14 @@ export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string>
  *
  * A pending review wins outright: a finished session with items awaiting the
  * human is ACTIONABLE, and actionable outranks finished.
+ *
+ * The `default` is load-bearing, not defensive noise. `ProjectSessionStatus`
+ * is a published SDK union, so an API that grows an eighth member ships a
+ * value this build has never seen. Without the default the function returns
+ * `undefined`, `STATUS_DOT_STYLE[undefined]` throws, and the whole sidebar
+ * unmounts. `stopped` is the safe answer: muted (never green, per the
+ * governing rule) and honest — "not live" is true of any value that is not
+ * one of the four live ones, whereas `failed` would invent a failure.
  */
 export function sessionDisplayStatus(
   session: ProjectSession,
@@ -195,6 +231,8 @@ export function sessionDisplayStatus(
       return 'stopped';
     case 'failed':
       return 'failed';
+    default:
+      return 'stopped';
   }
 }
 
@@ -239,25 +277,92 @@ export function matchesSessionStatusFilter(
   return display === filter;
 }
 
-/**
- * Which status filters this session set is worth offering, with their counts.
- *
- * Mirrors `availableSessionFilterOptions` exactly: an option earns a slot only
- * when it matches at least one session ("Failed 0" is a dead end), and the
- * group as a whole earns its place only at two or more represented statuses —
- * below that every option renders the same list as "All".
- */
+/** Which status filters this session set is worth offering, with their counts.
+ *  Same three rules as the source dimension — see `buildFilterOptions`. Counts
+ *  the whole set; for the faceted, ANDed-with-source counts the menu actually
+ *  renders, use `resolveSessionFilterMenu`. */
 export function availableSessionStatusFilterOptions(
   sessions: ProjectSession[],
 ): SessionStatusFilterOption[] {
-  const [allOption, ...statusOptions] = SESSION_STATUS_FILTER_OPTIONS;
-  const present = statusOptions
-    .map((option) => ({
-      ...option,
-      count: sessions.filter((session) => matchesSessionStatusFilter(session, option.value)).length,
-    }))
-    .filter((option) => option.count > 0);
+  return buildFilterOptions(
+    SESSION_STATUS_FILTER_OPTIONS,
+    sessions,
+    matchesSessionStatusFilter,
+    'all',
+  );
+}
 
-  if (present.length < 2) return [];
-  return [{ ...allOption, count: sessions.length }, ...present];
+/** Both filter dimensions, resolved together: the two option lists the menu
+ *  renders and the two values the list is actually filtered by. */
+export interface SessionFilterMenu {
+  filterOptions: SessionFilterOption[];
+  statusOptions: SessionStatusFilterOption[];
+  activeFilter: SessionFilterValue;
+  activeStatus: SessionStatusFilterValue;
+}
+
+/**
+ * Resolve the whole SESSIONS filter menu — both dimensions at once.
+ *
+ * The list ANDs the two filters. Counting each dimension over the raw session
+ * set therefore lies: with Source=Slack and every Slack session `completed`,
+ * a status menu counted over all sessions still offers "Running 2", and
+ * clicking it renders the no-matches empty state. So each dimension is counted
+ * over the sessions that already pass the OTHER dimension's active filter.
+ *
+ * That cross-dependency is what makes this one function rather than two.
+ *
+ * **Why it cannot oscillate.** Recovery — resetting a filter whose sessions
+ * have all vanished — reads the UNFACETED session set (steps 1 and 2 below).
+ * It is therefore independent of the other dimension's value, so a reset in
+ * one dimension can never trigger a reset in the other, and there is no
+ * feedback edge to loop over. Faceting (step 3) only reads the resolved
+ * values; it never writes them. The whole function is straight-line — no
+ * fixpoint iteration, no convergence to argue about.
+ *
+ * **Why the active option never disappears.** The faceted list can legitimately
+ * count the active option at 0 (Source=Slack, Status=Running, no Slack session
+ * running). Rather than silently resetting the user's choice — a filter
+ * changing itself under the cursor is the more confusing failure — the active
+ * option stays listed at its true count of 0, alongside "All". The count is
+ * honest, it matches the empty list the user is looking at, and "All" is one
+ * click away. See rules 2 and 3 in `buildFilterOptions`.
+ */
+export function resolveSessionFilterMenu(
+  sessions: ProjectSession[],
+  requestedFilter: SessionFilterValue,
+  requestedStatus: SessionStatusFilterValue,
+): SessionFilterMenu {
+  // 1 + 2. Recovery, per dimension, against the whole set. A persisted filter
+  // outlives the sessions that justified it: filter to Slack, delete the last
+  // Slack session, and the option is gone with no way back. Falling back to
+  // "all" only ever widens the visible set.
+  const activeFilter: SessionFilterValue = availableSessionFilterOptions(sessions).some(
+    (option) => option.value === requestedFilter,
+  )
+    ? requestedFilter
+    : 'all';
+  const activeStatus: SessionStatusFilterValue = availableSessionStatusFilterOptions(sessions).some(
+    (option) => option.value === requestedStatus,
+  )
+    ? requestedStatus
+    : 'all';
+
+  // 3. Faceted counts: each dimension sees only what the other one lets through.
+  return {
+    statusOptions: buildFilterOptions(
+      SESSION_STATUS_FILTER_OPTIONS,
+      sessions.filter((session) => matchesSessionFilter(session, activeFilter)),
+      matchesSessionStatusFilter,
+      activeStatus,
+    ),
+    filterOptions: buildFilterOptions(
+      SESSION_FILTER_OPTIONS,
+      sessions.filter((session) => matchesSessionStatusFilter(session, activeStatus)),
+      matchesSessionFilter,
+      activeFilter,
+    ),
+    activeFilter,
+    activeStatus,
+  };
 }
