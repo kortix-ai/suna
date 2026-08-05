@@ -115,6 +115,25 @@ function resolveKortixVersion(): string {
 }
 const KORTIX_VERSION = resolveKortixVersion();
 
+// --- Turbopack dev memory eviction ----------------------------------------
+// `experimental.turbopackMemoryEviction` takes exactly `false | 'auto' | 'full'`
+// (docs: /docs/app/api-reference/config/next-config-js/turbopackMemoryEviction).
+// Validate rather than cast: an unset var, an empty string (`FOO= pnpm dev`),
+// and a typo are three different mistakes, and only the first should silently
+// mean "use the default". Casting a raw env string would forward `''` or
+// `'ful'` straight into the config as a value Next never defined.
+function resolveTurbopackMemoryEviction(): false | 'auto' | 'full' {
+  const raw = process.env.KORTIX_TURBOPACK_EVICTION;
+  if (raw === undefined || raw === '') return 'auto';
+  if (raw === 'false') return false;
+  if (raw === 'auto' || raw === 'full') return raw;
+  console.warn(
+    `[next.config.ts] Ignoring KORTIX_TURBOPACK_EVICTION=${JSON.stringify(raw)} — ` +
+      `expected one of 'auto', 'full', 'false'. Falling back to 'auto'.`,
+  );
+  return 'auto';
+}
+
 // Local `pnpm preview` (scripts/dev-local.sh --build) sets KORTIX_PREVIEW_BUILD=1
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
 // (next start never reads .next/standalone) and skip ESLint. Prod/CI/Vercel builds
@@ -203,10 +222,24 @@ const nextConfig = (): NextConfig => ({
   //     GitHub Actions needs the actions/cache step added in ci.yml.
   //   · experimental.prefetchInlining                  (default true as of 16.3)
   //
+  // BEHAVIOUR CHANGE worth knowing even though this app dodges it:
+  //   · experimental.useTypeScriptCli (default true in 16.3) makes `next build`
+  //     shell out to the project's `tsc` instead of loading the TypeScript API.
+  //     Per its docs that checks "the complete project selected by the
+  //     configured tsconfig file ... INCLUDING TEST FILES". 16.2 only checked
+  //     the app's module graph. So on 16.3 a latent type error in a test can
+  //     fail a production build.
+  //     This app is immune ONLY because `typescript.ignoreBuildErrors: true`
+  //     above skips the type-check step entirely (including the CLI checker).
+  //     apps/whitelabel-demo does NOT set it, and 16.3 duly failed its build on
+  //     a pre-existing error in tests/e2e/session-scope.test.ts. Any new app in
+  //     this monorepo inherits that same trap.
+  //     Not adopted here: TypeScript 7 (`typescript@^7`, the 10x native port)
+  //     would speed up the real gate — the separate `tsc --noEmit` — but that
+  //     is a compiler swap with its own diagnostics surface, not part of a
+  //     framework bump. Deliberately left for its own change.
+  //
   // Not applicable to this app:
-  //   · experimental.useTypeScriptCli — `typescript.ignoreBuildErrors: true`
-  //     above skips the build type-check entirely, so the CLI-vs-API checker
-  //     choice never executes. The real gate is the separate `tsc --noEmit`.
   //   · next/root-params — root params only exist for a dynamic segment ABOVE
   //     the root layout. src/app's top level is (app)/(auth)/(public)/(system)/
   //     (utility)/admin/docs/api — all static. Locale comes from next-intl's
@@ -222,6 +255,22 @@ const nextConfig = (): NextConfig => ({
   //     need an audit first.
   //   · experimental.useOffline. Network-resilience retry semantics change how
   //     failed Server Actions surface; needs its own testing pass.
+  //   · next/error `catchError` boundaries. The clearest win left on the table:
+  //     src/app/error.tsx currently hard-reloads via window.location.reload()
+  //     because React's reset() can only reset client state, and it polls
+  //     reset() on an interval for the transient runtime-not-ready throw. 16.3's
+  //     retry() re-fetches the boundary's children INCLUDING Server Components,
+  //     which is what that code actually wants. Deliberately not done here —
+  //     rewriting the global error boundary is not an upgrade-PR change.
+  //
+  // Automatic in 16.3, nothing to configure, listed so the audit is complete:
+  //   · App Router SSR now uses native Node streams instead of web streams
+  //     (~22% more requests under load upstream). Runtime-only, no API change.
+  //   · import.meta.glob is a Turbopack capability, available without a flag.
+  //   · Immutable static assets reusable across deploys is an ADAPTER feature
+  //     (/docs/app/api-reference/adapters/immutable-static-assets). This app
+  //     ships `output: 'standalone'` on Vercel + a runner-only Docker image and
+  //     wires no custom adapter, so there is nothing to opt into here.
   //
   // Turbopack configuration
   turbopack: {
@@ -259,10 +308,7 @@ const nextConfig = (): NextConfig => ({
     // Default stays 'auto' (upstream's). Set KORTIX_TURBOPACK_EVICTION=full
     // when the laptop is thrashing. Disk cost is real either way:
     // .next/dev/cache grew 3.8GB -> 14-15GB.
-    turbopackMemoryEviction:
-      process.env.KORTIX_TURBOPACK_EVICTION === 'false'
-        ? false
-        : ((process.env.KORTIX_TURBOPACK_EVICTION as 'full' | 'auto') ?? 'auto'),
+    turbopackMemoryEviction: resolveTurbopackMemoryEviction(),
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',

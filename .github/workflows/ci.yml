@@ -169,12 +169,22 @@ jobs:
       # 16.3 build-cache feature into an actual CI speedup.
       #
       # Key on the lockfile plus this run's SHA so every run saves a fresh
-      # entry (actions/cache never overwrites an existing key); restore-keys
+      # entry (actions/cache never overwrites an existing key); the restore-key
       # falls back to the newest entry built against the same dependency set.
       # Turbopack invalidates per-file from its own content hashes, so a
       # restored cache from an older SHA is a valid starting point, not a
-      # source of stale output. Upstream recipe:
+      # source of stale output.
+      #
+      # The fallback deliberately stops at the lockfile hash. A broader
+      # `nextjs-turbopack-<os>-` key would also match caches built against a
+      # DIFFERENT next version, whose on-disk cache format need not be
+      # compatible — that is ~1GB downloaded to be discarded. Upstream's recipe
+      # scopes its restore-keys to the lockfile for the same reason:
       # https://nextjs.org/docs/app/guides/ci-build-caching
+      #
+      # Verified on this PR: run 1 logged "Cache not found" then "Cache saved";
+      # a re-run logged "Cache restored from key" and the Turbopack compile
+      # went 105s -> 1.549s.
       - name: Restore Turbopack build cache
         uses: actions/cache@v4
         with:
@@ -182,7 +192,6 @@ jobs:
           key: nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
-            nextjs-turbopack-${{ runner.os }}-
 
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build
