@@ -27,6 +27,7 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { STATUS_TEXT } from '@/components/ui/status';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { partOutcome, ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
@@ -124,6 +125,26 @@ function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; run
  * `pl-7` puts the members under the group's LABEL (size-4 icon + gap-3), clear
  * of the rail at `left-2` — the indent is what says these rows belong to the
  * row above rather than to the chain.
+ *
+ * The group row is the PARENT of the rows it opens, and says so without colour:
+ * `font-medium` against the regular-weight tool titles underneath it (see
+ * `InlineTriggerTitle` in tool/shared/infrastructure.tsx). Indent alone left the
+ * two levels reading as one list at a glance.
+ *
+ * `step.status` is consumed here, not discarded. `groupSteps` already picks the
+ * WORDS — a group holding a failure gets `narrateFailedStep`, never success
+ * wording — but the row used to render the same muted glyph either way, so the
+ * only failure signal inside an open burst was the sentence, and a reader had to
+ * click one level deeper to find out anything had gone wrong.
+ *
+ * Failure REPLACES the family glyph rather than sitting beside it, the same call
+ * `ToolOutcomeIcon` makes one level down: the row has one 16px gutter, and what
+ * the reader needs from it is the verdict — the family is still spelled out in
+ * the words immediately to its right ("Couldn't read your files"). Shape carries
+ * it as much as colour, so the mark survives a reader who cannot see the red.
+ *
+ * Running shimmers the label, which is how every tool row in this same chain
+ * already says "still going" — one running vocabulary per surface, not two.
  */
 export function ActivityGroupStep({
   step,
@@ -136,6 +157,7 @@ export function ActivityGroupStep({
   running: boolean;
   disableNavigation?: boolean;
 }) {
+  const failed = step.status === 'error';
   const Icon = iconFor(step.parts[0]);
 
   return (
@@ -144,14 +166,29 @@ export function ActivityGroupStep({
 			    clickable node, so a sibling caret would stack as a separate row. */}
       <DisclosureTrigger>
         <div
+          data-status={step.status}
           className={cn(
             'text-foreground/80 hover:text-foreground',
             'flex w-full cursor-pointer items-center gap-3',
             'text-left text-sm leading-[1.5] transition-colors',
           )}
         >
-          <Icon className="text-muted-foreground size-4 flex-none" />
-          <span className="min-w-0 truncate">{step.label}</span>
+          {failed ? (
+            <WarningIcon
+              weight="fill"
+              aria-label="This step failed"
+              className={cn('size-4 flex-none', STATUS_TEXT.destructive)}
+            />
+          ) : (
+            <Icon className="text-muted-foreground size-4 flex-none" />
+          )}
+          {step.status === 'running' ? (
+            <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
+              {step.label}
+            </TextShimmer>
+          ) : (
+            <span className="min-w-0 truncate font-medium">{step.label}</span>
+          )}
           <CaretRightIcon
             className={cn(
               'text-muted-foreground/40 size-3.5 flex-none',
