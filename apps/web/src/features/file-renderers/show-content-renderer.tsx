@@ -348,6 +348,16 @@ export function ShowContentRenderer({
     return URL.createObjectURL(blob);
   }, [isHtml, content]);
 
+  // Revoke the previous blob URL whenever the memo above produces a new one
+  // (content changed) and on unmount. The iframe below only ever reads the
+  // current `htmlBlobUrl`, so the old one is safe to free as soon as it
+  // stops being the current value.
+  useEffect(() => {
+    return () => {
+      if (htmlBlobUrl) URL.revokeObjectURL(htmlBlobUrl);
+    };
+  }, [htmlBlobUrl]);
+
   // Error fallback for FileContentRenderer (used for generic 'file' type)
   const fileErrorFallback = useCallback(
     (_error: string, fp: string) => {

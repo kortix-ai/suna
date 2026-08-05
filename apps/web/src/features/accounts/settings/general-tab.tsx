@@ -72,6 +72,26 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
   const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingStatus;
+  const avatarPreviewRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    avatarPreviewRef.current = avatarPreview;
+  }, [avatarPreview]);
+
+  // Closing the settings panel without saving (or cancelling out of it)
+  // unmounts this component while avatarPreview is still holding a blob
+  // URL — neither handleAvatarChange's replace-guard nor handleSave's
+  // post-save revoke runs in that case, so free it here on unmount. The
+  // ref (kept in sync above) always holds the latest preview, so this
+  // empty-deps effect's cleanup revokes whatever is current when it
+  // fires, not a value captured once at mount.
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewRef.current) {
+        URL.revokeObjectURL(avatarPreviewRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -110,6 +130,12 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       if (file.size > 5 * 1024 * 1024) {
         errorToast(t('profilePicture.tooLarge'));
         return;
+      }
+      // Picking a second file before saving replaces avatarPreview without
+      // ever passing through handleSave's revoke below — free the old
+      // preview URL here so it doesn't leak.
+      if (avatarPreview) {
+        URL.revokeObjectURL(avatarPreview);
       }
       setAvatarFile(file);
       const previewUrl = URL.createObjectURL(file);
