@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { QueryClient } from '@tanstack/react-query';
 
 import type { ProjectSession } from '@kortix/sdk';
-import { applySessionRename } from './rename-session-cache';
+import {
+  applySessionRename,
+  beginOptimisticRename,
+  rollbackOptimisticRename,
+} from './rename-session-cache';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -47,7 +52,11 @@ describe('applySessionRename', () => {
   });
 
   test('an empty list is a no-op, not a throw', () => {
-    expect(applySessionRename([], 's1', 'New name')).toEqual([]);
+    const sessions: ProjectSession[] = [];
+
+    // Same standard as the other no-op cases above: reference equality, not
+    // just an equivalent empty array.
+    expect(applySessionRename(sessions, 's1', 'New name')).toBe(sessions);
   });
 
   test('an empty name clears the override (custom_name: null) rather than storing ""', () => {
@@ -66,5 +75,77 @@ describe('applySessionRename', () => {
     const result = applySessionRename(sessions, 's1', 'New name');
 
     expect(result).not.toBe(sessions);
+  });
+});
+
+/**
+ * `beginOptimisticRename` / `rollbackOptimisticRename` are `onMutate` /
+ * `onError`'s cache write and restore, extracted from the mutation so a real
+ * `QueryClient` — a plain class, no provider or component needed — can drive
+ * the exact write-then-restore sequence the rename modal performs, without
+ * mounting anything or mocking a module.
+ */
+describe('beginOptimisticRename + rollbackOptimisticRename', () => {
+  const QUERY_KEY = ['project-sessions', 'p1'];
+
+  test('begin writes the new name into the cache and returns the pre-rename snapshot', () => {
+    const queryClient = new QueryClient();
+    const original = [makeSession({ session_id: 's1', custom_name: 'Old name' })];
+    queryClient.setQueryData(QUERY_KEY, original);
+
+    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
+
+    expect(previous).toBe(original);
+    expect(queryClient.getQueryData<ProjectSession[]>(QUERY_KEY)?.[0].custom_name).toBe('New name');
+  });
+
+  test('the rollback path restores the exact pre-rename snapshot', () => {
+    // The case the Important review finding asked for: drive begin, THEN
+    // rollback, and assert the cache is back to what it was before either
+    // ran — not just that the two functions individually behave.
+    const queryClient = new QueryClient();
+    const s2 = makeSession({ session_id: 's2', custom_name: 'Other' });
+    const original = [makeSession({ session_id: 's1', custom_name: 'Old name' }), s2];
+    queryClient.setQueryData(QUERY_KEY, original);
+
+    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
+    // Sanity check: the optimistic write actually landed before rolling it
+    // back — otherwise the restore assertion below would pass vacuously.
+    expect(queryClient.getQueryData<ProjectSession[]>(QUERY_KEY)?.[0].custom_name).toBe('New name');
+
+    rollbackOptimisticRename(queryClient, QUERY_KEY, previous);
+
+    // `toEqual`, not `toBe`: QueryClient's default structural sharing
+    // rebuilds a fresh array/object on every `setQueryData` call, even when
+    // the values it produces are deeply equal to what went in. Reference
+    // stability is `applySessionRename`'s own contract (covered above,
+    // directly, with no QueryClient involved) — here the property under test
+    // is that the CONTENT is exactly what it was before the rename.
+    const restored = queryClient.getQueryData<ProjectSession[]>(QUERY_KEY);
+    expect(restored).toEqual(original);
+    expect(restored?.[0].custom_name).toBe('Old name');
+    expect(restored?.[1].custom_name).toBe('Other');
+  });
+
+  test('no sessionId (nothing selected yet): begin leaves the cache untouched', () => {
+    const queryClient = new QueryClient();
+    const original = [makeSession({ session_id: 's1', custom_name: 'Old name' })];
+    queryClient.setQueryData(QUERY_KEY, original);
+
+    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, null, 'New name');
+
+    expect(previous).toBe(original);
+    expect(queryClient.getQueryData(QUERY_KEY)).toBe(original);
+  });
+
+  test('an empty cache: begin returns undefined, and rolling that back is a no-op', () => {
+    const queryClient = new QueryClient();
+
+    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
+    expect(previous).toBeUndefined();
+
+    rollbackOptimisticRename(queryClient, QUERY_KEY, previous);
+
+    expect(queryClient.getQueryData(QUERY_KEY)).toBeUndefined();
   });
 });

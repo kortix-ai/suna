@@ -1,4 +1,5 @@
 import type { ProjectSession } from '@kortix/sdk';
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 /**
  * Writes a rename into a project-session list without touching any other row.
@@ -30,4 +31,43 @@ export function applySessionRename(
   const next = sessions.slice();
   next[index] = { ...next[index], custom_name: name || null };
   return next;
+}
+
+/**
+ * `onMutate`'s cache write, extracted so it can be driven against a real
+ * `QueryClient` in a unit test — no component mount, no `mock.module`.
+ *
+ * Reads whatever is currently cached under `queryKey`, applies the rename
+ * with `applySessionRename` when there is something to rename, and returns
+ * the snapshot the caller must pass to `rollbackOptimisticRename` on
+ * failure. Caller is expected to have already run `cancelQueries` on
+ * `queryKey`; that step is async and stays in the mutation, not here.
+ */
+export function beginOptimisticRename(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  sessionId: string | null,
+  name: string,
+): { previous: ProjectSession[] | undefined } {
+  const previous = queryClient.getQueryData<ProjectSession[]>(queryKey);
+  if (sessionId && previous) {
+    queryClient.setQueryData<ProjectSession[]>(queryKey, applySessionRename(previous, sessionId, name));
+  }
+  return { previous };
+}
+
+/**
+ * `onError`'s restore: puts the pre-rename snapshot from
+ * `beginOptimisticRename` back into the cache, undoing whatever the
+ * optimistic write did. `previous` is `undefined` when `onMutate` never ran
+ * (no snapshot to restore, e.g. the cache was empty) — a no-op, not a clear.
+ */
+export function rollbackOptimisticRename(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  previous: ProjectSession[] | undefined,
+): void {
+  if (previous) {
+    queryClient.setQueryData(queryKey, previous);
+  }
 }

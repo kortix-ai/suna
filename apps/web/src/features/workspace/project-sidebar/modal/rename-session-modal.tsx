@@ -19,7 +19,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-import { applySessionRename } from './rename-session-cache';
+import { beginOptimisticRename, rollbackOptimisticRename } from './rename-session-cache';
 
 interface RenameSessionModalProps {
   projectId: string;
@@ -61,14 +61,7 @@ export function RenameSessionModal({
     // mutation triggers on settle.
     onMutate: async (name) => {
       await queryClient.cancelQueries({ queryKey: sessionsQueryKey });
-      const previous = queryClient.getQueryData<ProjectSession[]>(sessionsQueryKey);
-      if (sessionId && previous) {
-        queryClient.setQueryData<ProjectSession[]>(
-          sessionsQueryKey,
-          applySessionRename(previous, sessionId, name),
-        );
-      }
-      return { previous };
+      return beginOptimisticRename(queryClient, sessionsQueryKey, sessionId, name);
     },
     onSuccess: (updated, name) => {
       // Write the server's own response into the cache rather than discard
@@ -83,9 +76,7 @@ export function RenameSessionModal({
       onOpenChange(false);
     },
     onError: (err, _name, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(sessionsQueryKey, context.previous);
-      }
+      rollbackOptimisticRename(queryClient, sessionsQueryKey, context?.previous);
       errorToast(err instanceof Error ? err.message : 'Failed to rename session');
     },
     onSettled: () => {
