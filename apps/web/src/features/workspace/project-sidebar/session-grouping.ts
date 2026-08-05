@@ -8,9 +8,7 @@ import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session
  * General session grouper behind the sidebar's `Grouping ›` / `Ordering ›`
  * filter menu. Four grouping modes, three ordering modes, all composable.
  *
- * `status` mode is the sidebar's original three-section split
- * (`groupSessionsForSidebar`, kept as a thin wrapper in
- * `project-session-list-helpers.ts` for existing callers): membership is
+ * `status` mode is the sidebar's original three-section split: membership is
  * decided by display status, and `needs-you` wins outright over every other
  * signal.
  *
@@ -36,7 +34,7 @@ export const SESSION_ORDER_MODES: Array<{ value: SessionOrderMode; label: string
 ];
 
 /** Status-mode section ids — kept as its own union for callers that only ever
- *  see status-mode sections (e.g. `groupSessionsForSidebar`). */
+ *  see status-mode sections. */
 export type SessionSectionId = 'needs-you' | 'running' | 'recent';
 
 export interface SessionSection {
