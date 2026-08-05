@@ -65,6 +65,25 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  */
 export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
 
+/**
+ * Stable error code the platform API returns (HTTP 409) when ANOTHER call
+ * carrying the same `idempotency_key` is still mid-provision — see
+ * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
+ * the two `POST /projects/provision` handlers in
+ * `apps/api/src/projects/routes/r1.ts`. This is a RETRYABLE, EXPECTED state:
+ * the concurrent attempt simply hasn't committed yet, and the caller retries
+ * with the same key until it does. First-run onboarding hits it whenever a
+ * second tab (or the other entry door) races the same auto-create, so it must
+ * be SILENT to `onError` — otherwise the web host's global handler shows a red
+ * toast reading "Another provision with this idempotency_key is in flight",
+ * leaking an internal field name for a state that resolves on its own. The
+ * `ApiError` is still returned so callers can branch on `.code` (see
+ * `apps/web/src/lib/onboarding/ensure-first-project.ts`'s
+ * `isProvisionInFlightError`). A genuine 409 (no typed code) still reports.
+ * Mirrors `MODEL_NOT_SERVABLE_CODE`.
+ */
+export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -317,7 +336,14 @@ async function makeRequest<T = any>(
       const isModelNotServable =
         response.status === 409 && errorData?.code === MODEL_NOT_SERVABLE_CODE;
 
-      if (showErrors && !isFeatureNotSupported && !isModelNotServable) {
+      // Expected "a concurrent attempt with this key is still running" state —
+      // same shape as `isModelNotServable`, see `PROVISION_IN_FLIGHT_CODE`. The
+      // caller retries with the same key; the user must not see a toast (let
+      // alone one naming `idempotency_key`) for a race that resolves itself.
+      const isProvisionInFlight =
+        response.status === 409 && errorData?.code === PROVISION_IN_FLIGHT_CODE;
+
+      if (showErrors && !isFeatureNotSupported && !isModelNotServable && !isProvisionInFlight) {
         platformConfig().onError?.(error, errorContext);
       }
 
