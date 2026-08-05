@@ -55,7 +55,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { sandboxRecents, shouldArmLoadTimeout } from './easy-panel-logic';
+import { previewLoadSuccessState, sandboxRecents, shouldArmLoadTimeout } from './easy-panel-logic';
 import type { ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
@@ -533,7 +533,13 @@ export function AppPreview({
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={() => {
               clearLoadTimeout();
-              setIsLoading(false);
+              // A load is positive evidence the app is up, which overrides a
+              // `hasError` the deadline set on silence alone — otherwise the
+              // error card (absolute inset-0 z-10) keeps covering a working
+              // app until a manual Retry (see `previewLoadSuccessState`).
+              const next = previewLoadSuccessState();
+              setIsLoading(next.isLoading);
+              setHasError(next.hasError);
             }}
             onError={() => {
               clearLoadTimeout();

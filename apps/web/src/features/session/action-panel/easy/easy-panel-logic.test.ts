@@ -9,6 +9,7 @@ import {
   neighborOutputs,
   outputKey,
   pathOutput,
+  previewLoadSuccessState,
   quickBrowserOutput,
   resolveSideSize,
   sandboxRecents,
@@ -277,6 +278,12 @@ describe('shouldArmLoadTimeout (AppPreview\'s 5s "couldn\'t load" deadline)', ()
 
   it('is not armed once loading has already finished', () => {
     expect(shouldArmLoadTimeout({ ...base, isLoading: false })).toBe(false);
+  });
+});
+
+describe('previewLoadSuccessState (a late load clears the error overlay)', () => {
+  it('clears both isLoading and hasError, so a late success retracts a prior timeout verdict', () => {
+    expect(previewLoadSuccessState()).toEqual({ isLoading: false, hasError: false });
   });
 });
 

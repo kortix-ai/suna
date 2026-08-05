@@ -347,6 +347,24 @@ export function shouldArmLoadTimeout(input: {
 }
 
 /**
+ * `AppPreview`'s load/error state after an iframe `onLoad` fires — the fix
+ * for a late success leaving the "Couldn't load" card over a working app.
+ *
+ * The `shouldArmLoadTimeout` deadline reaches its "couldn't load" verdict on
+ * SILENCE: no `onLoad`/`onError` within 5s. That verdict is a guess, not
+ * proof, and the error card it sets is `absolute inset-0 z-10` — sitting on
+ * top of the iframe. An `onLoad` that fires after the guess was made is
+ * positive evidence the guess was wrong, so it must retract `hasError` too,
+ * not just clear the spinner — otherwise the card keeps covering a loaded,
+ * working app until a manual Retry. `onError` is untouched by this: a real
+ * error event is its own positive evidence of failure, so it still sets
+ * `hasError` on its own.
+ */
+export function previewLoadSuccessState(): { isLoading: boolean; hasError: boolean } {
+  return { isLoading: false, hasError: false };
+}
+
+/**
  * Whether the panel should present the primary deliverable on this render —
  * the payoff screen (W2). Same transition discipline as
  * `shouldAutoExpandOutputs`, with four extra refusals: a failed or stopped
