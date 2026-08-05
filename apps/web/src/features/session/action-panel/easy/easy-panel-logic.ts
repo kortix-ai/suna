@@ -488,6 +488,26 @@ export function previewLoadVerdict(input: {
 }
 
 /**
+ * The one sentence under "Couldn't load <app>".
+ *
+ * Reads the SAME three-state health {@link previewLoadVerdict} weighs, and for
+ * the same reason: `unknown` is not evidence. Two of the three failure paths —
+ * the continuously-unreachable streak and the {@link PREVIEW_MAX_WAIT_MS}
+ * ceiling — fire while health is perfectly well `unknown` (the runtime store
+ * still `connecting`, or `connected` with `healthy === null`). Deciding this
+ * copy on `health !== 'alive'` therefore told those users their workspace had
+ * stopped when nothing had established that. Only `dead` — a settled
+ * `unreachable` verdict from the runtime poll — earns the stopped wording.
+ */
+export function previewErrorReason(input: { sandbox: SandboxHealth; port: number }): string {
+  if (input.sandbox === 'dead') {
+    return 'This workspace has stopped, so the app isn’t reachable anymore.';
+  }
+  if (input.port > 0) return `The app on port ${input.port} may not be running yet.`;
+  return 'The app may not be running yet.';
+}
+
+/**
  * Whether the watch should probe the port again.
  *
  * Probing is not free: every probe is a real request against the user's own

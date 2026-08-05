@@ -13,6 +13,7 @@ import {
   neighborOutputs,
   outputKey,
   pathOutput,
+  previewErrorReason,
   previewLoadSuccessState,
   previewLoadVerdict,
   quickBrowserOutput,
@@ -432,6 +433,40 @@ describe('previewLoadVerdict (AppPreview declares failure from evidence, not sil
     expect(
       previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: PREVIEW_MAX_WAIT_MS }),
     ).toBe('failed');
+  });
+});
+
+describe('previewErrorReason (the copy must not claim more than the verdict knows)', () => {
+  const STOPPED = 'This workspace has stopped, so the app isn’t reachable anymore.';
+
+  it('says the workspace stopped only on a settled dead verdict', () => {
+    expect(previewErrorReason({ sandbox: 'dead', port: 3000 })).toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'dead', port: 0 })).toBe(STOPPED);
+  });
+
+  // THE DEFECT. Both non-`dead` failure paths — the continuously-unreachable
+  // streak and the PREVIEW_MAX_WAIT_MS ceiling — fire while health is
+  // `unknown` (store still `connecting`, or `connected` with `healthy: null`).
+  // Reading the three-state value through `health === 'alive'` told those
+  // users their workspace had stopped when nothing established that.
+  it('never says the workspace stopped when health is merely unknown', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).not.toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).not.toBe(STOPPED);
+  });
+
+  it('names the port when there is one', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).toBe(
+      'The app on port 3000 may not be running yet.',
+    );
+    expect(previewErrorReason({ sandbox: 'alive', port: 8080 })).toBe(
+      'The app on port 8080 may not be running yet.',
+    );
+  });
+
+  it('falls back to the port-free sentence when no port could be parsed', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).toBe(
+      'The app may not be running yet.',
+    );
   });
 });
 

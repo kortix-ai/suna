@@ -60,6 +60,7 @@ import {
   PREVIEW_PROBE_INTERVAL_MS,
   type PreviewProbe,
   type SandboxHealth,
+  previewErrorReason,
   previewLoadSuccessState,
   previewLoadVerdict,
   runtimeSandboxHealth,
@@ -184,7 +185,6 @@ export function AppPreview({
     getSandboxHealthSnapshot,
     getSandboxHealthSnapshot,
   );
-  const sandboxAlive = sandboxHealth === 'alive';
 
   useEffect(() => {
     if (!isEditing) setAddressValue(current);
@@ -534,13 +534,11 @@ export function AppPreview({
               <div>
                 <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
                 {/* The single most common cause, said plainly: the agent started
-                    the server a moment ago and it isn't listening yet. */}
+                    the server a moment ago and it isn't listening yet. Only a
+                    SETTLED `dead` verdict earns the stopped-workspace wording —
+                    see `previewErrorReason`. */}
                 <p className="text-muted-foreground mt-1 text-xs">
-                  {!sandboxAlive
-                    ? 'This workspace has stopped, so the app isn’t reachable anymore.'
-                    : port
-                      ? `The app on port ${port} may not be running yet.`
-                      : 'The app may not be running yet.'}
+                  {previewErrorReason({ sandbox: sandboxHealth, port })}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2">
