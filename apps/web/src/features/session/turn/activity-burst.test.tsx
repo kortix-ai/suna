@@ -1,6 +1,17 @@
+import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import type { Part, ToolPart } from '@/ui';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { burstFailureCount, burstIsRunning, showsClosingStep } from './activity-burst';
+import { NextIntlClientProvider } from 'next-intl';
+import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  ActivityGroupStep,
+  burstFailureCount,
+  burstIsRunning,
+  showsClosingStep,
+} from './activity-burst';
+import { mergeBurstSteps } from './merge-steps';
+import { stepLabel } from './step-label';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
   return {
@@ -78,6 +89,54 @@ describe('showsClosingStep', () => {
     // Every part was plumbing, so mergeBurstSteps returned no rows.
     expect(showsClosingStep(0, false)).toBe(false);
     expect(showsClosingStep(0, true)).toBe(false);
+  });
+});
+
+describe('ActivityGroupStep', () => {
+  const parts: Part[] = [
+    tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+    tool('2', 'read', { status: 'completed', input: { filePath: '/workspace/beta.ts' } }),
+  ];
+
+  /** The group as the burst builds it — no hand-made Step, so the render is
+   *  asserted against the same grouping the component actually receives. */
+  const groupOf = (input: Part[]) => {
+    const steps = mergeBurstSteps(input, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    return steps[0].step;
+  };
+
+  const render = (open: boolean) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <ChainOfThoughtStep open={open}>
+            <ActivityGroupStep
+              step={groupOf(parts)}
+              sessionId="session-1"
+              running={false}
+              disableNavigation
+            />
+          </ChainOfThoughtStep>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('closed, the two reads are ONE row that names the group', () => {
+    const markup = render(false);
+    expect(markup).toContain('Read 2 files');
+    expect(markup).not.toContain('alpha.ts');
+    expect(markup).not.toContain('beta.ts');
+  });
+
+  test('open, the group renders its members — the second level', () => {
+    // `Disclosure` renders only children[0] and children[1], and the step's
+    // rail already takes slot 0. If trigger + content were passed as siblings
+    // rather than one component, this content would silently never render.
+    const markup = render(true);
+    expect(markup).toContain('Read 2 files');
+    expect(markup).toContain('alpha.ts');
+    expect(markup).toContain('beta.ts');
   });
 });
 

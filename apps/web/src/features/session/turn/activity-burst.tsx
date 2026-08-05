@@ -4,11 +4,15 @@
  * One burst — a maximal run of non-text parts.
  *
  * Renders as a chain of thought: a muted summary line that expands into a
- * connected vertical chain of steps. The trailing burst stays open for the
- * whole working turn (so SSE gaps between tool calls do not blink it shut);
- * earlier bursts auto-collapse once later text/standalone closes them. Manual
- * after the user's first click. Collapsed height is always one row. A settled
- * chain closes on a "Done" step so the rail terminates instead of trailing off.
+ * connected vertical chain of steps. The chain has two levels — a run of
+ * consecutive same-family calls is ONE step that opens to its members, so the
+ * expansion groups the work the same way the collapsed summary line does.
+ *
+ * The trailing burst stays open for the whole working turn (so SSE gaps between
+ * tool calls do not blink it shut); earlier bursts auto-collapse once later
+ * text/standalone closes them. Manual after the user's first click. Collapsed
+ * height is always one row. A settled chain closes on a "Done" step so the rail
+ * terminates instead of trailing off.
  */
 
 import {
@@ -26,7 +30,8 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { partOutcome, ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
-import { ActivityStep } from './activity-step';
+import type { Step } from '../action-panel/shared/group-steps';
+import { ActivityStep, iconFor } from './activity-step';
 import { burstTitle } from './burst-title';
 import { flattenThought, mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
@@ -98,6 +103,77 @@ function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; run
         </button>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A run of consecutive same-family calls: one summary row that opens to its
+ * members.
+ *
+ * This is the level the collapsed burst title has always described. The title
+ * says "Read 2 files, ran 2 commands" and, until this row existed, expanding it
+ * produced four flat siblings — the summary grouped and the expansion did not.
+ *
+ * The group binds to `ChainOfThoughtStep`'s OWN `Disclosure`, so it opens
+ * independently of every other step and the chain rail still spans it however
+ * tall it grows. Trigger and content must be one component rather than two
+ * sibling children of the step: `Disclosure` renders exactly
+ * `React.Children.toArray(children)[0]` and `[1]`, and the step's rail already
+ * claims slot 0 — passing them as siblings would silently drop the content.
+ *
+ * `pl-7` puts the members under the group's LABEL (size-4 icon + gap-3), clear
+ * of the rail at `left-2` — the indent is what says these rows belong to the
+ * row above rather than to the chain.
+ */
+export function ActivityGroupStep({
+  step,
+  sessionId,
+  running,
+  disableNavigation,
+}: {
+  step: Step;
+  sessionId: string;
+  running: boolean;
+  disableNavigation?: boolean;
+}) {
+  const Icon = iconFor(step.parts[0]);
+
+  return (
+    <>
+      {/* One child only — DisclosureTrigger clones each child into its own
+			    clickable node, so a sibling caret would stack as a separate row. */}
+      <DisclosureTrigger>
+        <div
+          className={cn(
+            'text-foreground/80 hover:text-foreground',
+            'flex w-full cursor-pointer items-center gap-3',
+            'text-left text-sm leading-[1.5] transition-colors',
+          )}
+        >
+          <Icon className="text-muted-foreground size-4 flex-none" />
+          <span className="min-w-0 truncate">{step.label}</span>
+          <CaretRightIcon
+            className={cn(
+              'text-muted-foreground/40 size-3.5 flex-none',
+              'transition-transform group-data-[state=open]/step:rotate-90',
+            )}
+          />
+        </div>
+      </DisclosureTrigger>
+      <DisclosureContent>
+        <div className="mt-2 space-y-2 pl-7">
+          {step.parts.map((part) => (
+            <ActivityStep
+              key={part.id}
+              part={part}
+              sessionId={sessionId}
+              running={running}
+              disableNavigation={disableNavigation}
+            />
+          ))}
+        </div>
+      </DisclosureContent>
+    </>
   );
 }
 
@@ -244,15 +320,30 @@ export function ActivityBurst({
         <ToolActivateContext.Provider value={null}>
           <div className="mt-3">
             <ChainOfThought>
-              {steps.map((step) =>
-                step.kind === 'thought' ? (
-                  <ChainOfThoughtStep key={step.key}>
-                    <div className="flex min-w-0 gap-3">
-                      <ClockCounterClockwiseIcon className="text-muted-foreground mt-[3px] size-4 flex-none" />
-                      <ThoughtStepBody texts={step.texts} running={running} />
-                    </div>
-                  </ChainOfThoughtStep>
-                ) : (
+              {steps.map((step) => {
+                if (step.kind === 'thought') {
+                  return (
+                    <ChainOfThoughtStep key={step.key}>
+                      <div className="flex min-w-0 gap-3">
+                        <ClockCounterClockwiseIcon className="text-muted-foreground mt-[3px] size-4 flex-none" />
+                        <ThoughtStepBody texts={step.texts} running={running} />
+                      </div>
+                    </ChainOfThoughtStep>
+                  );
+                }
+                if (step.kind === 'group') {
+                  return (
+                    <ChainOfThoughtStep key={step.key}>
+                      <ActivityGroupStep
+                        step={step.step}
+                        sessionId={sessionId}
+                        running={running}
+                        disableNavigation={disableNavigation}
+                      />
+                    </ChainOfThoughtStep>
+                  );
+                }
+                return (
                   <ChainOfThoughtStep key={step.key}>
                     <ActivityStep
                       part={step.part}
@@ -261,8 +352,8 @@ export function ActivityBurst({
                       disableNavigation={disableNavigation}
                     />
                   </ChainOfThoughtStep>
-                ),
-              )}
+                );
+              })}
 
               {/* The closing step. It is a step, not a footer, so `ChainOfThought`
 							    hands it `isLast` and the rail above it finally has somewhere to

@@ -74,6 +74,14 @@ describe('stepLabel', () => {
     expect(stepLabel(tool('context_info')).tier).toBe('plumbing');
   });
 
+  test('the context engine tools are plumbing under the names it registers', () => {
+    // `ToolRegistry.register('prune'|'distill'|'compress', …)` — the `dcp_`
+    // spellings above never match a real part.
+    expect(stepLabel(tool('prune')).tier).toBe('plumbing');
+    expect(stepLabel(tool('distill')).tier).toBe('plumbing');
+    expect(stepLabel(tool('compress')).tier).toBe('plumbing');
+  });
+
   test('an unknown tool falls back to primary with a generic verb, never dropped', () => {
     const label = stepLabel(tool('some_future_tool'));
     expect(label.tier).toBe('primary');
