@@ -6190,3 +6190,61 @@ No public export name changed. The public-surface snapshots stayed unchanged.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-05 — session `preview-port-probe` (host-driven, additive)
+
+`apps/web`'s Easy-mode `AppPreview` declared a preview app dead after 5s of
+iframe silence. Nothing probed the port, so a cold dev-server compile (30-60s
+per the root `CLAUDE.md`) was indistinguishable from a dead one. The host needed
+a real verdict; per the "hosts never raw-`fetch` the sandbox proxy" rule, the
+probe belongs here.
+
+Added `src/core/session/preview-probe.ts`, exported through
+`src/core/session/index.ts` (already re-exported by the root barrel and
+`./session`):
+
+- `PreviewPortProbe` — `'reachable' | 'unreachable' | 'unknown'`.
+- `classifyPreviewProbeStatus(status)` — pure. `502/503/504` is the proxy
+  itself saying nothing is listening; `401/403` is our own preview-auth gate
+  and therefore says nothing about the port; anything else in the HTTP range
+  means a server answered.
+- `probePreviewPort(url, { signal, timeoutMs })` — a credentialed `HEAD` that
+  never throws; every failure mode collapses to `'unknown'`.
+- `PREVIEW_PROBE_TIMEOUT_MS = 10_000`.
+
+Deliberately NOT `authenticatedFetch`: the preview proxy authenticates a browser
+with the `__preview_session` cookie, and an `Authorization` header would turn
+every probe into a CORS preflight.
+
+RED:
+
+- `bun test src/core/session/preview-probe.test.ts`: `0 pass`, `1 fail` —
+  `Cannot find module './preview-probe'`.
+
+GREEN:
+
+- `bun test src/core/session/preview-probe.test.ts`: `21 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1516 pass`, `1 fail`, `1517` tests across
+  `122` files. The one failure is `fetchCostExportCsv requests the export URL
+  with a Bearer token` in `core/rest/projects-client/session-costs.test.ts` —
+  PRE-EXISTING and unrelated (a process-wide `mock.module` auth-token leak from
+  a sibling suite). Verified on a clean tree at the same commit: `1495 pass`,
+  `1 fail`, same test.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+Public surface: PURELY ADDITIVE — 4 names on `.` and `./session`
+(`PREVIEW_PROBE_TIMEOUT_MS`, `PreviewPortProbe`, `classifyPreviewProbeStatus`,
+`probePreviewPort`). Both snapshots re-recorded; zero removals, zero renames.
+`version` untouched.
+
+Not verified: the probe has never been run against a live sandbox proxy (this
+workstream is barred from booting the stack). If the cross-origin `HEAD` is
+refused in production it resolves `'unknown'`, which by design can never fail a
+preview — the host falls back to its own bounded wait.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
