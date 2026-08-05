@@ -737,17 +737,30 @@ projectsApp.openapi(
         );
       }
     }
-    // A winner we cannot re-read is a 409, never a 500 with an orphan: the
-    // constraint proved a project with this key exists, so retrying is right.
-    if (!winner) {
+    // ONE RULE, BOTH CALL SITES — the winner goes through the SAME classifier
+    // the pre-check uses. This path is MORE exposed to the in-flight problem,
+    // not less: we re-read the winner milliseconds after its own INSERT, while
+    // its seed push is still running, so a pending seed here is the normal case
+    // rather than a narrow overlap. Replaying it would hand back a project_id
+    // the winner's own rollback may delete.
+    //
+    // `classifyProvisionReplay(null, …)` is `create`, so this single branch
+    // also covers a winner we cannot re-read — which is a 409 for the same
+    // reason, never a 500 with an orphan: the constraint proved a project with
+    // this key exists, so retrying is right.
+    const winnerReplay = classifyProvisionReplay(winner, Date.now());
+    if (winnerReplay.kind !== 'replay') {
       return c.json(
         { error: 'Another provision with this idempotency_key is in flight', code: 'provision_in_flight' },
         409,
       );
     }
-    setContextField('projectId', winner.projectId);
+    setContextField('projectId', winnerReplay.project.projectId);
     return c.json(
-      provisionReplayResponse(winner, await provisionReplayAccess(winner.projectId, scope.userId)),
+      provisionReplayResponse(
+        winnerReplay.project,
+        await provisionReplayAccess(winnerReplay.project.projectId, scope.userId),
+      ),
       201,
     );
   }

@@ -238,6 +238,15 @@ describe('classifyProvisionReplay', () => {
     }
   });
 
+  test('the insert-race loser re-reading a just-inserted winner sees in_flight', () => {
+    // The race path re-reads the winner MILLISECONDS after the winner's own
+    // INSERT, so a pending seed there is the normal case, not an edge. Same
+    // rule, exercised at the age the race path actually observes.
+    const winner = projectRow({ metadata: pendingSeed, createdAt: new Date(T0 - 3) });
+
+    expect(classifyProvisionReplay(winner, T0).kind).toBe('in_flight');
+  });
+
   test('the window is caller-overridable so the bound itself is testable', () => {
     const project = projectRow({ metadata: pendingSeed, createdAt: new Date(T0 - 5_000) });
 

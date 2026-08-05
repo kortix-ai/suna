@@ -182,6 +182,12 @@ export async function findIdempotentProvision(
  * provision whose seed is still running at 121s and fails at 122s can still
  * strand one replayed id. Narrowing that further would cost recovery time on
  * the far more common crashed-seed case.
+ *
+ * THE WINDOW IS APPROXIMATE, BY TWO CLOCKS. `createdAt` is written by the
+ * DATABASE (`defaultNow()`); `now` is the API pod's `Date.now()`. Clock skew
+ * between them shifts the effective window by the skew, in either direction. It
+ * is bounded by the skew, self-correcting on the caller's next retry, and not
+ * worth a redesign — but do not read this bound as exact.
  */
 export const PROVISION_IN_FLIGHT_WINDOW_MS = 120_000;
 

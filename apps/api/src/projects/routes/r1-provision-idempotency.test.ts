@@ -38,6 +38,21 @@ function flattened(source: string): string {
   return source.replace(/\s+/g, ' ');
 }
 
+/**
+ * Source with comments removed, for assertions that COUNT call sites. A
+ * docstring naming a function is not a call to it, and counting both makes the
+ * guard fail when someone documents the code — which is the "passes for the
+ * wrong reason" failure mode in the other direction.
+ *
+ * `[^:]` guards `https://`; block comments go first so a `//` inside one cannot
+ * survive.
+ */
+function codeOnly(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
 describe('POST /provision resolves the idempotency key before it creates anything upstream', () => {
   test('the lookup precedes backend.createRepo', async () => {
     const handler = await provisionHandlerSource();
@@ -141,6 +156,39 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     expect(cleanup).not.toMatch(/catch\s*\{\s*\/\*[^*]*\*\/\s*\}/);
     expect(cleanup).toContain('ORPHANED MANAGED REPO');
     expect(cleanup.indexOf('console.error')).toBeGreaterThan(-1);
+  });
+
+  test('the insert-race loser classifies the winner too — one rule, both call sites', async () => {
+    // The pre-check path's guards CANNOT catch this: the defect is that the
+    // second replay call site never classifies at all.
+    //
+    // A and B carry one key and both pass the pre-check. A inserts; B's insert
+    // raises 23505; B deletes its own repo and re-reads A — MILLISECONDS after
+    // A's INSERT, while A's seed push is still running. So on this path "the
+    // winner is still in flight" is the normal case, not a narrow overlap, and
+    // replaying A's project_id hands B an id that A's rollback may delete.
+    const handler = await provisionHandlerSource();
+    const raceTail = handler.slice(handler.indexOf('isProvisionIdempotencyConflict('));
+
+    const classify = raceTail.indexOf('classifyProvisionReplay(');
+    const replay = raceTail.indexOf('provisionReplayResponse(');
+    expect(classify).toBeGreaterThan(-1);
+    expect(replay).toBeGreaterThan(-1);
+    expect(classify).toBeLessThan(replay);
+    expect(raceTail.indexOf('provision_in_flight')).toBeLessThan(replay);
+  });
+
+  test('both replay call sites go through the SAME classifier, not a parallel rule', async () => {
+    const code = codeOnly(await provisionHandlerSource());
+
+    // Two replay responses (pre-check + race loser) and two classifications.
+    expect(code.match(/provisionReplayResponse\(/g) ?? []).toHaveLength(2);
+    expect(code.match(/classifyProvisionReplay\(/g) ?? []).toHaveLength(2);
+    // No second, hand-rolled copy of the in-flight rule in the route: the seed
+    // state and the window belong to the classifier, and only to it.
+    expect(code).not.toContain('seed.expected');
+    expect(code).not.toContain('readManagedRepoSeedState');
+    expect(code).not.toContain('PROVISION_IN_FLIGHT_WINDOW_MS');
   });
 
   test('the replay does not claim a project grant the caller may not hold', async () => {
