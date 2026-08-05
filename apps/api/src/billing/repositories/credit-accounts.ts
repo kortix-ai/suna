@@ -37,6 +37,40 @@ export async function setDemoEnterprise(accountId: string, enabled: boolean): Pr
     });
 }
 
+/** Whether the account is flagged as a contracted cloud Enterprise customer.
+ *  When true the account resolves all enterprise entitlements (SSO/SCIM/RBAC/
+ *  audit) regardless of its billing tier — decoupling feature entitlements
+ *  from the commercial billing model. Set by an operator when a contract is
+ *  signed. Distinct from the self-serve demo flag (`isDemoEnterprise`). */
+export async function isEnterpriseEntitled(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ enterpriseEntitled: creditAccounts.enterpriseEntitled })
+    .from(creditAccounts)
+    .where(eq(creditAccounts.accountId, accountId))
+    .limit(1);
+  return row?.enterpriseEntitled ?? false;
+}
+
+/**
+ * Set the contracted-Enterprise entitlement flag. Upserts the credit row so a
+ * brand-new account (no billing row yet) can be flagged at sign-up — all other
+ * columns fall back to their schema defaults (tier 'free', legacy billing, …)
+ * and the Stripe webhook reconciliation will populate billing_model/tier/seat
+ * fields from the customer's subscription without clobbering this entitlement.
+ */
+export async function setEnterpriseEntitled(
+  accountId: string,
+  enabled: boolean,
+): Promise<void> {
+  await db
+    .insert(creditAccounts)
+    .values({ accountId, enterpriseEntitled: enabled })
+    .onConflictDoUpdate({
+      target: creditAccounts.accountId,
+      set: { enterpriseEntitled: enabled, updatedAt: new Date().toISOString() },
+    });
+}
+
 export async function getCreditBalance(accountId: string) {
   const [row] = await db
     .select({
