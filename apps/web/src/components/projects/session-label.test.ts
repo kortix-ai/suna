@@ -5,6 +5,8 @@ import {
   availableSessionFilterOptions,
   availableSessionStatusFilterOptions,
   matchesSessionStatusFilter,
+  matchesSourceFilters,
+  matchesStatusFilters,
   resolveSessionFilterMenu,
   SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
@@ -307,5 +309,54 @@ describe('resolveSessionFilterMenu', () => {
         if (menu.statusOptions.length === 0) expect(menu.activeStatus).toBe('all');
       }
     }
+  });
+});
+
+describe('matchesStatusFilters', () => {
+  test('an empty array matches everything', () => {
+    for (const status of ['queued', 'running', 'completed', 'stopped', 'failed'] as const) {
+      expect(matchesStatusFilters(makeSession({ status }), [])).toBe(true);
+    }
+  });
+
+  test('running covers the starting family plus running', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
+      expect(matchesStatusFilters(makeSession({ status }), ['running'])).toBe(true);
+    }
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['running'])).toBe(false);
+  });
+
+  test('several selected values are ORed', () => {
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['done', 'failed'])).toBe(true);
+    expect(matchesStatusFilters(makeSession({ status: 'failed' }), ['done', 'failed'])).toBe(true);
+    expect(matchesStatusFilters(makeSession({ status: 'stopped' }), ['done', 'failed'])).toBe(false);
+  });
+
+  test('reads the lifecycle, never the review overlay', () => {
+    expect(matchesStatusFilters(makeSession({ status: 'running' }), ['running'])).toBe(true);
+  });
+});
+
+describe('matchesSourceFilters', () => {
+  test('an empty array matches everything', () => {
+    expect(matchesSourceFilters(makeSession(), [])).toBe(true);
+    expect(matchesSourceFilters(makeSession({ metadata: { source: 'slack' } }), [])).toBe(true);
+  });
+
+  test('mine and shared split chats by ownership', () => {
+    expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'])).toBe(true);
+    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'])).toBe(false);
+    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['shared'])).toBe(true);
+  });
+
+  test('unknown ownership counts as mine so nothing is silently hidden', () => {
+    expect(matchesSourceFilters(makeSession(), ['mine'])).toBe(true);
+  });
+
+  test('automation sources match their kind', () => {
+    const slack = makeSession({ metadata: { source: 'slack' } });
+    expect(matchesSourceFilters(slack, ['slack'])).toBe(true);
+    expect(matchesSourceFilters(slack, ['email'])).toBe(false);
+    expect(matchesSourceFilters(slack, ['mine', 'slack'])).toBe(true);
   });
 });

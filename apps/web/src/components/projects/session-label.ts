@@ -366,3 +366,56 @@ export function resolveSessionFilterMenu(
     activeStatus,
   };
 }
+
+/**
+ * Multi-select filter facets. An EMPTY array means "no constraint" — that is
+ * how "All" is expressed, so there is no `'all'` sentinel member. A sentinel
+ * alongside arrays would allow `['all', 'running']`, which has no meaning.
+ */
+export type SessionSourceFilter = 'mine' | 'shared' | 'slack' | 'email' | 'schedule' | 'webhook';
+export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed';
+
+export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
+  { value: 'mine', label: 'My chats' },
+  { value: 'shared', label: 'Shared' },
+  { value: 'slack', label: 'Slack' },
+  { value: 'email', label: 'Email' },
+  { value: 'schedule', label: 'Scheduled' },
+  { value: 'webhook', label: 'Webhook' },
+];
+
+export const SESSION_STATUS_FILTERS: Array<{ value: SessionStatusFilter; label: string }> = [
+  { value: 'running', label: 'Running' },
+  { value: 'done', label: 'Done' },
+  { value: 'stopped', label: 'Stopped' },
+  { value: 'failed', label: 'Failed' },
+];
+
+/** Selected values are ORed. Empty = everything. */
+export function matchesStatusFilters(
+  session: ProjectSession,
+  filters: readonly SessionStatusFilter[],
+): boolean {
+  if (filters.length === 0) return true;
+  // Lifecycle only — someone filtering to Running still wants their
+  // review-pending running session.
+  const display = sessionDisplayStatus(session);
+  return filters.some((filter) =>
+    filter === 'running' ? display === 'running' || display === 'starting' : display === filter,
+  );
+}
+
+export function matchesSourceFilters(
+  session: ProjectSession,
+  filters: readonly SessionSourceFilter[],
+): boolean {
+  if (filters.length === 0) return true;
+  const kind = sessionSource(session).kind;
+  return filters.some((filter) => {
+    // `is_owner` is viewer-relative and older payloads omit it — unknown
+    // ownership reads as "mine" so the default view never hides a session.
+    if (filter === 'mine') return kind === 'chat' && session.is_owner !== false;
+    if (filter === 'shared') return kind === 'chat' && session.is_owner === false;
+    return kind === filter;
+  });
+}
