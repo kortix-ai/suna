@@ -79,7 +79,11 @@ import type { ShareContext } from './viewer-actions';
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
 const getSandboxHealthSnapshot = (): SandboxHealth => {
   const s = useRuntimeConnectionStore.getState();
-  return runtimeSandboxHealth({ status: s.status, healthy: s.healthy });
+  return runtimeSandboxHealth({
+    status: s.status,
+    healthy: s.healthy,
+    initialCheckDone: s.initialCheckDone,
+  });
 };
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */

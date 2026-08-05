@@ -381,14 +381,23 @@ export function previewLoadSuccessState(): { isLoading: boolean; hasError: boole
  * threshold (`FAIL_THRESHOLD_RECONNECT` / `FAIL_THRESHOLD_FIRST`), or on an
  * HTTP status that says outright that nothing is home. By the time the store
  * says `unreachable`, the sandbox has already been probed and re-probed.
+ *
+ * `initialCheckDone` gates `dead` for a reason that is easy to miss: the store
+ * is a process-wide singleton with no per-session key, so opening a preview
+ * carries whatever verdict the PREVIOUSLY viewed session left behind until the
+ * poll's first check lands. Without this gate a stale `unreachable` flashes the
+ * error card at mount on a perfectly healthy sandbox. `alive` needs no such
+ * gate: it can only be reached by a check that has already resolved.
  */
 export type SandboxHealth = 'alive' | 'dead' | 'unknown';
 
 export function runtimeSandboxHealth(runtime: {
   status: 'connecting' | 'connected' | 'unreachable';
   healthy: boolean | null;
+  /** Whether the runtime poll has completed a check for THIS mount. */
+  initialCheckDone: boolean;
 }): SandboxHealth {
-  if (runtime.status === 'unreachable') return 'dead';
+  if (runtime.status === 'unreachable') return runtime.initialCheckDone ? 'dead' : 'unknown';
   if (runtime.status === 'connected' && runtime.healthy === true) return 'alive';
   return 'unknown';
 }
@@ -492,13 +501,24 @@ export function previewLoadVerdict(input: {
  * listening. That answer arrives immediately or not at all. So:
  *
  * - a port that ANSWERED has settled the only question a probe can settle;
- * - a streak of misses must always be probed to its conclusion — it either
- *   reaches {@link PREVIEW_UNREACHABLE_WINDOW_MS} (a failure verdict) or is
- *   broken by an answer — which is why this outranks the elapsed check and why
- *   the loop is bounded at roughly twice the window rather than exactly once;
- * - past the window with no streak running, the probe has had every chance to
+ * - a MISS must always be probed on from — the streak either reaches
+ *   {@link PREVIEW_UNREACHABLE_WINDOW_MS} (a failure verdict) or is broken by
+ *   an answer, and neither can happen without another sample. This outranks
+ *   the elapsed check, which is why the loop is bounded at roughly twice the
+ *   window rather than exactly once;
+ * - past the window with nothing missing, the probe has had every chance to
  *   see a dead port and did not. It will not start now. The remaining wait
  *   belongs to the iframe and to {@link PREVIEW_MAX_WAIT_MS}.
+ *
+ * The miss test is the probe VERDICT, not `unreachableForMs`. Elapsed streak
+ * time cannot stand in for it: the caller starts a streak and reads its
+ * elapsed time in the same tick, so the sample that BEGINS a streak always
+ * carries `unreachableForMs: 0`. Keying on time therefore failed to protect
+ * the one sample the rule exists for — a first miss landing at or after the
+ * window stopped the loop after a single sample, and the failure verdict it
+ * was heading for was never reached. `unreachableForMs` stays in the signature
+ * because it is what {@link previewLoadVerdict} weighs; it just is not what
+ * decides whether to look again.
  */
 export function shouldKeepProbingPort(input: {
   probe: PreviewProbe;
@@ -508,7 +528,7 @@ export function shouldKeepProbingPort(input: {
   watchedMs: number;
 }): boolean {
   if (input.probe === 'reachable') return false;
-  if (input.unreachableForMs > 0) return true;
+  if (input.probe === 'unreachable') return true;
   return input.watchedMs < PREVIEW_UNREACHABLE_WINDOW_MS;
 }
 

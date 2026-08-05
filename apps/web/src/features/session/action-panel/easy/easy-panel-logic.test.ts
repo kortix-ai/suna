@@ -1,4 +1,5 @@
 import { describe, expect, it, test } from 'bun:test';
+import { PREVIEW_PROBE_TIMEOUT_MS } from '@kortix/sdk';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
@@ -14,14 +15,14 @@ import {
   pathOutput,
   previewLoadSuccessState,
   previewLoadVerdict,
-  runtimeSandboxHealth,
   quickBrowserOutput,
   resolveSideSize,
+  runtimeSandboxHealth,
   sandboxRecents,
   shouldArmLoadTimeout,
-  shouldKeepProbingPort,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  shouldKeepProbingPort,
   focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
@@ -294,31 +295,57 @@ describe('previewLoadSuccessState (a late load clears the error overlay)', () =>
 });
 
 describe('runtimeSandboxHealth', () => {
+  const checked = { initialCheckDone: true };
+
   // The single reason this is three-valued and not a boolean: the store's OWN
   // starting state is `connecting`/`null`, so "not alive" is the state every
   // session passes through on the way up. Reading that as "dead" would fail
   // every preview at mount.
   it('is unknown at rest, before any health check has resolved', () => {
-    expect(runtimeSandboxHealth({ status: 'connecting', healthy: null })).toBe('unknown');
+    expect(runtimeSandboxHealth({ status: 'connecting', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
   });
 
   it('is unknown while the sandbox is up but the runtime has not reported health', () => {
-    expect(runtimeSandboxHealth({ status: 'connected', healthy: null })).toBe('unknown');
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
   });
 
   it('is alive only once the runtime reports healthy', () => {
-    expect(runtimeSandboxHealth({ status: 'connected', healthy: true })).toBe('alive');
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: true, ...checked })).toBe('alive');
   });
 
   // `connected` + `healthy: false` is OpenCode still booting behind a live
   // sandbox — progress, not death.
   it('is unknown while the runtime is booting behind a live sandbox', () => {
-    expect(runtimeSandboxHealth({ status: 'connected', healthy: false })).toBe('unknown');
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: false, ...checked })).toBe(
+      'unknown',
+    );
   });
 
   it('is dead only on the store\'s own threshold-filtered "unreachable"', () => {
-    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: null })).toBe('dead');
-    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: true })).toBe('dead');
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: null, ...checked })).toBe('dead');
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: true, ...checked })).toBe('dead');
+  });
+
+  // The store is a process-wide singleton with no per-session key, so a preview
+  // opened right after a dead session inherits that session's verdict until the
+  // poll's first check lands. Without this gate the error card flashes at mount
+  // on a healthy sandbox.
+  it('withholds the dead verdict until a check has actually run for this mount', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'unreachable', healthy: null, initialCheckDone: false }),
+    ).toBe('unknown');
+  });
+
+  // `alive` needs no such gate — it is unreachable without a resolved check —
+  // and gating it would only delay the correct wording.
+  it('does not gate the alive verdict, which no unresolved check can produce', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'connected', healthy: true, initialCheckDone: false }),
+    ).toBe('alive');
   });
 });
 
@@ -380,7 +407,9 @@ describe('previewLoadVerdict (AppPreview declares failure from evidence, not sil
   // A port that goes 502 → 200 → 502 is a server restarting, not a dead one.
   // Continuity is what the caller resets, and this asserts the reset counts.
   it('does not fail on an intermittent port once a probe has answered again', () => {
-    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', unreachableForMs: 0 })).toBe('wait');
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', unreachableForMs: 0 })).toBe(
+      'wait',
+    );
   });
 
   // ─── A stopped workspace is known evidence, not a guess. ──
@@ -400,11 +429,10 @@ describe('previewLoadVerdict (AppPreview declares failure from evidence, not sil
   });
 
   it('fails at the bound even when the port answered but the frame never loaded', () => {
-    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: PREVIEW_MAX_WAIT_MS })).toBe(
-      'failed',
-    );
+    expect(
+      previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: PREVIEW_MAX_WAIT_MS }),
+    ).toBe('failed');
   });
-
 });
 
 describe('shouldKeepProbingPort (a probe is a real request against the user app)', () => {
@@ -438,6 +466,31 @@ describe('shouldKeepProbingPort (a probe is a real request against the user app)
         watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS * 1.5,
       }),
     ).toBe(true);
+  });
+
+  // ─── The FIRST miss of a streak carries `unreachableForMs: 0` — the caller
+  // starts the streak and reads its elapsed time in the same tick. A rule that
+  // keyed on accumulated time therefore did not protect the one sample that
+  // BEGINS a streak, so a first miss landing at or after the window ended the
+  // loop after a single sample and the failure verdict was never reached. ──
+  it('probes on after the miss that STARTS a streak, which has zero elapsed time', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unreachable',
+        unreachableForMs: 0,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+      }),
+    ).toBe(true);
+  });
+
+  // The concrete scenario: an app that accepts the connection and then hangs —
+  // the ordinary signature of a dev server compiling its first route. Probe 1
+  // stalls to its own ceiling and the loop must not end on that one sample.
+  it('leaves room for more than one sample when every probe stalls to its ceiling', () => {
+    expect(PREVIEW_PROBE_TIMEOUT_MS + PREVIEW_PROBE_INTERVAL_MS).toBeLessThan(
+      PREVIEW_UNREACHABLE_WINDOW_MS,
+    );
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_PROBE_TIMEOUT_MS })).toBe(true);
   });
 
   it('never runs unbounded: a broken streak past the window stops the loop', () => {
