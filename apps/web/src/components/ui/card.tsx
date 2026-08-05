@@ -6,7 +6,7 @@ import { fontWeights } from '@/lib/font-weight';
 import { useIcon, type IconComponent } from '@/lib/icon-context';
 import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import {
   Children,
@@ -205,7 +205,7 @@ const CardGroup = forwardRef<HTMLDivElement, CardGroupProps>(
               card nearest the cursor, previewing where a click will land. */}
           <AnimatePresence>
             {activeRect && (
-              <motion.div
+              <m.div
                 key={sessionRef.current}
                 aria-hidden
                 className="bg-hover pointer-events-none absolute z-0 rounded-xl"

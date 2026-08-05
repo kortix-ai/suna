@@ -51,7 +51,7 @@ import {
 } from '@kortix/sdk';
 import { RobotIcon as Bot, CpuIcon as Cpu, StackIcon as Layers } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { LayerHeader, SectionHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
@@ -218,7 +218,7 @@ function AgentEditorModal({
             </Button>
             <AnimatePresence initial={false}>
               {isDirty ? (
-                <motion.span
+                <m.span
                   key="dirty"
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -227,7 +227,7 @@ function AgentEditorModal({
                   className="text-muted-foreground/60 text-[11px]"
                 >
                   Unsaved changes
-                </motion.span>
+                </m.span>
               ) : null}
             </AnimatePresence>
           </div>

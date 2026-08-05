@@ -35,7 +35,7 @@ import {
   type Icon as IconType,
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -1534,7 +1534,7 @@ export function InteractiveDemoSection({
                 )}
               >
                 <AnimatePresence mode="wait">
-                  <motion.div
+                  <m.div
                     key={active}
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1554,7 +1554,7 @@ export function InteractiveDemoSection({
                       memberAdded: director.memberAdded,
                       slack: director.slack,
                     })}
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
               </div>
             </div>

@@ -11,7 +11,7 @@ import {
   HardDrivesIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import type { ReactNode } from 'react';
 import { StepCliTerminal } from '../step-cli-terminal';
 import { useCliMovie, type Stage } from '../step-director';
@@ -127,7 +127,7 @@ function ComputerView({ state }: { state: ComputerState }): ReactNode {
             {!started && <div className="text-muted-foreground">waiting for a session…</div>}
 
             {state.done.map((step) => (
-              <motion.div
+              <m.div
                 key={step}
                 initial={{ opacity: 0, x: -4 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -136,7 +136,7 @@ function ComputerView({ state }: { state: ComputerState }): ReactNode {
               >
                 <CheckIcon className="text-kortix-green size-3 shrink-0" />
                 {step}
-              </motion.div>
+              </m.div>
             ))}
 
             {state.doing && (

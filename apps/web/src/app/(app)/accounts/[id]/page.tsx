@@ -20,7 +20,7 @@ import {
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -469,7 +469,7 @@ export default function AccountSettingsPage() {
 
           {/* ── Content pane. Keyed remount + a 200ms rise on section switch;
                 opacity-only under reduced motion. ── */}
-          <motion.div
+          <m.div
             key={activeSection}
             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
@@ -683,7 +683,7 @@ export default function AccountSettingsPage() {
                 ) : null}
               </div>
             ) : null}
-          </motion.div>
+          </m.div>
         </div>
       ) : null}
     </div>

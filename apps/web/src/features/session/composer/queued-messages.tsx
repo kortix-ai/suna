@@ -26,7 +26,7 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   nextFocusAfterRemove,
@@ -152,7 +152,7 @@ function QueuedRow({
   const canReorder = !!onReorder && !isInFlight;
 
   return (
-    <motion.li
+    <m.li
       layout
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
@@ -263,7 +263,7 @@ function QueuedRow({
           )}
         </span>
       )}
-    </motion.li>
+    </m.li>
   );
 }
 
@@ -367,7 +367,7 @@ export function QueuedMessages({
         <ul className="space-y-1.5">
           <AnimatePresence initial={false}>
             {failed.map((message) => (
-              <motion.li
+              <m.li
                 key={message.id}
                 layout
                 initial={{ opacity: 0, y: -4 }}
@@ -395,7 +395,7 @@ export function QueuedMessages({
                     <XIcon className="size-3" />
                   </RowAction>
                 )}
-              </motion.li>
+              </m.li>
             ))}
           </AnimatePresence>
         </ul>

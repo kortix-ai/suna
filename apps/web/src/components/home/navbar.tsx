@@ -46,7 +46,7 @@ import {
   TextTIcon as Type,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -473,7 +473,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       </header>
       <AnimatePresence>
         {isDrawerOpen && isMobile && (
-          <motion.div
+          <m.div
             className="bg-background fixed inset-0 z-50 flex flex-col md:hidden"
             initial="hidden"
             animate="visible"
@@ -503,7 +503,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               {/* A scroll region, not a growing column: with three menus open-
                   able the link list can exceed a phone screen, and the CTA below
                   must stay reachable. */}
-              <motion.nav
+              <m.nav
                 className="min-h-0 flex-1 space-y-6 overflow-y-auto p-2"
                 variants={drawerMenuContainerVariants}
               >
@@ -538,7 +538,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
                     if (staticHref) {
                       return (
-                        <motion.li key={item.id} variants={drawerMenuVariants}>
+                        <m.li key={item.id} variants={drawerMenuVariants}>
                           {/* A row that navigates carries no glyph. Only the
                               rows that expand get an affordance, so the caret
                               always means "opens here". */}
@@ -554,14 +554,14 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                           >
                             {item.name}
                           </Link>
-                        </motion.li>
+                        </m.li>
                       );
                     }
 
                     const subLinks: NavSubLink[] = drawerSubLinks(item);
 
                     return (
-                      <motion.li key={item.id} variants={drawerMenuVariants}>
+                      <m.li key={item.id} variants={drawerMenuVariants}>
                         <Disclosure
                           className="group w-full"
                           open={openDrawerMenu === item.id}
@@ -606,13 +606,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                             </DisclosureBody>
                           </DisclosureContent>
                         </Disclosure>
-                      </motion.li>
+                      </m.li>
                     );
                   })}
                 </ul>
-              </motion.nav>
+              </m.nav>
 
-              <motion.div
+              <m.div
                 className="mt-auto flex flex-col gap-4"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -638,9 +638,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     </Link>
                   </Button>
                 )}
-              </motion.div>
+              </m.div>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

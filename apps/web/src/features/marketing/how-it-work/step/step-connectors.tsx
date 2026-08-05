@@ -5,7 +5,7 @@ import { BrandLogo, ConnectBadge, PageHead } from '@/components/home/interactive
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LockKeyIcon } from '@phosphor-icons/react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import type { ReactNode } from 'react';
 import { StepCliTerminal } from '../step-cli-terminal';
 import { useCliMovie, type Stage } from '../step-director';
@@ -79,7 +79,7 @@ function ConnectorsView({ state }: { state: ConnectorsState }): ReactNode {
           const connected = state.connected.includes(name);
           const rule = name === 'Linear' ? state.rule : null;
           return (
-            <motion.div
+            <m.div
               key={name}
               layout
               className={cn(
@@ -97,7 +97,7 @@ function ConnectorsView({ state }: { state: ConnectorsState }): ReactNode {
                 ) : null}
               </span>
               <ConnectBadge connected={connected} />
-            </motion.div>
+            </m.div>
           );
         })}
       </div>
