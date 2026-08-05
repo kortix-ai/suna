@@ -10,7 +10,7 @@ import {
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
 
-export interface RungAccountsProps {
+export interface ConnectorAccountsProps {
   projectId: string;
   connector: AdminConnector;
   displayName: string;
@@ -24,44 +24,19 @@ export interface RungAccountsProps {
 }
 
 /**
- * Accounts — capabilities #7 and #10, plus, for the connectors with no
- * account list, capability #8's shared-credential form.
+ * Accounts — which accounts this connector runs as.
  *
- * Pipedream connectors hold many authorizations (project + per-member), so
- * they get `ConnectionsList` — the exact component from `connectors-view.tsx`
- * (Task 8), unchanged: add project account, add my account, set default,
- * disconnect, copy connection ID and "Use in a new session" all move with it.
- * Every other connector has at most one credential, which `ConnectionSection`
- * (or `ChannelConnectionSection` for `provider === 'channel'`) owns. The
- * branch picks on the same predicate the old panel used:
- * `connector.provider === 'pipedream'`.
+ * Pipedream connectors hold many authorizations (one project account plus one
+ * per member), so they get `ConnectionsList` and, for a per-user connector, the
+ * team roster below it. Every other connector has at most one credential, owned
+ * by `ConnectionSection` — or `ChannelConnectionSection` for channels.
  *
- * Below the list, the team roster (capability #10) is a section of THIS rung,
- * not a fourth tab — visible without a click, on the old panel's exact
- * `showRoster` condition: `isPipedream && canManageProfiles &&
- * authorizationStrategy === 'user'`.
- *
- * FOLLOW-UP (not done here): the brief asks for the connection-ID label to
- * read "Account ID" instead of "Connection ID". Every place that string
- * appears — `connectors-view.tsx:898` (the `Hint` tooltip, which keeps its
- * technical wording per the brief), `:917` ("Copy connection ID" dropdown
- * item) and `:989` ("Connection ID copied" toast) — lives inside the
- * module-private `ConnectionRow` or `ConnectionsList`'s own `copyConnectionId`
- * closure. Neither is exported with a label-override prop, and both are
- * frozen (`connectors-view.tsx` must hold a zero-line diff). Relabeling those
- * three strings needs a prop added to `ConnectionRow`/`ConnectionsList` in a
- * task scoped to edit that file — left as-is here rather than touching shared
- * code mid-task.
- *
- * DEVIATION worth flagging to Task 12: the Capability Inventory files
- * `ConnectionSection` under Settings (#8) and Accounts (#7). It is ONE
- * component carrying both the credential row and the transport config, and it
- * cannot be split without editing the frozen `connectors-view.tsx`. Mounting
- * it on both rungs would print the same form twice, so it is mounted once,
- * here — the wider slot, since Accounts exists for readers and Settings does
- * not. Task 12 decides where it finally lives.
+ * `ConnectionSection` also carries the transport config, which belongs on
+ * Settings. It is one component with no seam between the two, and splitting it
+ * means editing `connectors-view.tsx`, so it is mounted here only — showing it
+ * on both tabs would print the same form twice.
  */
-export function RungAccounts({
+export function ConnectorAccounts({
   projectId,
   connector,
   displayName,
@@ -72,18 +47,16 @@ export function RungAccounts({
   onRemoved,
   onStartSession,
   onSetCredential,
-}: RungAccountsProps) {
+}: ConnectorAccountsProps) {
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  // Capability #10, on the old panel's `showRoster` condition.
   const showRoster =
     isPipedream && canManageProfiles && connector.authorizationStrategy === 'user';
 
   if (isPipedream) {
     return (
       <div className="space-y-5">
-        {/* Capability #7, verbatim. */}
         <ConnectionsList
           projectId={projectId}
           connector={connector}
@@ -123,7 +96,6 @@ export function RungAccounts({
     );
   }
 
-  // Capability #8.
   return isChannel ? (
     <ChannelConnectionSection
       projectId={projectId}

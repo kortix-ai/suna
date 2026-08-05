@@ -23,8 +23,8 @@ import { useQuery } from '@tanstack/react-query';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
-import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterCommands } from './command-filter';
@@ -141,17 +141,7 @@ export function CommandsPage({ projectId }: { projectId: string }) {
         {filtered.map((command) => (
           <CatalogCard
             key={command.path}
-            leading={
-              <span className="bg-primary/[0.06] flex size-9 shrink-0 items-center justify-center rounded-sm">
-                <CommandIcon className="size-5" />
-              </span>
-            }
-            title={
-              <span className="flex items-center gap-1">
-                <span className="text-muted-foreground/40">/</span>
-                {command.name}
-              </span>
-            }
+            title={command.name}
             description={command.description}
             onClick={() => setSelectedPath(command.path)}
           />

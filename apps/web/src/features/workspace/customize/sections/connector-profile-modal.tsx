@@ -65,7 +65,7 @@ export function AuthorizationStrategyField({
   /**
    * Skips this field's own "Authorization owner" label. For a caller that
    * already prints its own plain-language label for this exact control
-   * directly above it (the connector Settings rung's "Who it connects as") —
+   * directly above it (the connector Settings tab's "Connects as") —
    * so the two do not stack and repeat the same fact in two vocabularies.
    * Defaults to `false`; every other caller is unaffected.
    *
@@ -73,7 +73,7 @@ export function AuthorizationStrategyField({
    * suppressed `FieldLabel htmlFor` was the select's ONLY name source, so
    * `hideLabel` alone would have shipped a form control with no accessible
    * name (WCAG 4.1.2) — invisible to `tsc`, to eslint and to every test here.
-   * That combination is one line away: `rung-settings.tsx` today passes both
+   * That combination is one line away: `connector-settings.tsx` today passes both
    * `hideLabel` and a `lockedReason`, and its own comment says re-enabling
    * editing means deleting `lockedReason`. So the two props are coupled below
    * rather than documented apart — documenting it was tried, twice, and this
@@ -95,7 +95,7 @@ export function AuthorizationStrategyField({
     return (
       <Field>
         {hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}
-        <div className="bg-popover flex items-start gap-3 rounded-md border px-3 py-2.5">
+        <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-3">
           <span
             className={cn(
               'flex size-9 shrink-0 items-center justify-center rounded-sm',
@@ -103,9 +103,9 @@ export function AuthorizationStrategyField({
             )}
           >
             {isProject ? (
-              <UsersThree className="text-kortix-blue size-4" weight="duotone" />
+              <UsersThree className="text-kortix-blue size-5" weight="duotone" />
             ) : (
-              <User className="text-kortix-purple size-4" weight="duotone" />
+              <User className="text-kortix-purple size-5" weight="duotone" />
             )}
           </span>
           <div className="min-w-0 flex-1 space-y-0.5">
@@ -117,8 +117,8 @@ export function AuthorizationStrategyField({
             </div>
             <p className="text-muted-foreground text-xs text-pretty">
               {isProject
-                ? 'One project-managed account, shared with allowed sessions.'
-                : 'Each member authorizes their own account, private to their sessions.'}
+                ? 'Everyone in this project shares one connection.'
+                : 'Everyone connects their own account.'}
             </p>
           </div>
         </div>
@@ -147,8 +147,8 @@ export function AuthorizationStrategyField({
       </Select>
       <FieldDescription className="text-pretty">
         {value === 'project'
-          ? 'One project-managed account is available to allowed sessions.'
-          : 'Each user authorizes their own account for private sessions.'}
+          ? 'Everyone in this project shares one connection.'
+          : 'Everyone connects their own account.'}
       </FieldDescription>
     </Field>
   );

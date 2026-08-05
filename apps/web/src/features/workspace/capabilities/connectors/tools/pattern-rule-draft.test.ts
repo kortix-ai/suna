@@ -13,12 +13,12 @@ import { applyBulkPolicy, isPatternRule, orderPolicyRules } from './tool-policy'
  * The tools the connector currently reports. `retired_tool` is deliberately
  * NOT among them: a rule left behind by a tool the connector no longer lists
  * falls into the Advanced editor beside the patterns
- * (`rung-permissions.tsx`'s `advancedRules`), and it is that mixed set —
+ * (`connector-tools.tsx`'s `advancedRules`), and it is that mixed set —
  * one exact rule, one pattern — that `orderPolicyRules` reorders.
  */
 const LIVE_TOOLS = new Set(['getpetbyid']);
 
-/** `rung-permissions.tsx`'s `advancedRules`, with the same predicate. */
+/** `connector-tools.tsx`'s `advancedRules`, with the same predicate. */
 const advancedRulesOf = (policies: readonly ConnectorPolicyRule[]): ConnectorPolicyRule[] =>
   policies.filter((rule) => isPatternRule(rule.match) || !LIVE_TOOLS.has(rule.match));
 

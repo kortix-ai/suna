@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const source = readFileSync(join(import.meta.dir, 'rung-permissions.tsx'), 'utf8');
+const source = readFileSync(join(import.meta.dir, 'connector-tools.tsx'), 'utf8');
 
 /**
  * A source-assertion tripwire, in the shape of
@@ -22,7 +22,7 @@ const source = readFileSync(join(import.meta.dir, 'rung-permissions.tsx'), 'utf8
  * test in this suite and reintroduce exactly that. These assertions fail loudly
  * instead.
  */
-describe('rung-permissions write path', () => {
+describe('connector tools write path', () => {
   test('every setConnectorPolicies call orders the rules first', () => {
     const calls = [...source.matchAll(/setConnectorPolicies\(([^)]*)\)/g)];
     expect(calls).toHaveLength(1);
@@ -38,13 +38,13 @@ describe('rung-permissions write path', () => {
   // The reviewer grepped this by hand. Keeping it as a test means a new
   // caller anywhere under `capabilities/` has to come with its own ordering,
   // rather than inheriting the bug by default.
-  test('this rung is the only caller in the capabilities tree', () => {
+  test('this file is the only caller in the capabilities tree', () => {
     // `../..` is the capabilities root: this file sits at connectors/detail/.
     const root = join(import.meta.dir, '..', '..');
     const callers = readdirSync(root, { recursive: true, encoding: 'utf8' })
       .filter((name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'))
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('setConnectorPolicies('));
-    expect(callers).toEqual(['connectors/detail/rung-permissions.tsx']);
+    expect(callers).toEqual(['connectors/detail/connector-tools.tsx']);
   });
 
   // The reseed guard reads the SAME array the optimistic write reorders, so

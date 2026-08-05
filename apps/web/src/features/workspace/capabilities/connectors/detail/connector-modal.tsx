@@ -14,10 +14,16 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import {
+  Modal,
+  ModalBody,
+  ModalClose,
+  ModalContent,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -34,13 +40,14 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Icon } from '@/features/icon/icon';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
-import { CONNECTOR_RUNG_LABEL, type ConnectorRung, visibleRungs } from './connector-rungs';
-import { RungAccounts } from './rung-accounts';
-import { RungPermissions } from './rung-permissions';
-import { RungSettings } from './rung-settings';
+import { ConnectorAccounts } from './connector-accounts';
+import { ConnectorSettings } from './connector-settings';
+import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
+import { ConnectorTools } from './connector-tools';
 
 export interface ConnectorModalProps {
   projectId: string;
@@ -57,14 +64,14 @@ export interface ConnectorModalProps {
 }
 
 /**
- * Connector detail — header identity + rung nav + content pane.
+ * Connector detail — header identity + tab nav + content pane.
  *
  * Header: icon, name, description, primary connect action.
  * Left: Accounts / Tools / Settings nav.
- * Right: the active rung.
+ * Right: the active tab.
  *
  * `ConnectorModalBody` is keyed on `connector.slug` so picking a different card
- * while the modal stays open resets the active rung without remounting
+ * while the modal stays open resets the active tab without remounting
  * `Modal`/`ModalContent` (which would replay the open animation).
  */
 export function ConnectorModal({
@@ -78,7 +85,14 @@ export function ConnectorModal({
 }: ConnectorModalProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="h-[70vh] space-y-0 lg:max-w-7xl bg-popover" aria-describedby={undefined}>
+      {/* The close control lives in the header's button group (see
+          `ConnectorModalBody`), not floating over the content, so it sits on the
+          same baseline as Connect / Reconnect instead of overlapping them. */}
+      <ModalContent
+        className="bg-popover h-[80vh] space-y-0 lg:max-w-7xl"
+        aria-describedby={undefined}
+        showCloseButton={false}
+      >
         {connector ? (
           <ConnectorModalBody
             key={connector.slug}
@@ -114,9 +128,9 @@ function ConnectorModalBody({
   const connected = usesProjectAuthorization && connector.secretSet;
   const displayName = connectorDisplayName(connector);
 
-  const rungs = visibleRungs(connector, { canWrite });
-  const [selectedRung, setSelectedRung] = useState<ConnectorRung>('accounts');
-  const rung = rungs.includes(selectedRung) ? selectedRung : (rungs[0] ?? 'accounts');
+  const tabs = connectorTabs(connector, { canWrite });
+  const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
+  const tab = tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
 
   const [credOpen, setCredOpen] = useState(false);
 
@@ -205,11 +219,11 @@ function ConnectorModalBody({
 
   return (
     <>
-      <ModalHeader className="flex-row items-start gap-4 border-b pr-14 pb-4">
+      <ModalHeader className="flex-row items-start gap-2.5 border-b pb-4">
         <span className="p-1">
           <ConnectorAppIcon connector={connector} size="lg" />
         </span>
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <HeaderName
               projectId={projectId}
@@ -226,58 +240,66 @@ function ConnectorModalBody({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {showConnectCta ? (
-            <Button
-              size="sm"
-              className="gap-1.5 active:scale-[0.96]"
-              onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-              disabled={strategyUpdating || (isPipedream && reconnect.isPending)}
-            >
-              {isPipedream && reconnect.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <PlusIcon className="size-4 shrink-0" weight="bold" />
-              )}
-              {isPipedream ? 'Connect' : 'Add credential'}
-            </Button>
-          ) : null}
-          {showReconnectCta ? (
-            isPipedream ? (
+        <div className="flex items-center gap-2">
+          <ButtonGroup className="shrink-0">
+            {showConnectCta ? (
               <Button
                 size="sm"
-                variant="outline"
                 className="gap-1.5 active:scale-[0.96]"
-                onClick={() => reconnect.mutate()}
-                disabled={reconnect.isPending || strategyUpdating}
+                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+                disabled={strategyUpdating || (isPipedream && reconnect.isPending)}
               >
-                {reconnect.isPending ? (
+                {isPipedream && reconnect.isPending ? (
                   <Loading className="size-4 shrink-0" />
                 ) : (
-                  <KeyIcon className="size-4 shrink-0" />
+                  <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                Reconnect
+                {isPipedream ? 'Connect' : 'Add credential'}
               </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 active:scale-[0.96]"
-                onClick={() => setCredOpen(true)}
-                disabled={strategyUpdating}
-              >
-                <KeyIcon className="size-4 shrink-0" />
-                Replace credential
-              </Button>
-            )
-          ) : null}
+            ) : null}
+            {showReconnectCta ? (
+              isPipedream ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 active:scale-[0.96]"
+                  onClick={() => reconnect.mutate()}
+                  disabled={reconnect.isPending || strategyUpdating}
+                >
+                  {reconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                  Reconnect
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 active:scale-[0.96]"
+                  onClick={() => setCredOpen(true)}
+                  disabled={strategyUpdating}
+                >
+                  <KeyIcon className="size-4 shrink-0" />
+                  Replace credential
+                </Button>
+              )
+            ) : null}
+          </ButtonGroup>
+          <ModalClose asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-8 shrink-0 rounded-md"
+              aria-label="Close"
+            >
+              <Icon.Close className="text-foreground size-4 stroke-1" />
+            </Button>
+          </ModalClose>
         </div>
       </ModalHeader>
 
       <ModalBody className="max-h-[70vh] overflow-hidden p-0">
         <Tabs
-          value={rung}
-          onValueChange={(next) => setSelectedRung(next as ConnectorRung)}
+          value={tab}
+          onValueChange={(next) => setSelectedTab(next as ConnectorTab)}
           className="flex min-h-0 flex-col gap-0 overflow-y-auto lg:h-[70vh] lg:flex-row lg:overflow-hidden"
         >
           <TabsList
@@ -299,13 +321,13 @@ function ConnectorModalBody({
               'lg:**:data-[slot=tabs-trigger]:data-[state=inactive]:hover:bg-primary/3',
             )}
           >
-            {rungs.map((value) => (
+            {tabs.map((value) => (
               <TabsTrigger
                 key={value}
                 value={value}
                 className="w-fit flex-none gap-2 px-3 py-2.5 active:scale-[0.98] lg:w-full"
               >
-                {CONNECTOR_RUNG_LABEL[value]}
+                {CONNECTOR_TAB_LABEL[value]}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -332,7 +354,7 @@ function ConnectorModalBody({
                   }
                 />
               ) : (
-                <RungAccounts
+                <ConnectorAccounts
                   projectId={projectId}
                   connector={connector}
                   displayName={displayName}
@@ -347,8 +369,8 @@ function ConnectorModalBody({
               )}
             </TabsContent>
 
-            <TabsContent value="permissions">
-              <RungPermissions
+            <TabsContent value="tools">
+              <ConnectorTools
                 projectId={projectId}
                 connector={connector}
                 displayName={displayName}
@@ -359,7 +381,7 @@ function ConnectorModalBody({
             </TabsContent>
 
             <TabsContent value="settings">
-              <RungSettings
+              <ConnectorSettings
                 projectId={projectId}
                 connector={connector}
                 displayName={displayName}
@@ -450,7 +472,7 @@ function HeaderName({
           <Input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="h-auto max-w-xs border-none py-2 text-sm font-medium ring-0"
+            className="text-foreground h-[28px] max-w-xs border-none p-0 text-base font-semibold ring-0"
             autoFocus
             variant="transparent"
             disabled={disabled}
@@ -489,17 +511,15 @@ function HeaderName({
     <div className="group flex items-center gap-2">
       <ModalTitle className="truncate text-lg font-semibold">{displayName}</ModalTitle>
       {canWrite ? (
-        <Hint label="Rename" side="bottom">
-          <button
-            type="button"
-            onClick={() => !disabled && setEditing(true)}
-            disabled={disabled}
-            aria-label="Rename"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <PencilSimpleIcon className="size-3.5 shrink-0" />
-          </button>
-        </Hint>
+        <button
+          type="button"
+          onClick={() => !disabled && setEditing(true)}
+          disabled={disabled}
+          aria-label="Rename"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <PencilSimpleIcon className="size-3.5 shrink-0" />
+        </button>
       ) : null}
     </div>
   );

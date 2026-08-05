@@ -3,6 +3,7 @@
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
+  CheckIcon,
   GlobeIcon as Globe,
   type Icon as LucideIcon,
   ChatIcon as MessageSquare,
@@ -10,8 +11,8 @@ import {
   PlugIcon as Plug,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
-import Image from 'next/image';
 import { useTranslations } from 'next-intl';
+import Image from 'next/image';
 
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
@@ -87,6 +88,28 @@ export function ConnectorAppIcon({
   );
 }
 
+/**
+ * Green `✓` for a healthy project connector — same glyph Discovery/All use in
+ * the catalogue card's `trailing` slot. Not a badge: problem states keep the
+ * text pills in {@link ConnectorStatusBadge}; connected is affirmative and
+ * stays a mark, not a chip.
+ */
+export function ConnectorConnectedMark({ className }: { className?: string } = {}) {
+  return (
+    <CheckIcon
+      aria-hidden
+      weight="bold"
+      className={cn('text-kortix-green size-4 shrink-0', className)}
+      data-testid="catalog-connected"
+    />
+  );
+}
+
+/**
+ * Problem / setup pills for a project connector. Deliberately returns `null`
+ * when status is `connected` — put {@link ConnectorConnectedMark} in the card's
+ * `trailing` slot instead so Connected matches Discovery's `✓` affordance.
+ */
 export function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const status = connectorSetupStatus(connector);
@@ -118,9 +141,5 @@ export function ConnectorStatusBadge({ connector }: { connector: AdminConnector 
         )}
       </Badge>
     );
-  return (
-    <Badge variant="success" size="sm">
-      Connected
-    </Badge>
-  );
+  return null;
 }

@@ -14,7 +14,7 @@ export interface PatternDraftRow {
  * A content signature for a set of pattern rules, immune to the one reordering
  * the write path performs.
  *
- * Two callers depend on this in `rung-permissions.tsx`: the reseed guard, which
+ * Two callers depend on this in `connector-tools.tsx`: the reseed guard, which
  * refuses to rebuild the draft while the server's pattern set is unchanged, and
  * the dirty check behind Discard/Save.
  *

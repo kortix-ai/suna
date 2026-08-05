@@ -42,7 +42,7 @@ describe('groupToolsByRisk', () => {
     expect(groups[0]?.actions.map((a) => a.path)).toEqual(['z', 'a']);
   });
 
-  test('no actions at all — no groups, so the rung shows one empty state', () => {
+  test('no actions at all — no groups, so the tools tab shows one empty state', () => {
     expect(groupToolsByRisk([])).toEqual([]);
   });
 });

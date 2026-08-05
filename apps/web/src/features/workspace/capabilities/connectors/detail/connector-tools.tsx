@@ -79,8 +79,8 @@ import {
   POLICY_SEGMENTS,
 } from '@/features/workspace/capabilities/connectors/tools/tool-policy-labels';
 
-/** The shipped panel's threshold (`connectors-view.tsx:3201`). Below it the
- *  field is clutter; above it the list is unusable without one. */
+/** Below this many tools the search field is clutter; above it the list is
+ *  unusable without one. */
 const SEARCH_THRESHOLD = 6;
 
 const POLICY_QUERY_STALE_MS = 5_000;
@@ -106,20 +106,20 @@ interface PolicyWrite {
 let patternRowSeq = 0;
 const nextPatternRowId = () => `pattern-${++patternRowSeq}`;
 
-export interface RungPermissionsProps {
+export interface ConnectorToolsProps {
   projectId: string;
   connector: AdminConnector;
   displayName: string;
   canWrite: boolean;
-  /** The authorization owner is mid-update — freeze every write on this rung. */
+  /** The authorization owner is mid-update — freeze every write on this tab. */
   disabled: boolean;
   /** Refetch the connector record: `sensitive` lives on it. */
   onChanged: () => void;
 }
 
 /**
- * Permissions — capability #9, as a per-tool decision instead of a dropdown
- * and a save button.
+ * Tools — what this connector is allowed to do, as a per-tool decision instead
+ * of a dropdown and a save button.
  *
  * Three things make this readable to someone who is not going to study a
  * policy engine:
@@ -138,21 +138,21 @@ export interface RungPermissionsProps {
  * folded into **Advanced**. Both are real capabilities carried over from the
  * shipped panel; they are just not the common case.
  */
-export function RungPermissions({
+export function ConnectorTools({
   projectId,
   connector,
   displayName,
   canWrite,
   disabled,
   onChanged,
-}: RungPermissionsProps) {
+}: ConnectorToolsProps) {
   const queryClient = useQueryClient();
   const slug = connector.slug;
   const queryKey = useMemo(() => ['connector-policies', projectId, slug], [projectId, slug]);
 
   // Reading policies is admin-gated on the server (`resolveAdmin`,
   // executor/router.ts:1193), so a reader would get a 403 and a permanent
-  // skeleton. `visibleRungs` already hides this rung from them; the guard
+  // skeleton. `connectorTabs` already hides this tab from them; the guard
   // below keeps that true if it ever stops doing so.
   const policiesQuery = useQuery({
     queryKey,
@@ -172,7 +172,7 @@ export function RungPermissions({
   // Everything else — globs, regexes, and rules left behind by a tool the
   // connector no longer reports — belongs to the Advanced editor, where it
   // stays visible and editable instead of being silently dropped on the next
-  // save. Same split the shipped panel made (`connectors-view.tsx:3086`).
+  // save.
   const toolRules = useMemo(
     () => policies.filter((rule) => !isPatternRule(rule.match) && toolPaths.has(rule.match)),
     [policies, toolPaths],
@@ -381,9 +381,9 @@ export function RungPermissions({
           <section key={group.key} className="space-y-1">
             <div className="flex items-center justify-between gap-2 py-1">
               <div className="flex items-center gap-2">
-                <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
+                {/* <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" /> */}
                 <Label className="text-sm font-medium">{group.label}</Label>
-                <Badge variant="secondary" size="sm" className="tabular-nums">
+                <Badge variant="secondary" size="tabular">
                   {group.actions.length}
                 </Badge>
               </div>
@@ -391,19 +391,17 @@ export function RungPermissions({
                 <DropdownMenuTrigger asChild>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="text-muted-foreground h-8 gap-1.5 text-xs"
+                    variant="secondary"
                     disabled={frozen || busy || bulkPathsFor(group).length === 0}
                   >
                     Set all
                     <CaretDownIcon className="size-3.5 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-32">
+                <DropdownMenuContent align="end" className="min-w-32 rounded-lg">
                   {POLICY_SEGMENTS.map((segment) => (
                     <DropdownMenuItem
                       key={segment.choice}
-                      className="text-xs"
                       onSelect={() => setBulk({ group, choice: segment.choice })}
                     >
                       {segment.label}
@@ -464,7 +462,6 @@ export function RungPermissions({
         <DisclosureTrigger variant="outline">
           <Button
             variant="popover"
-            className="hover:bg-foreground/[0.03] flex w-full items-center justify-start gap-2 rounded-none px-4 py-2.5 text-sm font-medium"
           >
             Advanced
             {advancedRules.length > 0 ? (
@@ -544,7 +541,7 @@ export function RungPermissions({
                     {/* Three, not four: a stored rule always names an action.
                         "Default" for a pattern means deleting it, which is
                         what the trash button beside this does. */}
-                    <SelectContent>
+                    <SelectContent className="rounded-lg">
                       {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
                         (action) => (
                           <SelectItem key={action} value={action} className="text-xs">

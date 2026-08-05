@@ -12,12 +12,12 @@ export interface ConnectorActionSummary {
 const MAX_SAMPLE_NAMES = 4;
 
 /**
- * The Overview rung's "what it does" summary, derived only from the
+ * The connector card's "what it does" summary, derived only from the
  * connector's own `actions` — never invented copy. `read` counts separately
  * from `write` and `destructive`, which pool together as the actions a
  * session could change or delete something with.
  *
- * Returns `null` for zero actions so the rung can render nothing instead of
+ * Returns `null` for zero actions so the caller can render nothing instead of
  * an empty shell or a "0 tools" line — the case the verification fixture
  * (`verify-api`, 0 actions) exercises.
  */

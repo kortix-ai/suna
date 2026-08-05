@@ -81,7 +81,7 @@ export function EntityDetailModal({
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent
-        className="space-y-0 lg:max-w-7xl bg-popover"
+        className="bg-popover space-y-0 lg:max-w-6xl"
         {...(suppressDescriptionWarning ? { 'aria-describedby': undefined } : {})}
       >
         {entity ? (
@@ -136,10 +136,7 @@ function EntityModalBody({
   return (
     <>
       <ModalHeader className="border-border/60 space-y-1 border-b pb-4">
-        <ModalTitle>
-          {isCommand ? <span className="text-muted-foreground/40">/</span> : null}
-          {entity.name}
-        </ModalTitle>
+        <ModalTitle>{entity.name}</ModalTitle>
       </ModalHeader>
 
       <ModalBody className="max-h-[70vh] overflow-hidden p-0">

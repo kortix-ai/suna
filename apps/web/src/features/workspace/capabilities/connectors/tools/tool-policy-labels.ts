@@ -6,7 +6,7 @@ import type { PolicyChoice } from './tool-policy';
  * A `.ts` sibling of `tool-policy-control.tsx` rather than two more exports on
  * it: React Fast Refresh only hot-swaps a module whose every export is a
  * component, so these constants sitting beside `ToolPolicyControl` made every
- * edit to the control reload the whole page. `rung-permissions.tsx` reads them
+ * edit to the control reload the whole page. `connector-tools.tsx` reads them
  * too, and now does so without pulling the control's component graph.
  */
 

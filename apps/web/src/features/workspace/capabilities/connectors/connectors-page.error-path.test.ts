@@ -6,7 +6,7 @@ const source = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8'
 
 /**
  * A source-assertion tripwire, in the shape of
- * `rung-permissions.write-path.test.ts`.
+ * `connector-tools.write-path.test.ts`.
  *
  * The page runs TWO queries and every flag read off the second one FAILS
  * CLOSED. `getProjectDetail` returning 500 leaves `experimental` undefined, so

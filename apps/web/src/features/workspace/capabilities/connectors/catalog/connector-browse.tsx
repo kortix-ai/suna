@@ -4,7 +4,6 @@ import {
   BriefcaseIcon,
   ChartBarIcon,
   ChatCircleIcon,
-  CheckIcon,
   CodeIcon,
   CurrencyDollarIcon,
   FolderIcon,
@@ -30,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ConnectorConnectedMark } from '@/features/workspace/capabilities/connectors/connector-identity';
 
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
@@ -148,14 +148,7 @@ export function CategorySelect({
  */
 function CatalogAffordance({ connected }: { connected: boolean }) {
   if (connected) {
-    return (
-      <CheckIcon
-        aria-hidden
-        weight="bold"
-        className="text-kortix-green size-4 shrink-0"
-        data-testid="catalog-connected"
-      />
-    );
+    return <ConnectorConnectedMark />;
   }
   return (
     <PlusIcon

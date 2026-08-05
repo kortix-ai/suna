@@ -51,7 +51,7 @@ describe('connector authorization owner is locked after creation', () => {
     expect(VIEW).toContain('updateAuthorizationStrategy');
   });
 
-  // `hideLabel` (capabilities/connectors/rung-settings.tsx) lets a caller that
+  // `hideLabel` (capabilities/connectors/connector-settings.tsx) lets a caller that
   // already prints its own plain-language label for this control ("Who it
   // connects as") suppress the field's own "Authorization owner" label, so
   // the two never stack. Added here rather than to `connectors-view.tsx`,
@@ -69,7 +69,7 @@ describe('connector authorization owner is locked after creation', () => {
 
   // The hazard `hideLabel` opens: in the editable branch the suppressed
   // `<FieldLabel htmlFor={id}>` is the `<Select>`'s ONLY name source. Deleting
-  // `lockedReason` — which `rung-settings.tsx:107` explicitly describes as the
+  // `lockedReason` — which `connector-settings.tsx` explicitly describes as the
   // way to re-enable editing — would have rendered a combobox with no
   // accessible name. Coupled here rather than documented, because two comments
   // already documented it and it still surprised a reviewer.

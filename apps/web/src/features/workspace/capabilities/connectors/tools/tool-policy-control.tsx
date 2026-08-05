@@ -87,7 +87,7 @@ export function ToolPolicyControl({
   // tooltip still opens on a locked row.
   if (lockedReason) {
     return (
-      <Hint label={lockedReason} side="left">
+      <Hint label={lockedReason} side="bottom">
         <div className="shrink-0">{group}</div>
       </Hint>
     );
@@ -95,7 +95,7 @@ export function ToolPolicyControl({
 
   if (value === 'default' && defaultHint) {
     return (
-      <Hint label={defaultHint} side="left">
+      <Hint label={defaultHint} side="bottom">
         <div className="shrink-0">{group}</div>
       </Hint>
     );

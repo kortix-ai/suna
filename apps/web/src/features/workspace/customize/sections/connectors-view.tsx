@@ -6,6 +6,7 @@ import {
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
   CopyIcon as Copy,
+  DotsThreeIcon,
   ArrowSquareOutIcon as ExternalLink,
   KeyIcon as KeyRound,
   LockIcon as Lock,
@@ -184,6 +185,7 @@ import {
 } from '@/features/workspace/capabilities/connectors/connector-identity';
 import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
 import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
+import { useCopy } from '@/hooks/use-copy';
 
 const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
   read: 'outline',
@@ -717,7 +719,6 @@ function ConnectionRow({
   onSetDefault,
   onDisconnect,
   onStartSession,
-  onCopyId,
   pending,
   disabled = false,
 }: {
@@ -727,7 +728,6 @@ function ConnectionRow({
   onSetDefault: () => void;
   onDisconnect: () => void;
   onStartSession?: () => void;
-  onCopyId: (profileId: string) => void;
   pending: boolean;
   disabled?: boolean;
 }) {
@@ -736,6 +736,9 @@ function ConnectionRow({
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
   const mayMutate = isProjectAuthorization ? canManage : isMine;
+
+  const { copy } = useCopy({ successMessage: 'Connection ID copied to clipboard.' });
+
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
       <span
@@ -779,11 +782,11 @@ function ConnectionRow({
             aria-label={`Actions for ${profile.label}`}
             disabled={pending || disabled}
           >
-            {pending ? <Loading className="size-4 shrink-0" /> : <ChevronDown className="size-4" />}
+            {pending ? <Loading className="size-4 shrink-0" /> : <DotsThreeIcon className="size-4" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
-          <DropdownMenuItem onClick={() => onCopyId(profile.profile_id)}>
+          <DropdownMenuItem onClick={() => copy(profile.profile_id)}>
             Copy connection ID
           </DropdownMenuItem>
           {mayMutate && isMine && active && onStartSession && (
@@ -846,20 +849,6 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(profilesQuery.data?.profiles, connector.slug).filter(
     (profile) => profile.owner_type === authorizationOwnerType,
   );
-
-  const copyConnectionId = (profileId: string) => {
-    // The Clipboard API is absent in insecure contexts (navigator.clipboard is
-    // undefined -> a synchronous throw) and writeText can also reject.
-    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
-    if (!clipboard) {
-      errorToast('Could not copy — open the connection and copy the ID manually.');
-      return;
-    }
-    clipboard.writeText(profileId).then(
-      () => successToast('Connection ID copied'),
-      () => errorToast('Could not copy — open the connection and copy the ID manually.'),
-    );
-  };
 
   const addProject = usePipedreamConnectProject(projectId, connector.slug, () => {
     setAddScope(null);
@@ -958,7 +947,6 @@ export function ConnectionsList({
               onSetDefault={() => setDefault.mutate(profile.profile_id)}
               onDisconnect={() => setConfirmDisconnect(profile)}
               onStartSession={onStartSession}
-              onCopyId={copyConnectionId}
             />
           ))}
         </ul>

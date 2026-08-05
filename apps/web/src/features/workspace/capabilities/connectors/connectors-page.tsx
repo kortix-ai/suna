@@ -23,10 +23,17 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { connectorAuthorizationQueryKeys } from '@/features/workspace/customize/sections/connector-profile-form';
+import {
+  connectorAuthorizationQueryKeys,
+  connectorSetupStatus,
+} from '@/features/workspace/customize/sections/connector-profile-form';
 import { CustomConnectorForm } from '@/features/workspace/customize/sections/connectors-view';
 
-import { ConnectorAppIcon, ConnectorStatusBadge } from './connector-identity';
+import {
+  ConnectorAppIcon,
+  ConnectorConnectedMark,
+  ConnectorStatusBadge,
+} from './connector-identity';
 import { providerLabel } from './provider-label';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -369,6 +376,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               title={connectorDisplayName(connector)}
               description={describeConnector(connector)}
               badges={<ConnectorStatusBadge connector={connector} />}
+              trailing={
+                connectorSetupStatus(connector) === 'connected' ? (
+                  <ConnectorConnectedMark />
+                ) : undefined
+              }
               onClick={() => setDetailSlug(connector.slug)}
             />
           ))}

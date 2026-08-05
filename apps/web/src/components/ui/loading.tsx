@@ -23,7 +23,7 @@ const Loading = ({
   variant?: LoadingVariant;
 }) => {
   const base =
-    'text-foreground in-[button]:text-background in-data-[slot=button]:text-background in-[button.bg-transparent]:text-foreground in-[[data-slot=button].bg-transparent]:text-foreground size-4';
+    'text-foreground in-[button]:text-background in-data-[slot=button]:text-background in-[button.bg-transparent]:text-foreground in-[[data-slot=button].bg-transparent]:text-foreground in-[button.bg-secondary]:text-foreground! in-[[data-slot=button].bg-secondary]:text-foreground! size-4';
 
   if (variant === 'spokes') {
     return (
