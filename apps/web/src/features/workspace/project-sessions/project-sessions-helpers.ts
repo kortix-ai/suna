@@ -112,8 +112,9 @@ const AXIS_LABELS: Record<ProjectSessionsFilterAxis, string> = {
  *
  * An option earns a slot only when it matches at least one session — a
  * "Failed 0" entry is a dead end that costs a row to lead nowhere. This mirrors
- * `availableSessionFilterOptions()` in `components/projects/session-label.ts`,
- * the rule the sidebar has always honoured.
+ * the option-admission rule in `session-filter-menu.tsx`'s faceted resolvers
+ * (`components/projects/session-label.ts`), the rule the sidebar has always
+ * honoured.
  *
  * "All" is never grouped and is always offered. An axis with no surviving
  * option is dropped entirely rather than rendering an empty section header.

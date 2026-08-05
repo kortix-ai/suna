@@ -208,13 +208,21 @@ export function matchesSessionStatusFilter(
  * how "All" is expressed, so there is no `'all'` sentinel member. A sentinel
  * alongside arrays would allow `['all', 'running']`, which has no meaning.
  */
-export type SessionSourceFilter = 'mine' | 'shared' | 'slack' | 'email' | 'schedule' | 'webhook';
+export type SessionSourceFilter =
+  | 'mine'
+  | 'shared'
+  | 'slack'
+  | 'telegram'
+  | 'email'
+  | 'schedule'
+  | 'webhook';
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
   { value: 'mine', label: 'My chats' },
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
+  { value: 'telegram', label: 'Telegram' },
   { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },

@@ -159,4 +159,10 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(slack, ['email'])).toBe(false);
     expect(matchesSourceFilters(slack, ['mine', 'slack'])).toBe(true);
   });
+
+  test('telegram matches its own kind only', () => {
+    const telegram = makeSession({ metadata: { source: 'telegram' } });
+    expect(matchesSourceFilters(telegram, ['telegram'])).toBe(true);
+    expect(matchesSourceFilters(telegram, ['slack'])).toBe(false);
+  });
 });

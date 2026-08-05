@@ -115,15 +115,31 @@ describe('resolveShowOptions', () => {
   });
 
   test('ignores hidden-section state so a hidden section can be turned back on', () => {
+    // resolveShowOptions has no hiddenSections parameter at all: a section the
+    // user hid still has to appear here so Show can offer its checkbox back.
+    // resolveRenderedSectionIds, by contrast, DOES take hiddenSections and
+    // drops a hidden section from the render list — that asymmetry is the
+    // whole point of the two functions existing separately.
     const sessions = [running('a'), done('b')];
-    // groupSessions itself would drop a hidden section; resolveShowOptions
-    // never passes hiddenSections through, so both still appear.
-    const show = resolveShowOptions(sessions, 'status');
-    expect(show.map((o) => o.id)).toEqual(['running', 'recent']);
+    const show = resolveShowOptions(sessions, 'status').map((o) => o.id);
+    const rendered = resolveRenderedSectionIds(sessions, 'status', 'activity', ['running']);
+    expect(show).toEqual(['running', 'recent']);
+    expect(rendered).toEqual(['recent']);
+    expect(show).not.toEqual(rendered);
   });
 
   test('no sessions: no sections', () => {
     expect(resolveShowOptions([], 'status')).toEqual([]);
+  });
+
+  test('needs-you appears once a review count is threaded through', () => {
+    const sessions = [running('a')];
+    // Default {} — the earlier defect: needs-you can never surface.
+    expect(resolveShowOptions(sessions, 'status').map((o) => o.id)).toEqual(['running']);
+    // Real review data — needs-you is listed and offerable in Show.
+    expect(resolveShowOptions(sessions, 'status', { a: 1 }).map((o) => o.id)).toEqual([
+      'needs-you',
+    ]);
   });
 });
 
@@ -139,5 +155,19 @@ describe('resolveRenderedSectionIds', () => {
     const rendered = resolveRenderedSectionIds(sessions, 'status', 'activity', []);
     const shown = resolveShowOptions(sessions, 'status').map((o) => o.id);
     expect(rendered).toEqual(shown);
+  });
+
+  test('needs-you is reachable by Collapse all once a review count is threaded through', () => {
+    const sessions = [running('a'), done('b')];
+    // Default {} — the earlier defect: Collapse all silently left needs-you
+    // expanded because it was never in the rendered id list to begin with.
+    expect(resolveRenderedSectionIds(sessions, 'status', 'activity', [])).toEqual([
+      'running',
+      'recent',
+    ]);
+    expect(resolveRenderedSectionIds(sessions, 'status', 'activity', [], { a: 1 })).toEqual([
+      'needs-you',
+      'recent',
+    ]);
   });
 });

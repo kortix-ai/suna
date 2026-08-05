@@ -14,6 +14,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -70,37 +71,40 @@ export interface SessionFilterShowOption {
  * state — `Show` has to be able to list a section the user already hid, so it
  * can be turned back on.
  *
- * `reviewCountBySession` is empty: this component only receives `sessions`,
- * not the review-center summary, so in `status` mode the `needs-you` section
- * is only listed when at least one session's raw status would otherwise land
- * it in a different bucket... in practice this means `needs-you` never shows
- * a checkbox from this call alone. That is an accepted gap of the declared
- * `<SessionFilterMenu projectId sessions align? />` surface, not a bug: the
- * component was not handed review data to be more precise with.
+ * `reviewCountBySession` defaults to `{}` for callers that don't have it
+ * (e.g. a test that only cares about non-`status` modes), but the component
+ * below always threads the real review-center summary through: without it,
+ * `status` mode's `needs-you` bucket is always empty (`sessionDisplayStatus`
+ * only returns `'needs-you'` when a session's own review count is > 0), so
+ * `groupSessions` drops the section and the user has no way to hide/show it.
  */
 export function resolveShowOptions(
   sessions: ProjectSession[],
   mode: SessionGroupMode,
+  reviewCountBySession: Record<string, number> = {},
 ): SessionFilterShowOption[] {
   return groupSessions(sessions, {
     mode,
     order: 'activity',
-    reviewCountBySession: {},
+    reviewCountBySession,
   }).sections.map((section) => ({ id: section.id, label: section.label }));
 }
 
-/** The section ids that would actually render right now — mode, order, and
- *  hidden state all applied. What `Collapse all` collapses. */
+/** The section ids that would actually render right now — mode, order, review
+ *  state, and hidden state all applied. What `Collapse all` collapses. Same
+ *  `reviewCountBySession` default and rationale as `resolveShowOptions`: pass
+ *  the real summary so `needs-you` participates in "collapse everything". */
 export function resolveRenderedSectionIds(
   sessions: ProjectSession[],
   mode: SessionGroupMode,
   order: SessionOrderMode,
   hiddenSections: readonly string[],
+  reviewCountBySession: Record<string, number> = {},
 ): string[] {
   return groupSessions(sessions, {
     mode,
     order,
-    reviewCountBySession: {},
+    reviewCountBySession,
     hiddenSections,
   }).sections.map((section) => section.id);
 }
@@ -165,6 +169,7 @@ const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className
   mine: MessagesSquare,
   shared: UsersSolid,
   slack: Icon.Slack,
+  telegram: Icon.Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
@@ -180,9 +185,20 @@ export interface SessionFilterMenuProps {
   projectId: string;
   sessions: ProjectSession[];
   align?: 'start' | 'center' | 'end';
+  /** Review-center `needs_you` counts, keyed by session id. Optional and
+   *  defaulted to `{}` so existing call sites keep compiling, but a caller
+   *  that has the review summary (the sidebar does) should always pass it:
+   *  without it, `status` grouping's `needs-you` section can never appear in
+   *  `Show` or be reached by `Collapse all`. */
+  reviewCountBySession?: Record<string, number>;
 }
 
-export function SessionFilterMenu({ projectId, sessions, align = 'start' }: SessionFilterMenuProps) {
+export function SessionFilterMenu({
+  projectId,
+  sessions,
+  align = 'start',
+  reviewCountBySession = {},
+}: SessionFilterMenuProps) {
   const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
   const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
   const statusFilters = useSessionFilterStore((s) => s.statusFiltersByProject[projectId] ?? []);
@@ -199,7 +215,7 @@ export function SessionFilterMenu({ projectId, sessions, align = 'start' }: Sess
   const groupLabel = SESSION_GROUP_MODES.find((mode) => mode.value === groupMode)?.label ?? '';
   const orderLabel = SESSION_ORDER_MODES.find((mode) => mode.value === orderMode)?.label ?? '';
 
-  const showOptions = resolveShowOptions(sessions, groupMode);
+  const showOptions = resolveShowOptions(sessions, groupMode, reviewCountBySession);
   const statusOptions = resolveStatusFacetOptions(sessions, statusFilters, sourceFilters);
   const sourceOptions = resolveSourceFacetOptions(sessions, statusFilters, sourceFilters);
   const showFiltersSection = statusOptions.length > 0 || sourceOptions.length > 0;
@@ -276,18 +292,21 @@ export function SessionFilterMenu({ projectId, sessions, align = 'start' }: Sess
       {showFiltersSection && (
         <>
           <DropdownMenuSeparator />
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1">
-            <span className="text-muted-foreground text-xs font-medium tracking-normal">
-              Filters
-            </span>
-            <button
-              type="button"
+          <div className="flex items-center justify-between gap-2 pr-1">
+            <DropdownMenuLabel className="flex-1">Filters</DropdownMenuLabel>
+            <DropdownMenuItem
               disabled={!hasActiveFacets}
-              onClick={() => resetFilters(projectId)}
-              className="text-muted-foreground hover:text-foreground cursor-pointer text-xs font-medium transition-colors duration-150 ease-out disabled:pointer-events-none disabled:cursor-default disabled:opacity-40"
+              className="text-muted-foreground w-auto shrink-0 cursor-pointer justify-end px-2 text-xs font-medium"
+              onSelect={(event) => {
+                // Reset stays legible without collapsing the menu the user is
+                // mid-adjustment in — same "stay open" contract as every
+                // checkbox row below.
+                event.preventDefault();
+                resetFilters(projectId);
+              }}
             >
               Reset
-            </button>
+            </DropdownMenuItem>
           </div>
 
           {statusOptions.length > 0 && (
@@ -351,7 +370,13 @@ export function SessionFilterMenu({ projectId, sessions, align = 'start' }: Sess
         onSelect={() =>
           collapseAllSections(
             projectId,
-            resolveRenderedSectionIds(sessions, groupMode, orderMode, hiddenSections),
+            resolveRenderedSectionIds(
+              sessions,
+              groupMode,
+              orderMode,
+              hiddenSections,
+              reviewCountBySession,
+            ),
           )
         }
       >

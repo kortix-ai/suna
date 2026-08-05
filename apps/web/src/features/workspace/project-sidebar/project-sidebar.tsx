@@ -37,6 +37,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
 import {
   DotsThreeIcon as HiDotsHorizontal,
@@ -72,6 +73,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     refetchOnWindowFocus: false,
   });
   const sessions = filterSessions ?? [];
+  // The two facets are a PERSISTED, per-project store, so a filter survives
+  // navigation, ⌘J, and a full remount — a user can come back days later to a
+  // short list with no clue why. The in-menu dots only help once the closed
+  // menu is opened; this is the signal that fires from outside it.
+  const hasActiveSessionFilters = useSessionFilterStore(
+    (s) =>
+      (s.statusFiltersByProject[projectId]?.length ?? 0) > 0 ||
+      (s.sourceFiltersByProject[projectId]?.length ?? 0) > 0,
+  );
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -266,9 +276,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                           aria-label={tI18nHardcoded.raw(
                             'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
                           )}
-                          className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                          className="text-muted-foreground/90 hover:text-sidebar-foreground relative flex size-8 shrink-0 items-center justify-center px-2"
                         >
                           <HiDotsHorizontal className="size-3" />
+                          {hasActiveSessionFilters && (
+                            <span
+                              aria-hidden
+                              className="bg-foreground absolute top-1.5 right-1.5 size-1.5 rounded-full"
+                            />
+                          )}
                         </SidebarMenuButton>
                       </DropdownMenuTrigger>
                     </DropdownMenu>
