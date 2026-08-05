@@ -88,6 +88,51 @@ function findLastTurn(contentEl: HTMLDivElement): HTMLElement | null {
   return contentEl.querySelector<HTMLElement>('[data-last-turn]');
 }
 
+/**
+ * The element to park at the top of the viewport for "scroll to the last turn".
+ *
+ * Once the transcript is windowed by ROW, `[data-last-turn]` marks the last
+ * row — which is the turn's tail, not its start. Anchoring the tail would put
+ * the END of the response at the top and hide everything above it. The turn's
+ * start row carries `[data-turn-start]`, so prefer that.
+ *
+ * Falls back to `[data-last-turn]` when the transcript is not row-windowed, or
+ * when the last turn's start row is scrolled out of the window.
+ */
+function findLastTurnAnchor(contentEl: HTMLDivElement): HTMLElement | null {
+  const last = findLastTurn(contentEl);
+  if (!last) return null;
+  const turnId = last.getAttribute('data-turn-id');
+  if (!turnId) return last;
+  return (
+    contentEl.querySelector<HTMLElement>(`[data-turn-start="${CSS.escape(turnId)}"]`) ?? last
+  );
+}
+
+/**
+ * Height of the final TURN, or null when it cannot be measured.
+ *
+ * The spacer exists so the last turn can be scrolled until its top sits at
+ * TURN_TOP_OFFSET. That needs the turn's full height. With row windowing no
+ * single element spans a turn any more, so measure start-row top to last-row
+ * bottom.
+ *
+ * Null when the start row is unmounted: the reader is mid-thread, and
+ * `recalcSpacer` holds its current value rather than sizing from a fragment.
+ */
+function measureLastTurnHeight(contentEl: HTMLDivElement): number | null {
+  const last = findLastTurn(contentEl);
+  if (!last) return null;
+  const turnId = last.getAttribute('data-turn-id');
+  // Not row-windowed: the element IS the whole turn.
+  if (!turnId) return last.offsetHeight;
+  const start = contentEl.querySelector<HTMLElement>(
+    `[data-turn-start="${CSS.escape(turnId)}"]`,
+  );
+  if (!start) return null;
+  return last.getBoundingClientRect().bottom - start.getBoundingClientRect().top;
+}
+
 /** Whether any turn at all is mounted — distinguishes "empty thread" from
  *  "windowed and scrolled away from the tail". */
 function hasMountedTurn(contentEl: HTMLDivElement): boolean {
@@ -97,7 +142,7 @@ function hasMountedTurn(contentEl: HTMLDivElement): boolean {
 /** scrollTop that puts the last turn at TURN_TOP_OFFSET from viewport top.
  *  Null when the final turn is not mounted — callers must handle that. */
 function measureTarget(scrollEl: HTMLDivElement, contentEl: HTMLDivElement): number | null {
-  const last = findLastTurn(contentEl);
+  const last = findLastTurnAnchor(contentEl);
   if (!last) return null;
   const sr = scrollEl.getBoundingClientRect();
   const tr = last.getBoundingClientRect();
@@ -176,17 +221,18 @@ export function useAutoScroll({
     if (!el || !content || !spacer) return;
 
     const vh = el.clientHeight;
-    const last = findLastTurn(content);
+    const lastTurnHeight = measureLastTurnHeight(content);
     // Windowed transcript with the reader scrolled away from the tail: the
-    // true final turn is unmounted. Recomputing from whatever happens to be
-    // mounted would size the spacer from a mid-thread turn, and the spacer is
-    // real layout at the bottom of the content — so scrollHeight would move
-    // under the reader every time the window shifts mid-scroll. Keep the
-    // current value instead: a stale spacer is stable, a wrong one moves the
-    // page. `hasMountedTurn` distinguishes this from an empty thread, which
-    // still legitimately wants a full-viewport spacer.
-    if (!last && hasMountedTurn(content)) return;
-    let h = last ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET) : vh;
+    // final turn is not fully mounted, so it cannot be measured. Recomputing
+    // from whatever happens to be mounted would size the spacer from a
+    // fragment, and the spacer is real layout at the bottom of the content —
+    // so scrollHeight would move under the reader every time the window
+    // shifts mid-scroll. Keep the current value instead: a stale spacer is
+    // stable, a wrong one moves the page. `hasMountedTurn` distinguishes this
+    // from an empty thread, which still legitimately wants a full-viewport
+    // spacer.
+    if (lastTurnHeight === null && hasMountedTurn(content)) return;
+    let h = lastTurnHeight !== null ? Math.max(0, vh - lastTurnHeight - TURN_TOP_OFFSET) : vh;
 
     // Cap the spacer ONLY on fresh loads of an existing conversation (no
     // streaming yet this mount) — there the whitespace would look broken.
@@ -324,10 +370,19 @@ export function useAutoScroll({
   const anchorer = useMemo(
     () =>
       createTurnAnchor<HTMLElement>({
-        find: (turnId) =>
-          contentRef.current?.querySelector<HTMLElement>(
-            `[data-turn-id="${CSS.escape(turnId)}"]`,
-          ) ?? null,
+        // `data-turn-start` first: once the transcript is windowed by row, a
+        // turn owns SEVERAL `[data-turn-id]` elements, and anchoring should
+        // park the turn's start at the top — not whichever of its rows happens
+        // to come first in the DOM.
+        find: (turnId) => {
+          const content = contentRef.current;
+          if (!content) return null;
+          const escaped = CSS.escape(turnId);
+          return (
+            content.querySelector<HTMLElement>(`[data-turn-start="${escaped}"]`) ??
+            content.querySelector<HTMLElement>(`[data-turn-id="${escaped}"]`)
+          );
+        },
         anchor: (element) => {
           const el = scrollRef.current;
           if (!el) return;

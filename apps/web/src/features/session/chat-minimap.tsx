@@ -30,6 +30,16 @@ interface ChatMinimapProps {
    *  and an observer armed once would never see the ones that arrive later.
    *  Undefined when every turn is mounted, which leaves behavior unchanged. */
   renderedIdsKey?: string;
+  /**
+   * Scrolls to a turn that may not be mounted. Returns true when it handled
+   * the jump.
+   *
+   * Without this the rail is decorative for most of its dashes: the minimap
+   * only renders at 3+ turns, and in a windowed transcript most of those are
+   * unmounted, so the DOM lookup finds nothing and the click is silently
+   * dropped.
+   */
+  onJumpToTurn?: (turnId: string) => boolean;
 }
 
 function MinimapCard({ item }: { item: MinimapItem }) {
@@ -62,6 +72,7 @@ export function ChatMinimap({
   scrollRef,
   contentRef,
   renderedIdsKey,
+  onJumpToTurn,
 }: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -167,7 +178,14 @@ export function ChatMinimap({
       const contentEl = contentRef.current;
       const scrollEl = scrollRef.current;
       if (!contentEl || !scrollEl) return;
-      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(id)}"]`);
+      // Every dash in the rail is built from ALL turns, but a windowed
+      // transcript only mounts the ones near the viewport — so the DOM lookup
+      // below returns null for most dashes and the click does nothing at all.
+      // Ask the virtualizer to bring the turn into view instead.
+      if (onJumpToTurn?.(id)) return;
+      const target =
+        contentEl.querySelector<HTMLElement>(`[data-turn-start="${CSS.escape(id)}"]`) ??
+        contentEl.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(id)}"]`);
       if (!target) return;
       const offset =
         target.getBoundingClientRect().top -
@@ -177,7 +195,7 @@ export function ChatMinimap({
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       scrollEl.scrollTo({ top: Math.max(0, offset), behavior: reduceMotion ? 'auto' : 'smooth' });
     },
-    [contentRef, scrollRef],
+    [contentRef, scrollRef, onJumpToTurn],
   );
 
   if (items.length < 3 || sidePanelOpen) return null;
