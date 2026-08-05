@@ -262,9 +262,18 @@ export function showsClosingStep(stepCount: number, running: boolean): boolean {
  * step was a dead host — so the chain closed by asserting success over a
  * failure the reader had to expand a card to find. Reasoning parts are not
  * counted: a thought has no verdict to report.
+ *
+ * Plumbing is not counted either, and that clause is load-bearing: `burstTitle`
+ * skips non-primary tiers and `mergeBurstSteps` drops plumbing outright, so a
+ * failed context-compaction call renders NO row. Counting it here made the
+ * collapsed title carry a warning glyph and the chain close on "1 step failed"
+ * for a failure the reader could not find anywhere in the expanded body. All
+ * three readers of a burst must agree on what is in it.
  */
 export function burstFailureCount(parts: ReadonlyArray<Part>): number {
-  return parts.filter((part) => isToolPart(part) && partOutcome(part) !== 'ok').length;
+  return parts.filter(
+    (part) => isToolPart(part) && stepLabel(part).tier !== 'plumbing' && partOutcome(part) !== 'ok',
+  ).length;
 }
 
 export function ActivityBurst({

@@ -342,4 +342,32 @@ describe('burstFailureCount', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'running' })];
     expect(burstFailureCount(parts)).toBe(0);
   });
+
+  // The three readers of a burst must agree on what is IN it. `burstTitle`
+  // skips non-primary tiers and `mergeBurstSteps` drops plumbing, so a failed
+  // `prune`/`distill`/`compress` renders no row at all — counting it here made
+  // a burst of two clean reads collapse to "Read 2 files ⚠", expand to two
+  // clean rows, and close on "1 step failed" the reader could never locate.
+  test('a failed plumbing call is not counted — it renders no row to point at', () => {
+    const parts: Part[] = [
+      tool('1', 'read', { status: 'completed', output: 'ok', time: { start: 1, end: 2 } }),
+      tool('2', 'read', { status: 'completed', output: 'ok', time: { start: 2, end: 3 } }),
+      tool('3', 'prune', { status: 'error', error: 'Error: boom' }),
+    ];
+    expect(burstFailureCount(parts)).toBe(0);
+    expect(mergeBurstSteps(parts, (p) => stepLabel(p).tier)).toHaveLength(1);
+  });
+
+  test('memory plumbing is not counted either', () => {
+    const parts: Part[] = [tool('1', 'memory_search', { status: 'error', error: 'Error: boom' })];
+    expect(burstFailureCount(parts)).toBe(0);
+  });
+
+  test('a primary failure alongside failed plumbing still counts exactly once', () => {
+    const parts: Part[] = [
+      tool('1', 'bash', { status: 'error', error: 'Error: boom' }),
+      tool('2', 'compress', { status: 'error', error: 'Error: boom' }),
+    ];
+    expect(burstFailureCount(parts)).toBe(1);
+  });
 });
