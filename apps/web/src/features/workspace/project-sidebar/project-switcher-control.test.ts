@@ -54,6 +54,7 @@ describe('merged brand/switcher control', () => {
   // A seam that is always drawn makes the shell read as two boxes again.
   test('the seam only appears on hover', () => {
     expect(control).toContain('bg-border/0 group-hover/switcher:bg-border/70');
+    expect(control).not.toContain('group-hover/switcher:bg-border ');
   });
 
   // kortix-design-system: @phosphor-icons/react is the only icon source in

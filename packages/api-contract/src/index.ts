@@ -348,6 +348,23 @@ export const SessionScopeSchema = z
     added_secrets: z.array(z.string()),
     dropped_bindings: z.array(z.string()),
     retroactive: z.boolean(),
+    /**
+     * True when the new secrets scope was pushed to the live sandbox and
+     * OpenCode was restarted to pick it up — the change is in effect NOW.
+     * False when there was no active sandbox to push to (the change is stored
+     * and applies at the next boot), or when `secrets` was not part of this
+     * request. Mirrors the model route's `applied_live`.
+     */
+    applied_live: z.boolean().optional(),
+    /**
+     * Present only when a live push was REQUIRED (the secrets scope changed and
+     * an active sandbox exists) and FAILED — the row is written but the running
+     * harness still answers from the OLD scope. `applied_live: false` cannot
+     * express this on its own (it is also the benign no-active-sandbox answer),
+     * so a client must read THIS to tell a half-applied change from a stored one.
+     */
+    push_failed: z.literal(true).optional(),
+    push_reason: z.string().optional(),
     detail: z.string(),
   })
   .strict();

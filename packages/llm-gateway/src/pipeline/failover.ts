@@ -7,6 +7,7 @@ import type {
 } from '../domain';
 import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
@@ -28,33 +29,14 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function parseUpstreamBody(body: string): { message: string; code?: string } {
-  if (!body) return { message: 'Upstream request failed' };
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const nested = parsed.error;
-    if (typeof nested === 'string') {
-      return { message: nested, code: typeof parsed.code === 'string' ? parsed.code : undefined };
-    }
-    if (nested && typeof nested === 'object') {
-      const error = nested as Record<string, unknown>;
-      return {
-        message: typeof error.message === 'string' ? error.message : body,
-        code:
-          typeof error.code === 'string'
-            ? error.code
-            : typeof error.type === 'string'
-              ? error.type
-              : undefined,
-      };
-    }
-    return {
-      message: typeof parsed.message === 'string' ? parsed.message : body,
-      code: typeof parsed.code === 'string' ? parsed.code : undefined,
-    };
-  } catch {
-    return { message: body };
-  }
+// Mines the REAL human-readable message + code from an upstream error's
+// response body (the raw `UpstreamHttpError.body` the AI SDK populates with
+// `responseBody`). Delegates to the shared `parseUpstreamErrorBody` so the
+// non-streaming and streaming paths surface the same message for the same
+// upstream failure — e.g. "context length exceeded from messages" instead of a
+// generic "Bad Request"/"Bad Gateway" (2026-08-01 defect).
+function parseUpstreamBody(body: string): { message: string; code?: string | number } {
+  return parseUpstreamErrorBody(body);
 }
 
 function suggestionFor(status: number): string {

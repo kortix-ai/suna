@@ -110,7 +110,13 @@ export function createNewSessionScopeDraft(
 ): SessionScopeDraft {
   const draft: SessionScopeDraft = {};
   if (catalog.secrets.status === 'ready') {
-    draft.secrets = [];
+    // No user override yet. `null` means "inherit everything the agent's grant
+    // allows" — the same state a server-created session starts in. `[]` would be
+    // an EXPLICIT "inject zero project secrets", which silently denied every
+    // browser-created session its grant on the first prompt. The user can still
+    // deliberately deselect all (see `setAllSessionSecrets`) to get `[]`; the
+    // two are opposite and must not be conflated.
+    draft.secrets = null;
   }
   if (catalog.connector_profiles.status === 'ready') {
     draft.connector_bindings = {};

@@ -15,6 +15,7 @@ describe('managed catalog', () => {
       'claude-opus-4.8',
       'claude-sonnet-4.6',
       'glm-5.2',
+      'kimi-k3',
       'deepseek-v4-flash',
     ]);
   });
@@ -102,8 +103,10 @@ describe('managed catalog', () => {
         // OpenRouter slugs are provider/model.
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
       } else {
+        // AsterLab accepts a bare, slash-free upstream model id on its
+        // OpenAI-compatible endpoint (e.g. `glm-5.2`, `kimi-k3`).
         expect(m.transport, `${m.id} transport`).toBe('aster');
-        expect(m.upstreamModelId, `${m.id} AsterLab model`).toBe('glm-5.2');
+        expect(m.upstreamModelId, `${m.id} AsterLab slug`).toMatch(/^[^/]+$/);
       }
     }
   });
@@ -128,6 +131,16 @@ describe('managed resolution + back-compat aliases', () => {
       cachedInputPerMillion: 0.2,
       cacheWritePerMillion: 1,
       outputPerMillion: 4,
+    });
+    expect(getManagedModel('kimi-k3')?.name).toBe('Kimi K3');
+    expect(getManagedModel('kimi-k3')?.transport).toBe('aster');
+    expect(getManagedModel('kimi-k3')?.upstreamModelId).toBe('kimi-k3');
+    expect(getManagedModel('kimi-k3')?.vision).toBe(true);
+    expect(getManagedModel('kimi-k3')?.limit).toEqual({ context: 1_048_576, output: 131_072 });
+    expect(getManagedModel('kimi-k3')?.pricing).toEqual({
+      inputPerMillion: 3,
+      cachedInputPerMillion: 0.3,
+      outputPerMillion: 15,
     });
     expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBeUndefined();
     expect(getManagedModel('deepseek-v4-flash')?.pricing).toEqual({

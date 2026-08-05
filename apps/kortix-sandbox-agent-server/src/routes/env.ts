@@ -192,7 +192,19 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           // Keyed on the value DELTA, not the allowlist — `result.names` is the
           // full set, so using it would respawn on every push for any project
           // that merely has one of these secrets.
-          const mustRespawn = requiresRespawn([...opencodeEnvNames, ...result.changedNames])
+          //
+          // Project secrets (the `result.changedNames` half) shape the opencode
+          // child's PROCESS env at spawn via `mergeProjectEnv` (opencode.ts) —
+          // they are NOT in the config file a dispose re-reads. So any non-empty
+          // `changedNames` means opencode's process env is stale and a dispose
+          // would report success while the PID kept the old (e.g. 0/47) set. The
+          // only correct reload for a project-secret delta is a full respawn.
+          // The ~8s cost is the price of correctness; the dispose fast path is
+          // preserved for pure model/auth/deny changes that touch no project
+          // secret. Revocation is preserved too: `knownNames` is tracked in the
+          // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
+          const projectSecretsMoved = result.changedNames.length > 0
+          const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
           const how = await opencode.reloadConfig({ mustRespawn })
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
