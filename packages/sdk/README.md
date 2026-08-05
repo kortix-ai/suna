@@ -86,7 +86,19 @@ const kortix = createKortix({
 // Projects
 const projects = await kortix.projects.list();
 const detail = await kortix.project(pid).detail();
-await kortix.project(pid).secrets.upsert({ name: "STRIPE_API_KEY", value });
+await kortix.project(pid).secrets.upsert({
+  name: "LOCAL_TOOL_TOKEN",
+  value,
+  strategy: "runtime",
+  consumer: "sandbox",
+});
+await kortix.project(pid).secrets.upsert({
+  identifier: "anthropic-primary",
+  name: "ANTHROPIC_API_KEY",
+  value: providerKey,
+  strategy: "broker",
+  consumer: "llm_gateway",
+});
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)

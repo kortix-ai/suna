@@ -8,10 +8,10 @@ export {
   kortixSchema,
   // Enums
   sandboxStatusEnum,
-	  projectStatusEnum,
-	  projectSessionStatusEnum,
-	  sessionLifecycleCommandStatusEnum,
-	  projectRoleEnum,
+  projectStatusEnum,
+  projectSessionStatusEnum,
+  sessionLifecycleCommandStatusEnum,
+  projectRoleEnum,
   projectAccessRequestStatusEnum,
   apiKeyStatusEnum,
   apiKeyTypeEnum,
@@ -38,13 +38,16 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  projectSessionSecretHandles,
+  projectSecretHandleStatusEnum,
+  projectSecretConsumerEnum,
   secretShareScopeEnum,
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
-	  projectTriggerRuntime,
-	  projectTriggerExecutions,
-	  sessionLifecycleCommands,
-	  chatChannelBindings,
+  projectTriggerRuntime,
+  projectTriggerExecutions,
+  sessionLifecycleCommands,
+  chatChannelBindings,
   chatInstalls,
   chatPendingAuthMessages,
   chatThreads,
@@ -200,11 +203,7 @@ export {
   executorProjectSettingsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
-export type {
-  SecretEgressPolicy,
-  SecretEgressRule,
-  SecretInjectionSlot,
-} from './schema/kortix';
+export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
   TunnelMachineInfo,

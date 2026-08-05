@@ -42,8 +42,18 @@ describe('intersectSecretGrants', () => {
 
   test('narrowing composes with resolveGrantedSecretEnv end-to-end', () => {
     const rows: ResolvedProjectSecret[] = [
-      { identifier: 'GMAIL', key: 'GMAIL_TOKEN', value: 'g' },
-      { identifier: 'STRIPE', key: 'STRIPE_KEY', value: 's' },
+      {
+        secretId: 'secret-gmail',
+        identifier: 'GMAIL',
+        key: 'GMAIL_TOKEN',
+        value: 'g',
+      },
+      {
+        secretId: 'secret-stripe',
+        identifier: 'STRIPE',
+        key: 'STRIPE_KEY',
+        value: 's',
+      },
     ];
     // Agent grant 'all', session narrows to just GMAIL → only GMAIL_TOKEN injected.
     const narrowed = intersectSecretGrants('all', ['GMAIL']);
@@ -79,14 +89,32 @@ describe('secretsAllowlistPayloadConflicts', () => {
 
 describe('secretKeyCollisionInAllowlist', () => {
   const rows: ResolvedProjectSecret[] = [
-    { identifier: 'GMAPS_PRIMARY', key: 'GOOGLE_MAPS_API_KEY', value: 'a' },
-    { identifier: 'GMAPS_BACKUP', key: 'GOOGLE_MAPS_API_KEY', value: 'b' },
-    { identifier: 'STRIPE', key: 'STRIPE_KEY', value: 's' },
+    {
+      secretId: 'secret-gmaps-primary',
+      identifier: 'GMAPS_PRIMARY',
+      key: 'GOOGLE_MAPS_API_KEY',
+      value: 'a',
+    },
+    {
+      secretId: 'secret-gmaps-backup',
+      identifier: 'GMAPS_BACKUP',
+      key: 'GOOGLE_MAPS_API_KEY',
+      value: 'b',
+    },
+    {
+      secretId: 'secret-stripe',
+      identifier: 'STRIPE',
+      key: 'STRIPE_KEY',
+      value: 's',
+    },
   ];
 
   test('flags two allowlisted identifiers sharing one env KEY (would brick at boot)', () => {
     const c = secretKeyCollisionInAllowlist(rows, ['GMAPS_PRIMARY', 'GMAPS_BACKUP']);
-    expect(c).toEqual({ key: 'GOOGLE_MAPS_API_KEY', identifiers: ['GMAPS_BACKUP', 'GMAPS_PRIMARY'] });
+    expect(c).toEqual({
+      key: 'GOOGLE_MAPS_API_KEY',
+      identifiers: ['GMAPS_BACKUP', 'GMAPS_PRIMARY'],
+    });
   });
 
   test('no collision when only one identifier per KEY is allowlisted', () => {

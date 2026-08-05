@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSecrets } from '@kortix/db';
+import { projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
 
@@ -22,6 +22,7 @@ let authType: 'service_account' | 'supabase' = 'supabase';
 
 let row: ReturnType<typeof secretRow> | null = secretRow();
 const updates: Array<Record<string, unknown>> = [];
+const handleUpdates: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 const propagations: Array<{ projectId: string; options: unknown }> = [];
 
@@ -37,6 +38,7 @@ function secretRow(overrides: Record<string, unknown> = {}) {
     ownerUserId: null,
     description: null,
     strategy: 'runtime' as const,
+    consumer: 'sandbox' as const,
     egressPolicy: null,
     handlePrefix: null,
     rotatedAt: null,
@@ -61,9 +63,12 @@ function queryResult(fields: Record<string, unknown> | undefined) {
         secretId: row.secretId,
         name: row.name,
         strategy: row.strategy,
+        consumer: row.consumer,
         rotatedAt: row.rotatedAt,
         updatedAt: row.updatedAt,
         strategyLocked: row.strategyLocked,
+        egressPolicy: row.egressPolicy,
+        handlePrefix: row.handlePrefix,
       }
     : row;
   return {
@@ -73,48 +78,57 @@ function queryResult(fields: Record<string, unknown> | undefined) {
 }
 
 const databaseMock = {
-    select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => {
-        if (table !== projectSecrets) throw new Error('unexpected table');
-        return { where: () => queryResult(fields) };
-      },
-    }),
-    update: (table: unknown) => {
+  select: (fields?: Record<string, unknown>) => ({
+    from: (table: unknown) => {
       if (table !== projectSecrets) throw new Error('unexpected table');
+      return { where: () => queryResult(fields) };
+    },
+  }),
+  update: (table: unknown) => {
+    if (table === projectSessionSecretHandles) {
       return {
         set: (values: Record<string, unknown>) => ({
           where: async () => {
-            updates.push(values);
-            if (row) row = { ...row, ...values };
+            handleUpdates.push(values);
           },
         }),
       };
-    },
-    insert: (table: unknown) => {
-      if (table !== projectSecrets) throw new Error('unexpected table');
-      return {
-        values: (values: Record<string, unknown>) => {
-          const inserted = secretRow(values);
-          row = inserted;
-          return {
-            onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => ({
-              returning: async () => {
-                row = row ? { ...row, ...set } : inserted;
-                return [{ secretId: SECRET_ID }];
-              },
-            }),
-          };
-        },
-      };
-    },
-    delete: (table: unknown) => {
-      if (table !== projectSecrets) throw new Error('unexpected table');
-      return {
+    }
+    if (table !== projectSecrets) throw new Error('unexpected table');
+    return {
+      set: (values: Record<string, unknown>) => ({
         where: async () => {
-          row = null;
+          updates.push(values);
+          if (row) row = { ...row, ...values };
         },
-      };
-    },
+      }),
+    };
+  },
+  insert: (table: unknown) => {
+    if (table !== projectSecrets) throw new Error('unexpected table');
+    return {
+      values: (values: Record<string, unknown>) => {
+        const inserted = secretRow(values);
+        row = inserted;
+        return {
+          onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => ({
+            returning: async () => {
+              row = row ? { ...row, ...set } : inserted;
+              return [{ secretId: SECRET_ID }];
+            },
+          }),
+        };
+      },
+    };
+  },
+  delete: (table: unknown) => {
+    if (table !== projectSecrets) throw new Error('unexpected table');
+    return {
+      where: async () => {
+        row = null;
+      },
+    };
+  },
 };
 
 mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock }));
@@ -184,6 +198,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     agentGrant = null;
     authType = 'supabase';
     updates.length = 0;
+    handleUpdates.length = 0;
     audits.length = 0;
     propagations.length = 0;
   });
@@ -207,6 +222,9 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     });
     expect(updates).toHaveLength(1);
     expect(updates[0]?.strategy).toBe('denied');
+    expect(handleUpdates).toEqual([
+      expect.objectContaining({ status: 'revoked', revokedAt: expect.any(Date) }),
+    ]);
     expect(propagations).toHaveLength(1);
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({
@@ -223,24 +241,173 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(JSON.stringify(audits[0])).not.toContain('encrypted-value');
   });
 
-  test.each(['broker', 'egress'] as const)(
-    'rejects unavailable %s delivery without changing the row',
-    async (strategy) => {
-      const response = await buildApp().request(
-        `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
-        {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ strategy }),
-        },
-      );
+  test('requires an outbound policy for broker delivery', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'broker' }),
+      },
+    );
 
-      expect(response.status).toBe(409);
-      expect(await response.json()).toMatchObject({ code: 'secret_delivery_unavailable' });
-      expect(updates).toHaveLength(0);
-      expect(audits).toHaveLength(0);
-    },
-  );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'secret_delivery_policy_required' });
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+  });
+
+  test('configures the generic HTTPS broker with a validated outbound policy', async () => {
+    const egressPolicy = {
+      backend: 'kortix_fetch',
+      rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    };
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'broker',
+          egress_policy: egressPolicy,
+          handle_prefix: 'svc_',
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      delivery_status: 'available',
+      egress_policy: egressPolicy,
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      strategy: 'broker',
+      egressPolicy,
+      handlePrefix: 'svc_',
+    });
+    expect(audits).toHaveLength(1);
+  });
+
+  test('rejects a network policy on the LLM gateway consumer', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'broker',
+          egress_policy: {
+            backend: 'llm_gateway',
+            rules: [{ host: 'api.example.com' }],
+            inject: { kind: 'header', name: 'authorization' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+  });
+
+  test('configures the LLM gateway without a network policy', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'broker', consumer: 'llm_gateway' }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
+    expect(updates[0]).toMatchObject({
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+      egressPolicy: null,
+    });
+  });
+
+  test('configures a connector consumer without a network policy', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'broker', consumer: 'connector' }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'connector',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
+    expect(updates[0]).toMatchObject({
+      strategy: 'broker',
+      consumer: 'connector',
+      egressPolicy: null,
+    });
+  });
+
+  test('configures an automation consumer without a network policy', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'broker', consumer: 'executor' }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'executor',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
+    expect(updates[0]).toMatchObject({
+      strategy: 'broker',
+      consumer: 'executor',
+      egressPolicy: null,
+    });
+  });
+
+  test('rejects transparent egress until its adapter is available', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            backend: 'llm_gateway',
+            rules: [{ host: 'api.example.com' }],
+            inject: { kind: 'header', name: 'authorization' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'secret_delivery_unavailable' });
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+  });
 
   test('attributes a service-account strategy change to automation', async () => {
     authType = 'service_account';
@@ -358,6 +525,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     agentGrant = null;
     authType = 'supabase';
     updates.length = 0;
+    handleUpdates.length = 0;
     audits.length = 0;
     propagations.length = 0;
   });
@@ -388,6 +556,201 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     });
     expect(JSON.stringify(audits[0])).not.toContain('plaintext-test-value');
   });
+
+  test('infers the sandbox consumer for explicit runtime creation', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'runtime',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+    expect(row).toMatchObject({ strategy: 'runtime', consumer: 'sandbox' });
+  });
+
+  test('infers no consumer for explicit denied creation', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'denied',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'denied',
+      consumer: null,
+    });
+    expect(row).toMatchObject({ strategy: 'denied', consumer: null });
+  });
+
+  test('rejects a creation consumer without a strategy', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        consumer: 'sandbox',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'consumer requires a strategy' });
+  });
+
+  test('rejects consumers that conflict with runtime or denied creation', async () => {
+    const app = buildApp();
+    const runtime = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'runtime',
+        consumer: 'connector',
+      }),
+    });
+    const denied = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'denied',
+        consumer: 'sandbox',
+      }),
+    });
+
+    expect(runtime.status).toBe(400);
+    expect(denied.status).toBe(400);
+  });
+
+  test('requires a named server consumer for broker creation', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'broker',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: 'broker creation requires a supported server consumer',
+    });
+  });
+
+  test('creates an LLM gateway secret without a runtime delivery transition', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
+    expect(row).toMatchObject({ strategy: 'broker', consumer: 'llm_gateway' });
+    expect(audits[0]).toMatchObject({
+      after: {
+        configured: true,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+        rotated: true,
+      },
+    });
+    expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
+  });
+
+  test('defaults a known LLM credential to the LLM gateway', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'plaintext-test-value' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+      delivery_status: 'available',
+    });
+    expect(row).toMatchObject({ strategy: 'broker', consumer: 'llm_gateway' });
+    expect(audits[0]).toMatchObject({
+      after: {
+        configured: true,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+        rotated: true,
+      },
+    });
+  });
+
+  test('keeps an explicit runtime choice for a known LLM credential', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'ANTHROPIC_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+    expect(row).toMatchObject({ strategy: 'runtime', consumer: 'sandbox' });
+  });
+
+  test('creates a connector secret without a runtime delivery transition', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'broker',
+        consumer: 'connector',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'broker',
+      consumer: 'connector',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
+    expect(row).toMatchObject({ strategy: 'broker', consumer: 'connector' });
+    expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
+  });
 });
 
 describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
@@ -406,10 +769,9 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
   });
 
   test('records the deleted policy metadata without the encrypted value', async () => {
-    const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/primary-openai`,
-      { method: 'DELETE' },
-    );
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets/primary-openai`, {
+      method: 'DELETE',
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
@@ -423,9 +785,64 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
       metadata: { identifier: 'primary-openai', name: 'OPENAI_API_KEY' },
     });
     expect(JSON.stringify(audits[0])).not.toContain('encrypted-delete-value');
-    expect(propagations).toEqual([{
-      projectId: PROJECT_ID,
-      options: { refreshModels: true },
-    }]);
+    expect(propagations).toEqual([
+      {
+        projectId: PROJECT_ID,
+        options: { refreshModels: true },
+      },
+    ]);
+  });
+
+  test('requires the OAuth disconnect route for a Codex credential', async () => {
+    row = secretRow({
+      identifier: 'CODEX_AUTH_JSON',
+      name: 'CODEX_AUTH_JSON',
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+    });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/CODEX_AUTH_JSON`,
+      { method: 'DELETE' },
+    );
+
+    expect(response.status).toBe(400);
+    expect(row).not.toBeNull();
+    expect(audits).toHaveLength(0);
+  });
+});
+
+describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
+  beforeEach(() => {
+    row = secretRow({
+      identifier: 'CODEX_AUTH_JSON',
+      name: 'CODEX_AUTH_JSON',
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+    });
+    agentGrant = null;
+    authType = 'supabase';
+    audits.length = 0;
+    propagations.length = 0;
+  });
+
+  test('deletes subscription credentials and records metadata only', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(200);
+    expect(row).toBeNull();
+    expect(audits).toEqual([
+      expect.objectContaining({
+        action: 'secret.oauth.disconnected',
+        resourceType: 'project_secret',
+        metadata: {
+          identifier: 'CODEX_AUTH_JSON',
+          consumer: 'llm_gateway',
+        },
+      }),
+    ]);
+    expect(JSON.stringify(audits)).not.toContain('encrypted-value');
   });
 });

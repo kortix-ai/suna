@@ -21,7 +21,7 @@ import {
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
 } from '../github';
-import { getProjectSecretValue } from '../secrets';
+import { getProjectSecretValueForConsumer } from '../secrets';
 import { normalizeStarterTemplateId } from '../starter';
 import {
   buildProjectSeedFiles,
@@ -96,7 +96,12 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   const rawBody = await c.req.text();
   const secret = spec.secretEnv
-    ? await getProjectSecretValue(project.projectId, spec.secretEnv)
+    ? await getProjectSecretValueForConsumer({
+        projectId: project.projectId,
+        accountId: project.accountId,
+        name: spec.secretEnv,
+        consumer: 'executor',
+      })
     : null;
   if (!secret) {
     return c.json({ error: 'Webhook secret is not configured' }, 409);

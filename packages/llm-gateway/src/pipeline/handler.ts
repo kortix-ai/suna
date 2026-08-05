@@ -552,7 +552,7 @@ export async function handleChatCompletions(
   const exhaustedCandidates = new Set<string>();
   const invalidAttemptsByCandidate = new Map<string, number>();
   const candidateKey = ({ descriptor, routeModel }: RoutedUpstreamCandidate): string =>
-    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}`;
+    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}\u0000${descriptor.credentialRef ?? ''}`;
   const sleep = config.retry?.sleep ?? realSleep;
   const rand = config.retry?.rand ?? Math.random;
   const baseDelayMs = config.retry?.baseDelayMs ?? 250;

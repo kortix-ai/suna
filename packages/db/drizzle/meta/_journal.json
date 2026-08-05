@@ -246,6 +246,13 @@
       "when": 1785953661988,
       "tag": "20260805181421_session_pending_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785961753530,
+      "tag": "20260805202913_secret_consumer_boundary",
+      "breakpoints": true
     }
   ]
 }

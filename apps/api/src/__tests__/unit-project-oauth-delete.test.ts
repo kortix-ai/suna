@@ -21,6 +21,7 @@ mock.module('../iam', () => ({ PROJECT_ACTIONS }));
 const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
 const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
 const capabilityChecks: Array<{ userId: string; accountId: string; projectId: string; action: string }> = [];
+const auditEvents: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -61,6 +62,21 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
   },
 }));
 
+mock.module('../shared/audit', () => ({
+  inferAuditSource: () => 'api',
+  recordAuditEvent: async (event: Record<string, unknown>) => {
+    auditEvents.push(event);
+  },
+  runAuditedTransaction: async <T>(
+    operation: (tx: typeof import('../shared/db').db) => Promise<T>,
+    event: (result: T) => Record<string, unknown>,
+  ) => {
+    const result = await operation((await import('../shared/db')).db);
+    auditEvents.push(event(result));
+    return result;
+  },
+}));
+
 const { projectsApp } = await import('../projects/lib/app');
 await import('../projects/routes/r3');
 
@@ -83,6 +99,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     deleteCalls.length = 0;
     propagateCalls.length = 0;
     capabilityChecks.length = 0;
+    auditEvents.length = 0;
   });
 
   test('authorized principal deletes the backing secret and propagates to sandboxes', async () => {
@@ -106,6 +123,15 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
 
     expect(propagateCalls).toHaveLength(1);
     expect(propagateCalls[0].projectId).toBe(PROJECT_ID);
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      action: 'secret.oauth.disconnected',
+      projectId: PROJECT_ID,
+      metadata: {
+        identifier: 'CODEX_AUTH_JSON',
+        consumer: 'llm_gateway',
+      },
+    });
   });
 
   test('unauthorized principal is denied and no delete is issued', async () => {

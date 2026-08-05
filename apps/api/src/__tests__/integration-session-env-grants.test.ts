@@ -12,8 +12,16 @@
  * Runs against the local Postgres (DATABASE_URL).
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq, sql, inArray } from 'drizzle-orm';
-import { projectSecrets, projectSessions } from '@kortix/db';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
+import { and, eq, sql, inArray, isNull } from 'drizzle-orm';
+import {
+  auditEvents,
+  projects,
+  projectSecrets,
+  projectSessionSecretHandles,
+  projectSessions,
+} from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
@@ -43,18 +51,44 @@ const PRINCIPAL_SESSION = `e2e-principal-${crypto.randomUUID()}`;
 const VEYRIS_API_IDENT = `veyris-api-url-${SUFFIX}`;
 const VEYRIS_TOKEN_IDENT = `veyris-agent-token-${SUFFIX}`;
 const VEYRIS_SESSION = `e2e-veyris-${crypto.randomUUID()}`;
+const BROKER_IDENT = `E2E_BROKER_${SUFFIX}`;
+const BROKER_KEY = `E2E_BROKER_KEY_${SUFFIX}`;
+const BROKER_SESSION = `e2e-broker-${crypto.randomUUID()}`;
+const BROKER_VALUE = `broker-plaintext-${crypto.randomUUID()}`;
 
 beforeAll(async () => {
   const rows = (await db.execute(
-    sql`select project_id, account_id from kortix.projects limit 1`,
-  )) as unknown as Array<{ project_id: string; account_id: string }>;
+    sql`select account_id from kortix.accounts limit 1`,
+  )) as unknown as Array<{ account_id: string }>;
   if (!rows[0]) return;
-  ctx = { projectId: rows[0].project_id, accountId: rows[0].account_id };
+  ctx = { projectId: crypto.randomUUID(), accountId: rows[0].account_id };
+  await db.insert(projects).values({
+    projectId: ctx.projectId,
+    accountId: ctx.accountId,
+    name: `Secret delivery test ${SUFFIX}`,
+    repoUrl: resolve(import.meta.dir, '../../../..'),
+    defaultBranch: 'HEAD',
+    manifestPath: 'packages/starter/templates/base/kortix.yaml',
+  });
 
   // Two identifiers, SAME key — the headline secrets-v2 scenario.
-  await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: PRIMARY, name: KEY, value: 'primary-val' });
-  await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: BACKUP, name: KEY, value: 'backup-val' });
-  await writeSharedProjectSecret({ projectId: ctx.projectId, name: UNSCOPED, value: 'open-val' });
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    identifier: PRIMARY,
+    name: KEY,
+    value: 'primary-val',
+  });
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    identifier: BACKUP,
+    name: KEY,
+    value: 'backup-val',
+  });
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    name: UNSCOPED,
+    value: 'open-val',
+  });
 
   // One identifier with a shared value plus a distinct personal override for
   // OWNER and for RESTARTER — so the resolved value differs by principal.
@@ -108,13 +142,59 @@ beforeAll(async () => {
     // keeps this fixture isolated from any real Veyris rows in the local DB.
     secretsAllowlist: [VEYRIS_API_IDENT, VEYRIS_TOKEN_IDENT],
   });
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    identifier: BROKER_IDENT,
+    name: BROKER_KEY,
+    value: BROKER_VALUE,
+  });
+  await db
+    .update(projectSecrets)
+    .set({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      egressPolicy: {
+        backend: 'kortix_fetch',
+        rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+        inject: {
+          kind: 'header',
+          name: 'authorization',
+          template: 'Bearer {{secret}}',
+        },
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+      handlePrefix: 'test_broker_',
+    })
+    .where(
+      and(
+        eq(projectSecrets.projectId, ctx.projectId),
+        eq(projectSecrets.identifier, BROKER_IDENT),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
+  await db.insert(projectSessions).values({
+    sessionId: BROKER_SESSION,
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    branchName: `broker-${SUFFIX}`,
+    createdBy: USER,
+    agentName: 'broker-test',
+    secretsAllowlist: [BROKER_IDENT],
+  });
 });
 
 afterAll(async () => {
   if (!ctx) return;
+  await db
+    .delete(auditEvents)
+    .where(
+      and(eq(auditEvents.projectId, ctx.projectId), eq(auditEvents.sessionId, BROKER_SESSION)),
+    );
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, VEYRIS_SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, BROKER_SESSION));
   await db
     .delete(projectSecrets)
     .where(
@@ -127,14 +207,19 @@ afterAll(async () => {
           OVERRIDE_IDENT,
           VEYRIS_API_IDENT,
           VEYRIS_TOKEN_IDENT,
+          BROKER_IDENT,
         ]),
       ),
     );
+  await db.delete(projects).where(eq(projects.projectId, ctx.projectId));
 });
 
 describe('listProjectSecretsSnapshotForUser — session env injection by identifier', () => {
   test('an agent granted ONE identifier gets exactly that value under the shared key', async () => {
-    if (!ctx) { console.warn('[integration] no project in local DB — skipping'); return; }
+    if (!ctx) {
+      console.warn('[integration] no project in local DB — skipping');
+      return;
+    }
     const { env, names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [PRIMARY]);
     expect(env[KEY]).toBe('primary-val');
     expect(names).toContain(KEY);
@@ -293,6 +378,114 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       'VEYRIS_AGENT_TOKEN',
       'VEYRIS_API_URL',
     ]);
+  });
+
+  test('broker delivery stores one auditable session handle and never returns plaintext', async () => {
+    if (!ctx) return;
+
+    const first = await listProjectSecretsSnapshotForUser(
+      ctx.projectId,
+      USER,
+      [BROKER_IDENT],
+      BROKER_SESSION,
+    );
+    expect(first.env[BROKER_KEY]).toStartWith('test_broker_KXS1');
+    expect(first.env[BROKER_KEY]).not.toContain(BROKER_VALUE);
+    expect(first.names).toEqual([BROKER_KEY]);
+
+    const second = await listProjectSecretsSnapshotForUser(
+      ctx.projectId,
+      USER,
+      [BROKER_IDENT],
+      BROKER_SESSION,
+    );
+    expect(second.env[BROKER_KEY]).toBe(first.env[BROKER_KEY]);
+
+    const handles = await db
+      .select()
+      .from(projectSessionSecretHandles)
+      .where(eq(projectSessionSecretHandles.sessionId, BROKER_SESSION));
+    expect(handles).toHaveLength(1);
+    expect(handles[0]?.status).toBe('active');
+    expect(handles[0]?.identifier).toBe(BROKER_IDENT);
+    expect(handles[0]?.handleHash).toBe(
+      createHash('sha256').update(first.env[BROKER_KEY]!).digest('hex'),
+    );
+    expect(JSON.stringify(handles[0])).not.toContain(BROKER_VALUE);
+    expect(JSON.stringify(handles[0])).not.toContain(first.env[BROKER_KEY]!);
+
+    const issuedEvents = await db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.projectId, ctx.projectId),
+          eq(auditEvents.sessionId, BROKER_SESSION),
+          eq(auditEvents.action, 'secret.handle.issued'),
+        ),
+      );
+    expect(issuedEvents).toHaveLength(1);
+    expect(issuedEvents[0]?.metadata).toMatchObject({
+      identifier: BROKER_IDENT,
+      consumer: 'http_broker',
+      strategy: 'broker',
+      revision: 1,
+    });
+    expect(JSON.stringify(issuedEvents[0])).not.toContain(BROKER_VALUE);
+    expect(JSON.stringify(issuedEvents[0])).not.toContain(first.env[BROKER_KEY]!);
+
+    await db
+      .update(projectSecrets)
+      .set({
+        egressPolicy: {
+          backend: 'kortix_fetch',
+          rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v2/*' }],
+          inject: {
+            kind: 'header',
+            name: 'authorization',
+            template: 'Bearer {{secret}}',
+          },
+          on_no_match: 'deny',
+          tls: 'terminate',
+        },
+      })
+      .where(
+        and(
+          eq(projectSecrets.projectId, ctx.projectId),
+          eq(projectSecrets.identifier, BROKER_IDENT),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      );
+    const rotated = await listProjectSecretsSnapshotForUser(
+      ctx.projectId,
+      USER,
+      [BROKER_IDENT],
+      BROKER_SESSION,
+    );
+    expect(rotated.env[BROKER_KEY]).not.toBe(first.env[BROKER_KEY]);
+    const revisions = await db
+      .select()
+      .from(projectSessionSecretHandles)
+      .where(eq(projectSessionSecretHandles.sessionId, BROKER_SESSION))
+      .orderBy(projectSessionSecretHandles.revision);
+    expect(revisions.map((row) => [row.revision, row.status])).toEqual([
+      [1, 'superseded'],
+      [2, 'active'],
+    ]);
+    expect(revisions[1]?.policySnapshot.rules[0]?.path).toBe('/v2/*');
+    expect(JSON.stringify(revisions)).not.toContain(BROKER_VALUE);
+  });
+
+  test('broker delivery stays absent for an unscoped grant', async () => {
+    if (!ctx) return;
+    const snapshot = await listProjectSecretsSnapshotForUser(
+      ctx.projectId,
+      USER,
+      'all',
+      BROKER_SESSION,
+    );
+    expect(snapshot.env[BROKER_KEY]).toBeUndefined();
+    expect(snapshot.names).not.toContain(BROKER_KEY);
   });
 });
 

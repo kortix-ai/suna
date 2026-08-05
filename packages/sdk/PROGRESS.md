@@ -62,6 +62,57 @@ persisted across a reload, reordered, or edited by a user.
 
 ---
 
+### 2026-08-05 — session `secret-delivery-complete` claim
+
+No **Now** task claimed. This work continues the completed
+`secret-delivery-control-plane` slice.
+
+Scope:
+
+- Add an additive SDK contract for complete secret delivery configuration.
+- Preserve `setProjectSecretStrategy()` and every published name.
+- Expose consumer, broker, egress, rotation, and credential-profile metadata.
+- Keep web and CLI clients on the SDK contract.
+
+The listed `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-05 — session `secret-delivery-complete` completion
+
+Added an additive project-secret contract for delivery strategy, managed
+consumer, HTTP broker policy, rotation state, and session broker calls. Kept all
+published names and the existing `setProjectSecretStrategy()` signature. The
+web and CLI use the SDK contract instead of defining a second transport.
+
+RED:
+
+- The secret-client contract tests failed before the request and response types
+  included managed consumers and HTTP broker policy.
+- The root client test failed before a session exposed the secret broker.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk test`: `1538 pass`, `0 fail`, and `6298 expect()`
+  calls across `121` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+The public surface changed additively. No export was removed or renamed. The
+package version was not edited.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-04 — session `auth-cache-link-prefetch` claim
 
 No **Now** task claimed. This is a narrow browser cache identity fix.

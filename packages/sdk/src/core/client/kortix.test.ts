@@ -42,6 +42,20 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).secrets.broker binds the project and encoded identifier', async () => {
+  await kortix.project('PID123').secrets.broker('primary/key', {
+    url: 'https://api.example.com/v1/items',
+    method: 'POST',
+  });
+
+  expect(last().url).toContain('/projects/PID123/secrets/primary%2Fkey/broker');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    url: 'https://api.example.com/v1/items',
+    method: 'POST',
+  });
+});
+
 test('session(projectId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
@@ -364,7 +378,7 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).secrets covers provider OAuth start/poll', async () => {
+test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
   expect(last().method).toBe('POST');
@@ -372,6 +386,10 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
   await kortix.project('PID123').secrets.pollProviderOAuth('chatgpt', 'FLOW1');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/poll');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').secrets.removeProviderOAuth('chatgpt');
+  expect(last().url).toContain('/projects/PID123/oauth/chatgpt');
+  expect(last().method).toBe('DELETE');
 });
 
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {

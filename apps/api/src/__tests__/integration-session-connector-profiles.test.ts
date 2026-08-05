@@ -13,6 +13,7 @@ import {
   executorCredentials,
   projectSessionConnectorBindings,
   projectSessions,
+  projectSecrets,
   projects,
   serviceAccounts,
 } from '@kortix/db';
@@ -49,12 +50,14 @@ const CONNECTOR_B = crypto.randomUUID();
 const EMAIL_CONNECTOR = crypto.randomUUID();
 const MISSING_CONNECTOR_A = crypto.randomUUID();
 const MISSING_CONNECTOR_B = crypto.randomUUID();
+const SECRET_CONNECTOR = crypto.randomUUID();
 const PROFILE_DEFAULT = crypto.randomUUID();
 const PROFILE_A = crypto.randomUUID();
 const PROFILE_B = crypto.randomUUID();
 const PROFILE_EXTERNAL = crypto.randomUUID();
 const PROFILE_SERVICE_ACCOUNT = crypto.randomUUID();
 const EMAIL_PROFILE_DEFAULT = crypto.randomUUID();
+const SECRET_PROFILE_DEFAULT = crypto.randomUUID();
 const FOREIGN_PROFILE = crypto.randomUUID();
 const SESSION_A = crypto.randomUUID();
 const SESSION_B = crypto.randomUUID();
@@ -144,6 +147,17 @@ beforeAll(async () => {
       config: { baseUrl: 'https://missing-two.example.test', auth: { type: 'bearer' } },
       authorizationStrategy: 'user',
     },
+    {
+      connectorId: SECRET_CONNECTOR,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      slug: 'secret_backed',
+      name: 'Secret-backed connector',
+      providerType: 'http',
+      config: { baseUrl: 'https://secret-backed.example.test', auth: { type: 'bearer' } },
+      authSecret: 'CONNECTOR_BOUNDARY_KEY',
+      authorizationStrategy: 'project',
+    },
   ]);
   await db.insert(executorConnectorPolicies).values({
     connectorId: CONNECTOR_A,
@@ -202,6 +216,14 @@ beforeAll(async () => {
       projectId: PROJECT_A,
       connectorId: EMAIL_CONNECTOR,
       label: 'Default email',
+      isDefault: true,
+    },
+    {
+      profileId: SECRET_PROFILE_DEFAULT,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorId: SECRET_CONNECTOR,
+      label: 'Secret-backed default',
       isDefault: true,
     },
     {
@@ -333,6 +355,16 @@ beforeAll(async () => {
       source: 'default',
       createdBy: null,
     },
+    {
+      sessionId: SESSION_DEFAULT,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      connectorAlias: 'secret_backed',
+      connectorId: SECRET_CONNECTOR,
+      profileId: SECRET_PROFILE_DEFAULT,
+      source: 'default',
+      createdBy: null,
+    },
     // A caller-REQUESTED (source: 'request') veyris binding on an inherit_unbound
     // session — the explicit binding still wins, and unbound aliases fall back.
     {
@@ -363,6 +395,16 @@ beforeAll(async () => {
       valueEnc: encryptProjectSecret(PROJECT_A, 'workspace-b-capability'),
     },
   ]);
+  await db.insert(projectSecrets).values({
+    projectId: PROJECT_A,
+    identifier: 'CONNECTOR_BOUNDARY_KEY',
+    name: 'CONNECTOR_BOUNDARY_KEY',
+    valueEnc: encryptProjectSecret(PROJECT_A, 'connector-boundary-value'),
+    strategy: 'broker',
+    consumer: 'connector',
+    createdBy: USER,
+    rotatedAt: new Date(),
+  });
   await saveAgentMailInstall({
     projectId: PROJECT_A,
     profileSlug: 'kortix_email',
@@ -435,6 +477,22 @@ describe('session connector profile isolation', () => {
     expect(await depsB.loadPolicies(connectorB.connectorId)).toEqual([
       { match: '*', action: 'block', conditions: null, position: 0 },
     ]);
+  });
+
+  test('real Executor deps resolve a manifest secret only through the connector boundary', async () => {
+    const deps = makeDbGatewayDeps({
+      userId: USER,
+      accountId: ACCOUNT_A,
+      projectId: PROJECT_A,
+      sessionId: SESSION_DEFAULT,
+      subject: { userId: USER, groupIds: [] },
+      agentGrant: { agent: 'secret-agent', connectors: ['secret_backed'], kortixCli: [] },
+    });
+    const connector = await deps.loadConnectorBySlug(PROJECT_A, 'secret_backed');
+    if (!connector) throw new Error('Expected secret-backed connector');
+
+    expect(connector.authSecret).toBe('CONNECTOR_BOUNDARY_KEY');
+    expect(await deps.resolveCredential(connector, null)).toBe('connector-boundary-value');
   });
 
   test("an omitted user-strategy binding resolves the acting member's authorization", async () => {

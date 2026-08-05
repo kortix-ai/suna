@@ -1,5 +1,13 @@
 import { readFileSync } from 'node:fs';
+import {
+  brokerProjectSecretRequest,
+  setProjectSecretStrategy,
+  type SecretBrokerRequest,
+  type SecretEgressPolicy,
+  type SecretInjectionSlot,
+} from '@kortix/sdk';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -12,22 +20,22 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
-Manage encrypted env-var secrets on the linked Kortix project. Values
-are AES-256-GCM-encrypted at rest and injected into session sandboxes
-at boot.
+Manage encrypted secrets on the linked Kortix project. A delivery policy
+controls whether each value reaches a sandbox or stays on Kortix services.
 
 A secret is profile-like: an IDENTIFIER (the unique handle an agent's
 \`secrets\` grant references), a KEY (the env var injected into the sandbox),
-and a value. Leave the identifier blank and it defaults to the key — the
-common case. Set it explicitly to keep a second value under the same key
-(e.g. a backup key).
+and a value. Runtime delivery uses KEY as an environment variable. Leave the
+identifier blank and it defaults to the key. Set it explicitly to keep a
+second credential profile under the same key.
 
 Subcommands:
   ls                                List secrets (by identifier, → key when it
                                     differs) + manifest [env] spec. --json.
                                     JSON mirrors API fields: name, configured,
-                                    available, effective_source. Legacy key and
-                                    has_value aliases remain available.
+                                    available, effective_source, strategy,
+                                    consumer, and delivery_status. Legacy key
+                                    and has_value aliases remain available.
   set KEY=VALUE [KEY=VALUE …]       Upsert one or more secrets. Identifier
                                     defaults to KEY.
                                     Use \`KEY=-\` to read VALUE from stdin.
@@ -42,6 +50,22 @@ Subcommands:
                                     this session's sandbox. Use after setting
                                     a secret via the intake link or after a
                                     secret was updated mid-session.
+  delivery IDENTIFIER STRATEGY      Set runtime, broker, egress, or denied.
+    --consumer <service>             Broker consumer: llm-gateway, connector,
+                                    automation, or http-broker.
+    --allow-host <host>              Broker host. Repeat for more hosts.
+    --allow-method <method>          Allowed HTTP method. Repeat as needed.
+    --allow-path <path>              Exact path or one trailing /* wildcard.
+    --inject-header <name>           Inject into one managed header.
+    --inject-query <name>            Inject into one query parameter.
+    --inject-json <path>             Inject into one JSON body field.
+    --template <value>               Header template containing {{secret}}.
+    --handle-prefix <prefix>         Optional vendor-shaped sandbox handle.
+  call IDENTIFIER URL               Send one policy-bound HTTPS request.
+    --method <method>                Default: GET.
+    --header <name:value>            Request header. Repeat as needed.
+    --data <value>                   Inline request body.
+    --data-file <path>               Read the request body from a file.
   unset IDENTIFIER [IDENTIFIER …]   Remove one or more secrets (by identifier).
 
 Which agents may use a secret is governed by that agent's \`secrets\` grant in
@@ -84,6 +108,11 @@ export async function runSecrets(argv: string[]): Promise<number> {
       return secretsRequest(rest, ctxOpts, json);
     case 'sync':
       return secretsSync(ctxOpts, json);
+    case 'delivery':
+    case 'strategy':
+      return secretsDelivery(rest, ctxOpts, json);
+    case 'call':
+      return secretsCall(rest, ctxOpts, json);
     case 'unset':
     case 'rm':
     case 'remove':
@@ -109,6 +138,10 @@ type SecretRow = {
   configured: boolean;
   available: boolean;
   effectiveSource: 'mine' | 'shared' | 'none';
+  strategy: 'runtime' | 'egress' | 'broker' | 'denied';
+  consumer: ProjectSecret['consumer'];
+  deliveryStatus: 'available' | 'unavailable' | 'disabled';
+  requiresRotation: boolean;
 };
 
 async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
@@ -152,6 +185,11 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       configured,
       effectiveSource,
       available: effectiveSource !== 'none',
+      strategy: secret.strategy ?? 'runtime',
+      consumer: secret.consumer ?? (secret.strategy === 'denied' ? null : 'sandbox'),
+      deliveryStatus:
+        secret.delivery_status ?? (secret.strategy === 'denied' ? 'disabled' : 'available'),
+      requiresRotation: secret.requires_rotation ?? false,
     } as const;
   };
   const availableKeys = new Set(
@@ -180,6 +218,10 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         configured: false,
         available: false,
         effectiveSource: 'none',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+        deliveryStatus: 'available',
+        requiresRotation: false,
       });
     } else {
       for (const s of backing) {
@@ -203,6 +245,10 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         configured: r.configured,
         available: r.available,
         effective_source: r.effectiveSource,
+        strategy: r.strategy,
+        consumer: r.consumer,
+        delivery_status: r.deliveryStatus,
+        requires_rotation: r.requiresRotation,
         // Backward-compatible aliases for older CLI JSON consumers.
         key: r.key,
         has_value: r.available,
@@ -236,7 +282,9 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   const nameW = Math.max(...allRows.map((r) => r.identifier.length), 4);
-  process.stdout.write(`  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    SPEC${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    DELIVERY          SPEC${C.reset}\n`,
+  );
   for (const r of allRows) {
     const marker = r.available ? `${C.green}● ${C.reset}` : `${C.yellow}○ ${C.reset}`;
     const statusTxt = r.available
@@ -249,8 +297,18 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     // Show the injected env key only when it differs from the identifier —
     // the second-value-under-same-key case (mirrors the web's "→ key").
     const keyHint = r.key !== r.identifier ? ` ${C.dim}→ ${r.key}${C.reset}` : '';
+    const delivery =
+      r.strategy === 'runtime'
+        ? 'sandbox'
+        : r.strategy === 'denied'
+          ? 'disabled'
+          : r.strategy === 'broker'
+            ? (r.consumer ?? 'Kortix broker')
+            : 'approved hosts';
+    const rotation = r.requiresRotation ? ' · rotate' : '';
+    const deliveryText = `${delivery}${rotation}`;
     process.stdout.write(
-      `${marker}${pad(r.identifier, nameW)}   ${statusTxt}  ${specColor}${r.spec}${C.reset}${keyHint}\n`,
+      `${marker}${pad(r.identifier, nameW)}   ${statusTxt}  ${pad(deliveryText, 16)}  ${specColor}${r.spec}${C.reset}${keyHint}\n`,
     );
   }
 
@@ -269,6 +327,302 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     `  ${C.dim}${availableCount} available · ${required.length} required · ${optional.length} optional${C.reset}\n\n`,
   );
   return 0;
+}
+
+const SECRET_STRATEGIES = ['runtime', 'broker', 'egress', 'denied'] as const;
+type SecretStrategy = (typeof SECRET_STRATEGIES)[number];
+const BROKER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+type BrokerMethod = (typeof BROKER_METHODS)[number];
+
+function takeFlagValues(args: string[], names: string[]): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length;) {
+    if (!names.includes(args[index]!)) {
+      index += 1;
+      continue;
+    }
+    const flag = args[index]!;
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new Error(`${flag} requires a value`);
+    }
+    values.push(value);
+    args.splice(index, 2);
+  }
+  return values;
+}
+
+function deliveryLabel(strategy: SecretStrategy): string {
+  if (strategy === 'runtime') return 'Readable in sandbox';
+  if (strategy === 'broker') return 'Used through Kortix';
+  if (strategy === 'egress') return 'Sent only to approved hosts';
+  return 'Stored but disabled';
+}
+
+async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Promise<number> {
+  const [identifier, strategyRaw] = args;
+  const options = args.slice(2);
+  if (!identifier || !IDENTIFIER_RE.test(identifier)) {
+    process.stderr.write(
+      `${status.err('Usage: kortix secrets delivery IDENTIFIER runtime|broker|egress|denied')}\n`,
+    );
+    return 2;
+  }
+  if (!SECRET_STRATEGIES.includes(strategyRaw as SecretStrategy)) {
+    process.stderr.write(`${status.err('Delivery must be runtime, broker, egress, or denied.')}\n`);
+    return 2;
+  }
+
+  let allowedHosts: string[];
+  let allowedMethods: string[];
+  let allowedPath: string | undefined;
+  let injectHeader: string | undefined;
+  let injectQuery: string | undefined;
+  let injectJson: string | undefined;
+  let template: string | undefined;
+  let handlePrefix: string | undefined;
+  let consumerFlag: string | undefined;
+  try {
+    allowedHosts = takeFlagValues(options, ['--allow-host']);
+    allowedMethods = takeFlagValues(options, ['--allow-method']).map((method) =>
+      method.toUpperCase(),
+    );
+    allowedPath = takeFlagValue(options, ['--allow-path']);
+    injectHeader = takeFlagValue(options, ['--inject-header']);
+    injectQuery = takeFlagValue(options, ['--inject-query']);
+    injectJson = takeFlagValue(options, ['--inject-json']);
+    template = takeFlagValue(options, ['--template']);
+    handlePrefix = takeFlagValue(options, ['--handle-prefix']);
+    consumerFlag = takeFlagValue(options, ['--consumer']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  if (options.length > 0) {
+    process.stderr.write(`${status.err(`Unknown delivery option: ${options[0]}`)}\n`);
+    return 2;
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const strategy = strategyRaw as SecretStrategy;
+  const normalizedConsumer = consumerFlag?.replace(/-/g, '_') ?? 'http_broker';
+  const consumer = normalizedConsumer === 'automation' ? 'executor' : normalizedConsumer;
+  if (
+    strategy === 'broker' &&
+    !['llm_gateway', 'connector', 'executor', 'http_broker'].includes(consumer)
+  ) {
+    process.stderr.write(
+      `${status.err('--consumer must be llm-gateway, connector, automation, or http-broker.')}\n`,
+    );
+    return 2;
+  }
+  if (strategy !== 'broker' && consumerFlag !== undefined) {
+    process.stderr.write(`${status.err('--consumer is only valid for broker delivery.')}\n`);
+    return 2;
+  }
+  const hasBrokerOptions =
+    allowedHosts.length > 0 ||
+    allowedMethods.length > 0 ||
+    allowedPath !== undefined ||
+    injectHeader !== undefined ||
+    injectQuery !== undefined ||
+    injectJson !== undefined ||
+    template !== undefined ||
+    handlePrefix !== undefined;
+  if (strategy !== 'broker' && hasBrokerOptions) {
+    process.stderr.write(
+      `${status.err('Broker policy flags are only valid for broker delivery.')}\n`,
+    );
+    return 2;
+  }
+  if (strategy === 'egress') {
+    process.stderr.write(
+      `${status.err('Transparent egress delivery is unavailable. Use broker delivery.')}\n`,
+    );
+    return 2;
+  }
+
+  let policy: SecretEgressPolicy | undefined;
+  if (strategy === 'broker' && consumer !== 'http_broker' && hasBrokerOptions) {
+    process.stderr.write(
+      `${status.err(`HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`)}\n`,
+    );
+    return 2;
+  }
+  if (strategy === 'broker' && consumer === 'http_broker') {
+    if (allowedHosts.length === 0) {
+      process.stderr.write(`${status.err('Broker delivery requires --allow-host.')}\n`);
+      return 2;
+    }
+    const injectionValues = [injectHeader, injectQuery, injectJson].filter(
+      (value): value is string => value !== undefined,
+    );
+    if (injectionValues.length !== 1) {
+      process.stderr.write(
+        `${status.err('Broker delivery requires exactly one injection flag.')}\n`,
+      );
+      return 2;
+    }
+    if (template !== undefined && injectHeader === undefined) {
+      process.stderr.write(`${status.err('--template requires --inject-header.')}\n`);
+      return 2;
+    }
+    if (allowedMethods.some((method) => !BROKER_METHODS.includes(method as BrokerMethod))) {
+      process.stderr.write(`${status.err('Invalid --allow-method value.')}\n`);
+      return 2;
+    }
+    const inject: SecretInjectionSlot = injectHeader
+      ? { kind: 'header', name: injectHeader, ...(template ? { template } : {}) }
+      : injectQuery
+        ? { kind: 'query', name: injectQuery }
+        : { kind: 'json_body_field', path: injectJson! };
+    policy = {
+      backend: 'kortix_fetch',
+      rules: allowedHosts.map((host) => ({
+        host,
+        ...(allowedMethods.length > 0 ? { methods: allowedMethods } : {}),
+        ...(allowedPath ? { path: allowedPath } : {}),
+      })),
+      inject,
+      on_no_match: 'deny',
+      tls: 'terminate',
+    };
+  }
+
+  try {
+    const result = await withKortixScope(ctx.auth, () =>
+      setProjectSecretStrategy(ctx.projectId, identifier, strategy, {
+        ...(strategy === 'broker'
+          ? { consumer: consumer as 'llm_gateway' | 'connector' | 'executor' | 'http_broker' }
+          : {}),
+        ...(policy ? { egress_policy: policy } : {}),
+        ...(handlePrefix ? { handle_prefix: handlePrefix } : {}),
+      }),
+    );
+    if (json) {
+      emitJson(result);
+      return 0;
+    }
+    process.stdout.write(`${status.ok(`${identifier}: ${deliveryLabel(strategy)}`)}\n`);
+    if (strategy === 'runtime') {
+      process.stdout.write(
+        `  ${C.dim}The value is available to agent code and commands inside the sandbox.${C.reset}\n`,
+      );
+    } else if (result.requires_rotation) {
+      process.stdout.write(
+        `  ${C.dim}Rotate the value because an earlier sandbox may retain it.${C.reset}\n`,
+      );
+    }
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+async function secretsCall(args: string[], opts: CtxOpts, json = false): Promise<number> {
+  const [identifier, rawUrl] = args;
+  const options = args.slice(2);
+  if (!identifier || !IDENTIFIER_RE.test(identifier) || !rawUrl) {
+    process.stderr.write(`${status.err('Usage: kortix secrets call IDENTIFIER URL [options]')}\n`);
+    return 2;
+  }
+
+  let methodRaw: string | undefined;
+  let headerValues: string[];
+  let inlineBody: string | undefined;
+  let bodyFile: string | undefined;
+  try {
+    methodRaw = takeFlagValue(options, ['--method']);
+    headerValues = takeFlagValues(options, ['--header']);
+    inlineBody = takeFlagValue(options, ['--data']);
+    bodyFile = takeFlagValue(options, ['--data-file']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  if (options.length > 0) {
+    process.stderr.write(`${status.err(`Unknown call option: ${options[0]}`)}\n`);
+    return 2;
+  }
+  if (inlineBody !== undefined && bodyFile !== undefined) {
+    process.stderr.write(`${status.err('Pass only one request body: --data or --data-file.')}\n`);
+    return 2;
+  }
+  const method = (methodRaw ?? 'GET').toUpperCase();
+  if (!BROKER_METHODS.includes(method as BrokerMethod)) {
+    process.stderr.write(`${status.err(`Invalid HTTP method: ${method}`)}\n`);
+    return 2;
+  }
+  try {
+    const parsedUrl = new URL(rawUrl);
+    if (parsedUrl.protocol !== 'https:') throw new Error('not HTTPS');
+  } catch {
+    process.stderr.write(`${status.err('Broker URL must be a valid HTTPS URL.')}\n`);
+    return 2;
+  }
+
+  const headers: Record<string, string> = {};
+  for (const rawHeader of headerValues) {
+    const separator = rawHeader.includes(':') ? rawHeader.indexOf(':') : rawHeader.indexOf('=');
+    if (separator <= 0) {
+      process.stderr.write(`${status.err(`Malformed header: ${rawHeader}`)}\n`);
+      return 2;
+    }
+    const name = rawHeader.slice(0, separator).trim().toLowerCase();
+    const value = rawHeader.slice(separator + 1).trim();
+    if (!name) {
+      process.stderr.write(`${status.err(`Malformed header: ${rawHeader}`)}\n`);
+      return 2;
+    }
+    headers[name] = value;
+  }
+
+  let body: string | undefined = inlineBody;
+  if (bodyFile !== undefined) {
+    try {
+      body = readFileSync(bodyFile, 'utf8');
+    } catch (err) {
+      process.stderr.write(
+        `${status.err(`Cannot read request body: ${(err as Error).message}`)}\n`,
+      );
+      return 2;
+    }
+  }
+  const request: SecretBrokerRequest = {
+    url: rawUrl,
+    method: method as BrokerMethod,
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(body !== undefined ? { body_base64: Buffer.from(body).toString('base64') } : {}),
+  };
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  try {
+    const result = await withKortixScope(ctx.auth, () =>
+      brokerProjectSecretRequest(ctx.projectId, identifier, request),
+    );
+    if (json) {
+      emitJson(result);
+      return 0;
+    }
+    const contentType = result.headers['content-type'] ?? '';
+    const isText =
+      contentType.startsWith('text/') ||
+      contentType.includes('json') ||
+      contentType.includes('xml') ||
+      contentType.includes('javascript');
+    const responseBody = isText
+      ? Buffer.from(result.body_base64, 'base64').toString('utf8')
+      : result.body_base64;
+    process.stdout.write(
+      `\n  ${C.bold}Upstream status: ${result.status}${C.reset}\n` +
+        `  ${C.dim}${isText ? 'Body' : 'Body (base64)'}${C.reset}\n${responseBody}\n\n`,
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }
 
 async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {

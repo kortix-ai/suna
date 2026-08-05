@@ -16,6 +16,8 @@ import {
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
   ReconcileConnectionProfileInputSchema,
+  SecretBrokerRequestSchema,
+  SecretBrokerResponseSchema,
   SecretSchema,
   SecretDeliveryStrategySchema,
   UpdateSecretStrategyInputSchema,
@@ -370,10 +372,9 @@ describe('warm project session schemas', () => {
         sandbox_slug: 'default',
       }).success,
     ).toBe(true);
-    expect(
-      ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' })
-        .success,
-    ).toBe(false);
+    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -543,13 +544,63 @@ describe('SecretSchema', () => {
     expect(SecretDeliveryStrategySchema.safeParse('env').success).toBe(false);
   });
 
-  test('accepts only a strategy in the update input', () => {
+  test('accepts a broker policy and handle prefix in the update input', () => {
     expect(UpdateSecretStrategyInputSchema.parse({ strategy: 'denied' })).toEqual({
       strategy: 'denied',
     });
     expect(
+      UpdateSecretStrategyInputSchema.parse({
+        strategy: 'broker',
+        consumer: 'http_broker',
+        egress_policy: {
+          backend: 'kortix_fetch',
+          rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+          inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+        },
+        handle_prefix: 'example_',
+      }),
+    ).toEqual({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      egress_policy: {
+        backend: 'kortix_fetch',
+        rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+        inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      },
+      handle_prefix: 'example_',
+    });
+    expect(
       UpdateSecretStrategyInputSchema.safeParse({ strategy: 'runtime', value: 'secret' }).success,
     ).toBe(false);
+    expect(
+      UpdateSecretStrategyInputSchema.parse({ strategy: 'broker', consumer: 'llm_gateway' }),
+    ).toEqual({ strategy: 'broker', consumer: 'llm_gateway' });
+  });
+
+  test('validates the generic HTTPS broker request and response envelopes', () => {
+    expect(
+      SecretBrokerRequestSchema.parse({
+        url: 'https://api.example.com/v1/messages',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body_base64: 'e30=',
+      }),
+    ).toEqual({
+      url: 'https://api.example.com/v1/messages',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body_base64: 'e30=',
+    });
+    expect(SecretBrokerRequestSchema.parse({ url: 'https://api.example.com' }).method).toBe('GET');
+    expect(
+      SecretBrokerRequestSchema.safeParse({
+        url: 'https://api.example.com',
+        headers: Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`x-${index}`, 'x'])),
+      }).success,
+    ).toBe(false);
+    expect(
+      SecretBrokerResponseSchema.parse({ status: 200, headers: {}, body_base64: 'b2s=' }),
+    ).toEqual({ status: 200, headers: {}, body_base64: 'b2s=' });
   });
 });
 
@@ -686,9 +737,9 @@ describe('session connector profile contracts', () => {
   const profileId = '11111111-1111-4111-a111-111111111111';
 
   test('normalizes canonical, deprecated, and equal dual binding input', () => {
-    expect(
-      SessionConnectorBindingInputSchema.parse({ authorization_id: profileId }),
-    ).toEqual({ authorization_id: profileId });
+    expect(SessionConnectorBindingInputSchema.parse({ authorization_id: profileId })).toEqual({
+      authorization_id: profileId,
+    });
     expect(SessionConnectorBindingInputSchema.parse({ profile_id: profileId })).toEqual({
       authorization_id: profileId,
     });

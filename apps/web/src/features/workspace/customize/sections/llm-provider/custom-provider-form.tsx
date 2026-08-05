@@ -6,8 +6,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { upsertProjectSecret } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
@@ -83,6 +83,8 @@ export function CustomProviderForm({
         await upsertProjectSecret(projectId, {
           name: secretName,
           value: trimmed.apiKey,
+          strategy: 'broker',
+          consumer: 'llm_gateway',
         });
       }
 

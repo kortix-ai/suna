@@ -227,11 +227,7 @@ export const SessionConnectorBindingInputSchema = z
         message: 'authorization_id is required',
       });
     }
-    if (
-      value.authorization_id &&
-      value.profile_id &&
-      value.authorization_id !== value.profile_id
-    ) {
+    if (value.authorization_id && value.profile_id && value.authorization_id !== value.profile_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['profile_id'],
@@ -242,9 +238,7 @@ export const SessionConnectorBindingInputSchema = z
   .transform((value) => ({
     authorization_id: value.authorization_id ?? value.profile_id!,
   }));
-export type SessionConnectorBindingInput = z.input<
-  typeof SessionConnectorBindingInputSchema
->;
+export type SessionConnectorBindingInput = z.input<typeof SessionConnectorBindingInputSchema>;
 
 export const SessionConnectorBindingSchema = z
   .object({
@@ -254,10 +248,7 @@ export const SessionConnectorBindingSchema = z
 export type SessionConnectorBinding = z.infer<typeof SessionConnectorBindingSchema>;
 
 export const SessionConnectorBindingsInputSchema = z
-  .record(
-    SessionConnectorBindingAliasSchema,
-    SessionConnectorBindingInputSchema,
-  )
+  .record(SessionConnectorBindingAliasSchema, SessionConnectorBindingInputSchema)
   .superRefine((value, ctx) => {
     if (Object.keys(value).length > SESSION_CONNECTOR_BINDINGS_MAX_KEYS) {
       ctx.addIssue({
@@ -266,9 +257,7 @@ export const SessionConnectorBindingsInputSchema = z
       });
     }
   });
-export type SessionConnectorBindingsInput = z.input<
-  typeof SessionConnectorBindingsInputSchema
->;
+export type SessionConnectorBindingsInput = z.input<typeof SessionConnectorBindingsInputSchema>;
 
 export const SessionConnectorBindingsSchema = z
   .record(SessionConnectorBindingAliasSchema, SessionConnectorBindingSchema)
@@ -305,9 +294,7 @@ export const SessionSecretsAllowlistSchema = z
 export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSchema>;
 
 export const ConnectorAuthorizationStrategySchema = z.enum(['project', 'user']);
-export type ConnectorAuthorizationStrategy = z.infer<
-  typeof ConnectorAuthorizationStrategySchema
->;
+export type ConnectorAuthorizationStrategy = z.infer<typeof ConnectorAuthorizationStrategySchema>;
 
 /**
  * Connector aliases a session REQUIRES, whether or not anything is connected.
@@ -507,10 +494,7 @@ export const OAuth2ClientCredentialsSchema = z
         message: 'client_secret is required for the selected authentication method',
       });
     }
-    if (
-      value.token_endpoint_auth_method === 'private_key_jwt' &&
-      !value.private_key
-    ) {
+    if (value.token_endpoint_auth_method === 'private_key_jwt' && !value.private_key) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['private_key'],
@@ -525,13 +509,16 @@ const OAuth2HttpsUrlSchema = z
   .url()
   .refine((value) => value.startsWith('https://'), 'OAuth2 endpoints must use https');
 
-const OAuth2RedirectUrlSchema = z.string().url().refine((value) => {
-  const url = new URL(value);
-  return (
-    url.protocol === 'https:' ||
-    (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1'))
-  );
-}, 'redirect URI must use https except on loopback');
+const OAuth2RedirectUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' ||
+      (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1'))
+    );
+  }, 'redirect URI must use https except on loopback');
 
 export const OAuth2TokenEndpointAuthMethodSchema = z.enum([
   'none',
@@ -540,9 +527,7 @@ export const OAuth2TokenEndpointAuthMethodSchema = z.enum([
   'client_secret_jwt',
   'private_key_jwt',
 ]);
-export type OAuth2TokenEndpointAuthMethod = z.infer<
-  typeof OAuth2TokenEndpointAuthMethodSchema
->;
+export type OAuth2TokenEndpointAuthMethod = z.infer<typeof OAuth2TokenEndpointAuthMethodSchema>;
 
 const OAuth2ApplicationFields = {
   discovery_url: OAuth2HttpsUrlSchema.optional(),
@@ -594,13 +579,16 @@ export const OAuth2ApplicationInputSchema = z
   });
 export type OAuth2ApplicationInput = z.infer<typeof OAuth2ApplicationInputSchema>;
 
-export const OAuth2ApplicationViewSchema = z.object(OAuth2ApplicationFields).omit({
-  client_secret: true,
-  private_key: true,
-}).extend({
-  has_client_secret: z.boolean(),
-  has_private_key: z.boolean(),
-});
+export const OAuth2ApplicationViewSchema = z
+  .object(OAuth2ApplicationFields)
+  .omit({
+    client_secret: true,
+    private_key: true,
+  })
+  .extend({
+    has_client_secret: z.boolean(),
+    has_private_key: z.boolean(),
+  });
 export type OAuth2ApplicationView = z.infer<typeof OAuth2ApplicationViewSchema>;
 
 export const OAuth2DiscoveryInputSchema = z
@@ -608,10 +596,7 @@ export const OAuth2DiscoveryInputSchema = z
   .strict();
 export type OAuth2DiscoveryInput = z.infer<typeof OAuth2DiscoveryInputSchema>;
 
-const OAuth2OptionalScopesSchema = z
-  .array(z.string().trim().min(1).max(2048))
-  .max(64)
-  .optional();
+const OAuth2OptionalScopesSchema = z.array(z.string().trim().min(1).max(2048)).max(64).optional();
 
 export const OAuth2AuthorizationStartInputSchema = z
   .object({
@@ -620,9 +605,7 @@ export const OAuth2AuthorizationStartInputSchema = z
     error_redirect_uri: OAuth2RedirectUrlSchema.optional(),
   })
   .strict();
-export type OAuth2AuthorizationStartInput = z.infer<
-  typeof OAuth2AuthorizationStartInputSchema
->;
+export type OAuth2AuthorizationStartInput = z.infer<typeof OAuth2AuthorizationStartInputSchema>;
 
 export const OAuth2DeviceAuthorizationStartInputSchema = z
   .object({ scopes: OAuth2OptionalScopesSchema })
@@ -637,9 +620,7 @@ export const OAuth2AuthorizationStartResultSchema = z
     expires_at: z.string().datetime(),
   })
   .strict();
-export type OAuth2AuthorizationStartResult = z.infer<
-  typeof OAuth2AuthorizationStartResultSchema
->;
+export type OAuth2AuthorizationStartResult = z.infer<typeof OAuth2AuthorizationStartResultSchema>;
 
 export const OAuth2DeviceAuthorizationStartResultSchema = z
   .object({
@@ -681,8 +662,7 @@ export type UpdateConnectorAuthorizationCredentialInput = z.infer<
 export const UpdateConnectionProfileCredentialInputSchema =
   UpdateConnectorAuthorizationCredentialInputSchema;
 /** @deprecated Use `UpdateConnectorAuthorizationCredentialInput`. */
-export type UpdateConnectionProfileCredentialInput =
-  UpdateConnectorAuthorizationCredentialInput;
+export type UpdateConnectionProfileCredentialInput = UpdateConnectorAuthorizationCredentialInput;
 
 export const PendingSessionPromptSchema = z
   .object({
@@ -740,7 +720,9 @@ export const SessionCreateInputSchema = z
     // matches its project-or-user strategy. Missing authorizations return the
     // structured CONNECTOR_AUTHORIZATION_REQUIRED response before provisioning.
     require_connectors: z
-      .array(z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'))
+      .array(
+        z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'),
+      )
       .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
       .optional(),
     // Backend-only: narrow which project secrets (by identifier) this session's
@@ -826,9 +808,7 @@ export const WarmProjectSessionResultSchema = z.object({
   reused: z.boolean(),
   workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
 });
-export type WarmProjectSessionResult = z.infer<
-  typeof WarmProjectSessionResultSchema
->;
+export type WarmProjectSessionResult = z.infer<typeof WarmProjectSessionResultSchema>;
 
 export const ClaimWarmProjectSessionInputSchema = z
   .object({
@@ -843,9 +823,7 @@ export const ClaimWarmProjectSessionInputSchema = z
     pending_prompt: PendingSessionPromptSchema.optional(),
   })
   .strict();
-export type ClaimWarmProjectSessionInput = z.infer<
-  typeof ClaimWarmProjectSessionInputSchema
->;
+export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
@@ -997,6 +975,7 @@ export type SecretDeliveryStrategy = z.infer<typeof SecretDeliveryStrategySchema
 export const SecretConsumerSchema = z.enum([
   'sandbox',
   'llm_gateway',
+  'connector',
   'executor',
   'git_proxy',
   'http_broker',
@@ -1033,9 +1012,33 @@ export type SecretEgressPolicy = z.infer<typeof SecretEgressPolicySchema>;
 export const UpdateSecretStrategyInputSchema = z
   .object({
     strategy: SecretDeliveryStrategySchema,
+    consumer: SecretConsumerSchema.nullable().optional(),
+    egress_policy: SecretEgressPolicySchema.optional(),
+    handle_prefix: z.string().min(1).max(48).optional(),
   })
   .strict();
 export type UpdateSecretStrategyInput = z.infer<typeof UpdateSecretStrategyInputSchema>;
+
+export const SecretBrokerRequestSchema = z
+  .object({
+    url: z.string().min(1).max(4096),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).default('GET'),
+    headers: z.record(z.string(), z.string().max(8192)).optional(),
+    body_base64: z.string().max(1_400_000).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value.headers ?? {}).length <= 64, {
+    message: 'headers must contain at most 64 entries',
+    path: ['headers'],
+  });
+export type SecretBrokerRequest = z.infer<typeof SecretBrokerRequestSchema>;
+
+export const SecretBrokerResponseSchema = z.object({
+  status: z.number().int().min(100).max(599),
+  headers: z.record(z.string(), z.string()),
+  body_base64: z.string(),
+});
+export type SecretBrokerResponse = z.infer<typeof SecretBrokerResponseSchema>;
 
 export const SecretSchema = z.object({
   /** Unique per project. The handle an agent's `secrets` grant references. */

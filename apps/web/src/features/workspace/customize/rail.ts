@@ -65,7 +65,7 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Connect',
     items: [
-      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
+      { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },
