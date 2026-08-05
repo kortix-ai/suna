@@ -12,6 +12,7 @@ import {
   quickBrowserOutput,
   resolveSideSize,
   sandboxRecents,
+  shouldArmLoadTimeout,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
   focusIndexForCall,
@@ -256,6 +257,26 @@ describe('aspectChangedWidth (does a measurement ask the panel to move?)', () =>
     expect(
       aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: NaN, nextSize: 35 }),
     ).toBe(true);
+  });
+});
+
+describe('shouldArmLoadTimeout (AppPreview\'s 5s "couldn\'t load" deadline)', () => {
+  const base = { isLoading: true, noApp: false, hasPreview: true };
+
+  it('is not armed while previewUrl is null — the auth token fetch must not burn the budget', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: false })).toBe(false);
+  });
+
+  it('arms once previewUrl goes non-null', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: true })).toBe(true);
+  });
+
+  it('is not armed for the no-app landing, even with a stray previewUrl', () => {
+    expect(shouldArmLoadTimeout({ ...base, noApp: true })).toBe(false);
+  });
+
+  it('is not armed once loading has already finished', () => {
+    expect(shouldArmLoadTimeout({ ...base, isLoading: false })).toBe(false);
   });
 });
 

@@ -55,7 +55,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { sandboxRecents } from './easy-panel-logic';
+import { sandboxRecents, shouldArmLoadTimeout } from './easy-panel-logic';
 import type { ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
@@ -131,6 +131,7 @@ export function AppPreview({
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
   // Null while the auth token is still being fetched — the landing state holds.
   const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const hasPreview = !!previewUrl;
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -185,15 +186,19 @@ export function AppPreview({
   // spinner and the error card would otherwise hang on a dead server. After 5s
   // of silence, assume the worst and say so — a blank frame reads as "your app
   // is broken" with no explanation, which is worse than an honest error (W8).
+  // Armed only once the iframe actually has a `src` (`hasPreview`): the auth
+  // token fetch that produces `previewUrl` can itself take a few seconds, and
+  // arming at mount burned that wait against the app's budget, declaring a
+  // healthy app dead before it ever got a chance to load.
   useEffect(() => {
-    if (!isLoading || noApp) return;
+    if (!shouldArmLoadTimeout({ isLoading, noApp, hasPreview })) return;
     clearLoadTimeout();
     loadTimeout.current = setTimeout(() => {
       setIsLoading(false);
       setHasError(true);
     }, 5000);
     return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout, noApp]);
+  }, [isLoading, refreshKey, clearLoadTimeout, noApp, hasPreview]);
 
   // Nothing to load, so land the cursor on the address bar — the fastest way
   // in once you know the port. `focusWithoutScroll`: this fires while the
@@ -264,8 +269,6 @@ export function AppPreview({
     },
     [addressValue, navigateTo],
   );
-
-  const hasPreview = !!previewUrl;
 
   // At rest the bar shows the full URL; this overlay re-renders it with the
   // hostname highlighted, which an <input> can't do (it can't mix text colors).

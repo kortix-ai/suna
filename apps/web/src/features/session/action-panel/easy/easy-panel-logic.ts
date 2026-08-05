@@ -330,6 +330,23 @@ export function deriveIsRunning(stepsRunning: boolean, sessionBusy: boolean): bo
 }
 
 /**
+ * Whether `AppPreview`'s 5-second "couldn't load" deadline should be armed —
+ * the fix for the false positive where a healthy app got declared dead. The
+ * iframe has no `src` (and therefore no way to ever fire `onLoad`/`onError`)
+ * until the auth-token fetch resolves; arming the clock before then just
+ * counts down the fetch itself, so a slow token (not a slow app) trips the
+ * error. Requiring `hasPreview` — `previewUrl` gone non-null — means the
+ * clock starts only once the iframe actually has something to load.
+ */
+export function shouldArmLoadTimeout(input: {
+  isLoading: boolean;
+  noApp: boolean;
+  hasPreview: boolean;
+}): boolean {
+  return input.isLoading && !input.noApp && input.hasPreview;
+}
+
+/**
  * Whether the panel should present the primary deliverable on this render —
  * the payoff screen (W2). Same transition discipline as
  * `shouldAutoExpandOutputs`, with four extra refusals: a failed or stopped
