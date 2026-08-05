@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '@kortix/sdk';
+import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
   availableSessionFilterOptions,
   SESSION_DISPLAY_STATUS_LABELS,
@@ -79,60 +79,40 @@ describe('availableSessionFilterOptions', () => {
 });
 
 describe('sessionDisplayStatus', () => {
-  test('maps queued to starting', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'queued' as any }))).toBe('starting');
-  });
+  const cases: Array<[ProjectSessionStatus, SessionDisplayStatus]> = [
+    ['queued', 'starting'],
+    ['branching', 'starting'],
+    ['provisioning', 'starting'],
+    ['running', 'running'],
+    ['completed', 'done'],
+    ['stopped', 'stopped'],
+    ['failed', 'failed'],
+  ];
 
-  test('maps branching to starting', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'branching' as any }))).toBe('starting');
-  });
-
-  test('maps provisioning to starting', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'provisioning' as any }))).toBe('starting');
-  });
-
-  test('maps running to running', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
-  });
-
-  test('maps completed to done', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' as any }))).toBe('done');
-  });
-
-  test('maps stopped to stopped', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'stopped' as any }))).toBe('stopped');
-  });
-
-  test('maps failed to failed', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'failed' as any }))).toBe('failed');
-  });
+  for (const [status, expected] of cases) {
+    test(`maps ${status} to ${expected}`, () => {
+      expect(sessionDisplayStatus(makeSession({ status }))).toBe(expected);
+    });
+  }
 
   test('defaults reviewCount to 0 so a running session stays running', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
   });
 
   test('a pending review overrides every lifecycle status', () => {
-    const statuses: any[] = ['queued', 'branching', 'provisioning', 'running', 'completed', 'stopped', 'failed'];
-    for (const status of statuses) {
+    for (const [status] of cases) {
       expect(sessionDisplayStatus(makeSession({ status }), 1)).toBe('needs-you');
     }
   });
 
   test('a zero review count does not override', () => {
-    // @ts-expect-error - testing with a status value
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' as any }), 0)).toBe('done');
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }), 0)).toBe('done');
   });
 
   test('every display status has a label', () => {
-    const all = [
+    const all: SessionDisplayStatus[] = [
       'needs-you', 'starting', 'running', 'done', 'stopped', 'failed',
-    ] as const;
+    ];
     for (const value of all) {
       expect(SESSION_DISPLAY_STATUS_LABELS[value]).toBeTruthy();
     }
