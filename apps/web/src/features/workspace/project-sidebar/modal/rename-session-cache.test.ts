@@ -3,6 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import type { ProjectSession } from '@kortix/sdk';
 import {
+  applyRenameResponse,
   applySessionRename,
   beginOptimisticRename,
   rollbackOptimisticRename,
@@ -147,5 +148,62 @@ describe('beginOptimisticRename + rollbackOptimisticRename', () => {
     rollbackOptimisticRename(queryClient, QUERY_KEY, previous);
 
     expect(queryClient.getQueryData(QUERY_KEY)).toBeUndefined();
+  });
+});
+
+/**
+ * `onSuccess`'s write. The PATCH response is authoritative for the NAME, and
+ * for nothing else: `serializeSession` is called there with no `ownerEmail`,
+ * `ownerName`, `runtimeStatus` or `deletedAt`, so a wholesale substitution
+ * blanked fields the LIST endpoint had populated.
+ */
+describe('applyRenameResponse', () => {
+  test('renaming a SHARED session does not blank owner_email', () => {
+    const cached = makeSession({
+      session_id: 's1',
+      custom_name: 'Old name',
+      name: 'Old name',
+      owner_email: 'ada@kortix.com',
+      owner_name: 'Ada',
+      runtime_status: 'active',
+    });
+    // Exactly what PATCH /projects/:id/sessions/:id returns: the name fields
+    // are real, the resolved-owner fields were never asked for.
+    const patched = makeSession({
+      session_id: 's1',
+      custom_name: 'New name',
+      name: 'New name',
+      updated_at: '2026-02-02T00:00:00.000Z',
+      owner_email: null,
+      owner_name: null,
+      runtime_status: null,
+    });
+
+    const [row] = applyRenameResponse([cached], patched);
+
+    expect(row.custom_name).toBe('New name');
+    expect(row.name).toBe('New name');
+    expect(row.updated_at).toBe('2026-02-02T00:00:00.000Z');
+    // `share-session-modal.tsx` reads owner_email for "shared by X".
+    expect(row.owner_email).toBe('ada@kortix.com');
+    expect(row.owner_name).toBe('Ada');
+    expect(row.runtime_status).toBe('active');
+  });
+
+  test('every other row is left byte-identical (same object reference)', () => {
+    const other = makeSession({ session_id: 's2', custom_name: 'Untouched' });
+    const patched = makeSession({ session_id: 's1', custom_name: 'New name' });
+
+    const result = applyRenameResponse([makeSession({ session_id: 's1' }), other], patched);
+
+    expect(result[1]).toBe(other);
+  });
+
+  test('a response for a session that is no longer cached changes nothing', () => {
+    const sessions = [makeSession({ session_id: 's1', custom_name: 'Old name' })];
+
+    const result = applyRenameResponse(sessions, makeSession({ session_id: 'gone' }));
+
+    expect(result).toEqual(sessions);
   });
 });

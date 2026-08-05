@@ -57,6 +57,35 @@ export function beginOptimisticRename(
 }
 
 /**
+ * `onSuccess`'s cache write: the rename's authoritative result, merged onto the
+ * row that is already cached.
+ *
+ * MERGED, not replaced. `PATCH /projects/:id/sessions/:id` serializes its
+ * response with `serializeSession(row, { grants, viewerId, canManageProject })`
+ * (`apps/api/src/projects/routes/r7.ts`) — it passes no `ownerEmail`,
+ * `ownerName`, `runtimeStatus` or `deletedAt`, so those come back `null` even
+ * though the LIST endpoint resolves and populates them. Writing the response
+ * wholesale therefore blanked `owner_email` on a SHARED session — the field
+ * `share-session-modal.tsx` reads for "shared by X" — until `onSettled`'s
+ * refetch landed. Only the three fields this endpoint actually owns are taken.
+ */
+export function applyRenameResponse(
+  sessions: ProjectSession[],
+  updated: ProjectSession,
+): ProjectSession[] {
+  return sessions.map((session) =>
+    session.session_id === updated.session_id
+      ? {
+          ...session,
+          name: updated.name,
+          custom_name: updated.custom_name,
+          updated_at: updated.updated_at,
+        }
+      : session,
+  );
+}
+
+/**
  * `onError`'s restore: puts the pre-rename snapshot from
  * `beginOptimisticRename` back into the cache, undoing whatever the
  * optimistic write did. `previous` is `undefined` when `onMutate` never ran

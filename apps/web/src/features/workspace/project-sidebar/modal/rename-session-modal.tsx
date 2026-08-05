@@ -19,7 +19,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-import { beginOptimisticRename, rollbackOptimisticRename } from './rename-session-cache';
+import {
+  applyRenameResponse,
+  beginOptimisticRename,
+  rollbackOptimisticRename,
+} from './rename-session-cache';
 
 interface RenameSessionModalProps {
   projectId: string;
@@ -65,11 +69,12 @@ export function RenameSessionModal({
     },
     onSuccess: (updated, name) => {
       // Write the server's own response into the cache rather than discard
-      // it — it is the authoritative row (normalized name, fresh
-      // `updated_at`, …), so this replaces the optimistic guess from
-      // `onMutate` with the real thing.
+      // it — it is the authoritative name (normalized) and a fresh
+      // `updated_at`, so this replaces the optimistic guess from `onMutate`
+      // with the real thing. MERGED, not substituted: the PATCH response
+      // carries fewer fields than the list row — see `applyRenameResponse`.
       queryClient.setQueryData<ProjectSession[]>(sessionsQueryKey, (sessions) =>
-        sessions?.map((session) => (session.session_id === updated.session_id ? updated : session)),
+        sessions ? applyRenameResponse(sessions, updated) : sessions,
       );
       successToast(name ? `Renamed to "${name}"` : 'Session renamed');
       onSaved?.();
