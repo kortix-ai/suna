@@ -102,6 +102,15 @@ describe('resolveSourceFacetOptions', () => {
     expect(byValue.mine).toBe(1);
     expect(byValue.shared).toBe(1);
   });
+
+  test('telegram is a listed facet option', () => {
+    // Only protected by tsc before this test: if SESSION_SOURCE_FILTERS ever
+    // drops its telegram entry, 'telegram' silently stops being an option here
+    // even though matchesSourceFilters still recognizes the kind.
+    const sessions = [makeSession({ session_id: 'a', metadata: { source: 'telegram' } })];
+    const options = resolveSourceFacetOptions(sessions, [], []);
+    expect(options.map((o) => o.value)).toContain('telegram');
+  });
 });
 
 describe('resolveShowOptions', () => {

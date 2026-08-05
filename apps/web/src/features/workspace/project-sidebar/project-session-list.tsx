@@ -4,17 +4,16 @@ import { useTranslations } from 'next-intl';
 
 import {
   directSubsessions,
-  matchesSessionFilter,
-  matchesSessionStatusFilter,
+  matchesSourceFilters,
+  matchesStatusFilters,
   sessionDisplayStatus,
   sessionSource,
   SESSION_DISPLAY_STATUS_LABELS,
   type SessionDisplayStatus,
-  type SessionFilterValue,
   type SessionSourceKind,
-  type SessionStatusFilterValue,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,16 +32,18 @@ import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/s
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
-  groupSessionsForSidebar,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
+import { groupSessions, type SessionSection } from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -51,6 +52,7 @@ import {
 } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
+  CaretRightIcon,
   EnvelopeIcon as Mail,
   DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
@@ -64,12 +66,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState, type ComponentType } from 'react';
+import { useState, type ComponentType, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
-  filter?: SessionFilterValue;
-  statusFilter?: SessionStatusFilterValue;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -105,11 +105,7 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({
-  projectId,
-  filter = 'all',
-  statusFilter = 'all',
-}: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
@@ -143,6 +139,19 @@ export function ProjectSessionList({
   const reviewEnabled = useReviewCenterEnabled(projectId);
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
+  // Grouping, ordering, and the two multi-select facets all live in the
+  // persisted session-filter store (keyed by project) — see SessionFilterMenu,
+  // which writes to the same store from the nested `⋯` menu.
+  const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
+  const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
+  const statusFilters = useSessionFilterStore((s) => s.statusFiltersByProject[projectId] ?? []);
+  const sourceFilters = useSessionFilterStore((s) => s.sourceFiltersByProject[projectId] ?? []);
+  const hiddenSections = useSessionFilterStore((s) => s.hiddenSectionsByProject[projectId] ?? []);
+  const collapsedSections = useSessionFilterStore(
+    (s) => s.collapsedSectionsByProject[projectId] ?? [],
+  );
+  const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
@@ -168,14 +177,15 @@ export function ProjectSessionList({
   });
 
   // Unsorted on purpose: nothing here reads the order. The two consumers are
-  // `.length` and `.filter()`, and `groupSessionsForSidebar` sorts each section
-  // itself — sorting twice per render bought nothing.
+  // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
+  // sorting twice per render bought nothing.
   const sessions = data ?? [];
-  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
-  // this list only applies the chosen filter.
+  // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
+  // both on the Sessions header and on every section header below); this list
+  // only applies the two ANDed multi-select facets from the store.
   const visibleSessions = sessions.filter(
     (session) =>
-      matchesSessionFilter(session, filter) && matchesSessionStatusFilter(session, statusFilter),
+      matchesStatusFilters(session, statusFilters) && matchesSourceFilters(session, sourceFilters),
   );
 
   const viewState = resolveSessionListViewState({
@@ -229,19 +239,27 @@ export function ProjectSessionList({
   // Below the early returns: grouping is only ever read by the content state,
   // and computing it above meant every loading/error/empty render paid for a
   // result it threw away.
-  const grouped = groupSessionsForSidebar(visibleSessions, reviewSummary.needsYouBySession);
+  const grouped = groupSessions(visibleSessions, {
+    mode: groupMode,
+    order: orderMode,
+    reviewCountBySession: reviewSummary.needsYouBySession,
+    hiddenSections,
+  });
 
   return (
     <>
       <FadedScrollArea className="h-full min-h-0 space-y-px">
         {grouped.sections.map((section) => (
-          <div key={section.id} className="space-y-px">
-            {grouped.showHeaders && (
-              <SessionSectionHeader
-                label={section.label}
-                count={section.showCount ? section.sessions.length : null}
-              />
-            )}
+          <SessionListSection
+            key={section.id}
+            section={section}
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewSummary.needsYouBySession}
+            showHeader={grouped.showHeaders}
+            open={!collapsedSections.includes(section.id)}
+            onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
+          >
             {section.sessions.map((session) => {
               const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
               const isActive = pathname?.includes(`/sessions/${session.session_id}`);
@@ -302,7 +320,7 @@ export function ProjectSessionList({
                 </div>
               );
             })}
-          </div>
+          </SessionListSection>
         ))}
       </FadedScrollArea>
 
@@ -333,14 +351,114 @@ export function ProjectSessionList({
   );
 }
 
+interface SessionListSectionProps {
+  section: SessionSection;
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+  showHeader: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}
+
 /** Non-sticky by design: FadedScrollArea masks its own edges, and a sticky
- *  header fights that mask. */
-function SessionSectionHeader({ label, count }: { label: string; count: number | null }) {
+ *  header fights that mask.
+ *
+ *  When `showHeader` is false (at most one section is populated — see
+ *  `groupSessions`'s `showHeaders`), there is nothing to collapse or open a
+ *  menu on, so this renders the plain, always-expanded container it always
+ *  has. Otherwise the whole section is a `Disclosure`: `open` reflects the
+ *  store's collapsed-section list (collapsed = NOT open), so the header
+ *  toggle and the section's `Collapse all` menu action agree. */
+function SessionListSection({
+  section,
+  projectId,
+  sessions,
+  reviewCountBySession,
+  showHeader,
+  open,
+  onOpenChange,
+  children,
+}: SessionListSectionProps) {
+  if (!showHeader) {
+    return <div className="space-y-px">{children}</div>;
+  }
+
   return (
-    <div className="text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
-      <span>{label}</span>
-      {count !== null && <span className="tabular-nums">{count}</span>}
-    </div>
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="group/section space-y-px"
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+    >
+      <DisclosureTrigger>
+        <div className="text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+          <CaretRightIcon
+            aria-hidden
+            className="size-3 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/section:rotate-90"
+          />
+          <span className="min-w-0 flex-1 truncate">{section.label}</span>
+          {section.showCount && <span className="tabular-nums">{section.sessions.length}</span>}
+          <SessionSectionMenu
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+          />
+        </div>
+      </DisclosureTrigger>
+      <DisclosureContent>{children}</DisclosureContent>
+    </Disclosure>
+  );
+}
+
+/** The section header's own `⋯` — mounts the SAME `SessionFilterMenu` as the
+ *  Sessions header (project-sidebar.tsx), no section-scoped filter state.
+ *  Hover-revealed via `group/section` on the enclosing `Disclosure`; stays
+ *  visible while its own menu is open via `data-[state=open]`, which Radix
+ *  stamps on this trigger directly (not the group). The click handler stops
+ *  propagation so opening the menu never also toggles the disclosure — same
+ *  pattern as the row-level `⋯` in `ProjectSessionRow`. The hit area extends
+ *  past the visible button with `before:absolute before:-inset-1` instead of
+ *  growing the button, so the `h-6` header never changes height. */
+function SessionSectionMenu({
+  projectId,
+  sessions,
+  reviewCountBySession,
+}: {
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          type="button"
+          aria-label="Section options"
+          className={cn(
+            'relative shrink-0 opacity-0 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+            'before:absolute before:-inset-1',
+            'group-hover/section:opacity-100 data-[state=open]:opacity-100',
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <MoreHorizontal className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <SessionFilterMenu
+        projectId={projectId}
+        sessions={sessions}
+        reviewCountBySession={reviewCountBySession}
+        align="start"
+      />
+    </DropdownMenu>
   );
 }
 

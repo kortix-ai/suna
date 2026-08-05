@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/sidebar';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
@@ -34,6 +35,7 @@ import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-
 import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
@@ -82,6 +84,17 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       (s.statusFiltersByProject[projectId]?.length ?? 0) > 0 ||
       (s.sourceFiltersByProject[projectId]?.length ?? 0) > 0,
   );
+
+  // Same pair project-session-list.tsx reads (see the comment on `reviewSummary`
+  // there): the query keys (`['project-detail', projectId]` /
+  // `['review-center', projectId, 'list']`) are shared with that component, so
+  // this second pair of observers dedupes onto the SAME react-query cache
+  // entries and does not add a second poll. Wiring the real summary in here —
+  // not the `{}` default — is what lets `status` grouping's `needs-you`
+  // section appear in this menu's `Show` list and be reached by `Collapse
+  // all`, matching the section-header menu in project-session-list.tsx.
+  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -269,7 +282,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   </Link>
                   {sessions.length > 0 && (
                     <DropdownMenu onOpenChange={holdPeek}>
-                      <SessionFilterMenu projectId={projectId} sessions={sessions} align="start" />
+                      <SessionFilterMenu
+                        projectId={projectId}
+                        sessions={sessions}
+                        reviewCountBySession={reviewSummary.needsYouBySession}
+                        align="start"
+                      />
                       <DropdownMenuTrigger asChild>
                         <SidebarMenuButton
                           type="button"

@@ -65,37 +65,6 @@ export function sessionSource(session: ProjectSession): SessionSource {
 }
 
 /**
- * Session-list filter. "All" (default) shows everything; chats split into
- * "mine" and "shared" (chats someone else owns that are visible to me);
- * automation sources match sessionSource().
- *
- * @deprecated single-select surface, superseded by the multi-select
- * `SessionSourceFilter` facet below. `matchesSessionFilter` still has a live
- * caller in `project-session-list.tsx` (Task 5 of the advanced-filter plan
- * rewires it onto the store's facets) — do not delete until that caller is
- * gone.
- */
-export type SessionFilterValue =
-  | 'all'
-  | 'mine'
-  | 'shared'
-  | 'slack'
-  | 'email'
-  | 'schedule'
-  | 'webhook';
-
-/** @deprecated see `SessionFilterValue`. */
-export function matchesSessionFilter(session: ProjectSession, filter: SessionFilterValue): boolean {
-  if (filter === 'all') return true;
-  const kind = sessionSource(session).kind;
-  // `is_owner` is viewer-relative; older payloads may omit it — treat unknown
-  // ownership as "mine" so the default view never silently hides sessions.
-  if (filter === 'mine') return kind === 'chat' && session.is_owner !== false;
-  if (filter === 'shared') return kind === 'chat' && session.is_owner === false;
-  return kind === filter;
-}
-
-/**
  * Human display label for a session. Precedence: the user-set rename
  * (custom_name) is AUTHORITATIVE and always wins. Then: server-resolved
  * session.name (OpenCode auto-title mirrored during session reads) → legacy
@@ -177,30 +146,6 @@ export function sessionDisplayStatus(
     default:
       return 'stopped';
   }
-}
-
-/**
- * Session-list STATUS filter — independent of, and ANDed with, the source
- * filter (`SessionFilterValue`). Two dimensions, not one union: folding status
- * into the source union would make "Slack AND Running" unexpressible.
- *
- * `running` deliberately covers the whole starting family. The user filters by
- * what the list shows them, not by the sandbox lifecycle underneath it.
- */
-export type SessionStatusFilterValue = 'all' | 'running' | 'done' | 'stopped' | 'failed';
-
-/** @deprecated see `SessionFilterValue`; same live caller in
- *  `project-session-list.tsx` until Task 5. */
-export function matchesSessionStatusFilter(
-  session: ProjectSession,
-  filter: SessionStatusFilterValue,
-): boolean {
-  if (filter === 'all') return true;
-  // Read the lifecycle, never the review overlay: someone filtering to
-  // "Running" still wants their review-pending running session.
-  const display = sessionDisplayStatus(session);
-  if (filter === 'running') return display === 'running' || display === 'starting';
-  return display === filter;
 }
 
 /**

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
-  matchesSessionStatusFilter,
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
@@ -80,35 +79,6 @@ describe('sessionDisplayStatus', () => {
 
   test('labels never say "Active" — the data cannot support it', () => {
     expect(Object.values(SESSION_DISPLAY_STATUS_LABELS)).not.toContain('Active');
-  });
-});
-
-describe('matchesSessionStatusFilter', () => {
-  test('all matches every lifecycle status', () => {
-    const statuses: ProjectSessionStatus[] = [
-      'queued', 'branching', 'provisioning', 'running', 'completed', 'stopped', 'failed',
-    ];
-    for (const status of statuses) {
-      expect(matchesSessionStatusFilter(makeSession({ status }), 'all')).toBe(true);
-    }
-  });
-
-  test('running covers the whole starting family plus running', () => {
-    for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
-      expect(matchesSessionStatusFilter(makeSession({ status }), 'running')).toBe(true);
-    }
-    expect(matchesSessionStatusFilter(makeSession({ status: 'completed' }), 'running')).toBe(false);
-  });
-
-  test('done matches only completed', () => {
-    expect(matchesSessionStatusFilter(makeSession({ status: 'completed' }), 'done')).toBe(true);
-    expect(matchesSessionStatusFilter(makeSession({ status: 'stopped' }), 'done')).toBe(false);
-  });
-
-  test('stopped and failed match only themselves', () => {
-    expect(matchesSessionStatusFilter(makeSession({ status: 'stopped' }), 'stopped')).toBe(true);
-    expect(matchesSessionStatusFilter(makeSession({ status: 'failed' }), 'failed')).toBe(true);
-    expect(matchesSessionStatusFilter(makeSession({ status: 'failed' }), 'stopped')).toBe(false);
   });
 });
 
