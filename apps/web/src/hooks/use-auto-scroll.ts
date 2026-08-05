@@ -136,7 +136,9 @@ export function useAutoScroll({
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
   const workingRef = useRef(working);
-  workingRef.current = working;
+  useEffect(() => {
+    workingRef.current = working;
+  }, [working]);
   // Current spacer value for the RAF loop's contentH calculation.
   const spacerValRef = useRef(0);
   // Guard: true while a programmatic scroll (scrollToBottom/scrollToEnd) is
@@ -202,16 +204,6 @@ export function useAutoScroll({
       cancelAnimationFrame(rafId);
     };
   }, [recalcSpacer, working, hasContent]);
-
-  // ── isAtBottom (DOM-measured, uses measureTarget) ─────────────────
-  const isAtBottom = useCallback(() => {
-    const el = scrollRef.current;
-    const content = contentRef.current;
-    if (!el || !content) return true;
-    const target = measureTarget(el, content);
-    if (target === null) return true;
-    return el.scrollTop >= target - BOTTOM_THRESHOLD;
-  }, []);
 
   // ── Instant scroll: last turn at top ──────────────────────────────
   const scrollToEnd = useCallback(() => {
@@ -397,7 +389,7 @@ export function useAutoScroll({
       active = false;
       cancelAnimationFrame(rafIdRef.current);
     };
-  }, [working, hasContent, isAtBottom, recalcSpacer]);
+  }, [working, hasContent, recalcSpacer]);
 
   // ── Wheel intent ──────────────────────────────────────────────────
   // Depends on `working`/`hasContent` so listeners are (re-)attached
