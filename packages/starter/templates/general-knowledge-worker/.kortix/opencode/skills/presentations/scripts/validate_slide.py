@@ -1,6 +1,6 @@
 """Validate a presentation slide's dimensions via Playwright.
 
-Usage: uv run --with playwright validate_slide.py <slide_html_path>
+Usage: python3 validate_slide.py <slide_html_path>
 
 Renders the HTML at 1920x1080 and measures actual content height.
 Outputs JSON with pass/fail and measurements.

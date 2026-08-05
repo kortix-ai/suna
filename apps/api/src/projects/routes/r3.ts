@@ -1358,6 +1358,33 @@ projectsApp.openapi(
 },
 );
 
+// POST /v1/projects/:projectId/secrets/sync
+// Force a re-push of all project secrets to all active sandboxes. Use after
+// setting a secret via the intake link or when secrets are missing from a
+// session's environment despite being set in the store.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/secrets/sync',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/secrets/sync — force re-push secrets to active sandboxes',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.any(), 'Secrets re-pushed'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
+    await propagateProjectSecretsToActiveSandboxes(projectId);
+    return c.json({ ok: true, synced: true });
+  },
+);
+
 // GET /v1/projects/:projectId/triggers
 //
 // Lists triggers defined as files in `.opencode/triggers/*.md` on the

@@ -26,7 +26,7 @@ const BUBBLE_SURFACE = cn(
 );
 const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
-  'break-words whitespace-pre-wrap select-text',
+  'wrap-break-word whitespace-pre-wrap select-text',
 );
 
 /**

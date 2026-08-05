@@ -1,6 +1,6 @@
 """Convert HTML presentation slides to a single PDF.
 
-Usage: uv run --with playwright --with pypdf convert_pdf.py <presentation_dir> <output_path>
+Usage: python3 convert_pdf.py <presentation_dir> <output_path>
 
 Reads metadata.json from <presentation_dir>, renders each slide HTML
 at 1920x1080 via Playwright Chromium, merges into a single PDF.

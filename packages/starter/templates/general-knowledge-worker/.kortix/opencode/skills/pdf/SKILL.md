@@ -7,7 +7,7 @@ defaultProjectInstallOrder: 40
 
 # PDF Processing
 
-Run Python files with `uv run --with "pkg1,pkg2,pkg3" script.py` — declare all dependencies inline in one comma-separated `--with`. Version pins are allowed inside the list (e.g. `--with "reportlab==4.2.5,pypdf"`).
+`pypdf`, `pdfplumber`, `pymupdf`, `pdf2image`, `pypdfium2`, `pytesseract`, `reportlab`, and `pillow` are pre-installed. Run Python files with `python3 script.py`. Use `uv run --with <package> script.py` only for a package that is not pre-installed.
 
 ## Quick Start
 

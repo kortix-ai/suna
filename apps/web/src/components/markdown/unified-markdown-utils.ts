@@ -71,6 +71,11 @@ export function isLinkSafeHref(href: string | undefined): boolean {
   return true;
 }
 
+/** Route only trusted app paths through Next.js Link and its prefetcher. */
+export function shouldUseNextLink(href: string | undefined): boolean {
+  return isInternalUrl(href) && isLinkSafeHref(href);
+}
+
 /**
  * Fenced-code language hints that are not the id the highlighter preloads.
  *

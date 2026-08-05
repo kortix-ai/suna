@@ -217,3 +217,62 @@ All 17 below were adversarially verified on `kaab-hardening-docs` (== origin/mai
 
 **Doc line only (accepted capability / threat-model note — no code change unless policy changes):**
 - #17 record in the KaaB threat model that every project CI PAT is a `backend` vouching credential able to set `origin_ref`/`secrets`; decide whether to narrow the predicate.
+
+---
+
+## Addendum 2026-08-04 — "reported success it never verified" sweep
+
+A five-lens audit for one bug class: **an operation reporting success for
+something it never checked.** Eight confirmed (one a duplicate). Seven fixed and
+merged; one is left below because it is a genuine cost/design tradeoff, not an
+oversight.
+
+**Fixed:** #6083 (session reload changed the etag but not the agent opencode
+reads; repo-controlled git pathspec; `auth.json` stale after a dispose),
+#6086 (first secrets narrowing warned about nothing; transient git failure
+compiled an agent with no prompt; secret-identifier disclosure), #6089 (a failed
+spawn permanently killed the session), #6090 (`kortix access invite` claimed an
+email was sent when none was), #6091 (`PUT /scope` validated for the caller while
+delivery resolves for the session owner).
+
+### OPEN — a connector reads "Connected" before any credential exists
+
+**What a user sees.** Open the Pipedream connect dialog, close it without
+authorizing. The profile appears in the roster with a green **Connected** badge,
+and shows up as a selectable connection in the session-scope picker. Selecting it
+and saving is then refused with `CONNECTOR_PROFILE_INACTIVE` — *"Connector
+authorization for alias "x" is not connected"* — an error about a connection the
+UI listed as active one click earlier.
+
+**Cause.** `GET /projects/{id}/connector-profiles` (`r4.ts:347`) returns the row's
+`status` column, which is set to active when the profile row is *reconciled* —
+before any credential lands. The enforcement path does not trust that column: it
+calls `connectorAuthorizationIsConnected`
+(`lib/session-connector-bindings.ts:85`) in five places. So the gate is right and
+only the *display* is wrong. Row status is provenance, not connectivity.
+
+**Why it is not a one-liner.** The predicate does per-profile I/O —
+`profileCredentialExists`, plus `loadSlackInstall` / `loadTeamsInstall` /
+`loadAgentMailInstall` for channel connectors. The list route is currently a
+single joined query with no per-profile work, and the UI polls it. Calling the
+predicate per row turns one query into N+1.
+
+**Two options, and the choice is a real one:**
+
+1. **Compute `connected` in the list route.** Add it as a field beside `status`
+   and have the badge and the scope picker read it. Correct at the read side and
+   leaves stored state alone. Cost: N per-profile lookups on a polled route —
+   mitigable by resolving the per-project channel installs once per request and
+   batching the credential-existence check into a single `IN (…)` query, which
+   would keep it to ~2 extra queries rather than N.
+2. **Do not store a reconciled-but-unauthorized profile as active.** Insert it
+   with a pending status and let finalize flip it. Free at read time and correct
+   at the source, but it changes the meaning of a stored column that other
+   consumers already read — needs an audit of every `status` reader first.
+
+(1) is the smaller blast radius; (2) is the more honest data model. Either way
+the badge and the scope picker must stop reading `status` as connectivity.
+
+**Do not "fix" this by having the scope picker hide non-connected profiles
+only.** The badge is the thing that tells a user their setup is done; leaving it
+green while quietly filtering the picker trades one confusing surface for two.

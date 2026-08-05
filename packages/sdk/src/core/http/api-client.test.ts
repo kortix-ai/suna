@@ -456,3 +456,94 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
     }
   });
 });
+
+// Regression for Better Stack frontend pattern `ed07f6c5…`
+// (`ApiError: Model "nvidia/minimaxai/minimax-m3" is not available for this
+// account`, HTTP 409, `onunhandledrejection` `handled:false`) on the
+// co-worker session page: `PUT /v1/projects/:projectId/model-defaults`
+// returns a TYPED 409 with `code: 'model_not_servable'` (from
+// `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+// `channel-bindings.ts`) when a user picks a model their account can't use
+// (free-tier managed model, disconnected BYOK provider). The
+// `useModelDefaults` `setMutation` had no `onError`, and every call site
+// fire-and-forgets the promise (`void setXxxDefault(...)`), so the rejected
+// `mutateAsync` became an unhandled rejection → Sentry. `makeRequest` now
+// classifies that typed 409 as an EXPECTED "model not available" state —
+// silent to `onError` (Sentry) but still returned as an `ApiError` so the
+// mutation's `onError` can branch on `.code` and show a user-facing toast.
+// A genuine 409 (no typed code) still reports. Mirrors the
+// `feature_not_supported` 501 classification (PR #5240). See
+// `apps/api/src/__tests__/` for the API-side half of this contract.
+describe('makeRequest classifies a typed model_not_servable 409 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 409 with code=model_not_servable does NOT fire onError (Sentry) but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: 'Model "nvidia/minimaxai/minimax-m3" is not available for this account',
+      code: 'model_not_servable',
+    });
+    try {
+      const res = await backendApi.put('/projects/p1/model-defaults', {
+        scope: 'project',
+        model: 'nvidia/minimaxai/minimax-m3',
+      });
+      expect(res.success).toBe(false);
+      // The ApiError is still returned so the UI (useModelDefaults setMutation
+      // onError) can branch on the typed code and show a user-facing toast.
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(409);
+      expect(res.error?.code).toBe('model_not_servable');
+      expect(res.error?.message).toBe(
+        'Model "nvidia/minimaxai/minimax-m3" is not available for this account',
+      );
+      // The expected state must NEVER page Sentry.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 409 (no model_not_servable code) STILL fires onError (Sentry)', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, { error: 'Conflict', message: 'Conflict' });
+    try {
+      const res = await backendApi.put('/projects/p1/model-defaults', {
+        scope: 'project',
+        model: 'x/y',
+      });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(409);
+      // A real conflict (no typed code) still reports — the classification
+      // gate must never swallow a genuine defect.
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});

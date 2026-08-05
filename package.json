@@ -55,7 +55,8 @@
     "dotenv-expand": "^12",
     "node-pg-migrate": "^8",
     "pg": "^8",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "supabase": "2.111.0"
   },
   "packageManager": "pnpm@8.11.0",
   "pnpm": {

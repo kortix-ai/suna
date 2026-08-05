@@ -291,7 +291,7 @@ function GatewayLogDetail({
               <div className="text-muted-foreground mb-1 text-xs font-medium">
                 {data.error_code ?? 'Error'}
               </div>
-              <div className="text-foreground text-sm break-words whitespace-pre-wrap">
+              <div className="text-foreground text-sm wrap-break-word whitespace-pre-wrap">
                 {data.error_message}
               </div>
             </div>

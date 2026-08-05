@@ -4,7 +4,7 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
-import type { Opencode } from '../opencode'
+import { requiresRespawn, type Opencode } from '../opencode'
 import type { ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -180,10 +180,19 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           // (measured on the pinned 1.17.11). It falls back to a restart on its
           // own if dispose is unavailable, so this is never less correct — only
           // faster, and it does not sever an in-flight turn when dispose wins.
-          // A change to the spawn-time deny-list cannot be applied by a
-          // dispose — see reloadConfig. Anything else lives in the config file
-          // and takes the fast path.
-          const mustRespawn = opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')
+          // Some values are consumed by `spawnChild` OUTSIDE the config file —
+          // the deny-list shapes the child's env, and the Codex/OpenCode auth
+          // secrets are materialized into ~/.local/share/opencode/auth.json. A
+          // dispose re-reads the config file and touches neither, so it would
+          // leave the OLD subscription credential on disk while reporting
+          // success. That was a real regression from the dispose fast path:
+          // connecting a ChatGPT account confirmed in the UI and the next turn
+          // still ran on the account it replaced.
+          //
+          // Keyed on the value DELTA, not the allowlist — `result.names` is the
+          // full set, so using it would respawn on every push for any project
+          // that merely has one of these secrets.
+          const mustRespawn = requiresRespawn([...opencodeEnvNames, ...result.changedNames])
           const how = await opencode.reloadConfig({ mustRespawn })
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,

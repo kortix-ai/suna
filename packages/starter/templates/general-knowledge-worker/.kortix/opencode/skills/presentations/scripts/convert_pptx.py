@@ -1,6 +1,6 @@
 """Convert HTML presentation slides to PPTX with editable text.
 
-Usage: uv run --with playwright --with python-pptx convert_pptx.py <presentation_dir> <output_path>
+Usage: python3 convert_pptx.py <presentation_dir> <output_path>
 
 Three-layer PPTX per slide (matching Suna's approach):
   1. Clean background screenshot (text + visual elements hidden)

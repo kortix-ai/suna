@@ -153,3 +153,60 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(compactItem).toContain('text-muted-foreground');
   });
 });
+
+/**
+ * The stale-config chip, wired.
+ *
+ * These are wiring assertions, not rendering ones, and they exist because of a
+ * specific near-miss: `ConnectorRequiredNotice` shipped correct, passed every
+ * unit test, and rendered nothing for weeks — it was mounted with a value the
+ * app never populates. Its unit tests all covered the pure copy helper, which
+ * was fine the whole time. The lesson is that for this component family the
+ * bug lives at the mount, so the mount is what gets pinned.
+ */
+describe('SessionConfigIndicator wiring', () => {
+  test('the chip gets the Kortix session id, never the OpenCode one', () => {
+    // The header holds both. `sessionId` is the OpenCode id used by the
+    // changes/approvals chips; the config routes are keyed on the project
+    // session row's UUID, and passing the wrong one 400s on the id regex.
+    const mount = source.split('<SessionConfigIndicator')[1]?.split('/>')[0];
+    expect(mount).toBeTruthy();
+    expect(mount).toContain('sessionId={projectSessionId!}');
+    expect(mount).not.toContain('sessionId={sessionId}');
+  });
+
+  test('both reload entry points are gated on canShare', () => {
+    // The route requires session-owner-or-project-manager and 403s otherwise,
+    // so an ungated control is a button that only ever fails.
+    const mount = source.split('<SessionConfigIndicator')[1]?.split('/>')[0];
+    expect(mount).toContain('canReload={canShare}');
+
+    const menuItem = source.slice(
+      source.lastIndexOf('{canShare && (', source.indexOf('Reload config')),
+      source.indexOf('Reload config'),
+    );
+    expect(menuItem).toContain('reloadConfig.reload()');
+  });
+
+  test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
+    expect(source).toContain('const reloadConfig = useReloadSessionConfig(');
+    expect(source).toContain('isPending={reloadConfig.isPending}');
+    expect(source).toContain('disabled={reloadConfig.isPending}');
+  });
+
+  test('the force confirm is mounted by the HEADER, not the chip', () => {
+    // The chip unmounts the moment a reload lands (it self-hides when fresh).
+    // A confirm dialog living inside it would vanish mid-question.
+    expect(source).toContain('<SessionConfigReloadConfirm');
+    const confirm = source.split('<SessionConfigReloadConfirm')[1]?.split('/>')[0];
+    expect(confirm).toContain('busyReason={reloadConfig.busyReason}');
+    expect(confirm).toContain("reloadConfig.reload({ force: true })");
+  });
+
+  test('Reload config is distinct from Restart and sits beside it', () => {
+    // Two different actions on the same object: Restart reboots the same
+    // config, Reload fetches a new one. Adjacent so the difference is legible.
+    expect(source).toContain('Reload config');
+    expect(source.indexOf('Restart')).toBeLessThan(source.indexOf('Reload config'));
+  });
+});

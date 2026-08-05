@@ -397,7 +397,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | --- | --- |
 | `kortix executor discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix executor describe <connector>.<action>` | Show a tool's input schema. |
-| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. The legacy split form remains supported. |
+| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
 | `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix executor rm <slug>` | Remove a connector from the project. |
 | `kortix executor connect <slug>` | Mint a connect link for a human. |

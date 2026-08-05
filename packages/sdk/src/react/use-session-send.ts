@@ -91,6 +91,30 @@ export function beginOptimisticSend(
 }
 
 /**
+ * The prompt has gone out — the optimistic message is no longer `pending`.
+ *
+ * Call this immediately before POSTing, for any host that pairs
+ * `beginOptimisticSend` with its own hand-rolled send. Until it is called the
+ * sync store treats the message as never having been shown to the server, so
+ * nothing the server echoes back is allowed to supersede it — and the user
+ * sees their own message twice for the entire turn, until the session goes
+ * idle and `clearOptimisticMessages` finally sweeps it.
+ *
+ * `useSession.sendParts` marks dispatch by correlating the client-generated
+ * part ids that ride along with the prompt. A host that deliberately strips
+ * those ids (because client ids can sort before server ids under clock skew)
+ * has nothing to correlate on, and needs to say so explicitly. This is that
+ * explicit path.
+ *
+ * Never call it on a host's behalf, and never before the POST: a message the
+ * server has not been told about cannot be a copy of anything it returns, and
+ * pairing them would delete text the user typed.
+ */
+export function markOptimisticSendDispatched(sessionId: string, messageId: string): void {
+  useSyncStore.getState().markOptimisticDispatched(sessionId, messageId);
+}
+
+/**
  * A send that never reached the network at all (e.g. building the outgoing
  * parts — file uploads — threw before `promptOpenCodeMessage` was even
  * called). There is nothing to rehydrate from the server since it never saw

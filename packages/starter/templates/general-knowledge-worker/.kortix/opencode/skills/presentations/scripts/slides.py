@@ -6,9 +6,9 @@ Subcommands:
     thumbnail   Create a visual grid of slide thumbnails
 
 Usage:
-    uv run --with lxml --with pillow slides.py clean <unpacked_dir>
-    uv run --with lxml --with pillow slides.py add <unpacked_dir> <source>
-    uv run --with lxml --with pillow slides.py thumbnail <input.pptx> [output_prefix] [--cols N]
+    python3 slides.py clean <unpacked_dir>
+    python3 slides.py add <unpacked_dir> <source>
+    python3 slides.py thumbnail <input.pptx> [output_prefix] [--cols N]
 """
 
 import argparse

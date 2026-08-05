@@ -336,9 +336,13 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
   return 0;
 }
 
+function apiV1Base(url: string): string {
+  return `${url.trim().replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`;
+}
+
 function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: string): void {
   const name = install.workspaceName ?? install.workspaceId;
-  const webhookUrl = `${ctx.client.apiBase.replace(/\/$/, '')}/v1/webhooks/slack/${ctx.projectId}`;
+  const webhookUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
   process.stdout.write(
     `${headline}  ${C.bold}${name}${C.reset}\n` +
       `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
@@ -367,8 +371,7 @@ async function channelsManifest(
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
-  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
-  const requestUrl = `${baseUrl}/v1/webhooks/slack/${ctx.projectId}`;
+  const requestUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
 
   const manifest = {
     display_information: {

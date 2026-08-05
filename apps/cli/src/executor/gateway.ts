@@ -74,34 +74,18 @@ export function executorProjectContext(projectOverride?: string): { client: ApiC
   return { client: clientFromAuth(auth), projectId };
 }
 
-/** Bound so a forgotten approval can't wedge the agent forever:
- *  ~40 × ~45s gateway holds ≈ 30 min of pause. */
-const APPROVAL_POLL_MAX = 40;
-
 /**
- * Run a tool call, PAUSING for human approval — shared by BOTH faces
- * (`kortix executor call` and the MCP server) so the agent's turn behaves the
- * same everywhere. A `require_approval` call blocks: the gateway holds each
- * request briefly, then — while still pending — returns `retryable` + the
- * execution id; we re-issue the call with that id so the wait is effectively
- * INDEFINITE (like a question) without any single long-held request. On
- * approve, the SAME held request falls through and runs the action, so the
- * turn resumes in place — the human never has to type "continue".
+ * Make one executor request. A gated call returns its approval URL immediately.
+ * The API records the decision and sends a durable callback into the session
+ * when the human responds. The CLI never holds or polls an HTTP request.
  */
-export async function callPausingForApproval<T = unknown>(
+export async function callWithApprovalHandoff<T = unknown>(
   executor: ExecutorClient,
   connector: string,
   action: string,
   args: Record<string, unknown>,
 ): Promise<ExecutorCallResult<T>> {
-  let result = await executor.call<T>(connector, action, args);
-  for (let i = 0; i < APPROVAL_POLL_MAX; i++) {
-    if (!(result.status === 'pending_approval' && result.retryable && result.execution_id)) break;
-    result = await executor.call<T>(connector, action, args, {
-      approvalExecutionId: result.execution_id,
-    });
-  }
-  return result;
+  return executor.call<T>(connector, action, args);
 }
 
 export interface ConnectLinkResult {

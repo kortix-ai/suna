@@ -55,6 +55,7 @@ approvalLinksApp.get('/:token', async (c) => {
     .select({
       executionId: executorExecutions.executionId,
       sessionId: executorExecutions.sessionId,
+      actingUserId: executorExecutions.actingUserId,
       actionPath: executorExecutions.actionPath,
       connectorId: executorExecutions.connectorId,
       status: executorExecutions.status,
@@ -89,8 +90,8 @@ approvalLinksApp.get('/:token', async (c) => {
     isManager = false;
   }
 
-  let targetCreatedBy: string | null = null;
-  let targetOrigin: string | null = null;
+  let targetCreatedBy: string | null = row.sessionId ? null : row.actingUserId;
+  let targetOrigin: string | null = row.sessionId ? null : 'user';
   if (row.sessionId) {
     const [session] = await db
       .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
@@ -108,6 +109,9 @@ approvalLinksApp.get('/:token', async (c) => {
     targetSessionOrigin: targetOrigin,
     targetSessionCreatedBy: targetCreatedBy,
     callerUserId: loaded.userId,
+    callerAuthType:
+      ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
+      null,
     callerSessionId: callerKortixSessionId(c),
   });
   if (!verdict.allowed) {
@@ -117,7 +121,12 @@ approvalLinksApp.get('/:token', async (c) => {
             error: 'An agent cannot resolve its own approval — a human must approve or deny this',
             code: 'APPROVAL_REQUIRES_HUMAN',
           }
-        : { error: 'Only a project manager or the session launcher can resolve this' },
+        : verdict.reason === 'non_human_caller'
+          ? {
+              error: 'Sign in with a Kortix account to review this approval',
+              code: 'APPROVAL_REQUIRES_HUMAN',
+            }
+          : { error: 'Only a project manager or the session launcher can resolve this' },
       403,
     );
   }
@@ -156,12 +165,12 @@ approvalLinksApp.get('/:token', async (c) => {
     action: row.actionPath,
     connector: connectorSlug,
     risk: row.risk,
-    // 'pending_approval' = still actionable. Anything else means someone (or the
-    // hold expiring) already settled it; the page renders a read-only outcome
-    // rather than buttons that would 409.
+    // 'pending_approval' is actionable. Every terminal status renders a
+    // read-only outcome instead of buttons that would return 409.
     status: row.status,
     pending: row.status === 'pending_approval' && !row.resolvedAt,
     args_preview: argsPreview,
+    review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),

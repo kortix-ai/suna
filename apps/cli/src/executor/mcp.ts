@@ -25,7 +25,7 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path
 import type { ExecutorClient } from '@kortix/executor-sdk';
 import {
   addConnector,
-  callPausingForApproval,
+  callWithApprovalHandoff,
   executorClient,
   mintConnectLink,
   mintSecretLink,
@@ -521,10 +521,14 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
           };
         }
       }
-      // Pauses the run for human approval (indefinite poll, like a question) —
-      // shared with `kortix executor call`, see callPausingForApproval.
-      const result = await callPausingForApproval(executor, connector, action, callArgs);
-      return { content: content(result), isError: !result.ok };
+      // Returns the authenticated approval URL immediately when policy gates
+      // the call. The server callback resumes the session after a decision.
+      const result = await callWithApprovalHandoff(executor, connector, action, callArgs);
+      return {
+        content: content(result),
+        // Pending approval is a successful handoff, not an executor failure.
+        isError: result.status !== 'pending_approval' && !result.ok,
+      };
     }
 
     case 'connect': {

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realRequestContext from '../lib/request-context';
+import * as realAuthAudit from '../shared/auth-audit';
+import * as realSentry from '../lib/sentry';
+import * as realSsoSync from '../iam/sso-sync';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -67,20 +72,28 @@ mock.module('../shared/supabase', () => ({
 
 // Sandbox → project resolution, keyed by sandboxId the same way the real
 // session_sandboxes lookup would be (uuid/externalId → project_id).
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   resolveSandboxProjectId: async (sandboxId: string) =>
     sandboxProjectByOwnSandboxId[sandboxId] ?? null,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/auth-audit', () => ({
+  ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},
 }));
 
-mock.module('../lib/sentry', () => ({ setSentryUser: () => {} }));
-mock.module('../lib/request-context', () => ({ setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ syncSsoMembership: async () => {} }));
+mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
+mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
+mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
 const { combinedAuth } = await import('./auth');
 

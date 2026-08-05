@@ -1,26 +1,11 @@
 /**
- * Regression: `kortix executor connectors` / `kortix executor call` returned an
- * EMPTY catalog (and `connector_not_found`) for sessions created with
- * `connector_bindings` set but `inherit_unbound` absent.
+ * Regression for the Executor catalog/call profile-resolution contract.
  *
- * Root cause: `resolveSessionConnectorProfile` returns `null` for every alias
- * with NO explicit binding when the session has
- * `connector_bindings_configured = true` AND `connector_bindings_inherit_unbound
- * = false` (session-connector-bindings.ts:806). The create path defaulted an
- * ABSENT `inherit_unbound` to `false`, so any caller that sent
- * `connector_bindings: {...}` without `inherit_unbound` hid every unbound
- * connector. `listCatalog` (db-deps.ts) then filtered all those nulls away.
- *
- * Two-layer fix, both exercised here:
- *  1. sessions.ts: an ABSENT `inherit_unbound` now defaults to `true` — only an
- *     EXPLICIT `inherit_unbound: false` opts into fail-closed (the composer's
- *     "I picked these specific connections, turn the others off" signal).
- *  2. db-deps.ts `listCatalog`: a SAFETY NET for sessions created before the
- *     create-path default fix — when the primary resolution returns null, fall
- *     back to the PROJECT DEFAULT profile for aliases with NO durable binding
- *     row. A present-but-revoked binding still fails closed (the security
- *     invariant): the safety net never runs for a connector that HAS a
- *     binding row.
+ * `connector_bindings_configured = true` with `inherit_unbound = false` is an
+ * explicit fail-closed session scope. The catalog and call resolver must both
+ * hide every unbound alias. An earlier catalog-only safety net bypassed that
+ * stored scope, so discovery advertised project-default connectors while every
+ * call returned `connector_not_found`.
  *
  * Real-Postgres tenant contract — run with DATABASE_URL pointed at an isolated
  * migrated database (mirrors integration-session-connector-profiles.test.ts).
@@ -37,6 +22,7 @@ import {
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { dbExecutorRouterDeps } from '../executor/db-deps';
+import { createExecutorRouter } from '../executor/router';
 import {
   resolveProjectDefaultConnectorProfile,
   resolveSessionConnectorProfile,
@@ -58,9 +44,10 @@ const PROFILE_UNBOUND_MEMBER = crypto.randomUUID();
 const PROFILE_REVOKED_DEFAULT = crypto.randomUUID();
 const PROFILE_REVOKED_MEMBER = crypto.randomUUID();
 
-// The bug-condition session: bindings configured, inherit_unbound FALSE, binds
-// only veyris. Pre-fix this emptied the catalog.
+// A partial explicit fail-closed scope. Only veyris remains callable.
 const SESSION_BUG = crypto.randomUUID();
+// Exact production incident shape: explicit fail-closed scope with zero rows.
+const SESSION_EMPTY = crypto.randomUUID();
 // The fixed create-path default: bindings configured, inherit_unbound TRUE
 // (what an ABSENT inherit_unbound now becomes), binds only veyris.
 const SESSION_INHERIT = crypto.randomUUID();
@@ -214,6 +201,16 @@ beforeAll(async () => {
   ]);
   await db.insert(projectSessions).values([
     {
+      sessionId: SESSION_EMPTY,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      branchName: SESSION_EMPTY,
+      createdBy: USER,
+      visibility: 'private',
+      connectorBindingsConfigured: true,
+      connectorBindingsInheritUnbound: false,
+    },
+    {
       // The bug condition: configured + NOT inherit_unbound. Only veyris is bound.
       sessionId: SESSION_BUG,
       accountId: ACCOUNT,
@@ -245,9 +242,8 @@ beforeAll(async () => {
       visibility: 'private',
     },
   ]);
-  // SESSION_BUG and SESSION_INHERIT both bind veyris (to USER's member profile)
-  // AND bind `revoked` to a member profile that we then REVOKE below — proving
-  // the safety net never resurrects a present-but-revoked binding.
+  // SESSION_BUG and SESSION_INHERIT both bind veyris to USER's member profile.
+  // SESSION_BUG also binds `revoked` to a profile that is revoked below.
   await db.insert(projectSessionConnectorBindings).values([
     {
       sessionId: SESSION_BUG,
@@ -306,48 +302,61 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-describe('executor catalog — inherit_unbound safety net', () => {
-  test('the bug condition resolves null for every UNBOUND alias (root-cause reproduction)', async () => {
-    // SESSION_BUG is configured + NOT inherit_unbound. Its unbound alias
-    // (`unbound`, no binding row) resolves to null — that is the line-806 gate,
-    // and it is what emptied the catalog before the safety net.
+describe('executor catalog and call resolver use one session scope', () => {
+  test('an explicit empty scope hides every connector from catalog and calls', async () => {
     const unbound = await resolveSessionConnectorProfile({
       accountId: ACCOUNT,
       projectId: PROJECT,
-      sessionId: SESSION_BUG,
+      sessionId: SESSION_EMPTY,
       alias: 'unbound',
       actingUserId: USER,
     });
     expect(unbound).toBeNull();
+
+    const catalog = await dbExecutorRouterDeps.listCatalog(principalFor(SESSION_EMPTY));
+    expect(catalog).toEqual([]);
+
+    const deps = dbExecutorRouterDeps.makeGatewayDeps(principalFor(SESSION_EMPTY));
+    expect(await deps.loadConnectorBySlug(PROJECT, 'unbound')).toBeNull();
   });
 
-  test('the safety net surfaces the project default for an UNBOUND alias on a pre-fix session', async () => {
-    // The catalog for SESSION_BUG must NOT be empty: the `unbound` connector
-    // has no binding row, so the safety net falls back to its project-default
-    // profile. `veyris` (bound + connected) is listed too. `revoked` (bound but
-    // revoked) is NOT listed — the safety net never runs for a connector that
-    // HAS a binding row, so the revoked binding fails closed.
+  test('the real project-explicit HTTP routes expose the same empty scope', async () => {
+    const principal = principalFor(SESSION_EMPTY);
+    const app = createExecutorRouter({
+      ...dbExecutorRouterDeps,
+      resolvePrincipal: async () => principal,
+      resolveProjectPrincipal: async (_c, projectId) => (projectId === PROJECT ? principal : null),
+    });
+
+    const catalogResponse = await app.request(`/projects/${PROJECT}/catalog`);
+    expect(catalogResponse.status).toBe(200);
+    expect(await catalogResponse.json()).toEqual({ connectors: [] });
+
+    const callResponse = await app.request(`/projects/${PROJECT}/call`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'unbound', action: 'read', args: {} }),
+    });
+    expect(callResponse.status).toBe(404);
+    expect(await callResponse.json()).toEqual({
+      ok: false,
+      status: 'denied',
+      reason: 'connector_not_found',
+    });
+  });
+
+  test('a partial fail-closed scope exposes only its active explicit binding', async () => {
     const catalog = await dbExecutorRouterDeps.listCatalog(principalFor(SESSION_BUG));
     const slugs = catalog.map((c) => c.slug).sort();
-    expect(slugs).toEqual(['unbound', 'veyris']);
-    expect(slugs).not.toContain('revoked');
-  });
+    expect(slugs).toEqual(['veyris']);
 
-  test('the explicit-binding still wins over the safety-net project default', async () => {
-    // SESSION_BUG binds veyris to PROFILE_BOUND_MEMBER. The catalog must reflect
-    // the bound profile, not the project default — the safety net only runs
-    // when the PRIMARY resolution returns null, and a connected binding does
-    // not. Load the gateway connector to confirm the resolved profile id.
     const deps = dbExecutorRouterDeps.makeGatewayDeps(principalFor(SESSION_BUG));
     const conn = await deps.loadConnectorBySlug(PROJECT, 'veyris');
     expect(conn?.profileId).toBe(PROFILE_BOUND_MEMBER);
+    expect(await deps.loadConnectorBySlug(PROJECT, 'unbound')).toBeNull();
   });
 
   test('a present-but-REVOKED binding fails closed (the safety net does not resurrect it)', async () => {
-    // `revoked` has a binding row on SESSION_BUG pointing at a REVOKED profile.
-    // The primary resolution returns null (revoked), and because the connector
-    // HAS a durable binding, the safety net does NOT run — it stays null. This
-    // is the security invariant from session-connector-bindings.ts:669-671.
     const revoked = await resolveSessionConnectorProfile({
       accountId: ACCOUNT,
       projectId: PROJECT,
@@ -363,9 +372,8 @@ describe('executor catalog — inherit_unbound safety net', () => {
       alias: 'revoked',
       actingUserId: USER,
     });
-    // The project default DOES exist for `revoked` (a separate default profile) —
-    // proving the catalog omits it because of the binding-row guard, not because
-    // there is no fallback available.
+    // A different active project default exists. The explicit revoked binding
+    // still fails closed instead of falling through to it.
     expect(projectDefault?.profileId).toBe(PROFILE_REVOKED_DEFAULT);
 
     const catalog = await dbExecutorRouterDeps.listCatalog(principalFor(SESSION_BUG));
@@ -373,11 +381,6 @@ describe('executor catalog — inherit_unbound safety net', () => {
   });
 
   test('the fixed create-path default (inherit_unbound=true) lists unbound aliases without the safety net', async () => {
-    // SESSION_INHERIT is configured + inherit_unbound=true (what an ABSENT
-    // inherit_unbound now defaults to). Its unbound alias resolves directly via
-    // the project-default branch — no safety net needed. Every connected
-    // connector lists (the bound one via its binding, the unbound ones via the
-    // project default).
     const unbound = await resolveSessionConnectorProfile({
       accountId: ACCOUNT,
       projectId: PROJECT,
@@ -390,6 +393,11 @@ describe('executor catalog — inherit_unbound safety net', () => {
     const catalog = await dbExecutorRouterDeps.listCatalog(principalFor(SESSION_INHERIT));
     const slugs = catalog.map((c) => c.slug).sort();
     expect(slugs).toEqual(['revoked', 'unbound', 'veyris']);
+
+    const deps = dbExecutorRouterDeps.makeGatewayDeps(principalFor(SESSION_INHERIT));
+    expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.profileId).toBe(
+      PROFILE_UNBOUND_MEMBER,
+    );
   });
 
   test('a legacy session with no bindings configured lists every connected connector', async () => {
@@ -400,5 +408,10 @@ describe('executor catalog — inherit_unbound safety net', () => {
     // `revoked`'s member profile is revoked, but its DEFAULT profile is active
     // and connected, so a legacy session sees it via the project default.
     expect(slugs).toEqual(['revoked', 'unbound', 'veyris']);
+
+    const deps = dbExecutorRouterDeps.makeGatewayDeps(principalFor(SESSION_LEGACY));
+    expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.profileId).toBe(
+      PROFILE_UNBOUND_MEMBER,
+    );
   });
 });

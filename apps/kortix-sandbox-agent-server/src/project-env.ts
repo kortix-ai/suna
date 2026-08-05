@@ -11,7 +11,19 @@ type ProjectEnvSnapshot = {
 type ProjectEnvUpdate = {
   changed: boolean
   revision: string
+  /** The FULL current name set, not a delta. */
   names: string[]
+  /**
+   * Names whose VALUE actually moved — added, removed, or rewritten.
+   *
+   * `names` is the whole allowlist, so it cannot answer "did THIS secret just
+   * change". The caller needs that: a few values are consumed by `spawnChild`
+   * outside the opencode config file (they are materialized into auth.json), so
+   * a change to one of those demands a full respawn rather than the ~51ms
+   * dispose. Keying that decision off `names` would respawn on every push for
+   * any project that merely HAS such a secret.
+   */
+  changedNames: string[]
 }
 
 export type ProjectEnvStore = {
@@ -87,6 +99,13 @@ export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.en
       for (const name of nextNames) knownNames.add(name)
       for (const name of Object.keys(nextEnv)) knownNames.add(name)
 
+      // Computed against the PREVIOUS env, so it must run before the assignment.
+      const changedNames = [
+        ...new Set([...Object.keys(env), ...Object.keys(nextEnv)]),
+      ]
+        .filter((name) => env[name] !== nextEnv[name])
+        .sort()
+
       if (changed) {
         revision = nextRevision
         env = nextEnv
@@ -97,6 +116,7 @@ export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.en
         changed,
         revision: nextRevision,
         names: [...nextNames],
+        changedNames,
       }
     },
   }

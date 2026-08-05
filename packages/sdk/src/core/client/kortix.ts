@@ -872,6 +872,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         forgetReady();
         return P.stopProjectSession(projectId, sessionId);
       },
+      /** Is this session still running the config the manifest compiles to? */
+      configState: () => P.getProjectSessionConfigState(projectId, sessionId),
+      /**
+       * Recompile the agent config from git into this running session.
+       *
+       * Restarts opencode to rebuild its config, so readiness has to be
+       * resolved again — same reason `restart` forgets it.
+       */
+      reloadConfig: (input?: Parameters<typeof P.reloadProjectSessionConfig>[2]) => {
+        forgetReady();
+        return P.reloadProjectSessionConfig(projectId, sessionId, input);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),

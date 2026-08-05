@@ -21,6 +21,14 @@ function LegalContent() {
     tabParam === 'terms' || tabParam === 'privacy' || tabParam === 'imprint' ? tabParam : 'imprint',
   );
 
+  // Redirect /legal?tab=terms to the dedicated /legal/terms page
+  useEffect(() => {
+    if (tabParam === 'terms') {
+      router.replace('/legal/terms');
+      return;
+    }
+  }, [tabParam, router]);
+
   // Sync active tab with URL parameter when it changes
   useEffect(() => {
     const validTab =
@@ -35,6 +43,10 @@ function LegalContent() {
 
   // Handle tab change - updates both state and URL
   const handleTabChange = (tab: 'terms' | 'privacy' | 'imprint') => {
+    if (tab === 'terms') {
+      router.push('/legal/terms');
+      return;
+    }
     setActiveTab(tab);
     const params = new URLSearchParams(searchParams);
     params.set('tab', tab);

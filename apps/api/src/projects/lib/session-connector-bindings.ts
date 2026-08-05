@@ -834,13 +834,10 @@ export async function resolveSessionConnectorProfile(input: {
  * authorization strategy, the session's visibility, and is actually
  * connected, and stamps it `source: 'default'`.
  *
- * Extracted from `resolveSessionConnectorProfile` so the Executor catalog can
- * apply it as a SAFETY NET: a session created before the create-path default
- * fix (`inherit_unbound` absent → `false`) would otherwise hide every unbound
- * connector. Listing falls back to the project default for aliases with NO
- * durable session binding — a present-but-revoked binding still fails closed
- * (the catalog safety net never runs for a connector that HAS a binding row;
- * see `listCatalog` in db-deps.ts).
+ * Kept separate from `resolveSessionConnectorProfile` so callers that need the
+ * project default can resolve it directly. Executor discovery and execution do
+ * not call this helper. They use `resolveSessionConnectorProfile`, which also
+ * enforces the stored session scope.
  */
 export async function resolveProjectDefaultConnectorProfile(input: {
   accountId: string;

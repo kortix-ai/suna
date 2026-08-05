@@ -3,12 +3,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
- * ⌘I / Ctrl+I toggles the action-panel column beside the chat.
+ * ⌘I / Ctrl+I toggles the RIGHT SIDE of the session — whichever surface is
+ * docked there: the action-panel column, a detail panel (browser, terminal,
+ * files, a file preview), or both at once.
  *
- * It used to toggle the right-hand detail panel. That panel is content-driven
- * now — it opens because something gave it a terminal, a browser, a file or a
- * step to show — so the binding moved to the action panel, which still has an
- * empty-open state the chevron (and this key) can reach.
+ * It was bound to the action-panel column alone, which left every detail panel
+ * with no keyboard close and made the key a no-visible-op while one was up.
+ * The behavior itself lives in the store (`toggleRightPanel`, covered by
+ * `stores/kortix-computer-store.test.ts`); what this file pins is that the
+ * binding calls THAT and not the column's own toggle.
  *
  * Source assertions rather than a mounted layout: `session-layout.tsx` needs the
  * whole session runtime to render, and what is worth pinning is where the
@@ -23,14 +26,80 @@ const column = readFileSync(
   fileURLToPath(new URL('./session-action-panel-column.tsx', import.meta.url)),
   'utf8',
 );
+const provider = readFileSync(
+  fileURLToPath(new URL('./action-panel/session-panel-provider.tsx', import.meta.url)),
+  'utf8',
+);
 
-describe('⌘I toggles the action panel column', () => {
+describe('⌘I toggles the whole right side', () => {
   test('the column binds mod+i and registers a keydown listener', () => {
     expect(column).toContain("e.key === 'i'");
     expect(column).toContain("e.key === 'I'");
     expect(column).toContain('shouldHandleHotkey');
     expect(column).toContain("addEventListener('keydown'");
-    expect(column).toContain('toggle()');
+  });
+
+  // The whole point of the change: the key reaches the store action that reads
+  // BOTH surfaces, not the column's own single-surface toggle.
+  test('the key calls toggleRightPanel, never the column-only toggle', () => {
+    expect(column).toContain('useToggleRightPanel');
+    expect(column).toContain('toggleRight()');
+    const handler = column.slice(
+      column.indexOf('const onKey = '),
+      column.indexOf("addEventListener('keydown'"),
+    );
+    expect(handler).toContain('toggleRight()');
+    // As a STATEMENT, not as prose: the handler carries a comment explaining
+    // why it is not `toggle()`, and a substring check would fail on that.
+    expect(handler).not.toMatch(/^\s*toggle\(\);/m);
+  });
+
+  // The chevron is this column's own control and must stay narrow — binding it
+  // to the right-side toggle would make it close a detail it never opened.
+  test('the chevron still moves only this column', () => {
+    expect(column).toContain('useToggleActionPanel');
+    expect(column).toContain('onClick={toggle}');
+  });
+});
+
+/**
+ * The ⌘I restore memory is SESSION-SCOPED, and the provider is what makes that
+ * true in the React half: it keeps its detail through a ⌘I close (that is a
+ * minimise, so the next press restores it) and drops it on a session change
+ * (leave the page and the right side starts over).
+ *
+ * The store half — wiping `_detailContentBySession` in `setActiveSession` —
+ * is covered by `stores/kortix-computer-store.test.ts`. Both exist on purpose:
+ * the store guarantees the rule even if no provider is mounted.
+ */
+describe('the provider drops its detail on a session change, not on a close', () => {
+  test('the effect is keyed on the active session and clears detail + terminal', () => {
+    const effect = provider.slice(provider.indexOf('const activeSessionId'));
+    expect(effect).toContain('s._activeSessionId');
+    expect(effect).toContain('setDetail(');
+    expect(effect).toContain('setTerminalOpen(');
+    expect(effect).toContain('}, [activeSessionId]);');
+  });
+
+  // The close path must NOT clear it — that is what makes ⌘I a minimise. If
+  // this effect ever keyed on `isSidePanelOpen`, the restore would silently
+  // become "reopen an empty panel".
+  test('it does not key on the panel-open flag', () => {
+    const effect = provider.slice(
+      provider.indexOf('const activeSessionId'),
+      provider.indexOf('}, [activeSessionId]);'),
+    );
+    expect(effect).not.toContain('isSidePanelOpen');
+  });
+
+  test('it publishes the content session-keyed, so ⌘I knows what to restore', () => {
+    expect(provider).toContain('setDetailContent(sessionId, detail !== null || terminalOpen)');
+  });
+
+  // An unmounted provider has no detail, so a `true` left in the map would
+  // promise ⌘I something that no longer exists.
+  test('it forgets the session on unmount', () => {
+    expect(provider).toContain('setDetailContent(sessionId, null)');
   });
 
   test('only the active session tab owns the shortcut', () => {

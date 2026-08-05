@@ -479,16 +479,19 @@ export async function continueSession(
 
 export async function drainSessionLifecycleQueue(
   input: {
-  workerId?: string;
-  limit?: number;
-  /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
-  availableBefore?: Date;
+    workerId?: string;
+    limit?: number;
+    /** Drain one freshly-enqueued callback without waiting behind older work. */
+    idempotencyKey?: string;
+    /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
+    availableBefore?: Date;
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   const rows = await claimDueLifecycleCommands({
     workerId,
     limit: input.limit ?? 10,
+    idempotencyKey: input.idempotencyKey,
     availableBefore: input.availableBefore,
   });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };

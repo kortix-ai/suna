@@ -29,7 +29,7 @@ export function OutputBlock({
       {markdown ? (
         <UnifiedMarkdown content={text} />
       ) : (
-        <pre className="text-muted-foreground/80 font-mono text-xs break-words whitespace-pre-wrap">
+        <pre className="text-muted-foreground/80 font-mono text-xs wrap-break-word whitespace-pre-wrap">
           {text}
         </pre>
       )}
