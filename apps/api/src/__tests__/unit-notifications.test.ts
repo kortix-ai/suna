@@ -70,7 +70,7 @@ describe('notification emails', () => {
       role: 'member',
     });
 
-    expect(result).toEqual({ ok: false, skipped: true, reason: 'missing_mailtrap_token' });
+    expect(result).toEqual({ ok: false, skipped: true, reason: 'email_not_configured' });
     expect(calls).toHaveLength(0);
   });
 
