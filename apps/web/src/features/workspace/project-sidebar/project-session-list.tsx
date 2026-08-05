@@ -924,7 +924,7 @@ function SessionStatusDot({
         {display === 'starting' ? (
           // Loading is the only spinner in this codebase. The previous
           // implementation spun an SVG with animate-spin, which the rule bans.
-          <Loading variant="spokes" className="size-3.5 text-[var(--kortix-yellow)]" />
+          <Loading className="text-kortix-yellow size-3.5" />
         ) : (
           <svg
             height="16"

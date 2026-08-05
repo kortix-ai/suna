@@ -20,23 +20,25 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
-import {
-  ProjectCommandsNavItem,
-  ProjectConnectorsNavItem,
-  ProjectCustomizeNavItem,
-  ProjectFilesNavItem,
-  ProjectSkillsNavItem,
-  useCustomizeKeyboardShortcut,
-} from '@/features/workspace/project-sidebar/footer/project-customize-nav';
+import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
+import {
+  ProjectCustomizeNavItem,
+  ProjectSettingsNavItem,
+  useSettingsKeyboardShortcut,
+} from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { MagnifyingGlassIcon, SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import {
+  MagnifyingGlassIcon,
+  NavigationArrowIcon,
+  SidebarSimpleIcon as PanelLeft,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
@@ -85,7 +87,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     openCommandPalette();
   }, [isMobile, setOpenMobile]);
 
-  useCustomizeKeyboardShortcut();
+  useSettingsKeyboardShortcut();
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -178,7 +180,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   onClick={toggleSidebar}
                   className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
                 >
-                  <PanelLeft className="cn-rtl-flip size-4" />
+                  <PanelLeft className="cn-rtl-flip" />
                 </Button>
               </Hint>
             )}
@@ -192,25 +194,25 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={handleNewSession}
-                  // The guard already makes a second activation a no-op; the
-                  // disabled state is what makes that visible instead of
-                  // looking like a dead button worth hammering.
                   disabled={creatingSession}
                   aria-busy={creatingSession}
-                  size="md"
-                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] text-center !text-sm font-medium [&_svg]:!size-4"
+                  className="group/menu-button text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
                 >
+                  <span className="shrink-0">
+                    <NavigationArrowIcon className="rotate-90" />
+                  </span>
                   <span>
                     {tI18nHardcoded.raw(
                       'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
                     )}
                   </span>
                   <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
-                    <Kbd className="text-base">{modSymbol}</Kbd>
-                    <Kbd className="text-xs">J</Kbd>
+                    <Kbd>{modSymbol}</Kbd>
+                    <Kbd>J</Kbd>
                   </KbdGroup>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <ProjectCustomizeNavItem />
             </SidebarMenu>
           </SidebarGroup>
 
@@ -225,29 +227,25 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
-              {/* Sits directly above Files/Customize so a still-on-v1 manifest
-                  is impossible to miss — one click starts the migration session
+              {/* Sits directly above Files so a still-on-v1 manifest is
+                  impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}
               <ProjectManifestUpgradeAlert projectId={projectId} />
               {/* Billing sits ABOVE the permanent nav on purpose. This group is
                   bottom-anchored (mt-auto), so it grows upward as items appear:
                   anything below a late-arriving item gets shoved up the moment
                   billing state lands. Keeping the async items on top means
-                  Files/Customize/Connect never move — only the session list
-                  above them gives up the space. */}
+                  Files/Connect never move — only the session list above them
+                  gives up the space. */}
               <SidebarBalanceWarning accountId={accountId} />
               <SidebarUpgradeButton accountId={accountId} />
               {/* Files used to live on the collapsed icon rail; with the rail
-                  gone (offcanvas + hover flyout) it needs a docked entry. Above
-                  Customize — files aren't gated behind customize access. */}
+                  gone (offcanvas + hover flyout) it needs a docked entry.
+                  Connectors, Skills, Commands, and Customize used to follow it
+                  here — one Settings entry, on the Customize row's old line,
+                  replaced all four. */}
               <ProjectFilesNavItem />
-              {/* Connectors, Skills, and Commands graduated out of the
-                  Customize overlay into their own routed pages — mounted
-                  above Customize, same tier as Files. */}
-              <ProjectConnectorsNavItem />
-              <ProjectSkillsNavItem />
-              <ProjectCommandsNavItem />
-              <ProjectCustomizeNavItem />
+              <ProjectSettingsNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>

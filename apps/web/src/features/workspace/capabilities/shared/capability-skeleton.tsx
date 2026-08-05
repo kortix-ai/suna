@@ -7,9 +7,9 @@ import { CatalogGridSkeleton } from '@/features/workspace/capabilities/shared/ca
  * commands) while their page resolves.
  *
  * Shared by `(capabilities)/loading.tsx` (the navigation Suspense boundary),
- * so the sidebar's `<Link prefetch>` on ProjectConnectorsNavItem /
- * ProjectSkillsNavItem / ProjectCommandsNavItem has something to cache — same
- * reason `project-files-skeleton.tsx` exists for the Files entry.
+ * so the sidebar's `<Link prefetch>` on ProjectSettingsNavItem has something
+ * to cache — same reason `project-files-skeleton.tsx` exists for the Files
+ * entry.
  *
  * Matches `CapabilityPageShell`'s `max-w-5xl` header, then hands the grid to
  * `CatalogGridSkeleton` — the same loading chrome each page renders once its
