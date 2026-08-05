@@ -129,7 +129,7 @@ const invite = (extra: Record<string, unknown>) => ({
 
 describe('kortix access invite — email honesty', () => {
   test('a SKIPPED email is reported as such, with the link that still works', async () => {
-    inviteResponse = invite({ email_sent: false, email_skip_reason: 'missing_mailtrap_token' });
+    inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
     const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
     const out = stripAnsi(stdout);
@@ -140,7 +140,7 @@ describe('kortix access invite — email honesty', () => {
     // The only remaining delivery channel — discarding it left no recovery path.
     expect(out).toContain(INVITE_URL);
     // And it says WHY, so the operator can go fix the deployment.
-    expect(out).toContain('missing_mailtrap_token');
+    expect(out).toContain('email_not_configured');
   });
 
   test('a SENT email still reads as a plain success', async () => {
@@ -174,7 +174,7 @@ describe('kortix access invite — email honesty', () => {
   test('--json emits the full payload, including the fields the CLI used to drop', async () => {
     // Previously ignored on this subcommand, so a scripted caller had no way to
     // detect the skip either.
-    inviteResponse = invite({ email_sent: false, email_skip_reason: 'missing_mailtrap_token' });
+    inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
     const code = await runAccess([
       'invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor', '--json',
@@ -183,7 +183,7 @@ describe('kortix access invite — email honesty', () => {
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(parsed.email_sent).toBe(false);
-    expect(parsed.email_skip_reason).toBe('missing_mailtrap_token');
+    expect(parsed.email_skip_reason).toBe('email_not_configured');
     expect(parsed.invite_url).toBe(INVITE_URL);
   });
 });

@@ -680,7 +680,7 @@ projectsApp.openapi(
     // Fire the invite email — same transport + template as account-level
     // invites, framed around this project. Fire-and-forget: the invitation row
     // already exists and we return the invite_url regardless, so we don't block
-    // the response on Mailtrap (its 10s timeout was stacking onto the request).
+    // the response on the email provider (its 10s timeout was stacking onto the request).
     // send() never throws (it returns a result object), but guard the promise
     // anyway so a transport-layer rejection can't surface as unhandled.
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
@@ -713,7 +713,7 @@ projectsApp.openapi(
         // Optimistic: send is queued, not awaited. When delivery isn't wired up
         // we know synchronously it'll be skipped, so report that honestly.
         email_sent: emailConfigured,
-        email_skip_reason: emailConfigured ? null : 'missing_mailtrap_token',
+        email_skip_reason: emailConfigured ? null : 'email_not_configured',
         message: emailConfigured
           ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
           : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
