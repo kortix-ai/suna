@@ -61,6 +61,42 @@ describe('groupSessions — activity mode', () => {
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
   });
+
+  describe('calendar-day boundaries, not rolling 24h', () => {
+    // now = local Aug 6, 22:00 — chosen so a rolling-24h window and a
+    // calendar-day boundary disagree on where "yesterday, 23:00" lands.
+    const LOCAL_NOW = new Date(2026, 7, 6, 22, 0, 0).getTime();
+
+    test('23:00 the local calendar day before now is yesterday, not today', () => {
+      // Rolling-24h would put this ~23h before `now` — inside the 24h
+      // window, so "today". It is the previous calendar date, so it must
+      // bucket as yesterday.
+      const activityMs = new Date(2026, 7, 5, 23, 0, 0).getTime();
+      const grouped = groupSessions(
+        [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
+        { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+      );
+      expect(grouped.sections.map((s) => s.id)).toEqual(['yesterday']);
+    });
+
+    test('00:30 the same local calendar day as now is today', () => {
+      const activityMs = new Date(2026, 7, 6, 0, 30, 0).getTime();
+      const grouped = groupSessions(
+        [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
+        { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+      );
+      expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
+    });
+
+    test('a timestamp ~1 hour in the future still lands in today', () => {
+      const activityMs = LOCAL_NOW + 60 * 60 * 1000;
+      const grouped = groupSessions(
+        [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
+        { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+      );
+      expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
+    });
+  });
 });
 
 describe('groupSessions — source mode', () => {
@@ -98,10 +134,16 @@ describe('groupSessions — ordering', () => {
   });
 
   test('name sorts A to Z, case-insensitively', () => {
-    const grouped = groupSessions([older, newer], {
+    // 'Banana' < 'apple' under a plain case-sensitive localeCompare (capitals
+    // sort first), so this fixture only passes when { sensitivity: 'base' }
+    // is actually applied — unlike 'Alpha'/'Zebra', which sort the same
+    // either way and would pass even with case-sensitivity silently dropped.
+    const lower = makeSession({ session_id: 'lower', name: 'apple', created_at: '2026-08-01T00:00:00.000Z' });
+    const upper = makeSession({ session_id: 'upper', name: 'Banana', created_at: '2026-08-05T00:00:00.000Z' });
+    const grouped = groupSessions([upper, lower], {
       mode: 'none', order: 'name', reviewCountBySession: {}, now: NOW,
     });
-    expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
+    expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['lower', 'upper']);
   });
 });
 

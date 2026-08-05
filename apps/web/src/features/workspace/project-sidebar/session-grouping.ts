@@ -85,14 +85,31 @@ const NONE_SECTION_ORDER: Array<{ id: string; label: string; showCount: boolean 
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Which activity bucket a session falls into, computed against a caller-
- *  supplied `now` — never `Date.now()` — so grouping is deterministic. */
-function activityBucketFor(session: ProjectSession, now: number): ActivityBucketId {
-  const activityMs = new Date(sessionLastActivityAt(session)).getTime();
-  const ageMs = now - (Number.isFinite(activityMs) ? activityMs : now);
-  if (ageMs < DAY_MS) return 'today';
-  if (ageMs < 2 * DAY_MS) return 'yesterday';
-  if (ageMs < 7 * DAY_MS) return 'week';
+/** Midnight, in the viewer's LOCAL timezone, of the calendar day containing
+ *  `ms`. Local calendar components (`getFullYear`/`getMonth`/`getDate`), not
+ *  UTC — a row labelled "Today" means today on the viewer's own clock, not a
+ *  rolling 24h window from whatever instant they happened to look. */
+function startOfLocalDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** Which activity bucket a timestamp falls into, against calendar-day
+ *  boundaries computed ONCE by the caller (never inside a per-session
+ *  predicate) from a caller-supplied `now` — never `Date.now()` — so grouping
+ *  is deterministic and every session lands in exactly one bucket regardless
+ *  of what time the viewer happens to look. A future/skewed timestamp is
+ *  `>= todayStart` and lands in `today` rather than falling out of every
+ *  bucket. */
+function activityBucketFor(
+  activityMs: number,
+  todayStart: number,
+  yesterdayStart: number,
+  weekStart: number,
+): ActivityBucketId {
+  if (activityMs >= todayStart) return 'today';
+  if (activityMs >= yesterdayStart) return 'yesterday';
+  if (activityMs >= weekStart) return 'week';
   return 'older';
 }
 
@@ -103,7 +120,10 @@ function statusBucketFor(session: ProjectSession, reviewCount: number): SessionS
   return 'recent';
 }
 
-function orderComparator(order: SessionOrderMode): (a: ProjectSession, b: ProjectSession) => number {
+function orderComparator(
+  order: SessionOrderMode,
+  lastActivityMsBySession: Map<string, number>,
+): (a: ProjectSession, b: ProjectSession) => number {
   if (order === 'created') {
     return (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   }
@@ -113,8 +133,11 @@ function orderComparator(order: SessionOrderMode): (a: ProjectSession, b: Projec
         sensitivity: 'base',
       });
   }
+  // Mirrors sortSessionsByLastActivity's guard: an unparseable date sorts as
+  // 0 rather than NaN, which would otherwise produce an unstable order.
   return (a, b) =>
-    new Date(sessionLastActivityAt(b)).getTime() - new Date(sessionLastActivityAt(a)).getTime();
+    (lastActivityMsBySession.get(b.session_id) ?? 0) -
+    (lastActivityMsBySession.get(a.session_id) ?? 0);
 }
 
 /**
@@ -137,7 +160,25 @@ export function groupSessions(
 ): GroupedSessions {
   const { mode, order, reviewCountBySession, hiddenSections, now = Date.now() } = options;
   const hidden = new Set(hiddenSections ?? []);
-  const ordered = sessions.slice().sort(orderComparator(order));
+
+  // Precompute last-activity once per session (decorate-sort-undecorate):
+  // sessionLastActivityAt re-scans opencode_sessions, so calling it inside a
+  // comparator would repeat that scan O(n log n) times instead of O(n).
+  // Same NaN guard as sortSessionsByLastActivity — an unparseable date reads
+  // as 0, not NaN.
+  const lastActivityMsBySession = new Map<string, number>();
+  for (const session of sessions) {
+    const parsed = new Date(sessionLastActivityAt(session)).getTime();
+    lastActivityMsBySession.set(session.session_id, Number.isFinite(parsed) ? parsed : 0);
+  }
+
+  const ordered = sessions.slice().sort(orderComparator(order, lastActivityMsBySession));
+
+  // Calendar-day boundaries, resolved once against `now` — never inside the
+  // per-session bucket function below.
+  const todayStart = startOfLocalDay(now);
+  const yesterdayStart = todayStart - DAY_MS;
+  const weekStart = todayStart - 7 * DAY_MS;
 
   const declared =
     mode === 'status'
@@ -155,7 +196,12 @@ export function groupSessions(
       mode === 'status'
         ? statusBucketFor(session, reviewCountBySession[session.session_id] ?? 0)
         : mode === 'activity'
-          ? activityBucketFor(session, now)
+          ? activityBucketFor(
+              lastActivityMsBySession.get(session.session_id) ?? 0,
+              todayStart,
+              yesterdayStart,
+              weekStart,
+            )
           : mode === 'source'
             ? sessionSource(session).kind
             : 'all';
