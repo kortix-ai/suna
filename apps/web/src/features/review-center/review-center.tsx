@@ -47,7 +47,7 @@ import {
   ShieldCheckIcon as ShieldCheckSolid,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, LazyMotion, m, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
@@ -74,13 +74,6 @@ import { type ReviewItem, type ReviewKind, type ReviewSegment, segmentForStatus 
 
 /** Calm, premium easing for the inbox's enter/exit/layout motion. */
 const EASE = [0.2, 0, 0, 1] as const;
-
-// This is the one place in the app that animates `layout` (ItemRow reflows
-// as items are approved/dismissed/filtered) — the app-wide LazyMotionProvider
-// only loads `domAnimation`, which excludes the layout/drag projection
-// engine. Load `domMax` locally, scoped to just the list, instead of paying
-// for it on every route. See lib/motion/dom-max.ts.
-const loadListFeatures = () => import('@/lib/motion/dom-max').then((mod) => mod.domMax);
 
 /**
  * Relative time is client-only: it depends on `Date.now()`, which differs between
@@ -962,150 +955,146 @@ export function ReviewCenter({
             </AnimatePresence>
           </div>
 
-          {/* List — scoped domMax boundary: ItemRow below animates `layout`
-              (row reflow on approve/dismiss/filter), which needs the layout
-              engine domAnimation doesn't include. See loadListFeatures above. */}
-          <LazyMotion features={loadListFeatures}>
-            {isError && items.length === 0 ? (
-              <div className="pt-6">
-                <ErrorState
-                  size="sm"
-                  title="Couldn't load the review inbox"
-                  description="Check your connection and try again."
-                  action={
-                    <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
-                      {isFetching ? <Loading className="size-3.5 shrink-0" /> : null}
-                      Retry
-                    </Button>
-                  }
-                />
-              </div>
-            ) : isLoading && items.length === 0 ? (
-              <ul className="space-y-2">
-                {['a', 'b', 'c', 'd'].map((k) => (
-                  <li key={k}>
-                    <Skeleton className="h-[58px] w-full rounded-md" />
-                  </li>
-                ))}
-              </ul>
-            ) : visible.length === 0 ? (
-              <m.div
-                key={`empty-${segment}-${query ? 'q' : ''}`}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.28, ease: EASE }}
-                className="pt-6"
-              >
-                <EmptyState
-                  icon={CheckCircleSolid}
-                  size="sm"
-                  title={
-                    query
-                      ? 'No matches'
-                      : segment === 'needs_you'
-                        ? "You're all caught up"
-                        : 'Nothing here'
-                  }
-                  description={
-                    query
-                      ? 'Try a different search.'
-                      : segment === 'needs_you'
-                        ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
-                        : segment === 'waiting'
-                          ? 'Items you’ve acted on that the agent is still working through will appear here.'
-                          : 'Approved, rejected and finished items land here.'
-                  }
-                />
-              </m.div>
-            ) : grouped ? (
-              <div
-                ref={(el) => {
-                  listRef.current = el;
-                }}
-                onPointerMove={() => {
-                  setKbNav((k) => (k ? false : k));
-                  markSeen();
-                }}
-                className="space-y-4"
-              >
-                {groups.map((g) => (
-                  <div key={g.sessionId ?? '__none__'}>
-                    <div className="mb-1.5 flex items-center gap-2 px-1">
-                      <span className="text-foreground truncate text-xs font-semibold">
-                        {g.label}
-                      </span>
-                      <Badge variant="secondary" size="xs">
-                        {g.items.length}
-                      </Badge>
-                      {g.sessionId && onOpenSession && (
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground ml-auto shrink-0 text-[11px] underline-offset-2 hover:underline"
-                          onClick={() => onOpenSession(g.sessionId!)}
-                        >
-                          Open session
-                        </button>
-                      )}
-                    </div>
-                    <ul className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border">
-                      {g.items.map((item) => {
-                        const idx = visibleIndexById.get(item.id) ?? 0;
-                        return (
-                          <ItemRow
-                            key={item.id}
-                            item={item}
-                            idx={idx}
-                            focused={kbNav && idx === focusedIdx}
-                            selected={selectedIds.has(item.id)}
-                            showCheck={selectionCount > 0}
-                            fresh={freshIds.has(item.id)}
-                            reduce={reduce}
-                            quickDecidable={connected && isQuickDecidableApproval(item)}
-                            pendingDecision={pendingId === item.id ? pendingDecision : null}
-                            onOpen={() => setSelectedId(item.id)}
-                            onToggleSelect={() => toggleSelect(item.id)}
-                            onQuickApprove={() => quickDecide(item, 'approve')}
-                            onQuickDeny={() => quickDecide(item, 'deny')}
-                          />
-                        );
-                      })}
-                    </ul>
+          {/* List */}
+          {isError && items.length === 0 ? (
+            <div className="pt-6">
+              <ErrorState
+                size="sm"
+                title="Couldn't load the review inbox"
+                description="Check your connection and try again."
+                action={
+                  <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
+                    {isFetching ? <Loading className="size-3.5 shrink-0" /> : null}
+                    Retry
+                  </Button>
+                }
+              />
+            </div>
+          ) : isLoading && items.length === 0 ? (
+            <ul className="space-y-2">
+              {['a', 'b', 'c', 'd'].map((k) => (
+                <li key={k}>
+                  <Skeleton className="h-[58px] w-full rounded-md" />
+                </li>
+              ))}
+            </ul>
+          ) : visible.length === 0 ? (
+            <m.div
+              key={`empty-${segment}-${query ? 'q' : ''}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, ease: EASE }}
+              className="pt-6"
+            >
+              <EmptyState
+                icon={CheckCircleSolid}
+                size="sm"
+                title={
+                  query
+                    ? 'No matches'
+                    : segment === 'needs_you'
+                      ? "You're all caught up"
+                      : 'Nothing here'
+                }
+                description={
+                  query
+                    ? 'Try a different search.'
+                    : segment === 'needs_you'
+                      ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
+                      : segment === 'waiting'
+                        ? 'Items you’ve acted on that the agent is still working through will appear here.'
+                        : 'Approved, rejected and finished items land here.'
+                }
+              />
+            </m.div>
+          ) : grouped ? (
+            <div
+              ref={(el) => {
+                listRef.current = el;
+              }}
+              onPointerMove={() => {
+                setKbNav((k) => (k ? false : k));
+                markSeen();
+              }}
+              className="space-y-4"
+            >
+              {groups.map((g) => (
+                <div key={g.sessionId ?? '__none__'}>
+                  <div className="mb-1.5 flex items-center gap-2 px-1">
+                    <span className="text-foreground truncate text-xs font-semibold">
+                      {g.label}
+                    </span>
+                    <Badge variant="secondary" size="xs">
+                      {g.items.length}
+                    </Badge>
+                    {g.sessionId && onOpenSession && (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground ml-auto shrink-0 text-[11px] underline-offset-2 hover:underline"
+                        onClick={() => onOpenSession(g.sessionId!)}
+                      >
+                        Open session
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <ul
-                ref={(el) => {
-                  listRef.current = el;
-                }}
-                onPointerMove={() => {
-                  setKbNav((k) => (k ? false : k));
-                  markSeen();
-                }}
-                className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
-              >
-                {visible.map((item, idx) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    idx={idx}
-                    focused={kbNav && idx === focusedIdx}
-                    selected={selectedIds.has(item.id)}
-                    showCheck={selectionCount > 0}
-                    fresh={freshIds.has(item.id)}
-                    reduce={reduce}
-                    quickDecidable={connected && isQuickDecidableApproval(item)}
-                    pendingDecision={pendingId === item.id ? pendingDecision : null}
-                    sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
-                    onOpen={() => setSelectedId(item.id)}
-                    onToggleSelect={() => toggleSelect(item.id)}
-                    onQuickApprove={() => quickDecide(item, 'approve')}
-                    onQuickDeny={() => quickDecide(item, 'deny')}
-                  />
-                ))}
-              </ul>
-            )}
-          </LazyMotion>
+                  <ul className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border">
+                    {g.items.map((item) => {
+                      const idx = visibleIndexById.get(item.id) ?? 0;
+                      return (
+                        <ItemRow
+                          key={item.id}
+                          item={item}
+                          idx={idx}
+                          focused={kbNav && idx === focusedIdx}
+                          selected={selectedIds.has(item.id)}
+                          showCheck={selectionCount > 0}
+                          fresh={freshIds.has(item.id)}
+                          reduce={reduce}
+                          quickDecidable={connected && isQuickDecidableApproval(item)}
+                          pendingDecision={pendingId === item.id ? pendingDecision : null}
+                          onOpen={() => setSelectedId(item.id)}
+                          onToggleSelect={() => toggleSelect(item.id)}
+                          onQuickApprove={() => quickDecide(item, 'approve')}
+                          onQuickDeny={() => quickDecide(item, 'deny')}
+                        />
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ul
+              ref={(el) => {
+                listRef.current = el;
+              }}
+              onPointerMove={() => {
+                setKbNav((k) => (k ? false : k));
+                markSeen();
+              }}
+              className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
+            >
+              {visible.map((item, idx) => (
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  idx={idx}
+                  focused={kbNav && idx === focusedIdx}
+                  selected={selectedIds.has(item.id)}
+                  showCheck={selectionCount > 0}
+                  fresh={freshIds.has(item.id)}
+                  reduce={reduce}
+                  quickDecidable={connected && isQuickDecidableApproval(item)}
+                  pendingDecision={pendingId === item.id ? pendingDecision : null}
+                  sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
+                  onOpen={() => setSelectedId(item.id)}
+                  onToggleSelect={() => toggleSelect(item.id)}
+                  onQuickApprove={() => quickDecide(item, 'approve')}
+                  onQuickDeny={() => quickDecide(item, 'deny')}
+                />
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

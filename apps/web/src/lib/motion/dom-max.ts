@@ -1,7 +1,18 @@
-// Dedicated module so `LazyMotion`'s dynamic `features` loader can split this
-// off into its own chunk, separate from `dom-animation.ts`. `domMax` adds the
-// `layout`/`layoutId`/`drag` projection engine on top of `domAnimation`. Only
-// import this where a `layout` prop, `layoutId`, or `drag` is actually in use
-// (currently: features/review-center/review-center.tsx) — everywhere else
-// should use the smaller `dom-animation.ts` bundle.
+// Dedicated module so `LazyMotion`'s dynamic `features` loader (see
+// components/lazy-motion-provider.tsx) can split this off into its own
+// chunk instead of `import('motion/react')` directly, which would not split
+// anything (the barrel is already imported statically elsewhere for `m`/
+// `AnimatePresence`).
+//
+// This is the app-wide feature bundle — not `domAnimation`. Multiple `layout`
+// sites exist across the app (general-tab.tsx, queued-messages.tsx,
+// step-connectors.tsx, projects-page.tsx, review-center.tsx), and
+// framer-motion's feature loading is a global registry
+// (`setFeatureDefinitions`), not scoped per `LazyMotion` boundary — so a
+// smaller `domAnimation` provider plus a narrower local `domMax` boundary
+// around only the sites known to need it is unsound: once any `domMax`
+// boundary in the tree mounts, layout/drag become available everywhere,
+// making correctness depend on mount order. One global `domMax` boundary is
+// the only deterministic design. The extra bytes only affect the size of
+// this deferred chunk, not the initial JS payload.
 export { domMax } from 'motion/react';
