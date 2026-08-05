@@ -27,6 +27,9 @@ import type { AgentGrant } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
+import {
+  isAllowedSourceValidationError,
+} from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
@@ -480,6 +483,34 @@ async function readAttachmentBytes(c: Context): Promise<Uint8Array> {
     offset += chunk.byteLength;
   }
   return bytes;
+}
+
+/**
+ * Structured 400 for an EXPECTED source-address validation rejection from
+ * {@link assertAllowedSourceAddress} (the LFI/SSRF guard — non-https URL,
+ * private host, local-folder path). The throw is a typed
+ * {@link AllowedSourceValidationError} (stable `code: 'invalid_source_address'`)
+ * so this helper converts it to a clean 400 without letting it propagate to
+ * `app.onError` → `captureException` → Sentry (Better Stack pattern
+ * `f5c0ce61…`). Mirrors the `feature_not_supported` (#5240) +
+ * `RepoFileNotFoundError` (#5652) typed-error pattern: an expected user-input
+ * validation state must NOT page like a server defect. Returns the 400
+ * response when the error matches, otherwise `null` so the caller re-throws /
+ * falls through to the generic handler for a genuine server failure.
+ */
+function allowedSourceValidationResponse(
+  c: Context,
+  err: unknown,
+): Response | null {
+  if (!isAllowedSourceValidationError(err)) return null;
+  return c.json(
+    {
+      error: err.code,
+      code: err.code,
+      message: err.message,
+    },
+    400,
+  );
 }
 
 export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
@@ -945,7 +976,19 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       } catch {
         return c.json({ error: 'invalid_json' }, 400);
       }
-      return c.json(await deps.discoverConnectorAuth(projectId, body));
+      // `discoverConnectorAuth` calls `assertAllowedSourceAddress` (the LFI/SSRF
+      // guard) on the draft's endpoint/spec URL, which throws a typed
+      // `AllowedSourceValidationError` for a non-https / private / local source.
+      // That's an EXPECTED user-input validation state — catch it here and
+      // return a structured 400 instead of letting it propagate to
+      // `app.onError` → Sentry (Better Stack pattern `f5c0ce61…`).
+      try {
+        return c.json(await deps.discoverConnectorAuth(projectId, body));
+      } catch (err) {
+        const validation = allowedSourceValidationResponse(c, err);
+        if (validation) return validation;
+        throw err;
+      }
     },
   );
 
@@ -984,13 +1027,33 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       }
       let authDiscovery: ConnectorAuthDiscovery | undefined;
       if (body.auth === undefined && deps.discoverConnectorAuth) {
-        authDiscovery = await deps.discoverConnectorAuth(projectId, body);
-        if (authDiscovery.recommended) body.auth = authDiscovery.recommended;
+        // `discoverConnectorAuth` → `discoverConnectorAuthFromSource` calls
+        // `assertAllowedSourceAddress` on the draft's endpoint URL, which
+        // throws a typed `AllowedSourceValidationError` for a non-https /
+        // private / local source. That's an EXPECTED user-input validation
+        // state — catch it here and return a structured 400 instead of
+        // letting it propagate to `app.onError` → Sentry (Better Stack
+        // pattern `f5c0ce61…`). Same guard wraps `createConnector` below
+        // (the sync path also asserts the source on re-materialize).
+        try {
+          authDiscovery = await deps.discoverConnectorAuth(projectId, body);
+          if (authDiscovery.recommended) body.auth = authDiscovery.recommended;
+        } catch (err) {
+          const validation = allowedSourceValidationResponse(c, err);
+          if (validation) return validation;
+          throw err;
+        }
       }
-      const result = await deps.createConnector(projectId, admin.accountId, body);
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync, authDiscovery })
-        : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      try {
+        const result = await deps.createConnector(projectId, admin.accountId, body);
+        return result.ok
+          ? c.json({ ok: true, sync: result.sync, authDiscovery })
+          : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      } catch (err) {
+        const validation = allowedSourceValidationResponse(c, err);
+        if (validation) return validation;
+        throw err;
+      }
     },
   );
 
