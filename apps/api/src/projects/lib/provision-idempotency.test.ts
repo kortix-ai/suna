@@ -13,6 +13,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   PROVISION_IDEMPOTENCY_KEY_MAX_LENGTH,
   PROVISION_IDEMPOTENCY_UNIQUE_INDEX,
+  PROVISION_IN_FLIGHT_WINDOW_MS,
+  classifyProvisionReplay,
   describeProvisionedRepo,
   findIdempotentProvision,
   isProvisionIdempotencyConflict,
@@ -139,6 +141,114 @@ describe('readProvisionIdempotencyKey', () => {
       readProvisionIdempotencyKey({ idempotency_key: 'snake-one', idempotencyKey: 'camel-two' }),
     ).toEqual({ ok: true, key: 'snake-one' });
   });
+
+  test('a blank snake_case field falls through to a usable camelCase one', () => {
+    // `'' ?? x` is `''`, so a naive nullish coalesce silently drops the usable
+    // key and downgrades a protected caller to unprotected — the exact thing
+    // this function promises never to do quietly.
+    expect(
+      readProvisionIdempotencyKey({ idempotency_key: '', idempotencyKey: 'camel-two' }),
+    ).toEqual({ ok: true, key: 'camel-two' });
+    expect(
+      readProvisionIdempotencyKey({ idempotency_key: '   ', idempotencyKey: 'camel-two' }),
+    ).toEqual({ ok: true, key: 'camel-two' });
+  });
+
+  test('both fields blank is still "no key"', () => {
+    expect(readProvisionIdempotencyKey({ idempotency_key: '', idempotencyKey: '  ' })).toEqual({
+      ok: true,
+      key: null,
+    });
+  });
+
+  test('a non-string in either field is an error, never a fall-through', () => {
+    // Falling through here would be the silent downgrade wearing a different
+    // hat: the caller sent something, and we must not pretend they did not.
+    expect(readProvisionIdempotencyKey({ idempotency_key: 42, idempotencyKey: 'ok' }).ok).toBe(
+      false,
+    );
+    expect(readProvisionIdempotencyKey({ idempotency_key: '', idempotencyKey: 42 }).ok).toBe(false);
+  });
+});
+
+describe('classifyProvisionReplay', () => {
+  const T0 = Date.parse('2026-08-05T12:00:00.000Z');
+  const pendingSeed = {
+    git: { repo_id: '1', seed: { seeded: false, expected: true, reason: 'pending', at: '' } },
+  };
+  const verifiedSeed = {
+    git: { repo_id: '1', seed: { seeded: true, expected: true, reason: 'seeded', at: '' } },
+  };
+  const optedOut = {
+    git: { repo_id: '1', seed: { seeded: false, expected: false, reason: 'caller_opted_out', at: '' } },
+  };
+
+  test('nothing found means provision normally', () => {
+    expect(classifyProvisionReplay(null, T0)).toEqual({ kind: 'create' });
+  });
+
+  test('a seed still pending inside the window is in-flight, not a replay', () => {
+    // THE DEFECT this guards: the original call is between its INSERT and its
+    // seed rollback. Replaying its project_id hands the caller an id that call
+    // is about to `db.delete`.
+    const project = projectRow({ metadata: pendingSeed, createdAt: new Date(T0 - 5_000) });
+
+    expect(classifyProvisionReplay(project, T0)).toEqual({ kind: 'in_flight', project });
+  });
+
+  test('the same row past the window is a replay — the bound must expire', () => {
+    // A crashed seed leaves {expected:true, seeded:false} FOREVER. An unbounded
+    // in-flight check would make that project permanently un-replayable, when
+    // `shouldSelfHealManagedRepoSeed` is what repairs it on next access.
+    const project = projectRow({
+      metadata: pendingSeed,
+      createdAt: new Date(T0 - PROVISION_IN_FLIGHT_WINDOW_MS - 1),
+    });
+
+    expect(classifyProvisionReplay(project, T0)).toEqual({ kind: 'replay', project });
+  });
+
+  test('the boundary itself is a replay, not in-flight', () => {
+    const project = projectRow({
+      metadata: pendingSeed,
+      createdAt: new Date(T0 - PROVISION_IN_FLIGHT_WINDOW_MS),
+    });
+
+    expect(classifyProvisionReplay(project, T0).kind).toBe('replay');
+  });
+
+  test('a verified seed is a replay however fresh it is', () => {
+    const project = projectRow({ metadata: verifiedSeed, createdAt: new Date(T0 - 1) });
+
+    expect(classifyProvisionReplay(project, T0)).toEqual({ kind: 'replay', project });
+  });
+
+  test('a deliberate seed opt-out is a replay however fresh it is', () => {
+    // `expected: false` (kortix ship) never enters the seed try/catch, so no
+    // rollback can delete the row. There is no window to protect.
+    const project = projectRow({ metadata: optedOut, createdAt: new Date(T0 - 1) });
+
+    expect(classifyProvisionReplay(project, T0)).toEqual({ kind: 'replay', project });
+  });
+
+  test('a legacy row with no seed metadata is a replay, not a permanent 409', () => {
+    for (const metadata of [{}, null, { git: 'not-an-object' }, { git: { seed: 7 } }]) {
+      const project = projectRow({ metadata, createdAt: new Date(T0 - 1) });
+      expect(classifyProvisionReplay(project, T0).kind).toBe('replay');
+    }
+  });
+
+  test('the window is caller-overridable so the bound itself is testable', () => {
+    const project = projectRow({ metadata: pendingSeed, createdAt: new Date(T0 - 5_000) });
+
+    expect(classifyProvisionReplay(project, T0, 10_000).kind).toBe('in_flight');
+    expect(classifyProvisionReplay(project, T0, 1_000).kind).toBe('replay');
+  });
+
+  test('the window is bounded and at least as long as the SDK provision timeout', () => {
+    expect(PROVISION_IN_FLIGHT_WINDOW_MS).toBeGreaterThanOrEqual(120_000);
+    expect(Number.isFinite(PROVISION_IN_FLIGHT_WINDOW_MS)).toBe(true);
+  });
 });
 
 describe('findIdempotentProvision', () => {
@@ -263,31 +373,53 @@ describe('isProvisionIdempotencyConflict', () => {
 });
 
 describe('provisionReplayResponse', () => {
+  const REPLAY_ACCESS = { projectRole: 'manager' as const, effectiveRole: 'manager' as const };
   const seededRow = projectRow({
     metadata: { git: { repo_id: '987654321', seed: { seeded: true, expected: true } } },
   });
 
   test('returns the same project_id the original create returned', () => {
-    expect(provisionReplayResponse(seededRow).project_id).toBe(seededRow.projectId);
+    expect(provisionReplayResponse(seededRow, REPLAY_ACCESS).project_id).toBe(seededRow.projectId);
   });
 
   test('carries the create response fields the caller lost', () => {
-    expect(provisionReplayResponse(seededRow)).toMatchObject({
-      account_id: ACCOUNT,
-      name: 'My First Project',
-      repo_id: '987654321',
-      seeded: true,
-      status: 'active',
-      project_role: 'manager',
-      effective_project_role: 'manager',
+    expect(provisionReplayResponse(seededRow, { projectRole: 'manager', effectiveRole: 'manager' }))
+      .toMatchObject({
+        account_id: ACCOUNT,
+        name: 'My First Project',
+        repo_id: '987654321',
+        seeded: true,
+        status: 'active',
+      });
+  });
+
+  test('reports the grant the caller actually holds, not the creator\'s', () => {
+    // `grantProjectRole` runs only on the create path. A second account admin
+    // replaying someone else's key has no project_members row, and claiming
+    // `manager` would misreport an explicit grant that does not exist.
+    const replay = provisionReplayResponse(seededRow, {
+      projectRole: null,
+      effectiveRole: 'manager',
     });
+
+    expect(replay.project_role).toBeNull();
+    expect(replay.effective_project_role).toBe('manager');
+  });
+
+  test('reports a real grant when the caller holds one', () => {
+    const replay = provisionReplayResponse(seededRow, {
+      projectRole: 'manager',
+      effectiveRole: 'manager',
+    });
+
+    expect(replay.project_role).toBe('manager');
   });
 
   test('never mints a push credential as a side effect of a retry', () => {
     // A retry is a read. The one-shot push token belongs to the create that
     // produced it; a caller that needs one after a retry asks
     // POST /v1/projects/:projectId/git-token for it.
-    const replay = provisionReplayResponse(seededRow);
+    const replay = provisionReplayResponse(seededRow, REPLAY_ACCESS);
     expect(replay.push_token).toBeNull();
     expect(replay.git_username).toBeNull();
   });
@@ -295,14 +427,14 @@ describe('provisionReplayResponse', () => {
   test('does not leak the idempotency key back to the caller', () => {
     // It is an input, not part of the project representation, and the response
     // contract (@kortix/api-contract ProjectSchema) has no field for it.
-    expect(JSON.stringify(provisionReplayResponse(seededRow))).not.toContain(KEY);
+    expect(JSON.stringify(provisionReplayResponse(seededRow, REPLAY_ACCESS))).not.toContain(KEY);
   });
 
   test('reports an unseeded project honestly rather than claiming success', () => {
     const unseeded = projectRow({
       metadata: { git: { repo_id: '1', seed: { seeded: false, expected: true } } },
     });
-    expect(provisionReplayResponse(unseeded).seeded).toBe(false);
+    expect(provisionReplayResponse(unseeded, REPLAY_ACCESS).seeded).toBe(false);
   });
 });
 

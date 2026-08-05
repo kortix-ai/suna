@@ -97,9 +97,14 @@ Send `idempotency_key` when a retry is possible — a reload, a second tab, a
 timeout you retried. `provision` mints a brand-new managed repo per call, so
 without a key those all create real duplicate projects. Reuse one key for every
 attempt at a single logical create and the repeats return the project the first
-attempt made (201, same `project_id`, `push_token: null`). Use a fresh key per
-create attempt; two deliberate projects are two keys, and creating a second
-project with the same **name** and no key still works.
+attempt made (201, same `project_id`, `push_token: null`). The key identifies the
+attempt, not the payload — reusing one with a different `name` returns the first
+project and ignores the new value, so mint a fresh key per distinct create.
+Creating a second project with the same **name** and no key still works.
+
+A repeat that arrives while the first call is still provisioning gets `409` with
+`code: 'provision_in_flight'` rather than a `project_id` that call may still roll
+back. Retry with the same key.
 
 `project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
 private, unavailable, and soft-deleted sessions, with ownership and

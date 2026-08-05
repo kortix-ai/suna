@@ -268,8 +268,15 @@ export interface ProvisionProjectInput {
    * `project_id`) instead of creating another.
    *
    * Scope is the account: the same key under a different account creates
-   * normally. Two deliberate projects are two different keys — creating a
-   * second project with the same NAME and no key still works.
+   * normally. The key identifies the ATTEMPT, not the payload — it is not a
+   * request fingerprint, so reusing one with a different `name` or
+   * `starter_template` returns the FIRST project and ignores the new values.
+   * Mint a fresh key per distinct create; creating a second project with the
+   * same NAME and no key still works.
+   *
+   * Retry on `409` with `code: 'provision_in_flight'`. It means an earlier call
+   * with this key is still running (or lost a write race) and its project is
+   * not safe to hand back yet. Keep the SAME key when you retry.
    *
    * Format: 1–200 characters of `A–Z a–z 0–9 . _ : -`. A UUID per create
    * attempt is the intended shape. Omit it and the route behaves exactly as

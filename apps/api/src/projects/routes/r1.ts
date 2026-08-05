@@ -36,12 +36,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
-import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
+import { enforceProjectQuota, getProjectMemberRole, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import {
+  classifyProvisionReplay,
   findIdempotentProvision,
   isProvisionIdempotencyConflict,
   lookupProvisionByIdempotencyKey,
@@ -404,6 +405,30 @@ projectsApp.openapi(
   },
 );
 
+/**
+ * The caller's REAL access on a project that POST /provision is replaying.
+ *
+ * The create path can hard-code `manager` because it has just called
+ * `grantProjectRole`. A replay cannot: that grant is written only on the create
+ * path, so a second account admin replaying another admin's key holds no
+ * `project_members` row at all. `projectRole` is therefore looked up rather
+ * than assumed.
+ *
+ * `effectiveRole` is `manager` by derivation, not by assumption: reaching a
+ * replay required `authorize(…, ACCOUNT_ACTIONS.PROJECT_CREATE)` to pass, which
+ * means the caller is an owner or admin of the account, and `lib/access.ts`
+ * maps owner/admin to `manager` regardless of the project grant.
+ */
+async function provisionReplayAccess(
+  projectId: string,
+  userId: string,
+): Promise<{ projectRole: ProjectRole | null; effectiveRole: ProjectRole }> {
+  return {
+    projectRole: await getProjectMemberRole(projectId, userId),
+    effectiveRole: 'manager',
+  };
+}
+
 // POST /v1/projects/provision
 // Managed-git "Create project": provisions a repo on the managed backend +
 // scoped per-project push token, optionally seeds the starter (web flow), and
@@ -530,14 +555,39 @@ projectsApp.openapi(
   // second project with the same NAME still works. The quota check stays a
   // straight count — there is still no repoUrl to treat as an idempotent
   // re-link.
+  //
+  // NON-GOAL, stated so callers can rely on it: the key is NOT a fingerprint of
+  // the request. It identifies the ATTEMPT, not the payload. The same key with
+  // a different `name`, `starter_template`, or `source_item_id` returns the
+  // FIRST project, silently ignoring the new payload. Clients must therefore
+  // mint a fresh key per distinct create, and reuse one only across retries of
+  // the same create.
   const alreadyProvisioned = await findIdempotentProvision(
     lookupProvisionByIdempotencyKey,
     scope.accountId,
     idempotencyKey,
   );
-  if (alreadyProvisioned) {
-    setContextField('projectId', alreadyProvisioned.projectId);
-    return c.json(provisionReplayResponse(alreadyProvisioned), 201);
+  const replay = classifyProvisionReplay(alreadyProvisioned, Date.now());
+  if (replay.kind === 'in_flight') {
+    // The first call is between its INSERT and its seed rollback, so its row
+    // may still be deleted. Handing back its project_id here would be a 201
+    // carrying an id that stops existing seconds later — worse than the loud
+    // 502 the caller would have got without a key. Tell them to retry instead.
+    setContextField('projectId', replay.project.projectId);
+    return c.json(
+      { error: 'Another provision with this idempotency_key is in flight', code: 'provision_in_flight' },
+      409,
+    );
+  }
+  if (replay.kind === 'replay') {
+    setContextField('projectId', replay.project.projectId);
+    return c.json(
+      provisionReplayResponse(
+        replay.project,
+        await provisionReplayAccess(replay.project.projectId, scope.userId),
+      ),
+      201,
+    );
   }
 
   const provisionQuota = await enforceProjectQuota(c, scope.accountId);
@@ -644,25 +694,49 @@ projectsApp.openapi(
       scope.accountId,
       idempotencyKey,
     );
+    const mintedRepo = provisioned.repoName ?? provisioned.upstreamUrl;
+    const orphanContext =
+      `account=${scope.accountId} key=${idempotencyKey} ` +
+      `winner=${winner?.projectId ?? 'unresolved'} repo=${mintedRepo} ` +
+      `owner=${provisioned.repoOwner ?? 'unknown'} repo_id=${provisioned.externalRepoId ?? 'unknown'}`;
     console.warn(
-      `[projects] provision lost an idempotency-key race account=${scope.accountId} ` +
-        `key=${idempotencyKey} winner=${winner?.projectId ?? 'unresolved'} — deleting the repo ` +
-        `this request minted (${provisioned.repoName ?? provisioned.upstreamUrl})`,
+      `[projects] provision lost an idempotency-key race ${orphanContext} — deleting the repo ` +
+        `this request minted`,
     );
-    try {
-      await backend.deleteRepo({
-        provider,
-        upstreamUrl: provisioned.upstreamUrl,
-        externalRepoId: provisioned.externalRepoId,
-        repoOwner: provisioned.repoOwner,
-        repoName: provisioned.repoName,
-        installationId: provisioned.installationId,
-        credentialRef: provisioned.credentialRef,
-        defaultBranch: provisioned.defaultBranch,
-        managed: true,
-        metadata: {},
-      } satisfies GitConnectionRef);
-    } catch { /* best effort — the winner's project is what the caller needs */ }
+    // The DELETE MUST LEAVE A RECORD EITHER WAY. This is the one path whose
+    // entire purpose is preventing an orphaned managed repo, so a failure here
+    // that logs nothing turns "no orphan is left behind" into a claim nobody
+    // can check. The warn above states intent; these state outcome. Same shape
+    // as the seed rollback below (console.error, repo identity, stage).
+    if (!provisioned.repoOwner || !provisioned.repoName) {
+      // git-backends/github.ts `deleteRepo` returns silently without an owner
+      // and name — the repo would survive with no trace of why.
+      console.error(
+        `[projects] ORPHANED MANAGED REPO — provision cannot delete the repo it minted, the ` +
+          `backend ref has no owner/name ${orphanContext} stage=idempotency_race`,
+      );
+    } else {
+      try {
+        await backend.deleteRepo({
+          provider,
+          upstreamUrl: provisioned.upstreamUrl,
+          externalRepoId: provisioned.externalRepoId,
+          repoOwner: provisioned.repoOwner,
+          repoName: provisioned.repoName,
+          installationId: provisioned.installationId,
+          credentialRef: provisioned.credentialRef,
+          defaultBranch: provisioned.defaultBranch,
+          managed: true,
+          metadata: {},
+        } satisfies GitConnectionRef);
+      } catch (deleteError) {
+        console.error(
+          `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
+            `${orphanContext} stage=idempotency_race:`,
+          deleteError instanceof Error ? deleteError.message : deleteError,
+        );
+      }
+    }
     // A winner we cannot re-read is a 409, never a 500 with an orphan: the
     // constraint proved a project with this key exists, so retrying is right.
     if (!winner) {
@@ -672,7 +746,10 @@ projectsApp.openapi(
       );
     }
     setContextField('projectId', winner.projectId);
-    return c.json(provisionReplayResponse(winner), 201);
+    return c.json(
+      provisionReplayResponse(winner, await provisionReplayAccess(winner.projectId, scope.userId)),
+      201,
+    );
   }
   setContextField('projectId', row.projectId);
 
