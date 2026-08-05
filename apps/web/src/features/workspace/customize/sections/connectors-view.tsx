@@ -174,11 +174,19 @@ import { AuthorizationStrategyField, ConnectorProfileModal } from './connector-p
 import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
-// Both moved OUT of this file. It is 5,219 lines and 50 components; a plain
+// All moved OUT of this file. It is 5,219 lines and 50 components; a plain
 // function and a hook exported beside them took the whole module off React Fast
 // Refresh's hot path (every edit = full page reload) and forced any consumer of
-// either symbol to bundle all of it. Imported back so this legacy surface is
-// unchanged.
+// either symbol to bundle all of it.
+//
+// `providerLabel` and `usePipedreamConnect` came back byte-identical.
+// `ConnectorStatusBadge` and `ConnectorAppIcon` did NOT — the new catalog needs
+// a quieter row, so the badge dropped its green "Connected" case (an active
+// connector now renders nothing) and moved "Needs setup" from `warning` to
+// `info`, and the icon dropped its `p-1` inset. Those three changes land on
+// this legacy surface too, at the detail header below. That is a deliberate
+// shared definition, not an accident: two connector badges that disagree is
+// worse than one that changed.
 import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
