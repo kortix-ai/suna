@@ -193,8 +193,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ── Terms of Service → public Drive folder (permanent 308) ──────────────
-  // The Terms document moved to an externally-owned Google Drive folder. Both
+  // ── Terms of Service → public Drive file (permanent 308) ────────────────
+  // The Terms document moved to an externally-owned Google Drive file. Both
   // the new stable path (`/legal/terms`) and the legacy tab query
   // (`/legal?tab=terms`), including every supported locale prefix
   // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there

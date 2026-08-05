@@ -1,13 +1,13 @@
 /**
  * Permanent (308) redirect of every Terms-of-Service URL to the canonical
- * public Google Drive folder that now owns the Terms document.
+ * public Google Drive file that now owns the Terms document.
  *
  * The legal page (`/legal`) used to host three tabs — imprint, terms, and
- * privacy. Terms moved out to an externally-owned Drive folder; the legal page
+ * privacy. Terms moved out to an externally-owned Drive file; the legal page
  * now only renders imprint and privacy. Both the new stable path
  * (`/legal/terms`) and the legacy tab query (`/legal?tab=terms`), including
  * every supported locale prefix (`/de/legal/terms`, `/de/legal?tab=terms`, …),
- * must permanently redirect to that folder so existing links and bookmarks
+ * must permanently redirect to that file so existing links and bookmarks
  * keep resolving.
  *
  * The redirect is a 308 (Permanent Redirect) which preserves the request method
@@ -18,13 +18,14 @@
 import { locales, type Locale } from '@/i18n/config';
 
 /**
- * Canonical public Google Drive folder that owns the Terms of Service.
- * The `usp=sharing` param is what lets Drive render the folder publicly
+ * Canonical public Google Drive file that owns the Terms of Service
+ * (Kortix Terms of Service - Version 2026-07-14.pdf).
+ * The `usp=sharing` param is what lets Drive render the file publicly
  * without forcing a sign-in — it must always be present on the destination
  * and must never be overwritten by an incoming `usp` value.
  */
 export const LEGAL_TERMS_DRIVE_BASE =
-  'https://drive.google.com/drive/folders/1UZuRrBGhzACGBgi2J47BS-I6VMNnqIHN';
+  'https://drive.google.com/file/d/1KJ4lLxz6LQosk0DZIosSAf01GK8PdQ54/view';
 
 /**
  * Query params that are dropped when building the redirect destination:
@@ -53,10 +54,10 @@ function isLegalPath(pathname: string): boolean {
 }
 
 /**
- * Build the permanent Drive-folder destination URL for a Terms request.
+ * Build the permanent Drive-file destination URL for a Terms request.
  *
  * Rules:
- * 1. The base is the canonical Drive folder.
+ * 1. The base is the canonical Drive file.
  * 2. `usp=sharing` is always set and never overridden by an incoming `usp`.
  * 3. `tab` is always dropped.
  * 4. Every other incoming query param is preserved (sorted for a stable,
