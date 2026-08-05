@@ -134,6 +134,20 @@ export function ChatMinimap({
   const idsKey = useMemo(() => items.map((item) => item.id).join('\n'), [items]);
 
   // Track which turn is currently in view so we can highlight it.
+  //
+  // NOT `useMessageScrollerVisibility().currentAnchorId`, which is what this
+  // wants and cannot use. That hook projects its answer by walking
+  // `MessageScrollerContent`'s DIRECT children and reading `data-message-id`
+  // off each one (`ee()`/`Fe()` in @shadcn/react/message-scroller, both
+  // `Array.from(content.children)`). Our anchors are virtualized rows, so they
+  // live one level down, inside TranscriptList's positioned container — the
+  // element that has to carry the projected total height. The scroller's own
+  // IntersectionObserver does see them (it observes the registered elements at
+  // any depth), but the direct-children filter drops every id before the hook
+  // returns, so `currentAnchorId` is permanently null here.
+  //
+  // Rather than ship a highlight that never lights up, this keeps its own
+  // observer. Jumping does go through the scroller — see `onJumpToTurn`.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     const contentEl = contentRef.current;

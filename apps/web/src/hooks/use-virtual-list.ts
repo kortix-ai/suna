@@ -1,12 +1,7 @@
 'use client';
 
-import {
-  type VirtualItem,
-  type Virtualizer,
-  useVirtualizer,
-  useWindowVirtualizer,
-} from '@tanstack/react-virtual';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type Virtualizer, useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type VirtualListSnapshot,
@@ -94,6 +89,21 @@ export interface UseVirtualListResult<TRow> {
   containerRef: (node: HTMLElement | null) => void;
   scrollToKey: (key: string, options?: { align?: 'start' | 'center' | 'end' }) => boolean;
   scrollToIndex: (index: number, options?: { align?: 'start' | 'center' | 'end' }) => void;
+  /**
+   * Scroll to the true end of the list.
+   *
+   * NOT `scrollTop = scrollHeight - clientHeight`. That reads a PROJECTION:
+   * rows past the window still carry `estimateRowHeight`, so the number is
+   * wrong by however far the estimates are off, and it MOVES as those rows
+   * mount and measure. A one-shot target computed from it lands short —
+   * measured at 2,833px short on a real session, which is what made the
+   * scroll-to-bottom button look broken.
+   *
+   * virtual-core's `scrollToEnd` re-derives the target every frame until it
+   * stops moving (`reconcileScroll`, index.js:1131), which is exactly the
+   * behaviour a moving target needs.
+   */
+  scrollToEnd: (options?: { behavior?: 'auto' | 'smooth' }) => void;
   /** Offset + measured sizes, for restoring this exact position on remount. */
   takeSnapshot: () => VirtualListSnapshot;
 }
@@ -221,28 +231,38 @@ export function useVirtualList<TRow>({
     enabled: scroll.mode === 'window',
   });
 
-  const virtualizer = (
-    scroll.mode === 'element' ? elementVirtualizer : windowVirtualizer
-  ) as unknown as Virtualizer<Element, HTMLElement>;
+  const virtualizer = (scroll.mode === 'element'
+    ? elementVirtualizer
+    : windowVirtualizer) as unknown as Virtualizer<Element, HTMLElement>;
 
-  // ── Streaming growth must not drag the reader ───────────────────────────
-  // virtual-core's default rule (index.js:869) treats a grown item as being
-  // above the viewport and adds `delta` to scrollTop. For a row whose content
-  // is streaming in at its TAIL, the correct compensation is zero — the growth
-  // is below the reader. Because the correction is a DOWNWARD programmatic
-  // scroll, none of useAutoScroll's intent detectors observe it, so the
-  // viewport creeps toward the end while the reader is trying to read.
+  // ── Scroll compensation: OFF. `MessageScroller` owns anchoring ──────────
   //
-  // The precise rule: only a row that ends at or above the current offset can
-  // displace what follows it.
+  // virtual-core keeps the picture stable when a measured row size lands by
+  // writing an ABSOLUTE `scrollTop = scrollOffset + delta`
+  // (applyScrollAdjustment, index.js:1102). `scrollOffset` lags the live scroll
+  // position by a frame, so while the reader is scrolling that write lands
+  // BEHIND where they already are and undoes part of their own input. That is
+  // the reported "the whole thread staggers/shakes when I scroll".
   //
-  // This is an instance property, not an option (virtual-core index.d.ts:117),
-  // so it is assigned rather than passed.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = useCallback(
-    (item: VirtualItem, _delta: number, instance: Virtualizer<Element, HTMLElement>) =>
-      item.end <= instance.scrollOffset!,
-    [],
-  );
+  // Note this is NOT fixed by deleting the assignment. virtual-core's DEFAULT
+  // rule (index.js:862-869) compensates unconditionally on an item's FIRST
+  // measurement — `!this.itemSizeCache.has(key)` — and in a windowed list a
+  // first measurement is exactly what happens to every row the reader scrolls
+  // into. Falling back to the default means compensating on nearly every frame
+  // of a scroll. It has to be switched off explicitly.
+  //
+  // Measured on a real session, scrolling up 14,320px: 270 direction reversals
+  // with virtual-core's default rule, 0 with compensation disabled.
+  //
+  // Nothing is lost, because a second anchoring system now exists.
+  // `MessageScroller` re-pins against the LIVE element rect rather than a
+  // frame-stale offset: `reanchorToAnchoredMessage` holds the anchored row's
+  // viewport offset across every content resize, and `handleResize` re-pins the
+  // bottom while following a stream. Two systems both correcting the same
+  // scrollTop is the fight being removed — so this one stands down.
+  //
+  // Instance property, not an option (virtual-core index.d.ts:117).
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -276,9 +296,7 @@ export function useVirtualList<TRow>({
 
   const scrollToKey = useCallback(
     (key: string, options?: { align?: 'start' | 'center' | 'end' }) => {
-      const index = rowsRef.current.findIndex(
-        (row, i) => getRowKeyRef.current(row, i) === key,
-      );
+      const index = rowsRef.current.findIndex((row, i) => getRowKeyRef.current(row, i) === key);
       // False, not a scroll to 0: an unknown key must not throw the reader to
       // the top of the transcript.
       if (index < 0) return false;
@@ -286,6 +304,13 @@ export function useVirtualList<TRow>({
       return true;
     },
     [scrollToIndex],
+  );
+
+  const scrollToEnd = useCallback(
+    (options?: { behavior?: 'auto' | 'smooth' }) => {
+      virtualizer.scrollToEnd({ behavior: options?.behavior ?? 'auto' });
+    },
+    [virtualizer],
   );
 
   const takeSnapshot = useCallback(
@@ -298,11 +323,25 @@ export function useVirtualList<TRow>({
     [virtualizer, cacheKey],
   );
 
-  // A changed scroll margin invalidates every item offset. Re-measure so the
-  // range is recomputed against the new origin instead of the stale one.
-  useEffect(() => {
-    virtualizer.measure();
-  }, [scrollMargin, virtualizer]);
+  // NO `virtualizer.measure()` here. It looks like the right way to react to a
+  // new scroll margin and it is destructive:
+  //
+  //   this.measure = () => {
+  //     this.pendingMin = null;
+  //     this.itemSizeCache.clear();   // <- every measured row height, gone
+  //     ...
+  //   }
+  //
+  // Calling it throws away every height the ResizeObserver has measured, so the
+  // whole transcript reverts to `estimateRowHeight` and the projected total
+  // COLLAPSES. Measured live: the scrollable height swinging 2,525px while
+  // merely scrolling, dropping 200-300px at a time — the scroll range moving
+  // under the reader, which is exactly "I cannot scroll smoothly".
+  //
+  // It is also unnecessary. `scrollMargin` is already a dependency of
+  // virtual-core's measurement memo (getMeasurementOptions, index.js:562), so
+  // changing it re-derives every item offset from the PRESERVED size cache on
+  // its own. The correct reaction to a new margin is to do nothing.
 
   return {
     items,
@@ -311,6 +350,7 @@ export function useVirtualList<TRow>({
     containerRef,
     scrollToKey,
     scrollToIndex,
+    scrollToEnd,
     takeSnapshot,
   };
 }

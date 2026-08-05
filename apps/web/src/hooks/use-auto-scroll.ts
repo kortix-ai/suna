@@ -56,6 +56,12 @@ interface UseAutoScrollReturn {
   /** Same as scrollToAbsoluteBottom but with smooth animation. */
   smoothScrollToAbsoluteBottom: () => void;
   /**
+   * Clear the "user scrolled away" latch and hold the programmatic-scroll
+   * guard, WITHOUT scrolling. For handing the travel to the virtualizer, whose
+   * scrollToEnd re-derives a target that is still being measured.
+   */
+  beginExternalScroll: (holdMs?: number) => void;
+  /**
    * Anchor a SPECIFIC turn at the top of the viewport, as soon as it exists.
    *
    * Replaces the send path's `scrollToBottom(); setTimeout(…, 100)` pair, whose
@@ -428,6 +434,31 @@ export function useAutoScroll({
     };
   }, [anchorer, working, hasContent]);
 
+  /**
+   * Hand the actual travel to someone else — the virtualizer — while this hook
+   * keeps its own state consistent.
+   *
+   * Clears the "user scrolled away" latch, hides the FAB, and holds the
+   * programmatic-scroll guard for `holdMs` so the catch-all scroll listener
+   * does not read the incoming frames as the reader scrolling up and
+   * immediately re-latch.
+   *
+   * The guard is held generously because `scrollToEnd` reconciles: it keeps
+   * re-issuing a scroll until the target stops moving, which on a transcript
+   * that is still measuring rows takes a good deal longer than one smooth
+   * scroll (virtual-core caps the loop at 5s).
+   */
+  const beginExternalScroll = useCallback((holdMs = 1500) => {
+    recalcSpacer();
+    userScrolledRef.current = false;
+    setShowScrollButton(false);
+    programmaticScrollRef.current = true;
+    clearTimeout(programmaticScrollTimer.current);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, holdMs);
+  }, [recalcSpacer]);
+
   const smoothScrollToAbsoluteBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -603,6 +634,7 @@ export function useAutoScroll({
     scrollToEnd,
     scrollToAbsoluteBottom,
     smoothScrollToAbsoluteBottom,
+    beginExternalScroll,
     anchorTurn,
   };
 }

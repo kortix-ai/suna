@@ -1,61 +1,44 @@
 'use client';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { detectCommandFromText } from '@/features/session/detect-command';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   ArrowBendUpLeftIcon,
-  CaretDownIcon,
-  CheckIcon,
   CaretDownIcon as ChevronDown,
   StackIcon as Layers,
   ArrowCounterClockwiseIcon as RotateCcw,
-  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  SystemNotificationCard,
-  parseSystemNotifications,
-  stripSystemPtyText,
-} from './message-parsing';
+import { SystemNotificationCard, parseSystemNotifications } from './message-parsing';
 import type { QueueDrainGates } from './message-queue-boundary';
-import { useMessageQueueDrain } from './use-message-queue-drain';
-import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
-import { segmentTurn } from './turn/segment-turn';
-import { ThrottledMarkdown } from './turn/throttled-markdown';
-import { SessionReportCard } from './turn/turn-head';
-export { SessionReportCard } from './turn/turn-head';
 import { renderedTurnIdsKey } from './turn/turn-virtualizer';
+import { useMessageQueueDrain } from './use-message-queue-drain';
+export { SessionReportCard } from './turn/turn-head';
 // The SAME Map the turn renderer reads. It holds an answer optimistically
 // between the user submitting it and the SSE `message.part.updated` that
 // confirms it. Two instances would mean the writer here never reaches the
 // reader, and answered cards would flicker away the moment the event lands.
-import { optimisticAnswersCache } from './turn/use-turn-model';
 import { TranscriptList, type TranscriptListApi } from './turn/transcript-list';
 import { TranscriptRowView } from './turn/transcript-row';
-import { buildTranscriptRows, type TranscriptRow } from './turn/transcript-rows';
+import { type TranscriptRow, buildTranscriptRows } from './turn/transcript-rows';
+import { type TurnEntryCacheEntry, reconcileTurnEntries } from './turn/turn-entry-cache';
 import {
-  reconcileTurnEntries,
-  type TurnEntryCacheEntry,
-} from './turn/turn-entry-cache';
-import { computeTurnRowInputs, type TurnRowComputation } from './turn/use-turn-model';
-import { UserMessage } from './turn/user-message';
+  type TurnRowComputation,
+  computeTurnRowInputs,
+  optimisticAnswersCache,
+} from './turn/use-turn-model';
 
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import {
-  ConnectProviderDialog,
-  type ModelDefaultControls,
-} from '@/features/session/model-selector';
+import { type ModelDefaultControls } from '@/features/session/model-selector';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -69,15 +52,9 @@ import {
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { SessionBusyIndicator } from './session-busy-indicator';
-import { SessionTurnMeta } from './session-turn-meta';
-import {
-  sessionTurnDurationMs,
-  sessionTurnEndedAt,
-  sessionTurnSpan,
-} from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -88,16 +65,22 @@ import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller,
+} from '@/components/ui/message-scroller';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
+import { ToolActivateContext } from '@/features/session/tool/tool-renderers';
+import { createTurnAnchor } from '@/features/session/turn-anchor';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -107,23 +90,17 @@ import {
 import { playSound } from '@/lib/sounds';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import {
-  type KortixSystemMessage,
-  type SessionReport,
-  extractKortixSystemMessages,
-  extractSessionReport,
-  stripKortixSystemTags,
-} from '@/lib/utils/kortix-system-tags';
+import { type KortixSystemMessage, stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
-  useMessageQueueStore,
   type WebQueuedMessage,
   type WebSessionQueue,
+  useMessageQueueStore,
 } from '@/stores/message-queue-store';
+import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
@@ -133,32 +110,14 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type Command,
-  type MessageWithParts,
   type Part,
   type PermissionRequest,
   type QuestionRequest,
   type TextPart,
   type ToolPart,
   type Turn,
-  collectTurnParts,
-  findLastTextPart,
-  formatDuration,
-  getPermissionForTool,
-  getRetryInfo,
-  getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnStatus,
-  getWorkingState,
   groupMessagesIntoTurns,
-  isAgentPart,
-  isAttachment,
-  isReasoningPart,
   isTextPart,
-  isToolPart,
-  shouldShowToolPart,
 } from '@/ui';
 import { updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -170,11 +129,11 @@ import {
   applyOptimisticAbort,
   ascendingId,
   beginOptimisticSend,
-  markOptimisticSendDispatched,
   classifySendError,
   clearStartStash,
   formatModelString,
   formatPromptModel,
+  markOptimisticSendDispatched,
   parseModelKey,
   readStartStash,
   recoverFromSendFailure,
@@ -200,8 +159,6 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
-import { Icon } from '../icon/icon';
-import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
@@ -245,7 +202,6 @@ function turnIsCompaction(turn: Turn): boolean {
 // is keyed by the question tool part's `id` (stable across updates).
 // Entries are cleaned up once the server's authoritative part arrives with
 // real `metadata.answers`.
-
 
 // ============================================================================
 // Parse answers from the question tool's output string
@@ -567,7 +523,6 @@ export interface SessionTurnProps {
  * out of this file, which is a cycle.
  */
 
-
 // ============================================================================
 // Main SessionChat Component
 // ============================================================================
@@ -590,6 +545,97 @@ interface SessionChatProps {
   readOnly?: boolean;
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
+}
+
+/** The scroll commands `SessionChat` issues at the transcript. */
+interface TranscriptScrollApi {
+  /** Park a turn's first row at the top. False when that row is not mounted. */
+  scrollToTurn: (turnId: string) => boolean;
+  /** Park a turn's first row at the top as soon as that row exists. */
+  anchorTurn: (turnId: string) => void;
+  /** The reader took over — drop any anchor still waiting for its row. */
+  abandonAnchor: () => void;
+  /** Follow the transcript to its end. */
+  scrollToEnd: () => void;
+}
+
+/**
+ * Bridges `useMessageScroller` out to `SessionChat`.
+ *
+ * `useMessageScroller` throws outside `MessageScrollerProvider`, and
+ * `SessionChat` is the component that RENDERS that provider — so it can never
+ * call the hook itself. This is the smallest thing that can: it renders no DOM,
+ * and publishes the scroll commands through a ref the parent already owns.
+ */
+function TranscriptScrollBridge({
+  apiRef,
+  contentRef,
+}: {
+  apiRef: React.MutableRefObject<TranscriptScrollApi | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { scrollToEnd, scrollToMessage } = useMessageScroller();
+
+  // Row keys, not turn ids. `transcript-rows.ts` keys the row a turn STARTS
+  // with as `${turnId}:single` (no assistant reply yet) or `${turnId}:head`,
+  // and `MessageScrollerItem` registers under exactly that key. Scrolling to a
+  // bare turn id would resolve nothing and silently do nothing.
+  const rowKeyForTurn = useCallback((turnId: string, content: HTMLElement | null) => {
+    if (!content) return null;
+    for (const suffix of [':single', ':head']) {
+      const key = `${turnId}${suffix}`;
+      if (content.querySelector(`[data-message-id="${CSS.escape(key)}"]`)) return key;
+    }
+    return null;
+  }, []);
+
+  const scrollToTurn = useCallback(
+    (turnId: string) => {
+      const key = rowKeyForTurn(turnId, contentRef.current);
+      return key !== null && scrollToMessage(key, { align: 'start' });
+    },
+    [contentRef, rowKeyForTurn, scrollToMessage],
+  );
+
+  // The send path asks for an anchor BEFORE the turn it names has rendered, so
+  // a single call always misses. `createTurnAnchor` retries per frame until the
+  // row lands, gives up rather than firing late, and can be abandoned when the
+  // reader scrolls — the lifecycle `useAutoScroll` used to own. See
+  // `turn-anchor.ts`.
+  const anchorer = useMemo(
+    () =>
+      createTurnAnchor<string>({
+        // The row has to be REGISTERED with the scroller, not merely present in
+        // `rows`: `scrollToMessage` resolves through the scroller's element
+        // map. `data-message-id` is written by `MessageScrollerItem` at the
+        // moment of registration, so querying it is querying that map.
+        find: (turnId) => rowKeyForTurn(turnId, contentRef.current),
+        anchor: (key) => {
+          scrollToMessage(key, { align: 'start' });
+        },
+        schedule: (fn) => {
+          const id = requestAnimationFrame(fn);
+          return () => cancelAnimationFrame(id);
+        },
+      }),
+    [contentRef, rowKeyForTurn, scrollToMessage],
+  );
+
+  useEffect(() => {
+    apiRef.current = {
+      scrollToTurn,
+      anchorTurn: (turnId: string) => anchorer.request(turnId),
+      abandonAnchor: () => anchorer.abandon(),
+      scrollToEnd: () => {
+        scrollToEnd();
+      },
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, anchorer, scrollToEnd, scrollToTurn]);
+
+  return null;
 }
 
 export function SessionChat({
@@ -669,6 +715,11 @@ export function SessionChat({
     text: string;
   } | null>(null);
   const chatAreaRef = useRef<HTMLDivElement>(null);
+  // The transcript's scroll commands, published by `TranscriptScrollBridge`
+  // — which is the component inside `MessageScrollerProvider` that can call
+  // `useMessageScroller()`. Declared up here because the selection handlers
+  // below abandon a pending anchor through it.
+  const transcriptScroll = useRef<TranscriptScrollApi | null>(null);
 
   // On mouseup inside the chat area, check for text selection
   const handleChatMouseUp = useCallback(() => {
@@ -707,6 +758,13 @@ export function SessionChat({
   // Dismiss popup on scroll
   const handleChatScroll = useCallback(() => {
     setSelectionPopup(null);
+  }, []);
+
+  // The reader taking over outranks a pending post-send anchor. Without this an
+  // anchor queued at send time fires into a viewport they have since scrolled
+  // away from — the "it randomly just shot me up" report.
+  const handleTranscriptUserScroll = useCallback(() => {
+    transcriptScroll.current?.abandonAnchor();
   }, []);
 
   // When user clicks "Reply" in the popup
@@ -1436,26 +1494,23 @@ export function SessionChat({
     prevMsgLenRef.current = messages?.length || 0;
   }, [messages?.length]);
 
-  // ---- Auto-scroll (replaces inline scroll logic) ----
+  // ---- Scroll ----
+  // `MessageScroller` owns it: the bottom spacer, the follow-the-stream loop,
+  // "the reader took over" intent, the scroll-to-bottom button's visibility,
+  // and the initial position. It replaces `useAutoScroll`, whose spacer +
+  // requestAnimationFrame follow + MutationObserver each wrote scrollTop
+  // independently — and, together with virtual-core's own scroll compensation,
+  // produced the reported stagger: content moving up, then back down, while the
+  // reader was still scrolling.
+  //
+  // These two refs are all that is left of that hook's surface. Plenty of code
+  // below still reads the scroll element (the load-older sentinel's observer
+  // root, the history anchor) and queries inside the content element.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const hasActiveQuestion = useRuntimePendingStore((s) =>
     Object.values(s.questions).some((q) => q.sessionID === sessionId),
   );
-  const messageCount = messages?.length ?? 0;
-  const {
-    scrollRef,
-    contentRef,
-    spacerElRef,
-    showScrollButton,
-    scrollToBottom,
-    scrollToLastTurn,
-    scrollToEnd,
-    scrollToAbsoluteBottom,
-    smoothScrollToAbsoluteBottom,
-    anchorTurn,
-  } = useAutoScroll({
-    working: isBusy && !hasActiveQuestion,
-    hasContent: messageCount > 0,
-  });
   // Older history loads by scrolling, not by clicking: a sentinel above the
   // first turn pulls the previous page as it nears the top of the viewport.
   // A pull always prepends content above the reader, so every one is wrapped
@@ -1518,50 +1573,15 @@ export function SessionChat({
     // container the observer is rooted in.
   }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
 
-  // Scroll to the bottom on initial load / session change.
-  // Uses a callback ref on the scroll container to guarantee it's mounted.
-  // Strategy: start scrolled to ~90% instantly (no flash at top), then
-  // smooth-scroll the last bit once content has rendered for a nice effect.
-  const initialScrollDoneRef = useRef<string | null>(null);
-  const scrollContainerCallbackRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      // Always keep scrollRef updated
-      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-      if (!node) return;
-      if (initialScrollDoneRef.current === sessionId) return;
-      initialScrollDoneRef.current = sessionId;
-
-      // When viewing a sub-session from the top, don't scroll to bottom
-      if (initialScrollTop) {
-        node.scrollTop = 0;
-        return;
-      }
-
-      // Instant scroll to near-bottom so user doesn't see top-of-page flash.
-      // Position slightly above the bottom so the smooth scroll has room to animate.
-      const scrollNearBottom = () => {
-        const max = node.scrollHeight - node.clientHeight;
-        node.scrollTop = Math.max(0, max - 300);
-      };
-      scrollNearBottom();
-
-      // After content settles, smooth scroll the final stretch to the bottom.
-      setTimeout(() => {
-        node.scrollTo({
-          top: node.scrollHeight - node.clientHeight,
-          behavior: 'smooth',
-        });
-      }, 150);
-      // Follow-up in case async content changed scrollHeight
-      setTimeout(() => {
-        node.scrollTo({
-          top: node.scrollHeight - node.clientHeight,
-          behavior: 'smooth',
-        });
-      }, 600);
-    },
-    [sessionId, scrollRef, initialScrollTop],
-  );
+  // The initial position is `defaultScrollPosition` on the provider below —
+  // `last-anchor` normally, `start` for a sub-session opened from the top.
+  //
+  // It replaces a callback ref that set `scrollTop = scrollHeight - 300` on
+  // mount and then smooth-scrolled the rest on 150ms and 600ms timers. Both
+  // numbers were guesses at when content had settled, and on a windowed
+  // transcript `scrollHeight` is a PROJECTION built from unmeasured rows'
+  // estimates — so the timers animated toward a target that was still moving.
+  // The provider instead re-derives its target as the content resizes.
 
   // Tab switch: the DOM stays mounted (hidden class), so the browser
   // preserves scroll position automatically. No action needed here.
@@ -1809,7 +1829,6 @@ export function SessionChat({
     isBusy,
   ]);
 
-
   const rows = useMemo(
     () =>
       buildTranscriptRows(turns, {
@@ -1831,8 +1850,26 @@ export function SessionChat({
   restoreAnchorByTurnId.current = (turnId: string) =>
     transcriptApi.current?.scrollToTurn(turnId) ?? false;
 
+  /**
+   * "Put this turn at the top", from the minimap, CMD+K, or a history restore.
+   *
+   * The scroller first, the virtualizer second, and the order matters both ways.
+   *
+   * When the turn's row IS mounted, the scroller is the only one that leaves
+   * the transcript in a consistent state: it sizes its own bottom spacer so the
+   * row can actually reach the top, and it records the row as the anchor, so
+   * every later content resize re-pins THAT row instead of dragging the reader
+   * to the end of a streaming response.
+   *
+   * When it is NOT mounted the scroller cannot help — it resolves through the
+   * elements registered with it, and a windowed transcript has mounted only the
+   * rows near the viewport. `scrollToTurn` re-derives the row's index and
+   * scrolls by offset, which needs no element at all.
+   */
   const jumpToTurn = useCallback(
-    (turnId: string) => transcriptApi.current?.scrollToTurn(turnId) ?? false,
+    (turnId: string) =>
+      (transcriptScroll.current?.scrollToTurn(turnId) ?? false) ||
+      (transcriptApi.current?.scrollToTurn(turnId) ?? false),
     [],
   );
 
@@ -1841,9 +1878,7 @@ export function SessionChat({
       const turnProps = turnPropsById.get(row.turnId);
       const inputs = rowInputsById.get(row.turnId);
       if (!turnProps || !inputs) return null;
-      return (
-        <TranscriptRowView row={row} turnProps={turnProps} segmentContext={inputs} />
-      );
+      return <TranscriptRowView row={row} turnProps={turnProps} segmentContext={inputs} />;
     },
     [turnPropsById, rowInputsById],
   );
@@ -1897,7 +1932,6 @@ export function SessionChat({
   usePermissionSelfHeal(sessionId, messages, {
     enabled: !sessionState && isActiveSessionTab,
   });
-
 
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
@@ -2028,7 +2062,6 @@ export function SessionChat({
   // This frontend useEffect was causing double-billing once opencode.jsonc
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
-
 
   const handleConfirmRewind = useCallback(async () => {
     if (!sessionState || !rewindTarget) return;
@@ -2168,7 +2201,7 @@ export function SessionChat({
       // waits for THIS turn's element instead of guessing, gives up rather
       // than firing late, and abandons on any wheel/touch so it never yanks a
       // reader who has scrolled away. See `turn-anchor.ts`.
-      anchorTurn(messageID);
+      transcriptScroll.current?.anchorTurn(messageID);
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;
@@ -2359,7 +2392,6 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
-      anchorTurn,
       replyTo,
       messages,
       sessionState,
@@ -2646,12 +2678,15 @@ export function SessionChat({
         .finally(() => {
           commandInFlightRef.current = false;
         });
-      setTimeout(() => scrollToBottom(), 50);
+      // A slash command produces a turn like any other. Ask the scroller to
+      // follow to the end rather than timing a scroll against a guess at when
+      // that turn renders — the old `setTimeout(..., 50)` fired before the
+      // command's user message existed, so it scrolled to the PREVIOUS turn.
+      transcriptScroll.current?.scrollToEnd();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
-      scrollToBottom,
       lockedAgentName,
       sessionState,
       executeCommand,
@@ -3002,112 +3037,140 @@ export function SessionChat({
             </div>
           ) : (
             <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
-              <div
-                ref={scrollContainerCallbackRef}
-                className={cn(
-                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
-                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
-                )}
-                onMouseUp={handleChatMouseUp}
-                onMouseDown={handleChatMouseDown}
-                onScroll={handleChatScroll}
+              {/* One provider around the whole chat area, not just the scroller.
+                  The minimap and the bridge both need `useMessageScroller*`,
+                  and both sit OUTSIDE the scroll element. The provider renders
+                  no DOM of its own, so wrapping wider costs nothing.
+
+                  `last-anchor` restores to the top of the last turn, which is
+                  where the reader left off; `start` is for a sub-session opened
+                  from the top, which must not follow the stream either. */}
+              <MessageScrollerProvider
+                autoScroll={!initialScrollTop}
+                defaultScrollPosition={initialScrollTop ? 'start' : 'last-anchor'}
               >
-                <div
-                  ref={contentRef}
-                  role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6"
-                >
-                  <div className="flex min-w-0 flex-col">
-                    {/* Optimistic turn — the user's message plus the waiting row,
+                <TranscriptScrollBridge apiRef={transcriptScroll} contentRef={contentRef} />
+                <MessageScroller className="z-10">
+                  <MessageScrollerViewport
+                    ref={scrollRef}
+                    // On, but `handleLoadOlder` still captures its own anchor and
+                    // has to: the scroller's prepend restore tracks the first
+                    // visible item among MessageScrollerContent's DIRECT children
+                    // (`Ye()` in @shadcn/react/message-scroller), and our rows are
+                    // nested one level down inside the virtualizer's positioned
+                    // container. It is declared here so the intent is explicit and
+                    // it starts working the moment that nesting goes away.
+                    preserveScrollOnPrepend
+                    className={cn(
+                      'h-full flex-1 [scroll-behavior:auto]',
+                      shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                    )}
+                    onMouseUp={handleChatMouseUp}
+                    onMouseDown={handleChatMouseDown}
+                    onScroll={handleChatScroll}
+                    // A pending post-send anchor must not fire into a viewport
+                    // the reader has since moved. The scroller drops its own
+                    // follow on these; the anchor retry loop is ours, so it has
+                    // to be told too.
+                    onWheel={handleTranscriptUserScroll}
+                    onTouchMove={handleTranscriptUserScroll}
+                  >
+                    {/* `role="log"` comes from MessageScrollerContent. */}
+                    <MessageScrollerContent
+                      ref={contentRef}
+                      className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        {/* Optimistic turn — the user's message plus the waiting row,
                         shared verbatim with InstantSessionShell so the shell → chat
                         crossfade has nothing to drift on (see OptimisticTurn). */}
-                    {showOptimistic && (
-                      <OptimisticTurn
-                        text={optimisticPrompt || ''}
-                        agentNames={agentNames}
-                        onFileClick={openFileInComputer}
-                      />
-                    )}
-
-                    {isOptimisticCompacting && !hasCompactionTurn && (
-                      <div className="mt-12 space-y-3">
-                        <div className="my-3 flex items-center gap-3 py-4">
-                          <div className="bg-border h-px flex-1" />
-                          <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                            <Layers className="text-muted-foreground size-3.5" />
-                            <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                              Compaction
-                            </span>
-                          </div>
-                          <div className="bg-border h-px flex-1" />
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src="/kortix-logomark-white.svg"
-                            alt="Kortix"
-                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                        {showOptimistic && (
+                          <OptimisticTurn
+                            text={optimisticPrompt || ''}
+                            agentNames={agentNames}
+                            onFileClick={openFileInComputer}
                           />
-                          <div className="text-muted-foreground text-sm">
-                            {tHardcodedUi.raw(
-                              'componentsSessionSessionChat.line5954JsxTextCompactingSession',
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                        )}
 
-                    {/* Turn-based message rendering.
-                    ToolActivateContext makes inline tool rows open the side
-                    panel (Actions) focused on that tool, instead of expanding. */}
-                    {hasOlder && (
-                      <div className="mb-6 flex flex-col items-center gap-2">
-                        {/* Sentinel: crossing into view pulls the previous page.
-                        Sits above the spinner so it clears the viewport as
-                        soon as the prepended turns render. */}
-                        <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
-                        {isLoadingOlder && <Loading />}
-                        {olderPullFailed && !isLoadingOlder && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground text-xs">
-                              Couldn&apos;t load older messages.
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline-ghost"
-                              size="sm"
-                              onClick={() => void handleLoadOlder()}
-                            >
-                              Retry
-                            </Button>
+                        {isOptimisticCompacting && !hasCompactionTurn && (
+                          <div className="mt-12 space-y-3">
+                            <div className="my-3 flex items-center gap-3 py-4">
+                              <div className="bg-border h-px flex-1" />
+                              <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                <Layers className="text-muted-foreground size-3.5" />
+                                <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                                  Compaction
+                                </span>
+                              </div>
+                              <div className="bg-border h-px flex-1" />
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src="/kortix-logomark-white.svg"
+                                alt="Kortix"
+                                className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                              />
+                              <div className="text-muted-foreground text-sm">
+                                {tHardcodedUi.raw(
+                                  'componentsSessionSessionChat.line5954JsxTextCompactingSession',
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )}
-                      </div>
-                    )}
-                    <ToolActivateContext.Provider value={toolActivate}>
-                      {/* Notification-only early-return removed: it rendered the
+
+                        {/* Turn-based message rendering.
+                    ToolActivateContext makes inline tool rows open the side
+                    panel (Actions) focused on that tool, instead of expanding. */}
+                        {hasOlder && (
+                          <div className="mb-6 flex flex-col items-center gap-2">
+                            {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                            <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                            {isLoadingOlder && <Loading />}
+                            {olderPullFailed && !isLoadingOlder && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground text-xs">
+                                  Couldn&apos;t load older messages.
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline-ghost"
+                                  size="sm"
+                                  onClick={() => void handleLoadOlder()}
+                                >
+                                  Retry
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <ToolActivateContext.Provider value={toolActivate}>
+                          {/* Notification-only early-return removed: it rendered the
                       user's pty_* card but skipped turn.assistantMessages,
                       hiding every subsequent assistant response in that turn.
                       Fall through to the normal turn renderer instead. */}
-                      {/* Only the rows near the viewport are mounted. The
+                          {/* Only the rows near the viewport are mounted. The
                       container carries the full projected height so the
-                      scrollbar, the bottom spacer and useAutoScroll's
-                      scrollHeight arithmetic all still see the whole thread.
+                      scrollbar and MessageScroller's own scrollHeight
+                      arithmetic still see the whole thread.
                       Markup lives in TranscriptList — the hook underneath it
                       returns which rows to mount and where, and nothing else. */}
-                      <TranscriptList
-                        rows={rows}
-                        scrollRef={scrollRef as React.RefObject<HTMLDivElement | null>}
-                        cacheKey={sessionId}
-                        renderRow={renderTranscriptRow}
-                        onMountedKeysChange={handleMountedKeysChange}
-                        apiRef={transcriptApi}
-                      />
-                    </ToolActivateContext.Provider>
+                          <TranscriptList
+                            rows={rows}
+                            scrollRef={scrollRef as React.RefObject<HTMLDivElement | null>}
+                            cacheKey={sessionId}
+                            renderRow={renderTranscriptRow}
+                            onMountedKeysChange={handleMountedKeysChange}
+                            apiRef={transcriptApi}
+                          />
+                        </ToolActivateContext.Provider>
 
-                    {/* Busy indicator when no turns yet but session is busy */}
-                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
-                    {/* A turn refused for a missing connector renders HERE — after
+                        {/* Busy indicator when no turns yet but session is busy */}
+                        {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                        {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a
                     button that fixes it.
@@ -3120,102 +3183,110 @@ export function SessionChat({
                     'connector'` to leave the remedy to this card, a refused turn
                     rendered NOTHING — no card, no pill. `commandError` is the same
                     typed error, classified through the same `classifySendError`. */}
-                    <ConnectorRequiredNotice
-                      error={commandError}
-                      projectId={projectId}
-                      resend={
-                        sessionState && lastSubmittedRef.current
-                          ? () => {
-                              const last = lastSubmittedRef.current;
-                              if (!last) return;
-                              // Clear before, re-classify after: this bypasses the
-                              // normal submit path, which is the only other place
-                              // `commandError` is managed. Without the clear the
-                              // card outlives a successful retry; without the catch
-                              // a second refusal looks like success.
-                              setCommandError(null);
-                              void sessionState
-                                .sendParts(
-                                  last.parts as Parameters<typeof sessionState.sendParts>[0],
-                                  last.options as Parameters<typeof sessionState.sendParts>[1],
-                                )
-                                .catch((err: unknown) =>
-                                  setCommandError(classifySessionError(err)),
-                                );
-                            }
-                          : undefined
-                      }
-                      className="mt-2"
-                    />
-                    {/* Busy with no turn to attach it to yet — the same waiting row
+                        <ConnectorRequiredNotice
+                          error={commandError}
+                          projectId={projectId}
+                          resend={
+                            sessionState && lastSubmittedRef.current
+                              ? () => {
+                                  const last = lastSubmittedRef.current;
+                                  if (!last) return;
+                                  // Clear before, re-classify after: this bypasses the
+                                  // normal submit path, which is the only other place
+                                  // `commandError` is managed. Without the clear the
+                                  // card outlives a successful retry; without the catch
+                                  // a second refusal looks like success.
+                                  setCommandError(null);
+                                  void sessionState
+                                    .sendParts(
+                                      last.parts as Parameters<typeof sessionState.sendParts>[0],
+                                      last.options as Parameters<typeof sessionState.sendParts>[1],
+                                    )
+                                    .catch((err: unknown) =>
+                                      setCommandError(classifySessionError(err)),
+                                    );
+                                }
+                              : undefined
+                          }
+                          className="mt-2"
+                        />
+                        {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
-                  </div>
-                  {/* Spacer — ensures the last message can scroll to the top of
-						    the viewport (ChatGPT-style). Without this, scrollToBottom
-						    only brings the last message to the bottom of the screen.
-						    Height is dynamically measured from the scroll container so
-						    the newest message appears flush at the top. */}
-                  <div ref={spacerElRef} />
-                </div>
-              </div>
+                        {!showOptimistic && isBusy && turns.length === 0 && (
+                          <SessionBusyIndicator />
+                        )}
+                      </div>
+                      {/* No spacer element here any more. MessageScrollerContent
+                          renders and sizes its own, so the last turn can still be
+                          pulled to the top of the viewport (ChatGPT-style) — but
+                          it is sized when a scroll target is applied, not
+                          re-derived by a MutationObserver on every streamed token
+                          the way useAutoScroll's was. */}
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton
+                    // `icon-md` + `hit-area-2 shadow-xs` reproduce the FAB this
+                    // replaces exactly. Only the owner of its visibility changed:
+                    // it is now driven by the scroller's own `data-scrollable`
+                    // state instead of a `showScrollButton` React state that
+                    // three separate listeners raced to set.
+                    size="icon-md"
+                    className="hit-area-2 bottom-4 shadow-xs active:scale-[0.96]"
+                    // The TRAVEL is the virtualizer's job, not the scroller's.
+                    //
+                    // MessageScroller resolves scroll targets by walking
+                    // `MessageScrollerContent`'s DIRECT children, and our rows
+                    // are nested one level down inside the positioned container
+                    // that carries `height: totalSize`. So the scroller sees
+                    // zero items and its own `scrollToEnd` has nothing to aim
+                    // at: measured on a real session it stopped 285px short
+                    // with the final row not even mounted, while still marking
+                    // itself inactive — the reader clicks "go to the latest"
+                    // and does not get the latest.
+                    //
+                    // The virtualizer does know where the last row is, and its
+                    // `scrollToEnd` re-derives the target each frame until the
+                    // measurements settle. Same session: lands exactly on the
+                    // bottom with the last row fully visible.
+                    onClick={(event) => {
+                      event.preventDefault();
+                      transcriptApi.current?.scrollToEnd({ behavior: 'smooth' });
+                    }}
+                  />
+                </MessageScroller>
 
-              {/* Selection "Reply" popup — floats near selected text */}
-              {selectionPopup && (
-                <div
-                  data-reply-popup
-                  className="absolute z-50"
-                  style={{
-                    left: `${selectionPopup.x}px`,
-                    top: `${selectionPopup.y}px`,
-                    transform: 'translate(-50%, -100%)',
-                  }}
-                >
-                  <Button
-                    onClick={handleSelectionReply}
-                    size="sm"
-                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                {/* Selection "Reply" popup — floats near selected text */}
+                {selectionPopup && (
+                  <div
+                    data-reply-popup
+                    className="absolute z-50"
+                    style={{
+                      left: `${selectionPopup.x}px`,
+                      top: `${selectionPopup.y}px`,
+                      transform: 'translate(-50%, -100%)',
+                    }}
                   >
-                    Reply
-                    <ArrowBendUpLeftIcon className="size-4 shrink-0" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Chat Minimap */}
-              <ChatMinimap
-                turns={turns}
-                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-                contentRef={contentRef as React.RefObject<HTMLDivElement>}
-                renderedIdsKey={mountedTurnIdsKey}
-                onJumpToTurn={jumpToTurn}
-              />
-
-              <div
-                className={cn(
-                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2',
-                  'transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)]',
-                  'motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-[opacity]',
-                  showScrollButton
-                    ? 'translate-y-0 scale-100 opacity-100 duration-150'
-                    : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
+                    <Button
+                      onClick={handleSelectionReply}
+                      size="sm"
+                      className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                    >
+                      Reply
+                      <ArrowBendUpLeftIcon className="size-4 shrink-0" />
+                    </Button>
+                  </div>
                 )}
-              >
-                <Button
-                  variant="secondary"
-                  size="icon-md"
-                  aria-hidden={!showScrollButton}
-                  tabIndex={showScrollButton ? undefined : -1}
-                  className={cn(
-                    'hit-area-2 shadow-xs',
-                    'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
-                  )}
-                  onClick={smoothScrollToAbsoluteBottom}
-                >
-                  <CaretDownIcon className="size-4" />
-                </Button>
-              </div>
+
+                {/* Chat Minimap */}
+                <ChatMinimap
+                  turns={turns}
+                  scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                  contentRef={contentRef as React.RefObject<HTMLDivElement>}
+                  renderedIdsKey={mountedTurnIdsKey}
+                  onJumpToTurn={jumpToTurn}
+                />
+              </MessageScrollerProvider>
             </div>
           )}
 

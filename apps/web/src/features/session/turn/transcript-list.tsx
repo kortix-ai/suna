@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { useVirtualList, type VirtualListSnapshot } from '@/hooks/use-virtual-list';
 import { estimateRowHeight } from '@/hooks/virtual-list-core';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,7 @@ import type { TranscriptRow } from './transcript-rows';
 
 interface TranscriptListProps {
   rows: readonly TranscriptRow[];
-  /** The scroll container. Owned by the caller (it is also useAutoScroll's). */
+  /** The scroll container. Owned by the caller — it is `MessageScrollerViewport`. */
   scrollRef: React.RefObject<HTMLDivElement | null>;
   /** Scopes the measurement cache. A session id. */
   cacheKey: string;
@@ -48,10 +49,23 @@ export interface TranscriptListApi {
   scrollToKey: (key: string, options?: { align?: 'start' | 'center' | 'end' }) => boolean;
   /** Brings a TURN into view by scrolling to the row it starts with. */
   scrollToTurn: (turnId: string) => boolean;
+  /** Scrolls to the true end, re-deriving the target as rows measure. */
+  scrollToEnd: (options?: { behavior?: 'auto' | 'smooth' }) => void;
   takeSnapshot: () => VirtualListSnapshot;
 }
 
 const getRowKey = (row: TranscriptRow) => row.key;
+
+/**
+ * FIXED per-kind estimate, deliberately not a learned one.
+ *
+ * A learning estimator is destabilizing here: when the estimate changes, every
+ * UNMEASURED row's size changes with it, which shifts the start offset of every
+ * row after it. Rows above the viewport shifting is exactly what makes
+ * virtual-core apply a scroll correction — and that correction is the content
+ * jumping under the reader. A fixed estimate means an unmeasured row's size
+ * never moves until it is genuinely measured.
+ */
 const estimate = (row: TranscriptRow) => estimateRowHeight(row);
 
 export function TranscriptList({
@@ -63,18 +77,19 @@ export function TranscriptList({
   onMountedKeysChange,
   apiRef,
 }: TranscriptListProps) {
-  const { items, totalSize, measureRef, containerRef, scrollToKey, takeSnapshot } = useVirtualList({
-    rows,
-    getRowKey,
-    estimateRowHeight: estimate,
-    scroll: { mode: 'element', ref: scrollRef },
-    // Rows are ~48px, not ~18,000px. Six each side is ~290px of lead-in —
-    // enough that a fast flick does not show blank space, small enough that
-    // it does not re-mount what windowing just removed.
-    overscan: 6,
-    cacheKey,
-    initialSnapshot,
-  });
+  const { items, totalSize, measureRef, containerRef, scrollToKey, scrollToEnd, takeSnapshot } =
+    useVirtualList({
+      rows,
+      getRowKey,
+      estimateRowHeight: estimate,
+      scroll: { mode: 'element', ref: scrollRef },
+      // Rows are ~48px, not ~18,000px. Six each side is ~290px of lead-in —
+      // enough that a fast flick does not show blank space, small enough that
+      // it does not re-mount what windowing just removed.
+      overscan: 6,
+      cacheKey,
+      initialSnapshot,
+    });
 
   // ── Cross-row turn hover ────────────────────────────────────────────────
   // A turn's head and tail are separate virtual rows with no shared ancestor,
@@ -139,16 +154,18 @@ export function TranscriptList({
         // The row a turn STARTS with. Scrolling to any other row of that turn
         // would land the reader mid-response.
         const start = rowsRef.current.find(
-          (row) => row.turnId === turnId && (row.kind === 'turn-head' || row.kind === 'turn-single'),
+          (row) =>
+            row.turnId === turnId && (row.kind === 'turn-head' || row.kind === 'turn-single'),
         );
         return start ? scrollToKey(start.key, { align: 'start' }) : false;
       },
+      scrollToEnd,
       takeSnapshot,
     };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, scrollToKey, takeSnapshot]);
+  }, [apiRef, scrollToKey, scrollToEnd, takeSnapshot]);
 
   const lastRowKey = rows.length > 0 ? rows[rows.length - 1].key : null;
 
@@ -161,8 +178,17 @@ export function TranscriptList({
       onPointerLeave={handlePointerLeave}
     >
       {items.map(({ key, index, row, translate }) => (
-        <div
+        <MessageScrollerItem
           key={key}
+          // The scroller's anchoring unit is the ROW, keyed exactly as the
+          // virtualizer keys it — `scrollToMessage('<turnId>:head')`. Anything
+          // else would need a second id space to translate between.
+          messageId={key}
+          // Only the row a turn STARTS with is an anchor. Marking every row
+          // would make "the message you are reading" flip to a tool call
+          // halfway down a response, and `last-anchor` would restore to the
+          // tail of the thread instead of the top of its last turn.
+          scrollAnchor={row.kind === 'turn-head' || row.kind === 'turn-single'}
           // Dynamic measurement. Without this every row keeps its estimate
           // forever, `getTotalSize()` stays fiction and the scrollbar lies.
           ref={measureRef}
@@ -191,6 +217,19 @@ export function TranscriptList({
           // transcript drifts a couple of px per turn against `main`.
           className={cn(
             'absolute top-0 left-0 w-full',
+            // Cancels `MessageScrollerItem`'s own `[content-visibility:auto]
+            // [contain-intrinsic-size:auto_10rem]`. That pair is upstream's
+            // windowing for a NON-virtualized list, and it is silently fatal
+            // here: with `content-visibility: auto` an off-screen row skips
+            // layout and reports the 10rem intrinsic placeholder, so
+            // `measureElement` writes 160px into the size cache for a row that
+            // is nothing of the sort. Every offset after it is then wrong, the
+            // projected total is fiction, and the scrollbar lies.
+            //
+            // `cn` is tailwind-merge and both are arbitrary properties, so
+            // these replace rather than stack — asserted in the twMerge group
+            // for `[content-visibility:…]` / `[contain-intrinsic-size:…]`.
+            '[contain-intrinsic-size:none] [content-visibility:visible]',
             row.kind === 'turn-head' || row.kind === 'turn-single'
               ? // The inter-turn gap. First turn sits flush with the top.
                 row.turnIndex === 0
@@ -218,15 +257,15 @@ export function TranscriptList({
             data-turn-start={
               row.kind === 'turn-head' || row.kind === 'turn-single' ? row.turnId : undefined
             }
-            // Marks the transcript's TRUE final row. useAutoScroll sizes its
-            // bottom spacer from this; "last node in the DOM" is a different
-            // thing once rows are windowed.
+            // Marks the transcript's TRUE final row. "Last node in the DOM" is
+            // a different thing once rows are windowed, so anything that needs
+            // the real tail reads this attribute rather than the last child.
             data-last-turn={row.key === lastRowKey ? '' : undefined}
             className="group/turn"
           >
             {renderRow(row)}
           </div>
-        </div>
+        </MessageScrollerItem>
       ))}
     </div>
   );
