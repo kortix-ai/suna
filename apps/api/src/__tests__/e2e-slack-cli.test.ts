@@ -372,6 +372,16 @@ describe('slack CLI', () => {
     expect(world.manifests).toEqual(['Test Slack App']);
   });
 
+  test('manifest reports one /v1 mount when KORTIX_API_URL already includes /v1', async () => {
+    const origin = apiUrl;
+    apiUrl = `${origin}/v1`;
+
+    const manifest = asObject(await runSlack(['manifest']));
+
+    expect(manifest.webhook_url).toBe(`${origin}/v1/webhooks/slack/${PROJECT}`);
+    expect(String(manifest.webhook_url)).not.toContain('/v1/v1/');
+  });
+
   test('falls back to legacy slack only while the reserved channel connector rolls out', async () => {
     world.reservedFailure = 'action_not_found';
     const out = asObject(await runSlack(['thread', '--channel', 'C1', '--ts', '111.222']));

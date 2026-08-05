@@ -151,7 +151,7 @@ export function ApprovalRequest({
                 className="border-border grid gap-1 border-b px-4 py-3 last:border-b-0 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
               >
                 <dt className="text-muted-foreground font-mono text-xs break-all">{key}</dt>
-                <dd className="text-foreground min-w-0 text-sm break-words whitespace-pre-wrap">
+                <dd className="text-foreground min-w-0 text-sm wrap-break-word whitespace-pre-wrap">
                   {value === '[redacted]' ? (
                     <span className="text-muted-foreground italic">Hidden credential</span>
                   ) : (

@@ -375,6 +375,22 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       (perSeatPriceId && item.price?.id === perSeatPriceId) ||
       subscription.metadata?.billing_model === 'per_seat',
   );
+  // Whether this account's enterprise entitlements are sourced independently of
+  // `tier` — either because an operator set `enterprise_entitled` (a contracted
+  // cloud Enterprise deal) or because the account already carries the
+  // sales-assigned `tier='enterprise'`. In either case the per-seat billing
+  // reconciliation below must NOT clobber `tier` to `per_seat`: doing so would
+  // strip the enterprise identity surface (SSO/SCIM/RBAC/audit) on every
+  // ordinary subscription update. The per-seat billing semantics live on
+  // `billing_model='per_seat'` (set unconditionally below), which is the correct
+  // independent carrier — seat grants, auto-topup, and compute metering all key
+  // off `billing_model`, never `tier`. Keeping `tier='enterprise'` (or whatever
+  // the operator set) while `billing_model='per_seat'` is exactly the contract
+  // shape a deal that is BOTH Enterprise AND per-seat needs. See
+  // entitlements.ts (enterprise_entitled override) and the
+  // enterprise-per-seat-entitlement-coupling design note.
+  const accountIsEnterpriseEntitled =
+    !!account && (account.enterpriseEntitled || account.tier === 'enterprise');
   let perSeatDelta = 0;
   let perSeatNewSeats = 0;
   if (perSeatItem) {
@@ -385,7 +401,22 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.billingModel = 'per_seat';
     updates.seatCount = newSeats;
     updates.seatSubscriptionItemId = perSeatItem.id;
-    updates.tier = 'per_seat';
+    // Only flip `tier` to `per_seat` when the account is NOT enterprise-entitled.
+    // For an enterprise-entitled account, `billing_model='per_seat'` already
+    // carries the per-seat billing semantics; leaving `tier` untouched preserves
+    // the enterprise identity entitlements that key off it (or off
+    // `enterprise_entitled`). The previous unconditional `updates.tier =
+    // 'per_seat'` here downgraded a sales-assigned `tier='enterprise'` (or an
+    // `enterprise_entitled` account) on the very first per-seat webhook and on
+    // every subsequent seat-quantity update, silently removing SSO/SCIM/RBAC/audit.
+    if (!accountIsEnterpriseEntitled) {
+      updates.tier = 'per_seat';
+    } else if (updates.tier === 'per_seat') {
+      // `resolvedTier` above may have resolved to 'per_seat' from the price id
+      // before we knew the account was enterprise-entitled. Drop that tier
+      // write so we don't clobber the enterprise tier/entitlements.
+      delete updates.tier;
+    }
 
     // Apply scaled auto-topup defaults if the user hasn't customised them.
     if (!account?.autoTopupCustomized) {

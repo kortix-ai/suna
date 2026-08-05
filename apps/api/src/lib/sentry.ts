@@ -87,6 +87,18 @@ export const SENTRY_IGNORE_ERRORS = [
   // patterns 721b7efe… (API) + b38179c5… (frontend symptom).
   'max clients reached in session mode',
   'EMAXCONNSESSION',
+  // Expected source-address validation rejection from
+  // `assertAllowedSourceAddress` (the marketplace LFI/SSRF guard — non-https
+  // URL, private host, local-folder path). The throw is now a TYPED
+  // `AllowedSourceValidationError` (code `invalid_source_address`) that the
+  // executor `POST /connectors` + `POST /connectors/auth-discovery` route
+  // handlers catch and convert to a structured 400 (Better Stack pattern
+  // `f5c0ce61…`). This entry is defense in depth — mirrors the #5487
+  // pool-exhaustion ignore — so any residual `assertAllowedSourceAddress`
+  // throw that slips a route-level catch (a future call site, a
+  // fire-and-forget path) stops paging instead of surfacing as an unhandled
+  // 500. The guard is a VALID security validation, not a server defect.
+  'Only https registry URLs on public hosts are allowed.',
 ] as const;
 
 /**

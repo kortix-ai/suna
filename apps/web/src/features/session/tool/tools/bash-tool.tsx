@@ -103,7 +103,7 @@ function CommandBlock({
             {richOutput ? (
               richOutput
             ) : (
-              <div className="text-muted-foreground p-3 font-mono text-xs leading-[1.65] break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground p-3 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap">
                 {output}
               </div>
             )}

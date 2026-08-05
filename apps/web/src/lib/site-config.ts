@@ -212,7 +212,7 @@ export const siteConfig = {
       title: 'Legal',
       links: [
         { id: 10, title: 'Privacy Policy', url: '/legal?tab=privacy' },
-        { id: 11, title: 'Terms of Service', url: '/legal?tab=terms' },
+        { id: 11, title: 'Terms of Service', url: '/legal/terms' },
         { id: 12, title: 'License', url: 'https://github.com/kortix-ai/suna/blob/main/LICENSE' },
       ],
     },

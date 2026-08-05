@@ -1,7 +1,4 @@
-import type {
-  AttachedFile,
-  TrackedMention,
-} from '@/features/session/session-chat-input';
+import type { AttachedFile } from '@/features/session/session-chat-input';
 import { create } from 'zustand';
 
 interface PendingFilesState {
@@ -20,47 +17,9 @@ export const usePendingFilesStore = create<PendingFilesState>((set, get) => ({
   },
 }));
 
-export interface PendingQueuedMessage {
-  id: string;
-  text: string;
-  files?: AttachedFile[];
-  mentions?: TrackedMention[];
-}
-
-interface PendingQueueState {
-  messages: PendingQueuedMessage[];
-  queueMessage: (
-    text: string,
-    files?: AttachedFile[],
-    mentions?: TrackedMention[],
-  ) => void;
-  removeMessage: (id: string) => void;
-  consumePendingQueue: () => PendingQueuedMessage[];
-}
-
-let pendingQueueIdCounter = 0;
-
-export const usePendingQueueStore = create<PendingQueueState>((set, get) => ({
-  messages: [],
-  queueMessage: (text, files, mentions) =>
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: `pending-queue-${++pendingQueueIdCounter}`,
-          text,
-          files,
-          mentions,
-        },
-      ],
-    })),
-  removeMessage: (id) =>
-    set((state) => ({
-      messages: state.messages.filter((message) => message.id !== id),
-    })),
-  consumePendingQueue: () => {
-    const messages = get().messages;
-    set({ messages: [] });
-    return messages;
-  },
-}));
+// `usePendingQueueStore` used to live here: a single global list of messages
+// typed in the instant shell, consumed once by whichever `SessionChat` mounted
+// first. It carried no session id, so a message queued for one session could
+// be handed to another. The instant shell now writes straight into
+// `message-queue-store`, keyed by session — no handoff, nothing to consume,
+// and the queue survives the mount instead of depending on it.

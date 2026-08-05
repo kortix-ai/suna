@@ -202,6 +202,7 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './files', file: 'deprecated/files.ts', tier: 'isomorphic-core' },
   { name: './session', file: 'deprecated/session.ts', tier: 'isomorphic-core' },
   { name: './session/url', file: 'deprecated/session-url.ts', tier: 'isomorphic-core' },
+  { name: './message-queue', file: 'core/session/message-queue.ts', tier: 'isomorphic-core' },
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
 ];
 

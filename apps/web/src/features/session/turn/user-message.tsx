@@ -350,7 +350,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Distilled
               </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.distilled}
               </div>
             </div>
@@ -362,7 +362,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Summary
               </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.summary}
               </div>
             </div>
@@ -375,7 +375,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
 
 const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
-  'break-words whitespace-pre-wrap select-text',
+  'wrap-break-word whitespace-pre-wrap select-text',
 );
 
 const BUBBLE_SURFACE = cn(
@@ -1040,7 +1040,7 @@ export function UserMessage({
             </span>
           </div>
           {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm break-words">
+            <div className="text-foreground text-sm wrap-break-word">
               {channelMessageInfo.messageText}
             </div>
           )}
@@ -1068,7 +1068,7 @@ export function UserMessage({
           </div>
           {triggerEventInfo.prompt && (
             <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
               style={{ paddingLeft: '1.375rem' }}
             >
               {triggerEventInfo.prompt}
@@ -1091,7 +1091,7 @@ export function UserMessage({
           </div>
           {effectiveCommandInfo.args && (
             <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
               style={{ paddingLeft: '1.375rem' }}
             >
               {effectiveCommandInfo.args}

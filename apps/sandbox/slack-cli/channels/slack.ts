@@ -399,7 +399,10 @@ async function manifest(opts: { url?: string; projectId?: string; name?: string 
   if (opts.name) params.name = opts.name;
   const m = await kortixGet<unknown>(`/webhooks/slack/${projectId}/manifest`, params);
 
-  const publicUrl = (opts.url || getEnv('KORTIX_API_URL') || '').replace(/\/$/, '');
+  const publicUrl = (opts.url || getEnv('KORTIX_API_URL') || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/, '');
   const webhookUrl = publicUrl ? `${publicUrl}/v1/webhooks/slack/${projectId}` : undefined;
   return { ok: true, manifest: m, webhook_url: webhookUrl };
 }

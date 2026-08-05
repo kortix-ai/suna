@@ -18,9 +18,16 @@ import { readStartStash, useRuntimeAgents, writeStartStash } from '@kortix/sdk/r
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import {
+  useMessageQueueStore,
+  type WebQueuedMessage,
+} from '@/stores/message-queue-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
-import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
+
+/** Stable empty list, so a session with nothing queued does not hand the
+ *  zustand selector a fresh array on every render. */
+const EMPTY_PENDING: WebQueuedMessage[] = [];
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -145,16 +152,26 @@ export function InstantSessionShell({
   // draft. They render as the standard queued chips above the input and hand
   // off to the real SessionChat, which seeds its own queue from this store and
   // drains it at the first safe boundary.
-  const queuedMessages = usePendingQueueStore((s) => s.messages);
+  // Written straight into THIS session's queue. The old handoff store was a
+  // single global bucket with no session id, so `consumePendingQueue()` handed
+  // its contents to whichever SessionChat mounted first — a message typed for
+  // one session could surface in another. `SessionChat` reads the same store
+  // under the same key, so there is no handoff step left to get wrong.
+  const queuedMessages = useMessageQueueStore(
+    (s) => s.queues[sessionId]?.pending ?? EMPTY_PENDING,
+  );
   const handleQueueMessage = useCallback(
     (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      usePendingQueueStore.getState().queueMessage(text, files, mentions);
+      useMessageQueueStore.getState().enqueue(sessionId, { text, files, mentions });
     },
-    [],
+    [sessionId],
   );
-  const handleRemoveQueuedMessage = useCallback((id: string) => {
-    usePendingQueueStore.getState().removeMessage(id);
-  }, []);
+  const handleRemoveQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueueStore.getState().remove(sessionId, id);
+    },
+    [sessionId],
+  );
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
