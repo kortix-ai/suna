@@ -345,6 +345,39 @@ type SyncData = Pick<
 >;
 
 /**
+ * Free the part buckets belonging to `sessionIDs` that no message points at.
+ *
+ * `parts` is keyed by messageID, so every sweep that walks a session's
+ * `messages` misses the buckets with no message entry to walk from — and the
+ * store creates those on purpose. `message.part.delta` stores the part but
+ * SKIPS creating the assistant message when the session holds no user message
+ * yet (a delta that beats `hydrate()` after a page refresh), so `hydrate` can
+ * attach the real one later. Nothing else ever revisits the bucket, so before
+ * this it outlived both eviction and `clearSession`: the leak this file's
+ * retention work exists to close, left open on the one path that produces it.
+ *
+ * Attribution is by `Part.sessionID`, which is what those stub parts carry.
+ * `every` rather than `some` so a bucket is only freed when the whole thing is
+ * this session's; a bucket whose parts arrived without a `sessionID` is
+ * unattributable and deliberately left alone rather than guessed at.
+ *
+ * Mutates `parts` — a caller-owned copy in both call sites.
+ */
+function deleteOrphanPartBuckets(
+	parts: Record<string, Part[]>,
+	sessionIDs: readonly string[],
+): void {
+	const dropped = new Set(sessionIDs);
+	for (const messageID of Object.keys(parts)) {
+		const bucket = parts[messageID];
+		if (!bucket || bucket.length === 0) continue;
+		const owner = bucket[0].sessionID;
+		if (!owner || !dropped.has(owner)) continue;
+		if (bucket.every((part) => part.sessionID === owner)) delete parts[messageID];
+	}
+}
+
+/**
  * Drop these sessions' data outright.
  *
  * DELETES the `messages` key rather than emptying it, unlike `clearSession`.
@@ -367,6 +400,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
 		delete diffs[sessionID];
 		delete todos[sessionID];
 	}
+	deleteOrphanPartBuckets(parts, sessionIDs);
 	return { messages, parts, sessionStatus, diffs, todos };
 }
 
@@ -691,6 +725,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const existingMessages = s.messages[sessionID] ?? [];
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
+			deleteOrphanPartBuckets(nextParts, [sessionID]);
 			return {
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,

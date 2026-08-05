@@ -1165,6 +1165,61 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		expect(ids).toContain("prt_text");
 	});
 
+	// `parts` is keyed by messageID, and the sweep that frees a session walks
+	// `messages[sessionID]` to find the buckets to delete. The delta handler
+	// deliberately produces buckets no message points at: when `hasUserMsg` is
+	// false it stores the part WITHOUT creating the assistant message
+	// (sync-store.ts, `message.part.delta`), so hydrate can attach the real one
+	// later. Those buckets are invisible to a messages-driven sweep and used to
+	// survive every drop — the exact leak class this retention work exists to
+	// close, still open on the page-refresh path that produces them.
+	function orphanPartBucket(sessionID: string, messageID: string): void {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID,
+				messageID,
+				partID: `prt_orphan_${messageID}`,
+				field: "text",
+				delta: "streamed before the user message landed",
+			},
+		} as unknown as Parameters<ReturnType<typeof useSyncStore.getState>["applyEvent"]>[0]);
+	}
+
+	test("eviction frees part buckets that no message points at", () => {
+		orphanPartBucket("ses_a", "msg_orphan");
+		// The premise: a bucket exists with no message entry to reach it from.
+		expect(useSyncStore.getState().parts["msg_orphan"]).toHaveLength(1);
+		expect(useSyncStore.getState().messages["ses_a"]).toBeUndefined();
+
+		seedSession("ses_a");
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(isResident("ses_a")).toBe(false);
+		expect(useSyncStore.getState().parts["msg_orphan"]).toBeUndefined();
+	});
+
+	test("clearSession frees part buckets that no message points at", () => {
+		orphanPartBucket("ses_a", "msg_orphan");
+
+		useSyncStore.getState().clearSession("ses_a");
+
+		expect(useSyncStore.getState().parts["msg_orphan"]).toBeUndefined();
+	});
+
+	test("freeing one session leaves another session's orphan buckets alone", () => {
+		orphanPartBucket("ses_a", "msg_orphan_a");
+		orphanPartBucket("ses_keep", "msg_orphan_keep");
+
+		seedSession("ses_a");
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(useSyncStore.getState().parts["msg_orphan_a"]).toBeUndefined();
+		expect(useSyncStore.getState().parts["msg_orphan_keep"]).toHaveLength(1);
+	});
+
 	// An id that can never hold runtime data — an empty string here, a Kortix
 	// route UUID at the hook boundary — must not take one of the three slots.
 	// Parking one evicts a real transcript a navigation early.
