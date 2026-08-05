@@ -1267,10 +1267,14 @@ function slackRelayContext(): SandboxRelayContext | null {
 // session metadata: a Slack session is tagged `metadata.slack` at creation, and
 // the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
 // (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
-// metadata, so it has no such env — `slackRelayContext()` returns null and we
-// return WITHOUT touching opencode's question. That's the whole fix: the
-// dashboard answers `question.asked` interactively over opencode's own SSE, and
-// auto-answering it here was the "every question is auto-answered even outside
+// metadata, so it has no such env and `slackRelayContext()` returns null.
+//
+// That distinction now gates RESOLVING the question, not reporting it. Every
+// session reports it, so the control plane can persist it and the ask survives
+// the box being parked. Only a channel session auto-answers opencode's blocking
+// call, because only there does the reply arrive out of band. The dashboard
+// answers `question.asked` interactively over opencode's own SSE, and
+// auto-answering it here is the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
 async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
   // EVERY session, not just Slack ones.
@@ -1311,9 +1315,33 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // Resume opencode's (blocking) question tool with a sentinel so the turn ends;
-  // the user's reply / button click lands as a new turn. ALWAYS reply — a Slack
-  // question must never hang (that was "stuck until I kill it manually").
+  // PERSISTING the question is for every session. RESOLVING it here is not.
+  //
+  // In a channel session the reply genuinely arrives out of band — the user
+  // types in the Slack thread and it reaches the agent as a new turn — so the
+  // blocking call must be released or the turn hangs ("stuck until I kill it
+  // manually").
+  //
+  // A dashboard session is the opposite: the UI answers `question.asked`
+  // interactively over opencode's own SSE, so the call SHOULD keep blocking
+  // while the box is alive. Auto-answering it here is the "every question is
+  // auto-answered even outside Slack" bug described above — which the relay
+  // ungate silently brought back, because the sentinel then fired for every
+  // session. Seen live on dev 2026-08-05: a web session's agent was told
+  // "Posted to the Slack thread" (it was not) and replied "I'll use `slack
+  // send` for questions in this environment going forward instead of the
+  // `question` tool" — the tool park-and-restore exists to make reliable.
+  //
+  // If the box is parked while the question is still open, the control plane
+  // has it (persisted above) and POST /sessions/:id/question delivers the answer
+  // as a follow-up turn. Nothing is lost by leaving this one blocked.
+  if (!slackRelayContext()) {
+    logger.info('[opencode-events] question persisted; left open for the UI', {
+      requestId: req.id,
+    })
+    return
+  }
+
   const sentinel =
     '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
     'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
