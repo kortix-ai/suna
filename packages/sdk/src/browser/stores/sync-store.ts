@@ -386,22 +386,31 @@ function deleteOrphanPartBuckets(
  * decide whether the IndexedDB transcript may repaint. An empty array reads as
  * "loaded, and empty", which would leave a returning user staring at a blank
  * transcript that never repaints.
+ *
+ * `sessionStatus` is deliberately NOT dropped. It is the one slice read for
+ * sessions that are on purpose not resident — a parent's spawn-tool banner
+ * reads `sessionStatus[child]` for a child whose transcript the parent never
+ * holds (`tool/shared/sub-agent.tsx`, `tool/tools/removed-integration-tool.tsx`).
+ * Dropping it bought no memory either: every `session.status` frame, and the
+ * connect-time `client.session.status()` poll, re-add an entry for every
+ * session on the runtime whether or not it is resident, so the delete was
+ * undone on the next frame — while the gap was visible to the user. One small
+ * status object per session is not the memory this eviction reclaims; the
+ * transcript arrays are.
  */
 function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncData {
 	const messages = { ...state.messages };
 	const parts = { ...state.parts };
-	const sessionStatus = { ...state.sessionStatus };
 	const diffs = { ...state.diffs };
 	const todos = { ...state.todos };
 	for (const sessionID of sessionIDs) {
 		for (const message of messages[sessionID] ?? []) delete parts[message.id];
 		delete messages[sessionID];
-		delete sessionStatus[sessionID];
 		delete diffs[sessionID];
 		delete todos[sessionID];
 	}
 	deleteOrphanPartBuckets(parts, sessionIDs);
-	return { messages, parts, sessionStatus, diffs, todos };
+	return { messages, parts, sessionStatus: state.sessionStatus, diffs, todos };
 }
 
 /**
@@ -420,24 +429,35 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * and is back to LIMIT the moment any session mounts.
  *
  * Synchronous on purpose. Deferring it (a microtask, a post-commit hook) so
- * that every retain in a commit lands first would help only consumers that
- * mount in the SAME commit as the session being opened. The case that motivates
- * deferral — a parent's spawn-tool preview of a child session — is not one of
- * them: the preview renders off the parent's transcript, which arrives from
- * IndexedDB or the network a commit or more after the parent mounts, so the
- * child's retain is always too late no matter how the prune is scheduled.
- * Deferral would buy nothing there and cost the determinism that keeps unmount
- * out of the eviction path.
+ * that every retain in a commit lands first would buy nothing, because the
+ * ordering it would buy is already guaranteed. The case that motivates
+ * deferral is a parent's spawn-tool preview of a child session, and the
+ * preview's `useOpenCodeMessages(childId)` is always a React DESCENDANT of the
+ * component that retains the parent (`SessionLayout` → the transcript → the
+ * tool part). React runs passive effects bottom-up, so in any commit that
+ * mounts both, the child's retain lands before the parent's — and therefore
+ * before the prune the parent's retain triggers. Deferral would only cost the
+ * determinism that keeps unmount out of the eviction path.
  *
- * The residual hazard is real and worth naming: a child session the user opened
- * directly, then left, can be evicted while a parent's preview of it is about
- * to render, and previews have no repaint path. Closing it needs the reference
- * declared before the data is read — either the host retaining child ids when
- * it parses the parent's transcript, or `useOpenCodeMessages` reading the disk
- * cache the way `useSessionSync` does. The second needs the child's
- * `kortixSessionScope` plumbed through from the host: entries written for an
- * opened session are keyed `…:kortix-session:<scope>`, so a scopeless read
- * looks up a different key and misses (idb-sync-cache-key.ts:6-9).
+ * (The argument this replaces claimed the child's data "arrives a commit or
+ * more after the parent mounts". That is not universally true — a parent whose
+ * transcript is already resident renders it in the mount commit — and the
+ * conclusion never depended on it.)
+ *
+ * The residual hazard is narrower than it looks, and worth naming exactly.
+ * Only a child session the user opened DIRECTLY and then left is ever an
+ * eviction candidate; one that was only ever previewed was never retained, and
+ * `retainSession` leaves sessions it has never seen alone. What such a child
+ * loses is its `messages`/`parts` — `sessionStatus` survives eviction on
+ * purpose (see `dropSessionData`), so a preview's retry banner keeps reading.
+ * A preview showing a transcript has no repaint path of its own, so closing
+ * the rest needs the reference declared before the data is read — either the
+ * host retaining child ids when it parses the parent's transcript, or
+ * `useOpenCodeMessages` reading the disk cache the way `useSessionSync` does.
+ * The second needs the child's `kortixSessionScope` plumbed through from the
+ * host: entries written for an opened session are keyed
+ * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
+ * misses (idb-sync-cache-key.ts:6-9).
  */
 function pruneDetachedSessions(): string[] {
 	const evicted: string[] = [];

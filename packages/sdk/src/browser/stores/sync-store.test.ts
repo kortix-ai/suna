@@ -982,14 +982,30 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
 	});
 
-	test("freeing a session drops its status, diffs and todos too", () => {
+	test("freeing a session drops its diffs and todos too", () => {
 		visit("ses_a");
 		browseAway(RETENTION_BOUND + 1);
 
 		const state = useSyncStore.getState();
-		expect("ses_a" in state.sessionStatus).toBe(false);
 		expect("ses_a" in state.diffs).toBe(false);
 		expect("ses_a" in state.todos).toBe(false);
+	});
+
+	// `sessionStatus` is the one slice read for sessions that are deliberately
+	// NOT resident: a parent's spawn-tool banner reads `sessionStatus[child]` to
+	// show a child's retry state, for a child whose transcript the parent never
+	// holds. Dropping it also bought nothing — every SSE `session.status` frame
+	// and the connect-time `client.session.status()` poll re-add an entry for
+	// every session on the runtime, evicted or not, so the delete was undone on
+	// the next frame while the gap was visible to the user.
+	test("freeing a session keeps its status — an unmounted child's banner still reads it", () => {
+		visit("ses_a");
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(isResident("ses_a")).toBe(false);
+		expect(useSyncStore.getState().sessionStatus["ses_a"]).toEqual({
+			type: "busy",
+		} as SessionStatus);
 	});
 
 	// React runs every passive destroy before any passive create in a commit.
