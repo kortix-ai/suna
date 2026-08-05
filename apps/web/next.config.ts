@@ -188,6 +188,41 @@ const nextConfig = (): NextConfig => ({
     ignoreBuildErrors: true,
   },
 
+  // --- Next.js 16.3 posture ------------------------------------------------
+  // Recording WHY each 16.3 knob is set or left alone, so nobody "adds the
+  // missing config" later or wonders whether we missed the release. The only
+  // knob we set is turbopackMemoryEviction (below) — and only as an escape
+  // hatch, keeping upstream's default.
+  //
+  // Already default-ON in 16.3 — restating them here would be dead config that
+  // silently diverges the day upstream changes a default:
+  //   · experimental.turbopackFileSystemCacheForDev    (default true since 16.1)
+  //   · experimental.turbopackFileSystemCacheForBuild  (default true as of 16.3)
+  //     Measured: warm `next build` compile 36.3s -> 1.9s. Only pays off where
+  //     .next/cache survives between builds — Vercel does this automatically;
+  //     GitHub Actions needs the actions/cache step added in ci.yml.
+  //   · experimental.prefetchInlining                  (default true as of 16.3)
+  //
+  // Not applicable to this app:
+  //   · experimental.useTypeScriptCli — `typescript.ignoreBuildErrors: true`
+  //     above skips the build type-check entirely, so the CLI-vs-API checker
+  //     choice never executes. The real gate is the separate `tsc --noEmit`.
+  //   · next/root-params — root params only exist for a dynamic segment ABOVE
+  //     the root layout. src/app's top level is (app)/(auth)/(public)/(system)/
+  //     (utility)/admin/docs/api — all static. Locale comes from next-intl's
+  //     request.ts, not a [lang] segment.
+  //
+  // Deliberately NOT enabled — each is a migration, not a flag flip:
+  //   · cacheComponents + partialPrefetching (Instant Navigations). Requires
+  //     every request-time access to sit under Suspense or `use cache`.
+  //     See https://nextjs.org/docs/app/guides/migrating-to-cache-components
+  //   · reactCompiler + experimental.turbopackRustReactCompiler. The Rust port
+  //     only pays off once Babel is out of the pipeline, and we do not run
+  //     React Compiler at all today — the outstanding react-hooks/* warnings
+  //     need an audit first.
+  //   · experimental.useOffline. Network-resilience retry semantics change how
+  //     failed Server Actions surface; needs its own testing pass.
+  //
   // Turbopack configuration
   turbopack: {
     // Handle Node.js modules that shouldn't be bundled for browser builds
@@ -207,6 +242,27 @@ const nextConfig = (): NextConfig => ({
     serverActions: {
       allowedOrigins: ALLOWED_PROXY_ORIGINS,
     },
+    // Escape hatch for memory-constrained machines. 16.3 advertises "up to 90%
+    // less dev RAM". That number is eviction-OFF vs eviction-ON within 16.3
+    // (see the chart in /blog/next-16-3-turbopack), not 16.2 vs 16.3. It did
+    // not reproduce here in EITHER framing. Dev-server tree RSS, 24GB Mac,
+    // same 46 routes, sampled 30s after the last compile:
+    //   16.2.0                       5085 MB   (swap 17.9G used at sample)
+    //   16.3.0 eviction false        5559 MB   (swap 15.0G)  <- upstream "Before"
+    //   16.3.0 eviction 'full'       5382 MB   (swap 14.6G)
+    //   16.3.0 eviction 'auto'       7842 MB   (swap 10.7G)  <- shipped default
+    // Turning eviction OFF was not 10x worse; it was the CHEAPEST 16.3 config.
+    // Note the swap column: the run with the MOST free RAM produced the HIGHEST
+    // RSS. On a machine this size the reading tracks OS memory pressure more
+    // than the flag, so treat the deltas as indicative, not exact. The safe
+    // claim: no 16.3 config measured below 16.2, and 90% never appeared.
+    // Default stays 'auto' (upstream's). Set KORTIX_TURBOPACK_EVICTION=full
+    // when the laptop is thrashing. Disk cost is real either way:
+    // .next/dev/cache grew 3.8GB -> 14-15GB.
+    turbopackMemoryEviction:
+      process.env.KORTIX_TURBOPACK_EVICTION === 'false'
+        ? false
+        : ((process.env.KORTIX_TURBOPACK_EVICTION as 'full' | 'auto') ?? 'auto'),
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',
