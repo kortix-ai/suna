@@ -136,6 +136,17 @@ export function useAutoScroll({
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
   const workingRef = useRef(working);
+  // INVARIANT: this effect must stay declared before every other effect in
+  // this hook that reads `workingRef.current` — directly, or through
+  // `recalcSpacer` (below), which is the only reader. React runs passive
+  // effect setups in hook-declaration order within a commit (mount and
+  // update alike, StrictMode included), so an effect declared earlier here
+  // always sees the synced value before a later one runs in the same
+  // commit. Today that means the "Observers" and "RAF auto-scroll" effects
+  // below. If you add a `useLayoutEffect` anywhere in this hook, or an
+  // effect declared ABOVE this one that reads `workingRef.current`, it will
+  // see a stale value — layout effects run before passive effects, and
+  // earlier-declared passive effects run before this one syncs the ref.
   useEffect(() => {
     workingRef.current = working;
   }, [working]);
@@ -176,6 +187,8 @@ export function useAutoScroll({
   // Re-run when `working` changes so that observers are created once the
   // scroll area actually mounts (it's conditionally rendered — refs may
   // be null on the initial mount during loading/welcome screen).
+  // Reads workingRef.current (via recalcSpacer) — must stay declared after
+  // the workingRef sync effect above. See the INVARIANT note there.
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
@@ -345,6 +358,8 @@ export function useAutoScroll({
   // Phase 1 (spacer > 0): scrollHeight is constant, no scrolling needed.
   //   The spacer shrinks as the turn grows — content fills in naturally.
   // Phase 2 (spacer = 0): scrollHeight grows. Follow the growth.
+  // Reads workingRef.current (via recalcSpacer) — must stay declared after
+  // the workingRef sync effect above. See the INVARIANT note there.
   useEffect(() => {
     if (!working) {
       // Not streaming — calculate spacer once (covers idle session loads
