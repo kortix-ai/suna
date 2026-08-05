@@ -23,7 +23,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Claude } from '@/features/icon/icons/claude';
 import { Codex } from '@/features/icon/icons/codex';
 import { Cursor } from '@/features/icon/icons/cursor';
-import { HarnessMark as OpenCode } from '@/features/icon/icons/open-code';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
 import { getEnv } from '@/lib/env-config';

@@ -17,7 +17,6 @@ import { type ReactNode, useCallback } from 'react';
  *  statically resolved to a single import — this explicit map is the smallest set
  *  that covers it, kept in sync by hand with `landing/content.ts`. */
 const RIVAL_ICONS = { Claude, OpenAI } as const;
-type RivalIconKey = keyof typeof RIVAL_ICONS;
 
 /** Anchors the product against the two things a reader already knows, with
  *  their marks, so "AI Management System" lands without a paragraph first. */
@@ -26,8 +25,7 @@ function RivalEyebrow() {
     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
       <span>{heroEyebrow.lead}</span>
       {heroEyebrow.rivals.map((r, i) => {
-        const Glyph = RIVAL_ICONS[r.icon as RivalIconKey] as
-          ((p: { className?: string }) => ReactNode) | undefined;
+        const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
         return (
           <span key={r.id} className="flex items-center gap-1.5">
             {i > 0 && <span className="text-muted-foreground/50 mr-1">and</span>}

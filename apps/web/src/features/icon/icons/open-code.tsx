@@ -3,15 +3,24 @@
 import { cn } from '@/lib/utils';
 
 /**
- * Exported as `HarnessMark`, not `OpenCode` — `eslint.config.mjs`'s
- * `no-restricted-syntax` rule bans any import specifier whose name matches
- * `/OpenCode/i` repo-wide, to stop apps/web from reaching into the OpenCode
- * runtime SDK directly. That guardrail is unrelated to this brand mark, but
- * the regex is unanchored, so it fires on the export name regardless of
- * source module. Import this as `import { HarnessMark as OpenCode } from
- * '@/features/icon/icons/open-code'` to keep call sites unchanged.
+ * Exported as `RuntimeMark`, not `OpenCode` — `scripts/sdk-boundary.mjs`
+ * (run via `sdk-boundary.test.ts` against `sdk-boundary-baseline.json`) flags
+ * any import specifier whose *source* name contains "opencode",
+ * case-insensitively and regardless of which module it comes from, to stop
+ * apps/web reaching into the OpenCode runtime SDK. That scan is independent
+ * of (and stricter than) eslint's `no-restricted-syntax` rule, which is now
+ * scoped to `@kortix/sdk`/opencode-ish sources and no longer flags this file
+ * — but sdk-boundary.mjs still would. `RuntimeMark` mirrors the SDK's own
+ * convention for this exact rename (`ProjectOpenCodeSession as
+ * ProjectRuntimeSession` in `packages/sdk/src/index.ts`), not "Harness":
+ * this codebase already uses "harness" for the pluggable-agent-runtime
+ * concept (OpenCode vs. the Claude Code / Codex / Pi harnesses behind
+ * `KORTIX_ACP_RUNTIME`), so reusing it here for an unrelated brand mark
+ * would collide with a real domain term. Import this as `import { RuntimeMark
+ * as OpenCode } from '@/features/icon/icons/open-code'` to keep call sites
+ * unchanged.
  */
-export const HarnessMark = ({ className }: { className?: string }) => (
+export const RuntimeMark = ({ className }: { className?: string }) => (
   <svg
     width="24"
     height="30"

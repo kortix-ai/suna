@@ -36,8 +36,6 @@ export const heroEyebrow = {
   ],
 } as const;
 
-
-
 /** Closing CTA. Same block the page has always ended with. */
 export const cta = {
   badge: 'Get started',
@@ -402,20 +400,31 @@ export const useCases = {
 } as const;
 
 export type StackLayerId =
-  | 'models'
-  | 'harness'
-  | 'computer'
-  | 'context'
-  | 'control'
-  | 'security'
-  | 'kortix';
+  'models' | 'harness' | 'computer' | 'context' | 'control' | 'security' | 'kortix';
+
+/**
+ * Every icon module `stack.layers[].logos` is allowed to name. Narrowed (not
+ * `string`) so a typo'd or unmapped name fails here, at the data, instead of
+ * silently rendering a blank slot in `StackSection`'s `LAYER_ICONS` lookup.
+ */
+export type StackLogoKey =
+  | 'Claude'
+  | 'OpenAI'
+  | 'Gemini'
+  | 'OpenCode'
+  | 'Slack'
+  | 'Notion'
+  | 'Linear'
+  | 'Github'
+  | 'MicrosoftTeams'
+  | 'Gmail';
 
 export type StackLayer = {
   id: StackLayerId;
   name: string;
   body: string;
   /** Logo chips shown beside the layer. Keys map to `features/icon`. */
-  logos?: readonly string[];
+  logos?: readonly StackLogoKey[];
   /** Plain text chips where no logo exists. */
   chips?: readonly string[];
 };

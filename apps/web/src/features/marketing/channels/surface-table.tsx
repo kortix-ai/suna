@@ -12,7 +12,6 @@ import { surfaces } from './content';
  *  statically resolved to a single import — this explicit map is the smallest
  *  set that covers it, kept in sync by hand with `./content.ts`. */
 const ROW_ICONS = { Slack, MicrosoftTeams, Gmail, Kortix } as const;
-type IconKey = keyof typeof ROW_ICONS;
 
 /**
  * The four channel platforms and the honest state of each one.
@@ -45,7 +44,7 @@ export function SurfaceTable(): ReactNode {
 
       <ul>
         {surfaces.rows.map((row, i) => {
-          const Glyph = ROW_ICONS[row.icon as IconKey] as
+          const Glyph = ROW_ICONS[row.icon] as
             ((p: { className?: string }) => ReactNode) | undefined;
 
           return (

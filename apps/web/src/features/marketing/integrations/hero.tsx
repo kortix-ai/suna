@@ -18,7 +18,6 @@ import { hero } from './content';
  *  resolved to a single import — this explicit map is the smallest set that
  *  covers it, kept in sync by hand with `./content.ts`. */
 const LOGO_ICONS = { Slack, Notion, Linear, Github, Gmail, MicrosoftTeams } as const;
-type IconKey = keyof typeof LOGO_ICONS;
 
 /**
  * The logo row. Brand marks only — every one of these is a connector that
@@ -28,8 +27,7 @@ function LogoRow() {
   return (
     <ul className="mt-12 flex flex-wrap items-center gap-2.5">
       {hero.logos.map((key) => {
-        const Glyph = LOGO_ICONS[key as IconKey] as
-          ((p: { className?: string }) => ReactNode) | undefined;
+        const Glyph = LOGO_ICONS[key] as ((p: { className?: string }) => ReactNode) | undefined;
         if (!Glyph) return null;
         return (
           <li

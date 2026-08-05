@@ -2,7 +2,7 @@
 
 import { PageHead, Panel, Row } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
-import { HarnessMark as OpenCode } from '@/features/icon/icons/open-code';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ListChecksIcon, ShieldCheckIcon, WrenchIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';

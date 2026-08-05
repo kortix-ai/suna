@@ -8,10 +8,9 @@ import { resolve } from 'node:path';
  * from `@/features/icon/icons/*`) instead of the RSC-safe set in
  * `@/lib/icons/ssr` — see the RSC-boundary comments in `page.tsx` and
  * `layout.tsx`. This is a source-text contract (same approach as
- * `rsc-icon-boundary.test.ts` and `project-loading-contract.test.ts`) rather
- * than a render test, since rendering would need a full fumadocs +
- * next/navigation harness for no extra signal: what matters is which module
- * boundary each icon crosses.
+ * `project-loading-contract.test.ts`) rather than a render test, since
+ * rendering would need a full fumadocs + next/navigation harness for no
+ * extra signal: what matters is which module boundary each icon crosses.
  */
 const WEB_ROOT = resolve(import.meta.dir, '../../..');
 const ACTIONS = resolve(WEB_ROOT, 'src/app/docs/docs-page-actions.tsx');
@@ -163,32 +162,12 @@ describe('docs page renders the actions under the description', () => {
   });
 });
 
-describe('docs server entries never reference the client Icon namespace', () => {
-  const PAGE = resolve(WEB_ROOT, 'src/app/docs/[[...slug]]/page.tsx');
-  const LAYOUT = resolve(WEB_ROOT, 'src/app/docs/layout.tsx');
-
-  test('page.tsx does not import or use the client Icon namespace', () => {
-    const source = readFileSync(PAGE, 'utf8');
-    // The warning comment itself mentions `Icon.Github` in backticks as an
-    // example of what NOT to do — that mention must survive. What must never
-    // appear is an actual import or JSX usage.
-    expect(source).not.toMatch(/from\s+['"]@\/features\/icon\/icon['"]/);
-    expect(source).not.toContain('<Icon.');
-  });
-
-  test('layout.tsx does not import or use the client Icon namespace', () => {
-    const source = readFileSync(LAYOUT, 'utf8');
-    expect(source).not.toMatch(/from\s+['"]@\/features\/icon\/icon['"]/);
-    expect(source).not.toContain('<Icon.');
-  });
-
-  test('page.tsx keeps the RSC-icon-boundary warning comment intact', () => {
-    const source = readFileSync(PAGE, 'utf8');
-    expect(source).toContain("Server components must import icons from '@/lib/icons/ssr'");
-  });
-
-  test('layout.tsx keeps the RSC-icon-boundary warning comment intact', () => {
-    const source = readFileSync(LAYOUT, 'utf8');
-    expect(source).toContain("Server components must import icons from '@/lib/icons/ssr'");
-  });
-});
+// A prior `describe('docs server entries never reference the client Icon
+// namespace', …)` lived here. It scanned page.tsx/layout.tsx for imports of
+// `@/features/icon/icon` and pinned the warning comment's exact wording. That
+// module is deleted (see rsc-icon-boundary.test.ts's removal) and cannot be
+// reintroduced without recreating the whole barrel object it named, so the
+// scan was permanently vacuous — every icon is now its own named export, and
+// a Server Component importing one directly gets a real client reference,
+// not a namespace stub read as `undefined`. Removed rather than kept as a
+// green check with nothing left to catch.
