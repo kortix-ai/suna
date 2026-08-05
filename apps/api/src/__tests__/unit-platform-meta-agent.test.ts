@@ -4,6 +4,7 @@ import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
+  projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
@@ -76,5 +77,13 @@ describe('platform meta agent', () => {
       connectors: [],
       env: [],
     });
+  });
+
+  test('is gated on the meta_agent experimental flag, default off', () => {
+    expect(projectMetaAgentEnabled(null)).toBe(false);
+    expect(projectMetaAgentEnabled({})).toBe(false);
+    expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);
+    expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
+    expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
   });
 });

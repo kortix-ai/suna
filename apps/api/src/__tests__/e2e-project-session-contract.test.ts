@@ -968,7 +968,18 @@ describe('project session API contract', () => {
 
   beforeEach(() => resetState());
 
+  // The platform coordinator is a per-project experimental opt-in. Every other
+  // test in this file runs with the flag OFF and asserts the pre-meta default
+  // behavior byte-for-byte.
+  function enableMetaAgent() {
+    projectRow.metadata = {
+      ...(projectRow.metadata as Record<string, unknown>),
+      experimental: { meta_agent: true },
+    };
+  }
+
   test('creates an omitted-agent session with the meta REST runtime', async () => {
+    enableMetaAgent();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -980,8 +991,6 @@ describe('project session API contract', () => {
     const createdMeta = await response.json();
     expect(createdMeta).toMatchObject({
       agent_name: 'meta',
-      runtime_transport: 'rest',
-      runtime_harness: 'opencode',
       metadata: {
         sandbox_slug: 'meta',
       },
@@ -997,11 +1006,11 @@ describe('project session API contract', () => {
         KORTIX_AGENT_NAME: 'meta',
         KORTIX_META_AGENT: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
-        KORTIX_OPENCODE_PROCESS_TRANSPORT: 'rest',
       },
     });
   });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
+    enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'meta' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1023,6 +1032,7 @@ describe('project session API contract', () => {
   });
 
   test('a meta session cannot spawn another meta coordinator', async () => {
+    enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'meta' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1039,6 +1049,7 @@ describe('project session API contract', () => {
   });
 
   test('a non-meta session-bound caller may still spawn the meta coordinator', async () => {
+    enableMetaAgent();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
