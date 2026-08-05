@@ -3,7 +3,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SessionFilterValue } from '@/components/projects/session-label';
+import type {
+  SessionFilterValue,
+  SessionStatusFilterValue,
+} from '@/components/projects/session-label';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
@@ -28,10 +31,12 @@ function pruneProjects<V>(map: Record<string, V>): Record<string, V> {
 
 interface State {
   filterByProject: Record<string, SessionFilterValue>;
+  statusByProject: Record<string, SessionStatusFilterValue>;
 }
 
 interface Actions {
   setFilter: (projectId: string, filter: SessionFilterValue) => void;
+  setStatusFilter: (projectId: string, status: SessionStatusFilterValue) => void;
 }
 
 export const useSessionFilterStore = create<State & Actions>()(
@@ -42,11 +47,19 @@ export const useSessionFilterStore = create<State & Actions>()(
         if ((get().filterByProject[projectId] ?? 'all') === filter) return;
         set({ filterByProject: { ...get().filterByProject, [projectId]: filter } });
       },
+      statusByProject: {},
+      setStatusFilter: (projectId, status) => {
+        if ((get().statusByProject[projectId] ?? 'all') === status) return;
+        set({ statusByProject: { ...get().statusByProject, [projectId]: status } });
+      },
     }),
     {
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
-      partialize: (state) => ({ filterByProject: pruneProjects(state.filterByProject) }),
+      partialize: (state) => ({
+        filterByProject: pruneProjects(state.filterByProject),
+        statusByProject: pruneProjects(state.statusByProject),
+      }),
     },
   ),
 );

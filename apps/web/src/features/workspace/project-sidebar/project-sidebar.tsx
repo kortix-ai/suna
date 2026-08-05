@@ -2,14 +2,19 @@
 
 import {
   availableSessionFilterOptions,
+  availableSessionStatusFilterOptions,
   SESSION_FILTER_OPTIONS,
+  SESSION_STATUS_FILTER_OPTIONS,
   type SessionFilterValue,
+  type SessionStatusFilterValue,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
@@ -93,6 +98,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   // every session open / ⌘J / switch.
   const sessionFilter = useSessionFilterStore((s) => s.filterByProject[projectId] ?? 'all');
   const setSessionFilter = useSessionFilterStore((s) => s.setFilter);
+  const sessionStatus = useSessionFilterStore((s) => s.statusByProject[projectId] ?? 'all');
+  const setStatusFilter = useSessionFilterStore((s) => s.setStatusFilter);
   const { data: filterSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -105,6 +112,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     () => availableSessionFilterOptions(filterSessions ?? []),
     [filterSessions],
   );
+  const statusOptions = useMemo(
+    () => availableSessionStatusFilterOptions(filterSessions ?? []),
+    [filterSessions],
+  );
   // A persisted filter outlives the sessions that justified it — delete the
   // last Slack session while filtered to Slack and the menu disappears with no
   // way back. Fall back to "all" once the loaded set says the filter is gone.
@@ -115,6 +126,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const activeFilterOption =
     SESSION_FILTER_OPTIONS.find((option) => option.value === activeFilter) ??
     SESSION_FILTER_OPTIONS[0];
+  // A persisted status outlives the sessions that justified it — filter to
+  // Failed, delete the last failed session, and the option vanishes with no
+  // way back.
+  const activeStatus: SessionStatusFilterValue =
+    filterSessions && !statusOptions.some((option) => option.value === sessionStatus)
+      ? 'all'
+      : sessionStatus;
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -306,10 +324,38 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                         {activeFilterOption.label}
                       </span>
                     )}
+                    {activeStatus !== 'all' && (
+                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
+                        · {SESSION_STATUS_FILTER_OPTIONS.find((o) => o.value === activeStatus)?.label}
+                      </span>
+                    )}
                   </Link>
-                  {filterOptions.length > 0 && (
+                  {(statusOptions.length > 0 || filterOptions.length > 0) && (
                     <DropdownMenu onOpenChange={holdPeek}>
                       <DropdownMenuContent align="start" className="w-44 p-1">
+                        {statusOptions.length > 0 && (
+                          <>
+                            <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
+                              Status
+                            </DropdownMenuLabel>
+                            {statusOptions.map((option) => (
+                              <DropdownMenuItem
+                                key={option.value}
+                                className="cursor-pointer"
+                                onClick={() => setStatusFilter(projectId, option.value)}
+                              >
+                                {option.label}
+                                <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                                  {option.count}
+                                </span>
+                              </DropdownMenuItem>
+                            ))}
+                            {filterOptions.length > 0 && <DropdownMenuSeparator />}
+                            <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
+                              Source
+                            </DropdownMenuLabel>
+                          </>
+                        )}
                         {filterOptions.map((option) => {
                           const OptionIcon = SESSION_FILTER_ICONS[option.value];
                           return (
@@ -344,7 +390,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               </SidebarGroupLabel>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex h-full min-h-0 flex-col">
-                  <ProjectSessionList projectId={projectId} filter={activeFilter} />
+                  <ProjectSessionList
+                    projectId={projectId}
+                    filter={activeFilter}
+                    statusFilter={activeStatus}
+                  />
                 </div>
               </div>
             </div>

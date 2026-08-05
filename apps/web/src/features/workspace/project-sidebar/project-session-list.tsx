@@ -5,12 +5,14 @@ import { useTranslations } from 'next-intl';
 import {
   directSubsessions,
   matchesSessionFilter,
+  matchesSessionStatusFilter,
   sessionDisplayStatus,
   sessionSource,
   SESSION_DISPLAY_STATUS_LABELS,
   type SessionDisplayStatus,
   type SessionFilterValue,
   type SessionSourceKind,
+  type SessionStatusFilterValue,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
@@ -68,6 +70,7 @@ import { useState, type ComponentType } from 'react';
 interface ProjectSessionListProps {
   projectId: string;
   filter?: SessionFilterValue;
+  statusFilter?: SessionStatusFilterValue;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -103,7 +106,11 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
+export function ProjectSessionList({
+  projectId,
+  filter = 'all',
+  statusFilter = 'all',
+}: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
@@ -164,7 +171,10 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const sessions = sortSessionsByLastActivity(data ?? []);
   // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
   // this list only applies the chosen filter.
-  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
+  const visibleSessions = sessions.filter(
+    (session) =>
+      matchesSessionFilter(session, filter) && matchesSessionStatusFilter(session, statusFilter),
+  );
   const grouped = groupSessionsForSidebar(visibleSessions, reviewSummary.needsYouBySession);
 
   const viewState = resolveSessionListViewState({
