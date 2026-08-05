@@ -25,20 +25,6 @@ export function connectorNeedsAttention(c: AdminConnector): boolean {
 }
 
 /**
- * Land on what the user most likely came for: their own connectors if they
- * have any, the catalogue if the project is empty.
- *
- * Unlike the scope model this replaces, the fallback is NOT gated on an
- * experimental flag. `useCatalog` always resolves to a populated source —
- * Discover where `connectors_api_discover` is on, Easy Connect everywhere else
- * — so `discover` is a safe landing for every project rather than a tab that
- * may not exist. Perplexity always opens on its catalogue, which buries the
- * list for every project past its first day; this does not.
- */
-export function defaultConnectorScope(connectors: readonly AdminConnector[]): ConnectorScope {
-  return connectors.length > 0 ? 'connected' : 'discover';
-}
-
 /**
  * What a connector is called on screen.
  *

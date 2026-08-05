@@ -1,10 +1,12 @@
 import type { AdminConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   compareConnectors,
   connectorNeedsAttention,
   connectorSummary,
-  defaultConnectorScope,
   filterConnectors,
 } from './connector-filter';
 
@@ -40,16 +42,25 @@ describe('connectorNeedsAttention', () => {
   });
 });
 
-describe('defaultConnectorScope', () => {
-  test('lands on the project list when the project has connectors', () => {
-    expect(defaultConnectorScope([conn()])).toBe('connected');
+describe('the landing tab is Discovery, unconditionally', () => {
+  const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+
+  // `defaultConnectorScope(connectors)` opened a project that already had
+  // connectors on its own list, which put the least useful tab in front of the
+  // user most often — someone opening this page is usually here to ADD a
+  // connector, and the ones they have are one click away. It also made the
+  // landing tab depend on a query, so the page could settle onto a different
+  // tab than it first rendered.
+  test('the default scope is a constant, not derived from the project', () => {
+    expect(page).toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
+    expect(page).not.toContain('defaultConnectorScope');
   });
-  // No flag argument any more. `useCatalog` always resolves to a populated
-  // source — Discover where `connectors_api_discover` is on, Easy Connect
-  // everywhere else — so Discover is a safe landing for every project. The
-  // old signature had to fail closed because the tab it named might not exist.
-  test('an empty project lands on the catalogue, unconditionally', () => {
-    expect(defaultConnectorScope([])).toBe('discover');
+
+  test('the helper is gone rather than left unused', () => {
+    const filter = readFileSync(join(import.meta.dir, 'connector-filter.ts'), 'utf8');
+    expect(filter).not.toContain('defaultConnectorScope');
   });
 });
 

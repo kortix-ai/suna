@@ -7,7 +7,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
@@ -48,7 +47,6 @@ import { ALL_CATEGORIES, catalogCategoryKeys } from './connector-categories';
 import {
   connectorDisplayName,
   connectorSummary,
-  defaultConnectorScope,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
@@ -58,9 +56,9 @@ import { EasyConnectAddFlow } from './easy-connect-add-flow';
 import { useCatalog } from './use-catalog';
 
 /**
- * Tab order is deliberate: the catalogue first for a project that has nothing,
- * the project's own list last because that is where a returning user lands
- * (`defaultConnectorScope`).
+ * Tab order is deliberate, and so is the landing tab: Discovery leads and is
+ * always what opens, for every project. The project's own list sits last —
+ * reachable in one click, but never in the way of adding something.
  *
  * There is no Available tab. It showed the catalogue minus what the project
  * already had, which is the same catalogue with a handful of cards deleted
@@ -204,11 +202,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     if (projectQuery.isError) void projectQuery.refetch();
   }, [connectorsQuery, projectQuery]);
 
-  // Both queries feed the default scope, so until both land the filter row
-  // renders nothing (into a reserved 28px slot) rather than showing a tab that
-  // is about to change under the user.
+  // Gates the Connected grid only. Its empty state's wording depends on
+  // `projectQuery` as well as `connectorsQuery`, so it cannot say "no
+  // connectors yet" until both have landed. The TAB STRIP no longer waits on
+  // this: with a constant landing tab and no per-tab count, nothing in it is
+  // derived from a query, so making it appear a beat late bought nothing.
   const settled = !connectorsQuery.isLoading && !projectQuery.isLoading;
-  const scope: ConnectorScope = scopeChoice ?? defaultConnectorScope(connectors);
+
+  // Discovery, always — never derived from what the project already has.
+  // `defaultConnectorScope` used to open a project with connectors on its own
+  // list, which put the least useful tab in front of the user most often: a
+  // returning user opening this page is far more likely to be adding a
+  // connector than reading the ones already there, and the ones already there
+  // are one click away. It also made the landing tab depend on a query, so the
+  // page could settle onto a different tab than it first rendered.
+  const scope: ConnectorScope = scopeChoice ?? 'discover';
   const catalogActive = scope !== 'connected';
 
   const catalog = useCatalog(projectId, query, { enabled: catalogActive, discoverEnabled });
@@ -299,35 +307,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       }
       filters={
         <>
-          {/* `min-h-7` matches `TabsList`, so the row keeps its height
-              while the two queries resolve and the tabs appear without
-              nudging the grid below them. */}
-          <div className="min-h-7">
-            {settled ? (
-              <Tabs
-                value={scope}
-                onValueChange={(value) => setScopeChoice(value as ConnectorScope)}
-              >
-                <TabsList>
-                  {SCOPES.map((value) => (
-                    <TabsTrigger key={value} value={value}>
-                      {SCOPE_LABEL[value]}
-                      {/* Only Connected carries a count. The catalogue is
-                          paged, so a number on Discover / All / Available
-                          would describe the pages loaded so far rather than
-                          the catalogue. `tabular-nums` keeps the tab from
-                          changing width as the count does. */}
-                      {value === 'connected' ? (
-                        <Badge variant="secondary" size="sm" className="tabular-nums">
-                          {filtered.length}
-                        </Badge>
-                      ) : null}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            ) : null}
-          </div>
+          {/* Rendered immediately, not behind `settled`. The strip used to
+              wait for both queries because the landing tab was derived from
+              one of them and Connected carried a count off the other; neither
+              is true now, so waiting only meant an empty 28px slot on every
+              load followed by the tabs popping in. Three static labels over a
+              constant `scope` have nothing to wait for. */}
+          <Tabs value={scope} onValueChange={(value) => setScopeChoice(value as ConnectorScope)}>
+            <TabsList>
+              {SCOPES.map((value) => (
+                <TabsTrigger key={value} value={value}>
+                  {SCOPE_LABEL[value]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
           {/* Hidden during a catalogue search: the search is server-side across
               every category, so the grid ignores the category while one is
               running. Leaving the control on screen showing "Design" over
