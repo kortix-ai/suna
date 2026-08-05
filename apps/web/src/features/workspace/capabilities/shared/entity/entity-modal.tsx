@@ -174,8 +174,6 @@ function EntityModalBody({
     staleTime: 30_000,
   });
 
-  const isCommand = kind === 'command';
-
   return (
     <>
       <ModalHeader className="border-border/60 space-y-1 border-b pb-4">

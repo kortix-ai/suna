@@ -96,20 +96,23 @@ export function ConnectorAccounts({
     );
   }
 
+  // `canWrite` is already true past the guard above, so the only thing left to
+  // gate on is the in-flight strategy change — writing an account while the
+  // authorization owner is moving would race it.
   return isChannel ? (
     <ChannelConnectionSection
       projectId={projectId}
       connector={connector}
       onChanged={onChanged}
       onRemoved={onRemoved}
-      canWrite={canWrite && !strategyUpdating}
+      canWrite={!strategyUpdating}
     />
   ) : (
     <ConnectionSection
       projectId={projectId}
       connector={connector}
       onChanged={onChanged}
-      canWrite={canWrite && !strategyUpdating}
+      canWrite={!strategyUpdating}
       onSetCredential={usesProjectAuthorization ? onSetCredential : undefined}
     />
   );
