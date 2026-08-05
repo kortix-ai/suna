@@ -189,8 +189,8 @@ describe("useSyncStore — upsertPart / removePart (append + update)", () => {
 	test("applyPartDelta appends text incrementally onto an existing part", () => {
 		const store = useSyncStore.getState();
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
-		store.applyPartDelta("msg_1", "prt_1", "text", "lo");
-		store.applyPartDelta("msg_1", "prt_1", "text", " world");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", " world");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello world");
 	});
@@ -719,5 +719,41 @@ describe("useSyncStore — optimistic tracking is session-scoped", () => {
 
 		expect(useSyncStore.getState().hasOptimisticMessages("ses_2")).toBe(true);
 		expect(useSyncStore.getState().messages["ses_2"]?.map((m) => m.id)).toContain("msg_b");
+	});
+});
+
+describe("useSyncStore — deltaActiveParts tracking is session-scoped", () => {
+	// deltaActiveParts used to be one process-wide Set<string> shared by every
+	// session in the tab, cleared wholesale on session.idle/session.error. A
+	// second, unrelated session going idle wiped a still-streaming session's
+	// delta tracking too, so upsertPart's stale-snapshot guard (line ~292)
+	// stopped protecting it — a stale message.part.updated snapshot for the
+	// still-streaming session could then overwrite its delta-accumulated text.
+	test("session B going idle mid-stream does not let a stale snapshot overwrite session A's delta-accumulated part", () => {
+		const store = useSyncStore.getState();
+
+		// Session A: a delta has already landed for prt_a, accumulating text
+		// under a stub message bucket (mirrors the message.part.delta handler,
+		// which upserts a stub part before applying the delta).
+		store.upsertPart("msg_a_stub", textPart("prt_a", "msg_a_stub", "Hel", "ses_a"));
+		store.applyPartDelta("ses_a", "msg_a_stub", "prt_a", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
+
+		// Session B, completely unrelated, finishes streaming and goes idle.
+		store.applyEvent({
+			id: "evt_idle_b",
+			type: "session.idle",
+			properties: { sessionID: "ses_b" },
+		} as never);
+
+		// A stale message.part.updated snapshot for session A's part arrives,
+		// targeting a different (real) message bucket than the delta-created
+		// stub — the exact race the comment above deltaActiveParts documents.
+		// Session A is still streaming, so prt_a's delta tracking must have
+		// survived session B's idle, and this stale insert must be rejected.
+		store.upsertPart("msg_a_real", textPart("prt_a", "msg_a_real", "Hel", "ses_a"));
+
+		expect(useSyncStore.getState().parts.msg_a_real).toBeUndefined();
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
 	});
 });

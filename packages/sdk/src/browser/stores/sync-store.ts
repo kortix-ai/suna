@@ -50,6 +50,7 @@ interface SyncState {
 	upsertPart: (messageID: string, part: Part) => void;
 	removePart: (messageID: string, partID: string) => void;
 	applyPartDelta: (
+		sessionID: string,
 		messageID: string,
 		partID: string,
 		field: string,
@@ -113,25 +114,25 @@ const optimisticIds = new Map<string, Set<string>>();
 // can be a copy of it.
 const dispatchedOptimisticIds = new Map<string, Set<string>>();
 
-function trackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+function trackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
-	if (bucket) bucket.add(messageID);
-	else store.set(sessionID, new Set([messageID]));
+	if (bucket) bucket.add(id);
+	else store.set(sessionID, new Set([id]));
 }
 
-function untrackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+function untrackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
 	if (!bucket) return;
-	bucket.delete(messageID);
+	bucket.delete(id);
 	if (bucket.size === 0) store.delete(sessionID);
 }
 
 function hasTrackedId(
 	store: Map<string, Set<string>>,
 	sessionID: string,
-	messageID: string,
+	id: string,
 ): boolean {
-	return store.get(sessionID)?.has(messageID) ?? false;
+	return store.get(sessionID)?.has(id) ?? false;
 }
 
 /** Release every id this session was tracking — called from `clearSession`. */
@@ -150,11 +151,19 @@ const isDispatched = (sessionID: string, messageID: string) =>
 // double-render the user's text).
 const bridgedPartIds = new Set<string>();
 
-// Track part IDs that have received at least one delta.
-// Used by upsertPart to avoid overwriting delta-accumulated text with a
-// stale message.part.updated snapshot that arrives in the same event batch.
-// Entries are cleared when the streaming session goes idle.
-const deltaActiveParts = new Set<string>();
+// Track part IDs that have received at least one delta, keyed by session —
+// same shape and same reason as optimisticIds above. Used by upsertPart to
+// avoid overwriting delta-accumulated text with a stale message.part.updated
+// snapshot that arrives in the same event batch. A session's entries are
+// cleared when THAT session's stream goes idle or errors.
+//
+// It used to be one process-wide Set<string> shared by every session in the
+// tab, cleared wholesale on session.idle/session.error. Session B going idle
+// wiped session A's tracking while A was still streaming, so the guard below
+// stopped protecting A — a stale snapshot could then overwrite A's
+// delta-accumulated text. Keying by session and releasing only the ending
+// session's bucket fixes it.
+const deltaActiveParts = new Map<string, Set<string>>();
 
 // ============================================================================
 
@@ -289,7 +298,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// text (missing the beginning). Skip the insert — the delta-
 				// created version already exists in the parts list under the
 				// message entry created by the delta handler.
-					if (deltaActiveParts.has(part.id) && isTextLikePart(part)) {
+					if (hasTrackedId(deltaActiveParts, part.sessionID, part.id) && isTextLikePart(part)) {
 					// Delta-created part already exists — check all messageID
 					// buckets since the delta handler may have stored it under
 					// a different (stub) message entry.
@@ -320,8 +329,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (messageID, partID, field, delta) => {
-		deltaActiveParts.add(partID);
+	applyPartDelta: (sessionID, messageID, partID, field, delta) => {
+		trackId(deltaActiveParts, sessionID, partID);
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -649,6 +658,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		optimisticIds.clear();
 		dispatchedOptimisticIds.clear();
 		bridgedPartIds.clear();
+		deltaActiveParts.clear();
 		set({
 			messages: {},
 			parts: {},
@@ -906,6 +916,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 
 				store.applyPartDelta(
+					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
@@ -942,9 +953,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
 			if (sessionID) store.setStatus(sessionID, { type: "idle" });
-			// Streaming finished — clear delta tracking so future
-			// message.part.updated snapshots are accepted normally.
-			deltaActiveParts.clear();
+			// Streaming finished for THIS session — clear only its own delta
+			// tracking so future message.part.updated snapshots for it are
+			// accepted normally. Never the whole map: another session may
+			// still be streaming (see comment above deltaActiveParts).
+			if (sessionID) deltaActiveParts.delete(sessionID);
 			return;
 		}
 		case "session.error": {
@@ -954,7 +967,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const error = props.error;
 			// Mark session idle — errors terminate the response.
 			store.setStatus(sid, { type: "idle" });
-			deltaActiveParts.clear();
+			// Clear only this session's delta tracking — see the idle handler
+			// above and the comment above deltaActiveParts.
+			deltaActiveParts.delete(sid);
 
 			// Patch the error onto the last assistant message in the sync store.
 			// If no assistant message exists yet, create a temporary one so the
