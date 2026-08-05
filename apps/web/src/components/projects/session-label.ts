@@ -140,3 +140,60 @@ export function sessionDisplayLabel(session: ProjectSession): string {
     : session.session_id.slice(0, 8);
   return session.custom_name?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
 }
+
+/**
+ * What the user sees, as opposed to what the sandbox is doing.
+ *
+ * `ProjectSessionStatus` is a seven-value SANDBOX lifecycle. Users get five
+ * states plus one override. The collapse is deliberate: `queued`, `branching`
+ * and `provisioning` are one idea ("starting") to anyone who is not debugging
+ * the provisioner.
+ *
+ * The governing rule is that green means live or actionable and nothing else,
+ * so `completed` maps to `done` and is rendered muted — never green.
+ */
+export type SessionDisplayStatus =
+  | 'needs-you'
+  | 'starting'
+  | 'running'
+  | 'done'
+  | 'stopped'
+  | 'failed';
+
+/** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
+ *  not that the agent is working, and the payload carries no signal for that. */
+export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string> = {
+  'needs-you': 'Needs you',
+  starting: 'Starting',
+  running: 'Running',
+  done: 'Done',
+  stopped: 'Stopped',
+  failed: 'Failed',
+};
+
+/**
+ * Resolve a session to its display status.
+ *
+ * A pending review wins outright: a finished session with items awaiting the
+ * human is ACTIONABLE, and actionable outranks finished.
+ */
+export function sessionDisplayStatus(
+  session: ProjectSession,
+  reviewCount = 0,
+): SessionDisplayStatus {
+  if (reviewCount > 0) return 'needs-you';
+  switch (session.status) {
+    case 'queued':
+    case 'branching':
+    case 'provisioning':
+      return 'starting';
+    case 'running':
+      return 'running';
+    case 'completed':
+      return 'done';
+    case 'stopped':
+      return 'stopped';
+    case 'failed':
+      return 'failed';
+  }
+}
