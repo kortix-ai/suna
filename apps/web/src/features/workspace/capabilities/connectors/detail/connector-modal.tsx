@@ -43,7 +43,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
 import { ButtonGroup } from '@/components/ui/button-group';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { ConnectorAccounts } from './connector-accounts';
@@ -347,7 +347,7 @@ function ConnectorModalBody({
               className="size-8 shrink-0 rounded-md"
               aria-label="Close"
             >
-              <Icon.Close className="text-foreground size-4 stroke-1" />
+              <Close className="text-foreground size-4 stroke-1" />
             </Button>
           </ModalClose>
         </div>
@@ -557,7 +557,7 @@ function HeaderName({
             }}
             disabled={rename.isPending || disabled}
           >
-            <Icon.Close className="size-4 shrink-0" />
+            <Close className="size-4 shrink-0" />
           </Button>
         </form>
       </>
