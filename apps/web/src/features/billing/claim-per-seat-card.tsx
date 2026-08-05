@@ -52,7 +52,7 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
         </Button>
       </div>
       {claim.isError && (
-        <p className="text-destructive mt-2 text-xs break-words">
+        <p className="text-destructive mt-2 text-xs wrap-break-word">
           {(claim.error as Error)?.message ?? 'Could not switch. Try again or contact support.'}
         </p>
       )}

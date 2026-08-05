@@ -102,7 +102,7 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
 
   return (
     <ToolResultCard>
-      <p className="text-muted-foreground/80 px-2 py-1.5 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+      <p className="text-muted-foreground/80 px-2 py-1.5 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
         {summary}
       </p>
       {traceback && (

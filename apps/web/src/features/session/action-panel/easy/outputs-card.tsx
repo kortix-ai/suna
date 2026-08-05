@@ -13,6 +13,7 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
@@ -160,7 +161,11 @@ export function OutputRows({
   const hidden = Math.max(0, outputs.length - visible.length);
 
   return (
-    <>
+    <FadedScrollArea
+      fadeColor="from-pane"
+      rootClassName="h-auto min-h-0 flex-1"
+      className="overscroll-contain"
+    >
       <ul className="flex flex-col gap-0">
         {visible.map((o) => (
           <li key={outputKey(o)} className="flex items-center">
@@ -203,7 +208,7 @@ export function OutputRows({
           </span>
         </button>
       )}
-    </>
+    </FadedScrollArea>
   );
 }
 
@@ -276,12 +281,9 @@ export function OutputsCard({
       isEmpty={outputs.length === 0}
       defaultExpanded={defaultExpanded}
       emptyArt={<OutputsArt />}
-      // Not "files": a landing page or an app is an output too, and promising
-      // only files would make the row that opens one look like a mistake.
       emptyText="Open the files and apps created during this task."
-      // The card body carries the horizontal padding; the rows carry none, so a
-      // row's tint runs the full width of the list instead of being inset twice.
-      contentClassName="border-border border-t px-2 py-2"
+      contentClassName="flex min-h-0 flex-col px-2 py-2"
+      fill
       headerAction={<DownloadAllAction outputs={outputs} />}
     >
       <OutputRows outputs={outputs} onOpenOutput={onOpenOutput} />

@@ -16,18 +16,24 @@ import {
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
+import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { promptFromSearchParams } from './prompt-from-search-params';
 
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const { data: projectDetail } = useQuery({
     queryKey: ['project-detail', projectId],
@@ -58,6 +64,27 @@ export default function ProjectIndexPage() {
     window.localStorage.setItem(storageKey, '1');
     openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
   }, [accountState, projectAccountId, openUpgradeDialog]);
+
+  // `/projects/start?q=<prompt>` forwards its query string onto this route
+  // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
+  // `/projects/<id>?q=<prompt>`. Seed the one-shot prefill store — ProjectHome
+  // already consumes it (project-home.tsx) — then strip `q` from the URL so a
+  // refresh doesn't re-seed the same prompt. `seededRef` guards against
+  // re-seeding on every render once the strip lands.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    const prompt = promptFromSearchParams(searchParams);
+    if (!prompt || !projectId) return;
+
+    seededRef.current = true;
+    useComposerPrefillStore.getState().setPrefill(projectId, prompt);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('q');
+    const query = nextParams.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [searchParams, pathname, projectId, router]);
 
   const handleSend = useCallback(
     (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {

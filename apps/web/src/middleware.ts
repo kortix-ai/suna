@@ -1,4 +1,5 @@
 import { locales, type Locale } from '@/i18n/config';
+import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import {
@@ -128,12 +129,6 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
   );
 }
 
-// Routes that require authentication but are related to billing/setup
-const BILLING_ROUTES: string[] = [];
-
-// Routes that require authentication and active subscription
-const PROTECTED_ROUTES = ['/projects', '/accounts', '/invites', '/admin'];
-
 // Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
@@ -196,6 +191,19 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
   ) {
     return NextResponse.next();
+  }
+
+  // ── Terms of Service → public Drive file (permanent 308) ────────────────
+  // The Terms document moved to an externally-owned Google Drive file. Both
+  // the new stable path (`/legal/terms`) and the legacy tab query
+  // (`/legal?tab=terms`), including every supported locale prefix
+  // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there
+  // so existing links/bookmarks keep resolving. Privacy and imprint stay local
+  // on `/legal`. This runs before auth/locale logic — the destination is an
+  // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
+  const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
+  if (termsDestination) {
+    return NextResponse.redirect(termsDestination, 308);
   }
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -489,11 +497,6 @@ export async function middleware(request: NextRequest) {
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
       return redirectPreservingSession(url);
-    }
-
-    // ── Billing-related routes (activate-trial, etc.) ────────────────────
-    if (BILLING_ROUTES.some((route) => pathname.startsWith(route))) {
-      return supabaseResponse;
     }
 
     return supabaseResponse;

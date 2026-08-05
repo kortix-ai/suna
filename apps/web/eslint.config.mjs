@@ -1,14 +1,6 @@
-import { dirname } from 'path';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypescript from 'eslint-config-next/typescript';
 
 const sdkBoundaryBaseline = JSON.parse(
   readFileSync(new URL('./src/sdk-boundary-baseline.json', import.meta.url), 'utf8'),
@@ -24,7 +16,8 @@ const sdkBoundaryLegacyFiles = [
 const sdkBoundaryShimFiles = ['src/lib/iam-client.ts'];
 
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
@@ -153,6 +146,37 @@ const eslintConfig = [
        reach past it. */
     files: ['src/lib/icons/ssr.tsx', 'src/lib/icons/ssr.test.tsx'],
     rules: { 'no-restricted-imports': 'off' },
+  },
+  {
+    /* fumadocs-mdx codegen output (gitignored, not tracked — see
+       apps/web/.gitignore). It ships its own `@ts-nocheck` intentionally
+       (skips type checking a generated re-export barrel) and is
+       regenerated on every `next dev`/`next build`, so there is nothing to
+       fix here; exclude it from linting entirely. */
+    ignores: ['.source/**'],
+  },
+  {
+    /* eslint-plugin-react-hooks@7 (pulled in by eslint-config-next@16's
+       dependency bump) ships the "React Compiler" rule set enabled by
+       default. As of 2026-08-04 that flags 402 pre-existing findings
+       across 175 files in this codebase — none introduced by the Next 16
+       upgrade. Downgraded to warnings here pending a dedicated audit; this
+       is NOT a decision to accept them permanently. Breakdown at the time
+       of downgrade:
+       react-hooks/set-state-in-effect (211), react-hooks/refs (120),
+       react-hooks/preserve-manual-memoization (21), react-hooks/purity (16),
+       react-hooks/static-components (11), react-hooks/immutability (10),
+       react-hooks/set-state-in-render (10), react-hooks/use-memo (2). */
+    rules: {
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/set-state-in-render': 'warn',
+      'react-hooks/use-memo': 'warn',
+    },
   },
 ];
 

@@ -87,7 +87,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', external: true },
       { label: 'Status', href: 'https://status.kortix.com', external: true },
       { label: 'Support', href: '/support' },
-      { label: 'Terms', href: '/legal?tab=terms' },
+      { label: 'Terms', href: '/legal/terms' },
       { label: 'Privacy', href: '/legal?tab=privacy' },
     ],
   },

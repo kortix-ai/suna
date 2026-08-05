@@ -673,16 +673,16 @@ export function JsonFailureOutputCard({
         <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground/90 text-xs leading-relaxed text-pretty break-words">
+        <p className="text-foreground/90 text-xs leading-relaxed text-pretty wrap-break-word">
           {summary}
         </p>
         {detail && detail !== summary && (
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty break-words">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty wrap-break-word">
             {detail}
           </p>
         )}
         {failure.hint && (
-          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty break-words">
+          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty wrap-break-word">
             {failure.hint.trim()}
           </p>
         )}
@@ -850,7 +850,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
           <UnifiedMarkdown content={text} />
         </div>
       ) : (
-        <pre className="text-muted-foreground font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+        <pre className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
           {text}
         </pre>
       )}

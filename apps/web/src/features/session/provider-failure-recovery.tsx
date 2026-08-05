@@ -34,7 +34,7 @@ export function ProviderFailureRecovery({
         <div className="border-border/60 bg-muted/40 w-full rounded-md border px-3 py-2.5 text-left">
           <p className="text-muted-foreground mb-1 text-xs font-medium">Saved prompt</p>
           {pendingPrompt.text ? (
-            <p className="text-foreground/90 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed">
+            <p className="text-foreground/90 max-h-40 overflow-y-auto whitespace-pre-wrap wrap-break-word text-xs leading-relaxed">
               {pendingPrompt.text}
             </p>
           ) : (

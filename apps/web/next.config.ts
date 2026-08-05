@@ -188,18 +188,6 @@ const nextConfig = (): NextConfig => ({
     ignoreBuildErrors: true,
   },
 
-  // Lint runs in CI (`pnpm lint`); skip it during local preview builds for speed.
-  // Prod/CI builds (no KORTIX_PREVIEW_BUILD) keep Next's default lint-on-build.
-  eslint: {
-    ignoreDuringBuilds: IS_PREVIEW_BUILD,
-  },
-
-  // Webpack configuration to make Konva work with Next.js
-  webpack: (config) => {
-    config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
-    return config;
-  },
-
   // Turbopack configuration
   turbopack: {
     // Handle Node.js modules that shouldn't be bundled for browser builds

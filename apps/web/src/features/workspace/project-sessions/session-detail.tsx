@@ -19,7 +19,7 @@ function DetailItem({ label, value, mono }: SessionDetailField) {
       <dt className="text-muted-foreground text-xs">{label}</dt>
       <dd
         className={cn(
-          'text-foreground text-sm break-words',
+          'text-foreground text-sm wrap-break-word',
           mono && 'font-mono text-xs tabular-nums',
         )}
       >
@@ -52,7 +52,7 @@ export function SessionDetail({
 
       {session.error ? (
         <InfoBanner tone="destructive" icon={WarningIcon} title="Session error">
-          <span className="break-words">{session.error}</span>
+          <span className="wrap-break-word">{session.error}</span>
         </InfoBanner>
       ) : null}
 

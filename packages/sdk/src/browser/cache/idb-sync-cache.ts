@@ -25,13 +25,31 @@ interface CachedSession {
   updatedAt: number;
 }
 
-async function getCurrentCacheScope(): Promise<string | null> {
-  try {
-    const userId = (await platformConfig().getUserId?.()) ?? null;
-    return userId ? `user:${userId}` : null;
-  } catch {
-    return null;
-  }
+let cacheScopePromise: Promise<string | null> | null = null;
+
+function getCurrentCacheScope(): Promise<string | null> {
+  if (cacheScopePromise) return cacheScopePromise;
+
+  const pending = (async () => {
+    try {
+      const userId = (await platformConfig().getUserId?.()) ?? null;
+      return userId ? `user:${userId}` : null;
+    } catch {
+      return null;
+    }
+  })();
+  cacheScopePromise = pending;
+
+  // Authentication can hydrate after the first cache access. Retain a real
+  // user scope for this browser session, but let an unauthenticated lookup be
+  // retried instead of pinning `null` until reload.
+  void pending.then((scope) => {
+    if (!scope && cacheScopePromise === pending) {
+      cacheScopePromise = null;
+    }
+  });
+
+  return pending;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -217,6 +235,9 @@ export async function deleteSessionFromIDB(
 }
 
 export async function clearSessionIDBCache(): Promise<void> {
+  // The host calls this on sign-out and account changes. Invalidate identity
+  // before touching IndexedDB so the next write cannot reuse the previous user.
+  cacheScopePromise = null;
   try {
     pendingWrites.clear();
     if (flushTimer) {

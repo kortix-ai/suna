@@ -14,22 +14,22 @@ import { faq } from './content';
  * The FAQ — mount between the trust section and the closing CTA. It is the last
  * thing a reader passes before the ask.
  *
- * IT IS AN ACCORDION, AND THAT IS A TRADE. Four of these answers concede
- * something — gates ship off, self-hosting is not air-gapped, audit export is
- * an entitlement, we hold no certification — and collapsing them puts the
+ * IT IS AN ACCORDION, AND THAT IS A TRADE. Three of these answers concede
+ * something — gates ship off, self-hosting is not air-gapped, and audit export
+ * is an entitlement — and collapsing them puts the
  * sentences the section exists to say out loud one click away. That is the
  * accepted cost. It buys the thing that matters more here: expanded by default
  * the section was 1769px of prose sitting directly on top of the CTA, which
  * pushed the ask off the screen and demanded a full read nobody standing at the
- * end of a landing page is going to give. Collapsed it is a seven-line list a
+ * end of a landing page is going to give. Collapsed it is a six-line list a
  * reader scans in a few seconds and opens exactly once.
  *
  * THE ONE RULE THIS PUTS ON THE COPY. A collapsed answer must never let the
  * section read as if it only says flattering things. Every question stays
- * neutral — "Do you hold a security certification?", not "Is Kortix secure?" —
- * so the awkward rows are visibly present in the resting state and a reader
- * hunting for the catch can see which row to open. If a future edit rewrites a
- * question into a claim, the collapse has turned the section into marketing.
+ * neutral, so the awkward rows are visibly present in the resting state and a
+ * reader hunting for the catch can see which row to open. If a future edit
+ * rewrites a question into a claim, the collapse has turned the section into
+ * marketing.
  *
  * `type="single" collapsible`, matching the careers board
  * (`features/marketing/careers/careers-page.tsx` → `Board`), which is the
@@ -48,14 +48,14 @@ import { faq } from './content';
  * of the next line. Capped it sits near 70.
  *
  * WHY IT IS ONE BORDERED SLAB. The rows are a set — the point is partly that
- * there are only seven of them and none is missing. Seven separate cards would
- * read as seven claims; one divided panel reads as a document, which is what an
+ * there are only six of them and none is missing. Six separate cards would
+ * read as six claims; one divided panel reads as a document, which is what an
  * FAQ is. `rounded-sm` and a hairline border, flat: it sits in the page flow, so
  * it gets an edge rather than elevation. The padding lives on the trigger and
  * the content, never on the bordered element, so the row seams run edge to edge.
  *
  * Copy, and the accuracy gate every answer had to pass, live in `content.ts`.
- * Read that file before editing a word here — four of these answers are
+ * Read that file before editing a word here — three of these answers are
  * deliberately unflattering and must stay that way.
  */
 export function FaqSection(): ReactNode {
@@ -101,7 +101,7 @@ export function FaqSection(): ReactNode {
                 </span>
               </AccordionTrigger>
               <AccordionContent className="px-5 pb-6 sm:px-8">
-                <p className="text-muted-foreground min-w-0 max-w-[36rem] text-base leading-[1.7] text-pretty">
+                <p className="text-muted-foreground max-w-[36rem] min-w-0 text-base leading-[1.7] text-pretty">
                   {item.answer}
                 </p>
               </AccordionContent>
@@ -109,7 +109,6 @@ export function FaqSection(): ReactNode {
           ))}
         </Accordion>
       </Reveal>
-
     </section>
   );
 }

@@ -248,6 +248,13 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // Surface the per-account contracted-Enterprise flag so the admin console
+    // and the frontend can distinguish a real Enterprise contract (entitlements
+    // sourced from `enterprise_entitled`, independent of billing tier) from a
+    // self-serve demo or a self-host license. When true, the frontend hides
+    // the self-serve "Enterprise features — Demo" toggle (a real contract
+    // supersedes the demo) and the admin console shows the contract state.
+    enterprise_entitled: !!sub?.enterpriseEntitled,
     models: [],
     auto_topup: autoTopup,
     instances,
@@ -339,6 +346,9 @@ export function buildLocalAccountState(): AccountStateResponse {
       entitlements: getTierEntitlements('free'),
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // No-DB local mode has no credit_accounts row, so the contracted-Enterprise
+    // flag is false by construction (fail-closed).
+    enterprise_entitled: false,
     models: [],
     auto_topup: {
       enabled: false,

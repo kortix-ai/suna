@@ -12,6 +12,105 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-05 — session `better-queue` completion
+
+No **Now** task claimed. This is an additive module for a host-side defect: a
+message queued while the agent is running is released mid-turn, and sometimes
+twice. The SDK half of that fix is two tasks; the rest is `apps/web`.
+
+Added `core/session/message-queue.ts` — the queue's ordering, claiming, and
+failure rules as pure transitions over serializable state. No `Date.now()`, no
+`crypto`, no timers: ids and timestamps are inputs, so every transition is
+deterministic. Exported as the new `./message-queue` subpath at tier
+`isomorphic-core`.
+
+The two invariants that motivated it: `claimNext` records the claim in the same
+transition that returns the item, so two drains racing send one message; and
+`failInFlight` sets the item aside instead of requeueing it at the head, so a
+failed item can never lock out the rest of the queue. That lockout is the exact
+reason the web client queue was deleted wholesale in `67749c1f76`.
+
+RED:
+
+- `bun test src/core/session/message-queue.test.ts`: `0 pass`, `1 fail`,
+  `error: Cannot find module './message-queue'`.
+
+GREEN:
+
+- `bun test src/core/session/message-queue.test.ts`: `31 pass`, `0 fail`,
+  `47 expect()` calls.
+- `pnpm --filter @kortix/sdk test`: `1490 pass`, `2 skip`, `0 fail`, and
+  `6185 expect()` calls across `121` files (baseline was `1456` across `120`).
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+Public surface changed, additively: 12 new names on `./message-queue`, nothing
+removed or renamed. Both snapshots re-recorded deliberately. No alias needed and
+no major implied. The `version` field was not touched.
+
+`core/session/send-queue.ts` gained a doc note only. It has **zero call sites**
+anywhere in the monorepo — a correct, tested queue nothing imports, while the
+web host reimplemented a worse one inline. It stays exported because it is
+published API; new host code should use `message-queue` instead. Its weakness is
+structural, not a bug: it holds `dispatch` closures, and a closure cannot be
+persisted across a reload, reordered, or edited by a user.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-04 — session `auth-cache-link-prefetch` claim
+
+No **Now** task claimed. This is a narrow browser cache identity fix.
+
+Scope:
+
+- Resolve the offline transcript cache scope once per authenticated browser session.
+- Invalidate the resolved scope when the host clears the session cache.
+- Preserve all published names, signatures, and cache key formats.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-04 — session `auth-cache-link-prefetch` completion
+
+The IndexedDB transcript cache now memoizes one authenticated user scope across
+stream writes. `clearSessionIDBCache()` invalidates the scope before clearing
+pending writes and IndexedDB, so sign-out and account changes cannot reuse it.
+Null scopes are not retained, which preserves late authentication hydration.
+
+RED:
+
+- Four concurrent `saveSessionToIDB()` calls performed `4` identity reads; the
+  regression expected `1`.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1456 pass`, `2 skip`, `0 fail`, and
+  `6133 expect()` calls across `120` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+No public export name, signature, cache key, or public-surface snapshot changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ## Who may edit what
 
 | Section                     | Agents may…                                            | Agents may **not**…                                                                                         |

@@ -91,13 +91,27 @@ export const SessionLayout = memo(function SessionLayout({
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
+  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  // "This layout is the one on screen." A session inside the tab system is
+  // visible when it is the active tab; a session on the standalone
+  // /projects/:id/sessions/:id route has no tab and is always the visible one.
+  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
 
+  // Tell the store which session owns the right side, and close it.
+  //
+  // This used to be gated on `isActiveTab` alone and skipped for transient
+  // sessions, so on the standalone route — and in the window before
+  // `tab-store.activeTabId` catches up with a navigation — it never fired.
+  // The store kept the PREVIOUS session's `isSidePanelOpen`, so opening a
+  // second session rendered its panel already open with nothing to put in it:
+  // the empty loading panel. Firing on visibility covers every entry path
+  // (fresh navigation, tab switch, back/forward, transient → real handoff),
+  // and `setActiveSession` closes both surfaces, so a session you have just
+  // arrived at never inherits the last one's right side.
   useEffect(() => {
-    if (transient) return;
-    if (isActiveTab) {
-      setActiveSession(sessionId);
-    }
-  }, [transient, isActiveTab, sessionId, setActiveSession]);
+    if (!isVisibleLayout) return;
+    setActiveSession(sessionId);
+  }, [isVisibleLayout, sessionId, setActiveSession]);
 
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
   const panelView = normalizeSessionPanelLayoutView(storedPanelView);
@@ -196,9 +210,6 @@ export const SessionLayout = memo(function SessionLayout({
   const handleEnabled = shouldShowPanel && !isExpanded;
   const handleVisible = handleEnabled;
 
-  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
-
-  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
   useEffect(() => {
     if (transient) return;
     if (!isVisibleLayout) return;
@@ -209,9 +220,10 @@ export const SessionLayout = memo(function SessionLayout({
       }
     };
   }, [transient, isVisibleLayout, sessionId, setActivePanelSession]);
-  // ⌘I / Ctrl+I lives on `SessionActionPanelColumn` — it toggles the action
-  // panel beside the chat. The right-hand detail panel stays content-driven
-  // (no empty-open state, no hotkey).
+  // ⌘I / Ctrl+I lives on `SessionActionPanelColumn` — it toggles the RIGHT SIDE
+  // as a whole (`toggleRightPanel`), so it closes this detail panel too. The
+  // detail panel is still content-driven: the key never opens it empty, only
+  // back onto content this session already has.
 
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -438,9 +450,10 @@ export const SessionLayout = memo(function SessionLayout({
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
   // Settings → Appearance and the command palette. Nothing here is a dead end:
-  // the detail card carries its own close button and Escape, which is the only
-  // way this panel closes now — the header toggle is gone. ⌘I / Ctrl+I
-  // toggles the action-panel column beside the chat, not this detail panel.
+  // the detail card carries its own close button and Escape, and ⌘I / Ctrl+I
+  // closes the right side from anywhere. The two differ on purpose: the card's
+  // own close DISCARDS the detail (it is done with), while ⌘I only puts it
+  // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
@@ -624,8 +637,8 @@ function PanelHeaderSwitcher({
       side="bottom"
       sideOffset={4}
       delayDuration={300}
-      // No ⌘I hint here: that shortcut toggles the action-panel column, not
-      // this Advanced-mode detail toggle.
+      // No ⌘I hint here: that shortcut toggles the right side as a whole, and
+      // this Advanced-mode button is a narrower thing — the detail panel only.
       label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
     >
       <Button

@@ -58,6 +58,7 @@ export * from './use-kortix-master';
 export {
   useSessionSend,
   beginOptimisticSend,
+  markOptimisticSendDispatched,
   abandonOptimisticSend,
   recoverFromSendFailure,
   sendAndRecover,

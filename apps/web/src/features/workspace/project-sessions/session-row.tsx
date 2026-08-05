@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
+import { TypedTitle } from '@/components/ui/typed-title';
 import { Icon } from '@/features/icon/icon';
 import {
   getSessionDisplayTitle,
@@ -168,7 +169,11 @@ export function SessionRow({
         <SourceIcon className={cn('size-4', statusTile.icon)} />
       </span>
       <span className="min-w-0 flex-1 truncate text-sm">
-        {title}
+        {/* Types itself in when the name changes — a session created moments
+            ago reads "New session" until the agent names it, and this is what
+            shows that the name was written rather than swapped. Plain text at
+            rest, so the row is unchanged (and still ellipsises) until then. */}
+        <TypedTitle text={title} />
         {source.triggerSlug ? (
           <span className="text-muted-foreground"> · {source.triggerSlug}</span>
         ) : null}

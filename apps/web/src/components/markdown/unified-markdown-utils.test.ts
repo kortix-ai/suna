@@ -10,6 +10,7 @@ import {
   looksLikeUrl,
   normalizeLanguage,
   shikiWasmAvailable,
+  shouldUseNextLink,
 } from './unified-markdown-utils';
 
 describe('isInternalUrl', () => {
@@ -29,6 +30,22 @@ describe('isInternalUrl', () => {
     expect(isInternalUrl(undefined)).toBe(false);
     expect(isInternalUrl('')).toBe(false);
     expect(isInternalUrl('relative/path')).toBe(false);
+  });
+});
+
+describe('shouldUseNextLink', () => {
+  test('uses Next Link only for trusted app-router hrefs', () => {
+    expect(shouldUseNextLink('/dashboard')).toBe(true);
+    expect(shouldUseNextLink('#section')).toBe(true);
+    expect(shouldUseNextLink('https://kortix.com/legal/terms.')).toBe(false);
+    expect(shouldUseNextLink('http://localhost:3000/dashboard')).toBe(false);
+    expect(shouldUseNextLink('mailto:hi@kortix.ai')).toBe(false);
+    expect(shouldUseNextLink('relative/path')).toBe(false);
+  });
+
+  test('keeps malformed absolute hrefs out of Next Link', () => {
+    expect(shouldUseNextLink('http://:')).toBe(false);
+    expect(shouldUseNextLink('https://:')).toBe(false);
   });
 });
 
@@ -203,8 +220,7 @@ describe('shikiWasmAvailable', () => {
     try {
       // Simulate a browser/context that blocks or disables WebAssembly.
       // `delete` mirrors how such runtimes expose no WebAssembly global at all.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (globalThis as any).WebAssembly;
+      delete (globalThis as { WebAssembly?: unknown }).WebAssembly;
       expect(shikiWasmAvailable()).toBe(false);
     } finally {
       // Restore — other tests (and the live Shiki init) need WebAssembly.

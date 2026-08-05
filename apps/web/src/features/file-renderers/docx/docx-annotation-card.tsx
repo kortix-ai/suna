@@ -107,7 +107,7 @@ function DocxAnnotationCard({
           {anchorText}
         </div>
       ) : null}
-      <div className="text-xs leading-snug break-words">{snippet}</div>
+      <div className="text-xs leading-snug wrap-break-word">{snippet}</div>
     </Card>
   )
 }
