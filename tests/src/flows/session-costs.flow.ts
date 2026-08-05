@@ -136,12 +136,24 @@ flow(
         .exists('$.series')
         .exists('$.models');
 
-      // The series is gap-filled, one point per UTC day in the window — a
-      // chart that skips empty days compresses time and turns a spike into a
-      // trend. Eight days inclusive across the seven-day window above.
+      // The series is gap-filled, one point per UTC day in the half-open
+      // window [floor(from), to) — a chart that skips empty days compresses
+      // time and turns a spike into a trend. The count depends on the time of
+      // day the flow runs (the first bucket is the partial day `from` lands
+      // in), so compute it from the window instead of hard-coding it: a fixed
+      // 8 fails as 9 for any run not at exactly UTC midnight.
+      const windowFrom = new Date(window.from);
+      const firstBucket = Date.UTC(
+        windowFrom.getUTCFullYear(),
+        windowFrom.getUTCMonth(),
+        windowFrom.getUTCDate(),
+      );
+      const expectedPoints = Math.ceil((new Date(window.to).getTime() - firstBucket) / 86_400_000);
       const series = response.json<{ series?: Array<{ day?: string }> }>()?.series;
-      if (!Array.isArray(series) || series.length !== 8) {
-        throw new Error(`expected 8 gap-filled series points, got ${series?.length}`);
+      if (!Array.isArray(series) || series.length !== expectedPoints) {
+        throw new Error(
+          `expected ${expectedPoints} gap-filled series points for [${window.from}, ${window.to}), got ${series?.length}`,
+        );
       }
     });
 
