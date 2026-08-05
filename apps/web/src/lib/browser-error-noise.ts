@@ -2120,6 +2120,151 @@ export function isEmbedPdfTilingTileDestructureNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingViewportAdvance);
 }
 
+// Broader third-party-library React #185 "Maximum update depth exceeded"
+// fallback noise matcher. The `isEmbedPdfTilingReactUpdateDepthNoise`
+// matcher above anchors on the SPECIFIC `@embedpdf/plugin-tiling`
+// `onTileRendering` subscription callback frame; it does NOT catch #185
+// events thrown by OTHER third-party libs (no `onTileRendering` frame). The
+// editor re-render loop siblings fired by the document-state race (see
+// `isDocumentStateNotFoundNoise`) are such a class: a ProseMirror/TipTap-
+// based editor library's async interaction/selection handler re-enters the
+// React render loop after the editor's document-state map race, tripping
+// React's 50-nested-update guard (#185) WITHOUT an `onTileRendering` frame.
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — all
+// three from the SAME Safari 26.5 session
+// `be897489-001b-4ca4-b9ca-a1aa770c4082`, SAME release
+// `f2db5007f14e77e3b9456d2f83208e97bc2b2734`, SAME chunk
+// `0foj1ouh5ijrj.js`, same 2026-08-05 ~04:30–05:28 UTC window as the doc-state
+// race siblings, 1 occurrence each / 0 identified users, all UNCAUGHT
+// (`handled:false`, never reached a React error boundary):
+//   - `223d7d7e1000bc98be5969f2cddac143e03134cb39442f0b959cf1def53ccb8a`:
+//     mechanism `auto.browser.global_handlers.onerror`, frames
+//     `r @ 13jg6.ewllp.z.js | f_ @ 0foj1ouh5ijrj.js | fL | s4 | nM | ? | sZ |
+//     ? @ 00ym4.y9k1959.js | ov @ 0foj1ouh5ijrj.js | oy @ 0foj1ouh5ijrj.js`.
+//   - `51b14963e617b4cee9926db4a4d6a9d50d4bdfb3b71d5f32faf1c83d33066d12`:
+//     mechanism `auto.browser.browserapierrors.setInterval`, frames
+//     `r @ 13jg6.ewllp.z.js | ? @ 12r-_umoe~03c.js | ov @ 0foj1ouh5ijrj.js |
+//     oy @ 0foj1ouh5ijrj.js`.
+//   - `cd68e360db0f42e7dca4e9e922cfe80ed629e878dbb327f74ac889d194da0276`:
+//     call_site_function `oy`, call_site_file
+//     `app:///_next/static/chunks/0foj1ouh5ijrj.js`.
+// ALL three carry NO `onTileRendering` frame and NO first-party
+// `apps/web/src/…` frame — they are the editor library's own re-render loop,
+// not a first-party setState loop.
+//
+// React #185 is ALSO the exact message a REAL first-party infinite-setState
+// loop produces, so this BROADER fallback matcher is anchored on BOTH the
+// #185 message (`REACT_UPDATE_DEPTH_NOISE_PATTERN`, already defined above)
+// AND TWO negative guards:
+//   1. NO resolved first-party `apps/web/src/…` frame — a real first-party
+//      setState loop de-minifies to `apps/web/src/…` and is preserved (this
+//      is the load-bearing guard; it mirrors the tiling matcher).
+//   2. The event is UNCAUGHT — the exception's mechanism is one of the
+//      global auto-handlers (`onerror` / `onunhandledrejection`) OR a
+//      `BrowserApiErrors` auto-wrapper (`addEventListener` / `setTimeout` /
+//      `setInterval`/ …) with `handled:false`. A CAUGHT React #185 (one that
+//      reached a React error boundary, `handled:true`) may be actionable —
+//      the boundary exists precisely to surface first-party render loops the
+//      app chose to handle — so it keeps reporting. The production noise
+//      siblings are all `handled:false` global/BrowserApiErrors captures.
+//
+// IMPORTANT: this is a FALLBACK that runs AFTER `isEmbedPdfTilingReactUpdateDepthNoise`
+// (the tiling matcher is tried first in `shouldIgnoreSentryBrowserNoise`, so
+// its more specific `onTileRendering` anchor wins for the tiling class). It
+// does NOT replace or subsume the tiling matcher; a tiling #185 with an
+// `onTileRendering` frame is dropped by the tiling matcher before this
+// fallback is reached. This fallback only catches the non-tiling third-party
+// #185 class (the editor re-render loop siblings here). Deliberately NOT
+// added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no
+// frame/mechanism context, so a bare `#185` match there would swallow a real
+// first-party setState loop; the frame+mechanism-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+//
+// The Sentry `BrowserApiErrors` integration auto-wraps these EventTarget /
+// timer APIs and captures throws from inside their callbacks as
+// `handled:false` (`auto.browser.browserapierrors.<api>`); the global
+// `GlobalHandlers` integration captures `onerror`/`onunhandledrejection` as
+// `auto.browser.global_handlers.<handler>` (`handled:false`). All of these
+// are UNCAUGHT — they never reached a React error boundary. A CAUGHT #185
+// (mechanism absent, or `handled:true`, or a non-global/non-BrowserApiErrors
+// mechanism) keeps reporting.
+const REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS = new Set([
+  'auto.browser.global_handlers.onerror',
+  'auto.browser.global_handlers.onunhandledrejection',
+  'auto.browser.browserapierrors.addEventListener',
+  'auto.browser.browserapierrors.setTimeout',
+  'auto.browser.browserapierrors.setInterval',
+  'auto.browser.browserapierrors.requestAnimationFrame',
+]);
+
+/**
+ * Whether a Sentry event is a third-party-library React #185 "Maximum update
+ * depth exceeded" render loop that is NOT the `@embedpdf/plugin-tiling`
+ * `onTileRendering` class (caught by `isEmbedPdfTilingReactUpdateDepthNoise`
+ * above). This is the BROADER FALLBACK for non-tiling third-party #185s —
+ * e.g. the ProseMirror/TipTap-based editor library's re-render loop fired by
+ * its document-state race (see `isDocumentStateNotFoundNoise`). Requires
+ * the `Minified React error #185` message AND TWO negative guards: (1) NO
+ * resolved first-party `apps/web/src/…` frame (a real first-party setState
+ * loop de-minifies to `apps/web/src/…` and is preserved), and (2) the event
+ * is UNCAUGHT — its mechanism is one of the global auto-handlers
+ * (`onerror`/`onunhandledrejection`) or a `BrowserApiErrors` auto-wrapper
+ * (`addEventListener`/`setTimeout`/`setInterval`/…) with `handled:false`. A
+ * CAUGHT React #185 (reached a React error boundary, `handled:true`) may be
+ * actionable and keeps reporting. This matcher runs AFTER
+ * `isEmbedPdfTilingReactUpdateDepthNoise` (the tiling matcher's more
+ * specific `onTileRendering` anchor is tried first), so it does NOT replace
+ * or subsume the tiling matcher. See
+ * `REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS` for the full rationale and the
+ * three Better Stack patterns `223d7d7e…` / `51b14963…` / `cd68e360…`.
+ */
+export function isThirdPartyReactUpdateDepthNoise(input: {
+  message?: unknown;
+  mechanism?: unknown;
+  handled?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_UPDATE_DEPTH_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm the throw is third-party (no
+  // `apps/web/src/…` negative-guard evidence, no chunk anchor). Keep
+  // reporting rather than blanket-dropping frameless #185s of unknown
+  // origin. (Mirrors `isEmbedPdfTilingReactUpdateDepthNoise`.)
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means
+  // our own component is the looping culprit → actionable; keep reporting so
+  // the call site can be found + fixed. (Mirrors the tiling matcher.)
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: the event must be UNCAUGHT. A CAUGHT React #185 (one
+  // that reached a React error boundary, `handled:true`, or whose mechanism
+  // is not a global/BrowserApiErrors auto-handler) may be actionable — the
+  // boundary exists to surface first-party render loops the app chose to
+  // handle — so it keeps reporting. The production noise siblings are all
+  // `handled:false` global/BrowserApiErrors captures.
+  const mechanism = normalizeString(input.mechanism);
+  if (!REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS.has(mechanism)) {
+    return false;
+  }
+  // `handled` is optional in the Sentry payload; when present it is a boolean.
+  // Treat a missing `handled` as uncaught (the global/BrowserApiErrors
+  // mechanisms above are UNCAUGHT by definition — they auto-capture throws
+  // that never reached a React error boundary). When present and `true`, the
+  // event was caught by a boundary → keep reporting.
+  const handled = input.handled;
+  if (handled === true) {
+    return false;
+  }
+  return true;
+}
+
 // React #327 = `Should not already be working.` — the React production
 // reconciler's re-entrancy guard. It throws from
 // `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
@@ -2713,6 +2858,120 @@ export function isConnectionClosedNoise(input: {
   return true;
 }
 
+// Third-party editor-library document-state race noise. A ProseMirror/TipTap-
+// based editor library (`@tiptap/*` deps in `apps/web/package.json`) holds an
+// internal document-state map keyed by document id. When the editor is
+// unmounted / the document is closed while an async interaction or selection
+// is still in flight (a race in the library's own async interaction handling,
+// fired by WebKit's async timing differing from Chrome's), the library
+// throws from its OWN internal state-lookup helpers:
+//   - `getDocumentStateOrThrow` → `Interaction state not found for document: <docId>`
+//   - `getDocumentState`        → `Selection state not found for document: <docId>`
+// Both are library-internal functions in a minified `_next/static/chunks/…`
+// bundle (e.g. `17631.2j-4o95.js`), NEVER in first-party `apps/web/src/…`
+// source (grep confirms no first-party `getDocumentStateOrThrow` /
+// `getDocumentState`). The throw is captured by Sentry's
+// `BrowserApiErrors.addEventListener` / `setInterval` / global
+// `onerror`/`onunhandledrejection` auto-wrappers as an UNCAUGHT event
+// (`handled:false`, never reaches a React error boundary) and leaks to Better
+// Stack.
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967):
+//   - `6d6fa794a67a293ce9fa5d093648a9d76a2dd243e04f4f9dd9fbbd67bfb0c9ef`:
+//     `Error`, message
+//     `Interaction state not found for document: doc-1785904808253-gbsixyvii`,
+//     call_site_function `getDocumentStateOrThrow`, call_site_file
+//     `app:///_next/static/chunks/17631.2j-4o95.js`, 28 occurrences / 0
+//     identified users, last 2026-08-05 04:40:45 UTC (POST-v0.12.3),
+//     mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
+//     `handled:false`), request URL
+//     `https://kortix.com/projects/e1d956a3-…/sessions/be897489-…` (session
+//     page), Safari 26.5 on macOS (WebKit). Frames: `r @ 13jg6.ewllp.z.js` →
+//     `v @ 17631.2j-4o95.js` → `getActiveMode @ 17631.2j-4o95.js` →
+//     `getDocumentStateOrThrow @ 17631.2j-4o95.js` — NO first-party
+//     `apps/web/src/…` frame.
+//   - `a954c7e7553065986e8177c68b82ccf3c3d83d6eabb413700974b2a11f841fb7`:
+//     `Error`, message
+//     `Selection state not found for document: doc-1785904808253-gbsixyvii`
+//     (SAME doc id as the interaction sibling), call_site_function
+//     `getDocumentState`, SAME call_site_file
+//     `app:///_next/static/chunks/17631.2j-4o95.js`, 2 occurrences, same
+//     timestamp as the interaction sibling.
+//
+// These are noise, not a product bug:
+//   1. UNCAUGHT (`handled:false`, `addEventListener`/`onunhandledrejection`)
+//      — never reached a React error boundary.
+//   2. Third-party library internal — `getDocumentStateOrThrow` /
+//      `getDocumentState` are library-internal helpers in a minified chunk,
+//      NOT first-party `apps/web/src/…` code.
+//   3. Safari-specific — WebKit's async timing differs from Chrome's,
+//      triggering the editor's internal state-map race.
+//   4. 28+2 occurrences from a SINGLE session (`be897489-…`) in a short window
+//      — a transient race, not a persistent bug.
+//
+// The `<Interaction|Selection> state not found for document:` prefix is the
+// library's OWN canonical wording for its internal state-lookup failure
+// (the `for document:` suffix names the library's document-state map), and
+// `getDocumentStateOrThrow` / `getDocumentState` are library-internal
+// function names never present in first-party code, so anchoring on the
+// message prefix is conservative. BUT a first-party `throw new Error(
+// 'Interaction state not found for document: …')` regression would surface
+// with a resolved `apps/web/src/…` frame, so a NEGATIVE guard MUST preserve
+// any event whose stack carries a resolved first-party frame. Only events
+// with NO resolved first-party frame (the production noise shape: all frames
+// in the minified `17631` / `13jg6` library chunks) are dropped. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate
+// has no frame context, so a bare-string match there could swallow a real
+// first-party state-lookup regression the negative guard exists to preserve;
+// the frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN =
+  /^(Interaction|Selection) state not found for document:/;
+
+/**
+ * Whether a Sentry / window.onerror event is the third-party editor-library
+ * (ProseMirror/TipTap-based) document-state race noise class: the library's
+ * own internal `getDocumentStateOrThrow` / `getDocumentState` helpers threw
+ * `<Interaction|Selection> state not found for document: <docId>` when the
+ * editor was unmounted / the document closed while an async interaction or
+ * selection was still in flight (a race in the library's async interaction
+ * handling, triggered by WebKit's async timing). The throw is in the
+ * library's minified chunk (`17631.2j-4o95.js`), never first-party. Requires
+ * the canonical message prefix AND a NEGATIVE guard: if any frame (or the
+ * window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting (a real first-party
+ * `throw new Error('Interaction state not found for document: …')`
+ * regression de-minifies to `apps/web/src/…` and must not be hidden). The
+ * production noise pattern carries only minified `17631`/`13jg6` library
+ * chunk frames, so the negative guard does not fire for it. A frameless
+ * capture with this exact message prefix still classifies as noise (the
+ * `for document:` suffix names the library's document-state map and the
+ * message wording is library-specific). See
+ * `DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN` for the full rationale and the
+ * two Better Stack patterns `6d6fa794…` / `a954c7e7…`.
+ */
+export function isDocumentStateNotFoundNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw this state-lookup message → a real first-party regression;
+  // keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 
 // Bare lowercase `network error` rejection noise — the canonical Axios /
 // `XMLHttpRequest` transport-abort message. Axios throws this (or the
@@ -2863,18 +3122,32 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Transient WebSocket / SSE transport-close noise — a client-side
   // websocket/SSE library threw the canonical `Connection closed.` message when
   // the server closed a background realtime connection during a deploy / idle-
-  // timeout recycle / session end. The connection closing is EXPECTED, not a
-  // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
-  // guard so a real first-party `throw new Error('Connection closed.')`
-  // regression keeps reporting. See `isConnectionClosedNoise`.
-  if (isConnectionClosedNoise({ message, filename: input.filename })) {
-    return true;
-  }
+   // timeout recycle / session end. The connection closing is EXPECTED, not a
+   // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+   // guard so a real first-party `throw new Error('Connection closed.')`
+   // regression keeps reporting. See `isConnectionClosedNoise`.
+   if (isConnectionClosedNoise({ message, filename: input.filename })) {
+     return true;
+   }
+
+   // Third-party editor-library (ProseMirror/TipTap-based) document-state
+   // race noise — the library's own internal `getDocumentStateOrThrow` /
+   // `getDocumentState` helpers threw
+   // `<Interaction|Selection> state not found for document: <docId>` when the
+   // editor was unmounted / the document closed while an async interaction or
+   // selection was still in flight (a race in the library's async interaction
+   // handling, triggered by WebKit's async timing). Requires the canonical
+   // message prefix AND a NEGATIVE guard: any resolved first-party
+   // `apps/web/src/…` frame → keep reporting. See
+   // `isDocumentStateNotFoundNoise`.
+   if (isDocumentStateNotFoundNoise({ message, filename: input.filename })) {
+     return true;
+   }
 
 
-  // Browser-native <img> / next/image load failures can surface as this exact
-  // message through window.onerror. Keep this exact: the old pptx-react-viewer
-  // threw actionable errors such as "Failed to load image for colour change
+   // Browser-native <img> / next/image load failures can surface as this exact
+   // message through window.onerror. Keep this exact: the old pptx-react-viewer
+   // threw actionable errors such as "Failed to load image for colour change
   // processing", which must still reach error tracking.
   if (isBareImageLoadNoiseMessage(message)) {
     return true;
@@ -3083,6 +3356,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   exception?: {
     values?: Array<{
       value?: unknown;
+      mechanism?: { type?: unknown; handled?: unknown };
       stacktrace?: { frames?: Array<{ filename?: unknown }> };
     }>;
   };
@@ -3090,6 +3364,8 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   const primaryException = event.exception?.values?.find(Boolean);
   const message = primaryException?.value ?? event.message;
   const frames = primaryException?.stacktrace?.frames ?? [];
+  const mechanism = primaryException?.mechanism?.type;
+  const handled = primaryException?.mechanism?.handled;
   const requestUrl = normalizeString(event.request?.url);
   const environment = normalizeString((event as { environment?: unknown }).environment);
 
@@ -3462,6 +3738,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Broader third-party-library React #185 "Maximum update depth exceeded"
+  // fallback — runs AFTER the @embedpdf tiling #185 matcher above (the
+  // tiling matcher's more specific `onTileRendering` anchor is tried first,
+  // so a tiling #185 is dropped before this fallback is reached). Catches
+  // non-tiling third-party #185s — e.g. the ProseMirror/TipTap-based editor
+  // library's re-render loop fired by its document-state race (see
+  // `isDocumentStateNotFoundNoise`): the three Better Stack patterns
+  // `223d7d7e…` / `51b14963…` / `cd68e360…`, all from the same Safari 26.5
+  // session as the doc-state race, NO `onTileRendering` frame, all UNCAUGHT.
+  // Requires the #185 message AND TWO negative guards: NO resolved
+  // first-party `apps/web/src/…` frame (a real first-party setState loop
+  // de-minifies to `apps/web/src/…` and is preserved), AND the event is
+  // UNCAUGHT (mechanism is a global/BrowserApiErrors auto-handler with
+  // `handled:false` — a CAUGHT #185 that reached a React error boundary may
+  // be actionable and keeps reporting). This matcher does NOT replace or
+  // subsume the tiling matcher. See `isThirdPartyReactUpdateDepthNoise`.
+  if (isThirdPartyReactUpdateDepthNoise({ message, mechanism, handled, frames })) {
+    return true;
+  }
+
   // Firefox-specific React scheduler re-entrancy noise — `Minified React error
   // #327;` (`Should not already be working.`), thrown from React's own
   // production reconciler chunk when the scheduler re-enters during the commit
@@ -3569,6 +3865,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // patterns into a real, tested matcher. NOT in `ignoreErrors` (no frame
   // context there). See `isConnectionClosedNoise`.
   if (isConnectionClosedNoise({ message, frames })) {
+    return true;
+  }
+
+  // Third-party editor-library (ProseMirror/TipTap-based) document-state
+  // race noise — the library's own internal `getDocumentStateOrThrow` /
+  // `getDocumentState` helpers threw
+  // `<Interaction|Selection> state not found for document: <docId>` when the
+  // editor was unmounted / the document closed while an async interaction or
+  // selection was still in flight (a race in the library's async interaction
+  // handling, triggered by WebKit's async timing). The throw is in the
+  // library's minified `17631`/`13jg6` chunks, never first-party. Requires the
+  // canonical message prefix AND a NEGATIVE guard: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting (a real first-party state-lookup
+  // regression de-minifies to `apps/web/src/…` and must not be hidden). The
+  // prod events (Better Stack `6d6fa794…` 28 occ + `a954c7e7…` 2 occ, same
+  // Safari 26.5 session) carry only minified library chunk frames, so the
+  // negative guard does not fire for them. NOT in `ignoreErrors` (no frame
+  // context there). See `isDocumentStateNotFoundNoise`.
+  if (isDocumentStateNotFoundNoise({ message, frames })) {
     return true;
   }
 

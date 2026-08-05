@@ -6,6 +6,7 @@ import {
   isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
   isConnectionClosedNoise,
+  isDocumentStateNotFoundNoise,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
   isEmbedPdfTilingTileDestructureNoise,
@@ -34,6 +35,7 @@ import {
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
   isSupabaseTokenExpiredNoise,
+  isThirdPartyReactUpdateDepthNoise,
   isTronLinkProxyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
@@ -3463,20 +3465,558 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
     assert.equal(
       isAndroidWebViewNativeBridgePostMessageNoise({
         message,
-        frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+        frames: [],
       }),
       false,
-      `expected "${message}" from an app chunk (no bridge frame) to keep reporting`,
+      `expected "${message}" to keep reporting`,
     )
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value: message }] },
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
       }),
       false,
-      `expected frameless Sentry event for "${message}" to keep reporting`,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
 })
+
+// ---------------------------------------------------------------------------
+// Third-party editor-library (ProseMirror/TipTap-based) document-state race
+// noise (Better Stack patterns
+// 6d6fa794a67a293ce9fa5d093648a9d76a2dd243e04f4f9dd9fbbd67bfb0c9ef and
+// a954c7e7553065986e8177c68b82ccf3c3d83d6eabb413700974b2a11f841fb7, Kortix
+// Frontend prod, application_id 2346967). A ProseMirror/TipTap-based editor
+// library holds an internal document-state map keyed by document id; when the
+// editor is unmounted / the document closed while an async interaction or
+// selection is still in flight (a race in the library's async interaction
+// handling, fired by WebKit's async timing differing from Chrome's), the
+// library's own internal `getDocumentStateOrThrow` / `getDocumentState`
+// helpers throw `<Interaction|Selection> state not found for document:
+// <docId>`. Both Better Stack patterns are the SAME doc id
+// (`doc-1785904808253-gbsixyvii`), same Safari 26.5 session
+// (`be897489-001b-4ca4-b9ca-a1aa770c4082`), same minified chunk
+// `17631.2j-4o95.js`, last 2026-08-05 04:40:45 UTC (POST-v0.12.3), UNCAUGHT
+// (`handled:false`, mechanism `addEventListener`), NO first-party
+// `apps/web/src/…` frame. 28 occurrences (interaction) + 2 occurrences
+// (selection) from a single session in a short window — a transient race, not
+// a persistent bug. The matcher anchors on the
+// `/^(Interaction|Selection) state not found for document:/` message prefix
+// with a NEGATIVE guard: any resolved first-party `apps/web/src/…` frame →
+// keep reporting (a real first-party `throw new Error('Interaction state not
+// found for document: …')` regression de-minifies to `apps/web/src/…`).
+// ---------------------------------------------------------------------------
+
+// The exact interaction-state message from the production event (pattern
+// 6d6fa794…, 28 occurrences).
+const DOCUMENT_STATE_INTERACTION_MESSAGE =
+  'Interaction state not found for document: doc-1785904808253-gbsixyvii'
+
+// The exact selection-state message from the production event (pattern
+// a954c7e7…, 2 occurrences, SAME doc id).
+const DOCUMENT_STATE_SELECTION_MESSAGE =
+  'Selection state not found for document: doc-1785904808253-gbsixyvii'
+
+// Pattern 6d6fa794 — the production stack frames (oldest-first → throwing
+// frame last): the entry `r` in chunk `13jg6.ewllp.z.js`, then the editor
+// library's internal `v` → `getActiveMode` → `getDocumentStateOrThrow` in
+// chunk `17631.2j-4o95.js`. All minified third-party library chunk frames —
+// NO first-party `apps/web/src/…` frame.
+const DOCUMENT_STATE_INTERACTION_FRAMES = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'v' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getActiveMode' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentStateOrThrow' },
+]
+
+// Pattern a954c7e7 — the selection sibling's call site is the library's
+// `getDocumentState` in the same `17631.2j-4o95.js` chunk.
+const DOCUMENT_STATE_SELECTION_FRAMES = [
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentState' },
+]
+
+// The production Sentry event shape (pattern 6d6fa794): UNCAUGHT, mechanism
+// `auto.browser.browserapierrors.addEventListener`, handled:false, on the
+// co-worker session page.
+const DOCUMENT_STATE_INTERACTION_EVENT = {
+  request: {
+    url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+  },
+  exception: {
+    values: [
+      {
+        value: DOCUMENT_STATE_INTERACTION_MESSAGE,
+        mechanism: {
+          type: 'auto.browser.browserapierrors.addEventListener',
+          handled: false,
+        },
+        stacktrace: { frames: DOCUMENT_STATE_INTERACTION_FRAMES },
+      },
+    ],
+  },
+}
+
+test('classifies the editor document-state interaction race as noise (pattern 6d6fa794)', () => {
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      frames: DOCUMENT_STATE_INTERACTION_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('classifies the editor document-state selection race as noise (pattern a954c7e7)', () => {
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_SELECTION_MESSAGE,
+      frames: DOCUMENT_STATE_SELECTION_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned editor document-state interaction Sentry event via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(DOCUMENT_STATE_INTERACTION_EVENT),
+    true,
+  )
+})
+
+test('suppresses the editor document-state event via the runtime gate too', () => {
+  // The runtime gate sees the window.onerror `filename`; the prod event's
+  // throw site is the library chunk, so a runtime capture with the chunk
+  // filename + the canonical message classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      filename: 'app:///_next/static/chunks/17631.2j-4o95.js',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: DOCUMENT_STATE_SELECTION_MESSAGE,
+      filename: 'app:///_next/static/chunks/17631.2j-4o95.js',
+    }),
+    true,
+  )
+})
+
+test('suppresses the editor document-state event even with no frames (message-only capture)', () => {
+  // The `for document:` suffix names the library's document-state map; a
+  // frameless capture with this exact message prefix still classifies as
+  // noise (the message wording is library-specific). This mirrors the
+  // Connection-closed / Paper-Shaders-WebGL-unsupported matchers.
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: DOCUMENT_STATE_INTERACTION_MESSAGE, stacktrace: { frames: [] } },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the editor document-state throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw this
+  // state-lookup message → actionable regression; the negative guard MUST
+  // preserve it so the call site can be found + fixed. The message wording
+  // alone is not enough to drop — the library's canonical wording could be
+  // reused by a hostile/copy-pasted first-party throw.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [
+      { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentStateOrThrow' },
+      { filename: 'app:///apps/web/src/features/editor/state.ts', function: 'lookup' },
+    ],
+  ]) {
+    assert.equal(
+      isDocumentStateNotFoundNoise({
+        message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party document-state throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: DOCUMENT_STATE_INTERACTION_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party document-state throw from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message that is not a document-state lookup (over-match guard)', () => {
+  // Only the `<Interaction|Selection> state not found for document:` prefix
+  // is noise; a different wording keeps reporting so the matcher does not
+  // over-match.
+  for (const message of [
+    'Interaction state not found',
+    'Selection state not found',
+    'state not found for document: doc-x',
+    'Interaction state not found for widget: w-1',
+    'Document state not found for document: doc-x',
+  ]) {
+    assert.equal(
+      isDocumentStateNotFoundNoise({
+        message,
+        frames: DOCUMENT_STATE_INTERACTION_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: DOCUMENT_STATE_INTERACTION_FRAMES } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Broader third-party-library React #185 "Maximum update depth exceeded"
+// fallback noise (Better Stack patterns
+// 223d7d7e1000bc98be5969f2cddac143e03134cb39442f0b959cf1def53ccb8a,
+// 51b14963e617b4cee9926db4a4d6a9d50d4bdfb3b71d5f32faf1c83d33066d12, and
+// cd68e360db0f42e7dca4e9e922cfe80ed629e878dbb327f74ac889d194da0276, Kortix
+// Frontend prod, application_id 2346967). A ProseMirror/TipTap-based editor
+// library's async interaction/selection handler re-enters the React render
+// loop after its document-state-map race (see the document-state matcher
+// above), tripping React's 50-nested-update guard (#185) WITHOUT an
+// `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
+// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
+// (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
+// matcher anchors on the `onTileRendering` frame and does NOT catch these —
+// they have no `onTileRendering` frame. This broader fallback matcher runs
+// AFTER the tiling matcher and catches non-tiling third-party #185s. It
+// requires the #185 message AND TWO negative guards: NO resolved first-party
+// `apps/web/src/…` frame (a real first-party setState loop de-minifies to
+// `apps/web/src/…` and is preserved), AND the event is UNCAUGHT (mechanism is
+// a global/BrowserApiErrors auto-handler with `handled:false` — a CAUGHT #185
+// that reached a React error boundary may be actionable).
+// ---------------------------------------------------------------------------
+
+// Pattern 223d7d7e — mechanism `auto.browser.global_handlers.onerror`, frames
+// `r @ 13jg6.ewllp.z.js | f_ @ 0foj1ouh5ijrj.js | fL | s4 | nM | ? | sZ | ?
+// @ 00ym4.y9k1959.js | ov | oy`. NO `onTileRendering` frame, NO first-party
+// `apps/web/src/…` frame.
+const REACT185_THIRDPARTY_FRAMES_223D7D7E = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'f_' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'fL' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 's4' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'nM' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'sZ' },
+  { filename: 'app:///_next/static/chunks/00ym4.y9k1959.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+// Pattern 51b14963 — mechanism
+// `auto.browser.browserapierrors.setInterval`, frames
+// `r @ 13jg6.ewllp.z.js | ? @ 12r-_umoe~03c.js | ov @ 0foj1ouh5ijrj.js | oy
+// @ 0foj1ouh5ijrj.js`.
+const REACT185_THIRDPARTY_FRAMES_51B14963 = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/12r-_umoe~03c.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+// Pattern cd68e360 — mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (handled:false), frames
+// `? @ 0d5wqj98qv1e9.js | onExitComplete @ 0f7hq0oahq8u6.js | ? @
+// 0f7hq0oahq8u6.js | ov @ 0foj1ouh5ijrj.js | oy @ 0foj1ouh5ijrj.js`. The
+// `onExitComplete` frame is the editor library's exit/teardown re-render
+// path — the same document-close race that produces the doc-state throws.
+const REACT185_THIRDPARTY_FRAMES_CD68E360 = [
+  { filename: 'app:///_next/static/chunks/0d5wqj98qv1e9.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0f7hq0oahq8u6.js', function: 'onExitComplete' },
+  { filename: 'app:///_next/static/chunks/0f7hq0oahq8u6.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+test('classifies the editor re-render-loop React #185 siblings as noise (patterns 223d7d7e / 51b14963 / cd68e360)', () => {
+  for (const [label, frames, mechanism] of [
+    ['223d7d7e', REACT185_THIRDPARTY_FRAMES_223D7D7E, 'auto.browser.global_handlers.onerror'],
+    ['51b14963', REACT185_THIRDPARTY_FRAMES_51B14963, 'auto.browser.browserapierrors.setInterval'],
+    ['cd68e360', REACT185_THIRDPARTY_FRAMES_CD68E360, 'auto.browser.global_handlers.onunhandledrejection'],
+  ] as const) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism,
+        handled: false,
+        frames,
+      }),
+      true,
+      `expected React #185 ${label} (no onTileRendering, uncaught) to classify as noise`,
+    )
+  }
+})
+
+test('suppresses the assigned editor re-render-loop React #185 Sentry events via the beforeSend gate', () => {
+  for (const [label, frames, mechanism] of [
+    ['223d7d7e', REACT185_THIRDPARTY_FRAMES_223D7D7E, 'auto.browser.global_handlers.onerror'],
+    ['51b14963', REACT185_THIRDPARTY_FRAMES_51B14963, 'auto.browser.browserapierrors.setInterval'],
+    ['cd68e360', REACT185_THIRDPARTY_FRAMES_CD68E360, 'auto.browser.global_handlers.onunhandledrejection'],
+  ] as const) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: {
+          url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+        },
+        exception: {
+          values: [
+            {
+              value: REACT_185,
+              mechanism: { type: mechanism, handled: false },
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress React #185 ${label}`,
+    )
+  }
+})
+
+test('suppresses the editor re-render-loop React #185 when handled is omitted (mechanism implies uncaught)', () => {
+  // `handled` is optional in the Sentry payload; the global/BrowserApiErrors
+  // mechanisms are UNCAUGHT by definition. A missing `handled` is treated as
+  // uncaught.
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onunhandledrejection',
+      frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a React #185 with a resolved first-party frame (real first-party setState loop)', () => {
+  // A resolved `apps/web/src/…` frame means our own component is the looping
+  // culprit → actionable; the negative guard MUST preserve it. This is the
+  // whole reason the matcher is frame-aware (React #185 is also a real
+  // first-party setState-loop message).
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [
+      { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+      { filename: 'app:///apps/web/src/features/editor/editor.tsx', function: 'render' },
+    ],
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism: 'auto.browser.global_handlers.onerror',
+        handled: false,
+        frames,
+      }),
+      false,
+      `expected first-party React #185 from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: REACT_185,
+              mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party React #185 from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a CAUGHT React #185 (handled:true — reached a React error boundary)', () => {
+  // A CAUGHT #185 (mechanism `handled:true`) reached a React error boundary;
+  // the boundary exists to surface first-party render loops the app chose to
+  // handle, so it may be actionable and keeps reporting.
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: true,
+      frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: true },
+            stacktrace: { frames: REACT185_THIRDPARTY_FRAMES_223D7D7E },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a React #185 whose mechanism is not a global/BrowserApiErrors auto-handler', () => {
+  // A non-global, non-BrowserApiErrors mechanism (e.g. an explicit
+  // `captureException` call, or a custom instrumented boundary) may be
+  // actionable; keep reporting. Only the UNCAUGHT global/BrowserApiErrors
+  // class is dropped.
+  for (const mechanism of [
+    'generic',
+    'instrument',
+    'auto.function.console',
+    'manual',
+    '',
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism,
+        handled: false,
+        frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+      }),
+      false,
+      `expected React #185 with mechanism "${mechanism}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a React #185 with no frames (cannot confirm it is third-party)', () => {
+  // No frames → can't confirm the throw is third-party (no `apps/web/src/…`
+  // negative guard evidence, no chunk anchor). Keep reporting rather than
+  // blanket-dropping frameless #185s of unknown origin. (Distinct from the
+  // doc-state matcher, whose message prefix is library-specific enough that
+  // a frameless capture is still noise.)
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: false,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT replace or subsume the @embedpdf tiling #185 matcher — the tiling matcher still wins for onTileRendering', () => {
+  // The broader fallback matcher runs AFTER
+  // `isEmbedPdfTilingReactUpdateDepthNoise` in `shouldIgnoreSentryBrowserNoise`.
+  // A tiling #185 with an `onTileRendering` frame is dropped by the TILING
+  // matcher (which has the more specific anchor) — the gate returns true for
+  // it. The broader matcher is the FALLBACK for non-tiling third-party #185s
+  // (no `onTileRendering` frame), NOT a replacement for the tiling matcher.
+  const tilingFrames = [
+    { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+  ]
+  // The tiling matcher (specific anchor) classifies it as noise.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames: tilingFrames }),
+    true,
+  )
+  // The gate (which tries the tiling matcher FIRST) drops the tiling #185.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: tilingFrames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  // A tiling #185 that ALSO carries a first-party frame keeps reporting via
+  // BOTH matchers' negative guards (the tiling matcher's negative guard
+  // already preserves it; the broader matcher's negative guard agrees).
+  const tilingFramesWithFirstParty = [
+    { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+    { filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' },
+  ]
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames: tilingFramesWithFirstParty }),
+    false,
+  )
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: false,
+      frames: tilingFramesWithFirstParty,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: tilingFramesWithFirstParty },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-React message that happens to mention #185 via the broader matcher', () => {
+  // The broader matcher anchors on `Minified React error #185` — a different
+  // message wording must not be matched.
+  for (const message of [
+    'Maximum update depth exceeded',
+    'Error #185 in custom handler',
+    'react.dev/errors/185',
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message,
+        mechanism: 'auto.browser.global_handlers.onerror',
+        handled: false,
+        frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
 
 test('does NOT suppress a real first-party postMessage failure that throws from an app chunk', () => {
   // A genuine `window.postMessage` / structured-clone failure in our own code
