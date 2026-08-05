@@ -19,20 +19,21 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
-import { Icon } from '@/features/icon/icon';
+import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCopy } from '@/hooks/use-copy';
-import {
-  createAccountToken,
-  listAccountTokens,
-  revokeAccountToken,
-  type AccountToken,
-  type CreatedAccountToken,
-} from '@kortix/sdk';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import {
+  createAccountToken,
+  listAccountTokens,
+  listProjectsForAccount,
+  revokeAccountToken,
+  type AccountToken,
+  type CreatedAccountToken,
+  type KortixProject,
+} from '@kortix/sdk';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -240,7 +241,7 @@ export function CreateApiKeyAction({
   return (
     <div className="flex justify-end">
       <Button size="sm" variant="secondary" onClick={onStartCreate}>
-        <Icon.Plus className="size-4 shrink-0" />
+        <Plus className="size-4 shrink-0" />
         Create API key
       </Button>
     </div>
@@ -341,7 +342,7 @@ export function CliTokensTab() {
           }
           action={
             <Button onClick={() => setCreating(true)}>
-              <Icon.Plus className="size-4" />
+              <Plus className="size-4" />
               Create API key
             </Button>
           }

@@ -21,7 +21,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -74,8 +75,8 @@ const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
   ComponentType<{ className?: string }>
 > = {
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,

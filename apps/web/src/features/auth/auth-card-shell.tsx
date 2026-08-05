@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
@@ -111,7 +111,7 @@ export function AuthCardShell({
 
   return (
     <AuthFrame>
-      <motion.div {...rise(0)}>
+      <m.div {...rise(0)}>
         <div className="mb-10">
           <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
           <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance md:mt-6">
@@ -119,12 +119,12 @@ export function AuthCardShell({
           </h1>
           <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
         </div>
-      </motion.div>
+      </m.div>
 
-      <motion.div {...rise(0.06)}>
+      <m.div {...rise(0.06)}>
         {children}
         {footer ? <div className="mt-8">{footer}</div> : null}
-      </motion.div>
+      </m.div>
     </AuthFrame>
   );
 }

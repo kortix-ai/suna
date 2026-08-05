@@ -18,7 +18,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 export interface PanelCardProps {
@@ -170,13 +170,13 @@ export function PanelCard({
                     {headerAction}
                   </span>
                 )}
-                <motion.span
+                <m.span
                   animate={{ rotate: expanded ? 90 : 0 }}
                   transition={transition}
                   className="text-muted-foreground shrink-0"
                 >
                   <ChevronRight className="size-4" />
-                </motion.span>
+                </m.span>
               </span>
             }
           />

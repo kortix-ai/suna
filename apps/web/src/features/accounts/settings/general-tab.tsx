@@ -43,7 +43,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { ClockIcon as Clock, WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
-import { AnimatePresence, motion, MotionConfig } from 'motion/react';
+import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -72,6 +72,26 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
   const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingStatus;
+  const avatarPreviewRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    avatarPreviewRef.current = avatarPreview;
+  }, [avatarPreview]);
+
+  // Closing the settings panel without saving (or cancelling out of it)
+  // unmounts this component while avatarPreview is still holding a blob
+  // URL — neither handleAvatarChange's replace-guard nor handleSave's
+  // post-save revoke runs in that case, so free it here on unmount. The
+  // ref (kept in sync above) always holds the latest preview, so this
+  // empty-deps effect's cleanup revokes whatever is current when it
+  // fires, not a value captured once at mount.
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewRef.current) {
+        URL.revokeObjectURL(avatarPreviewRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -110,6 +130,12 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       if (file.size > 5 * 1024 * 1024) {
         errorToast(t('profilePicture.tooLarge'));
         return;
+      }
+      // Picking a second file before saving replaces avatarPreview without
+      // ever passing through handleSave's revoke below — free the old
+      // preview URL here so it doesn't leak.
+      if (avatarPreview) {
+        URL.revokeObjectURL(avatarPreview);
       }
       setAvatarFile(file);
       const previewUrl = URL.createObjectURL(file);
@@ -378,16 +404,16 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
               </ModalHeader>
               <ModalBody className="overflow-hidden">
                 <MotionConfig transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}>
-                  <motion.div layout className="space-y-4">
-                    <motion.div layout>
+                  <m.div layout className="space-y-4">
+                    <m.div layout>
                       <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />}>
                         {deletionType === 'immediate'
                           ? t('deleteAccount.warningImmediate')
                           : t('deleteAccount.warningGracePeriod')}
                       </InfoBanner>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-2">
+                    <m.div layout className="space-y-2">
                       <p className="text-sm font-medium">{t('deleteAccount.whenDelete')}</p>
                       <ul className="text-muted-foreground list-disc space-y-1.5 pl-4 text-xs sm:pl-5 sm:text-sm">
                         <li>{t('deleteAccount.agentsDeleted')}</li>
@@ -397,7 +423,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                         <li>{t('deleteAccount.billingRemoved')}</li>
                         <AnimatePresence initial={false}>
                           {deletionType === 'grace-period' && (
-                            <motion.li
+                            <m.li
                               key="scheduled-30-days"
                               className="list-item"
                               initial={{ opacity: 0, height: 0 }}
@@ -405,13 +431,13 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                               exit={{ opacity: 0, height: 0 }}
                             >
                               {t('deleteAccount.scheduled30Days')}
-                            </motion.li>
+                            </m.li>
                           )}
                         </AnimatePresence>
                       </ul>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-3">
+                    <m.div layout className="space-y-3">
                       <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                       <RadioGroup
                         value={deletionType}
@@ -437,9 +463,9 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                           variant="outline"
                         />
                       </RadioGroup>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-2">
+                    <m.div layout className="space-y-2">
                       <Label htmlFor="delete-confirm" className="text-sm">
                         {t('deleteAccount.confirmText')}
                       </Label>
@@ -451,8 +477,8 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                         placeholder={t('deleteAccount.confirmPlaceholder')}
                         autoComplete="off"
                       />
-                    </motion.div>
-                  </motion.div>
+                    </m.div>
+                  </m.div>
                 </MotionConfig>
               </ModalBody>
               <ModalFooter className="w-full sm:justify-between">

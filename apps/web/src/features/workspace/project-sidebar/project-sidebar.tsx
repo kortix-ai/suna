@@ -27,7 +27,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
@@ -78,7 +78,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className
   all: List,
   mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Icon.Slack,
+  slack: Slack,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,

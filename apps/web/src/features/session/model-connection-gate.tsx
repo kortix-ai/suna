@@ -1,7 +1,7 @@
 'use client';
 
 import { CreditCardIcon as CreditCard, KeyIcon as KeyRound } from '@phosphor-icons/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -91,7 +91,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
       {modal}
       <AnimatePresence initial={false}>
         {show && (
-          <motion.div
+          <m.div
             key="model-connection-bar"
             initial={reduceMotion ? { opacity: 0 } : { height: 0 }}
             animate={
@@ -106,7 +106,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
             }
             className="relative z-0 overflow-hidden"
           >
-            <motion.div
+            <m.div
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
@@ -140,8 +140,8 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

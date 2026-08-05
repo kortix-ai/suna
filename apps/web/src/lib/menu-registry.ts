@@ -17,7 +17,9 @@
  * ============================================================================
  */
 
-import { Icon } from '@/features/icon/icon';
+import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
+import { Moon } from '@/features/icon/icons/moon';
+import { Sun } from '@/features/icon/icons/sun';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { ExperimentalFeatureKey } from '@kortix/sdk';
 import {
@@ -707,7 +709,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop',
     label: 'Desktop',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'navigation',
     subGroup: 'services',
     showIn: ['rightSidebar'],
@@ -765,7 +767,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop-cmd',
     label: 'Desktop',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -905,7 +907,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-light',
     label: 'Light Theme',
-    icon: Icon.Sun,
+    icon: Sun,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -915,7 +917,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-dark',
     label: 'Dark Theme',
-    icon: Icon.Moon,
+    icon: Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -925,7 +927,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-system',
     label: 'System Theme',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',

@@ -44,7 +44,7 @@ import {
   SlidersHorizontalIcon as SlidersHorizontal,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import Image from 'next/image';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -179,7 +179,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="bg-background fixed inset-0 z-[70] flex flex-col"
@@ -217,7 +217,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-5 pb-6 md:items-center md:px-8">
           <div className="w-full max-w-2xl py-6">
             <AnimatePresence mode="wait">
-              <motion.div
+              <m.div
                 key={stepId}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -243,7 +243,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                 {stepId === 'done' && (
                   <DoneStep profileCount={connectorSlugs.length} onStart={complete} />
                 )}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
           </div>
         </div>
@@ -262,7 +262,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
             <StepPrimaryAction stepId={stepId} projectId={projectId} onNext={next} />
           </div>
         )}
-      </motion.div>
+      </m.div>
 
       {showFounderStep && (
         <DemoQualifierModal

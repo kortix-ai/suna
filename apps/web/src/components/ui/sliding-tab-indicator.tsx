@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { motion, useReducedMotion, type Transition } from 'motion/react';
+import { m, useReducedMotion, type Transition } from 'motion/react';
 import {
   useCallback,
   useLayoutEffect,
@@ -92,7 +92,7 @@ export function SlidingTabIndicator({
   return (
     <div ref={containerRef} className={cn('relative', className)} {...props}>
       {visible ? (
-        <motion.div
+        <m.div
           aria-hidden
           className={cn('pointer-events-none absolute top-0 left-0 z-0', indicatorClassName)}
           initial={false}

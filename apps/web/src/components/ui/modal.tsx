@@ -45,7 +45,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 import {
   DialogDepthProvider,
@@ -223,7 +223,7 @@ const ModalContentInner = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   ModalContentProps
 >(
-    (
+  (
     {
       side = 'bottom',
       animation = 'default',
@@ -293,7 +293,7 @@ const ModalContentInner = React.forwardRef<
                   closeClassName,
                 )}
               >
-                <Icon.Close className="text-primary size-4 stroke-1" />
+                <Close className="text-primary size-4 stroke-1" />
                 <span className="sr-only">Close</span>
               </Button>
             </ModalClose>

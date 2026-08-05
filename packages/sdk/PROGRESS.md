@@ -6182,3 +6182,58 @@ No public export name changed. The public-surface snapshots stayed unchanged.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+### 2026-08-06 — session `perf-memory` review fix wave
+
+Three fixes to the session-retention work already on the `perf-memory` branch,
+after a whole-branch review. All three are eviction correctness, not new
+capability. No public export name changed; `SyncState` gains one method,
+`shouldHydrateFromCache` gains one optional input field — both additive.
+
+**1. Orphan part buckets survived every drop.** `parts` is keyed by messageID,
+and both sweeps (`dropSessionData`, `clearSession`) walked `messages[sessionID]`
+to find buckets. The `message.part.delta` handler deliberately stores a part
+WITHOUT creating its assistant message when the session holds no user message
+yet, so those buckets are unreachable from that walk and outlived the drop — the
+leak class this work exists to close, still open on the page-refresh path that
+creates it. `deleteOrphanPartBuckets` sweeps them by `Part.sessionID`.
+
+**2. `sessionStatus` no longer dropped on eviction.** It is the only slice read
+for sessions that are on purpose not resident (a spawn-tool banner reads
+`sessionStatus[child]`), and dropping it reclaimed nothing — the `session.status`
+frames and the connect-time status poll re-add an entry for every session on the
+runtime regardless. This changed an expectation an existing test encoded
+deliberately, so that test changed with it, in its own commit, with the reasoning
+in the message.
+
+**3. An evicted session that is still streaming now repaints from disk.** Its
+SSE frames put `messages[id]` back within seconds, holding only the post-eviction
+tail, and `shouldHydrateFromCache` read the key's presence as "the store is the
+authority" — so returning to it showed the fragment, not the transcript. Before
+this branch that transcript was simply resident, so it was a regression in what
+the user sees. Fixed by marking evicted sessions (`wasTranscriptEvicted`) rather
+than by dropping events for unmounted sessions: `useOpenCodeMessages` (the
+spawn-tool preview of a child) has no reconcile and is fed by SSE alone, so
+dropping frames would trade recoverable staleness for an unrecoverable gap.
+`pruneDetachedSessions` re-checks the marked ids so refilled data is swept again
+on the next mount instead of living forever outside the detach window.
+
+RED, then GREEN, for each — every new assertion was watched failing against the
+unfixed code first, and each fix was then mutation-checked (11 mutations, each
+killing a specific test; see the commit messages).
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1533 pass`, `0 fail`, `6287 expect()` calls
+  across `121` files (baseline for this branch was `1520` / `121`).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Not covered by a test:** the two-line wiring in `use-session-sync.ts` that
+passes `wasTranscriptEvicted` into `shouldHydrateFromCache`. The SDK test runner
+has no DOM, so that effect cannot be driven; both halves of the decision it
+composes are tested directly.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**

@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import nextTypescript from 'eslint-config-next/typescript';
+import { readFileSync } from 'node:fs';
 
 const sdkBoundaryBaseline = JSON.parse(
   readFileSync(new URL('./src/sdk-boundary-baseline.json', import.meta.url), 'utf8'),
@@ -134,7 +134,15 @@ const eslintConfig = [
       'no-restricted-syntax': [
         'error',
         {
-          selector: "ImportSpecifier[imported.name=/OpenCode/i]",
+          // Scoped to the runtime SDK sources this guardrail actually cares
+          // about (@kortix/sdk and anything opencode-named) — NOT every
+          // import named "OpenCode" from anywhere. An earlier unscoped
+          // version (`ImportSpecifier[imported.name=/OpenCode/i]`) also
+          // fired on an unrelated brand-mark icon component imported from
+          // '@/features/icon/icons/open-code', forcing it to export under a
+          // confusing alias for no boundary-safety reason.
+          selector:
+            'ImportDeclaration[source.value=/(^@kortix\\/sdk(\\/|$))|opencode/i] > ImportSpecifier[imported.name=/OpenCode/i]',
           message: 'Import a runtime-neutral alias from @kortix/sdk.',
         },
       ],

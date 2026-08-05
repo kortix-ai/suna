@@ -51,7 +51,7 @@ import {
   SparkleIcon as SparklesSolid,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
@@ -401,7 +401,7 @@ export function AppPreview({
                 → "Button icon-swap"). */}
             <span className="relative inline-flex size-4 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'link'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -414,7 +414,7 @@ export function AppPreview({
                   ) : (
                     <LinkSimpleIcon className="size-4" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </Button>
