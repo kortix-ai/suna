@@ -6,6 +6,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import {
   ensureFirstProject,
   isAutoProjectSuppressed,
+  isProvisionInFlightError,
   navigationMayCreateProject,
 } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
@@ -102,7 +103,14 @@ export default function ProjectStartPage() {
       // default landing.
       router.replace(withCurrentQuery('/projects'));
     } catch (err) {
-      console.error('[onboarding] could not resolve a landing project', err);
+      // A concurrent, healthy provision — this account's OTHER tab or entry
+      // point is mid-create with the same persisted idempotency key — is not
+      // a bug. `ensureFirstProject` already re-checked once before throwing;
+      // this loop's own retry (below, same key) is what waits out the rest,
+      // so this must not be logged as though something went wrong.
+      if (!isProvisionInFlightError(err)) {
+        console.error('[onboarding] could not resolve a landing project', err);
+      }
       const delay = RETRY_DELAY_MS[attempts.current - 1];
       if (attempts.current < MAX_RESOLVE_ATTEMPTS && delay !== undefined) {
         // A transient backend hiccup must not demote the user to the projects
