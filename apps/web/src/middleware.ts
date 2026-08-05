@@ -1,4 +1,5 @@
 import { locales, type Locale } from '@/i18n/config';
+import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import {
@@ -190,6 +191,19 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
   ) {
     return NextResponse.next();
+  }
+
+  // ── Terms of Service → public Drive folder (permanent 308) ──────────────
+  // The Terms document moved to an externally-owned Google Drive folder. Both
+  // the new stable path (`/legal/terms`) and the legacy tab query
+  // (`/legal?tab=terms`), including every supported locale prefix
+  // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there
+  // so existing links/bookmarks keep resolving. Privacy and imprint stay local
+  // on `/legal`. This runs before auth/locale logic — the destination is an
+  // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
+  const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
+  if (termsDestination) {
+    return NextResponse.redirect(termsDestination, 308);
   }
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
