@@ -19,12 +19,19 @@ function fnSource(name: string): string {
   return ends.length === 0 ? SOURCE.slice(start) : SOURCE.slice(start, ends[0]);
 }
 
-describe('project Settings sidebar entry', () => {
+/**
+ * The labels do not follow the destinations here, so these tests exist mostly
+ * to stop someone "fixing" the pairing back on intuition:
+ *
+ *   Customize row -> the capability ROUTE (Connectors first)
+ *   Settings row  -> the Customize OVERLAY
+ */
+describe('project Customize sidebar entry (the routed one)', () => {
   test('navigates with a prefetching Link, not router.push', () => {
     // Same tripwire as the Files entry: a button + router.push cannot be
     // prefetched, so every click pays for the RSC payload and the route chunk
     // cold. `prefetch={false}` also contains "prefetch", hence the two asserts.
-    const navItem = fnSource('ProjectSettingsNavItem');
+    const navItem = fnSource('ProjectCustomizeNavItem');
 
     expect(navItem).toContain('<Link');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
@@ -34,12 +41,19 @@ describe('project Settings sidebar entry', () => {
     expect(navItem).not.toContain('router.push');
   });
 
+  test('lands on Connectors by default', () => {
+    // First entry of TAB_PREFERENCE is the landing tab; skills/commands are
+    // only fallbacks for a caller denied connector read.
+    expect(SOURCE).toMatch(/TAB_PREFERENCE[\s\S]*?key: 'connectors'/);
+  });
+
   test('reads the three capability leaves, not one', () => {
     // Gating the whole entry on connector read alone would strand a caller who
     // may open Skills or Commands but not Connectors.
     expect(SOURCE).toContain('PROJECT_CONNECTOR_READ');
     expect(SOURCE).toContain('PROJECT_SKILL_READ');
     expect(SOURCE).toContain('PROJECT_COMMAND_READ');
+    expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
   test('stays visible while a probe is loading', () => {
@@ -48,6 +62,49 @@ describe('project Settings sidebar entry', () => {
   });
 
   test('closes the mobile drawer on navigate', () => {
+    expect(fnSource('ProjectCustomizeNavItem')).toContain('setOpenMobile(false)');
+  });
+
+  test('does not open the overlay', () => {
+    // The two rows are different surfaces. If this one starts calling
+    // openCustomize() the capability pages lose their only sidebar entry.
+    expect(fnSource('ProjectCustomizeNavItem')).not.toContain('openCustomize');
+  });
+
+  test('carries no keycap', () => {
+    // Mod+, is printed on the Settings row, and one shortcut advertised on two
+    // rows is a lie on at least one of them.
+    expect(fnSource('ProjectCustomizeNavItem')).not.toContain('<Kbd>');
+  });
+});
+
+describe('project Settings sidebar entry (the overlay one)', () => {
+  test('opens the Customize overlay, it does not navigate', () => {
+    // The overlay floats over the current page on purpose (customize-store):
+    // routing there instead would drop you out of whatever session you were in.
+    const navItem = fnSource('ProjectSettingsNavItem');
+
+    expect(navItem).toContain('openCustomize()');
+    expect(navItem).not.toContain('<Link');
+    expect(navItem).not.toContain('capabilityTabHref');
+    expect(navItem).not.toContain('router.push');
+  });
+
+  test('is ungated and takes its active state from the overlay flag', () => {
+    // useCapabilityTab reads connector/skill/command.read — the leaves the
+    // capability ROUTE needs. The overlay also holds Agents, LLM providers and
+    // Members, so gating it on those three would hide it from a caller who can
+    // still use most of what is inside. And an overlay has no pathname, so
+    // active state has to come from the store.
+    const navItem = fnSource('ProjectSettingsNavItem');
+
+    expect(navItem).not.toContain('useCapabilityTab');
+    expect(navItem).not.toContain('useProjectCan');
+    expect(navItem).not.toContain('usePathname');
+    expect(navItem).toContain('useCustomizeStore((s) => s.open)');
+  });
+
+  test('closes the mobile drawer on open', () => {
     expect(fnSource('ProjectSettingsNavItem')).toContain('setOpenMobile(false)');
   });
 
@@ -65,44 +122,15 @@ describe('project Settings sidebar entry', () => {
     // always truthy and Windows users were shown ⌘.
     expect(SOURCE).toContain("useDevice() === 'mac'");
   });
+});
 
-  test('the Customize row opens the overlay, it does not navigate', () => {
-    // The overlay floats over the current page on purpose (customize-store):
-    // routing there instead would drop you out of whatever session you were in.
-    const customize = fnSource('ProjectCustomizeNavItem');
-
-    expect(customize).toContain('openCustomize()');
-    expect(customize).toContain('Customize');
-    expect(customize).toContain('setOpenMobile(false)');
-    expect(customize).not.toContain('<Link');
-    expect(customize).not.toContain('capabilityTabHref');
-    expect(customize).not.toContain('router.push');
-    // No keycap: Mod+, is printed on the Settings row, and one shortcut
-    // advertised on two rows is a lie on at least one of them.
-    expect(customize).not.toContain('<Kbd>');
-  });
-
-  test('the Customize row is ungated and its active state is the overlay flag', () => {
-    // useSettingsTab reads connector/skill/command.read — the leaves the
-    // Settings ROUTE needs. The overlay also holds Agents, LLM providers and
-    // Members, so gating it on those three would hide it from a caller who can
-    // still use most of what is inside. And an overlay has no pathname, so
-    // active state has to come from the store.
-    const customize = fnSource('ProjectCustomizeNavItem');
-
-    expect(customize).not.toContain('useSettingsTab');
-    expect(customize).not.toContain('useProjectCan');
-    expect(customize).not.toContain('usePathname');
-    expect(customize).toContain('useCustomizeStore((s) => s.open)');
-  });
-
-  test('the Mod+, shortcut goes where the Settings row goes', () => {
-    // A keycap that opens something other than the row it is printed on is
-    // worse than no keycap.
+describe('the Mod+, shortcut', () => {
+  test('goes where the row it is printed on goes — the overlay', () => {
     const hook = fnSource('useSettingsKeyboardShortcut');
 
     expect(hook).toContain("event.key === ','");
-    expect(hook).toContain('capabilityTabHref(projectId, tab)');
-    expect(hook).not.toContain('openCustomize');
+    expect(hook).toContain('openCustomize()');
+    expect(hook).not.toContain('capabilityTabHref');
+    expect(hook).not.toContain('router.push');
   });
 });
