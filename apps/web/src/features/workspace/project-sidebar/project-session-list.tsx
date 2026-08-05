@@ -5,7 +5,10 @@ import { useTranslations } from 'next-intl';
 import {
   directSubsessions,
   matchesSessionFilter,
+  sessionDisplayStatus,
   sessionSource,
+  SESSION_DISPLAY_STATUS_LABELS,
+  type SessionDisplayStatus,
   type SessionFilterValue,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
@@ -28,6 +31,7 @@ import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/s
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  groupSessionsForSidebar,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -43,7 +47,6 @@ import {
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
-  type ProjectSessionStatus,
 } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
@@ -162,6 +165,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
   // this list only applies the chosen filter.
   const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
+  const grouped = groupSessionsForSidebar(visibleSessions, reviewSummary.needsYouBySession);
 
   const viewState = resolveSessionListViewState({
     isLoading,
@@ -214,65 +218,76 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   return (
     <>
       <FadedScrollArea className="h-full min-h-0 space-y-px">
-        {visibleSessions.map((session) => {
-          const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-          const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          const isSwitchTarget = switchingToSessionId === session.session_id;
-          const children = directSubsessions(session);
-          return (
-            <div key={session.session_id} className="space-y-px">
-              <ProjectSessionRow
-                session={session}
-                href={href}
-                isActive={!!isActive && !activeOpenCodeSessionId}
-                isSwitching={isSwitchTarget}
-                onNavigate={(event) => {
-                  if (switchingToSessionId && session.session_id === activeSessionId) {
-                    event.preventDefault();
-                    cancelSessionSwitch();
-                    router.replace(href, { scroll: false });
-                    return;
-                  }
-                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
-                    beginSessionSwitch(session.session_id);
-                  }
-                }}
-                displayTitle={getSessionDisplayTitle(session)}
-                childCount={children.length}
-                reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
-                onDelete={(id, label) => setSessionToDelete({ id, label })}
-                onShare={(s) => setSessionToShare(s)}
-                onRename={(id, name) => setSessionToRename({ id, name })}
-                onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
-                isRestarting={
-                  restartMutation.isPending &&
-                  restartMutation.variables?.sessionId === session.session_id
-                }
-                onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
-                isStopping={
-                  stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-                }
+        {grouped.sections.map((section) => (
+          <div key={section.id} className="space-y-px">
+            {grouped.showHeaders && (
+              <SessionSectionHeader
+                label={section.label}
+                count={section.showCount ? section.sessions.length : null}
               />
-              {children.length > 0 && isActive && (
-                <div className="border-border ml-3.5 border-l-2 pl-2">
-                  {children.map((child) => {
-                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                    const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-                    return (
-                      <ProjectSubsessionRow
-                        key={child.id}
-                        title={child.title || 'Sub-session'}
-                        href={childHref}
-                        isActive={activeChild}
-                        updatedAt={child.updated_at}
-                      />
-                    );
-                  })}
+            )}
+            {section.sessions.map((session) => {
+              const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+              const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+              const isSwitchTarget = switchingToSessionId === session.session_id;
+              const children = directSubsessions(session);
+              return (
+                <div key={session.session_id} className="space-y-px">
+                  <ProjectSessionRow
+                    session={session}
+                    href={href}
+                    isActive={!!isActive && !activeOpenCodeSessionId}
+                    isSwitching={isSwitchTarget}
+                    onNavigate={(event) => {
+                      if (switchingToSessionId && session.session_id === activeSessionId) {
+                        event.preventDefault();
+                        cancelSessionSwitch();
+                        router.replace(href, { scroll: false });
+                        return;
+                      }
+                      if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+                        beginSessionSwitch(session.session_id);
+                      }
+                    }}
+                    displayTitle={getSessionDisplayTitle(session)}
+                    childCount={children.length}
+                    reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+                    onDelete={(id, label) => setSessionToDelete({ id, label })}
+                    onShare={(s) => setSessionToShare(s)}
+                    onRename={(id, name) => setSessionToRename({ id, name })}
+                    onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
+                    isRestarting={
+                      restartMutation.isPending &&
+                      restartMutation.variables?.sessionId === session.session_id
+                    }
+                    onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
+                    isStopping={
+                      stopMutation.isPending &&
+                      stopMutation.variables?.sessionId === session.session_id
+                    }
+                  />
+                  {children.length > 0 && isActive && (
+                    <div className="border-border ml-3.5 border-l-2 pl-2">
+                      {children.map((child) => {
+                        const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                        const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                        return (
+                          <ProjectSubsessionRow
+                            key={child.id}
+                            title={child.title || 'Sub-session'}
+                            href={childHref}
+                            isActive={activeChild}
+                            updatedAt={child.updated_at}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        ))}
       </FadedScrollArea>
 
       <ShareSessionModal
@@ -299,6 +314,17 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
     </>
+  );
+}
+
+/** Non-sticky by design: FadedScrollArea masks its own edges, and a sticky
+ *  header fights that mask. */
+function SessionSectionHeader({ label, count }: { label: string; count: number | null }) {
+  return (
+    <div className="text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+      <span>{label}</span>
+      {count !== null && <span className="tabular-nums">{count}</span>}
+    </div>
   );
 }
 
@@ -381,7 +407,7 @@ function ProjectSessionRow({
           aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          <SessionStatusDot session={session} reviewCount={reviewCount} />
 
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
@@ -536,68 +562,66 @@ function ProjectSubsessionRow({
   );
 }
 
+/** Per-display-status paint. Green appears in exactly two rows — the two that
+ *  mean live or actionable. `done` is muted on purpose: it is the change that
+ *  drains the green out of a long list and makes the rest mean something. */
+const STATUS_DOT_STYLE: Record<
+  SessionDisplayStatus,
+  { color: string; fill: boolean; dashed: boolean }
+> = {
+  'needs-you': { color: 'var(--kortix-green)', fill: true, dashed: false },
+  starting: { color: 'var(--kortix-yellow)', fill: false, dashed: false },
+  running: { color: 'var(--kortix-green)', fill: true, dashed: false },
+  done: { color: 'var(--muted-foreground)', fill: false, dashed: false },
+  stopped: { color: 'var(--muted-foreground)', fill: false, dashed: true },
+  failed: { color: 'var(--kortix-red)', fill: true, dashed: false },
+};
+
 function SessionStatusDot({
-  status,
+  session,
   reviewCount = 0,
 }: {
-  status: ProjectSessionStatus;
+  session: ProjectSession;
   reviewCount?: number;
 }) {
-  const isProvisioning = status === 'queued' || status === 'branching' || status === 'provisioning';
-  // A session with items awaiting the human reads as "finished — your turn": a
-  // solid accent ring + filled center in Kortix green, overriding the run-status
-  // dot because "awaiting you" is the more actionable signal. This is the same
-  // needs_you state the footer "Review" pill counts, so the dots always sum to it.
-  const reviewPending = reviewCount > 0;
+  const display = sessionDisplayStatus(session, reviewCount);
+  const style = STATUS_DOT_STYLE[display];
+  const label =
+    display === 'needs-you'
+      ? `${reviewCount} awaiting your review`
+      : SESSION_DISPLAY_STATUS_LABELS[display];
 
   return (
-    <Hint
-      side="right"
-      label={
-        reviewPending ? (
-          <span className="text-xs">{reviewCount} awaiting your review</span>
-        ) : (
-          <span className="text-xs capitalize">{status}</span>
-        )
-      }
-    >
+    <Hint side="right" label={<span className="text-xs">{label}</span>}>
       <div className="flex size-4 shrink-0 items-center justify-center">
-        <svg
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          strokeLinejoin="round"
-          style={{
-            color: reviewPending
-              ? 'var(--kortix-green)'
-              : isProvisioning
-                ? 'var(--kortix-yellow)'
-                : status === 'running'
-                  ? 'var(--kortix-green)'
-                  : status === 'stopped'
-                    ? 'var(--muted-foreground)'
-                    : status === 'completed'
-                      ? 'var(--kortix-green)'
-                      : 'var(--kortix-red)',
-          }}
-          className={cn(
-            'relative flex shrink-0 items-center justify-center',
-            !reviewPending && isProvisioning && 'animate-spin',
-          )}
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6.3"
-            stroke="currentColor"
-            fill="none"
-            strokeWidth="1.5"
-            strokeDasharray={reviewPending ? undefined : '3 3.4'}
-          ></circle>
-          {(reviewPending || isProvisioning || status === 'failed') && (
-            <circle cx="8" cy="8" r={reviewPending ? 3.2 : 4} fill="currentColor" />
-          )}
-        </svg>
+        {display === 'starting' ? (
+          // Loading is the only spinner in this codebase. The previous
+          // implementation span an SVG with animate-spin, which the rule bans.
+          <Loading variant="spokes" className="size-3.5 text-[var(--kortix-yellow)]" />
+        ) : (
+          <svg
+            height="16"
+            width="16"
+            viewBox="0 0 16 16"
+            strokeLinejoin="round"
+            style={{ color: style.color }}
+            className="flex shrink-0 items-center justify-center"
+            aria-hidden
+          >
+            <circle
+              cx="8"
+              cy="8"
+              r="6.3"
+              stroke="currentColor"
+              fill="none"
+              strokeWidth="1.5"
+              strokeDasharray={style.dashed ? '3 3.4' : undefined}
+            />
+            {style.fill && (
+              <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
+            )}
+          </svg>
+        )}
       </div>
     </Hint>
   );
