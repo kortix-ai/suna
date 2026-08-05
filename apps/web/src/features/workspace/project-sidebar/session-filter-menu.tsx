@@ -23,7 +23,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/features/icon/icon';
-import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
@@ -201,9 +201,15 @@ export function SessionFilterMenu({
 }: SessionFilterMenuProps) {
   const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
   const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
-  const statusFilters = useSessionFilterStore((s) => s.statusFiltersByProject[projectId] ?? []);
-  const sourceFilters = useSessionFilterStore((s) => s.sourceFiltersByProject[projectId] ?? []);
-  const hiddenSections = useSessionFilterStore((s) => s.hiddenSectionsByProject[projectId] ?? []);
+  const statusFilters = useSessionFilterStore(
+    (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const sourceFilters = useSessionFilterStore(
+    (s) => s.sourceFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const hiddenSections = useSessionFilterStore(
+    (s) => s.hiddenSectionsByProject[projectId] ?? EMPTY_LIST,
+  );
   const setGroupMode = useSessionFilterStore((s) => s.setGroupMode);
   const setOrderMode = useSessionFilterStore((s) => s.setOrderMode);
   const toggleStatusFilter = useSessionFilterStore((s) => s.toggleStatusFilter);

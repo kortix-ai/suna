@@ -22,6 +22,20 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 const STORAGE_KEY = 'kortix.project-session-view';
 
+/**
+ * The fallback every list-valued selector must use — never a bare `[]`.
+ *
+ * zustand v5 reads through `useSyncExternalStore`, which compares snapshots
+ * with `Object.is`. A selector written `s.statusFiltersByProject[id] ?? []`
+ * allocates a NEW array on every read, so the snapshot never equals the
+ * previous one and React re-renders forever ("Maximum update depth exceeded").
+ * One frozen module-level reference makes the comparison stable.
+ *
+ * `readonly never[]` is assignable to any `readonly T[]`, so a single constant
+ * serves every list in this store.
+ */
+export const EMPTY_LIST: readonly never[] = Object.freeze([]);
+
 /** Soft cap so the per-project map can't grow unbounded; keeps the last N. */
 const MAX_TRACKED_PROJECTS = 24;
 

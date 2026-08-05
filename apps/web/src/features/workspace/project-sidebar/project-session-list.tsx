@@ -6,9 +6,9 @@ import {
   directSubsessions,
   matchesSourceFilters,
   matchesStatusFilters,
+  SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
   sessionSource,
-  SESSION_DISPLAY_STATUS_LABELS,
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
@@ -38,12 +38,15 @@ import {
   shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
-import { groupSessions, type SessionSection } from '@/features/workspace/project-sidebar/session-grouping';
+import {
+  groupSessions,
+  type SessionSection,
+} from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
+import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
-import { useSessionFilterStore } from '@/stores/session-filter-store';
 import {
   listProjectSessions,
   restartProjectSession,
@@ -144,11 +147,17 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // which writes to the same store from the nested `⋯` menu.
   const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
   const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
-  const statusFilters = useSessionFilterStore((s) => s.statusFiltersByProject[projectId] ?? []);
-  const sourceFilters = useSessionFilterStore((s) => s.sourceFiltersByProject[projectId] ?? []);
-  const hiddenSections = useSessionFilterStore((s) => s.hiddenSectionsByProject[projectId] ?? []);
+  const statusFilters = useSessionFilterStore(
+    (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const sourceFilters = useSessionFilterStore(
+    (s) => s.sourceFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const hiddenSections = useSessionFilterStore(
+    (s) => s.hiddenSectionsByProject[projectId] ?? EMPTY_LIST,
+  );
   const collapsedSections = useSessionFilterStore(
-    (s) => s.collapsedSectionsByProject[projectId] ?? [],
+    (s) => s.collapsedSectionsByProject[projectId] ?? EMPTY_LIST,
   );
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
