@@ -3,12 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type {
-  SessionFilterValue,
-  SessionSourceFilter,
-  SessionStatusFilter,
-  SessionStatusFilterValue,
-} from '@/components/projects/session-label';
+import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
 import type {
   SessionGroupMode,
   SessionOrderMode,
@@ -41,13 +36,6 @@ function toggleValue<V>(list: readonly V[], value: V): V[] {
 }
 
 interface State {
-  /** @deprecated superseded by the source/status facets below; kept until
-   *  project-sidebar.tsx / project-session-list.tsx stop importing it. */
-  filterByProject: Record<string, SessionFilterValue>;
-  /** @deprecated superseded by statusFiltersByProject; kept for the same
-   *  reason as filterByProject. */
-  statusByProject: Record<string, SessionStatusFilterValue>;
-
   groupByProject: Record<string, SessionGroupMode>;
   orderByProject: Record<string, SessionOrderMode>;
   statusFiltersByProject: Record<string, SessionStatusFilter[]>;
@@ -57,11 +45,6 @@ interface State {
 }
 
 interface Actions {
-  /** @deprecated superseded by the source/status facets below. */
-  setFilter: (projectId: string, filter: SessionFilterValue) => void;
-  /** @deprecated superseded by toggleStatusFilter. */
-  setStatusFilter: (projectId: string, status: SessionStatusFilterValue) => void;
-
   setGroupMode: (projectId: string, mode: SessionGroupMode) => void;
   setOrderMode: (projectId: string, order: SessionOrderMode) => void;
   toggleStatusFilter: (projectId: string, value: SessionStatusFilter) => void;
@@ -75,17 +58,6 @@ interface Actions {
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => ({
-      filterByProject: {},
-      setFilter: (projectId, filter) => {
-        if ((get().filterByProject[projectId] ?? 'all') === filter) return;
-        set({ filterByProject: { ...get().filterByProject, [projectId]: filter } });
-      },
-      statusByProject: {},
-      setStatusFilter: (projectId, status) => {
-        if ((get().statusByProject[projectId] ?? 'all') === status) return;
-        set({ statusByProject: { ...get().statusByProject, [projectId]: status } });
-      },
-
       groupByProject: {},
       setGroupMode: (projectId, mode) => {
         if ((get().groupByProject[projectId] ?? 'status') === mode) return;
@@ -161,8 +133,6 @@ export const useSessionFilterStore = create<State & Actions>()(
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
-        filterByProject: pruneProjects(state.filterByProject),
-        statusByProject: pruneProjects(state.statusByProject),
         groupByProject: pruneProjects(state.groupByProject),
         orderByProject: pruneProjects(state.orderByProject),
         statusFiltersByProject: pruneProjects(state.statusFiltersByProject),

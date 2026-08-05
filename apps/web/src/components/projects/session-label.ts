@@ -10,9 +10,6 @@ import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk';
  * - the SOURCE a session came from, and the source filter over it;
  * - the DISPLAY STATUS — the five user-facing states the seven-value sandbox
  *   lifecycle collapses to — and the status filter over it;
- * - the two-dimension filter MENU (`resolveSessionFilterMenu`), which resolves
- *   both filters and both option lists together so the counts a menu promises
- *   always match what the list renders.
  */
 
 /** The root opencode session a project session is pinned to (if synced). */
@@ -70,8 +67,13 @@ export function sessionSource(session: ProjectSession): SessionSource {
 /**
  * Session-list filter. "All" (default) shows everything; chats split into
  * "mine" and "shared" (chats someone else owns that are visible to me);
- * automation sources match sessionSource(). Which of these a project actually
- * offers is decided by availableSessionFilterOptions().
+ * automation sources match sessionSource().
+ *
+ * @deprecated single-select surface, superseded by the multi-select
+ * `SessionSourceFilter` facet below. `matchesSessionFilter` still has a live
+ * caller in `project-session-list.tsx` (Task 5 of the advanced-filter plan
+ * rewires it onto the store's facets) — do not delete until that caller is
+ * gone.
  */
 export type SessionFilterValue =
   | 'all'
@@ -82,16 +84,7 @@ export type SessionFilterValue =
   | 'schedule'
   | 'webhook';
 
-export const SESSION_FILTER_OPTIONS: Array<{ value: SessionFilterValue; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'mine', label: 'My Chats' },
-  { value: 'shared', label: 'Shared' },
-  { value: 'slack', label: 'Slack' },
-  { value: 'email', label: 'Email' },
-  { value: 'schedule', label: 'Scheduled' },
-  { value: 'webhook', label: 'Webhook' },
-];
-
+/** @deprecated see `SessionFilterValue`. */
 export function matchesSessionFilter(session: ProjectSession, filter: SessionFilterValue): boolean {
   if (filter === 'all') return true;
   const kind = sessionSource(session).kind;
@@ -100,56 +93,6 @@ export function matchesSessionFilter(session: ProjectSession, filter: SessionFil
   if (filter === 'mine') return kind === 'chat' && session.is_owner !== false;
   if (filter === 'shared') return kind === 'chat' && session.is_owner === false;
   return kind === filter;
-}
-
-export interface SessionFilterOption {
-  value: SessionFilterValue;
-  label: string;
-  count: number;
-}
-
-/**
- * The one option-list builder both filter dimensions use.
- *
- * Three rules, identical for source and status:
- *
- * 1. An option earns a slot only when it matches at least one session — an
- *    "Email 0" row is a dead end.
- * 2. …unless it is the ACTIVE option. A menu that drops the option the user is
- *    currently filtered to leaves no way back, so the active option is always
- *    listed, at its true count, even when that count is 0.
- * 3. The group as a whole earns its place only at two or more listed options:
- *    below that every option renders the exact same list as "All". `[]` is the
- *    signal to drop the group entirely. Rule 3 is skipped whenever a non-"all"
- *    option is active — again, the user needs the way back.
- *
- * "All" is prepended (never counted as an option itself) and counts every
- * session in `sessions`, including kinds no option covers (e.g. telegram).
- */
-function buildFilterOptions<V extends string>(
-  declared: Array<{ value: V; label: string }>,
-  sessions: ProjectSession[],
-  matches: (session: ProjectSession, value: V) => boolean,
-  active: V,
-): Array<{ value: V; label: string; count: number }> {
-  const [allOption, ...rest] = declared;
-  const present = rest
-    .map((option) => ({
-      ...option,
-      count: sessions.filter((session) => matches(session, option.value)).length,
-    }))
-    .filter((option) => option.count > 0 || option.value === active);
-
-  if (active === allOption.value && present.length < 2) return [];
-  return [{ ...allOption, count: sessions.length }, ...present];
-}
-
-/** Which source filters a session set is worth offering, with their counts.
- *  See `buildFilterOptions` for the rules. Counts the whole set — for the
- *  faceted, ANDed-with-status counts the menu actually renders, use
- *  `resolveSessionFilterMenu`. */
-export function availableSessionFilterOptions(sessions: ProjectSession[]): SessionFilterOption[] {
-  return buildFilterOptions(SESSION_FILTER_OPTIONS, sessions, matchesSessionFilter, 'all');
 }
 
 /**
@@ -246,25 +189,8 @@ export function sessionDisplayStatus(
  */
 export type SessionStatusFilterValue = 'all' | 'running' | 'done' | 'stopped' | 'failed';
 
-export interface SessionStatusFilterOption {
-  value: SessionStatusFilterValue;
-  label: string;
-  count: number;
-}
-
-/** Declared order — the menu renders these top-to-bottom regardless of which
- *  statuses the project happens to contain. */
-export const SESSION_STATUS_FILTER_OPTIONS: Array<{
-  value: SessionStatusFilterValue;
-  label: string;
-}> = [
-  { value: 'all', label: 'All' },
-  { value: 'running', label: 'Running' },
-  { value: 'done', label: 'Done' },
-  { value: 'stopped', label: 'Stopped' },
-  { value: 'failed', label: 'Failed' },
-];
-
+/** @deprecated see `SessionFilterValue`; same live caller in
+ *  `project-session-list.tsx` until Task 5. */
 export function matchesSessionStatusFilter(
   session: ProjectSession,
   filter: SessionStatusFilterValue,
@@ -275,96 +201,6 @@ export function matchesSessionStatusFilter(
   const display = sessionDisplayStatus(session);
   if (filter === 'running') return display === 'running' || display === 'starting';
   return display === filter;
-}
-
-/** Which status filters this session set is worth offering, with their counts.
- *  Same three rules as the source dimension — see `buildFilterOptions`. Counts
- *  the whole set; for the faceted, ANDed-with-source counts the menu actually
- *  renders, use `resolveSessionFilterMenu`. */
-export function availableSessionStatusFilterOptions(
-  sessions: ProjectSession[],
-): SessionStatusFilterOption[] {
-  return buildFilterOptions(
-    SESSION_STATUS_FILTER_OPTIONS,
-    sessions,
-    matchesSessionStatusFilter,
-    'all',
-  );
-}
-
-/** Both filter dimensions, resolved together: the two option lists the menu
- *  renders and the two values the list is actually filtered by. */
-export interface SessionFilterMenu {
-  filterOptions: SessionFilterOption[];
-  statusOptions: SessionStatusFilterOption[];
-  activeFilter: SessionFilterValue;
-  activeStatus: SessionStatusFilterValue;
-}
-
-/**
- * Resolve the whole SESSIONS filter menu — both dimensions at once.
- *
- * The list ANDs the two filters. Counting each dimension over the raw session
- * set therefore lies: with Source=Slack and every Slack session `completed`,
- * a status menu counted over all sessions still offers "Running 2", and
- * clicking it renders the no-matches empty state. So each dimension is counted
- * over the sessions that already pass the OTHER dimension's active filter.
- *
- * That cross-dependency is what makes this one function rather than two.
- *
- * **Why it cannot oscillate.** Recovery — resetting a filter whose sessions
- * have all vanished — reads the UNFACETED session set (steps 1 and 2 below).
- * It is therefore independent of the other dimension's value, so a reset in
- * one dimension can never trigger a reset in the other, and there is no
- * feedback edge to loop over. Faceting (step 3) only reads the resolved
- * values; it never writes them. The whole function is straight-line — no
- * fixpoint iteration, no convergence to argue about.
- *
- * **Why the active option never disappears.** The faceted list can legitimately
- * count the active option at 0 (Source=Slack, Status=Running, no Slack session
- * running). Rather than silently resetting the user's choice — a filter
- * changing itself under the cursor is the more confusing failure — the active
- * option stays listed at its true count of 0, alongside "All". The count is
- * honest, it matches the empty list the user is looking at, and "All" is one
- * click away. See rules 2 and 3 in `buildFilterOptions`.
- */
-export function resolveSessionFilterMenu(
-  sessions: ProjectSession[],
-  requestedFilter: SessionFilterValue,
-  requestedStatus: SessionStatusFilterValue,
-): SessionFilterMenu {
-  // 1 + 2. Recovery, per dimension, against the whole set. A persisted filter
-  // outlives the sessions that justified it: filter to Slack, delete the last
-  // Slack session, and the option is gone with no way back. Falling back to
-  // "all" only ever widens the visible set.
-  const activeFilter: SessionFilterValue = availableSessionFilterOptions(sessions).some(
-    (option) => option.value === requestedFilter,
-  )
-    ? requestedFilter
-    : 'all';
-  const activeStatus: SessionStatusFilterValue = availableSessionStatusFilterOptions(sessions).some(
-    (option) => option.value === requestedStatus,
-  )
-    ? requestedStatus
-    : 'all';
-
-  // 3. Faceted counts: each dimension sees only what the other one lets through.
-  return {
-    statusOptions: buildFilterOptions(
-      SESSION_STATUS_FILTER_OPTIONS,
-      sessions.filter((session) => matchesSessionFilter(session, activeFilter)),
-      matchesSessionStatusFilter,
-      activeStatus,
-    ),
-    filterOptions: buildFilterOptions(
-      SESSION_FILTER_OPTIONS,
-      sessions.filter((session) => matchesSessionStatusFilter(session, activeStatus)),
-      matchesSessionFilter,
-      activeFilter,
-    ),
-    activeFilter,
-    activeStatus,
-  };
 }
 
 /**

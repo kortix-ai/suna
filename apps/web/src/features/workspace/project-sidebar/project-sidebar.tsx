@@ -1,20 +1,7 @@
 'use client';
 
-import {
-  resolveSessionFilterMenu,
-  SESSION_FILTER_OPTIONS,
-  SESSION_STATUS_FILTER_OPTIONS,
-  type SessionFilterValue,
-} from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
@@ -30,7 +17,6 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
@@ -44,45 +30,29 @@ import {
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
+import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
 import {
-  CalendarDotsIcon as CalendarClock,
   DotsThreeIcon as HiDotsHorizontal,
-  ListIcon as List,
   MagnifyingGlassIcon,
-  EnvelopeIcon as Mail,
-  ChatsIcon as MessagesSquare,
   SidebarSimpleIcon as PanelLeft,
-  UsersIcon as UsersSolid,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, type ComponentType } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { ProjectSwitcher } from './project-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
-
-const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className?: string }>> = {
-  all: List,
-  mine: MessagesSquare,
-  shared: UsersSolid,
-  slack: Icon.Slack,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
-};
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -91,41 +61,17 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
-  // Filter lives in a persisted store (keyed by project) so it survives the
-  // project shell remounting on navigation — local state reset to "all" on
-  // every session open / ⌘J / switch.
-  const sessionFilter = useSessionFilterStore((s) => s.filterByProject[projectId] ?? 'all');
-  const setSessionFilter = useSessionFilterStore((s) => s.setFilter);
-  const sessionStatus = useSessionFilterStore((s) => s.statusByProject[projectId] ?? 'all');
-  const setStatusFilter = useSessionFilterStore((s) => s.setStatusFilter);
+  // Backs the nested filter menu (SessionFilterMenu): grouping, ordering, and
+  // the two multi-select facets all live in the persisted session-filter
+  // store, keyed by project, so the chosen view survives the project shell
+  // remounting on navigation — opening a session, ⌘J, switching sessions.
   const { data: filterSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
-  // Both dimensions resolve together: the counts are faceted (each menu counts
-  // what the OTHER filter lets through, because the list ANDs them) and the
-  // "persisted filter outlived its sessions" recovery runs in the same pass.
-  // An empty option list means the group would render the same list as "All",
-  // and is the signal to drop that group — both empty drops the whole menu.
-  // Until the query resolves, keep the persisted values and offer nothing:
-  // resolving against [] would reset the filter to "all" on every mount.
-  const { filterOptions, statusOptions, activeFilter, activeStatus } = useMemo(
-    () =>
-      filterSessions
-        ? resolveSessionFilterMenu(filterSessions, sessionFilter, sessionStatus)
-        : {
-            filterOptions: [],
-            statusOptions: [],
-            activeFilter: sessionFilter,
-            activeStatus: sessionStatus,
-          },
-    [filterSessions, sessionFilter, sessionStatus],
-  );
-  const activeFilterOption =
-    SESSION_FILTER_OPTIONS.find((option) => option.value === activeFilter) ??
-    SESSION_FILTER_OPTIONS[0];
+  const sessions = filterSessions ?? [];
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -297,10 +243,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {/* Sessions are always expanded — no collapse toggle. The header
-                label opens the full sessions page and carries the active
-                filter; the ⋯ button opens the filter menu, and only appears
-                once the project has two or more session sources to choose
-                between. */}
+                label opens the full sessions page; the ⋯ button opens the
+                nested Grouping/Ordering/Show/Filters menu (SessionFilterMenu)
+                and appears whenever there is at least one session — Grouping
+                and Ordering are always meaningful, unlike the old flat
+                STATUS/SOURCE dropdown this replaced. */}
             <div className="flex min-h-0 flex-1 flex-col space-y-2">
               <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
@@ -309,72 +256,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
                   >
                     <span>Sessions</span>
-                    {activeFilter !== 'all' && (
-                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                        {tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
-                        )}{' '}
-                        {activeFilterOption.label}
-                      </span>
-                    )}
-                    {activeStatus !== 'all' && (
-                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                        · {SESSION_STATUS_FILTER_OPTIONS.find((o) => o.value === activeStatus)?.label}
-                      </span>
-                    )}
                   </Link>
-                  {(statusOptions.length > 0 || filterOptions.length > 0) && (
+                  {sessions.length > 0 && (
                     <DropdownMenu onOpenChange={holdPeek}>
-                      <DropdownMenuContent align="start" className="w-44 p-1">
-                        {/* Each label is gated on ITS OWN group. A label with
-                            nothing under it is a header for an empty list —
-                            which is exactly what an all-chat project used to
-                            render, because SOURCE was gated on the STATUS
-                            group. The separator needs both groups present. */}
-                        {statusOptions.length > 0 && (
-                          <>
-                            <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
-                              Status
-                            </DropdownMenuLabel>
-                            {statusOptions.map((option) => (
-                              <DropdownMenuItem
-                                key={option.value}
-                                className="cursor-pointer"
-                                onClick={() => setStatusFilter(projectId, option.value)}
-                              >
-                                {option.label}
-                                <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                                  {option.count}
-                                </span>
-                              </DropdownMenuItem>
-                            ))}
-                          </>
-                        )}
-                        {statusOptions.length > 0 && filterOptions.length > 0 && (
-                          <DropdownMenuSeparator />
-                        )}
-                        {filterOptions.length > 0 && (
-                          <DropdownMenuLabel className="text-muted-foreground/60 px-2 py-1 text-[11px] font-medium tracking-wider uppercase">
-                            Source
-                          </DropdownMenuLabel>
-                        )}
-                        {filterOptions.map((option) => {
-                          const OptionIcon = SESSION_FILTER_ICONS[option.value];
-                          return (
-                            <DropdownMenuItem
-                              key={option.value}
-                              className="cursor-pointer"
-                              onClick={() => setSessionFilter(projectId, option.value)}
-                            >
-                              <OptionIcon className="h-4 w-4" />
-                              {option.label}
-                              <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                                {option.count}
-                              </span>
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
+                      <SessionFilterMenu projectId={projectId} sessions={sessions} align="start" />
                       <DropdownMenuTrigger asChild>
                         <SidebarMenuButton
                           type="button"
@@ -392,11 +277,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               </SidebarGroupLabel>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex h-full min-h-0 flex-col">
-                  <ProjectSessionList
-                    projectId={projectId}
-                    filter={activeFilter}
-                    statusFilter={activeStatus}
-                  />
+                  <ProjectSessionList projectId={projectId} />
                 </div>
               </div>
             </div>
