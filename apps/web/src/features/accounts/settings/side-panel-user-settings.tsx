@@ -12,15 +12,15 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import {
   getInstanceTabs,
   getPreferenceTabs,
   type SettingsTab,
   type SettingsTabId,
 } from '@/lib/menu-registry';
-import { listSandboxes, type SandboxInfo } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
+import { listSandboxes, type SandboxInfo } from '@kortix/sdk';
 import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import { KeyIcon as KeyRound, ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
@@ -190,7 +190,7 @@ function SidePanelUserSettings({
                       variant="ghost"
                       className="text-primary hover:text-primary size-8 rounded-md p-0 text-xs font-semibold transition-colors focus:outline-none"
                     >
-                      <Icon.Close className="size-4 stroke-1" />
+                      <Close className="size-4 stroke-1" />
                       <span className="sr-only">Close</span>
                     </Button>
                   </Hint>

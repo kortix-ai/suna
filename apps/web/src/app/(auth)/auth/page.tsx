@@ -16,7 +16,7 @@
  */
 
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
@@ -577,7 +577,7 @@ function AuthCardForm({
   if (step === 'sso' && ssoUrl) {
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader
             title="Use single sign-on"
             description={
@@ -587,9 +587,9 @@ function AuthCardForm({
               </>
             }
           />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <Button
@@ -642,7 +642,7 @@ function AuthCardForm({
               </button>
             </p>
           </div>
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -651,7 +651,7 @@ function AuthCardForm({
   if (step === 'code') {
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader
             title="Check your email"
             description={
@@ -661,9 +661,9 @@ function AuthCardForm({
               </>
             }
           />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <CodeInput
@@ -729,7 +729,7 @@ function AuthCardForm({
               </>
             )}
           </div>
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -739,11 +739,11 @@ function AuthCardForm({
     const copy = credentialsCopy(credMode);
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader title={copy.title} description={copy.description ?? undefined} />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
@@ -812,7 +812,7 @@ function AuthCardForm({
               Email me a code instead
             </Button>
           )}
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -820,11 +820,11 @@ function AuthCardForm({
   /* ── Entry step ── */
   return (
     <>
-      <motion.div {...rise(0)}>
+      <m.div {...rise(0)}>
         <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
-      </motion.div>
+      </m.div>
 
-      <motion.div {...rise(0.06)}>
+      <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
 
         {googleEnabled && (
@@ -889,7 +889,7 @@ function AuthCardForm({
         <p className="text-muted-foreground mt-8 text-sm">
           New here? Continue creates your account automatically.
         </p>
-      </motion.div>
+      </m.div>
     </>
   );
 }

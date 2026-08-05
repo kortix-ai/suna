@@ -1,20 +1,49 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
+import { Gemini } from '@/features/icon/icons/gemini';
+import { Github } from '@/features/icon/icons/github';
+import { Gmail } from '@/features/icon/icons/gmail';
+import { Linear } from '@/features/icon/icons/linear';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Notion } from '@/features/icon/icons/notion';
+import { OpenAI } from '@/features/icon/icons/open-ai';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { stack, type StackLayerId } from './content';
+import { stack, type StackLayerId, type StackLogoKey } from './content';
 
-type IconKey = keyof typeof Icon;
+/** `stack.layers[].logos` selects a logo by name at runtime, so it can't be
+ *  statically resolved to a single import — this explicit map is the smallest
+ *  set that covers it, kept in sync by hand with `landing/content.ts`. */
+const LAYER_ICONS = {
+  Claude,
+  OpenAI,
+  Gemini,
+  OpenCode,
+  Slack,
+  Notion,
+  Linear,
+  Github,
+  MicrosoftTeams,
+  Gmail,
+} as const;
 
-function LayerLogos({ logos, chips }: { logos?: readonly string[]; chips?: readonly string[] }) {
+function LayerLogos({
+  logos,
+  chips,
+}: {
+  logos?: readonly StackLogoKey[];
+  chips?: readonly string[];
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {logos?.map((key) => {
-        const Glyph = Icon[key as IconKey] as ((p: { className?: string }) => ReactNode) | undefined;
+        const Glyph = LAYER_ICONS[key] as ((p: { className?: string }) => ReactNode) | undefined;
         if (!Glyph) return null;
         return (
           <span

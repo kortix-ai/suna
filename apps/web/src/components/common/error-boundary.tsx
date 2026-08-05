@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { Icon } from '@/features/icon/icon';
+import { Copy } from '@/features/icon/icons/copy';
 import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
@@ -48,7 +48,7 @@ function CopyErrorButton({ report, label }: { report: string; label: string }) {
         {copied ? (
           <CheckIcon className="text-foreground size-3.5" />
         ) : (
-          <Icon.Copy className="size-3.5" />
+          <Copy className="size-3.5" />
         )}
       </span>
     </button>

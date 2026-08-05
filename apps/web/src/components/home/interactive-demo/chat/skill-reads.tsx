@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { BookOpenIcon as BookOpen, CheckIcon as Check } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { skillDescription } from './match-skills';
 import type { DemoPhase } from './use-demo-conversation';
@@ -52,7 +52,7 @@ export function SkillsRead({
           const desc = skillDescription(name);
 
           return (
-            <motion.div
+            <m.div
               key={name}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -78,7 +78,7 @@ export function SkillsRead({
                   )}
                 </div>
               </button>
-            </motion.div>
+            </m.div>
           );
         })}
       </AnimatePresence>

@@ -10,7 +10,7 @@ import {
   WarningIcon as DangerTriangleSolid,
   InfoIcon as InfoCircleSolid,
 } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
@@ -36,14 +36,14 @@ export function Rise({
 }) {
   const prefersReducedMotion = useReducedMotion();
   return (
-    <motion.div
+    <m.div
       className={className}
       initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay, ease: AUTH_EASE }}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 

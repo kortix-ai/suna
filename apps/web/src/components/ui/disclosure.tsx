@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion, MotionConfig, Transition, Variant, Variants } from 'motion/react';
+import { AnimatePresence, m, MotionConfig, Transition, Variant, Variants } from 'motion/react';
 import * as React from 'react';
 import { createContext, useContext, useEffect, useId, useState } from 'react';
 
@@ -204,7 +204,7 @@ export function DisclosureContent({
     >
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
+          <m.div
             id={uniqueId}
             initial="collapsed"
             animate="expanded"
@@ -213,7 +213,7 @@ export function DisclosureContent({
             className={contentClassName}
           >
             {children}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

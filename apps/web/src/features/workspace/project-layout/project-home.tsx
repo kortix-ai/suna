@@ -27,7 +27,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { Slack } from '@/features/icon/icons/slack';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -478,7 +479,7 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     section: 'skills',
   },
   {
-    icon: Icon.Slack,
+    icon: Slack,
     title: 'Slack',
     desc: 'Run this project right from chat.',
     section: 'channels',
@@ -490,7 +491,7 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     section: 'members',
   },
   {
-    icon: Icon.Kortix,
+    icon: Kortix,
     title: 'Agent',
     desc: 'Shape how your agent thinks and acts.',
     section: 'agents',

@@ -1,6 +1,6 @@
 'use client';
 
-import type { Message, Part, SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
 import { useEffect, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
@@ -21,7 +21,7 @@ import {
   writeCachedTranscript,
 } from '../browser/session-sync/session-transcript-cache';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
-import { type MessageWithParts, useSyncStore } from '../browser/stores/sync-store';
+import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
@@ -33,57 +33,10 @@ type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'pat
   after?: string;
 };
 
-const EMPTY_MESSAGES: MessageWithParts[] = [];
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: 'idle' } as SessionStatus;
 const BUSY_STATUS = { type: 'busy' } as SessionStatus;
-const MESSAGE_CACHE_MAX = 20;
-const messageCache = new Map<
-  string,
-  {
-    msgs: Message[] | undefined;
-    partRefs: (Part[] | undefined)[];
-    result: MessageWithParts[];
-  }
->();
-
-function touchMessageCache(sessionId: string) {
-  const entry = messageCache.get(sessionId);
-  if (entry) {
-    messageCache.delete(sessionId);
-    messageCache.set(sessionId, entry);
-  }
-  if (messageCache.size > MESSAGE_CACHE_MAX) {
-    const oldest = messageCache.keys().next().value;
-    if (oldest) messageCache.delete(oldest);
-  }
-}
-
-function buildMessages(
-  sessionId: string,
-  msgs: Message[] | undefined,
-  parts: Record<string, Part[]>,
-): MessageWithParts[] {
-  if (!msgs || msgs.length === 0) return EMPTY_MESSAGES;
-
-  const cached = messageCache.get(sessionId);
-  if (cached && cached.msgs === msgs) {
-    const same =
-      cached.partRefs.length === msgs.length &&
-      msgs.every((message, index) => Object.is(parts[message.id], cached.partRefs[index]));
-    if (same) return cached.result;
-  }
-
-  const partRefs = msgs.map((message) => parts[message.id]);
-  const result = msgs.map((info) => ({
-    info,
-    parts: parts[info.id] ?? [],
-  }));
-  messageCache.set(sessionId, { msgs, partRefs, result });
-  touchMessageCache(sessionId);
-  return result;
-}
 
 /**
  * Returns the current session tail and explicit history-loading state.
@@ -118,6 +71,20 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     controller.getSnapshot,
   );
 
+  // Reference-count the mounted consumers of this session's transcript so the
+  // store can free it once the last one is gone — without this, every session
+  // opened in the tab stays resident for the tab's lifetime.
+  //
+  // Deliberately NOT folded into the `retainSessionSyncController` call below.
+  // That hold is also gated on `networkEnabled` + `runtimeHealthy`, and a
+  // session read while its sandbox is still booting is precisely the case the
+  // disk paint exists for: eviction there would blank the transcript the user
+  // is looking at. Consumers are consumers whether or not the runtime is up.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId)) return;
+    return useSyncStore.getState().retainSession(sessionId);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !cacheOwnerScope) return;
     const claim = claimSessionCacheOwnership(sessionId, cacheOwnerScope);
@@ -129,7 +96,6 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       runtimeScope === 'none' ? undefined : runtimeScope,
     );
     useSyncStore.getState().clearSession(sessionId);
-    messageCache.delete(sessionId);
   }, [cacheOwnerScope, runtimeScope, sessionId]);
 
   // Paint from disk FIRST, and deliberately without waiting on `runtimeHealthy`.
@@ -147,6 +113,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       if (
         !shouldHydrateFromCache({
           storeHasSession: sessionId in store.messages,
+          storeSessionWasEvicted: store.wasTranscriptEvicted(sessionId),
           cachedMessageCount: cached.messages.length,
         })
       ) {
@@ -172,10 +139,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     // Cached messages render immediately. Revalidate one bounded tail so
     // events produced while this route was inactive are not skipped.
     void controller.reconcile('initial');
-    return () => {
-      release();
-      messageCache.delete(sessionId);
-    };
+    return release;
   }, [controller, networkEnabled, runtimeHealthy, runtimeScope, sessionId]);
 
   // Mirror the tail back to disk as it changes, so the NEXT open of this session
@@ -200,7 +164,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   }, [kortixSessionScope, sessionId]);
 
   const messages = useSyncStore((state) =>
-    buildMessages(readableSessionId, state.messages[readableSessionId], state.parts),
+    state.buildSessionMessages(
+      readableSessionId,
+      state.messages[readableSessionId],
+      state.parts,
+    ),
   );
 
   const runtimeStatus = useSyncStore(

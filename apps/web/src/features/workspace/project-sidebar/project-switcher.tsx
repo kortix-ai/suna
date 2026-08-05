@@ -40,7 +40,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Icon } from '@/features/icon/icon';
+import { Kortix } from '@/features/icon/icons/kortix';
 import { resolveSwitcherLabel } from '@/features/workspace/project-sidebar/project-switcher-label';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -213,7 +213,7 @@ export function ProjectSwitcher({
           aria-label={homeLabel}
           className="text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full shrink-0 items-center justify-center rounded-s-sm px-2 transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
         >
-          <Icon.Kortix className="size-4" />
+          <Kortix className="size-4" />
         </Link>
         {!labelPending ? (
           <>

@@ -47,7 +47,7 @@ import {
   ShieldCheckIcon as ShieldCheckSolid,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
@@ -93,7 +93,7 @@ function AnimatedCount({ value }: { value: number }) {
   return (
     <span className="relative inline-flex min-w-[1ch] justify-center overflow-hidden tabular-nums">
       <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
+        <m.span
           key={value}
           initial={{ y: -7, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -101,7 +101,7 @@ function AnimatedCount({ value }: { value: number }) {
           transition={{ duration: 0.16, ease: EASE }}
         >
           {value}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -186,7 +186,7 @@ function ItemRow({
       : kind.bar;
 
   return (
-    <motion.li
+    <m.li
       data-idx={idx}
       layout={!reduce}
       initial={reduce ? false : { opacity: 0, y: fresh ? -6 : 0 }}
@@ -285,7 +285,7 @@ function ItemRow({
           </Badge>
         )}
       </div>
-    </motion.li>
+    </m.li>
   );
 }
 
@@ -930,7 +930,7 @@ export function ReviewCenter({
                 segment === 'needs_you' &&
                 visibleSafePending > 0 &&
                 selectionCount === 0 && (
-                  <motion.div
+                  <m.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -950,7 +950,7 @@ export function ReviewCenter({
                         Approve all safe
                       </Button>
                     </div>
-                  </motion.div>
+                  </m.div>
                 )}
             </AnimatePresence>
           </div>
@@ -979,7 +979,7 @@ export function ReviewCenter({
               ))}
             </ul>
           ) : visible.length === 0 ? (
-            <motion.div
+            <m.div
               key={`empty-${segment}-${query ? 'q' : ''}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1006,7 +1006,7 @@ export function ReviewCenter({
                         : 'Approved, rejected and finished items land here.'
                 }
               />
-            </motion.div>
+            </m.div>
           ) : grouped ? (
             <div
               ref={(el) => {
@@ -1101,7 +1101,7 @@ export function ReviewCenter({
       {/* Floating multi-select action bar */}
       <AnimatePresence>
         {selectionCount > 0 && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
@@ -1128,7 +1128,7 @@ export function ReviewCenter({
                 <X className="size-4" />
               </Button>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
 import { listProjectAccess } from '@kortix/sdk';
@@ -216,7 +216,7 @@ function SubjectPicker({
           size="icon-xs"
           className="absolute top-1/2 right-3 -translate-y-1/2"
         >
-          <Icon.Close className="text-muted-foreground size-3.5" />
+          <Close className="text-muted-foreground size-3.5" />
         </Button>
       </div>
 

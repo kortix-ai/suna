@@ -5,7 +5,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import Image from 'next/image';
 import * as React from 'react';
 
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
 
@@ -137,7 +137,7 @@ const PreviewImageContent = React.forwardRef<
               aria-label="Close image preview"
               className="text-background"
             >
-              <Icon.Close className="size-4" />
+              <Close className="size-4" />
             </Button>
           </PreviewImageClose>
         </div>

@@ -5,9 +5,9 @@ import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Icon } from '@/features/icon/icon';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
   ArrowRightIcon as ArrowRight,
   SquaresFourIcon as Blocks,
@@ -35,7 +35,7 @@ import {
   type Icon as IconType,
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -888,7 +888,7 @@ function ChannelsPage({
                 connected ? 'border-kortix-green/30 bg-kortix-green/5' : 'border-border',
               )}
             >
-              <Icon.Slack className="size-7" />
+              <Slack className="size-7" />
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
@@ -909,7 +909,7 @@ function ChannelsPage({
             </Badge>
           ) : (
             <Button size="sm" className="shrink-0">
-              <Icon.Slack className="size-3.5" />{' '}
+              <Slack className="size-3.5" />{' '}
               {tI18nHardcoded.raw(
                 'autoComponentsHomeInteractiveDemoSectionJsxTextAddToSlacka83dbb5b',
               )}
@@ -1534,7 +1534,7 @@ export function InteractiveDemoSection({
                 )}
               >
                 <AnimatePresence mode="wait">
-                  <motion.div
+                  <m.div
                     key={active}
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1554,7 +1554,7 @@ export function InteractiveDemoSection({
                       memberAdded: director.memberAdded,
                       slack: director.slack,
                     })}
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
               </div>
             </div>

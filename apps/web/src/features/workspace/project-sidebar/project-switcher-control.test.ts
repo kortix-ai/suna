@@ -26,7 +26,7 @@ describe('merged brand/switcher control', () => {
   // The mark's whole job before the merge. Losing it would make the merge a
   // deletion dressed up as a redesign.
   test('the mark keeps its link to the project home', () => {
-    expect(control).toContain('<Icon.Kortix');
+    expect(control).toContain('<Kortix');
     expect(control).toContain('href={homeHref}');
     expect(source).toContain("activeProjectId ? `/projects/${activeProjectId}` : '/projects'");
   });

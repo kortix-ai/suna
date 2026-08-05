@@ -3,6 +3,7 @@ import type {
 	AssistantMessage,
 	Message,
 	Part,
+	SessionStatus,
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
@@ -189,8 +190,8 @@ describe("useSyncStore — upsertPart / removePart (append + update)", () => {
 	test("applyPartDelta appends text incrementally onto an existing part", () => {
 		const store = useSyncStore.getState();
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
-		store.applyPartDelta("msg_1", "prt_1", "text", "lo");
-		store.applyPartDelta("msg_1", "prt_1", "text", " world");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", " world");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello world");
 	});
@@ -719,5 +720,793 @@ describe("useSyncStore — optimistic tracking is session-scoped", () => {
 
 		expect(useSyncStore.getState().hasOptimisticMessages("ses_2")).toBe(true);
 		expect(useSyncStore.getState().messages["ses_2"]?.map((m) => m.id)).toContain("msg_b");
+	});
+});
+
+describe("useSyncStore — deltaActiveParts tracking is session-scoped", () => {
+	// deltaActiveParts used to be one process-wide Set<string> shared by every
+	// session in the tab, cleared wholesale on session.idle/session.error. A
+	// second, unrelated session going idle wiped a still-streaming session's
+	// delta tracking too, so upsertPart's stale-snapshot guard (line ~292)
+	// stopped protecting it — a stale message.part.updated snapshot for the
+	// still-streaming session could then overwrite its delta-accumulated text.
+	test("session B going idle mid-stream does not let a stale snapshot overwrite session A's delta-accumulated part", () => {
+		const store = useSyncStore.getState();
+
+		// Session A: a delta has already landed for prt_a, accumulating text
+		// under a stub message bucket (mirrors the message.part.delta handler,
+		// which upserts a stub part before applying the delta).
+		store.upsertPart("msg_a_stub", textPart("prt_a", "msg_a_stub", "Hel", "ses_a"));
+		store.applyPartDelta("ses_a", "msg_a_stub", "prt_a", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
+
+		// Session B, completely unrelated, finishes streaming and goes idle.
+		store.applyEvent({
+			id: "evt_idle_b",
+			type: "session.idle",
+			properties: { sessionID: "ses_b" },
+		} as never);
+
+		// A stale message.part.updated snapshot for session A's part arrives,
+		// targeting a different (real) message bucket than the delta-created
+		// stub — the exact race the comment above deltaActiveParts documents.
+		// Session A is still streaming, so prt_a's delta tracking must have
+		// survived session B's idle, and this stale insert must be rejected.
+		store.upsertPart("msg_a_real", textPart("prt_a", "msg_a_real", "Hel", "ses_a"));
+
+		expect(useSyncStore.getState().parts.msg_a_real).toBeUndefined();
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
+	});
+
+	// The `message.part.updated` handler resolves a session id through a
+	// fallback chain (`part.sessionID ?? eventSessionID ?? <scan messages>`)
+	// specifically because `part.sessionID` can be absent on the wire. The
+	// guard above must consult THAT resolved id, not `part.sessionID` alone —
+	// otherwise a wire part with no `sessionID` field silently disables the
+	// guard even though the surrounding handler knew exactly which session it
+	// belonged to.
+	test("message.part.updated with part.sessionID absent still rejects a stale snapshot for a tracked part", () => {
+		const store = useSyncStore.getState();
+
+		store.upsertPart("msg_b_stub", textPart("prt_w", "msg_b_stub", "Hel", "ses_b"));
+		store.applyPartDelta("ses_b", "msg_b_stub", "prt_w", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_b_stub[0] as TextPart).text).toBe("Hello");
+
+		// The incoming part carries NO sessionID field at all (the exact wire
+		// condition the fallback chain exists for). The event's own
+		// properties.sessionID is "ses_b", so the handler's resolvedSessionID
+		// still correctly identifies session B — that resolved id, not the
+		// missing field, is what the guard must see.
+		store.applyEvent({
+			id: "evt_stale_no_session_on_part",
+			type: "message.part.updated",
+			properties: {
+				sessionID: "ses_b",
+				time: Date.now(),
+				part: {
+					id: "prt_w",
+					messageID: "msg_b_real",
+					type: "text",
+					text: "Hel",
+				},
+			},
+		} as never);
+
+		expect(useSyncStore.getState().parts.msg_b_real).toBeUndefined();
+		expect((useSyncStore.getState().parts.msg_b_stub[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("session A's own idle clears its own bucket, allowing a later snapshot to land", () => {
+		const store = useSyncStore.getState();
+
+		store.upsertPart("msg_a_stub", textPart("prt_z", "msg_a_stub", "Hel", "ses_a"));
+		store.applyPartDelta("ses_a", "msg_a_stub", "prt_z", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
+
+		// Session A itself finishes streaming — unlike the cross-session test
+		// above, THIS session's own idle must release its own tracking.
+		store.applyEvent({
+			id: "evt_idle_a",
+			type: "session.idle",
+			properties: { sessionID: "ses_a" },
+		} as never);
+
+		// A later snapshot for the same part id, targeting a different bucket,
+		// now lands normally — session A is no longer streaming, so nothing
+		// should still be guarding prt_a's stale-snapshot rejection.
+		store.upsertPart("msg_a_real", textPart("prt_z", "msg_a_real", "Hel", "ses_a"));
+
+		expect((useSyncStore.getState().parts.msg_a_real?.[0] as TextPart | undefined)?.text).toBe(
+			"Hel",
+		);
+	});
+});
+
+describe("useSyncStore — bridgedPartIds tracking is session-scoped", () => {
+	// bridgedPartIds used to be one process-wide Set<string> of message ids
+	// whose optimistic parts were bridged onto a real message. It was cleared
+	// only by reset() (which application code never calls) — clearSession did
+	// not touch it — so ids accumulated for the lifetime of the tab. If a
+	// LATER message in an unrelated session ever reused a leaked id,
+	// upsertPart's bridge-clearing branch fired for it anyway: the first real
+	// text part for that id wiped every part already stored under it, even
+	// though nothing was ever bridged in that session. Same leak class as
+	// optimisticIds ("optimistic tracking is session-scoped" above) and
+	// deltaActiveParts ("deltaActiveParts tracking is session-scoped" above).
+	test("clearing the bridging session stops a later, unrelated message that reuses its id from being wiped", () => {
+		const store = useSyncStore.getState();
+
+		// Session 1: an optimistic send bridges onto an echoed message with no
+		// parts yet — mirrors "a DISPATCHED message is superseded by an echo
+		// with no parts yet, and its text is bridged" above.
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		store.clearSession("ses_1");
+
+		// A completely different session's message happens to reuse the same
+		// id. It already has an unrelated (non-text) part before any text part
+		// for it arrives.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_2",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		// The first real text part for this id lands in ses_2. Nothing was
+		// ever bridged in ses_2, so this must append, not wipe the step part
+		// as if it were clearing session 1's stale bridge.
+		store.upsertPart(
+			"msg_reused",
+			textPart("prt_text", "msg_reused", "unrelated text", "ses_2"),
+		);
+
+		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_step");
+		expect(ids).toContain("prt_text");
+	});
+
+	// The test above proves session-scoping (ses_1's bridge doesn't leak into
+	// ses_2), but a Map keyed by session is scoped correctly by construction
+	// even if `clearSession` never released anything — that test alone can't
+	// tell "forgetSessionIds deletes bridgedPartIds's bucket" from "it
+	// doesn't". This one reuses the id in the SAME session after
+	// clearSession, which only passes if that release actually happens. The
+	// realistic trigger: a cache-ownership conflict for the same session
+	// calls clearSession(sessionId) and then re-hydrates the same message
+	// ids (see use-session-sync.ts).
+	test("clearSession releases the session's OWN bridged ids — reusing the id in the same session afterward is not treated as still-bridged", () => {
+		const store = useSyncStore.getState();
+
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		store.clearSession("ses_1");
+
+		// The SAME session, same message id, reused after the clear. It picks
+		// up an unrelated (non-text) part before any text part arrives for it.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_1",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		// The first real text part for this id lands in ses_1 again. If
+		// clearSession released ses_1's bridge tracking, this appends normally.
+		// If it didn't, this id is still marked bridged for ses_1 and the step
+		// part is wiped.
+		store.upsertPart(
+			"msg_reused",
+			textPart("prt_text", "msg_reused", "unrelated text", "ses_1"),
+		);
+
+		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_step");
+		expect(ids).toContain("prt_text");
+	});
+});
+
+describe("useSyncStore — session retention (memory eviction)", () => {
+	// `messages` and `parts` are keyed by session and nothing ever removed a
+	// key. `clearSession` had exactly one caller (a cache-ownership conflict in
+	// use-session-sync.ts) and `reset()` had none in application code, so every
+	// session a user opened kept its full transcript and every part in memory
+	// for the lifetime of the tab. Open ten long sessions and memory climbed
+	// monotonically and never came back.
+	//
+	// The fix is a consumer refcount: `retainSession` on mount, its returned
+	// release on unmount, and the store frees a session once its LAST consumer
+	// is gone. Freeing is deferred through a small window of detached sessions
+	// so a remount (React StrictMode's mount → cleanup → mount, a fast refresh,
+	// a tab flip) reclaims the transcript instead of repainting it from disk.
+
+	/** Mirrors `DETACHED_SESSION_LIMIT` in sync-store.ts. */
+	const RETENTION_BOUND = 3;
+
+	function seedSession(sessionID: string): string {
+		const messageID = `msg_${sessionID}`;
+		const store = useSyncStore.getState();
+		store.upsertMessage(sessionID, userMessage(messageID, sessionID));
+		store.upsertPart(
+			messageID,
+			textPart(`prt_${sessionID}`, messageID, "hello", sessionID),
+			sessionID,
+		);
+		store.setStatus(sessionID, { type: "busy" } as SessionStatus);
+		store.setDiff(sessionID, []);
+		store.setTodo(sessionID, []);
+		return messageID;
+	}
+
+	function isResident(sessionID: string): boolean {
+		return sessionID in useSyncStore.getState().messages;
+	}
+
+	/** Open a session and leave again — one full mount/unmount cycle. */
+	function visit(sessionID: string): void {
+		seedSession(sessionID);
+		useSyncStore.getState().retainSession(sessionID)();
+	}
+
+	/** Browse `count` other sessions. Eviction happens on the NEXT mount, so
+	 *  RETENTION_BOUND + 1 visits are what guarantee an already-detached
+	 *  session is pushed out. */
+	function browseAway(count: number): void {
+		for (let i = 0; i < count; i++) visit(`ses_churn_${i}`);
+	}
+
+	test("the last consumer leaving eventually frees the session's messages and parts", () => {
+		const messageIDs = ["ses_a", "ses_b", "ses_c", "ses_d"].map((id) => {
+			const messageID = seedSession(id);
+			useSyncStore.getState().retainSession(id)();
+			return messageID;
+		});
+
+		// Four detached, three fit in the window — the oldest goes on the next
+		// mount.
+		seedSession("ses_e");
+		useSyncStore.getState().retainSession("ses_e");
+
+		expect(isResident("ses_a")).toBe(false);
+		expect(useSyncStore.getState().parts[messageIDs[0]]).toBeUndefined();
+		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
+	});
+
+	test("freeing a session drops its diffs and todos too", () => {
+		visit("ses_a");
+		browseAway(RETENTION_BOUND + 1);
+
+		const state = useSyncStore.getState();
+		expect("ses_a" in state.diffs).toBe(false);
+		expect("ses_a" in state.todos).toBe(false);
+	});
+
+	// `sessionStatus` is the one slice read for sessions that are deliberately
+	// NOT resident: a parent's spawn-tool banner reads `sessionStatus[child]` to
+	// show a child's retry state, for a child whose transcript the parent never
+	// holds. Dropping it also bought nothing — every SSE `session.status` frame
+	// and the connect-time `client.session.status()` poll re-add an entry for
+	// every session on the runtime, evicted or not, so the delete was undone on
+	// the next frame while the gap was visible to the user.
+	test("freeing a session keeps its status — an unmounted child's banner still reads it", () => {
+		visit("ses_a");
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(isResident("ses_a")).toBe(false);
+		expect(useSyncStore.getState().sessionStatus["ses_a"]).toEqual({
+			type: "busy",
+		} as SessionStatus);
+	});
+
+	// React runs every passive destroy before any passive create in a commit.
+	// Pruning on release therefore let the unmount of the session being LEFT
+	// evict the session being ENTERED, in the very commit that mounts it: it
+	// was the oldest of four detached sessions at exactly the wrong moment.
+	// Costs a loading flash and a disk round trip — or a permanently blank
+	// transcript when nothing was ever written to disk (unauthenticated:
+	// `getCurrentCacheScope()` returns null and `saveSessionToIDB` no-ops).
+	test("returning to the oldest detached session does not evict it — unmount never frees", () => {
+		for (const id of ["ses_a", "ses_x", "ses_y", "ses_b"]) visit(id);
+		// Four detached and ses_a is the oldest. Now go back to it: React
+		// destroys ses_b's effects first, then creates ses_a's.
+		const messageID = `msg_ses_a`;
+
+		useSyncStore.getState().retainSession("ses_a");
+
+		expect(isResident("ses_a")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	test("nothing is freed by a release on its own — only by the next mount", () => {
+		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) visit(id);
+		// Over the bound, but no session has mounted since.
+		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) {
+			expect(isResident(id)).toBe(true);
+		}
+
+		seedSession("ses_e");
+		useSyncStore.getState().retainSession("ses_e");
+		expect(isResident("ses_a")).toBe(false);
+	});
+
+	// THE criterion most likely to be got wrong. Two components can render the
+	// same live session at once (transcript + context modal, split view, or a
+	// parent's spawn-tool preview of a child session). Tying eviction to a raw
+	// unmount would free the data out from under the one still on screen.
+	test("a session with two consumers survives one of them leaving", () => {
+		const messageID = seedSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		useSyncStore.getState().retainSession("ses_live");
+
+		releaseFirst();
+
+		// Not merely un-evicted — never even detached, so no amount of browsing
+		// elsewhere can push it out of the window.
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_live")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	test("the second consumer leaving does free the session", () => {
+		seedSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		const releaseSecond = useSyncStore.getState().retainSession("ses_live");
+		releaseFirst();
+		releaseSecond();
+
+		browseAway(RETENTION_BOUND + 1);
+		expect(isResident("ses_live")).toBe(false);
+	});
+
+	// A release that ran twice would drop a hold the second consumer still
+	// owns, which is the two-consumer bug through a side door. React can invoke
+	// a cleanup once, but nothing stops a caller from holding onto it.
+	test("releasing twice drops one hold, not two", () => {
+		const messageID = seedSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		useSyncStore.getState().retainSession("ses_live");
+
+		releaseFirst();
+		releaseFirst();
+
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_live")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	// StrictMode double-invokes effects in dev: mount → cleanup → mount, in the
+	// same commit. Freeing the instant the count hits zero would blank the
+	// transcript on every single mount, in development.
+	test("StrictMode's mount → cleanup → mount does not free the session", () => {
+		const messageID = seedSession("ses_strict");
+
+		useSyncStore.getState().retainSession("ses_strict")();
+		expect(isResident("ses_strict")).toBe(true);
+		useSyncStore.getState().retainSession("ses_strict");
+
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_strict")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	// Hosts that read this store without ever retaining (apps/mobile drives it
+	// from its own event pipeline) must keep exactly today's behaviour.
+	test("a session that was never retained is never freed", () => {
+		const messageID = seedSession("ses_unmanaged");
+
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_unmanaged")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	// The cache re-hydrate path in use-session-sync.ts paints from IndexedDB
+	// only when the store holds nothing for the session — `shouldHydrateFromCache`
+	// tests `sessionId in store.messages`, and `isLoading` tests the same key.
+	// `clearSession` leaves `messages[id] = []`, which reads as "loaded, and
+	// empty": a returning user would get a blank transcript that never repaints.
+	// Eviction must DELETE the key.
+	test("eviction deletes the session key rather than emptying it, so the cache can repaint", () => {
+		seedSession("ses_a");
+
+		useSyncStore.getState().clearSession("ses_a");
+		expect("ses_a" in useSyncStore.getState().messages).toBe(true);
+		expect(useSyncStore.getState().messages.ses_a).toEqual([]);
+
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+		expect("ses_a" in useSyncStore.getState().messages).toBe(false);
+	});
+
+	test("returning to a freed session repaints it from the cache without data loss", () => {
+		const messageID = seedSession("ses_a");
+		const cached = useSyncStore.getState().getMessages("ses_a");
+
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+		expect(isResident("ses_a")).toBe(false);
+
+		// What the IDB cache round-trips: the same `{ info, parts }` rows.
+		useSyncStore.getState().retainSession("ses_a");
+		useSyncStore.getState().hydrate("ses_a", cached);
+
+		expect(useSyncStore.getState().messages.ses_a.map((m) => m.id)).toEqual([messageID]);
+		expect(useSyncStore.getState().parts[messageID]).toEqual([
+			textPart(`prt_ses_a`, messageID, "hello", "ses_a"),
+		]);
+	});
+
+	// Same leak class the four module-level tracking maps were fixed for: a
+	// session whose data is gone must not leave its optimistic/bridge/delta
+	// bookkeeping behind. Reuses the id in the SAME session afterwards, which
+	// only passes if `forgetSessionIds` actually ran for it.
+	test("eviction releases the session's optimistic and bridge tracking", () => {
+		const store = useSyncStore.getState();
+
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		store.retainSession("ses_1")();
+		browseAway(RETENTION_BOUND + 1);
+		expect(isResident("ses_1")).toBe(false);
+
+		// The same session id comes back and reuses the message id. It picks up
+		// an unrelated (non-text) part before any text part arrives for it.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_1",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+		store.upsertPart(
+			"msg_reused",
+			textPart("prt_text", "msg_reused", "unrelated text", "ses_1"),
+		);
+
+		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_step");
+		expect(ids).toContain("prt_text");
+	});
+
+	// `parts` is keyed by messageID, and the sweep that frees a session walks
+	// `messages[sessionID]` to find the buckets to delete. The delta handler
+	// deliberately produces buckets no message points at: when `hasUserMsg` is
+	// false it stores the part WITHOUT creating the assistant message
+	// (sync-store.ts, `message.part.delta`), so hydrate can attach the real one
+	// later. Those buckets are invisible to a messages-driven sweep and used to
+	// survive every drop — the exact leak class this retention work exists to
+	// close, still open on the page-refresh path that produces them.
+	function orphanPartBucket(sessionID: string, messageID: string): void {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID,
+				messageID,
+				partID: `prt_orphan_${messageID}`,
+				field: "text",
+				delta: "streamed before the user message landed",
+			},
+		} as unknown as Parameters<ReturnType<typeof useSyncStore.getState>["applyEvent"]>[0]);
+	}
+
+	test("eviction frees part buckets that no message points at", () => {
+		orphanPartBucket("ses_a", "msg_orphan");
+		// The premise: a bucket exists with no message entry to reach it from.
+		expect(useSyncStore.getState().parts["msg_orphan"]).toHaveLength(1);
+		expect(useSyncStore.getState().messages["ses_a"]).toBeUndefined();
+
+		seedSession("ses_a");
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(isResident("ses_a")).toBe(false);
+		expect(useSyncStore.getState().parts["msg_orphan"]).toBeUndefined();
+	});
+
+	test("clearSession frees part buckets that no message points at", () => {
+		orphanPartBucket("ses_a", "msg_orphan");
+
+		useSyncStore.getState().clearSession("ses_a");
+
+		expect(useSyncStore.getState().parts["msg_orphan"]).toBeUndefined();
+	});
+
+	test("freeing one session leaves another session's orphan buckets alone", () => {
+		orphanPartBucket("ses_a", "msg_orphan_a");
+		orphanPartBucket("ses_keep", "msg_orphan_keep");
+
+		seedSession("ses_a");
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
+
+		expect(useSyncStore.getState().parts["msg_orphan_a"]).toBeUndefined();
+		expect(useSyncStore.getState().parts["msg_orphan_keep"]).toHaveLength(1);
+	});
+
+	// An id that can never hold runtime data — an empty string here, a Kortix
+	// route UUID at the hook boundary — must not take one of the three slots.
+	// Parking one evicts a real transcript a navigation early.
+	test("an empty session id never takes a slot in the window", () => {
+		visit("ses_a");
+		// Whatever a caller does with an unusable id, it costs nothing.
+		for (let i = 0; i < 5; i++) useSyncStore.getState().retainSession("")();
+		visit("ses_b");
+		visit("ses_c");
+
+		// Three real sessions detached, exactly at the bound: nothing to evict.
+		seedSession("ses_d");
+		useSyncStore.getState().retainSession("ses_d");
+		expect(isResident("ses_a")).toBe(true);
+	});
+
+	// A session whose agent is still running does not go quiet when it is
+	// evicted — its SSE frames keep arriving and put `messages[id]` straight
+	// back, holding only what streamed after the eviction. Coming back to it
+	// then found `sessionId in store.messages` true, so the disk repaint stood
+	// down and the user saw the fragment instead of their history. Before this
+	// branch that history was simply resident, so this is a regression in what
+	// the user sees, not a missed optimisation.
+	//
+	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// spawn-tool preview of a child session) has no reconcile of its own and is
+	// fed by SSE alone, so a child streaming before its preview mounts would
+	// lose the frames outright. The events stay; the repaint decision is what
+	// gets fixed.
+	describe("a session evicted while it is still streaming", () => {
+		function evict(sessionID: string): void {
+			seedSession(sessionID);
+			useSyncStore.getState().retainSession(sessionID)();
+			browseAway(RETENTION_BOUND + 1);
+			expect(isResident(sessionID)).toBe(false);
+		}
+
+		/** What the live SSE stream does to an evicted session: recreates its
+		 *  key with only the tail that arrived after the eviction. */
+		function streamInto(sessionID: string): void {
+			const store = useSyncStore.getState();
+			store.upsertMessage(sessionID, assistantMessage("msg_after", sessionID));
+			store.upsertPart(
+				"msg_after",
+				textPart("prt_after", "msg_after", "post-eviction", sessionID),
+				sessionID,
+			);
+		}
+
+		test("is marked, so the disk repaint still runs when the user returns", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			expect(isResident("ses_a")).toBe(true);
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(true);
+		});
+
+		test("a resident session that was never evicted is not marked", () => {
+			seedSession("ses_a");
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		test("the repaint clears the mark — hydrate is the authority again", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().retainSession("ses_a");
+			useSyncStore
+				.getState()
+				.hydrate("ses_a", [{ info: userMessage("msg_ses_a", "ses_a"), parts: [] }]);
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+			// The merge keeps the streamed tail and restores the history under it.
+			expect(useSyncStore.getState().messages["ses_a"].map((m) => m.id)).toEqual([
+				"msg_after",
+				"msg_ses_a",
+			]);
+		});
+
+		// `hydrate`'s ordinal fallback pairs an in-flight optimistic user message
+		// with the oldest unclaimed real one. Every message in the disk copy is
+		// unclaimed by definition, so repainting under a live send would retire
+		// the message the user just typed. The key-presence check used to make
+		// that unreachable (optimisticAdd creates the key); the mark has to.
+		test("a send in flight stands the repaint down rather than racing it", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore
+				.getState()
+				.optimisticAdd("ses_a", userMessage("msg_client", "ses_a"), [
+					textPart("prt_client", "msg_client", "just typed", "ses_a"),
+				]);
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		test("a deliberate clearSession is not something the cache may undo", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().clearSession("ses_a");
+
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(false);
+		});
+
+		// Eviction takes the session out of the detach window, so the data SSE
+		// puts back had no path out of memory again — the leak this branch closes,
+		// reopened by the stream. The next mount of anything sweeps it.
+		test("is freed again on the next mount, not left resident forever", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+			expect(isResident("ses_a")).toBe(true);
+
+			seedSession("ses_next");
+			useSyncStore.getState().retainSession("ses_next");
+
+			expect(isResident("ses_a")).toBe(false);
+			expect(useSyncStore.getState().parts["msg_after"]).toBeUndefined();
+			// Still marked: it is still a session the user can come back to.
+			expect(useSyncStore.getState().wasTranscriptEvicted("ses_a")).toBe(true);
+		});
+
+		test("the user returning is what stops the re-sweep, not luck", () => {
+			evict("ses_a");
+			streamInto("ses_a");
+
+			useSyncStore.getState().retainSession("ses_a");
+			seedSession("ses_next");
+			useSyncStore.getState().retainSession("ses_next");
+
+			expect(isResident("ses_a")).toBe(true);
+		});
+	});
+
+	test("reset() clears the retention bookkeeping along with the data", () => {
+		seedSession("ses_a");
+		const release = useSyncStore.getState().retainSession("ses_a");
+
+		useSyncStore.getState().reset();
+		release();
+
+		// The hold is gone with everything else, so a late unmount cannot park a
+		// session the next page just opened.
+		seedSession("ses_a");
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_a")).toBe(true);
+	});
+});
+
+describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
+	// This memo used to exist TWICE — once in use-session-sync.ts, once in
+	// use-opencode-sessions/messages.ts — and neither copy was dropped when a
+	// session's data was. Every session the user opened stayed reachable
+	// through whichever memo still held its rows, up to 20 transcripts per
+	// copy, so freeing the store alone freed nothing. One memo, owned by the
+	// store, beside the eviction that invalidates it.
+
+	function rowsFor(sessionID: string) {
+		const state = useSyncStore.getState();
+		return state.buildSessionMessages(sessionID, state.messages[sessionID], state.parts);
+	}
+
+	test("returns a stable reference while the underlying arrays are unchanged", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+
+		expect(rowsFor("ses_1")).toBe(rowsFor("ses_1"));
+	});
+
+	test("rebuilds when a part changes, so a new tail actually renders", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const before = rowsFor("ses_1");
+
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi there"), "ses_1");
+
+		const after = rowsFor("ses_1");
+		expect(after).not.toBe(before);
+		expect((after[0].parts[0] as TextPart).text).toBe("hi there");
+	});
+
+	test("an empty session is a stable empty array, never a fresh one", () => {
+		expect(rowsFor("ses_missing")).toBe(rowsFor("ses_other_missing"));
+		expect(rowsFor("ses_missing")).toEqual([]);
+	});
+
+	// The actual leak assertion, and the only way to observe the memo from
+	// outside: re-present the SAME arrays it memoized on. A surviving entry
+	// hands back the identical rows — which is precisely the retention being
+	// fixed, since those rows hold the whole transcript. Re-seeding the session
+	// instead would prove nothing: `upsertMessage` builds a new array, so the
+	// memo would rebuild whether or not the old entry was ever dropped.
+	function capture(sessionID: string) {
+		const state = useSyncStore.getState();
+		const msgs = state.messages[sessionID];
+		const parts = state.parts;
+		return {
+			rows: state.buildSessionMessages(sessionID, msgs, parts),
+			rebuild: () =>
+				useSyncStore.getState().buildSessionMessages(sessionID, msgs, parts),
+		};
+	}
+
+	test("eviction drops the memoized rows, not just the store slices", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const held = capture("ses_1");
+		expect(held.rebuild()).toBe(held.rows); // memoized while resident
+
+		store.retainSession("ses_1")();
+		for (let i = 0; i < 4; i++) {
+			const id = `ses_churn_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
+			useSyncStore.getState().retainSession(id)();
+		}
+		useSyncStore.getState().retainSession("ses_fresh");
+
+		expect("ses_1" in useSyncStore.getState().messages).toBe(false);
+		expect(held.rebuild()).not.toBe(held.rows);
+	});
+
+	// The memo is bounded, or a tab that never navigates away still accumulates
+	// one full set of rows per session it has ever rendered.
+	test("the memo is bounded — the least recently used session is dropped", () => {
+		// 21 distinct sessions rendered once each, never re-read: probing one
+		// early would count as use and reorder the very thing under test.
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 21; i++) {
+			const id = `ses_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
+			held.push(capture(id));
+		}
+
+		// 21 > MESSAGE_ROWS_LIMIT. Assert the survivor first — asking about an
+		// evicted session re-inserts it and would evict this one.
+		expect(held[1].rebuild()).toBe(held[1].rows);
+		expect(held[0].rebuild()).not.toBe(held[0].rows);
+	});
+
+	test("a hit counts as use, so a stable session is not pushed out by other sessions", () => {
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 20; i++) {
+			const id = `ses_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
+			held.push(capture(id));
+		}
+
+		// ses_0 renders again, unchanged — a memo HIT. That is use, so it is no
+		// longer the least recently used; ses_1 is.
+		expect(held[0].rebuild()).toBe(held[0].rows);
+
+		useSyncStore.getState().upsertMessage("ses_20", userMessage("msg_20", "ses_20"));
+		capture("ses_20");
+
+		expect(held[0].rebuild()).toBe(held[0].rows);
+		expect(held[1].rebuild()).not.toBe(held[1].rows);
+	});
+
+	test("clearSession drops the memoized rows too", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const held = capture("ses_1");
+		expect(held.rebuild()).toBe(held.rows);
+
+		store.clearSession("ses_1");
+
+		expect(held.rebuild()).not.toBe(held.rows);
 	});
 });
