@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
+  groupSessionsForSidebar,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -256,5 +257,93 @@ describe('resolveSessionListViewState', () => {
       visibleCount: 2,
     });
     expect(state).toBe('content');
+  });
+});
+
+describe('groupSessionsForSidebar', () => {
+  const running = makeSession({ session_id: 'run', status: 'running' });
+  const starting = makeSession({ session_id: 'start', status: 'provisioning' });
+  const done = makeSession({ session_id: 'done', status: 'completed' });
+  const stopped = makeSession({ session_id: 'stop', status: 'stopped' });
+  const failed = makeSession({ session_id: 'fail', status: 'failed' });
+
+  test('orders sections needs-you, running, recent', () => {
+    const grouped = groupSessionsForSidebar([done, running, failed], { done: 2 });
+    expect(grouped.sections.map((section) => section.id)).toEqual([
+      'needs-you', 'running', 'recent',
+    ]);
+  });
+
+  test('starting sits in the running section', () => {
+    const grouped = groupSessionsForSidebar([starting, done], {});
+    const runningSection = grouped.sections.find((section) => section.id === 'running');
+    expect(runningSection?.sessions.map((s) => s.session_id)).toEqual(['start']);
+  });
+
+  test('recent holds completed, stopped and failed', () => {
+    const grouped = groupSessionsForSidebar([done, stopped, failed, running], {});
+    const recent = grouped.sections.find((section) => section.id === 'recent');
+    expect(recent?.sessions.map((s) => s.session_id).sort()).toEqual(['done', 'fail', 'stop']);
+  });
+
+  test('omits an empty section entirely', () => {
+    const grouped = groupSessionsForSidebar([done, stopped], {});
+    expect(grouped.sections.map((section) => section.id)).toEqual(['recent']);
+  });
+
+  test('a review-pending running session appears once, in needs-you only', () => {
+    const grouped = groupSessionsForSidebar([running], { run: 3 });
+    expect(grouped.sections.map((section) => section.id)).toEqual(['needs-you']);
+    const ids = grouped.sections.flatMap((section) =>
+      section.sessions.map((s) => s.session_id),
+    );
+    expect(ids).toEqual(['run']);
+  });
+
+  test('a zero review count does not move a session into needs-you', () => {
+    const grouped = groupSessionsForSidebar([running], { run: 0 });
+    expect(grouped.sections.map((section) => section.id)).toEqual(['running']);
+  });
+
+  test('showHeaders is false when only one section is populated', () => {
+    expect(groupSessionsForSidebar([done, stopped], {}).showHeaders).toBe(false);
+  });
+
+  test('showHeaders is true at two or more populated sections', () => {
+    expect(groupSessionsForSidebar([running, done], {}).showHeaders).toBe(true);
+  });
+
+  test('showHeaders is false for an empty list, with no sections', () => {
+    const grouped = groupSessionsForSidebar([], {});
+    expect(grouped.sections).toEqual([]);
+    expect(grouped.showHeaders).toBe(false);
+  });
+
+  test('recent does not show a count; needs-you and running do', () => {
+    const grouped = groupSessionsForSidebar([running, done], { });
+    const byId = Object.fromEntries(grouped.sections.map((s) => [s.id, s.showCount]));
+    expect(byId.running).toBe(true);
+    expect(byId.recent).toBe(false);
+  });
+
+  test('sorts newest-first within each section', () => {
+    const older = makeSession({
+      session_id: 'older',
+      status: 'completed',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    const newer = makeSession({
+      session_id: 'newer',
+      status: 'completed',
+      created_at: '2026-02-01T00:00:00.000Z',
+    });
+    const grouped = groupSessionsForSidebar([older, newer], {});
+    expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
+  });
+
+  test('does not mutate the input array', () => {
+    const input = [done, running];
+    groupSessionsForSidebar(input, {});
+    expect(input.map((s) => s.session_id)).toEqual(['done', 'run']);
   });
 });

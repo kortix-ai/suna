@@ -1,5 +1,7 @@
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
+import { sessionDisplayStatus } from '@/components/projects/session-label';
+
 /**
  * Pure helpers extracted from `project-session-list.tsx` so the sidebar's
  * sort/poll/label/time-formatting decisions and its loading/error/empty/
@@ -111,4 +113,67 @@ export function resolveSessionListViewState(params: {
   if (params.totalCount === 0) return 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
+}
+
+export type SessionSectionId = 'needs-you' | 'running' | 'recent';
+
+export interface SessionSection {
+  id: SessionSectionId;
+  label: string;
+  /** Recent is unbounded, so a count there is noise rather than information. */
+  showCount: boolean;
+  sessions: ProjectSession[];
+}
+
+export interface GroupedSessions {
+  sections: SessionSection[];
+  /** False when at most one section is populated: a header divides, and one
+   *  header divides nothing. Keeps a new project from looking like chrome. */
+  showHeaders: boolean;
+}
+
+const SECTION_ORDER: Array<{ id: SessionSectionId; label: string; showCount: boolean }> = [
+  { id: 'needs-you', label: 'Needs you', showCount: true },
+  { id: 'running', label: 'Running', showCount: true },
+  { id: 'recent', label: 'Recent', showCount: false },
+];
+
+/**
+ * Split the session list into the sidebar's three sections, newest-first
+ * within each.
+ *
+ * Membership is decided by display status, so the mapping rules live in ONE
+ * place (`sessionDisplayStatus`) rather than being restated here. A session
+ * belongs to exactly one section — `needs-you` wins outright, so a
+ * review-pending running session is never rendered twice.
+ *
+ * `reviewCountBySession` is `useReviewSessionSummary().needsYouBySession`
+ * unchanged. That hook returns `{}` when the review_center flag is off, which
+ * is why this function needs no flag of its own.
+ */
+export function groupSessionsForSidebar(
+  sessions: ProjectSession[],
+  reviewCountBySession: Record<string, number>,
+): GroupedSessions {
+  const buckets: Record<SessionSectionId, ProjectSession[]> = {
+    'needs-you': [],
+    running: [],
+    recent: [],
+  };
+
+  for (const session of sortSessionsByLastActivity(sessions)) {
+    const display = sessionDisplayStatus(
+      session,
+      reviewCountBySession[session.session_id] ?? 0,
+    );
+    if (display === 'needs-you') buckets['needs-you'].push(session);
+    else if (display === 'running' || display === 'starting') buckets.running.push(session);
+    else buckets.recent.push(session);
+  }
+
+  const sections = SECTION_ORDER.filter((section) => buckets[section.id].length > 0).map(
+    (section) => ({ ...section, sessions: buckets[section.id] }),
+  );
+
+  return { sections, showHeaders: sections.length > 1 };
 }
