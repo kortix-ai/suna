@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectSession } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { groupSessions } from './session-grouping';
 
 const NOW = new Date('2026-08-06T12:00:00.000Z').getTime();
@@ -34,14 +34,20 @@ describe('groupSessions — status mode', () => {
 
   test('a review-pending session appears exactly once', () => {
     const grouped = groupSessions([makeSession({ session_id: 'run', status: 'running' })], {
-      mode: 'status', order: 'activity', reviewCountBySession: { run: 2 }, now: NOW,
+      mode: 'status',
+      order: 'activity',
+      reviewCountBySession: { run: 2 },
+      now: NOW,
     });
     expect(grouped.sections.flatMap((s) => s.sessions.map((x) => x.session_id))).toEqual(['run']);
   });
 
   test('a zero review count does not move a session into needs-you', () => {
     const grouped = groupSessions([makeSession({ session_id: 'run', status: 'running' })], {
-      mode: 'status', order: 'activity', reviewCountBySession: { run: 0 }, now: NOW,
+      mode: 'status',
+      order: 'activity',
+      reviewCountBySession: { run: 0 },
+      now: NOW,
     });
     expect(grouped.sections.map((s) => s.id)).toEqual(['running']);
   });
@@ -106,7 +112,10 @@ describe('groupSessions — status mode', () => {
       created_at: '2026-02-01T00:00:00.000Z',
     });
     const grouped = groupSessions([older, newer], {
-      mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW,
+      mode: 'status',
+      order: 'activity',
+      reviewCountBySession: {},
+      now: NOW,
     });
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
   });
@@ -214,7 +223,10 @@ describe('groupSessions — source mode', () => {
 describe('groupSessions — none mode', () => {
   test('one section, no headers', () => {
     const grouped = groupSessions([makeSession(), makeSession({ session_id: 's2' })], {
-      mode: 'none', order: 'activity', reviewCountBySession: {}, now: NOW,
+      mode: 'none',
+      order: 'activity',
+      reviewCountBySession: {},
+      now: NOW,
     });
     expect(grouped.sections.map((s) => s.id)).toEqual(['all']);
     expect(grouped.showHeaders).toBe(false);
@@ -222,12 +234,23 @@ describe('groupSessions — none mode', () => {
 });
 
 describe('groupSessions — ordering', () => {
-  const older = makeSession({ session_id: 'older', name: 'Zebra', created_at: '2026-08-01T00:00:00.000Z' });
-  const newer = makeSession({ session_id: 'newer', name: 'Alpha', created_at: '2026-08-05T00:00:00.000Z' });
+  const older = makeSession({
+    session_id: 'older',
+    name: 'Zebra',
+    created_at: '2026-08-01T00:00:00.000Z',
+  });
+  const newer = makeSession({
+    session_id: 'newer',
+    name: 'Alpha',
+    created_at: '2026-08-05T00:00:00.000Z',
+  });
 
   test('created sorts newest first', () => {
     const grouped = groupSessions([older, newer], {
-      mode: 'none', order: 'created', reviewCountBySession: {}, now: NOW,
+      mode: 'none',
+      order: 'created',
+      reviewCountBySession: {},
+      now: NOW,
     });
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
   });
@@ -237,10 +260,21 @@ describe('groupSessions — ordering', () => {
     // sort first), so this fixture only passes when { sensitivity: 'base' }
     // is actually applied — unlike 'Alpha'/'Zebra', which sort the same
     // either way and would pass even with case-sensitivity silently dropped.
-    const lower = makeSession({ session_id: 'lower', name: 'apple', created_at: '2026-08-01T00:00:00.000Z' });
-    const upper = makeSession({ session_id: 'upper', name: 'Banana', created_at: '2026-08-05T00:00:00.000Z' });
+    const lower = makeSession({
+      session_id: 'lower',
+      name: 'apple',
+      created_at: '2026-08-01T00:00:00.000Z',
+    });
+    const upper = makeSession({
+      session_id: 'upper',
+      name: 'Banana',
+      created_at: '2026-08-05T00:00:00.000Z',
+    });
     const grouped = groupSessions([upper, lower], {
-      mode: 'none', order: 'name', reviewCountBySession: {}, now: NOW,
+      mode: 'none',
+      order: 'name',
+      reviewCountBySession: {},
+      now: NOW,
     });
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['lower', 'upper']);
   });
@@ -253,29 +287,48 @@ describe('groupSessions — hidden sections and invariants', () => {
         makeSession({ session_id: 'run', status: 'running' }),
         makeSession({ session_id: 'done', status: 'completed' }),
       ],
-      { mode: 'status', order: 'activity', reviewCountBySession: {}, hiddenSections: ['running'], now: NOW },
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: {},
+        hiddenSections: ['running'],
+        now: NOW,
+      },
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['recent']);
   });
 
   test('showHeaders is false at one or zero populated sections', () => {
     const one = groupSessions([makeSession({ status: 'completed' })], {
-      mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW,
+      mode: 'status',
+      order: 'activity',
+      reviewCountBySession: {},
+      now: NOW,
     });
     expect(one.showHeaders).toBe(false);
-    const none = groupSessions([], { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW });
+    const none = groupSessions([], {
+      mode: 'status',
+      order: 'activity',
+      reviewCountBySession: {},
+      now: NOW,
+    });
     expect(none.sections).toEqual([]);
     expect(none.showHeaders).toBe(false);
   });
 
-  test('open-ended tails carry no count', () => {
+  test('a section carries its id, label and sessions — and nothing else', () => {
     const grouped = groupSessions(
-      [makeSession({ session_id: 'run', status: 'running' }), makeSession({ session_id: 'd', status: 'completed' })],
+      [
+        makeSession({ session_id: 'run', status: 'running' }),
+        makeSession({ session_id: 'd', status: 'completed' }),
+      ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
     );
-    const byId = Object.fromEntries(grouped.sections.map((s) => [s.id, s.showCount]));
-    expect(byId.running).toBe(true);
-    expect(byId.recent).toBe(false);
+    // Headers render the label alone; counts were removed from the UI, so a
+    // section exposing a count field again would be dead surface.
+    for (const section of grouped.sections) {
+      expect(Object.keys(section).sort()).toEqual(['id', 'label', 'sessions']);
+    }
   });
 
   test('does not mutate the input array', () => {

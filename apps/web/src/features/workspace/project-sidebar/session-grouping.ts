@@ -42,7 +42,6 @@ export interface SessionSection {
   id: string;
   label: string;
   /** Open-ended tails (recent/older/all) don't get a count: it's noise. */
-  showCount: boolean;
   sessions: ProjectSession[];
 }
 
@@ -53,33 +52,31 @@ export interface GroupedSessions {
   showHeaders: boolean;
 }
 
-const STATUS_SECTION_ORDER: Array<{ id: SessionSectionId; label: string; showCount: boolean }> = [
-  { id: 'needs-you', label: 'Needs you', showCount: true },
-  { id: 'running', label: 'Running', showCount: true },
-  { id: 'recent', label: 'Recent', showCount: false },
+const STATUS_SECTION_ORDER: Array<{ id: SessionSectionId; label: string }> = [
+  { id: 'needs-you', label: 'Needs you' },
+  { id: 'running', label: 'Running' },
+  { id: 'recent', label: 'Recent' },
 ];
 
 type ActivityBucketId = 'today' | 'yesterday' | 'week' | 'older';
 
-const ACTIVITY_SECTION_ORDER: Array<{ id: ActivityBucketId; label: string; showCount: boolean }> = [
-  { id: 'today', label: 'Today', showCount: true },
-  { id: 'yesterday', label: 'Yesterday', showCount: true },
-  { id: 'week', label: 'This week', showCount: true },
-  { id: 'older', label: 'Older', showCount: false },
+const ACTIVITY_SECTION_ORDER: Array<{ id: ActivityBucketId; label: string }> = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'This week' },
+  { id: 'older', label: 'Older' },
 ];
 
-const SOURCE_SECTION_ORDER: Array<{ id: string; label: string; showCount: boolean }> = [
-  { id: 'chat', label: 'Chat', showCount: true },
-  { id: 'slack', label: 'Slack', showCount: true },
-  { id: 'telegram', label: 'Telegram', showCount: true },
-  { id: 'email', label: 'Email', showCount: true },
-  { id: 'schedule', label: 'Scheduled', showCount: true },
-  { id: 'webhook', label: 'Webhook', showCount: true },
+const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'slack', label: 'Slack' },
+  { id: 'telegram', label: 'Telegram' },
+  { id: 'email', label: 'Email' },
+  { id: 'schedule', label: 'Scheduled' },
+  { id: 'webhook', label: 'Webhook' },
 ];
 
-const NONE_SECTION_ORDER: Array<{ id: string; label: string; showCount: boolean }> = [
-  { id: 'all', label: 'All', showCount: false },
-];
+const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -56,8 +56,8 @@ import {
 import {
   CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
+  DotsThreeIcon,
   EnvelopeIcon as Mail,
-  DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
@@ -412,13 +412,15 @@ function SessionListSection({
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
-        <div className="group/section-header text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+        <div className="group/section-header text-muted-foreground/60 flex h-6 items-center gap-1 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+          <span className="truncate">{section.label}</span>
+          {/* Label first, caret after it — the caret is a modifier on the label,
+              not a bullet in front of it. Hidden until the header is hovered so a
+              resting sidebar is just words; rotates rather than swapping glyphs. */}
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/section:rotate-90"
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
-          <span className="min-w-0 flex-1 truncate">{section.label}</span>
-          {section.showCount && <span className="tabular-nums">{section.sessions.length}</span>}
           <SessionSectionMenu
             projectId={projectId}
             sessions={sessions}
@@ -464,7 +466,7 @@ function SessionSectionMenu({
           type="button"
           aria-label="Section options"
           className={cn(
-            'relative shrink-0 opacity-0 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+            'relative ml-auto shrink-0 opacity-0 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
             'before:absolute before:-inset-1',
             'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
           )}
@@ -477,7 +479,7 @@ function SessionSectionMenu({
             }
           }}
         >
-          <MoreHorizontal className="size-3.5" />
+          <DotsThreeIcon className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <SessionFilterMenu
@@ -635,7 +637,7 @@ function ProjectSessionRow({
                     e.stopPropagation();
                   }}
                 >
-                  <MoreHorizontal className="size-3.5" />
+                  <DotsThreeIcon className="size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-44">
