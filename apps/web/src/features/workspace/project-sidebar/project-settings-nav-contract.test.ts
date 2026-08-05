@@ -66,29 +66,43 @@ describe('project Settings sidebar entry', () => {
     expect(SOURCE).toContain("useDevice() === 'mac'");
   });
 
-  test('the Customize twin shares the destination, gate, and Link contract', () => {
-    // Two rows, one route. If they ever diverge, one of them is a dead end.
+  test('the Customize row opens the overlay, it does not navigate', () => {
+    // The overlay floats over the current page on purpose (customize-store):
+    // routing there instead would drop you out of whatever session you were in.
     const customize = fnSource('ProjectCustomizeNavItem');
 
-    expect(customize).toContain('capabilityTabHref(projectId, tab)');
-    expect(customize).toContain('useSettingsTab(projectId)');
+    expect(customize).toContain('openCustomize()');
     expect(customize).toContain('Customize');
-    expect(customize).toMatch(/prefetch(\s|>|$)/);
-    expect(customize).not.toContain('prefetch={false}');
-    expect(customize).not.toContain('router.push');
     expect(customize).toContain('setOpenMobile(false)');
+    expect(customize).not.toContain('<Link');
+    expect(customize).not.toContain('capabilityTabHref');
+    expect(customize).not.toContain('router.push');
     // No keycap: Mod+, is printed on the Settings row, and one shortcut
     // advertised on two rows is a lie on at least one of them.
     expect(customize).not.toContain('<Kbd>');
   });
 
-  test('the Mod+, shortcut goes where the row goes', () => {
-    // A keycap that opens something other than what the row opens is worse
-    // than no keycap. The Customize overlay stays reachable elsewhere.
+  test('the Customize row is ungated and its active state is the overlay flag', () => {
+    // useSettingsTab reads connector/skill/command.read — the leaves the
+    // Settings ROUTE needs. The overlay also holds Agents, LLM providers and
+    // Members, so gating it on those three would hide it from a caller who can
+    // still use most of what is inside. And an overlay has no pathname, so
+    // active state has to come from the store.
+    const customize = fnSource('ProjectCustomizeNavItem');
+
+    expect(customize).not.toContain('useSettingsTab');
+    expect(customize).not.toContain('useProjectCan');
+    expect(customize).not.toContain('usePathname');
+    expect(customize).toContain('useCustomizeStore((s) => s.open)');
+  });
+
+  test('the Mod+, shortcut goes where the Settings row goes', () => {
+    // A keycap that opens something other than the row it is printed on is
+    // worse than no keycap.
     const hook = fnSource('useSettingsKeyboardShortcut');
 
     expect(hook).toContain("event.key === ','");
     expect(hook).toContain('capabilityTabHref(projectId, tab)');
-    expect(SOURCE).not.toContain('openCustomize');
+    expect(hook).not.toContain('openCustomize');
   });
 });

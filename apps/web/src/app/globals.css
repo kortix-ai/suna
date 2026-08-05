@@ -703,7 +703,7 @@
 }
 
 .dark {
-  --background: oklch(0.1398 0 0); /* canvas #090909 */
+  --background: oklch(0.17 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
