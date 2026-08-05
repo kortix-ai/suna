@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 /**
  * Terms-of-Service links must point at the stable `/legal/terms` path, which
- * the middleware permanently 308-redirects to the public Drive folder. The
+ * the middleware permanently 308-redirects to the public Drive file. The
  * legacy `/legal?tab=terms` query form must not appear in any source link — it
  * only still works because the middleware redirects it, but new links should
  * use the stable path. Privacy and imprint stay local on `/legal?tab=…`.
