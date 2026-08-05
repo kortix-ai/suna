@@ -38,6 +38,36 @@ describe('SessionSiteHeader sidebar toggle', () => {
   });
 });
 
+describe('SessionSiteHeader session title', () => {
+  test('renders sessionTitle in the leading cluster, after the home button and before leadingAction', () => {
+    const homeButtonIndex = source.indexOf('<HouseIcon');
+    const titleIndex = source.indexOf('{sessionTitle}');
+    const leadingActionIndex = source.lastIndexOf('{leadingAction}');
+    expect(titleIndex).toBeGreaterThan(-1);
+    expect(titleIndex).toBeGreaterThan(homeButtonIndex);
+    expect(leadingActionIndex).toBeGreaterThan(titleIndex);
+  });
+
+  // Without these, a long title just grows the leading cluster and pushes
+  // the trailing cluster (config/dev-tools/⋯) off-screen instead of eliding.
+  test('the title element carries min-w-0 and truncate, so a long value shrinks instead of expanding the row', () => {
+    const titleIndex = source.indexOf('{sessionTitle}');
+    const titleTagStart = source.lastIndexOf('<span', titleIndex);
+    const titleTag = source.slice(titleTagStart, titleIndex);
+    expect(titleTag).toContain('min-w-0');
+    expect(titleTag).toContain('truncate');
+  });
+
+  // The stray blank JSX expression that used to sit where the title now
+  // renders is gone — the trailing cluster's first real child follows
+  // directly after the opening tag.
+  test('the dead blank line ahead of the trailing cluster is gone', () => {
+    const trailingClusterStart = source.indexOf('<SessionChangesIndicator');
+    const precedingChunk = source.slice(trailingClusterStart - 40, trailingClusterStart);
+    expect(precedingChunk.trim().endsWith('>')).toBe(true);
+  });
+});
+
 describe('SessionSiteHeader trailing cluster — non-technical resting state', () => {
   test('Terminal, Browser, and Files come from one list, and collapse behind a single "Developer tools" control below lg', () => {
     // One declaration drives both the desktop row and the collapsed menu, so

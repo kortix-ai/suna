@@ -219,6 +219,14 @@ export function SessionSiteHeader({
                 </Link>
               </Button>
             )}
+
+            {/* min-w-0 lets this shrink below its content width — without it
+                a long title just grows the row and shoves the trailing
+                cluster (config/dev-tools/⋯) off-screen instead of eliding. */}
+            <span className="text-foreground/80 min-w-0 truncate text-sm font-medium">
+              {sessionTitle}
+            </span>
+
             {leadingAction}
           </div>
 
@@ -228,8 +236,6 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[28px]',
             )}
           >
-            
-
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
