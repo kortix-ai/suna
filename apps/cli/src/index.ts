@@ -20,6 +20,7 @@ import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runAudit } from './commands/audit.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -253,6 +254,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'roles',
             args: '<subcommand>',
             blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+          },
+          {
+            name: 'audit',
+            args: '<subcommand>',
+            blurb: 'Read the account audit trail (who did what, when)',
           },
           {
             name: 'grants',
@@ -528,6 +534,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'roles') {
     return runRoles(argv.slice(1));
   }
+  if (argv[0] === 'audit') {
+    return runAudit(argv.slice(1));
+  }
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
   }
@@ -586,6 +595,7 @@ const KNOWN_COMMANDS = [
   'agents',
   'access',
   'roles',
+  'audit',
   'grants',
   'update',
   'uninstall',
