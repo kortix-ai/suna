@@ -25,7 +25,7 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Slack } from '@/features/icon/icons/slack';
@@ -84,6 +84,28 @@ interface ProjectSessionListProps {
 
 const SESSION_RELATIVE_TIME_CLASS =
   'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
+
+/** The one `⋯` box. All three menus in this file — the `Sessions` header, every
+ *  section header, and every session row — render `Button variant="ghost"
+ *  size="icon-xs"` with THIS class, so the glyph sits on a single vertical
+ *  axis at every level of the tree.
+ *
+ *  The geometry, given every row is `px-2` inside the same column: the trigger
+ *  is flush to the right edge of that padded box, so its 24px square spans
+ *  `[W-32, W-8]` and the 16px glyph inside spans `[W-28, W-12]` — identical for
+ *  all three, at any sidebar width.
+ *
+ *  Do NOT rebuild this from `SidebarMenuButton`. That primitive's base carries
+ *  `p-2 w-full h-8 gap-2 overflow-hidden`; `size-6` only beats `w-full`/`h-8`
+ *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
+ *  overflowing an 8px content box, centered by coincidence rather than by
+ *  layout, with a different hover fill than the other two. */
+const SESSION_MENU_TRIGGER_CLASS =
+  'text-muted-foreground hover:text-sidebar-foreground shrink-0 focus:ring-0 focus-visible:ring-0';
+
+/** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
+ *  centered in an identical 32px line at all three levels. */
+const SESSION_ROW_HEIGHT_CLASS = 'h-8';
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
@@ -168,11 +190,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     (s) => s.collapsedSectionsByProject[projectId] ?? EMPTY_LIST,
   );
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
-  // The two facets are PERSISTED per project, so a filter survives navigation,
-  // ⌘J, and a full remount — a user can come back days later to a short list
-  // with no clue why. The in-menu dots only help once the closed menu is
-  // opened; this dot is the signal that fires from outside it.
-  const hasActiveSessionFilters = statusFilters.length > 0 || sourceFilters.length > 0;
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
@@ -392,7 +409,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         projectId={projectId}
         sessions={sessions}
         reviewCountBySession={reviewSummary.needsYouBySession}
-        hasActiveFilters={hasActiveSessionFilters}
         onMenuOpenChange={holdPeek}
       />
 
@@ -436,20 +452,23 @@ function SessionListHeader({
   projectId,
   sessions,
   reviewCountBySession,
-  hasActiveFilters,
   onMenuOpenChange,
 }: {
   projectId: string;
   sessions: ProjectSession[];
   reviewCountBySession: Record<string, number>;
-  hasActiveFilters: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
   return (
-    <div className="text-foreground flex w-full shrink-0 flex-row items-center gap-0.5 px-2">
+    <div
+      className={cn(
+        'flex w-full shrink-0 flex-row items-center gap-1 px-2',
+        SESSION_ROW_HEIGHT_CLASS,
+      )}
+    >
       <Link
         href={`/projects/${projectId}/sessions`}
-        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch text-sm font-medium transition-colors duration-150"
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
       >
         <span className="truncate">Sessions</span>
       </Link>
@@ -462,13 +481,15 @@ function SessionListHeader({
             align="start"
           />
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
+            <Button
+              variant="ghost"
+              size="icon-xs"
               type="button"
               aria-label="Session view options"
-              className="text-muted-foreground hover:text-sidebar-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm"
+              className={SESSION_MENU_TRIGGER_CLASS}
             >
               <DotsThreeIcon className="size-4" />
-            </SidebarMenuButton>
+            </Button>
           </DropdownMenuTrigger>
         </DropdownMenu>
       )}
@@ -518,7 +539,12 @@ function SessionListSection({
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
-        <div className="group/section-header text-muted-foreground flex h-8 items-center gap-1 px-2 text-sm font-medium">
+        <div
+          className={cn(
+            'group/section-header text-muted-foreground flex items-center gap-1 px-2 text-sm font-medium',
+            SESSION_ROW_HEIGHT_CLASS,
+          )}
+        >
           <span className="truncate">{section.label}</span>
           <CaretRightIcon
             aria-hidden
@@ -569,7 +595,8 @@ function SessionSectionMenu({
           type="button"
           aria-label="Section options"
           className={cn(
-            'relative ml-auto shrink-0 opacity-0 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+            SESSION_MENU_TRIGGER_CLASS,
+            'relative ml-auto opacity-0 transition-opacity duration-150',
             'before:absolute before:-inset-1',
             'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
           )}
@@ -727,7 +754,12 @@ function ProjectSessionRow({
               <span
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
-                  'pr-1.5 transition-opacity duration-150',
+                  // pr-1 (4px), not pr-1.5: the timestamp and the `⋯` swap in
+                  // this same slot on hover, so the text's right edge must land
+                  // on the GLYPH's right edge, not the button's. The 16px glyph
+                  // is inset 4px inside its 24px box — match that, or the two
+                  // states sit 2px apart and the swap visibly shifts.
+                  'pr-1 transition-opacity duration-150',
                   'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
                 )}
                 title={`Last activity: ${activity.exact}`}
@@ -747,7 +779,8 @@ function ProjectSessionRow({
                     'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
                   )}
                   className={cn(
-                    'absolute top-1/2 right-0 -translate-y-1/2 rounded-sm transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    SESSION_MENU_TRIGGER_CLASS,
+                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
                     activity
                       ? cn(
                           'pointer-events-none opacity-0',
