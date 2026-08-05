@@ -50,6 +50,8 @@ export interface BuildableTemplate {
   slug: string;
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
+  /** Selects the fixed platform meta-agent runtime instead of the full layer. */
+  runtimeProfile?: 'standard' | 'meta';
   /**
    * Per-project COLD warm: bake the project's repo checkout into /workspace at
    * build time. Threaded straight to `stageBuildContext` (or, on the

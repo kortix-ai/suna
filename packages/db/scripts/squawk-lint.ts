@@ -29,6 +29,7 @@ const DB_ROOT = join(import.meta.dir, '..');
 const MIGRATIONS_DIR = join(DB_ROOT, 'migrations');
 const CONFIG_PATH = join(DB_ROOT, '.squawk.toml');
 const GRANDFATHER_FILE = join(DB_ROOT, 'grandfathered-migrations.json');
+const WAIVER_FILE = join(DB_ROOT, 'squawk-waivers.json');
 
 // Pinned release + per-platform sha256. Upstream doesn't publish checksum
 // files, so these were computed by us at pin time (2026-07-16, squawk v2.59.0)
@@ -106,6 +107,30 @@ function loadGrandfatherSet(): Set<string> {
   }
 }
 
+export interface SquawkWaiver {
+  file: string;
+  reason: string;
+  [k: string]: unknown;
+}
+
+/**
+ * Migrations that merged red and can no longer be fixed — see
+ * squawk-waivers.json for why the hatch exists and why it is debt.
+ *
+ * Separate from the grandfather snapshot on purpose. That file means "existed
+ * before 2026-07-16" and has to keep meaning only that; folding merged-red
+ * files into it would make the baseline a dumping ground and erase the
+ * distinction between "predates the policy" and "violated the policy".
+ */
+export function loadWaivers(): SquawkWaiver[] {
+  try {
+    const data = JSON.parse(readFileSync(WAIVER_FILE, 'utf8')) as { files: SquawkWaiver[] };
+    return Array.isArray(data.files) ? data.files : [];
+  } catch {
+    return [];
+  }
+}
+
 async function main(): Promise<void> {
   const lintAll = process.argv.includes('--all');
   const grandfathered = loadGrandfatherSet();
@@ -115,7 +140,20 @@ async function main(): Promise<void> {
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
-  const targets = lintAll ? allSqlFiles : allSqlFiles.filter((f) => !grandfathered.has(f));
+  const waivers = loadWaivers();
+  const waived = new Set(waivers.map((w) => w.file));
+
+  const targets = lintAll
+    ? allSqlFiles
+    : allSqlFiles.filter((f) => !grandfathered.has(f) && !waived.has(f));
+
+  // Printed every run, on purpose. A waiver is unfixed debt that shipped; the
+  // moment it goes quiet it stops being debt and starts being the new normal.
+  if (waivers.length > 0 && !lintAll) {
+    console.log(`squawk-lint: ${waivers.length} WAIVED migration(s) — merged red, now immutable:`);
+    for (const w of waivers) console.log(`  ! ${w.file}\n      ${w.reason}`);
+    console.log('    (see packages/db/squawk-waivers.json)');
+  }
 
   if (targets.length === 0) {
     console.log('squawk-lint: no new migrations to lint (everything is grandfathered).');
@@ -136,7 +174,12 @@ async function main(): Promise<void> {
   process.exit(result.status ?? 1);
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Guarded so the module can be imported for its helpers (squawk-lint.test.ts)
+// without running the lint — and, more to the point, without the `process.exit`
+// at the end of main() killing the test runner.
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

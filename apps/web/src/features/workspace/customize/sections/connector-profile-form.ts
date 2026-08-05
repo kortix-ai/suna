@@ -10,6 +10,11 @@ const MAX_CONNECTOR_PROFILE_SLUG_LENGTH = 128;
 export interface EasyConnectApp {
   slug: string;
   name: string;
+  /** Catalogue metadata, when the source publishes it (Pipedream apps do).
+   *  Optional so a hand-typed `{ slug, name }` stays valid; the profile
+   *  modal simply renders less without them. */
+  description?: string | null;
+  imgSrc?: string | null;
 }
 
 export interface EasyConnectProfileInput {

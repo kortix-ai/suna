@@ -65,6 +65,20 @@ const tabsListHeightClasses: Record<TabsSize, string> = {
   lg: 'h-10',
 };
 
+/** Stroke thickness of the active underline rule (`type="underline"` only). */
+type TabsUnderlineSize = 'xs' | 'sm' | 'md' | 'lg';
+
+const tabsUnderlineBorderClasses: Record<TabsUnderlineSize, string> = {
+  xs: '**:data-[slot=tabs-trigger]:after:h-px',
+  sm: '**:data-[slot=tabs-trigger]:after:h-[1.5px]',
+  md: '**:data-[slot=tabs-trigger]:after:h-0.5',
+  lg: '**:data-[slot=tabs-trigger]:after:h-[3px]',
+};
+
+/** Shared underline-list chrome; indicator height comes from `underlineSize`. */
+const tabsListUnderlineBaseClasses =
+  "border-border **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:relative **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-0 **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:after:pointer-events-none **:data-[slot=tabs-trigger]:after:absolute **:data-[slot=tabs-trigger]:after:inset-x-0 **:data-[slot=tabs-trigger]:after:bottom-0 **:data-[slot=tabs-trigger]:after:rounded-full **:data-[slot=tabs-trigger]:after:bg-transparent **:data-[slot=tabs-trigger]:after:content-[''] **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:after:bg-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent";
+
 /** `default` is the secondary-coloured pill bar; `underline` is the flat rule. */
 type TabsListType = 'default' | 'underline';
 
@@ -120,6 +134,8 @@ function Tabs({
 interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> {
   type?: TabsListType;
   size?: TabsSize;
+  /** Active underline stroke. Only applies when `type="underline"`. Default `sm`. */
+  underlineSize?: TabsUnderlineSize;
   animate?: 'fluid' | 'none';
 }
 
@@ -127,6 +143,7 @@ function TabsList({
   className,
   type = 'default',
   size = 'default',
+  underlineSize = 'sm',
   animate = 'fluid',
   children,
   ...props
@@ -140,8 +157,8 @@ function TabsList({
       className={cn(
         type === 'default' &&
           'relative z-10 inline-flex h-full w-fit items-center justify-center gap-1',
-        type === 'underline' &&
-          'border-border **:data-[slot=tabs-trigger]:data-[state=active]:border-b-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-x-0 **:data-[slot=tabs-trigger]:border-t-0 **:data-[slot=tabs-trigger]:border-b-[1.5px] **:data-[slot=tabs-trigger]:border-b-transparent **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent',
+        type === 'underline' && tabsListUnderlineBaseClasses,
+        type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
         type === 'underline' && tabsListHeightClasses[size],
         className,
       )}
@@ -252,12 +269,15 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
 /** Compact Radix TabsList — use inside <Tabs> root for smaller contexts. */
 interface TabsListCompactProps extends React.ComponentProps<typeof TabsPrimitive.List> {
   type?: TabsListType;
+  /** Active underline stroke. Only applies when `type="underline"`. Default `sm`. */
+  underlineSize?: TabsUnderlineSize;
   animate?: 'fluid' | 'none';
 }
 
 function TabsListCompact({
   className,
   type = 'default',
+  underlineSize = 'sm',
   animate = 'fluid',
   children,
   ...props
@@ -271,8 +291,9 @@ function TabsListCompact({
       className={cn(
         type === 'default' &&
           'relative z-10 inline-flex h-full w-fit items-center justify-center gap-0.5',
-        type === 'underline' &&
-          'border-border **:data-[slot=tabs-trigger]:data-[state=active]:border-b-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex h-7 w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-x-0 **:data-[slot=tabs-trigger]:border-t-0 **:data-[slot=tabs-trigger]:border-b-[1.5px] **:data-[slot=tabs-trigger]:border-b-transparent **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent',
+        type === 'underline' && tabsListUnderlineBaseClasses,
+        type === 'underline' && 'h-7',
+        type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
         type === 'underline' && className,
       )}
       {...props}
@@ -411,4 +432,10 @@ export {
   tabsTriggerTextVariants,
 };
 
-export type { TabsListType, TabsSize, TabsTriggerSize, TabsTriggerVariant };
+export type {
+  TabsListType,
+  TabsSize,
+  TabsTriggerSize,
+  TabsTriggerVariant,
+  TabsUnderlineSize,
+};

@@ -27,15 +27,18 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
+  ProjectCommandsNavItem,
+  ProjectConnectorsNavItem,
   ProjectCustomizeNavItem,
   ProjectFilesNavItem,
+  ProjectSkillsNavItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
@@ -45,7 +48,6 @@ import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
-import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
@@ -75,7 +77,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, ComponentType<{ className
   all: List,
   mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Icon.Slack,
+  slack: Slack,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
@@ -132,19 +134,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     [authUser, isAdmin],
   );
 
-  // Optimistic + shared with every other entry point (see useNewProjectSession).
-  // The timing marks + mobile-drawer close fire on the synchronous navigation.
+  // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
   const creatingSession = useIsCreatingProjectSession(projectId);
   const handleNewSession = useCallback(() => {
-    markSessionClick();
-    newSession({
-      onNavigate: (sessionId) => {
-        beginSessionTiming(sessionId);
-        sessionMark(sessionId, 'session-created');
-        if (isMobile) setOpenMobile(false);
-      },
-    });
+    newSession();
+    if (isMobile) setOpenMobile(false);
   }, [newSession, isMobile, setOpenMobile]);
 
   // Mobile: the sidebar is a Sheet, so leaving it open would stack the palette
@@ -370,6 +365,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   gone (offcanvas + hover flyout) it needs a docked entry. Above
                   Customize — files aren't gated behind customize access. */}
               <ProjectFilesNavItem />
+              {/* Connectors, Skills, and Commands graduated out of the
+                  Customize overlay into their own routed pages — mounted
+                  above Customize, same tier as Files. */}
+              <ProjectConnectorsNavItem />
+              <ProjectSkillsNavItem />
+              <ProjectCommandsNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>

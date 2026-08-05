@@ -15,8 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import {
   Form,
   FormControl,
@@ -48,14 +46,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Github as GithubIcon } from '@/features/icon/icons/github';
+import { Plus } from '@/features/icon/icons/plus';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { githubInstallationLabel, isGitHubAppInstallationId } from '@/lib/github-installations';
-import { isManagedGitUnavailableError, isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
+import {
+  isManagedGitUnavailableError,
+  isProjectLimitError,
+} from '@/lib/onboarding/ensure-first-project';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   createProjectRepo,
   getManagedGitStatus,
@@ -68,9 +75,6 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk';
-import { useDebounce } from '@/hooks/use-debounce';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   CubeIcon as Boxes,
   CheckCircleIcon as CheckCircleSolid,
@@ -238,10 +242,8 @@ export const ProjectCreateModal = ({
 
   const selectedInstallationId = githubForm.watch('installationId');
   const selectedRepo = githubForm.watch('repo');
-  const {
-    debouncedValue: debouncedRepositorySearch,
-    isLoading: isDebouncingRepositorySearch,
-  } = useDebounce(repositorySearch.trim(), 300);
+  const { debouncedValue: debouncedRepositorySearch, isLoading: isDebouncingRepositorySearch } =
+    useDebounce(repositorySearch.trim(), 300);
 
   function resetAndClose() {
     setMode('managed');
@@ -293,37 +295,37 @@ export const ProjectCreateModal = ({
   }
 
   async function finishCreatedProject(project: KortixProject) {
-      successToast('Project created');
-      queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
-        upsertProject(projects, project),
-      );
-      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
-        upsertProject(projects, project),
-      );
-      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    successToast('Project created');
+    queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
+      upsertProject(projects, project),
+    );
+    queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+      upsertProject(projects, project),
+    );
+    void queryClient.invalidateQueries({ queryKey: ['projects'] });
     void queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' });
 
-      if (effectiveSourceItemId) {
-        const sessionId = await startTemplateSetupSession(project, {
-          itemId: effectiveSourceItemId,
-          title: sourceItemQuery.data?.title ?? 'this project',
-        });
-        if (sessionId) {
-          resetAndClose();
-          router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
-          return;
-        }
-      }
-
-      const onboardingSessionId = await startProjectOnboardingSession(project);
-      if (onboardingSessionId) {
+    if (effectiveSourceItemId) {
+      const sessionId = await startTemplateSetupSession(project, {
+        itemId: effectiveSourceItemId,
+        title: sourceItemQuery.data?.title ?? 'this project',
+      });
+      if (sessionId) {
         resetAndClose();
-        router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+        router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
         return;
       }
+    }
 
+    const onboardingSessionId = await startProjectOnboardingSession(project);
+    if (onboardingSessionId) {
       resetAndClose();
-      router.replace(`/projects/${project.project_id}`);
+      router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+      return;
+    }
+
+    resetAndClose();
+    router.replace(`/projects/${project.project_id}`);
   }
 
   const createMutation = useMutation({
@@ -497,7 +499,11 @@ export const ProjectCreateModal = ({
   // own "no icon" default instead of receiving an explicit null to interpret.
   // Which key — `icon` or `icon_glyph` — comes straight from which side of
   // the union `icon` holds, so this client can never send both.
-  const iconPayload = !icon ? {} : 'emoji' in icon ? { icon: icon.emoji } : { icon_glyph: icon.glyph };
+  const iconPayload = !icon
+    ? {}
+    : 'emoji' in icon
+      ? { icon: icon.emoji }
+      : { icon_glyph: icon.glyph };
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!effectiveAccountId) return errorToast('Select an account first');
@@ -714,7 +720,7 @@ export const ProjectCreateModal = ({
                       ) : (
                         <Item variant="outline" className="items-start">
                           <ItemMedia variant="icon" className="rounded-full bg-transparent">
-                            <Icon.Github />
+                            <GithubIcon />
                           </ItemMedia>
                           <ItemContent>
                             <ItemTitle>Connect GitHub to create projects</ItemTitle>
@@ -730,7 +736,7 @@ export const ProjectCreateModal = ({
                               disabled={isConnectingGitHub}
                               onClick={handleConnectGitHub}
                             >
-                              {isConnectingGitHub ? <Loading /> : <Icon.Github />}
+                              {isConnectingGitHub ? <Loading /> : <GithubIcon />}
                               {isConnectingGitHub ? 'Connecting' : 'Connect'}
                             </Button>
                           </ItemActions>
@@ -746,7 +752,7 @@ export const ProjectCreateModal = ({
                         >
                           <SelectTrigger className="w-full">
                             <span className="flex min-w-0 items-center gap-2">
-                              <Icon.Github className="size-4" />
+                              <GithubIcon className="size-4" />
                               <span className="truncate">
                                 github.com/{selectedInstallation?.owner_login}
                               </span>
@@ -841,7 +847,7 @@ export const ProjectCreateModal = ({
                     (mode === 'github-create' && !selectedInstallationId)
                   }
                 >
-                  {submitting ? <Loading /> : <Icon.Plus />}
+                  {submitting ? <Loading /> : <Plus />}
                   {mode === 'github-create' ? 'Create in your GitHub' : 'Create project'}
                 </Button>
               </ModalFooter>
@@ -874,7 +880,7 @@ export const ProjectCreateModal = ({
                     ) : (
                       <Item variant="outline" className={cn('items-start')}>
                         <ItemMedia variant="icon" className="rounded-full bg-transparent">
-                          <Icon.Github />
+                          <GithubIcon />
                         </ItemMedia>
                         <ItemContent>
                           <ItemTitle>Link a GitHub account</ItemTitle>
@@ -890,7 +896,7 @@ export const ProjectCreateModal = ({
                             disabled={isConnectingGitHub}
                             onClick={handleConnectGitHub}
                           >
-                            {isConnectingGitHub ? <Loading /> : <Icon.Github />}
+                            {isConnectingGitHub ? <Loading /> : <GithubIcon />}
                             {isConnectingGitHub ? 'Connecting' : 'Link GitHub'}
                           </Button>
                         </ItemActions>
@@ -919,7 +925,7 @@ export const ProjectCreateModal = ({
                                   disabled={isConnectingGitHub}
                                   onClick={handleConnectGitHub}
                                 >
-                                  {isConnectingGitHub ? <Loading /> : <Icon.Plus />}
+                                  {isConnectingGitHub ? <Loading /> : <Plus />}
                                   Add account
                                 </Button>
                               ) : null}
@@ -933,7 +939,7 @@ export const ProjectCreateModal = ({
                                 <SelectTrigger className="w-full justify-between p-0 has-[>svg]:p-0">
                                   <div className="flex h-full items-center">
                                     <span className="px-3">
-                                      <Icon.Github className="size-4" />
+                                      <GithubIcon className="size-4" />
                                     </span>
                                     <Separator orientation="vertical" className="mr-2" />
                                     <span
@@ -958,7 +964,7 @@ export const ProjectCreateModal = ({
                                       value={installation.installation_id ?? ''}
                                       className="flex flex-row items-center gap-2"
                                     >
-                                      <Icon.Github />
+                                      <GithubIcon />
                                       <span>
                                         {githubInstallationLabel(
                                           installation.installation_id,
@@ -1133,7 +1139,7 @@ export const ProjectCreateModal = ({
                   }
                   className="w-full sm:w-auto"
                 >
-                  {submitting ? <Loading /> : <Icon.Github />}
+                  {submitting ? <Loading /> : <GithubIcon />}
                   {tHardcodedUi.raw(
                     'componentsProjectsProjectCreateModal.line549JsxTextImportRepo',
                   )}

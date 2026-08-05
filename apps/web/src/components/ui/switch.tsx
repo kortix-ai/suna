@@ -3,7 +3,7 @@
 import { spring } from '@/lib/springs';
 import { cn } from '@/lib/utils';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
-import { animate, motion, useMotionValue } from 'motion/react';
+import { animate, m, useMotionValue } from 'motion/react';
 import { forwardRef, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 
 type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> & {
@@ -163,7 +163,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         {...props}
       >
         <SwitchPrimitive.Thumb asChild>
-          <motion.span
+          <m.span
             className="absolute top-0 left-0 block rounded-full bg-white shadow-sm"
             initial={false}
             style={{ x: motionX }}

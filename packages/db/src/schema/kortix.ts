@@ -2778,6 +2778,61 @@ export const creditAccounts = kortixSchema.table(
 // Billing v2 — per-second sandbox compute metering.
 // One row per active window. Hibernate closes the row; resume opens a new one.
 // Cost flows into credit_ledger as 'compute_debit'; this table is the audit trail.
+/**
+ * A question the agent asked that nobody has answered yet.
+ *
+ * Persisted OUTSIDE the sandbox on purpose. A blocked turn makes no gateway LLM
+ * calls, so it earns no deadline extension and its box is parked on schedule —
+ * correct, and the invariant that only a control-plane observation may extend a
+ * box depends on it. What was wrong is that parking DESTROYED the question:
+ * opencode restarts cold, so the user came back to a session that had silently
+ * forgotten what it asked.
+ *
+ * Keeping the question here lets the box die on time and the conversation
+ * survive it. The row is the durable half of park-and-restore.
+ */
+export const sessionPendingQuestions = kortixSchema.table(
+  'session_pending_questions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    /** `project_sessions.session_id`. Text, matching that table's PK. */
+    sessionId: text('session_id').notNull(),
+    /** opencode's `question.asked` request id — the dedupe key with sessionId. */
+    requestId: text('request_id').notNull(),
+    /** The opencode session that asked; survives an opencode restart changing it. */
+    opencodeSessionId: text('opencode_session_id'),
+    /** The raw QuestionInfo[] as opencode reported it. */
+    questions: jsonb().notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    /** Null while the question is still open — the index keys on this. */
+    answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
+    answers: jsonb(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    // The relay is best-effort and retries, so the same question can arrive
+    // twice. Upsert on this instead of inserting duplicates the UI would render
+    // as two identical prompts.
+    uniqueIndex('session_pending_questions_session_request_uniq').on(
+      table.sessionId,
+      table.requestId,
+    ),
+    // The only hot read: "does this session have an open question?"
+    index('session_pending_questions_open_idx')
+      .on(table.sessionId)
+      .where(sql`answered_at IS NULL`),
+  ],
+);
+
 export const sandboxComputeSessions = kortixSchema.table(
   'sandbox_compute_sessions',
   {

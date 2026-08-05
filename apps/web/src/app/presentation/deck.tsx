@@ -24,7 +24,7 @@ import {
   CornersOutIcon as Maximize,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -150,7 +150,7 @@ export function Deck({
         }}
       >
         <AnimatePresence mode="wait" custom={dir}>
-          <motion.div
+          <m.div
             key={slide.id}
             custom={dir}
             initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
@@ -160,7 +160,7 @@ export function Deck({
             className="absolute inset-0"
           >
             {slide.node}
-          </motion.div>
+          </m.div>
         </AnimatePresence>
 
         {/* ── Chrome (navbar-style) ───────────────────────────────────── */}
@@ -226,7 +226,7 @@ export function Deck({
       {/* ── Overview grid ──────────────────────────────────────────────── */}
       <AnimatePresence>
         {overview ? (
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -264,7 +264,7 @@ export function Deck({
                 </Thumb>
               ))}
             </div>
-          </motion.div>
+          </m.div>
         ) : null}
       </AnimatePresence>
     </div>

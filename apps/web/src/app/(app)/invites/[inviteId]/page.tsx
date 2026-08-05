@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 
 import { ClockIcon as Clock } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -282,7 +282,7 @@ function BrandSurface({ children }: { children: React.ReactNode }) {
 
 function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: string }) {
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
@@ -295,7 +295,7 @@ function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: s
           {children}
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

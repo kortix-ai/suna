@@ -135,6 +135,18 @@ export function idleGraceMs(): number {
 }
 
 /**
+ * Tight idle tail for CHILD sessions — ones spawned by a coordinator
+ * (`metadata.spawned_by_session`). A worker exists for one bounded task; once
+ * its turn ends the coordinator collects outputs with `sessions cp` and the
+ * box has no reason to idle at full compute. Wake-on-demand (/start, proxy
+ * auto-wake, server-side prompt delivery) restores it when needed. The actual
+ * stop still waits for the ~5-minute maintenance reaper tick.
+ */
+export function childIdleGraceMs(): number {
+  return 2 * 60_000;
+}
+
+/**
  * Did the SANDBOX ITSELF author this request? Such a request may never extend
  * the box's deadline — that is the self-renewal this design deletes.
  *

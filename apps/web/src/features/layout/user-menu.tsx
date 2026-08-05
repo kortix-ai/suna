@@ -33,6 +33,9 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
+import { Monitor } from '@/features/icon/icons/monitor';
+import { Moon } from '@/features/icon/icons/moon';
+import { Sun } from '@/features/icon/icons/sun';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
@@ -66,7 +69,6 @@ import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { Icon } from '../icon/icon';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
@@ -116,9 +118,9 @@ const LEGAL_LINKS: MenuLink[] = [
  * have to re-read it in the other.
  */
 export const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: Icon.Sun },
-  { value: 'dark', label: 'Dark', Icon: Icon.Moon },
-  { value: 'system', label: 'System', Icon: Icon.Monitor },
+  { value: 'light', label: 'Light', Icon: Sun },
+  { value: 'dark', label: 'Dark', Icon: Moon },
+  { value: 'system', label: 'System', Icon: Monitor },
 ] as const;
 
 export interface UserMenuUser {
@@ -352,7 +354,7 @@ export function UserMenu({
             only answer to "what am I looking at right now". */}
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            {resolvedTheme === 'dark' ? <Icon.Moon /> : <Icon.Sun />}
+            {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
             Theme
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>

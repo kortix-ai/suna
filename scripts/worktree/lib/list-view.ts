@@ -12,11 +12,10 @@
  * columns away from the name it belonged to. Those five columns are priced once
  * in the footer instead, and a dot leader carries the eye across what is left.
  */
-import pc from 'picocolors';
 import type { Ports } from './ports';
 import { dbModeOf, type DbMode, type Registry, type SlotEntry } from './registry';
 import { SHARED_SUPABASE_PORTS } from './supabase';
-import { link } from './term';
+import { bold, cyan, dim, green, link, yellow } from './term';
 
 export interface ListRow {
   name: string;
@@ -104,21 +103,21 @@ export function renderRail(rows: ListRow[], opts: RailOpts): string[] {
   const showApi = !columns || columns >= GUTTER + nameW + LEADER + webW + 2 + 4 + apiW;
 
   const lines = rows.map((r, i) => {
-    const paint = r.live ? pc.green : pc.dim;
-    const glyph = r.live ? pc.green('●') : pc.dim('○');
-    const name = r.live ? pc.bold(r.name) : r.name;
+    const paint = r.live ? green : dim;
+    const glyph = r.live ? green('●') : dim('○');
+    const name = r.live ? bold(r.name) : r.name;
     // At the longest name this is exactly three dots; the floor of two keeps a
     // visible rail if a future name ever exceeds the measured maximum.
     const dots = Math.max(2, nameW - r.name.length + 3);
-    const leader = pc.dim(` ${'·'.repeat(dots)} `);
+    const leader = dim(` ${'·'.repeat(dots)} `);
     const web = link(`http://localhost:${r.ports.web}`, paint(webs[i]!)) + ' '.repeat(webW - webs[i]!.length);
     const api = showApi
-      ? `  ${pc.dim('api')} ${link(`http://localhost:${r.ports.api}`, pc.dim(`:${r.ports.api}`))}`
+      ? `  ${dim('api')} ${link(`http://localhost:${r.ports.api}`, dim(`:${r.ports.api}`))}`
       : '';
     return `  ${glyph} ${name}${leader}${web}${api}`.trimEnd();
   });
 
-  return [...lines, '', `  ${pc.dim(footer(rows, opts))}`];
+  return [...lines, '', `  ${dim(footer(rows, opts))}`];
 }
 
 function footer(rows: ListRow[], opts: RailOpts): string {
@@ -141,22 +140,22 @@ function footer(rows: ListRow[], opts: RailOpts): string {
 
 export function renderDetail(row: ListRow, opts: { probed: boolean }): string[] {
   const p = effectivePorts(row);
-  const glyph = row.live ? pc.green('●') : pc.dim('○');
+  const glyph = row.live ? green('●') : dim('○');
   const state = row.live ? 'running' : 'stopped';
   const drift = opts.probed && (row.recordedStatus === 'running') !== row.live
-    ? pc.yellow(` (registry says ${row.recordedStatus})`)
+    ? yellow(` (registry says ${row.recordedStatus})`)
     : '';
   const field = (label: string, href: string, text = href) =>
-    `    ${pc.dim(label.padEnd(7))} ${link(href, pc.cyan(text))}`;
+    `    ${dim(label.padEnd(7))} ${link(href, cyan(text))}`;
   const out = [
-    `  ${glyph} ${pc.bold(row.name)}  ${pc.dim(`slot ${row.slot} · ${state} · ${row.dbMode} db`)}${drift}`,
+    `  ${glyph} ${bold(row.name)}  ${dim(`slot ${row.slot} · ${state} · ${row.dbMode} db`)}${drift}`,
     '',
     field('web', `http://localhost:${p.web}`),
     field('api', `http://localhost:${p.api}/v1`),
     field('studio', `http://localhost:${p.sbStudio}`),
   ];
-  if (row.branch !== row.name) out.push(`    ${pc.dim('branch'.padEnd(7))} ${row.branch}`);
-  out.push(`    ${pc.dim('path'.padEnd(7))} ${pc.dim(row.path)}`);
+  if (row.branch !== row.name) out.push(`    ${dim('branch'.padEnd(7))} ${row.branch}`);
+  out.push(`    ${dim('path'.padEnd(7))} ${dim(row.path)}`);
   return out;
 }
 

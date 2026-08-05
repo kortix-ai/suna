@@ -92,6 +92,16 @@ export async function deductCredits(
   amount: number,
   description: string,
   ledgerType: LedgerDebitType = 'usage',
+  /**
+   * Stable key identifying the thing being paid for.
+   *
+   * Without it, a debit whose RPC response is lost AFTER the function committed
+   * is invisible to us: the wallet moved, this code believes it did not, and the
+   * caller charges the same thing again. Commit-then-timeout is the ordinary
+   * failure of a pooled RPC under load. Pass a key derived from WHAT is being
+   * billed (not from the clock or a random id) so a retry produces the same one.
+   */
+  idempotencyKey?: string,
 ) {
   const supabase = getSupabase();
 
@@ -100,6 +110,7 @@ export async function deductCredits(
     p_amount: amount,
     p_description: description,
     p_ledger_type: ledgerType,
+    ...(idempotencyKey ? { p_idempotency_key: idempotencyKey } : {}),
   });
 
   if (error) {

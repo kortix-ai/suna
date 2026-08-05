@@ -26,7 +26,7 @@ describe('merged brand/switcher control', () => {
   // The mark's whole job before the merge. Losing it would make the merge a
   // deletion dressed up as a redesign.
   test('the mark keeps its link to the project home', () => {
-    expect(control).toContain('<Icon.Kortix');
+    expect(control).toContain('<Kortix');
     expect(control).toContain('href={homeHref}');
     expect(source).toContain("activeProjectId ? `/projects/${activeProjectId}` : '/projects'");
   });
@@ -54,6 +54,7 @@ describe('merged brand/switcher control', () => {
   // A seam that is always drawn makes the shell read as two boxes again.
   test('the seam only appears on hover', () => {
     expect(control).toContain('bg-border/0 group-hover/switcher:bg-border/70');
+    expect(control).not.toContain('group-hover/switcher:bg-border ');
   });
 
   // kortix-design-system: @phosphor-icons/react is the only icon source in

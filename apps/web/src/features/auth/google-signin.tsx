@@ -2,12 +2,12 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { NewGoogle } from '@/features/icon/icons/new-google';
 import { authRedirectUrl } from '@/lib/desktop';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
-import { Icon } from '../icon/icon';
 
 interface GoogleSignInProps {
   returnUrl?: string;
@@ -74,7 +74,7 @@ export default function GoogleSignIn({
       {isLoading ? (
         <Loading className="text-foreground! size-4 shrink-0" />
       ) : (
-        <Icon.NewGoogle className="h-4 w-4" />
+        <NewGoogle className="h-4 w-4" />
       )}
       <span>{isLoading ? t('signingIn') : t('continueWithGoogle')}</span>
     </Button>

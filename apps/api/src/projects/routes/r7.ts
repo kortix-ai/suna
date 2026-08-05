@@ -39,7 +39,7 @@ import {
   modelChangeResult,
   validateModelChangeShape,
 } from '../lib/session-model-change';
-import { pushSessionModelToSandbox } from '../lib/sandbox-env-sync';
+import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
@@ -316,6 +316,7 @@ projectsApp.openapi(
           authType: c.get('authType') as string | undefined,
           apiKeyType: c.get('apiKeyType') as string | undefined,
           inSession: isProjectSessionPrincipal(c),
+          callerSessionId: callerKortixSessionId(c),
           request: requestAuditContext(c),
         });
         if (result.error) throw new WarmSessionCreateFailure(result.error);
@@ -750,6 +751,7 @@ projectsApp.openapi(
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
     inSession: isProjectSessionPrincipal(c),
+    callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
     idempotencyKey,
     mayManageSystemConnectorProfiles,
@@ -2671,9 +2673,41 @@ projectsApp.openapi(
       );
     }
 
-    // No push needed: the per-prompt hot sync re-reads secretsAllowlist and
-    // re-resolves the whole env on the NEXT prompt, and connector bindings are
-    // resolved server-side at call time. Pushing here would race that.
+    // Connector bindings are resolved server-side at call time, so they need no
+    // push. Secrets are different: the allowlist narrows what the sandbox
+    // receives, and for a long time this route just persisted the row and told
+    // the caller "Applies from the next prompt." — delegating delivery to the
+    // per-prompt hot sync. That delegation was unreliable. The hot sync has
+    // silent early-returns (`!serviceKey`, `!snapshot`), only fires when the
+    // prompt routes through `POST :8000 /session/{id}/{prompt_async|message}`
+    // (a prompt sent any other way slips past it), and even when it fired the
+    // daemon took the ~51ms dispose fast path for a pure secret change — and a
+    // dispose re-reads the opencode config file only, NOT the child's process
+    // env, so opencode kept its stale 0/47 PID while `agent-env.sh` got the new
+    // set. The box reported a stale OpenCode until something else forced a
+    // respawn.
+    //
+    // Push here, the same pattern the `/model` PUT uses: re-derive the snapshot
+    // from the row we just committed, POST it to the daemon, and restart
+    // opencode so `spawnChild` re-runs `mergeProjectEnv` + the gateway strip.
+    // Only when the effective set actually moved — a no-op re-scope (same
+    // allowlist) must not restart opencode and kill an in-flight turn for
+    // nothing. `applied_live` tells the caller whether it is in effect NOW or
+    // only at the next boot, exactly like the model route.
+    let scopeAppliedLive = false;
+    let scopePushFailed = false;
+    let scopePushReason: string | undefined;
+    const scopeSecretsChanged =
+      wantsSecrets && (narrowedSecrets || addedSecrets.length > 0 || droppedSecrets.length > 0);
+    if (scopeSecretsChanged) {
+      const push = await pushSessionScopeToSandbox({ projectId, sessionId });
+      scopeAppliedLive = push.applied;
+      if (!push.applied) {
+        scopePushFailed = true;
+        scopePushReason = push.reason;
+      }
+    }
+
     return c.json({
       secrets_allowlist: nextAllowlist,
       required_connectors: nextRequired,
@@ -2698,9 +2732,17 @@ projectsApp.openapi(
       // this warning on exactly that case, telling a user revoking every secret
       // from a live session that nothing had been dropped.
       retroactive: !narrowedSecrets,
-      detail: narrowedSecrets
-        ? 'Dropped secrets stop being delivered from the next prompt. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
-        : 'Applies from the next prompt.',
+      applied_live: scopeAppliedLive,
+      ...(scopePushFailed ? { push_failed: true as const, push_reason: scopePushReason } : {}),
+      detail: scopeSecretsChanged
+        ? narrowedSecrets
+          ? scopeAppliedLive
+            ? 'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
+            : 'Dropped secrets stop being delivered from the next prompt. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
+          : scopeAppliedLive
+            ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
+            : 'Applies from the next prompt.'
+        : 'No change to the secrets scope.',
     });
   },
 );

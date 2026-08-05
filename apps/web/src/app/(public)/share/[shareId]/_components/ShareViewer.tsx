@@ -16,7 +16,7 @@ import {
   ThumbsDownIcon as ThumbsDown,
   ThumbsUpIcon as ThumbsUp,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ============================================================================
@@ -345,7 +345,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
       {/* Thumbs up */}
       <AnimatePresence mode="popLayout">
         {!disliked && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.5, width: 0 }}
             animate={{ opacity: 1, scale: 1, width: 'auto' }}
             exit={{ opacity: 0, scale: 0.5, width: 0 }}
@@ -359,14 +359,14 @@ function MessageActions({ text, className }: { text: string; className?: string 
             >
               <ThumbsUp className="h-3.5 w-3.5" fill={liked ? 'currentColor' : 'none'} />
             </Button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
       {/* Thumbs down */}
       <AnimatePresence mode="popLayout">
         {!liked && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.5, width: 0 }}
             animate={{ opacity: 1, scale: 1, width: 'auto' }}
             exit={{ opacity: 0, scale: 0.5, width: 0 }}
@@ -380,7 +380,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
             >
               <ThumbsDown className="h-3.5 w-3.5" fill={disliked ? 'currentColor' : 'none'} />
             </Button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

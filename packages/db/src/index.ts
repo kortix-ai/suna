@@ -101,6 +101,7 @@ export {
   creditPurchases,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
+  sessionPendingQuestions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel

@@ -62,6 +62,18 @@ type DiscoverProfileTarget =
   | { source: 'integration'; item: DiscoverIntegration; variant: DiscoverIntegrationVariant }
   | { source: 'pipedream'; app: PipedreamApp };
 
+/**
+ * The Add-connector modal's Discover tab: a flat, searchable grid of the
+ * public catalogue plus Pipedream's OAuth apps.
+ *
+ * ── Known duplication, read before changing this file ──────────────────────
+ * `features/workspace/capabilities/connectors/discover-add-flow.tsx` runs the
+ * same add journey (surface picker -> `ConnectorProfileModal` ->
+ * `createConnector`) for the Connectors page's Browse scope. The two are
+ * separate implementations of one journey and must stay behaviourally
+ * consistent; a fix here very likely belongs there too. That file's header
+ * records why they were not unified.
+ */
 export function DiscoverCatalogue({
   projectId,
   existingSlugs,

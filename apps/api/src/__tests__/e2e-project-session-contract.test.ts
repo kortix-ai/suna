@@ -26,6 +26,7 @@ const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
+const SESSION_BOUND_PAT = 'kortix_pat_session_executor';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -210,6 +211,17 @@ mock.module('../middleware/auth', () => ({
       await next();
       return;
     }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_BOUND_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      await next();
+      return;
+    }
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SA_TOKEN}`) {
       c.set('userId', USER_ID);
       c.set('userEmail', '');
@@ -223,6 +235,12 @@ mock.module('../middleware/auth', () => ({
     c.set('userId', USER_ID);
     c.set('userEmail', 'contract@example.test');
     c.set('authType', 'supabase');
+    // The real middleware sets `sessionId` to the SUPABASE AUTH session for
+    // browser JWTs (IAM idle/lifetime gate) — it is NOT a project session.
+    // Mirrored here so a caller-session consumer that forgets to filter by
+    // authType (callerKortixSessionId) fails a test instead of stamping
+    // login-session ids into project data.
+    c.set('sessionId', '00000000-0000-4000-a000-00000000auth');
     await next();
   },
 }));
@@ -274,6 +292,13 @@ mock.module('../snapshots/builder', () => ({
     contentHash: 'a'.repeat(64),
     built: false,
     isDefault: true,
+  }),
+  ensureMetaSandboxImage: async () => ({
+    snapshotName: 'kortix-meta-test',
+    slug: 'meta',
+    contentHash: 'b'.repeat(64),
+    built: false,
+    isDefault: false,
   }),
   deleteSandboxImage: async () => ({
     deleted: false,
@@ -951,6 +976,102 @@ describe('project session API contract', () => {
 
   beforeEach(() => resetState());
 
+  // The platform coordinator is a per-project experimental opt-in. Every other
+  // test in this file runs with the flag OFF and asserts the pre-meta default
+  // behavior byte-for-byte.
+  function enableMetaAgent() {
+    projectRow.metadata = {
+      ...(projectRow.metadata as Record<string, unknown>),
+      experimental: { meta_agent: true },
+    };
+  }
+
+  test('creates an omitted-agent session with the meta REST runtime', async () => {
+    enableMetaAgent();
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const createdMeta = await response.json();
+    expect(createdMeta).toMatchObject({
+      agent_name: 'meta',
+      metadata: {
+        sandbox_slug: 'meta',
+      },
+    });
+    // A browser (supabase) create is not an in-session spawn — its Supabase
+    // AUTH session id must never be stamped as a coordinator link.
+    expect(createdMeta.metadata?.spawned_by_session).toBeUndefined();
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+      extraEnvVars: {
+        KORTIX_AGENT_NAME: 'meta',
+        KORTIX_META_AGENT: '1',
+        KORTIX_PROJECT_AUTO_CLONE: '0',
+      },
+    });
+  });
+  test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
+    enableMetaAgent();
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    // The fixture project declares `default_agent: 'kortix'` — a meta-session
+    // spawn resolves to it, never to another platform meta coordinator.
+    expect(created.agent_name).toBe('kortix');
+    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+  });
+
+  test('a meta session cannot spawn another meta coordinator', async () => {
+    enableMetaAgent();
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe('META_AGENT_RECURSION');
+  });
+
+  test('a non-meta session-bound caller may still spawn the meta coordinator', async () => {
+    enableMetaAgent();
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect((await response.json()).agent_name).toBe('meta');
+  });
+
   test('GET project session inventory rejects callers without project.session.read', async () => {
     deniedIamAction = 'project.session.read';
     const app = createApp();
@@ -1388,6 +1509,7 @@ describe('project session API contract', () => {
         provider: 'daytona',
         base_ref: 'main',
         opencode_model: 'anthropic/claude-opus-4-8',
+        agent_name: 'default',
         secrets: ['GMAIL_TOKEN'],
       }),
     });
@@ -2535,6 +2657,33 @@ describe('project session API contract', () => {
     });
   });
 
+  test('restart of a meta session keeps the meta runtime env', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      agentName: 'meta',
+      metadata: { ...((sessionRow!.metadata as Record<string, unknown>) ?? {}), sandbox_slug: 'meta' },
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+
+    expect([200, 202]).toContain(res.status);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    // The rebuilt env must keep the meta runtime — losing it makes the daemon
+    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    expect(lastProvisionInput).toMatchObject({
+      agentName: 'meta',
+      extraEnvVars: {
+        KORTIX_META_AGENT: '1',
+        KORTIX_PROJECT_AUTO_CLONE: '0',
+      },
+    });
+  });
+
   test('restart restores a provider-removed sandbox in place without provisioning', async () => {
     const app = createApp();
     sessionRow = {
@@ -2840,7 +2989,7 @@ describe('project session API contract', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'default' }),
     });
     expect(createRes.status).toBe(201);
 

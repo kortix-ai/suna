@@ -16,7 +16,7 @@ import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sid
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { parseCustomizeSection } from '@/lib/customize-sections';
+import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { desktopShellPlatform } from '@/lib/desktop';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
@@ -103,10 +103,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   }, [projectDetailError, projectId, router, user?.id]);
 
   useEffect(() => {
-    // Files graduated out of Customize into its own page — send legacy
-    // ?customize=files links there instead of opening the overlay.
-    if (searchParams.get('customize') === 'files') {
-      router.replace(`/projects/${projectId}/files`);
+    // Files, Connectors, Skills, and Commands graduated out of Customize into
+    // their own pages — send legacy ?customize=<section> links there instead
+    // of opening the overlay.
+    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('customize'));
+    if (redirect) {
+      router.replace(redirect);
       return;
     }
     const section = parseCustomizeSection(searchParams.get('customize'));
@@ -141,9 +143,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     }
   }, []);
 
-  // Optimistic new-session: mint the id client-side and navigate immediately so
-  // the instant shell paints before the create POST returns (see
-  // useNewProjectSession). Shared with the sidebar / ⌘T-⌘J / command palette.
+  // New-session navigation opens the project composer. The first send creates
+  // the durable session.
   const newSession = useNewProjectSession(projectId);
   const handleNewSession = useCallback(() => {
     newSession();

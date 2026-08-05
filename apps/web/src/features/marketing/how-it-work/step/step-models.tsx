@@ -2,7 +2,11 @@
 
 import { PageHead, Panel, Row, StatusDot } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
-import { Icon } from '@/features/icon/icon';
+import { ChatGPT } from '@/features/icon/icons/chat-gpt';
+import { Claude } from '@/features/icon/icons/claude';
+import { Gemini } from '@/features/icon/icons/gemini';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { OpenAI } from '@/features/icon/icons/open-ai';
 import { GlobeIcon, KeyIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
@@ -10,9 +14,9 @@ import { WebPanelWrapper } from '../web-panel-wrapper';
 type Glyph = (props: { className?: string }) => ReactNode;
 
 const PROVIDERS: { glyph: Glyph; name: string; models: string; on: boolean }[] = [
-  { glyph: Icon.Claude as Glyph, name: 'Anthropic', models: 'Opus · Sonnet · Haiku', on: true },
-  { glyph: Icon.OpenAI as Glyph, name: 'OpenAI', models: 'GPT · Codex', on: true },
-  { glyph: Icon.Gemini as Glyph, name: 'Google', models: 'Gemini Pro · Flash', on: true },
+  { glyph: Claude as Glyph, name: 'Anthropic', models: 'Opus · Sonnet · Haiku', on: true },
+  { glyph: OpenAI as Glyph, name: 'OpenAI', models: 'GPT · Codex', on: true },
+  { glyph: Gemini as Glyph, name: 'Google', models: 'Gemini Pro · Flash', on: true },
   {
     // The custom-provider form takes any base URL and drives it through
     // `@ai-sdk/openai-compatible` — vLLM, LiteLLM and Ollama all land here.
@@ -31,11 +35,11 @@ const PROVIDERS: { glyph: Glyph; name: string; models: string; on: boolean }[] =
 const BILLING: { glyph: Glyph; title: string; sub: string }[] = [
   { glyph: KeyIcon as Glyph, title: 'Your own API key', sub: 'any major provider' },
   {
-    glyph: Icon.ChatGPT as Glyph,
+    glyph: ChatGPT as Glyph,
     title: 'Your ChatGPT subscription',
     sub: 'the one you already pay for',
   },
-  { glyph: Icon.Kortix as Glyph, title: 'Kortix Gateway', sub: 'managed — no key to bring' },
+  { glyph: Kortix as Glyph, title: 'Kortix Gateway', sub: 'managed — no key to bring' },
 ];
 
 /** Layer 02 — the model slot is yours to fill, and so is the bill. */

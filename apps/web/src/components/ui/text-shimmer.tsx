@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, type JSX } from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 export type TextShimmerProps = {
@@ -22,13 +22,13 @@ function TextShimmerComponent({
   spread = 2,
   repeat = Infinity,
 }: TextShimmerProps) {
-  // Memoized on `as`: `motion.create` returns a NEW component type on every
+  // Memoized on `as`: `m.create` returns a NEW component type on every
   // call, and a new type is not reconcilable — React unmounts and remounts this
   // subtree on each re-render, restarting the shimmer sweep from frame zero.
   // Any caller that re-renders on live data sees that as a flicker; the session
   // transcript's busy line and every running tool row do.
   const MotionComponent = useMemo(
-    () => motion.create(Component as keyof JSX.IntrinsicElements),
+    () => m.create(Component as keyof JSX.IntrinsicElements),
     [Component],
   );
 

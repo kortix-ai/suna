@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { cn } from '@/lib/utils';
 import { CheckIcon, GitPullRequestIcon } from '@phosphor-icons/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
@@ -96,7 +96,7 @@ export function StepControlPlane(): ReactNode {
 
               <AnimatePresence mode="wait" initial={false}>
                 {merged ? (
-                  <motion.div
+                  <m.div
                     key="merged"
                     initial={reduced ? false : { opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -106,9 +106,9 @@ export function StepControlPlane(): ReactNode {
                       Merging is a named grant in kortix.yaml. Narrow it to a person, a group or
                       nobody.
                     </InfoBanner>
-                  </motion.div>
+                  </m.div>
                 ) : (
-                  <motion.div
+                  <m.div
                     key="pending"
                     initial={false}
                     exit={reduced ? undefined : { opacity: 0, y: -6 }}
@@ -122,7 +122,7 @@ export function StepControlPlane(): ReactNode {
                     <span className="text-muted-foreground text-xs">
                       Read the diff first — nothing lands until it is approved.
                     </span>
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
             </div>

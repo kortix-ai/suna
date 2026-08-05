@@ -41,7 +41,7 @@ flow("SYS-7", { domain: "system", tags: ["smoke"], routes: ["POST /v1/system/dem
     r.status(400);
   });
   await ctx.step("POST /v1/system/demo-request (valid) → 200 accepted", async () => {
-    // Public lead capture. `emailed` is false when Mailtrap isn't configured on
+    // Public lead capture. `emailed` is false when no email provider is configured on
     // the target env — the request is still accepted (graceful skip).
     const r = await ctx.client.post("/v1/system/demo-request", {
       name: "ke2e probe",

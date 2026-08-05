@@ -1509,6 +1509,49 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
   });
 
+  // Defect (2026-08-01, live-reported in Slack): an upstream 400 "context
+  // length exceeded from messages" surfaced to the user as a generic "Bad
+  // Gateway" instead of the real error + real status. Root cause was in
+  // transports/ai-sdk/sse.ts: when the AI SDK wrapped a non-2xx upstream
+  // response in an APICallError whose `.message` was the generic HTTP status
+  // text (the upstream's body failed the provider's error-schema parse), the
+  // streaming adapter emitted that generic message as the client-facing
+  // `message` and carried the real message only in `detail` — and a numeric
+  // status code reached statusForErrorFrame as a STRING or undefined, so it
+  // fell through to a blanket 502. Fixed in sse.ts (mines the real message +
+  // numeric status from responseBody/data); this test pins the END-TO-END
+  // client-facing contract the fix produces: a numeric 4xx code on the error
+  // frame surfaces as that status with the real message, NOT a 502 "Bad
+  // Gateway". This is the post-fix shape the ai-sdk transport now emits.
+  const contextLengthSse =
+    'data: {"error":{"message":"context length exceeded from messages","code":400}}\n\n' +
+    "data: [DONE]\n\n";
+
+  test("streaming: a numeric 4xx error-frame code surfaces as that status with the real message — not a blanket 502 Bad Gateway", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(contextLengthSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    // 400, the upstream's real status — NOT a generic 502 "Bad Gateway".
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("upstream_error");
+    // The REAL upstream message reaches the caller, not a generic "Bad Request".
+    expect(body.message).toBe("context length exceeded from messages");
+    expect(body.error.message).toBe("context length exceeded from messages");
+    expect(body.upstream_code).toBe(400);
+    expect(body.suggestion).toContain("switch to another model");
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].status).toBe(400);
+    expect(traces[0].errorCode).toBe("upstream_error");
+    expect(traces[0].errorMessage).toBe("context length exceeded from messages");
+  });
+
   test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {
     const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
     const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };

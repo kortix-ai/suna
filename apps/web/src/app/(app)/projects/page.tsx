@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { UpgradeButton } from '@/features/billing/upgrade-button';
-import { Icon } from '@/features/icon/icon';
+import { Plus } from '@/features/icon/icons/plus';
 import { AppHeader } from '@/features/layout/app-header';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -22,9 +22,7 @@ import { ProjectCreateModal } from '@/features/projects/modal/project-create-mod
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
-import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { syncSubscription } from '@kortix/sdk';
-import { fireConfetti } from '@/lib/confetti';
+import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import {
   ensureFirstProject,
@@ -506,7 +504,7 @@ export default function ProjectsPage() {
                       onClick={() => openCreateModal(activeAccountId)}
                       disabled={!canCreateProjects}
                     >
-                      <Icon.Plus />
+                      <Plus />
                       {tI18nHardcoded.raw(
                         'autoAppAppProjectsPageJsxTextCreateYourFirstProject061cafdb',
                       )}

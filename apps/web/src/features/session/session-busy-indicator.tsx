@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -78,7 +78,7 @@ export function SessionBusyIndicator({
   const swap = reduceMotion ? FADE_SWAP : ROLL_SWAP;
 
   return (
-    <motion.div
+    <m.div
       role="status"
       aria-live="polite"
       data-testid="session-busy-indicator"
@@ -93,7 +93,7 @@ export function SessionBusyIndicator({
         ) : (
           <span className="relative block min-w-0 overflow-hidden leading-5">
             <AnimatePresence mode="popLayout">
-              <motion.span
+              <m.span
                 key={label}
                 initial={hasMounted.current ? swap.initial : swap.animate}
                 animate={swap.animate}
@@ -102,12 +102,12 @@ export function SessionBusyIndicator({
                 className="block min-w-0 whitespace-nowrap will-change-transform"
               >
                 <TextShimmer className="truncate text-sm leading-5">{label}</TextShimmer>
-              </motion.span>
+              </m.span>
             </AnimatePresence>
           </span>
         )}
       </span>
       <span className="sr-only">{label}</span>
-    </motion.div>
+    </m.div>
   );
 }

@@ -27,7 +27,12 @@ describe('project sidebar footer ordering', () => {
   });
 
   test('the permanent nav keeps its own order', () => {
-    expect(orderOf('ProjectFilesNavItem')).toBeLessThan(orderOf('ProjectCustomizeNavItem'));
+    // Connectors/Skills/Commands graduated out of Customize into their own
+    // pages and mount above the Customize entry, same tier as Files.
+    expect(orderOf('ProjectFilesNavItem')).toBeLessThan(orderOf('ProjectConnectorsNavItem'));
+    expect(orderOf('ProjectConnectorsNavItem')).toBeLessThan(orderOf('ProjectSkillsNavItem'));
+    expect(orderOf('ProjectSkillsNavItem')).toBeLessThan(orderOf('ProjectCommandsNavItem'));
+    expect(orderOf('ProjectCommandsNavItem')).toBeLessThan(orderOf('ProjectCustomizeNavItem'));
     expect(orderOf('ProjectCustomizeNavItem')).toBeLessThan(
       orderOf('ProjectChatGptConnectNavItem'),
     );

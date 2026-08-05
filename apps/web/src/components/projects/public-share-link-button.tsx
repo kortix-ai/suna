@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckIcon as Check, LinkSimpleIcon } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -54,7 +54,7 @@ export function PublicShareLinkButton({
         ) : (
           <span className={cn('relative inline-flex items-center justify-center', iconClassName)}>
             <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
+              <m.span
                 key={share.copied ? 'check' : 'link'}
                 initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                 animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -67,7 +67,7 @@ export function PublicShareLinkButton({
                 ) : (
                   <LinkSimpleIcon className={iconClassName} />
                 )}
-              </motion.span>
+              </m.span>
             </AnimatePresence>
           </span>
         )}

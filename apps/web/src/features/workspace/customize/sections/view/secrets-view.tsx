@@ -48,12 +48,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -65,6 +64,7 @@ import {
   listProjectSecrets,
   upsertProjectSecret,
 } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -177,7 +177,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 )}
               </Button>
               <Button size="sm" variant="secondary" onClick={openCreate}>
-                <Icon.Plus className="size-4 shrink-0" />
+                <PlusIcon className="size-4 shrink-0" />
                 Add
               </Button>
             </div>

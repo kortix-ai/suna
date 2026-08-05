@@ -18,6 +18,12 @@ describe('buildNewSessionCreateInput', () => {
     ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
   });
 
+  it('forces the fixed meta sandbox when the meta agent is selected', () => {
+    expect(
+      buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' }),
+    ).toEqual({ agent_name: 'meta', sandbox_slug: 'meta' });
+  });
+
   it('binds only the sandbox slug when no agent is picked', () => {
     expect(buildNewSessionCreateInput({ sandbox_slug: 'node22' })).toEqual({
       sandbox_slug: 'node22',

@@ -10,6 +10,7 @@ import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../gith
 import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
 import {
+  existingProjectMirrorPath,
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
@@ -25,6 +26,9 @@ import type { GitBackedProject, GitBranchInfo } from './types';
 // install wall-clock time without spawning an unbounded pile of `git
 // hash-object` subprocesses per commit.
 const HASH_CONCURRENCY = 8;
+const BRANCH_COMPARE_CONCURRENCY = 8;
+const BRANCH_COMPARE_LIMIT = 100;
+const BRANCH_LIST_TIMEOUT_MS = 15_000;
 
 export interface ExpectedFileRevision {
   path: string;
@@ -100,8 +104,40 @@ export async function hashBlobs(
   );
 }
 
-export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
-  const repoPath = await refreshMirror(project);
+function branchFromRemoteRef(name: string, tip: string, defaultBranch: string): GitBranchInfo {
+  const isDefault = name === defaultBranch;
+  return {
+    name,
+    is_default: isDefault,
+    tip,
+    tip_short: tip.slice(0, 7),
+    subject: '',
+    committer_name: '',
+    committer_email: '',
+    committed_at: '',
+    ahead: isDefault ? 0 : null,
+    behind: isDefault ? 0 : null,
+  };
+}
+
+export function parseRemoteBranches(stdout: string, defaultBranch: string): GitBranchInfo[] {
+  const branches = stdout
+    .split('\n')
+    .map((line) => line.trim().match(/^([0-9a-f]{40})\s+refs\/heads\/(.+)$/))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => branchFromRemoteRef(match[2] ?? '', match[1] ?? '', defaultBranch));
+
+  branches.sort((a, b) => {
+    if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return branches;
+}
+
+async function readCachedBranchMetadata(
+  repoPath: string,
+  baseRef: string,
+): Promise<Map<string, GitBranchInfo>> {
   const format = [
     '%(refname:short)',
     '%(objectname)',
@@ -117,7 +153,6 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
     false,
   );
   const lines = result.stdout.split('\n').filter(Boolean);
-  const baseRef = project.defaultBranch;
 
   const branches = lines
     .map<GitBranchInfo | null>((line) => {
@@ -139,32 +174,73 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
     })
     .filter((b): b is GitBranchInfo => b !== null);
 
-  // Compute ahead/behind vs default in parallel (skip the default itself).
-  await Promise.all(
-    branches.map(async (b) => {
-      if (b.is_default) {
-        b.ahead = 0;
-        b.behind = 0;
-        return;
+  // Exact ahead/behind requires one revision walk per branch on the Git
+  // versions available in our runtime. Bound both process concurrency and the
+  // total comparison count. A repository with thousands of session branches
+  // must never spawn thousands of child processes from one HTTP request.
+  const comparable =
+    branches.length <= BRANCH_COMPARE_LIMIT
+      ? branches
+      : branches.filter((branch) => branch.is_default);
+  await mapLimit(comparable, BRANCH_COMPARE_CONCURRENCY, async (b) => {
+    if (b.is_default) {
+      b.ahead = 0;
+      b.behind = 0;
+      return;
+    }
+    try {
+      const rl = await runGit(
+        ['rev-list', '--left-right', '--count', `${baseRef}...${b.name}`],
+        repoPath,
+        false,
+      );
+      const match = rl.stdout.trim().match(/^(\d+)\s+(\d+)/);
+      if (match) {
+        b.behind = Number(match[1]);
+        b.ahead = Number(match[2]);
       }
-      try {
-        const rl = await runGit(
-          ['rev-list', '--left-right', '--count', `${baseRef}...${b.name}`],
-          repoPath,
-          false,
-        );
-        const match = rl.stdout.trim().match(/^(\d+)\s+(\d+)/);
-        if (match) {
-          b.behind = Number(match[1]);
-          b.ahead = Number(match[2]);
-        }
-      } catch {
-        // Default branch missing or unreachable — leave ahead/behind null.
-      }
-    }),
-  );
+    } catch {
+      // Default branch missing or unreachable — leave ahead/behind null.
+    }
+  });
 
-  return branches;
+  return new Map(branches.map((branch) => [branch.name, branch]));
+}
+
+/**
+ * List the remote branch refs without cloning repository history.
+ *
+ * The old path called `refreshMirror()` first. A cold request cloned the full
+ * repository and then started one `git rev-list` process per branch. That
+ * cannot fit inside the API or SDK deadline for repositories with thousands
+ * of branches. One `git ls-remote --heads` call returns the authoritative refs
+ * without transferring commit history. A valid warm mirror may enrich the
+ * response with commit metadata, but this read never creates or refreshes it.
+ */
+export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
+  const result = await runGit(
+    ['ls-remote', '--heads', project.repoUrl],
+    undefined,
+    true,
+    project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    BRANCH_LIST_TIMEOUT_MS,
+    project.gitAuthHeaders,
+  );
+  const branches = parseRemoteBranches(result.stdout, project.defaultBranch);
+  const repoPath = existingProjectMirrorPath(project);
+  if (!repoPath || branches.length === 0) return branches;
+
+  const cached = await readCachedBranchMetadata(repoPath, project.defaultBranch).catch(() => null);
+  if (!cached) return branches;
+
+  return branches.map((branch) => {
+    const metadata = cached.get(branch.name);
+    // Only reuse metadata for the same remote tip. A stale mirror must not
+    // attach the previous commit's subject, date, or comparison counts.
+    return metadata?.tip === branch.tip ? metadata : branch;
+  });
 }
 
 /**

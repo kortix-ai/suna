@@ -73,8 +73,9 @@ load_local_env() {
   export BACKEND_URL="http://localhost:8008/v1"
 
   # Route sandbox model calls through the local standalone gateway. Proxy mode
-  # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway,
-  # and sandboxes reach it via the API's tunnel origin. Exported AFTER the .env
+  # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway.
+  # Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
+  # standalone gateway owns /v1/chat/completions. Exported AFTER the .env
   # decrypt so they override whatever the committed apps/api/.env carries.
   if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
     export LLM_GATEWAY_ENABLED=true

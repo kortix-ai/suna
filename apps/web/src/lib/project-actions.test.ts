@@ -8,12 +8,10 @@ import {
 // A `can(action)` that returns true for the given allow-list.
 const canFrom = (allowed: string[]) => (action: string) => allowed.includes(action);
 
-// A generic set of section READ leaves (agents/skills/commands/connectors/etc.).
+// A generic set of section READ leaves (agents/secrets/channels/etc.).
 const READS = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_AGENT_READ,
-  PROJECT_ACTIONS.PROJECT_SKILL_READ,
-  PROJECT_ACTIONS.PROJECT_COMMAND_READ,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
   PROJECT_ACTIONS.PROJECT_SECRET_READ,
   PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
@@ -27,7 +25,7 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     // read-only / granular role saw a blank panel. Now the read leaf is enough.
     const can = canFrom(READS); // deliberately no customize.write
     expect(isCustomizeSectionVisible('agents', can)).toBe(true);
-    expect(isCustomizeSectionVisible('connectors', can)).toBe(true);
+    expect(isCustomizeSectionVisible('channels', can)).toBe(true);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true);
     expect(isCustomizeSectionVisible('schedules', can)).toBe(true);
     expect(isCustomizeSectionVisible('members', can)).toBe(true);
