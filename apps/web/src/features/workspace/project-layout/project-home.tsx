@@ -44,13 +44,13 @@ import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
+  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
-  type SandboxTemplate,
 } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
-import { chalkColors } from '@kortix/shared';
+import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
@@ -92,6 +92,7 @@ export function ProjectHome({
   const showSidebarToggle = isMobileViewport || sidebarState !== 'expanded';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
@@ -102,6 +103,11 @@ export function ProjectHome({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
+  const metaSelected = isMetaAgentName(selectedAgent);
+
+  useEffect(() => {
+    if (metaSelected) setSelectedSlug(null);
+  }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
@@ -126,10 +132,14 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        ...(selectedSlug ? { sandbox_slug: selectedSlug } : {}),
+        ...(metaSelected
+          ? { sandbox_slug: META_SANDBOX_SLUG }
+          : selectedSlug
+            ? { sandbox_slug: selectedSlug }
+            : {}),
       });
     },
-    [selectedSlug, onSend],
+    [metaSelected, selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -214,8 +224,11 @@ export function ProjectHome({
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )}
             prefill={prefill}
+            onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={
-              showSandboxPicker ? (
+              metaSelected ? (
+                <MetaRuntimeIndicator />
+              ) : showSandboxPicker ? (
                 <SandboxPicker
                   items={sandboxItems}
                   activeSlug={activeSlug}
@@ -228,6 +241,17 @@ export function ProjectHome({
         }
       />
     </div>
+  );
+}
+
+function MetaRuntimeIndicator() {
+  return (
+    <Hint label="Meta uses a fixed minimal sandbox. It starts specialized sessions for project work.">
+      <span className="text-muted-foreground inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium">
+        <Container className="size-3.5" />
+        Meta runtime
+      </span>
+    </Hint>
   );
 }
 

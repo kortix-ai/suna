@@ -717,12 +717,8 @@ export function CommandPalette() {
   const newSession = useNewProjectSession(projectId ?? undefined);
   const handleNewSession = useCallback(() => {
     if (projectId) {
-      newSession({
-        onNavigate: (sessionId) => {
-          openProjectTab(projectId, sessionId);
-          close();
-        },
-      });
+      newSession();
+      close();
       return;
     }
 

@@ -30,6 +30,8 @@ import {
   getOpenComputeSession,
   getLatestComputeSession,
   updateComputeSession,
+  claimComputeWindow,
+  releaseComputeWindow,
   findStaleActiveSessions,
   type SandboxSpec,
 } from '../repositories/compute-sessions';
@@ -148,46 +150,68 @@ async function settleComputeWindow(
   };
   const windowCost = calculateComputeCost(spec, durationSeconds, row.provider as ProviderName);
   if (windowCost <= 0) {
-    await updateComputeSession(row.id, { lastBilledAt: billableEnd.toISOString() });
+    // Still CAS'd: an unconditional write here would clobber a cursor another
+    // settler had legitimately advanced.
+    await claimComputeWindow({
+      id: row.id,
+      expectedLastBilledAt: row.lastBilledAt,
+      nextLastBilledAt: billableEnd.toISOString(),
+      addCostUsd: 0,
+    });
+    return 0;
+  }
+
+  // CLAIM BEFORE DEBITING. The order is the whole fix.
+  //
+  // This used to debit first and move the cursor afterwards, with the update
+  // keyed on `id` alone. Two settlers that had loaded the same row therefore
+  // both billed the same seconds — the customer paid twice for one hour, and
+  // the duplicate ledger rows were byte-identical and landed in the same
+  // second. Claiming first means the loser of the race bills nothing at all.
+  const claimed = await claimComputeWindow({
+    id: row.id,
+    expectedLastBilledAt: row.lastBilledAt,
+    nextLastBilledAt: billableEnd.toISOString(),
+    addCostUsd: windowCost,
+  });
+  if (!claimed) {
+    // Someone else settled this window. Not an error, and not worth a warning
+    // on a path that runs every few minutes for every live box.
     return 0;
   }
 
   // Debit the wallet. deductCredits already triggers auto-topup as a
   // fire-and-forget after a deduction (services/credits.ts:79).
-  // If the balance is insufficient the deduct throws; we still update the
-  // accrued cost on the session row so the next attempt can settle.
-  let debited = false;
   try {
     await deductCredits(
       row.accountId,
       windowCost,
       `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
       'compute_debit',
+      // Derived from WHAT is billed — this session and this window end — so a
+      // retry after a lost response produces the same key and replays instead
+      // of charging again. The CAS claim above already stops two settlers from
+      // both billing; this covers the single settler that never learned its own
+      // debit succeeded.
+      `compute:${row.id}:${billableEnd.toISOString()}`,
     );
-    debited = true;
   } catch (err) {
-    // Out of credits + no auto-topup. Record the accrual; the session will be
-    // forced to stop by the limits layer (separate concern).
+    // Out of credits + no auto-topup. Hand the window back so the next tick can
+    // retry the same seconds once the wallet can pay — the accrual must never
+    // outrun the ledger.
+    const released = await releaseComputeWindow({
+      id: row.id,
+      claimedLastBilledAt: billableEnd.toISOString(),
+      revertToLastBilledAt: row.lastBilledAt,
+      subCostUsd: windowCost,
+    });
     console.warn(
-      `[compute-metering] failed to debit ${row.accountId} for session ${row.id}:`,
+      `[compute-metering] failed to debit ${row.accountId} for session ${row.id}` +
+        `${released ? '' : ' (window NOT released — another settler moved the cursor; seconds forfeited)'}:`,
       err instanceof Error ? err.message : String(err),
     );
-  }
-
-  if (!debited) {
-    // Do NOT advance `last_billed_at` past a window we failed to collect. It
-    // used to advance regardless, which silently forfeited the revenue (the
-    // seconds could never be re-attempted) AND left `cost_usd` claiming an
-    // accrual the ledger has no entry for — the exact mirror image of the
-    // over-billing bug, and just as invisible. Leaving the cursor put makes the
-    // next tick retry the same window once the wallet can pay for it.
     return 0;
   }
-
-  await updateComputeSession(row.id, {
-    costUsd: String(Number(row.costUsd) + windowCost),
-    lastBilledAt: billableEnd.toISOString(),
-  });
 
   return windowCost;
 }

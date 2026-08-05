@@ -46,12 +46,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface ExportTranscriptModalProps {
   sessionId: string;
+  kortixSessionScope?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function ExportTranscriptModal({
   sessionId,
+  kortixSessionScope,
   open,
   onOpenChange,
 }: ExportTranscriptModalProps) {
@@ -60,7 +62,7 @@ export function ExportTranscriptModal({
   const [copied, setCopied] = useState(false);
 
   const { data: session } = useRuntimeSession(sessionId);
-  const { messages: visibleMessages } = useSessionSync(sessionId);
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope });
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);

@@ -4,8 +4,10 @@ import { useTranslations } from 'next-intl';
 
 import {
   directSubsessions,
+  isMetaCoordinatorSession,
   matchesSessionFilter,
   sessionSource,
+  spawnedBySessionId,
   type SessionFilterValue,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
@@ -29,6 +31,7 @@ import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/s
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  groupSessionsByCoordinator,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -47,7 +50,9 @@ import {
   type ProjectSessionStatus,
 } from '@kortix/sdk';
 import {
+  ArrowElbowDownRightIcon as SpawnedBy,
   CalendarDotsIcon as CalendarClock,
+  FolderSimpleIcon as MetaFolder,
   EnvelopeIcon as Mail,
   DotsThreeIcon as MoreHorizontal,
   PencilSimpleIcon,
@@ -212,17 +217,15 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     );
   }
 
-  return (
-    <>
-      <FadedScrollArea className="h-full min-h-0 space-y-px">
-        {visibleSessions.map((session) => {
-          const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-          const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          const isSwitchTarget = switchingToSessionId === session.session_id;
-          const children = directSubsessions(session);
-          return (
+  const renderSessionNode = (session: ProjectSession, nested: boolean) => {
+    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+    const isSwitchTarget = switchingToSessionId === session.session_id;
+    const children = directSubsessions(session);
+    return (
             <div key={session.session_id} className="space-y-px">
               <ProjectSessionRow
+                nested={nested}
                 session={session}
                 href={href}
                 isActive={!!isActive && !activeOpenCodeSessionId}
@@ -272,8 +275,22 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 </div>
               )}
             </div>
-          );
-        })}
+    );
+  };
+
+  return (
+    <>
+      <FadedScrollArea className="h-full min-h-0 space-y-px">
+        {groupSessionsByCoordinator(visibleSessions).map((group) => (
+          <div key={group.session.session_id} className="space-y-px">
+            {renderSessionNode(group.session, false)}
+            {group.children.length > 0 && (
+              <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                {group.children.map((child) => renderSessionNode(child, true))}
+              </div>
+            )}
+          </div>
+        ))}
       </FadedScrollArea>
 
       <ShareSessionModal
@@ -320,6 +337,9 @@ interface ProjectSessionRowProps {
   childCount?: number;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
+  /** Rendered indented under its coordinator — the indent already conveys the
+   *  spawn link, so the right-side spawned-by icon is omitted. */
+  nested?: boolean;
 }
 
 function ProjectSessionRow({
@@ -338,6 +358,7 @@ function ProjectSessionRow({
   isStopping,
   childCount = 0,
   reviewCount = 0,
+  nested = false,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -361,6 +382,8 @@ function ProjectSessionRow({
 
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+  const isMeta = isMetaCoordinatorSession(session);
+  const spawnedBy = spawnedBySessionId(session);
 
   return (
     <div className="group/session-list block">
@@ -384,6 +407,14 @@ function ProjectSessionRow({
         >
           <SessionStatusDot status={session.status} reviewCount={reviewCount} />
 
+          {isMeta && (
+            <Hint side="top" label="Meta coordinator">
+              <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+                <MetaFolder className="size-3.5" weight="fill" />
+              </span>
+            </Hint>
+          )}
+
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
           {childCount > 0 && (
@@ -394,6 +425,13 @@ function ProjectSessionRow({
         </Link>
 
         <div className="flex shrink-0 items-center gap-0">
+          {spawnedBy && !nested && (
+            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
           {SourceIcon && (
             <span className="flex size-4 shrink-0 items-center justify-center">
               <Hint

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
@@ -111,7 +111,10 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // decision like #1-3.
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
-export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+export async function buildOpencodeConfigContent(
+  env: NodeJS.ProcessEnv,
+  opts: { injectedSkillsDir?: string | null } = {},
+): Promise<string | undefined> {
   const executorToken = env.KORTIX_CLI_TOKEN || env.KORTIX_EXECUTOR_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -151,7 +154,14 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // agent behavior itself.
   const compiledAgentConfigRaw = env.KORTIX_COMPILED_AGENT_CONFIG
   const hasCompiledAgentConfig = !!compiledAgentConfigRaw
-  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig) return undefined
+  // (5) The daemon-injected managed skills dir (`ensureInjectedManagedSkills`).
+  // OpenCode loads skills from config-declared `skills.paths` — the overlay dir
+  // must be declared or the baked `kortix-*` skills are never discovered on a
+  // box with no project config (the platform meta sandbox).
+  const injectedSkillsDir =
+    opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
+  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig && !injectedSkillsDir)
+    return undefined
 
   let base: Record<string, unknown> = {}
   if (hasCompiledAgentConfig) {
@@ -174,6 +184,22 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     }
   }
   const out: Record<string, unknown> = { ...base }
+
+  // (5) Injected managed skills — append to whatever `skills.paths` the base
+  // config already declares; never clobber.
+  if (injectedSkillsDir) {
+    const skills =
+      out.skills && typeof out.skills === 'object' && !Array.isArray(out.skills)
+        ? (out.skills as Record<string, unknown>)
+        : {}
+    const paths = Array.isArray(skills.paths)
+      ? skills.paths.filter((p): p is string => typeof p === 'string')
+      : []
+    out.skills = {
+      ...skills,
+      paths: paths.includes(injectedSkillsDir) ? paths : [...paths, injectedSkillsDir],
+    }
+  }
 
   // (1) Optional Kortix Executor MCP server. CLI remains the primary agent path.
   if (hasExecutorMcp) {
@@ -508,9 +534,9 @@ const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-openc
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
-  opts: { configPath?: string } = {},
+  opts: { configPath?: string; injectedSkillsDir?: string | null } = {},
 ): Promise<string | null> {
-  const content = await buildOpencodeConfigContent(env)
+  const content = await buildOpencodeConfigContent(env, { injectedSkillsDir: opts.injectedSkillsDir })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
   mkdirSync(dirname(configPath), { recursive: true })
@@ -1049,7 +1075,9 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
-    const configPath = await writeKortixOpencodeConfig(baseEnv)
+    const configPath = await writeKortixOpencodeConfig(baseEnv, {
+      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+    })
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT

@@ -156,4 +156,4 @@ describe('truncate', () => {
     expect(out).toHaveLength(52);
     expect(out.endsWith('…')).toBe(true);
   });
-})
+});

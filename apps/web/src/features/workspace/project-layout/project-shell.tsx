@@ -143,9 +143,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     }
   }, []);
 
-  // Optimistic new-session: mint the id client-side and navigate immediately so
-  // the instant shell paints before the create POST returns (see
-  // useNewProjectSession). Shared with the sidebar / ⌘T-⌘J / command palette.
+  // New-session navigation opens the project composer. The first send creates
+  // the durable session.
   const newSession = useNewProjectSession(projectId);
   const handleNewSession = useCallback(() => {
     newSession();

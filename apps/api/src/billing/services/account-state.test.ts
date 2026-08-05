@@ -1,3 +1,5 @@
+import { effectiveTierForLimits } from '../../shared/account-limits';
+import * as realUsageBreakdown from './usage-breakdown';
 // buildMinimalAccountState used to fetch the identical credit_accounts row 4
 // separate times (directly, then again inside getCreditSummary /
 // getAccountEntitlements / getAutoTopupSettings) across ~10 fully sequential
@@ -55,7 +57,12 @@ mock.module('./seat-management', () => ({
   countActiveMembers: async (_accountId: string) => trackedDelay(3),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand silently deletes every other one — and the failure
+// lands in whatever file imports the missing name next, as
+// `SyntaxError: Export named '…' not found`, attributed to no test at all.
 mock.module('./usage-breakdown', () => ({
+  ...realUsageBreakdown,
   getUsageBreakdownThisPeriod: async (_accountId: string) => trackedDelay(null),
 }));
 
@@ -228,3 +235,48 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(getCreditAccountCalls).toBe(2);
   });
 });
+
+/**
+ * The concurrency limit the dashboard SHOWS must be the one the server ENFORCES.
+ *
+ * resolveAccountSessionLimit coerces a paying per-seat account whose stored
+ * `tier` is stale to 'per_seat', so bad tier data cannot gate a paying team as
+ * free. account-state read the raw `tier` column instead, so such an account
+ * was shown the FREE ceiling while the server admitted the per-seat one — two
+ * independent derivations of a single number.
+ */
+describe('effectiveTierForLimits', () => {
+  const paying = {
+    billingModel: 'per_seat',
+    stripeSubscriptionId: 'sub_123',
+    stripeSubscriptionStatus: 'active',
+  };
+
+  test('a paying per-seat account with a stale free tier resolves to per_seat', () => {
+    expect(effectiveTierForLimits('free', paying)).toBe('per_seat');
+  });
+
+  test('a genuinely free account stays free', () => {
+    expect(effectiveTierForLimits('free', { billingModel: 'credits' })).toBe('free');
+  });
+
+  test('a cancelled per-seat subscription is not coerced', () => {
+    expect(
+      effectiveTierForLimits('free', { ...paying, stripeSubscriptionStatus: 'canceled' }),
+    ).toBe('free');
+  });
+
+  test('an unpaid per-seat subscription is not coerced', () => {
+    expect(effectiveTierForLimits('free', { ...paying, stripeSubscriptionStatus: 'unpaid' })).toBe(
+      'free',
+    );
+  });
+
+  test('a per-seat row with no Stripe subscription is not coerced', () => {
+    expect(effectiveTierForLimits('free', { ...paying, stripeSubscriptionId: null })).toBe('free');
+  });
+
+  test('a null tier defaults to free rather than throwing', () => {
+    expect(effectiveTierForLimits(null, null)).toBe('free');
+  });
+})

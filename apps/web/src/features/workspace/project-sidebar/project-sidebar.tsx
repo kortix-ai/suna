@@ -48,7 +48,6 @@ import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
-import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { listProjectSessions } from '@kortix/sdk';
@@ -135,19 +134,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     [authUser, isAdmin],
   );
 
-  // Optimistic + shared with every other entry point (see useNewProjectSession).
-  // The timing marks + mobile-drawer close fire on the synchronous navigation.
+  // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
   const creatingSession = useIsCreatingProjectSession(projectId);
   const handleNewSession = useCallback(() => {
-    markSessionClick();
-    newSession({
-      onNavigate: (sessionId) => {
-        beginSessionTiming(sessionId);
-        sessionMark(sessionId, 'session-created');
-        if (isMobile) setOpenMobile(false);
-      },
-    });
+    newSession();
+    if (isMobile) setOpenMobile(false);
   }, [newSession, isMobile, setOpenMobile]);
 
   // Mobile: the sidebar is a Sheet, so leaving it open would stack the palette
