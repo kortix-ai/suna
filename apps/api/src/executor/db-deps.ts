@@ -6,7 +6,6 @@ import {
   executorExecutions,
   executorProjectPolicies,
   executorProjectSettings,
-  projectSessionConnectorBindings,
   projectSessions,
   projects,
 } from '@kortix/db';
@@ -57,7 +56,6 @@ import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
-  resolveProjectDefaultConnectorProfile,
   resolveSessionConnectorProfile,
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -386,6 +384,24 @@ function toGatewayConnector(
   };
 }
 
+/**
+ * Resolve the one active connector profile this principal may use.
+ *
+ * Catalog discovery and call execution must use this same function. A session
+ * with an explicit fail-closed scope cannot advertise a project-default profile
+ * in the catalog and then lose it when the gateway resolves the call.
+ */
+async function resolveActiveConnectorProfile(principal: ExecutorPrincipal, row: ConnectorRow) {
+  const profile = await resolveSessionConnectorProfile({
+    accountId: principal.accountId,
+    projectId: row.projectId,
+    sessionId: principal.sessionId,
+    alias: row.slug,
+    actingUserId: principal.userId,
+  });
+  return profile?.status === 'active' ? profile : null;
+}
+
 const nodeFetch: FetchImpl = async (url, init) => {
   const res = await fetch(url, {
     method: init.method,
@@ -406,14 +422,8 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
         .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      const profile = await resolveSessionConnectorProfile({
-        accountId: principal.accountId,
-        projectId,
-        sessionId: principal.sessionId,
-        alias: slug,
-        actingUserId: principal.userId,
-      });
-      if (!profile || profile.status !== 'active') return null;
+      const profile = await resolveActiveConnectorProfile(principal, row);
+      if (!profile) return null;
       return toGatewayConnector(row, profile);
     },
     loadAction: async (connectorId, relPath) => {
@@ -878,22 +888,6 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
   ]);
 
-  // SAFETY NET — the durable binding aliases this session has explicitly bound.
-  // A session created before the create-path `inherit_unbound` default fix
-  // (absent → `false`) with `connector_bindings` set would have
-  // `connector_bindings_configured = true, inherit_unbound = false`, and
-  // `resolveSessionConnectorProfile` returns null for EVERY unbound alias,
-  // emptying the catalog. For those, we fall back to the PROJECT DEFAULT
-  // profile — but ONLY for aliases with NO durable binding row. A present
-  // binding that resolves to null because it is revoked/error/strategy-
-  // mismatched still fails closed (the security invariant: a present but
-  // revoked/error binding never falls through to a project default). Loading
-  // the bound-alias set once here keeps the per-connector fallback a cheap
-  // set lookup rather than an extra query per connector.
-  const boundAliases: Set<string> | null = p.sessionId
-    ? await loadSessionBoundAliases(p.accountId, p.projectId, p.sessionId)
-    : null;
-
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
@@ -902,30 +896,8 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
     if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(row.slug))) continue;
-    let profile = await resolveSessionConnectorProfile({
-      accountId: p.accountId,
-      projectId: p.projectId,
-      sessionId: p.sessionId,
-      alias: row.slug,
-      actingUserId: p.userId,
-    });
-    // Safety net: a pre-fix session (configured + not-inherit-unbound) hides
-    // unbound aliases. For an alias with NO durable binding, fall back to the
-    // project default so the catalog isn't empty. An alias WITH a binding that
-    // resolved null stays null (revoked/error fails closed).
-    if ((!profile || profile.status !== 'active') && boundAliases !== null) {
-      const alias = canonicalConnectorAlias(row.slug);
-      if (!boundAliases.has(alias)) {
-        const fallback = await resolveProjectDefaultConnectorProfile({
-          accountId: p.accountId,
-          projectId: p.projectId,
-          alias: row.slug,
-          actingUserId: p.userId,
-        });
-        if (fallback && fallback.status === 'active') profile = fallback;
-      }
-    }
-    if (!profile || profile.status !== 'active') continue;
+    const profile = await resolveActiveConnectorProfile(p, row);
+    if (!profile) continue;
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
@@ -964,31 +936,6 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     });
   }
   return out;
-}
-
-/**
- * The canonical aliases a session has explicitly bound (durable
- * `project_session_connector_bindings` rows). Used by `listCatalog`'s safety
- * net to distinguish "no binding → fall back to project default" from
- * "present-but-null binding → fail closed". Returns null only when there is
- * no session in scope.
- */
-async function loadSessionBoundAliases(
-  accountId: string,
-  projectId: string,
-  sessionId: string,
-): Promise<Set<string>> {
-  const rows = await db
-    .select({ alias: projectSessionConnectorBindings.connectorAlias })
-    .from(projectSessionConnectorBindings)
-    .where(
-      and(
-        eq(projectSessionConnectorBindings.sessionId, sessionId),
-        eq(projectSessionConnectorBindings.accountId, accountId),
-        eq(projectSessionConnectorBindings.projectId, projectId),
-      ),
-    );
-  return new Set(rows.map((r) => canonicalConnectorAlias(r.alias)));
 }
 
 async function resolveProjectUserWith(
