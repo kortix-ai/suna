@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -25,8 +25,12 @@ import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/ca
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
-import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
+import {
+  projectDetailQuery,
+  useProjectAccountId,
+} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterCommands } from './command-filter';
 
 /**
@@ -48,7 +52,11 @@ import { filterCommands } from './command-filter';
  * editing the repo on a branch, not a form here.
  */
 export function CommandsPage({ projectId }: { projectId: string }) {
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_WRITE).allowed === true;
+  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
+  // run on the first render instead of waiting a round-trip for it.
+  const accountId = useProjectAccountId(projectId);
+  const canWrite =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_WRITE, { accountId }).allowed === true;
   const configure = useConfigureThread(projectId);
 
   const [query, setQuery] = useState('');
@@ -65,10 +73,21 @@ export function CommandsPage({ projectId }: { projectId: string }) {
 
   // Unfiltered lookup (see the component doc comment above) — deliberately
   // not `filtered.find(...)`.
-  const selectedCommand = useMemo(
-    () => commands.find((command) => command.path === selectedPath) ?? null,
-    [commands, selectedPath],
-  );
+  // `open` follows `selectedPath` alone — see `shared/detail-selection.ts`.
+  // Deriving it from this lookup meant any blip in `detailQuery` (a failed
+  // refetch, or a background agent renaming the path in kortix.yaml) closed
+  // the modal while the user was reading a file inside it.
+  const detail = detailSelection({
+    selection: selectedPath,
+    record: commands.find((command) => command.path === selectedPath),
+    isSuccess: detailQuery.isSuccess,
+  });
+
+  // The one honest auto-close: the config came back and this command is not in
+  // it, so it really was deleted or renamed.
+  useEffect(() => {
+    if (detail.isMissing) setSelectedPath(null);
+  }, [detail.isMissing]);
 
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero commands vs. commands exist but this search hid all of
@@ -149,9 +168,10 @@ export function CommandsPage({ projectId }: { projectId: string }) {
       </CatalogGrid>
       <EntityDetailModal
         projectId={projectId}
-        entity={selectedCommand}
+        entity={detail.record}
         kind="command"
-        open={selectedCommand !== null}
+        open={detail.open}
+        isResolving={detail.isResolving}
         onOpenChange={(next) => {
           if (!next) setSelectedPath(null);
         }}

@@ -1,4 +1,7 @@
+'use client';
+
 import { getProjectDetail } from '@kortix/sdk';
+import { useQuery } from '@tanstack/react-query';
 
 /**
  * How long `['project-detail', projectId]` stays fresh for a capability page.
@@ -22,4 +25,29 @@ export function projectDetailQuery(projectId: string) {
     queryFn: () => getProjectDetail(projectId),
     staleTime: PROJECT_DETAIL_STALE_MS,
   };
+}
+
+/**
+ * The owning account id, read off the detail every capability surface already
+ * loads — the hint `useProjectCan` wants.
+ *
+ * Without it `useProjectCan` resolves the account through its OWN
+ * `getProject` under `['project', projectId]`, and keeps the IAM probe
+ * `enabled: false` until that lands. That is two costs on every capability
+ * page: a second network call for a project the page is already holding, and
+ * a serialized `getProject → probe → canWrite` waterfall, so every write
+ * affordance (`+`, Connect, Remove) appears two round-trips after paint
+ * rather than one.
+ *
+ * Reading `['project-detail', projectId]` here is free: the pages mount that
+ * observer anyway, so this shares the cache entry instead of adding a fetch.
+ * Modals that do not already read it (`ConnectorModal`, `EntityModal`) mount a
+ * second observer on the SAME key, which react-query dedupes.
+ */
+export function useProjectAccountId(projectId: string | undefined): string | undefined {
+  const { data } = useQuery({
+    ...projectDetailQuery(projectId ?? ''),
+    enabled: Boolean(projectId),
+  });
+  return data?.project?.account_id;
 }

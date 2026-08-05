@@ -24,6 +24,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -35,6 +36,7 @@ import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
 } from '@/features/workspace/capabilities/connectors/connector-identity';
+import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -51,11 +53,16 @@ import { ConnectorTools } from './connector-tools';
 
 export interface ConnectorModalProps {
   projectId: string;
-  /** The connector to show. `null` while nothing is selected — callers keep
-   *  `open` false in that case. */
+  /** The connector to show, or `null` when it has not resolved yet. `open` is
+   *  driven by the SELECTION, not by this — see `shared/detail-selection.ts`. */
   connector: AdminConnector | null;
   canWrite: boolean;
   open: boolean;
+  /** Open on a selection whose record is still loading — `?c=<slug>` on a cold
+   *  page, which is how every OAuth 2.0 return arrives. Renders the shell so
+   *  the modal is present from the first frame instead of appearing on its own
+   *  once the list lands. */
+  isResolving?: boolean;
   onOpenChange: (open: boolean) => void;
   /** Refetch every authorization-derived query. Every mutation below calls it. */
   onChanged: () => void;
@@ -79,17 +86,15 @@ export function ConnectorModal({
   connector,
   canWrite,
   open,
+  isResolving = false,
   onOpenChange,
   onChanged,
   onRemoved,
 }: ConnectorModalProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      {/* The close control lives in the header's button group (see
-          `ConnectorModalBody`), not floating over the content, so it sits on the
-          same baseline as Connect / Reconnect instead of overlapping them. */}
       <ModalContent
-        className="bg-popover h-[80vh] space-y-0 lg:max-w-7xl"
+        className="bg-popover h-[80vh] space-y-0 lg:max-w-6xl"
         aria-describedby={undefined}
         showCloseButton={false}
       >
@@ -102,9 +107,56 @@ export function ConnectorModal({
             onChanged={onChanged}
             onRemoved={onRemoved}
           />
+        ) : isResolving ? (
+          <ConnectorModalSkeleton />
         ) : null}
       </ModalContent>
     </Modal>
+  );
+}
+
+/**
+ * The shell, while `?c=<slug>` is resolving against a list that has not
+ * arrived. Shape-matched to `ConnectorModalBody` — same header height, same
+ * left rail width — so the handover fills the placeholders in place instead of
+ * relaying the modal out from under the pointer.
+ *
+ * The `ModalTitle` is real and visually hidden: Radix's Dialog needs an
+ * accessible name at all times, and a screen reader announcing "Loading
+ * connector" is the honest answer during this window.
+ */
+function ConnectorModalSkeleton() {
+  return (
+    <>
+      <ModalHeader className="flex-row items-start gap-2.5 border-b pb-4">
+        <VisuallyHidden>
+          <ModalTitle>Loading connector</ModalTitle>
+        </VisuallyHidden>
+        <span className="p-1">
+          <Skeleton className="size-10 rounded-md" />
+        </span>
+        <div className="min-w-0 flex-1 space-y-2 pt-1">
+          <Skeleton className="h-4 w-40 rounded-sm" />
+          <Skeleton className="h-3 w-64 rounded-sm" />
+        </div>
+      </ModalHeader>
+      <ModalBody className="max-h-[70vh] overflow-hidden p-0">
+        <div className="flex min-h-0 flex-col lg:h-[70vh] lg:flex-row">
+          <div className="lg:border-border shrink-0 gap-1 p-3 lg:h-full lg:w-64 lg:border-r">
+            <div className="hidden space-y-1.5 lg:block">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-9 w-full rounded-md" />
+              ))}
+            </div>
+          </div>
+          <div className="min-w-0 flex-1 space-y-3 px-5 py-4 lg:px-6">
+            <Skeleton className="h-5 w-32 rounded-sm" />
+            <Skeleton className="h-20 w-full rounded-md" />
+            <Skeleton className="h-20 w-full rounded-md" />
+          </div>
+        </div>
+      </ModalBody>
+    </>
   );
 }
 
@@ -168,8 +220,13 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
+  // `accountId` rides the ['project-detail'] cache the connectors page
+  // already filled, so the profiles probe resolves on the modal's first
+  // render instead of after its own getProject round-trip.
+  const accountId = useProjectAccountId(projectId);
   const canManageProfiles =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE, { accountId })
+      .allowed === true;
 
   const newSession = useNewProjectSession(projectId);
   const startPrivateSession = () => {

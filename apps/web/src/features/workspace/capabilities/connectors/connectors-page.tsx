@@ -3,10 +3,12 @@
 import { listConnectors, type AdminConnector } from '@kortix/sdk';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import {
   InputGroupSearch,
   InputGroupSearchIcon,
@@ -27,7 +29,6 @@ import {
   connectorAuthorizationQueryKeys,
   connectorSetupStatus,
 } from '@/features/workspace/customize/sections/connector-profile-form';
-import { CustomConnectorForm } from '@/features/workspace/customize/sections/connectors-view';
 
 import {
   ConnectorAppIcon,
@@ -43,7 +44,11 @@ import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/ca
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
-import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
+import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
+import {
+  projectDetailQuery,
+  useProjectAccountId,
+} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { connectedCatalogKeys, type CatalogEntry } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { CategorySelect, ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import { ALL_CATEGORIES, catalogCategoryKeys } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
@@ -53,10 +58,55 @@ import {
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
-import { ConnectorModal } from '@/features/workspace/capabilities/connectors/detail/connector-modal';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
+
+/**
+ * The two click-gated surfaces, split out of this route's initial chunk.
+ *
+ * Both reach `customize/sections/connectors-view.tsx` — 5,075 lines whose own
+ * import list pulls `@pipedream/sdk/browser`, `HighlightedCode` (shiki),
+ * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorProfileModal`. An ES
+ * module is all-or-nothing to the bundler, so two `import` lines put that
+ * entire graph in front of a page that paints a grid of cards.
+ * `connector-identity.tsx` was lifted out of that file for exactly this
+ * reason; these were the two edges that put it straight back.
+ *
+ *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
+ *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
+ *     `SetCredentialModal`, and owns the only `usePipedreamConnect` call on
+ *     the route.
+ *   • `CustomConnectorForm` is the `+` modal's body.
+ *
+ * Neither can render before a click, so neither needs to be parsed before
+ * one. `ssr: false` keeps them out of the server bundle too — a closed modal
+ * has no markup worth streaming.
+ */
+const ConnectorModal = dynamic(
+  () =>
+    import('@/features/workspace/capabilities/connectors/detail/connector-modal').then(
+      (m) => m.ConnectorModal,
+    ),
+  { ssr: false },
+);
+
+const CustomConnectorForm = dynamic(
+  () =>
+    import('@/features/workspace/customize/sections/connectors-view').then(
+      (m) => m.CustomConnectorForm,
+    ),
+  { ssr: false, loading: () => <ModalFormFallback /> },
+);
+
+/** Holds the `+` modal's height while its form chunk arrives. */
+function ModalFormFallback() {
+  return (
+    <div className="flex min-h-64 items-center justify-center">
+      <Loading className="size-5 shrink-0" />
+    </div>
+  );
+}
 
 /**
  * Tab order is deliberate, and so is the landing tab: Discovery leads and is
@@ -109,8 +159,14 @@ type Panel = 'custom';
  * because the redirect URL is built from the current one.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
+  // `accountId` comes off the detail this page already loads. Without it
+  // `useProjectCan` fetches the project a second time under its own key AND
+  // holds the IAM probe disabled until that lands — so `+` and every write
+  // affordance appeared two sequential round-trips after paint.
+  const accountId = useProjectAccountId(projectId);
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
+    true;
   const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
@@ -251,10 +307,34 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   // Looked up against the unfiltered list, never `filtered` — searching or
   // switching scope while the modal is open must not yank it shut.
-  const selectedConnector = useMemo(
-    () => connectors.find((c) => c.slug === detailSlug) ?? null,
-    [connectors, detailSlug],
-  );
+  //
+  // `detailSelection` then keeps the modal's `open` on `?c=` alone. Deriving
+  // it from this lookup is what made the modal animate itself open a beat
+  // after an OAuth return (list still loading, so the lookup missed) and
+  // vanish mid-edit whenever one of `invalidate()`'s four refetches failed.
+  const detail = detailSelection({
+    selection: detailSlug,
+    record: connectors.find((c) => c.slug === detailSlug),
+    isSuccess: connectorsQuery.isSuccess,
+  });
+
+  // The one honest auto-close: the list came back, and this connector is not
+  // in it. That is a deletion — by this user in another tab, or by a teammate.
+  useEffect(() => {
+    if (detail.isMissing) setDetailSlug(null);
+  }, [detail.isMissing, setDetailSlug]);
+
+  // The detail chunk is lazy (see the `dynamic` block above), so it must not
+  // mount until something is selected — otherwise every page load pays for it.
+  // Once mounted it STAYS mounted: unmounting on close would cut Radix's exit
+  // animation, and the chunk is already in memory by then anyway.
+  // Seeded from the FIRST render, not an effect: `?c=<slug>` is already in the
+  // URL on a deep link and on every OAuth return, and mounting a frame later
+  // would put the modal on screen one paint after the page behind it.
+  const [detailMounted, setDetailMounted] = useState(() => detailSlug !== null);
+  useEffect(() => {
+    if (detail.open) setDetailMounted(true);
+  }, [detail.open]);
 
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
 
@@ -441,18 +521,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         </ModalContent>
       </Modal>
 
-      <ConnectorModal
-        projectId={projectId}
-        connector={selectedConnector}
-        canWrite={canWrite}
-        open={selectedConnector !== null}
-        onOpenChange={(open) => !open && setDetailSlug(null)}
-        onChanged={invalidate}
-        onRemoved={() => {
-          invalidate();
-          setDetailSlug(null);
-        }}
-      />
+      {detailMounted ? (
+        <ConnectorModal
+          projectId={projectId}
+          connector={detail.record}
+          canWrite={canWrite}
+          open={detail.open}
+          isResolving={detail.isResolving}
+          onOpenChange={(open) => !open && setDetailSlug(null)}
+          onChanged={invalidate}
+          onRemoved={() => {
+            invalidate();
+            setDetailSlug(null);
+          }}
+        />
+      ) : null}
     </CapabilityPageShell>
   );
 }

@@ -15,6 +15,7 @@ import {
   editConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -34,13 +35,16 @@ export interface EntityDetailEntity {
 
 export interface EntityDetailModalProps {
   projectId: string;
-  /** The skill/command to show. `null` while nothing is selected — callers
-   *  should keep `open` false in that case; the modal renders nothing until
-   *  both are set. Selecting a different card while `open` stays `true` swaps
-   *  the content in place (no close/reopen). */
+  /** The skill/command to show, or `null` when it has not resolved yet. `open`
+   *  is driven by the SELECTION, not by this — see
+   *  `shared/detail-selection.ts`. Selecting a different card while `open`
+   *  stays `true` swaps the content in place (no close/reopen). */
   entity: EntityDetailEntity | null;
   kind: EntityKind;
   open: boolean;
+  /** Open on a selection whose record has not arrived. Renders the shell so a
+   *  refetch cannot blank the modal the user is working in. */
+  isResolving?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -67,6 +71,7 @@ export function EntityDetailModal({
   entity,
   kind,
   open,
+  isResolving = false,
   onOpenChange,
 }: EntityDetailModalProps) {
   // A skill/command with no description renders no `ModalDescription`, so
@@ -86,9 +91,44 @@ export function EntityDetailModal({
       >
         {entity ? (
           <EntityModalBody key={entity.path} projectId={projectId} entity={entity} kind={kind} />
+        ) : isResolving ? (
+          <EntityModalSkeleton kind={kind} />
         ) : null}
       </ModalContent>
     </Modal>
+  );
+}
+
+/**
+ * The shell, while the selected path is being resolved against a config that
+ * has not arrived. Shape-matched to `EntityModalBody` — same header, same
+ * `lg:w-64` file rail — so the handover fills placeholders in place.
+ *
+ * `ModalTitle` is real, not decorative: Radix's Dialog requires an accessible
+ * name for the whole time it is open, including this window.
+ */
+function EntityModalSkeleton({ kind }: { kind: EntityKind }) {
+  return (
+    <>
+      <ModalHeader className="border-border/60 space-y-1 border-b pb-4">
+        <ModalTitle className="sr-only">Loading {kind}</ModalTitle>
+        <Skeleton className="h-5 w-48 rounded-sm" aria-hidden />
+      </ModalHeader>
+
+      <ModalBody className="max-h-[70vh] overflow-hidden p-0">
+        <div className="flex min-h-0 flex-col lg:h-[70vh] lg:flex-row">
+          <div className="border-border/60 shrink-0 space-y-1.5 border-b p-2 lg:h-full lg:w-64 lg:border-r lg:border-b-0">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-7 w-full rounded-md" />
+            ))}
+          </div>
+          <div className="min-w-0 flex-1 space-y-3 p-4">
+            <Skeleton className="h-4 w-32 rounded-sm" />
+            <Skeleton className="h-40 w-full rounded-md" />
+          </div>
+        </div>
+      </ModalBody>
+    </>
   );
 }
 
@@ -102,7 +142,10 @@ function EntityModalBody({
   kind: EntityKind;
 }) {
   const configure = useConfigureThread(projectId);
-  const canWrite = useProjectCan(projectId, WRITE_ACTION[kind]).allowed === true;
+  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
+  // run on the first render instead of waiting a round-trip for it.
+  const accountId = useProjectAccountId(projectId);
+  const canWrite = useProjectCan(projectId, WRITE_ACTION[kind], { accountId }).allowed === true;
 
   // The real repo path, with any manifest anchor (`kortix.yaml#agents.x`)
   // stripped — skills/commands never carry one in practice, but this stays

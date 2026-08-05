@@ -1,7 +1,7 @@
 'use client';
 
 import { listDiscoverIntegrations, listPipedreamApps } from '@kortix/sdk';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
@@ -26,6 +26,13 @@ export interface CatalogState {
   /** Which catalogue answered. Decides the add flow a card opens. */
   source: CatalogSource;
   isLoading: boolean;
+  /**
+   * Results for a PREVIOUS query are on screen while the current one is in
+   * flight — the search-as-you-type window. `isLoading` is deliberately false
+   * here: the grid keeps its cards and dims, instead of being replaced by
+   * skeletons on every debounced keystroke.
+   */
+  isRefreshing: boolean;
   isError: boolean;
   refetch: () => void;
 }
@@ -87,6 +94,7 @@ export function useCatalog(
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
     enabled: opts.enabled && source === 'discover',
+    placeholderData: keepPreviousData,
   });
 
   const easyConnectQuery = useInfiniteQuery({
@@ -97,6 +105,7 @@ export function useCatalog(
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
     enabled: opts.enabled && source === 'easy-connect',
+    placeholderData: keepPreviousData,
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -112,9 +121,19 @@ export function useCatalog(
   // next — a chain that stops itself at `CATALOG_PREFETCH_PAGES` rather than a
   // loop that has to be broken.
   const loadedPages = active.data?.pages.length ?? 0;
-  const { fetchNextPage: activeFetchNextPage, hasNextPage, isFetchingNextPage } = active;
+  const {
+    fetchNextPage: activeFetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isPlaceholderData,
+  } = active;
   useEffect(() => {
     if (!opts.enabled) return;
+    // While `placeholderData` is showing, `data` belongs to the PREVIOUS query
+    // key — `loadedPages` and `hasNextPage` describe that one, not the search
+    // now in flight. Paging off it would fire a cursor request against a query
+    // whose first page has not landed.
+    if (isPlaceholderData) return;
     if (
       !shouldPrefetchMorePages({
         loadedPages,
@@ -126,7 +145,14 @@ export function useCatalog(
       return;
     }
     void activeFetchNextPage();
-  }, [opts.enabled, loadedPages, hasNextPage, isFetchingNextPage, activeFetchNextPage]);
+  }, [
+    opts.enabled,
+    loadedPages,
+    hasNextPage,
+    isFetchingNextPage,
+    isPlaceholderData,
+    activeFetchNextPage,
+  ]);
 
   const entries = useMemo(() => {
     if (source === 'discover') {
@@ -151,7 +177,11 @@ export function useCatalog(
     total,
     activeQuery,
     source,
+    // `isLoading` is now the COLD state only — no cards on screen at all.
+    // A search over a populated catalogue keeps its results and reports
+    // `isRefreshing`, so the grid dims instead of blanking to skeletons.
     isLoading: opts.enabled && active.isLoading,
+    isRefreshing: opts.enabled && active.isPlaceholderData,
     isError: active.isError,
     refetch: () => void active.refetch(),
   };

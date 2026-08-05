@@ -33,6 +33,7 @@ import { ConnectorConnectedMark } from '@/features/workspace/capabilities/connec
 
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { cn } from '@/lib/utils';
 import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { catalogSections, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
@@ -450,7 +451,20 @@ export function ConnectorBrowse({
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      // Search-as-you-type keeps the previous results and dims them, rather
+      // than swapping the whole catalogue for six skeleton cards on every
+      // debounced keystroke (which is what `isLoading` did before
+      // `placeholderData: keepPreviousData` split the cold state out of it).
+      // `aria-busy` is the same statement for assistive tech, and
+      // `pointer-events-none` stops a click landing on a card that is about to
+      // be replaced by a different one in the same position.
+      aria-busy={state.isRefreshing || undefined}
+      className={cn(
+        'space-y-6 transition-opacity duration-150 ease-out',
+        state.isRefreshing && 'pointer-events-none opacity-60',
+      )}
+    >
       {showSections ? (
         sections.map((section) => (
           <CategorySection
