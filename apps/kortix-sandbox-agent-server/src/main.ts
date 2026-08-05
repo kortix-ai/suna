@@ -1273,7 +1273,19 @@ function slackRelayContext(): SandboxRelayContext | null {
 // auto-answering it here was the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
 async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
-  const ctx = slackRelayContext()
+  // EVERY session, not just Slack ones.
+  //
+  // This used to take `slackRelayContext()`, which returns null without
+  // SLACK_THREAD_TS / SLACK_CHANNEL_ID — so for a web session apps/api never
+  // learned a question was pending. The box was then parked on schedule (a
+  // waiting turn makes no LLM calls, so it earns no extension — that part is
+  // correct), and the question died with it, because opencode restarts cold.
+  // The user came back to a session that had silently forgotten what it asked.
+  //
+  // The control plane now PERSISTS the question regardless of channel, so
+  // reporting it is useful for every session. Posting it into a thread is still
+  // channel-specific and stays server-side.
+  const ctx = sandboxRelayContext()
   if (!ctx) return
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`

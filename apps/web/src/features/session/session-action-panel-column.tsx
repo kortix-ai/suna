@@ -57,7 +57,7 @@ import {
 } from '@/stores/kortix-computer-store';
 import { useTabStore } from '@/stores/tab-store';
 import { CaretDoubleLeftIcon, CaretDoubleRightIcon } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useEffect } from 'react';
 
 /** The panel's open width. The inner content is pinned to it so the cards keep
@@ -212,7 +212,7 @@ export function SessionActionPanelColumn() {
           width immediately instead of playing an arrival nobody asked for.
           The transition ternary is safe here precisely BECAUSE this element
           never unmounts: there is no exiting node holding stale props. */}
-      <motion.div
+      <m.div
         initial={false}
         animate={{ width: isOpen ? PANEL_WIDTH : 0 }}
         transition={reduce ? { duration: 0 } : isOpen ? ENTER : EXIT}
@@ -239,7 +239,7 @@ export function SessionActionPanelColumn() {
         >
           <ActionPanel />
         </div>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

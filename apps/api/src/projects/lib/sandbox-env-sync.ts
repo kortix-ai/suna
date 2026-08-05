@@ -554,3 +554,101 @@ export async function pushSessionModelToSandbox(input: {
     return { applied: false, reason };
   }
 }
+
+/**
+ * Re-resolve this session's secrets snapshot and deliver it to the RUNNING
+ * sandbox, restarting opencode so its process env picks up the new set.
+ *
+ * `PUT /sessions/{id}/scope` re-scopes a live session's secrets allowlist. The
+ * row was persisted, but for a long time nothing pushed the new snapshot to the
+ * box: the route returned "Applies from the next prompt." and delegated the
+ * actual delivery to `syncSandboxEnvForPrompt`. That delegation was unreliable:
+ *
+ *   - the per-prompt hot sync has two silent early-returns (`!serviceKey`,
+ *     `!snapshot`/`!row.createdBy`) that skip the POST with no log;
+ *   - it only fires when the prompt routes through `POST :8000
+ *     /session/{id}/{prompt_async|message}` — a prompt sent any other way
+ *     (straight to :4096, the lifecycle queue) slips past it;
+ *   - even when it DID fire, the daemon's env route took the ~51ms dispose
+ *     fast path for a pure secret change, and a dispose re-reads the opencode
+ *     CONFIG file only — it does not re-run `mergeProjectEnv`, so opencode's
+ *     process env stayed on the OLD (0/47) snapshot while `agent-env.sh` got
+ *     the new one (so freshly-started shells saw 47/47). The box reported a
+ *     stale OpenCode PID until something else forced a respawn.
+ *
+ * Pushing here — the same pattern the `/model` PUT already uses — fixes both
+ * halves: the snapshot is re-derived from the freshly-committed allowlist and
+ * POSTed to the daemon, and `refreshModels: true` restarts opencode so
+ * `spawnChild` re-runs `mergeProjectEnv` + `withoutDeniedProviderEnv`. The
+ * LLM-gateway provider strip is re-stamped alongside (it lives in the same
+ * `opencodeEnv`/`llmGatewayDenyEnv` channel), so the 42/47-vs-47/47 split
+ * between the opencode process and tool shells is preserved, and revocation
+ * keeps working (`knownNames` is still tracked in the daemon store, so a
+ * dropped secret is actively cleared on the respawn).
+ *
+ * Best-effort by design, mirroring `pushSessionModelToSandbox`: the row is
+ * already committed, so a sandbox that is down or unreachable simply picks the
+ * new scope up on its next boot. The caller reports `applied_live` so a UI can
+ * tell "in effect now" from "stored, applies at next boot" — the same
+ * distinction the model route makes.
+ */
+export async function pushSessionScopeToSandbox(input: {
+  projectId: string;
+  sessionId: string;
+}): Promise<{ applied: boolean; reason?: string }> {
+  try {
+    const [row] = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        provider: sessionSandboxes.provider,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, input.sessionId),
+          eq(sessionSandboxes.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+
+    const config = (row.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+
+    // Re-derive from the row the route JUST committed — `resolveOwnerRawEnv`
+    // reads `secretsAllowlist` fresh, so this reflects the new scope, not the
+    // boot snapshot the daemon is still running.
+    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
+
+    const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(input.projectId);
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: SANDBOX_SERVICE_PORT,
+      transport: 'http',
+    });
+    await postEnvToDaemon({
+      previewUrl: url,
+      providerHeaders: headers,
+      serviceKey,
+      snapshot,
+      // Restarts opencode so spawnChild re-runs mergeProjectEnv + the gateway
+      // strip. A dispose cannot refresh the child's process env (project
+      // secrets shape it at spawn, not via the config file), so the respawn is
+      // the load-bearing part — see the daemon-side gate in routes/env.ts.
+      refreshModels: true,
+      llmGatewayEnabled,
+      llmGatewayBaseUrl: llmGatewayEnabled
+        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
+        : undefined,
+      llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
+    });
+    await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
+    return { applied: true };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[env-sync] scope push failed for session ${input.sessionId}:`, reason);
+    return { applied: false, reason };
+  }
+}

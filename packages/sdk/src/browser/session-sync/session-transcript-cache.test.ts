@@ -78,4 +78,30 @@ describe('shouldHydrateFromCache', () => {
   test('an empty cache entry is not worth a render', () => {
     expect(shouldHydrateFromCache({ storeHasSession: false, cachedMessageCount: 0 })).toBe(false);
   });
+
+  // The one case where a present store entry is NOT the authority. Eviction
+  // deletes a session's key; if that session's agent is still running, its SSE
+  // parts put the key straight back — holding only what streamed after the
+  // eviction. That fragment outranks nothing: it is strictly less than what is
+  // on disk, and `hydrate` merges rather than replaces, so painting the disk
+  // copy under it restores the history without touching the live tail.
+  test('repaints when the store entry is only a post-eviction fragment', () => {
+    expect(
+      shouldHydrateFromCache({
+        storeHasSession: true,
+        storeSessionWasEvicted: true,
+        cachedMessageCount: 3,
+      }),
+    ).toBe(true);
+  });
+
+  test('an evicted session with nothing cached still has nothing to paint', () => {
+    expect(
+      shouldHydrateFromCache({
+        storeHasSession: true,
+        storeSessionWasEvicted: true,
+        cachedMessageCount: 0,
+      }),
+    ).toBe(false);
+  });
 });

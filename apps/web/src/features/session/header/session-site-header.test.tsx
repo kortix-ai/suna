@@ -6,6 +6,10 @@ const source = readFileSync(
   fileURLToPath(new URL('./session-site-header.tsx', import.meta.url)),
   'utf8',
 );
+const exportModalSource = readFileSync(
+  fileURLToPath(new URL('./export-transcript-modal.tsx', import.meta.url)),
+  'utf8',
+);
 
 describe('SessionSiteHeader sidebar toggle', () => {
   test('connects collapsed-toggle hover to the sidebar peek controller', () => {
@@ -35,6 +39,17 @@ describe('SessionSiteHeader sidebar toggle', () => {
       source.indexOf(';', source.indexOf('const showSidebarToggle =')),
     );
     expect(gate).toContain('isMobileViewport ||');
+  });
+});
+
+describe('SessionSiteHeader transcript ownership', () => {
+  test('keeps the export modal on the canonical project-session cache scope', () => {
+    expect(source).toContain(
+      'kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}',
+    );
+    expect(exportModalSource).toContain(
+      'useSessionSync(sessionId, { kortixSessionScope })',
+    );
   });
 });
 

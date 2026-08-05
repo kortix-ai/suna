@@ -19,8 +19,10 @@ import { Input } from '@/components/ui/input';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { Plus } from '@/features/icon/icons/plus';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
@@ -33,8 +35,6 @@ import {
   CreditCardIcon as CreditCardSolid,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { Icon } from '../icon/icon';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export type AccountSwitcherVariant = 'header' | 'sidebar';
 
@@ -235,7 +235,7 @@ export function AccountSwitcher({
 
         {canCreateAccount && (
           <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
-            <Icon.Plus className="size-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">
               {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
             </span>

@@ -152,6 +152,25 @@ export async function locateSessionAnywhere(
   // active account holds no projects, and it usually finds the session.
   const ctx = await resolveProjectContext({ ...opts, quietWhenUnresolved: true });
   if (ctx) {
+    // Short-id ergonomics: `sessions ls`/`status` print 8-char ids, so accept
+    // any unambiguous prefix instead of failing with "Invalid session id". The
+    // list already carries the full row, so a prefix hit returns it directly and
+    // skips the per-session re-fetch below.
+    if (!SESSION_UUID_RE.test(sessionId)) {
+      const expanded = await expandSessionIdPrefix(ctx.client, ctx.projectId, sessionId);
+      if (expanded === 'ambiguous') {
+        process.stderr.write(
+          `${status.err(`Several sessions match "${sessionId}" — use more of the id.`)}\n`,
+        );
+        return null;
+      }
+      if (expanded) {
+        return {
+          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: expanded },
+          switched: false,
+        };
+      }
+    }
     const probed = await probeSession(ctx.client, ctx.projectId, sessionId);
     if (probed !== false && !(probed instanceof ApiError)) {
       return {
@@ -273,6 +292,28 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
+const SESSION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Expand a short session-id prefix against the project's session list,
+ *  returning the matched row (the list already carries it — no re-fetch). */
+async function expandSessionIdPrefix(
+  client: ApiClient,
+  projectId: string,
+  reference: string,
+): Promise<ProjectSession | 'ambiguous' | null> {
+  try {
+    const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions`);
+    const matches = sessions.filter((s) => s.session_id.startsWith(reference));
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return 'ambiguous';
+    return null;
+  } catch {
+    // Listing failed — let the direct probe surface the real error.
+    return null;
+  }
+}
+
 async function probeSession(
   client: ApiClient,
   projectId: string,

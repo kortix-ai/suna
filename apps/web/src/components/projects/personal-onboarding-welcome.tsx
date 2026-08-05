@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/card';
 import { successToast } from '@/components/ui/toast';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
-import { Icon } from '@/features/icon/icon';
+import { WhatsApp } from '@/features/icon/icons/whats-app';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
@@ -132,7 +132,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
-              <Icon.WhatsApp />
+              <WhatsApp />
               WhatsApp
             </Link>
           </Button>

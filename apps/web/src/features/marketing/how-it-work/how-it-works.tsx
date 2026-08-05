@@ -7,7 +7,7 @@ import { useMediaQuery } from '@/hooks/utils/use-media-query';
 import { cn } from '@/lib/utils';
 import {
   cubicBezier,
-  motion,
+  m,
   useMotionTemplate,
   useReducedMotion,
   useScroll,
@@ -124,7 +124,7 @@ function LayerCard({
   const live = pinned && frame > 0;
 
   return (
-    <motion.article
+    <m.article
       data-stack-layer={layer.id}
       data-pinned={live ? 'true' : 'false'}
       style={
@@ -158,7 +158,7 @@ function LayerCard({
         </h3>
       </button>
 
-      <motion.div
+      <m.div
         data-card-body
         style={live && !isLast ? { filter, opacity: bodyOpacity, willChange: 'filter' } : undefined}
         className={cn(
@@ -206,8 +206,8 @@ function LayerCard({
             </div>
           </>
         )}
-      </motion.div>
-    </motion.article>
+      </m.div>
+    </m.article>
   );
 }
 

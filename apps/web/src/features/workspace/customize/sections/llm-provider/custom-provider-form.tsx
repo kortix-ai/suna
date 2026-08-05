@@ -17,7 +17,7 @@ import {
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useState } from 'react';
 
@@ -374,7 +374,7 @@ function CustomProviderSnippetView({
           >
             <span className="relative inline-flex size-3.5 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'copy'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -387,7 +387,7 @@ function CustomProviderSnippetView({
                   ) : (
                     <Copy className="size-3.5" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </button>

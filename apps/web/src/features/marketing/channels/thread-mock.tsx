@@ -1,6 +1,7 @@
 'use client';
 
-import { Icon } from '@/features/icon/icon';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { thread } from './content';
@@ -24,7 +25,7 @@ function Avatar({ kind, who }: { kind: string; who: string }): ReactNode {
       aria-hidden
       className="border-border bg-background flex size-7 shrink-0 items-center justify-center rounded-sm border"
     >
-      <Icon.Kortix className="size-3" />
+      <Kortix className="size-3" />
     </span>
   );
 }
@@ -50,7 +51,7 @@ export function ThreadMock(): ReactNode {
     <figure className="border-border bg-card flex h-full flex-col overflow-hidden rounded-sm border">
       {/* channel header */}
       <div className="border-border flex items-center gap-3 border-b px-5 py-3.5 sm:px-6">
-        <Icon.Slack className="size-4 shrink-0" />
+        <Slack className="size-4 shrink-0" />
         <span className="text-muted-foreground font-mono text-xs">{mock.channel}</span>
       </div>
 
@@ -88,9 +89,7 @@ export function ThreadMock(): ReactNode {
             {mock.system.id}…
           </span>
           <span aria-hidden className="bg-border h-px min-w-6 flex-1" />
-          <span className="text-muted-foreground/60 font-mono text-[11px]">
-            {mock.system.note}
-          </span>
+          <span className="text-muted-foreground/60 font-mono text-[11px]">{mock.system.note}</span>
         </div>
 
         {/* the decision, back in the thread */}

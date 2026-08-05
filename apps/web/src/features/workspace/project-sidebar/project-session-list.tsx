@@ -4,11 +4,13 @@ import { useTranslations } from 'next-intl';
 
 import {
   directSubsessions,
+  isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
   sessionSource,
+  spawnedBySessionId,
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
@@ -25,13 +27,15 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  groupSessionsByCoordinator,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -58,9 +62,11 @@ import {
   CaretRightIcon,
   DotsThreeIcon,
   EnvelopeIcon as Mail,
+  FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
+  ArrowElbowDownRightIcon as SpawnedBy,
   SquareIcon as Square,
   TrashIcon,
   WebhooksLogoIcon as Webhook,
@@ -82,8 +88,8 @@ const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
   ComponentType<{ className?: string }>
 > = {
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
@@ -265,6 +271,69 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     );
   }
 
+  // One session row plus its opencode sub-sessions. `nested` marks a row drawn
+  // under its coordinator: the indent already carries the spawn link, so the
+  // row drops its own spawned-by icon.
+  const renderSessionNode = (session: ProjectSession, nested: boolean) => {
+    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+    const isSwitchTarget = switchingToSessionId === session.session_id;
+    const children = directSubsessions(session);
+    return (
+      <div key={session.session_id} className="space-y-px">
+        <ProjectSessionRow
+          nested={nested}
+          session={session}
+          href={href}
+          isActive={!!isActive && !activeOpenCodeSessionId}
+          isSwitching={isSwitchTarget}
+          onNavigate={(event) => {
+            if (switchingToSessionId && session.session_id === activeSessionId) {
+              event.preventDefault();
+              cancelSessionSwitch();
+              router.replace(href, { scroll: false });
+              return;
+            }
+            if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+              beginSessionSwitch(session.session_id);
+            }
+          }}
+          displayTitle={getSessionDisplayTitle(session)}
+          childCount={children.length}
+          reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+          onDelete={(id, label) => setSessionToDelete({ id, label })}
+          onShare={(s) => setSessionToShare(s)}
+          onRename={(id, name) => setSessionToRename({ id, name })}
+          onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
+          isRestarting={
+            restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
+          }
+          onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
+          isStopping={
+            stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+          }
+        />
+        {children.length > 0 && isActive && (
+          <div className="border-border ml-3.5 border-l-2 pl-2">
+            {children.map((child) => {
+              const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+              const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+              return (
+                <ProjectSubsessionRow
+                  key={child.id}
+                  title={child.title || 'Sub-session'}
+                  href={childHref}
+                  isActive={activeChild}
+                  updatedAt={child.updated_at}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <FadedScrollArea className="h-full min-h-0 space-y-px">
@@ -279,66 +348,20 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             open={!collapsedSections.includes(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
           >
-            {section.sessions.map((session) => {
-              const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-              const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-              const isSwitchTarget = switchingToSessionId === session.session_id;
-              const children = directSubsessions(session);
-              return (
-                <div key={session.session_id} className="space-y-px">
-                  <ProjectSessionRow
-                    session={session}
-                    href={href}
-                    isActive={!!isActive && !activeOpenCodeSessionId}
-                    isSwitching={isSwitchTarget}
-                    onNavigate={(event) => {
-                      if (switchingToSessionId && session.session_id === activeSessionId) {
-                        event.preventDefault();
-                        cancelSessionSwitch();
-                        router.replace(href, { scroll: false });
-                        return;
-                      }
-                      if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
-                        beginSessionSwitch(session.session_id);
-                      }
-                    }}
-                    displayTitle={getSessionDisplayTitle(session)}
-                    childCount={children.length}
-                    reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
-                    onDelete={(id, label) => setSessionToDelete({ id, label })}
-                    onShare={(s) => setSessionToShare(s)}
-                    onRename={(id, name) => setSessionToRename({ id, name })}
-                    onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
-                    isRestarting={
-                      restartMutation.isPending &&
-                      restartMutation.variables?.sessionId === session.session_id
-                    }
-                    onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
-                    isStopping={
-                      stopMutation.isPending &&
-                      stopMutation.variables?.sessionId === session.session_id
-                    }
-                  />
-                  {children.length > 0 && isActive && (
-                    <div className="border-border ml-3.5 border-l-2 pl-2">
-                      {children.map((child) => {
-                        const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                        const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-                        return (
-                          <ProjectSubsessionRow
-                            key={child.id}
-                            title={child.title || 'Sub-session'}
-                            href={childHref}
-                            isActive={activeChild}
-                            updatedAt={child.updated_at}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {/* Two independent groupings compose here: `groupSessions` splits the
+                list into sections, then within each section
+                `groupSessionsByCoordinator` nests spawned sessions under the
+                coordinator that started them. */}
+            {groupSessionsByCoordinator(section.sessions).map((group) => (
+              <div key={group.session.session_id} className="space-y-px">
+                {renderSessionNode(group.session, false)}
+                {group.children.length > 0 && (
+                  <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                    {group.children.map((child) => renderSessionNode(child, true))}
+                  </div>
+                )}
+              </div>
+            ))}
           </SessionListSection>
         ))}
       </FadedScrollArea>
@@ -509,6 +532,9 @@ interface ProjectSessionRowProps {
   childCount?: number;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
+  /** Rendered indented under its coordinator — the indent already conveys the
+   *  spawn link, so the right-side spawned-by icon is omitted. */
+  nested?: boolean;
 }
 
 function ProjectSessionRow({
@@ -527,6 +553,7 @@ function ProjectSessionRow({
   isStopping,
   childCount = 0,
   reviewCount = 0,
+  nested = false,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -550,6 +577,8 @@ function ProjectSessionRow({
 
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+  const isMeta = isMetaCoordinatorSession(session);
+  const spawnedBy = spawnedBySessionId(session);
 
   return (
     <div className="group/session-list block">
@@ -573,6 +602,14 @@ function ProjectSessionRow({
         >
           <SessionStatusDot session={session} reviewCount={reviewCount} />
 
+          {isMeta && (
+            <Hint side="top" label="Meta coordinator">
+              <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+                <MetaFolder className="size-3.5" weight="fill" />
+              </span>
+            </Hint>
+          )}
+
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
           {childCount > 0 && (
@@ -583,6 +620,13 @@ function ProjectSessionRow({
         </Link>
 
         <div className="flex shrink-0 items-center gap-0">
+          {spawnedBy && !nested && (
+            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
           {SourceIcon && (
             <span className="flex size-4 shrink-0 items-center justify-center">
               <Hint

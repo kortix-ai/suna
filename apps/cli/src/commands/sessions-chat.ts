@@ -51,6 +51,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
+  options: { requireRunning?: boolean } = {},
 ): Promise<ResolvedSession | null> {
   const found = await locateSessionAnywhere(
     sessionId,
@@ -67,7 +68,7 @@ export async function loadSessionForChat(
     );
   }
 
-  if (session.status !== 'running') {
+  if (options.requireRunning !== false && session.status !== 'running') {
     process.stderr.write(
       `${status.err(`Session ${session.session_id} is ${session.status}, not running.`)}\n` +
         `  ${C.dim}Run \`kortix sessions restart ${session.session_id}\` first.${C.reset}\n`,

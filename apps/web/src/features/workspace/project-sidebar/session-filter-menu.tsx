@@ -22,7 +22,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
 import {
@@ -168,8 +169,8 @@ export function resolveSourceFacetOptions(
 const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className?: string }>> = {
   mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,

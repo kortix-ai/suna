@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useCallback, useState } from 'react';
 
 /**
@@ -44,7 +44,7 @@ export function ModelIdCopyButton({ value, className }: { value: string; classNa
     >
       <span className="relative inline-flex size-3 items-center justify-center">
         <AnimatePresence initial={false} mode="popLayout">
-          <motion.span
+          <m.span
             key={copied ? 'check' : 'copy'}
             initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
             animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -53,7 +53,7 @@ export function ModelIdCopyButton({ value, className }: { value: string; classNa
             className="absolute inset-0 inline-flex items-center justify-center"
           >
             {copied ? <Check className="text-kortix-green size-3" /> : <Copy className="size-3" />}
-          </motion.span>
+          </m.span>
         </AnimatePresence>
       </span>
     </button>

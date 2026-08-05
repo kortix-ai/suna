@@ -635,9 +635,9 @@ app.openapi(
 // "Book a demo" qualifier form POSTs the first-step details here (via the web
 // server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
 // submission, whether or not the lead goes on to book a Cal slot. The email uses
-// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
-// never needs the secret. IP rate-limited; a missing Mailtrap token is a
-// graceful skip, so lead capture never fails on account of email.
+// the API's email-provider credentials (AWS Secrets Manager), so the Vercel
+// frontend never needs the secret. IP rate-limited; no configured email
+// provider is a graceful skip, so lead capture never fails on account of email.
 const DemoRequestSchema = z
   .object({
     name: z.string().max(200).optional(),

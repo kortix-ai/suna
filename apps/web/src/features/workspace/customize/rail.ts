@@ -3,16 +3,13 @@ import {
   AlarmIcon as AlarmClock,
   ArrowCircleUpIcon as ArrowUpCircle,
   ChatsIcon as ChatMessages,
-  CommandIcon as Command,
   CubeIcon as Boxes,
   GearSixIcon as LucideSettings,
   GitForkIcon as GitFork,
   KeyIcon as KeyRound,
   MonitorIcon as Monitor,
-  PlugIcon as Plug,
   RobotIcon as Bot,
   ShippingContainerIcon as Container,
-  SparkleIcon as Sparkles,
   StorefrontIcon as Store,
   TrayIcon as Inbox,
   UsersThreeIcon as LucideUsersRound,
@@ -25,9 +22,8 @@ import type { RailGroup, RailItem } from './type';
  * Whether a rail item is the active one for the current section.
  *
  * `llm-management` stands in for every `llm-*` sub-section so deep-links into
- * an LLM sub-page still light up the single LLM rail entry. Every other item —
- * including the independent Agents, Skills, and Commands entries — matches its
- * own section 1:1.
+ * an LLM sub-page still light up the single LLM rail entry. Every other item
+ * matches its own section 1:1.
  */
 export function isRailItemActive(item: RailItem, section: CustomizeSection): boolean {
   if (item.section === 'llm-management') return section.startsWith('llm-');
@@ -64,16 +60,11 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 const GROUPS: readonly RailGroup[] = [
   {
     label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
+    items: [{ section: 'agents', label: 'Agents', icon: Bot }],
   },
   {
     label: 'Connect',
     items: [
-      { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Environment variables', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],

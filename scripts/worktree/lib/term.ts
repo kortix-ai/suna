@@ -26,3 +26,19 @@ export function stripAnsi(s: string): string {
 export function visibleWidth(s: string): number {
   return stripAnsi(s).length;
 }
+
+// SGR styling without a dependency. Worktree CI runs `bun test` against the
+// bare checkout — no install — so lib/ must not import from node_modules
+// (picocolors here broke that contract). Same TTY/NO_COLOR gating picocolors
+// applies; stripAnsi above already erases these codes for layout tests.
+const useColor = process.stdout.isTTY && process.env.NO_COLOR === undefined;
+const sgr =
+  (open: number, close: number) =>
+  (s: string): string =>
+    useColor ? `\x1b[${open}m${s}\x1b[${close}m` : s;
+
+export const bold = sgr(1, 22);
+export const dim = sgr(2, 22);
+export const green = sgr(32, 39);
+export const yellow = sgr(33, 39);
+export const cyan = sgr(36, 39);

@@ -16,7 +16,7 @@ import {
   SlidersIcon as Sliders,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useState } from 'react';
 import {
   PERMISSION_ACTION_ONLY_KEYS,
@@ -100,7 +100,7 @@ export function PermissionRuleRow({
       </div>
       <AnimatePresence initial={false}>
         {(showRules || isMap) && (
-          <motion.div
+          <m.div
             key="rules"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -150,7 +150,7 @@ export function PermissionRuleRow({
                 <Plus className="size-3 shrink-0" /> Add pattern rule
               </Button>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>
