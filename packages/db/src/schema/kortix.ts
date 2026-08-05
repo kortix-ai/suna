@@ -328,6 +328,14 @@ export const projects = kortixSchema.table(
       .default('runtime')
       .notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // Caller-supplied dedupe token for POST /v1/projects/provision. That route
+    // mints a brand-new managed repo per call, so a retry after a lost response
+    // used to create a real duplicate project + duplicate upstream repo. The
+    // route looks this up BEFORE it creates anything upstream and returns the
+    // existing project instead. NULL on every project created any other way
+    // (BYO-repo link, /create-repo, CLI) and on every pre-existing row — the
+    // partial unique index below only constrains rows that carry a key.
+    idempotencyKey: text('idempotency_key'),
     // Monotonic CAS token for sandbox-provider switching. Reserved (bumped) on
     // THIS row at switch-REQUEST time and stamped onto the new provider_transitions
     // row; a later switch/cancel bumps it again. Activation is a conditional
@@ -344,6 +352,14 @@ export const projects = kortixSchema.table(
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
     index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+    // The dedupe guarantee itself, not just a lookup index: two concurrent
+    // provisions carrying the same key can both miss the pre-check, and only a
+    // unique constraint stops the second INSERT. Partial, so the ~all rows with
+    // no key are unconstrained. Account-scoped — one account's key must never
+    // collide with another's.
+    uniqueIndex('idx_projects_account_idempotency_key')
+      .on(table.accountId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
   ],
 );
 

@@ -29,6 +29,7 @@ function projectRow(
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
+    idempotencyKey: null,
     status: 'active',
     metadata: {},
     lastOpenedAt: NOW,

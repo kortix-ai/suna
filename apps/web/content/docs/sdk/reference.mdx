@@ -84,7 +84,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 | `list()` · `listForAccount(accountId)` | your projects · projects in an account |
 | `get(id)` · `detail(id)` | summary · full detail |
 | `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id? }` |
+| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
 | `update(id, input)` · `archive(id)` | update settings · archive |
 | `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
 | `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
@@ -92,6 +92,14 @@ Reached by invite token alone — the invitee may not be a member yet.
 
 `provision` creates a new project; it does not start an existing project's
 sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
+
+Send `idempotency_key` when a retry is possible — a reload, a second tab, a
+timeout you retried. `provision` mints a brand-new managed repo per call, so
+without a key those all create real duplicate projects. Reuse one key for every
+attempt at a single logical create and the repeats return the project the first
+attempt made (201, same `project_id`, `push_token: null`). Use a fresh key per
+create attempt; two deliberate projects are two keys, and creating a second
+project with the same **name** and no key still works.
 
 `project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
 private, unavailable, and soft-deleted sessions, with ownership and

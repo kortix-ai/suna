@@ -12,6 +12,45 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-05 — session `provision-idempotency` completion
+
+No **Now** task claimed. The SDK half of a server-side defect fix is one
+optional field; the rest is `apps/api` + `packages/db`.
+
+`POST /v1/projects/provision` mints a brand-new managed repo on every call and
+guarded only on the quota count, so a retry after a lost response created a
+genuine duplicate project with its own upstream GitHub repo. The route now
+accepts an `idempotency_key`, looks it up before `backend.createRepo`, and
+returns the already-provisioned project. `ProvisionProjectInput` gained
+`idempotency_key?: string` so that key is part of the public surface.
+
+RED:
+
+- `pnpm --filter @kortix/sdk typecheck`: `error TS2353: Object literal may only
+  specify known properties, and 'idempotency_key' does not exist in type
+  'ProvisionProjectInput'` — three occurrences, exit `2`. The type IS the
+  behaviour here, so the type-checker is where the failure belongs; the runtime
+  wire assertion (`idempotency_key is sent on provision`) guards a future
+  refactor that whitelists body fields.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1496 pass`, `0 fail`, `6196 expect()` calls
+  across `121` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and constructed.
+
+Public surface unchanged in NAMES — one optional field added to an existing
+exported interface. Additive, no alias needed, no major implied, no snapshot
+re-record. The `version` field was not touched.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-05 — session `better-queue` completion
 
 No **Now** task claimed. This is an additive module for a host-side defect: a

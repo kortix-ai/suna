@@ -69,6 +69,7 @@ const projectRow: typeof projects.$inferSelect = {
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
+  idempotencyKey: null,
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
