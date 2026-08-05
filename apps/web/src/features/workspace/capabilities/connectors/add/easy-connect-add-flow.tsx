@@ -89,7 +89,6 @@ export function EasyConnectAddFlow({
       existingSlugs={existingSlugs}
       pending={add.isPending}
       icon={<ConnectorProfileIcon src={app?.imgSrc} name={app?.name ?? ''} />}
-      byline="by Pipedream"
       summary={app?.description ?? null}
       onOpenChange={(open) => !open && onClose()}
       onSubmit={(profile) => add.mutate(profile)}

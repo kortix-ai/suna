@@ -84,20 +84,24 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
         className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 active:scale-[0.96]"
       >
         <ShieldCheckIcon className="size-4" />
-        Global rules
+        <span className='hidden md:block'>Global rules</span>
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="right"
           className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
         >
-          <SheetHeader className="border-border shrink-0 space-y-1 border-b p-5 pr-12 text-left">
-            <SheetTitle className="text-base font-semibold text-balance">Global rules</SheetTitle>
-            <SheetDescription className="text-pretty">
-              Permissions that apply to every connector in this project.
+          {/* `pr-12` clears the sheet's own close button, which is absolutely
+              positioned at `top-4 right-4`. */}
+          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
+            <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
+            <SheetDescription className="text-xs text-pretty">
+              Approval rules that apply to every connector in this project.
             </SheetDescription>
           </SheetHeader>
-          <SheetBody className="min-h-0 px-5 py-4">
+          {/* The body is the only scroller, so the panel's save bar can stick
+              to its bottom edge. */}
+          <SheetBody className="min-h-0 gap-0 px-5 py-5">
             <PoliciesPanel projectId={projectId} />
           </SheetBody>
         </SheetContent>

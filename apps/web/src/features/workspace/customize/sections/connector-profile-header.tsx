@@ -69,7 +69,7 @@ export function ConnectorProfileHeader({
   return (
     <div className={cn('flex items-start gap-3.5', className)}>
       {icon}
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 flex-1 space-y-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {nameSlot ?? <span className="text-foreground truncate text-lg font-semibold">{name}</span>}
           {status}
