@@ -91,6 +91,37 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
         (a, b) =>
           new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
       )[0] ?? null,
+  // The claim/release pair the real repository uses. Implemented FAITHFULLY
+  // rather than stubbed true: the compare-and-set IS the fix (one settler wins a
+  // window, the loser bills nothing), so a fake that always succeeded would let
+  // the double-billing regression back in with the suite still green.
+  claimComputeWindow: async (input: {
+    id: string;
+    expectedLastBilledAt: string;
+    nextLastBilledAt: string;
+    addCostUsd: number;
+  }) => {
+    const row = sessions.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.endedAt !== null && row.endedAt !== undefined) return false;
+    if (row.lastBilledAt !== input.expectedLastBilledAt) return false;
+    row.lastBilledAt = input.nextLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) + input.addCostUsd);
+    return true;
+  },
+  releaseComputeWindow: async (input: {
+    id: string;
+    claimedLastBilledAt: string;
+    revertToLastBilledAt: string;
+    subCostUsd: number;
+  }) => {
+    const row = sessions.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.lastBilledAt !== input.claimedLastBilledAt) return false;
+    row.lastBilledAt = input.revertToLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) - input.subCostUsd);
+    return true;
+  },
   updateComputeSession: async (id: string, patch: any) => {
     const row = sessions.find((s) => s.id === id);
     if (!row) return;

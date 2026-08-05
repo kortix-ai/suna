@@ -97,6 +97,7 @@ function resetState() {
   modelDefaults = { account: null, agents: {}, projects: {} };
   projectRow.metadata = {};
   secretValues.clear();
+  secretConsumerReads.length = 0;
 }
 
 function sign(rawBody: string, secret: string) {
@@ -179,6 +180,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -336,6 +338,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const secretConsumerReads: Array<Record<string, unknown>> = [];
 const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
   ...realProjectSecrets,
@@ -345,10 +348,13 @@ mock.module('../projects/secrets', () => ({
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: async () => 'empty',
-  getProjectSecretValue: async (_projectId: string, name: string) =>
-    secretValues.get(name) ?? null,
+  getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
+    secretConsumerReads.push(input);
+    return input.consumer === 'executor' ? (secretValues.get(input.name) ?? null) : null;
+  },
 }));
 
 const triggerDbMock: any = {
@@ -1379,6 +1385,12 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('fired');
+    expect(secretConsumerReads[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      name: 'HOOK_SECRET',
+      consumer: 'executor',
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');

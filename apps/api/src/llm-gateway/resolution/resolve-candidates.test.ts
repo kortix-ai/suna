@@ -39,12 +39,20 @@ mock.module('../../config', () => ({ config }));
 // `secretsByName` falls back to `resolvedSecret` for backward compatibility.
 let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
-const getProjectSecretValue = mock(async (_projectId: string, name: string) => {
+let resolvedSecrets: Array<{ identifier: string; value: string }> = [];
+const getProjectSecretValueForConsumer = mock(async (input: { name: string }) => {
+  const name = input.name;
   if (name in secretsByName) return secretsByName[name] ?? null;
   return resolvedSecret;
 });
+const resolveProjectSecretsForConsumer = mock(async (input: { name: string }) => {
+  if (resolvedSecrets.length > 0) return resolvedSecrets;
+  const value = await getProjectSecretValueForConsumer(input);
+  return value ? [{ identifier: input.name, value }] : [];
+});
 mock.module('../../projects/secrets', () => ({
-  getProjectSecretValue,
+  getProjectSecretValueForConsumer,
+  resolveProjectSecretsForConsumer,
 }));
 
 class CodexRefreshError extends Error {}
@@ -160,6 +168,7 @@ beforeEach(() => {
   });
   resolvedSecret = null;
   secretsByName = {};
+  resolvedSecrets = [];
   codexCredential = null;
   codexThrows = false;
   catalogUpstream = null;
@@ -169,7 +178,8 @@ beforeEach(() => {
   livePricingCalls = [];
   getAccountTier.mockClear();
   getCachedAccountTier.mockClear();
-  getProjectSecretValue.mockClear();
+  getProjectSecretValueForConsumer.mockClear();
+  resolveProjectSecretsForConsumer.mockClear();
   resolveCodexCredential.mockClear();
 });
 
@@ -180,7 +190,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       envVar: 'ANTHROPIC_API_KEY',
       kind: 'anthropic',
     };
-    resolvedSecret = 'sk-user-key';
+    resolvedSecrets = [{ identifier: 'ANTHROPIC_API_KEY', value: 'sk-user-key' }];
     runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
     const p = principal();
     tierByAccount[p.accountId] = 'pro';
@@ -192,8 +202,38 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
       billingMode: 'platform-fee',
       markup: 0.1,
       apiKey: 'sk-user-key',
+      credentialRef: 'ANTHROPIC_API_KEY',
     });
     expect(candidates[1]).toMatchObject({ provider: 'kortix-managed' });
+  });
+
+  test('queues every provider credential before the managed fallback', async () => {
+    catalogUpstream = {
+      baseUrl: 'https://api.anthropic.com/v1',
+      envVar: 'ANTHROPIC_API_KEY',
+      kind: 'anthropic',
+    };
+    resolvedSecrets = [
+      { identifier: 'primary', value: 'sk-primary' },
+      { identifier: 'secondary', value: 'sk-secondary' },
+    ];
+    runtimeManagedModel = { id: 'anthropic/claude-sonnet-4.6' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'anthropic/claude-sonnet-4.6');
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates.map((candidate) => candidate.credentialRef)).toEqual([
+      'primary',
+      'secondary',
+      undefined,
+    ]);
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual([
+      'sk-primary',
+      'sk-secondary',
+      'm',
+    ]);
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {
@@ -249,8 +289,16 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     // The bearer token AND the region are each looked up under their own
     // AWS-standard secret name, project-wide (shared) only — there is no
     // per-caller/private lookup.
-    expect(getProjectSecretValue).toHaveBeenCalledWith('p1', 'AWS_BEARER_TOKEN_BEDROCK');
-    expect(getProjectSecretValue).toHaveBeenCalledWith('p1', 'AWS_REGION');
+    expect(getProjectSecretValueForConsumer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'p1',
+        name: 'AWS_BEARER_TOKEN_BEDROCK',
+        consumer: 'llm_gateway',
+      }),
+    );
+    expect(getProjectSecretValueForConsumer).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'p1', name: 'AWS_REGION', consumer: 'llm_gateway' }),
+    );
   });
 
   test('BYOK Bedrock with no AWS_REGION set: falls back to the BYOK default (us-east-1), not the managed AWS_BEDROCK_REGION default', async () => {
@@ -464,7 +512,10 @@ describe('resolveCandidates — codex + unknown provider', () => {
 
   test('codex provider resolves to the codex descriptor when a credential exists', async () => {
     codexCredential = { access: 'codex-token' };
-    const candidates = await resolveCandidates(principal(), 'codex/gpt-5.5');
+    const candidates = await resolveCandidates(
+      principal({ accountId: 'acct-1', sessionId: 'session-1' }),
+      'codex/gpt-5.5',
+    );
     expect(candidates).toEqual([
       expect.objectContaining({
         provider: 'openai-codex',
@@ -472,6 +523,10 @@ describe('resolveCandidates — codex + unknown provider', () => {
         resolvedModel: 'codex/gpt-5.5',
       }),
     ]);
+    expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
+      accountId: 'acct-1',
+      sessionId: 'session-1',
+    });
   });
 
   test('codex with no resolvable credential throws provider_not_connected', async () => {

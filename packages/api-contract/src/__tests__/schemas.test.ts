@@ -16,6 +16,8 @@ import {
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
   ReconcileConnectionProfileInputSchema,
+  SecretBrokerRequestSchema,
+  SecretBrokerResponseSchema,
   SecretSchema,
   SecretDeliveryStrategySchema,
   UpdateSecretStrategyInputSchema,
@@ -370,10 +372,9 @@ describe('warm project session schemas', () => {
         sandbox_slug: 'default',
       }).success,
     ).toBe(true);
-    expect(
-      ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' })
-        .success,
-    ).toBe(false);
+    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -543,13 +544,63 @@ describe('SecretSchema', () => {
     expect(SecretDeliveryStrategySchema.safeParse('env').success).toBe(false);
   });
 
-  test('accepts only a strategy in the update input', () => {
+  test('accepts a broker policy and handle prefix in the update input', () => {
     expect(UpdateSecretStrategyInputSchema.parse({ strategy: 'denied' })).toEqual({
       strategy: 'denied',
     });
     expect(
+      UpdateSecretStrategyInputSchema.parse({
+        strategy: 'broker',
+        consumer: 'http_broker',
+        egress_policy: {
+          backend: 'kortix_fetch',
+          rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+          inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+        },
+        handle_prefix: 'example_',
+      }),
+    ).toEqual({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      egress_policy: {
+        backend: 'kortix_fetch',
+        rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+        inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      },
+      handle_prefix: 'example_',
+    });
+    expect(
       UpdateSecretStrategyInputSchema.safeParse({ strategy: 'runtime', value: 'secret' }).success,
     ).toBe(false);
+    expect(
+      UpdateSecretStrategyInputSchema.parse({ strategy: 'broker', consumer: 'llm_gateway' }),
+    ).toEqual({ strategy: 'broker', consumer: 'llm_gateway' });
+  });
+
+  test('validates the generic HTTPS broker request and response envelopes', () => {
+    expect(
+      SecretBrokerRequestSchema.parse({
+        url: 'https://api.example.com/v1/messages',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body_base64: 'e30=',
+      }),
+    ).toEqual({
+      url: 'https://api.example.com/v1/messages',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body_base64: 'e30=',
+    });
+    expect(SecretBrokerRequestSchema.parse({ url: 'https://api.example.com' }).method).toBe('GET');
+    expect(
+      SecretBrokerRequestSchema.safeParse({
+        url: 'https://api.example.com',
+        headers: Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`x-${index}`, 'x'])),
+      }).success,
+    ).toBe(false);
+    expect(
+      SecretBrokerResponseSchema.parse({ status: 200, headers: {}, body_base64: 'b2s=' }),
+    ).toEqual({ status: 200, headers: {}, body_base64: 'b2s=' });
   });
 });
 
@@ -604,6 +655,8 @@ describe('SessionCreateInputSchema runtime_context', () => {
       agent_name: 'veyris',
       provider: 'daytona',
       branch_already_created: true,
+      initial_prompt: 'Do the task.\n\n--- session contract ---\n…',
+      title_source: 'Do the task.',
       runtime_context: {
         workspace_id: 'org_123',
         'wrapper.locale': 'de',
@@ -684,9 +737,9 @@ describe('session connector profile contracts', () => {
   const profileId = '11111111-1111-4111-a111-111111111111';
 
   test('normalizes canonical, deprecated, and equal dual binding input', () => {
-    expect(
-      SessionConnectorBindingInputSchema.parse({ authorization_id: profileId }),
-    ).toEqual({ authorization_id: profileId });
+    expect(SessionConnectorBindingInputSchema.parse({ authorization_id: profileId })).toEqual({
+      authorization_id: profileId,
+    });
     expect(SessionConnectorBindingInputSchema.parse({ profile_id: profileId })).toEqual({
       authorization_id: profileId,
     });
@@ -831,6 +884,64 @@ describe('session scope contracts', () => {
         connector_bindings: { gmail: { profile_id: authorizationId } },
       }).success,
     ).toBe(false);
+  });
+
+  test('reports applied_live when the scope was pushed to the running sandbox', () => {
+    // Mirrors the model route's applied_live: the caller can tell "in effect
+    // now" from "stored, applies at next boot". The field is optional so a
+    // response that omits it (e.g. a secrets-untouched re-scope) still parses.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: ['STRIPE_KEY'],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: true,
+      detail: 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+    };
+    expect(SessionScopeSchema.parse(value)).toEqual(value);
+  });
+
+  test('reports push_failed when a required live push failed (half-applied change)', () => {
+    // The row is written but the running harness still answers from the OLD
+    // scope. `applied_live: false` alone cannot express this (it is also the
+    // benign no-active-sandbox answer), so a client must read push_failed to
+    // tell a half-applied change from a stored one. Mirrors the model route's
+    // push_failed.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: ['STRIPE_KEY'],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: false,
+      push_failed: true as const,
+      push_reason: 'daemon unreachable',
+      detail: 'Applies from the next prompt.',
+    };
+    expect(SessionScopeSchema.parse(value)).toEqual(value);
+  });
+
+  test('rejects an unknown extra field even with the new optional ones', () => {
+    // .strict() is preserved: adding a field the schema does not name fails,
+    // so the contract stays exhaustive.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: false,
+      detail: 'No change to the secrets scope.',
+      surprise: true,
+    };
+    expect(SessionScopeSchema.safeParse(value).success).toBe(false);
   });
 });
 

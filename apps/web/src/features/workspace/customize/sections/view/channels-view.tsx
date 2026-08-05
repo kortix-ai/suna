@@ -34,7 +34,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Slack } from '@/features/icon/icons/slack';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
@@ -514,7 +515,7 @@ function SlackChannelRow({
     <TableRow className="hover:bg-transparent">
       <TableCell>
         <div className="flex items-center gap-2.5">
-          <Icon.Slack className="size-5 shrink-0" />
+          <Slack className="size-5 shrink-0" />
           <span className="text-sm font-medium">Slack</span>
         </div>
       </TableCell>
@@ -599,7 +600,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
     <TableRow className="hover:bg-transparent">
       <TableCell>
         <div className="flex items-center gap-2.5">
-          <Icon.MicrosoftTeams className="size-5 shrink-0" />
+          <MicrosoftTeams className="size-5 shrink-0" />
           <span className="text-sm font-medium">Microsoft Teams</span>
         </div>
       </TableCell>

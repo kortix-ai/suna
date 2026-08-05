@@ -30,9 +30,9 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
     // Route sandbox model calls through the local standalone gateway. Proxy mode
-    // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway,
-    // and sandboxes reach it via the API's tunnel origin. Overrides .env so the
-    // worktree is self-contained.
+    // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway.
+    // Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
+    // standalone gateway owns /v1/chat/completions. Overrides .env.
     LLM_GATEWAY_ENABLED: 'true',
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),

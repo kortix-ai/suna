@@ -61,13 +61,31 @@ export function toHydrateEntries(
  * store holds anything for this session — from SSE, an optimistic send, or a
  * completed reconcile — it outranks whatever is on disk, so hydrating again
  * could only ever move the transcript backwards.
+ *
+ * With exactly one exception, and it is not hypothetical: a session whose agent
+ * is still running when the store evicts it. Eviction deletes the key; the
+ * agent's next SSE frame puts it straight back, holding only what streamed
+ * after the eviction. The store "has" the session, but what it has is strictly
+ * less than the disk copy, so standing down leaves the user with a fragment and
+ * a `loadOlder` for their own history. `hydrate` merges rather than replaces —
+ * it never drops a message the store has that the incoming set lacks, and for
+ * text parts it keeps whichever side has more — so painting the disk copy under
+ * a live fragment restores the history without touching the live tail.
  */
 export function shouldHydrateFromCache(input: {
   storeHasSession: boolean;
   cachedMessageCount: number;
+  /**
+   * The store's entry for this session is a post-eviction fragment. From
+   * `useSyncStore.wasTranscriptEvicted`, which also reports false the moment a
+   * send goes in flight — repainting under one would retire the message the
+   * user just typed.
+   */
+  storeSessionWasEvicted?: boolean;
 }): boolean {
-  if (input.storeHasSession) return false;
-  return input.cachedMessageCount > 0;
+  if (input.cachedMessageCount <= 0) return false;
+  if (!input.storeHasSession) return true;
+  return input.storeSessionWasEvicted === true;
 }
 
 /**

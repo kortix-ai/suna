@@ -59,6 +59,9 @@ Browse the project's git repo — the same read-only view the dashboard shows
 (Files tab + version history). Operates on the default branch unless --ref
 selects another branch, tag, or commit sha.
 
+For LIVE files inside a session's sandbox (uncommitted work, build outputs),
+use \`kortix sessions cp <session-id>:<path> <dst>\` instead.
+
 Subcommands:
   ls [<path>]                       List files (recursive) under a path.
   cat <path>                        Print a file's contents.

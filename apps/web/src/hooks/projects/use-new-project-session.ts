@@ -31,8 +31,8 @@ import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
- * The ONE "new empty session" path, shared by every entry point (project shell
- * button, ⌘T/⌘J shortcuts, project sidebar, command palette, home composer).
+ * The shared project-session entry path. Calls without options only open the
+ * composer. Calls with options create a session for an explicit task.
  *
  * Every entry point mints the session id client-side and persists it only after
  * an explicit user action. The route bundle and `/start` are prefetched before
@@ -115,6 +115,11 @@ export function useNewProjectSession(projectId: string | undefined) {
     (opts?: NewProjectSessionOpts) => {
       if (!projectId) {
         opts?.onError?.();
+        return;
+      }
+
+      if (!opts) {
+        router.push(`/projects/${projectId}`);
         return;
       }
 

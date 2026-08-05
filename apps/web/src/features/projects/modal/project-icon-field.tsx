@@ -1,7 +1,7 @@
 'use client';
 
 import { SmileyIcon, XIcon } from '@phosphor-icons/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -233,7 +233,7 @@ export function ProjectIconField({
               so a size-5 box left it hanging 2.61px out of the shared box. */}
           <span className="relative inline-flex size-6 items-center justify-center">
             <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
+              <m.span
                 key={identity}
                 {...(reduceMotion ? SWAP_REDUCED : SWAP)}
                 transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
@@ -256,7 +256,7 @@ export function ProjectIconField({
                 ) : (
                   <SmileyIcon className="text-muted-foreground size-4" />
                 )}
-              </motion.span>
+              </m.span>
             </AnimatePresence>
           </span>
         </Button>

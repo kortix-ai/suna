@@ -62,6 +62,57 @@ persisted across a reload, reordered, or edited by a user.
 
 ---
 
+### 2026-08-05 — session `secret-delivery-complete` claim
+
+No **Now** task claimed. This work continues the completed
+`secret-delivery-control-plane` slice.
+
+Scope:
+
+- Add an additive SDK contract for complete secret delivery configuration.
+- Preserve `setProjectSecretStrategy()` and every published name.
+- Expose consumer, broker, egress, rotation, and credential-profile metadata.
+- Keep web and CLI clients on the SDK contract.
+
+The listed `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-05 — session `secret-delivery-complete` completion
+
+Added an additive project-secret contract for delivery strategy, managed
+consumer, HTTP broker policy, rotation state, and session broker calls. Kept all
+published names and the existing `setProjectSecretStrategy()` signature. The
+web and CLI use the SDK contract instead of defining a second transport.
+
+RED:
+
+- The secret-client contract tests failed before the request and response types
+  included managed consumers and HTTP broker policy.
+- The root client test failed before a session exposed the secret broker.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk test`: `1538 pass`, `0 fail`, and `6298 expect()`
+  calls across `121` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+The public surface changed additively. No export was removed or renamed. The
+package version was not edited.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-04 — session `auth-cache-link-prefetch` claim
 
 No **Now** task claimed. This is a narrow browser cache identity fix.
@@ -5721,6 +5772,37 @@ that UI wiring belongs to the web task consuming this client.
 
 ---
 
+### 2026-08-02 — session `capabilities-task-5` (small fix, bundled with an `apps/web` task)
+
+Not a Now-chain task — a single self-contained bug fix carried in while building the
+skill/command detail modal for the capabilities-pages plan (`suna-capabilities`
+worktree, `apps/web/src/features/workspace/capabilities/skills/entity-modal.tsx`).
+
+`readProjectFile` (`core/rest/projects-client/files.ts`) called `backendApi.get`
+with no options, so `showErrors` defaulted to `true` and a `project.file.read`
+403 fired the global toast — even though every existing caller
+(`config-entity-view.tsx`, the git-ref file explorer, and now the new entity
+modal) already renders its own inline error state. `listProjectFiles` in the
+same file already carried the fix for the identical gate
+(`{ showErrors: false }`, "a member deep-linking to the files page legitimately
+403s"); `readProjectFile` just didn't have it yet. Same one-line fix, same
+justification, applied to the sibling function.
+
+Test-first: added a 403-never-hits-`onError` test to `files.test.ts` mirroring
+`listProjectFiles`'s existing one. RED (received 1 call, expected 0) before the
+fix, GREEN after. No signature change, no new export — behavior-only.
+
+Gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1389 pass`, `2 skip`, `0 fail`, `5968
+  expect() calls` across `117` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-03 — session `session-title-source-of-truth` claim
 
 No **Now** task claimed. This is a narrow cross-host session-title bug fix.
@@ -6147,6 +6229,61 @@ GREEN:
   and `createKortix` constructed successfully.
 
 No public export name changed. The public-surface snapshots stayed unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-06 — session `perf-memory` review fix wave
+
+Three fixes to the session-retention work already on the `perf-memory` branch,
+after a whole-branch review. All three are eviction correctness, not new
+capability. No public export name changed; `SyncState` gains one method,
+`shouldHydrateFromCache` gains one optional input field — both additive.
+
+**1. Orphan part buckets survived every drop.** `parts` is keyed by messageID,
+and both sweeps (`dropSessionData`, `clearSession`) walked `messages[sessionID]`
+to find buckets. The `message.part.delta` handler deliberately stores a part
+WITHOUT creating its assistant message when the session holds no user message
+yet, so those buckets are unreachable from that walk and outlived the drop — the
+leak class this work exists to close, still open on the page-refresh path that
+creates it. `deleteOrphanPartBuckets` sweeps them by `Part.sessionID`.
+
+**2. `sessionStatus` no longer dropped on eviction.** It is the only slice read
+for sessions that are on purpose not resident (a spawn-tool banner reads
+`sessionStatus[child]`), and dropping it reclaimed nothing — the `session.status`
+frames and the connect-time status poll re-add an entry for every session on the
+runtime regardless. This changed an expectation an existing test encoded
+deliberately, so that test changed with it, in its own commit, with the reasoning
+in the message.
+
+**3. An evicted session that is still streaming now repaints from disk.** Its
+SSE frames put `messages[id]` back within seconds, holding only the post-eviction
+tail, and `shouldHydrateFromCache` read the key's presence as "the store is the
+authority" — so returning to it showed the fragment, not the transcript. Before
+this branch that transcript was simply resident, so it was a regression in what
+the user sees. Fixed by marking evicted sessions (`wasTranscriptEvicted`) rather
+than by dropping events for unmounted sessions: `useOpenCodeMessages` (the
+spawn-tool preview of a child) has no reconcile and is fed by SSE alone, so
+dropping frames would trade recoverable staleness for an unrecoverable gap.
+`pruneDetachedSessions` re-checks the marked ids so refilled data is swept again
+on the next mount instead of living forever outside the detach window.
+
+RED, then GREEN, for each — every new assertion was watched failing against the
+unfixed code first, and each fix was then mutation-checked (11 mutations, each
+killing a specific test; see the commit messages).
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1533 pass`, `0 fail`, `6287 expect()` calls
+  across `121` files (baseline for this branch was `1520` / `121`).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+
+**Not covered by a test:** the two-line wiring in `use-session-sync.ts` that
+passes `wasTranscriptEvicted` into `shouldHydrateFromCache`. The SDK test runner
+has no DOM, so that effect cannot be driven; both halves of the decision it
+composes are tested directly.
 
 **Status:** COMPLETE.
 

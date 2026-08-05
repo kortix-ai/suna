@@ -132,7 +132,19 @@ export function toTransportError(err: unknown, provider: string): Error {
         ? e.cause.statusCode
         : undefined;
   if (typeof statusCode === 'number') {
-    return new UpstreamHttpError(statusCode, e.responseBody ?? e.message ?? '', provider);
+    // `responseBody` is the RAW upstream body — the actionable text lives there
+    // when the AI SDK's own `.message` fell back to `response.statusText`
+    // (generic "Bad Request"/"Internal Server Error") because the body failed
+    // the provider's error-schema parse. Prefer it whenever it is non-empty;
+    // only fall back to the AI SDK's `.message` (which may itself be the real
+    // `error.message` when the schema DID match) when no body was captured.
+    // The downstream `parseUpstreamBody` (failover.ts → parseUpstreamErrorBody)
+    // mines the real `error.message`/`error.code` out of this raw body.
+    const body =
+      typeof e.responseBody === 'string' && e.responseBody.trim().length > 0
+        ? e.responseBody
+        : (e.message ?? '');
+    return new UpstreamHttpError(statusCode, body, provider);
   }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {

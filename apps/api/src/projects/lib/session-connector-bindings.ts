@@ -30,6 +30,7 @@ import {
   isTrustedManagedChannelAuthorization,
   type ConnectorAuthorizationStrategy,
 } from './connector-authorization-strategy';
+import { projectSecretIsConfiguredForConsumer } from '../secrets';
 
 export interface ValidatedSessionConnectorBinding {
   alias: string;
@@ -120,11 +121,20 @@ export async function connectorAuthorizationIsConnected(input: {
   ) {
     return true;
   }
-  return (
-    profile.ownerType === 'project' &&
-    profile.isDefault &&
-    (await credentialExists(connector.connectorId, null))
-  );
+  if (profile.ownerType !== 'project' || !profile.isDefault) return false;
+  if (await credentialExists(connector.connectorId, null)) return true;
+  const [stored] = await db
+    .select({ authSecret: executorConnectors.authSecret })
+    .from(executorConnectors)
+    .where(eq(executorConnectors.connectorId, connector.connectorId))
+    .limit(1);
+  return stored?.authSecret
+    ? projectSecretIsConfiguredForConsumer({
+        projectId: connector.projectId,
+        name: stored.authSecret,
+        consumer: 'connector',
+      })
+    : false;
 }
 
 function trustedManagedAuthorization(

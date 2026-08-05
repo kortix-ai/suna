@@ -71,6 +71,17 @@ export const projectSecretStrategyEnum = kortixSchema.enum('project_secret_strat
   'denied',
 ]);
 
+/** The only service allowed to receive a decrypted project secret value. */
+export const projectSecretConsumerEnum = kortixSchema.enum('project_secret_consumer', [
+  'sandbox',
+  'llm_gateway',
+  'connector',
+  'executor',
+  'git_proxy',
+  'http_broker',
+  'network',
+]);
+
 export const projectSessionStatusEnum = kortixSchema.enum('project_session_status', [
   'queued',
   'branching',
@@ -232,17 +243,16 @@ export const accountInvitations = kortixSchema.table(
      *  user who hasn't logged in yet (a pending invite, no user row) is parked
      *  here and materialized into account_group_members on acceptance — same
      *  ride-along pattern as project grants. */
-    bootstrapGrants:
-      jsonb('bootstrap_grants').$type<
-        Array<
-          | {
-              project_id: string;
-              role: 'manager' | 'editor' | 'member';
-              expires_at?: string | null;
-            }
-          | { group_id: string }
-        >
-      >(),
+    bootstrapGrants: jsonb('bootstrap_grants').$type<
+      Array<
+        | {
+            project_id: string;
+            role: 'manager' | 'editor' | 'member';
+            expires_at?: string | null;
+          }
+        | { group_id: string }
+      >
+    >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     acceptedByUserId: uuid('accepted_by_user_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -588,6 +598,8 @@ export const projectSecrets = kortixSchema.table(
      *  re-entered through a setup link or `kortix env push` can never silently
      *  downgrade a brokered secret back to plaintext. */
     strategy: projectSecretStrategyEnum('strategy').default('runtime').notNull(),
+    /** The only boundary allowed to consume plaintext. NULL means no consumer. */
+    consumer: projectSecretConsumerEnum('consumer').default('sandbox'),
     /** NULL while strategy = 'runtime'; there is no wire for a plaintext row. */
     egressPolicy: jsonb('egress_policy').$type<SecretEgressPolicy>(),
     /** Format-shaping prefix for the minted handle (e.g. 'sk-ant-api03-') so a
@@ -716,9 +728,7 @@ export const projectSessions = kortixSchema.table(
     // null/absent = the caller declared none.
     requiredConnectors: jsonb('required_connectors').$type<string[]>(),
     // Distinguishes omitted connector_bindings from an explicit replacement.
-    connectorBindingsConfigured: boolean('connector_bindings_configured')
-      .default(false)
-      .notNull(),
+    connectorBindingsConfigured: boolean('connector_bindings_configured').default(false).notNull(),
     // When a session sets `connector_bindings`, binding ANY alias normally
     // suppresses the project-default fallback for every OTHER (unbound) alias —
     // "all-or-nothing" (see resolveSessionConnectorProfile). This opts the session
@@ -2762,6 +2772,61 @@ export const creditAccounts = kortixSchema.table(
 // Billing v2 — per-second sandbox compute metering.
 // One row per active window. Hibernate closes the row; resume opens a new one.
 // Cost flows into credit_ledger as 'compute_debit'; this table is the audit trail.
+/**
+ * A question the agent asked that nobody has answered yet.
+ *
+ * Persisted OUTSIDE the sandbox on purpose. A blocked turn makes no gateway LLM
+ * calls, so it earns no deadline extension and its box is parked on schedule —
+ * correct, and the invariant that only a control-plane observation may extend a
+ * box depends on it. What was wrong is that parking DESTROYED the question:
+ * opencode restarts cold, so the user came back to a session that had silently
+ * forgotten what it asked.
+ *
+ * Keeping the question here lets the box die on time and the conversation
+ * survive it. The row is the durable half of park-and-restore.
+ */
+export const sessionPendingQuestions = kortixSchema.table(
+  'session_pending_questions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    /** `project_sessions.session_id`. Text, matching that table's PK. */
+    sessionId: text('session_id').notNull(),
+    /** opencode's `question.asked` request id — the dedupe key with sessionId. */
+    requestId: text('request_id').notNull(),
+    /** The opencode session that asked; survives an opencode restart changing it. */
+    opencodeSessionId: text('opencode_session_id'),
+    /** The raw QuestionInfo[] as opencode reported it. */
+    questions: jsonb().notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    /** Null while the question is still open — the index keys on this. */
+    answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
+    answers: jsonb(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    // The relay is best-effort and retries, so the same question can arrive
+    // twice. Upsert on this instead of inserting duplicates the UI would render
+    // as two identical prompts.
+    uniqueIndex('session_pending_questions_session_request_uniq').on(
+      table.sessionId,
+      table.requestId,
+    ),
+    // The only hot read: "does this session have an open question?"
+    index('session_pending_questions_open_idx')
+      .on(table.sessionId)
+      .where(sql`answered_at IS NULL`),
+  ],
+);
+
 export const sandboxComputeSessions = kortixSchema.table(
   'sandbox_compute_sessions',
   {
@@ -2982,10 +3047,7 @@ export interface TunnelNetworkScope {
 
 /** Union of all capability scopes. */
 export type TunnelPermissionScope =
-  | TunnelFilesystemScope
-  | TunnelShellScope
-  | TunnelNetworkScope
-  | Record<string, unknown>;
+  TunnelFilesystemScope | TunnelShellScope | TunnelNetworkScope | Record<string, unknown>;
 
 export const tunnelConnections = kortixSchema.table(
   'tunnel_connections',
@@ -4053,9 +4115,7 @@ export const executorConnectors = kortixSchema.table(
      *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Exclusive authorization owner model for this connector profile. */
-    authorizationStrategy: executorConnectorAuthorizationStrategyEnum(
-      'authorization_strategy',
-    )
+    authorizationStrategy: executorConnectorAuthorizationStrategyEnum('authorization_strategy')
       .default('project')
       .notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */

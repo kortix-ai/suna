@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -73,4 +73,93 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
     // backlog rather than whatever the planner happened to scan.
     .orderBy(asc(sandboxComputeSessions.lastBilledAt))
     .limit(limit);
+}
+
+/**
+ * Atomically CLAIM a billable window, or lose the race.
+ *
+ * Settling used to be a read-modify-write: read `last_billed_at` into memory,
+ * debit the wallet, then `UPDATE ... WHERE id = $id`. Nothing tied the write to
+ * the value that was read, so two settlers that loaded the same row both billed
+ * the same seconds and both wrote the same cursor. The customer paid twice for
+ * one hour, and the duplicate ledger rows were byte-identical and landed in the
+ * same second — indistinguishable from two legitimate sandboxes.
+ *
+ * That race is not hypothetical. `projects/maintenance.ts` launches four
+ * settlers inside one `Promise.all` — the reaper, the orphan sweep, the
+ * stuck-session sweep, and the metering tick — and an orphaned sandbox is
+ * eligible for several of them at once. Serializing the maintenance pass would
+ * not fix it either: `pauseComputeSession` is also reachable from request-path
+ * hooks on other replicas.
+ *
+ * So the cursor move IS the lock. `last_billed_at` must still equal the value
+ * the caller read, and the row must still be open. `cost_usd` accumulates in
+ * SQL rather than from an in-memory `Number(row.costUsd) + windowCost`, which
+ * had the same lost-update flaw one column over.
+ *
+ * Returns true when this caller owns the window and may bill it. False means
+ * somebody else already did — bill nothing.
+ */
+export async function claimComputeWindow(input: {
+  id: string;
+  /** The `last_billed_at` the caller based its window on. */
+  expectedLastBilledAt: string;
+  /** Where the cursor moves to when the claim succeeds. */
+  nextLastBilledAt: string;
+  /** Added to `cost_usd` in SQL. May be 0 for a zero-cost window. */
+  addCostUsd: number;
+}): Promise<boolean> {
+  const rows = await db
+    .update(sandboxComputeSessions)
+    .set({
+      lastBilledAt: input.nextLastBilledAt,
+      costUsd: sql`${sandboxComputeSessions.costUsd} + ${String(input.addCostUsd)}::numeric`,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      and(
+        eq(sandboxComputeSessions.id, input.id),
+        isNull(sandboxComputeSessions.endedAt),
+        eq(sandboxComputeSessions.lastBilledAt, input.expectedLastBilledAt),
+      ),
+    )
+    .returning({ id: sandboxComputeSessions.id });
+  return rows.length > 0;
+}
+
+/**
+ * Give a claimed window back after the debit failed.
+ *
+ * Preserves the deliberate "do not advance past a window we could not collect"
+ * behaviour: an out-of-credits account must be able to retry the same seconds
+ * once its wallet can pay, rather than silently forfeiting them.
+ *
+ * Also CAS'd. If another settler has since moved the cursor past our value we
+ * do NOT force it back — that would re-open the window for double billing,
+ * trading a revenue loss for a customer overcharge. Losing this race forfeits
+ * the seconds, which is the safe direction.
+ */
+export async function releaseComputeWindow(input: {
+  id: string;
+  /** The cursor value this caller wrote when it claimed. */
+  claimedLastBilledAt: string;
+  /** Where to put the cursor back. */
+  revertToLastBilledAt: string;
+  subCostUsd: number;
+}): Promise<boolean> {
+  const rows = await db
+    .update(sandboxComputeSessions)
+    .set({
+      lastBilledAt: input.revertToLastBilledAt,
+      costUsd: sql`${sandboxComputeSessions.costUsd} - ${String(input.subCostUsd)}::numeric`,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      and(
+        eq(sandboxComputeSessions.id, input.id),
+        eq(sandboxComputeSessions.lastBilledAt, input.claimedLastBilledAt),
+      ),
+    )
+    .returning({ id: sandboxComputeSessions.id });
+  return rows.length > 0;
 }

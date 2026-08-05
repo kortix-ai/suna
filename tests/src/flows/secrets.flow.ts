@@ -123,6 +123,8 @@ flow(
       "POST /v1/projects/:projectId/secrets",
       "GET /v1/projects/:projectId/secrets",
       "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
+      "POST /v1/projects/:projectId/secrets/:identifier/broker",
+      "POST /v1/projects/:projectId/secrets/sync",
       "GET /v1/accounts/:accountId/audit",
     ],
   },
@@ -162,6 +164,17 @@ flow(
         .has("$.requires_rotation", true);
     });
 
+    await ctx.step("manager synchronizes the current policy to active sessions", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/sync",
+          {},
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.ok", true).has("$.synced", true);
+    });
+
     await ctx.step("runtime delivery stays disabled until rotation", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -173,18 +186,70 @@ flow(
       r.status(409).body().has("$.code", "secret_rotation_required");
     });
 
-    for (const strategy of ["broker", "egress"]) {
-      await ctx.step(`${strategy} fails closed until its adapter is available`, async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .put(
-            "/v1/projects/:projectId/secrets/:identifier/strategy",
-            { strategy },
-            { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
-          );
-        r.status(409).body().has("$.code", "secret_delivery_unavailable");
-      });
-    }
+    await ctx.step("broker delivery requires an outbound policy", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "broker" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(400).body().has("$.code", "secret_delivery_policy_required");
+    });
+
+    await ctx.step("generic HTTPS broker accepts a validated policy", async () => {
+      const policy = {
+        backend: "kortix_fetch",
+        rules: [{ host: "api.example.com", methods: ["POST"], path: "/v1/*" }],
+        inject: { kind: "header", name: "authorization", template: "Bearer {{secret}}" },
+      };
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "broker", egress_policy: policy, handle_prefix: "svc_" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "broker")
+        .has("$.consumer", "http_broker")
+        .has("$.delivery_status", "available")
+        .has("$.egress_policy", policy);
+    });
+
+    await ctx.step("transparent egress fails closed until its adapter is available", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: {
+              backend: "llm_gateway",
+              rules: [{ host: "api.example.com" }],
+              inject: { kind: "header", name: "authorization" },
+            },
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(409).body().has("$.code", "secret_delivery_unavailable");
+    });
+
+    await ctx.step("broker execution requires a session-scoped agent token", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/broker",
+          {
+            url: "https://api.example.com/v1/messages",
+            method: "POST",
+            body_base64: "e30=",
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(403).body().has("$.code", "session_agent_token_required");
+    });
 
     await ctx.step("rotation permits runtime delivery", async () => {
       const rotate = await ctx.client
@@ -219,7 +284,7 @@ flow(
       const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
       const matchingEvents = events.filter((item) => item.action === "secret.strategy.changed");
       const event = matchingEvents[0];
-      if (!event || matchingEvents.length < 2) throw new Error("strategy audit events missing");
+      if (!event || matchingEvents.length < 3) throw new Error("strategy audit events missing");
       if (
         event.project_id !== p.id ||
         event.resource_type !== "project_secret" ||

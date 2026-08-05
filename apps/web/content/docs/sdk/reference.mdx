@@ -195,10 +195,16 @@ project access.
 
 | method | what |
 | --- | --- |
-| `list()` · `upsert({ name, value })` | all project secrets · create or update one |
-| `remove(name)` | delete a secret |
+| `list()` · `upsert(input)` | list metadata · create or update a write-only value and delivery policy |
+| `setStrategy(identifier, strategy, options?)` | change the consumer and delivery policy |
+| `broker(identifier, request)` | execute a session-authorized, policy-bound HTTPS request |
+| `remove(identifier)` | delete a secret |
 | `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
 | `setGitCredential(input)` | set a git auth credential |
+
+`runtime` with consumer `sandbox` is the only policy that exposes plaintext to
+the session. Managed consumers use `broker`. The HTTPS broker method requires a
+session-scoped token and an active session handle.
 
 #### `p.access` — members, invites, requests
 

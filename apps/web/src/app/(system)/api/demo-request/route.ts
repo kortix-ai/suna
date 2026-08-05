@@ -14,7 +14,7 @@ export const revalidate = 0;
 //      migration needed when a form's fields change.
 //   2. Fire an internal notification email by calling the API's public
 //      POST /v1/system/demo-request. The email is sent API-side so it uses the
-//      API's Mailtrap credentials (from AWS Secrets Manager) — the Vercel
+//      API's email-provider credentials (from AWS Secrets Manager) — the Vercel
 //      frontend never needs the secret.
 // ---------------------------------------------------------------------------
 
@@ -52,7 +52,7 @@ function backendUrl() {
   ).replace(/\/$/, '');
 }
 
-// Notify us of every submission via the API (which holds the Mailtrap creds).
+// Notify us of every submission via the API (which holds the email-provider creds).
 // Best-effort: never throws, never blocks the user's flow on a failed email.
 async function notify(body: Record<string, unknown>): Promise<void> {
   try {

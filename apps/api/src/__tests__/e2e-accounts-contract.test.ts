@@ -291,7 +291,7 @@ mock.module('../accounts/email', () => ({
   buildInviteUrl: (inviteId: string) => `http://localhost:3000/invites/${inviteId}`,
   sendAccountInviteEmail: async (opts: Record<string, unknown>) => {
     sentInvites.push(opts);
-    return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
+    return { ok: false, skipped: true, reason: 'email_not_configured' };
   },
 }));
 

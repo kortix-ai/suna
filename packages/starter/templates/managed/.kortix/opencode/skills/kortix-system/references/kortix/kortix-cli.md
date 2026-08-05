@@ -184,10 +184,20 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
 | `kortix sessions chat [<id>]` | Talk to a session's agent. `--prompt "<text>"` = one-shot (prints the reply and exits); add `--json` to get that reply as JSON (a synchronous subagent call); no flag = REPL. No id → picks/asks which running session. `--new` starts a fresh one. |
-| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. |
+| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
+| `kortix sessions wait-for <id> [--timeout <s>]` | Block until the session's agent finishes its current work — never poll with sleeps. Exit `0` = done, `3` = blocked on a permission/question ask (answer via `sessions pending`), `124` = still working at the timeout (default 300s). Alias: `wait`. |
+| `kortix sessions cp <src> <dst> [-r]` | Copy files between your machine/sandbox and a session's sandbox, or directly between two sessions' sandboxes. Refs are scp-style: `<session-id>:<path>` is remote, plain is local; paths resolve under `/workspace` unless absolute. Overwrites the exact destination path; `-r` for directories. Wakes stopped sandboxes on demand. |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
+
+Session ids can be abbreviated: any unambiguous prefix works (the 8-char
+ids `sessions ls` prints are fine).
+
+**Stopped ≠ failed.** A spawned session's sandbox stops automatically a
+couple of minutes after its agent finishes, to save compute. Its files
+and conversation are intact — `sessions cp`, `sessions chat`, and
+`sessions wait-for` wake it on demand. Treat `stopped` as *parked*.
 
 **Inside a sandbox:** `KORTIX_SESSION_ID` tells you which session
 you're running in. `kortix sessions info $KORTIX_SESSION_ID` gives
@@ -213,20 +223,28 @@ exits), or drop into a REPL with `kortix sessions chat <id>`.
 spawn many sessions, watch the fleet, collect results, land work:
 
 ```sh
-# spawn a subagent and get a *ready* session id back in one call
-id=$(kortix sessions new --json --wait --prompt "do task X" | jq -r .session_id)
+# spawn a subagent (optionally shipping input files) and get a ready session id
+id=$(kortix sessions new --json --wait \
+       --with-file input.pdf \
+       --prompt "Process /workspace/incoming/input.pdf; write results to /workspace/out/" \
+     | jq -r .session_id)
 
-kortix sessions status --json                 # the fleet: who's working vs idle
-kortix sessions chat "$id" --prompt "result?" --json | jq -r .text   # synchronous call
+kortix sessions wait-for "$id" --timeout 300  # block until it finishes (exit 3 = it asked something)
+kortix sessions cp "$id":out/result.pdf .     # collect the deliverable
 kortix sessions log "$id" --json              # …or read progress without interrupting
+kortix sessions chat "$id" --prompt "status?" --json | jq -r .text   # synchronous call
 
 kortix cr ls --json                           # subagents land work as CRs → review/merge
-kortix sessions rm "$id"                       # tear the subagent down
+kortix sessions rm "$id"                       # tear the subagent down when fully done
 ```
 
 `--json --wait` is the spawn primitive (one call → a running session id you
-can immediately drive); `sessions status` is the at-a-glance fleet view;
-`chat … --prompt --json` is a synchronous call; `log` is async observation.
+can immediately drive); `wait-for` replaces sleep-polling; `sessions cp`
+moves files in/out (also session↔session); `sessions status` is the
+at-a-glance fleet view; `chat … --prompt --json` is a synchronous call;
+`log` is async observation. Session sandboxes have Python (via **uv** —
+`uv run` / `uvx` / `uv pip`, prefer it over bare `pip`), Node, browsers,
+and document tooling preinstalled.
 
 ### Triggers
 

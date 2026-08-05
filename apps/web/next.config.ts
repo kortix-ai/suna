@@ -115,6 +115,25 @@ function resolveKortixVersion(): string {
 }
 const KORTIX_VERSION = resolveKortixVersion();
 
+// --- Turbopack dev memory eviction ----------------------------------------
+// `experimental.turbopackMemoryEviction` takes exactly `false | 'auto' | 'full'`
+// (docs: /docs/app/api-reference/config/next-config-js/turbopackMemoryEviction).
+// Validate rather than cast: an unset var, an empty string (`FOO= pnpm dev`),
+// and a typo are three different mistakes, and only the first should silently
+// mean "use the default". Casting a raw env string would forward `''` or
+// `'ful'` straight into the config as a value Next never defined.
+function resolveTurbopackMemoryEviction(): false | 'auto' | 'full' {
+  const raw = process.env.KORTIX_TURBOPACK_EVICTION;
+  if (raw === undefined || raw === '') return 'auto';
+  if (raw === 'false') return false;
+  if (raw === 'auto' || raw === 'full') return raw;
+  console.warn(
+    `[next.config.ts] Ignoring KORTIX_TURBOPACK_EVICTION=${JSON.stringify(raw)} — ` +
+      `expected one of 'auto', 'full', 'false'. Falling back to 'auto'.`,
+  );
+  return 'auto';
+}
+
 // Local `pnpm preview` (scripts/dev-local.sh --build) sets KORTIX_PREVIEW_BUILD=1
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
 // (next start never reads .next/standalone) and skip ESLint. Prod/CI/Vercel builds
@@ -188,6 +207,71 @@ const nextConfig = (): NextConfig => ({
     ignoreBuildErrors: true,
   },
 
+  // --- Next.js 16.3 posture ------------------------------------------------
+  // Recording WHY each 16.3 knob is set or left alone, so nobody "adds the
+  // missing config" later or wonders whether we missed the release. The only
+  // knob we set is turbopackMemoryEviction (below) — and only as an escape
+  // hatch, keeping upstream's default.
+  //
+  // Already default-ON in 16.3 — restating them here would be dead config that
+  // silently diverges the day upstream changes a default:
+  //   · experimental.turbopackFileSystemCacheForDev    (default true since 16.1)
+  //   · experimental.turbopackFileSystemCacheForBuild  (default true as of 16.3)
+  //     Measured: warm `next build` compile 36.3s -> 1.9s. Only pays off where
+  //     .next/cache survives between builds — Vercel does this automatically;
+  //     GitHub Actions needs the actions/cache step added in ci.yml.
+  //   · experimental.prefetchInlining                  (default true as of 16.3)
+  //
+  // BEHAVIOUR CHANGE worth knowing even though this app dodges it:
+  //   · experimental.useTypeScriptCli (default true in 16.3) makes `next build`
+  //     shell out to the project's `tsc` instead of loading the TypeScript API.
+  //     Per its docs that checks "the complete project selected by the
+  //     configured tsconfig file ... INCLUDING TEST FILES". 16.2 only checked
+  //     the app's module graph. So on 16.3 a latent type error in a test can
+  //     fail a production build.
+  //     This app is immune ONLY because `typescript.ignoreBuildErrors: true`
+  //     above skips the type-check step entirely (including the CLI checker).
+  //     apps/whitelabel-demo does NOT set it, and 16.3 duly failed its build on
+  //     a pre-existing error in tests/e2e/session-scope.test.ts. Any new app in
+  //     this monorepo inherits that same trap.
+  //     Not adopted here: TypeScript 7 (`typescript@^7`, the 10x native port)
+  //     would speed up the real gate — the separate `tsc --noEmit` — but that
+  //     is a compiler swap with its own diagnostics surface, not part of a
+  //     framework bump. Deliberately left for its own change.
+  //
+  // Not applicable to this app:
+  //   · next/root-params — root params only exist for a dynamic segment ABOVE
+  //     the root layout. src/app's top level is (app)/(auth)/(public)/(system)/
+  //     (utility)/admin/docs/api — all static. Locale comes from next-intl's
+  //     request.ts, not a [lang] segment.
+  //
+  // Deliberately NOT enabled — each is a migration, not a flag flip:
+  //   · cacheComponents + partialPrefetching (Instant Navigations). Requires
+  //     every request-time access to sit under Suspense or `use cache`.
+  //     See https://nextjs.org/docs/app/guides/migrating-to-cache-components
+  //   · reactCompiler + experimental.turbopackRustReactCompiler. The Rust port
+  //     only pays off once Babel is out of the pipeline, and we do not run
+  //     React Compiler at all today — the outstanding react-hooks/* warnings
+  //     need an audit first.
+  //   · experimental.useOffline. Network-resilience retry semantics change how
+  //     failed Server Actions surface; needs its own testing pass.
+  //   · next/error `catchError` boundaries. The clearest win left on the table:
+  //     src/app/error.tsx currently hard-reloads via window.location.reload()
+  //     because React's reset() can only reset client state, and it polls
+  //     reset() on an interval for the transient runtime-not-ready throw. 16.3's
+  //     retry() re-fetches the boundary's children INCLUDING Server Components,
+  //     which is what that code actually wants. Deliberately not done here —
+  //     rewriting the global error boundary is not an upgrade-PR change.
+  //
+  // Automatic in 16.3, nothing to configure, listed so the audit is complete:
+  //   · App Router SSR now uses native Node streams instead of web streams
+  //     (~22% more requests under load upstream). Runtime-only, no API change.
+  //   · import.meta.glob is a Turbopack capability, available without a flag.
+  //   · Immutable static assets reusable across deploys is an ADAPTER feature
+  //     (/docs/app/api-reference/adapters/immutable-static-assets). This app
+  //     ships `output: 'standalone'` on Vercel + a runner-only Docker image and
+  //     wires no custom adapter, so there is nothing to opt into here.
+  //
   // Turbopack configuration
   turbopack: {
     // Handle Node.js modules that shouldn't be bundled for browser builds
@@ -207,6 +291,24 @@ const nextConfig = (): NextConfig => ({
     serverActions: {
       allowedOrigins: ALLOWED_PROXY_ORIGINS,
     },
+    // Escape hatch for memory-constrained machines. 16.3 advertises "up to 90%
+    // less dev RAM". That number is eviction-OFF vs eviction-ON within 16.3
+    // (see the chart in /blog/next-16-3-turbopack), not 16.2 vs 16.3. It did
+    // not reproduce here in EITHER framing. Dev-server tree RSS, 24GB Mac,
+    // same 46 routes, sampled 30s after the last compile:
+    //   16.2.0                       5085 MB   (swap 17.9G used at sample)
+    //   16.3.0 eviction false        5559 MB   (swap 15.0G)  <- upstream "Before"
+    //   16.3.0 eviction 'full'       5382 MB   (swap 14.6G)
+    //   16.3.0 eviction 'auto'       7842 MB   (swap 10.7G)  <- shipped default
+    // Turning eviction OFF was not 10x worse; it was the CHEAPEST 16.3 config.
+    // Note the swap column: the run with the MOST free RAM produced the HIGHEST
+    // RSS. On a machine this size the reading tracks OS memory pressure more
+    // than the flag, so treat the deltas as indicative, not exact. The safe
+    // claim: no 16.3 config measured below 16.2, and 90% never appeared.
+    // Default stays 'auto' (upstream's). Set KORTIX_TURBOPACK_EVICTION=full
+    // when the laptop is thrashing. Disk cost is real either way:
+    // .next/dev/cache grew 3.8GB -> 14-15GB.
+    turbopackMemoryEviction: resolveTurbopackMemoryEviction(),
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',

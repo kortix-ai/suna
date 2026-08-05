@@ -1,5 +1,9 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+import { ChatGPT } from '@/features/icon/icons/chat-gpt';
+import { Claude } from '@/features/icon/icons/claude';
+import { Github } from '@/features/icon/icons/github';
+import { OpenAI } from '@/features/icon/icons/open-ai';
+import { OpenClaw } from '@/features/icon/icons/open-claw';
 import { cn } from '@/lib/utils';
 import type { ComponentType, ReactNode } from 'react';
 
@@ -29,12 +33,12 @@ function GrokMark({ className }: { className?: string }) {
 }
 
 const BRAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
-  'claude cowork': Icon.Claude,
-  claude: Icon.Claude,
-  chatgpt: Icon.ChatGPT,
-  openai: Icon.OpenAI,
-  openclaw: Icon.OpenClaw,
-  github: Icon.Github,
+  'claude cowork': Claude,
+  claude: Claude,
+  chatgpt: ChatGPT,
+  openai: OpenAI,
+  openclaw: OpenClaw,
+  github: Github,
   grok: GrokMark,
 };
 

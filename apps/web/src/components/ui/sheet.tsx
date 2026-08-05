@@ -4,7 +4,7 @@ import * as SheetPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import { buttonVariants } from './button';
@@ -122,7 +122,7 @@ const SheetContent = React.forwardRef<
                 buttonVariants({ variant: 'ghost', size: 'icon' }),
               )}
             >
-              <Icon.Close className="size-[1.15rem] stroke-0" />
+              <Close className="size-[1.15rem] stroke-0" />
               <span className="sr-only">Close</span>
             </SheetPrimitive.Close>
           )}

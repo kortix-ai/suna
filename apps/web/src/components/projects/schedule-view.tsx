@@ -58,20 +58,17 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { type ModelKey, modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import { useRuntimeProviders, useVisibleAgents } from '@kortix/sdk/react';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
-import { triggerBadgeState } from './trigger-status';
 import {
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
@@ -83,6 +80,13 @@ import {
   updateProjectTrigger,
   upsertProjectSecret,
 } from '@kortix/sdk';
+import {
+  type ModelKey,
+  modelKeyToWire,
+  useRuntimeProviders,
+  useVisibleAgents,
+  wireToModelKey,
+} from '@kortix/sdk/react';
 import {
   AlarmIcon as AlarmClockSolid,
   WarningIcon as AlertTriangle,
@@ -105,6 +109,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { triggerBadgeState } from './trigger-status';
 
 const TRIGGER_BADGE_ICONS = {
   clock: AlarmClockSolid,
@@ -517,7 +522,7 @@ function FilterRowsEditor({
         disabled={disabled}
         onClick={() => onChange([...rows, { path: '', value: '' }])}
       >
-        <Icon.Plus className="size-3.5 shrink-0" />
+        <Plus className="size-3.5 shrink-0" />
         Add condition
       </Button>
       <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
@@ -605,7 +610,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
               className="gap-1.5"
               onClick={() => setCreateOpen(true)}
             >
-              <Icon.Plus className="size-4 shrink-0" />
+              <Plus className="size-4 shrink-0" />
               {meta.createButtonLabel}
             </Button>
           ) : null
@@ -676,7 +681,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                     onClick={() => setCreateOpen(true)}
                     className="gap-1.5"
                   >
-                    <Icon.Plus className="size-3.5 shrink-0" />
+                    <Plus className="size-3.5 shrink-0" />
                     {meta.createButtonLabel}
                   </Button>
                 ) : null
@@ -949,11 +954,7 @@ function TriggerDetailToolbar({
   return (
     <div className="flex items-center gap-1.5">
       <Button size="sm" className="gap-1.5" onClick={onFire} disabled={firePending}>
-        {firePending ? (
-          <Loading className="shrink-0" />
-        ) : (
-          <Play className="shrink-0" />
-        )}
+        {firePending ? <Loading className="shrink-0" /> : <Play className="shrink-0" />}
         {fireLabel}
       </Button>
       <Button size="sm" variant="outline" onClick={onToggle} disabled={togglePending}>

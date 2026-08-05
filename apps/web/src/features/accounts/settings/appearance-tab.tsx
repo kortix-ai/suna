@@ -4,7 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { Icon } from '@/features/icon/icon';
+import { Monitor } from '@/features/icon/icons/monitor';
+import { Moon } from '@/features/icon/icons/moon';
+import { Sun } from '@/features/icon/icons/sun';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
@@ -126,7 +128,7 @@ export function AppearanceTab() {
             type="button"
             onClick={() => setTheme('light')}
           >
-            <Icon.Sun />
+            <Sun />
             <span className="text-sm font-medium">Light</span>
           </button>
           <button
@@ -138,7 +140,7 @@ export function AppearanceTab() {
             style={{ backgroundColor: theme === 'dark' ? 'var(--background)' : 'transparent' }}
             onClick={() => setTheme('dark')}
           >
-            <Icon.Moon />
+            <Moon />
             <span className="text-sm font-medium">Dark</span>
           </button>
           <button
@@ -150,7 +152,7 @@ export function AppearanceTab() {
             style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}
             onClick={() => setTheme('system')}
           >
-            <Icon.Monitor />
+            <Monitor />
             <span className="text-sm font-medium">System</span>
           </button>
         </div>

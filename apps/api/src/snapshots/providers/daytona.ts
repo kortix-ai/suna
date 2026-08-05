@@ -20,6 +20,7 @@ import {
   KORTIX_ENTRYPOINT,
   type StagedContext,
   stageBuildContext,
+  stageMetaBuildContext,
   stageWarmFromBaseContext,
 } from '../build-context';
 import { type InvalidatableObservation, shortLivedObservation } from '../observation-cache';
@@ -136,12 +137,14 @@ class DaytonaAdapter implements SandboxProviderAdapter {
           input.warmRepo,
         );
       } else {
-        ctx = await stageBuildContext(
-          input.snapshotName,
-          userDockerfile,
-          input.warmRepo,
-          input.isShared,
-        );
+        ctx = input.runtimeProfile === 'meta'
+          ? await stageMetaBuildContext()
+          : await stageBuildContext(
+              input.snapshotName,
+              userDockerfile,
+              input.warmRepo,
+              input.isShared,
+            );
       }
       const buildLogs: string[] = [];
       try {

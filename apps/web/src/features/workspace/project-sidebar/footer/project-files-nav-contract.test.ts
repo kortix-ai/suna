@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SOURCE = readFileSync(resolve(import.meta.dir, 'project-customize-nav.tsx'), 'utf8');
+const SOURCE = readFileSync(resolve(import.meta.dir, 'project-files-nav.tsx'), 'utf8');
 
 /** The ProjectFilesNavItem function body, isolated from its neighbours. */
 function filesNavItemSource(): string {

@@ -2,7 +2,7 @@
 
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -76,7 +76,7 @@ function Hero(): ReactNode {
             </Button>
             <Button size="sm" variant="outline" asChild>
               <a href={hero.ctaSecondaryHref} target="_blank" rel="noreferrer">
-                <Icon.Github className="size-4" />
+                <Github className="size-4" />
                 {hero.ctaSecondary}
               </a>
             </Button>
@@ -191,7 +191,7 @@ function Closing(): ReactNode {
               className="border border-white/20 bg-transparent text-white hover:bg-white/10"
             >
               <a href={closing.ctaSecondaryHref} target="_blank" rel="noreferrer">
-                <Icon.Github className="size-4" />
+                <Github className="size-4" />
                 {closing.ctaSecondary}
               </a>
             </Button>

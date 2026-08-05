@@ -8,7 +8,7 @@ import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
@@ -1197,7 +1197,7 @@ export default function DevelopersPage() {
                       {tI18nHardcoded.raw(
                         'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',
                       )}
-                      <Icon.Github />
+                      <Github />
                     </Link>
                   </Button>
                 </div>

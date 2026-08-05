@@ -15,7 +15,7 @@ import {
   InfoIcon as Info,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -165,7 +165,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   return (
     <AnimatePresence>
       {shouldRender && lc && (
-        <motion.div
+        <m.div
           key="maintenance-banner"
           initial={{ opacity: 0, y: 24, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -227,7 +227,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
               </button>
             )}
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

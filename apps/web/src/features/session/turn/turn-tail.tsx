@@ -14,8 +14,8 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { ConnectProviderDialog } from '@/features/session/model-selector';
 import type { ToolPart } from '@/ui';
 import { CheckIcon, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Icon } from '../../icon/icon';
+import { AnimatePresence, m } from 'motion/react';
+import { Copy } from '@/features/icon/icons/copy';
 import { SandboxUrlDetector } from '../sandbox-url-detector';
 import { SessionBusyIndicator } from '../session-busy-indicator';
 import type { SessionTurnProps } from '../session-chat';
@@ -185,7 +185,7 @@ export function TurnTail({ model, props }: { model: TurnModel; props: SessionTur
           >
             <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'copy'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -196,9 +196,9 @@ export function TurnTail({ model, props }: { model: TurnModel; props: SessionTur
                   {copied ? (
                     <CheckIcon className="text-foreground size-4" />
                   ) : (
-                    <Icon.Copy className="size-4" />
+                    <Copy className="size-4" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </Button>

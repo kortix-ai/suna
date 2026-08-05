@@ -140,7 +140,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free tier sees no managed Kortix models', () => {
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'deepseek-v4-flash']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'kimi-k3', 'deepseek-v4-flash']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });

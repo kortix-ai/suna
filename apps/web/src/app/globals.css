@@ -703,7 +703,7 @@
 }
 
 .dark {
-  --background: oklch(0.1398 0 0); /* canvas #090909 */
+  --background: oklch(0.17 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
@@ -968,6 +968,42 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Catalogue card reveal — the cards a "View all" uncovers in a category grid.
+
+   Deliberately NOT `.kx-fade-up`. That is page-enter motion for a handful of
+   large blocks, where 300ms and 8px read as considered. This fires on 20+
+   dense cards at once, and at that count the same values read as a wave
+   crawling down the grid: half the travel and two thirds the duration land the
+   whole reveal inside the 300ms UI budget (200ms + a 90ms delay ceiling).
+
+   The delay arrives as a custom property rather than an inline
+   `animation-delay`, so the reduced-motion rule below can actually win. An
+   inline style beats a stylesheet declaration, which meant the stagger
+   survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
+   but the staged reveal did not. */
+@keyframes kx-card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kx-card-reveal {
+  animation: kx-card-reveal 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation-delay: var(--kx-card-reveal-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-card-reveal {
+    animation-name: kx-fade;
+    animation-delay: 0ms;
   }
 }
 

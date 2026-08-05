@@ -96,4 +96,56 @@ describe('createScopedSession', () => {
 
     expect(calls).toEqual(['replace']);
   });
+
+  test('a new-session draft with null secrets PUTs null, not an explicit zero', async () => {
+    // Regression: a browser-created session starts with no user override, which
+    // is `secrets: null` — "inherit everything the agent's grant allows". The
+    // scope replacement MUST carry `null`, because `[]` is the opposite ("inject
+    // zero project secrets") and silently denied every browser session its grant.
+    let replacement: SessionScopeInput | undefined;
+
+    await createScopedSession({
+      create: async () => 'session-4',
+      draft: { secrets: null, connector_bindings: {}, require_connectors: [] },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async () => scope,
+      replaceScope: async (_id, input) => {
+        replacement = input;
+      },
+      onReady: () => {},
+    });
+
+    expect(replacement).toEqual({
+      secrets: null,
+      connector_bindings: {},
+      require_connectors: [],
+    });
+    expect(replacement?.secrets).toBeNull();
+  });
+
+  test('an explicit zero-secrets draft still PUTs [] (deliberate deselect is preserved)', async () => {
+    // The flip side of the regression: a user who deliberately deselected every
+    // secret MUST still get `[]` — that is a real, explicit "inject zero project
+    // secrets", not a no-op. Conflating it with null would silently re-grant a
+    // secret the user meant to withhold.
+    let replacement: SessionScopeInput | undefined;
+
+    await createScopedSession({
+      create: async () => 'session-5',
+      draft: { secrets: [], connector_bindings: {}, require_connectors: [] },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async () => scope,
+      replaceScope: async (_id, input) => {
+        replacement = input;
+      },
+      onReady: () => {},
+    });
+
+    expect(replacement).toEqual({
+      secrets: [],
+      connector_bindings: {},
+      require_connectors: [],
+    });
+    expect(replacement?.secrets).toEqual([]);
+  });
 });

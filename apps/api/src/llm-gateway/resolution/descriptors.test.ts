@@ -6,7 +6,11 @@ const config: Record<string, unknown> = {
   ASTER_API_URL: 'https://api.asterlab.ai/v1',
 };
 mock.module('../../config', () => ({ config }));
-mock.module('../../billing/services/tiers', () => ({ llmPriceMarkup: () => 2 }));
+mock.module('../../billing/services/tiers', () => ({
+  getTierEntitlements: () => ({}),
+  llmPriceMarkup: () => 2,
+  tierHasEntitlement: () => false,
+}));
 
 // Stand in for the live models.dev pricing cache (router/config/model-pricing)
 // with a tiny fixed catalog keyed by BASE (unprefixed) Bedrock model ids —

@@ -11,6 +11,7 @@ import {
   StackIcon as Layers,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
+import { AnimatePresence } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -108,6 +109,7 @@ import {
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
+import { Copy } from '@/features/icon/icons/copy';
 import {
   type Command,
   type Part,

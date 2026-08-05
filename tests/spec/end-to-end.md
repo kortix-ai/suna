@@ -46,7 +46,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
-`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via Mailtrap; `emailed:false` when Mailtrap unconfigured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
+`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
@@ -264,7 +264,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-3` `GET /projects/:id/files/search?q=&content=1&ref=&limit=` → filename + grep.
 `FILE-4` `GET /projects/:id/files/history?path=` → commit history for path.
 `FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream.
-`FILE-6` `GET /projects/:id/branches` → branches.
+`FILE-6` `GET /projects/:id/branches` → authoritative remote branch refs without cloning repository history. A warm server mirror can add commit metadata and ahead/behind counts. Cold responses keep those optional display fields empty or `null`.
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to OpenCode file API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
@@ -422,21 +422,22 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 
 `CLI-PROJ` `kortix projects ls|info|link|unlink|open|rm` → `GET /projects`, `GET /projects/:id`, `DELETE /projects/:id[?purge=true]` (`--purge` deletes the managed repo; BYO untouched).
 `CLI-SESS` `kortix sessions ls|new|info|restart|rm|open` → maps to §7.
-`CLI-SEC` `kortix secrets ls|set|unset` + `kortix env pull|push` → maps to §6 (values write-only).
+`CLI-SEC` `kortix secrets ls|set|unset|delivery|call` + `kortix env pull|push` → maps to §15 (values write-only; delivery configures managed use; call executes the session-bound HTTPS broker).
 `CLI-TRG` `kortix triggers ls|fire|enable|disable|info` → maps to §12.
 
 ---
 
 ## 15. Secrets / env
 
-DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id,name)`). **Write-only API — values never returned.**
+DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id,identifier)`). Several identifiers can use one `name`. **Write-only API — values never returned.**
 
-`SEC-1` `GET /projects/:id/secrets` → `manage` → names only + manifest required/optional keys + virtual git-auth row.
-`SEC-2` `POST /projects/:id/secrets {name,value}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. M_EDITOR/M_VIEWER → 403.
-`SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403.
-`SEC-4` injection — `buildSessionSandboxEnvVars` decrypts **all** project secrets into the session env (project-global, no per-member scoping) + minted `KORTIX_TOKEN`/`KORTIX_CLI_TOKEN`, `KORTIX_LLM_*`, `KORTIX_GIT_AUTH_TOKEN`, etc.
+`SEC-1` `GET /projects/:id/secrets` → `manage` → identifiers, keys, delivery metadata, manifest required/optional keys, and the virtual git-auth row; values never appear.
+`SEC-2` `POST /projects/:id/secrets {identifier?,name,value?,strategy?,consumer?,egress_policy?,handle_prefix?}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. Omitting `identifier` uses the normalized name. Omitting `value` updates only an existing identifier. A known LLM credential defaults to `broker` + `llm_gateway` when both policy fields are omitted. Explicit `runtime` and `denied` infer `sandbox` and `null` when consumer is omitted. Broker creation requires an explicit supported server consumer; conflicting policy fields → 400. `http_broker` requires a `kortix_fetch` policy. M_EDITOR/M_VIEWER → 403.
+`SEC-3` `DELETE /projects/:id/secrets/:identifier` → `manage`; invalid identifier → 400; system secret (git-auth) → 403.
+`SEC-4` injection — `buildSessionSandboxEnvVars` intersects the agent grant and immutable session allowlist. Only `runtime` values enter the session environment. `denied` enters nothing. Managed delivery never falls back to plaintext.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
-`SEC-8` `PUT /projects/:id/secrets/:identifier/strategy {strategy}` → manager-only human control plane; `runtime|denied` → 200 with delivery metadata and a `secret.strategy.changed` audit event; `broker|egress` → 409 until an adapter is available; agent principals → 403.
+`SEC-8` `PUT /projects/:id/secrets/:identifier/strategy {strategy,consumer?,egress_policy?,handle_prefix?}` → manager-only control plane; `runtime|denied` → 200; `broker` accepts `llm_gateway|connector|executor|http_broker`; only `http_broker` accepts and requires a validated `backend=kortix_fetch` policy. Generic `git_proxy` broker and transparent `egress` → 409 until their adapters are available. Each change revokes active HTTP broker handles and writes `secret.strategy.changed`; agent principals → 403. `POST /projects/:id/secrets/sync` requires secret write and re-applies current policy to active sessions. `POST /projects/:id/secrets/:identifier/broker` accepts only a session-scoped agent token, intersects the immutable agent grant with the current session allowlist, requires an active revisioned handle, applies the stored HTTPS host/method/path/injection policy, and writes pending plus terminal audit events without request bodies, headers, query values, handles, or secret values.
+`SEC-9` server consumers resolve only matching `broker` rows. LLM resolution returns every authorized identifier for one provider key in deterministic order: canonical identifier, newest update, then identifier. The gateway tries the next same-provider credential after a thrown 401, a terminal-auth 400, or a terminal-auth streaming error; one invalid credential preserves the upstream terminal error. Connector, Executor, subscription, channel, webhook, and Git paths use their server-side credential resolvers and write metadata-only `secret.consumer.*` audit events.
 `EXEC-ATT-AUTH` `POST /executor/[projects/:projectId/]attachments` → both attachment-upload forms require authentication before accepting multipart data; anonymous requests → 401.
 
 ---
@@ -507,6 +508,7 @@ The `/v1/admin/api/*` surface backs `apps/web/src/app/admin/` — all guarded by
 `ADM-4` `POST /v1/admin/api/accounts/:id/credits {amount,description?,isExpiring?}` → grant credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
 `ADM-5` `POST /v1/admin/api/accounts/:id/credits/debit {amount,description?}` → debit credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
 `ADM-6` `PUT /v1/system/maintenance` (`supabaseAuth`, handler does admin check) → update maintenance config → 200; non-admin → 403; ANON → 401.
+`ADM-13` `POST /v1/admin/api/accounts/:id/enterprise-entitlement {enabled:boolean}` → set the contracted Enterprise entitlement flag; invalid body → 400; non-admin → 403; ANON → 401.
 
 ---
 

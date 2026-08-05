@@ -2,7 +2,7 @@
 
 import { PageHead, Panel, Row } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
-import { Icon } from '@/features/icon/icon';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ListChecksIcon, ShieldCheckIcon, WrenchIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
@@ -53,7 +53,7 @@ export function StepHarness(): ReactNode {
           count="primary"
           action={
             <span className="border-border bg-background flex size-7 items-center justify-center rounded-md border">
-              <Icon.OpenCode className="size-4" />
+              <OpenCode className="size-4" />
             </span>
           }
         >
