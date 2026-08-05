@@ -22,6 +22,7 @@ import {
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
+  listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
   type DbMode, type KillResult,
 } from './lib';
@@ -39,13 +40,6 @@ const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
 const warn = (s: string) => console.log(`${pc.yellow('!')} ${s}`);
 const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); process.exit(1); };
 const url = (u: string) => pc.cyan(pc.underline(u));
-// OSC 8 hyperlink — makes `text` actually clickable in supporting terminals
-// (iTerm2, VS Code, modern macOS terminals). Terminals without OSC 8 support
-// just render `text` as-is, so styling is left to the caller for graceful
-// degradation. Wrap only the visible glyphs (no trailing padding) so the
-// clickable/underlined region matches the text exactly.
-const link = (href: string, text: string) =>
-  process.stdout.isTTY ? `\x1b]8;;${href}\x07${text}\x1b]8;;\x07` : text;
 
 // Free any stale process still holding this slot's ports — a previous `up` that
 // didn't shut down cleanly, or a gateway that crashed but left the port bound.
@@ -168,7 +162,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
   ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
-  ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
+  ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
 shares the primary Supabase DB by default, and gets its own node_modules. Pass ${pc.cyan('--db')}
@@ -625,41 +619,32 @@ async function cmdNuke(a: Args) {
   ok(`removed "${name}" — slot ${e!.slot} freed.`);
 }
 
-function cmdList() {
+/**
+ * `list [name] [--json]` — read-only. It never writes the registry, so a status
+ * that disagrees with the probe is reported, not repaired; `doctor` owns repair.
+ */
+function cmdList(a: Args) {
   const reg = loadRegistry();
-  const names = Object.keys(reg.slots);
-  if (!names.length) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
-  const statusColor: Record<string, (s: string) => string> = { running: pc.green, stopped: pc.dim, created: pc.yellow };
-  // A cell carries its plain `text` (used for width math) separately from its
-  // `render` (with color/links). Widths derive from content + header so the
-  // header always lines up with the rows and nothing is truncated.
-  type Cell = { text: string; render: string };
-  const cell = (text: string, render = text): Cell => ({ text, render });
-  const portCell = (port: number): Cell => cell(String(port), link(`http://localhost:${port}`, pc.green(String(port))));
-  const headers = ['NAME', 'SLOT', 'STATUS', 'DB MODE', 'BRANCH', 'WEB', 'API', 'DB', 'STUDIO'];
-  const rows: Cell[][] = names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot).map((n) => {
-    const e = reg.slots[n];
-    const col = statusColor[e.status] ?? ((s: string) => s);
-    const dbMode = dbModeOf(e);
-    return [
-      cell(n, pc.bold(n)),
-      cell(String(e.slot), pc.dim(String(e.slot))),
-      cell(e.status, col(e.status)),
-      cell(dbMode),
-      cell(e.branch),
-      portCell(e.ports.web),
-      portCell(e.ports.api),
-      portCell(dbMode === 'isolated' ? e.ports.sbDb : SHARED_SUPABASE_PORTS.sbDb),
-      portCell(dbMode === 'isolated' ? e.ports.sbStudio : SHARED_SUPABASE_PORTS.sbStudio),
-    ];
-  });
-  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].text.length)));
-  const GAP = '  ';
-  // Pad after `render` using the plain-text length so zero-width escape codes
-  // don't throw off alignment. The last column gets no trailing padding.
-  const fmt = (c: Cell, i: number) => c.render + (i === widths.length - 1 ? '' : ' '.repeat(widths[i] - c.text.length));
-  console.log('\n  ' + pc.dim(headers.map((h, i) => (i === headers.length - 1 ? h : h.padEnd(widths[i]))).join(GAP)));
-  for (const r of rows) console.log('  ' + r.map(fmt).join(GAP));
+  const total = Object.keys(reg.slots).length;
+  const live = listenPorts();
+  const probed = live !== null;
+  const all = sortRows(buildRows(reg, live));
+  const rows = a.name ? filterRows(all, a.name) : all;
+
+  if (a.flags.json) { console.log(JSON.stringify(toJsonRows(rows, { probed }), null, 2)); return; }
+  if (!total) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
+  if (!rows.length) {
+    console.log(`\n  ${pc.dim(`No worktree matches "${a.name}".`)} See all: ${pc.cyan('pnpm worktree list')}\n`);
+    return;
+  }
+
+  // One hit for an explicit query is a lookup, not a list — show the full URLs
+  // rather than making you widen the match to read them.
+  const lines = a.name && rows.length === 1
+    ? renderDetail(rows[0]!, { probed })
+    : renderRail(rows, { probed, columns: process.stdout.columns, totalCount: total });
+  console.log('');
+  for (const l of lines) console.log(l);
   console.log('');
 }
 
@@ -801,7 +786,7 @@ try {
     case 'start': await cmdStart(a); break;
     case 'stop': await cmdStop(a); break;
     case 'nuke': case 'rm': await cmdNuke(a); break;
-    case 'list': case 'ls': cmdList(); break;
+    case 'list': case 'ls': cmdList(a); break;
     case 'status': cmdStatus(a); break;
     case 'pr': await cmdPr(a); break;
     case 'doctor': await cmdDoctor(a); break;

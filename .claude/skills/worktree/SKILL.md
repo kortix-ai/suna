@@ -192,13 +192,37 @@ If `gh` isn't installed it still pushes and prints a compare URL. On a fork, gh
 may ask which base repo — answer the prompt (or pass `--repo`). Requires the
 push remote (`origin`) to be authenticated for your account.
 
-### `list` (alias `ls`) — table of all worktrees
+### `list` (alias `ls`) — every worktree and its ports
 
 ```sh
-pnpm worktree list
+pnpm worktree list           # all of them, running first then alphabetical
+pnpm worktree list md        # substring filter
+pnpm worktree list --json    # machine-readable, for scripts and jq
 ```
 
-Shows name, slot, status, DB mode, branch, and the web/api/db/studio ports.
+One line per worktree: live status, name, and its web/api ports, with a dot
+leader between the name and the port so the eye cannot slip a row. Both ports
+are OSC 8 hyperlinks — ⌘-click them in a supporting terminal.
+
+Status is a **real listening-port scan** (one `lsof` for the whole box, ~40ms),
+not the registry field, so it cannot go stale the way a recorded status can. If
+`lsof` is unavailable the command falls back to the registry and says so in the
+footer. `list` never writes the registry — `doctor` owns drift repair.
+
+Constants live in the footer instead of in every row: the shared Supabase
+db/studio ports, the counts, and — when any worktree runs `--db` — a note that
+DB modes are mixed.
+
+A filter matching exactly one worktree expands into full clickable URLs:
+
+```
+  ○ md-table  slot 19 · stopped · shared db
+
+    web     http://localhost:14900
+    api     http://localhost:14908/v1
+    studio  http://localhost:54323
+    path    /Users/you/root/kortix/suna-md-table
+```
 
 ### `status` — live health
 

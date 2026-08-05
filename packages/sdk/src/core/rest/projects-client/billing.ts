@@ -138,6 +138,13 @@ export interface AccountState {
    *  hides the self-serve "Enterprise features — Demo" toggle and any
    *  "Request enterprise access" upsell when this is true. */
   enterprise_license_available?: boolean;
+  /** True when an operator flagged this account as a contracted cloud
+   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
+   *  then resolves all enterprise entitlements regardless of billing tier, so
+   *  a deal that is BOTH Enterprise AND per-seat can hold both at once. The
+   *  frontend uses this to hide the self-serve demo toggle (a real contract
+   *  supersedes the demo). */
+  enterprise_entitled?: boolean;
   auto_topup?: {
     enabled: boolean;
     threshold: number;

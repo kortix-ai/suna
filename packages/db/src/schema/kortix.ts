@@ -2729,6 +2729,22 @@ export const creditAccounts = kortixSchema.table(
     // the enterprise surface. NOT a real Enterprise plan (sales-assigned);
     // production use requires a signed agreement. Default false → fail-closed.
     demoEnterprise: boolean('demo_enterprise').default(false).notNull(),
+    // Operator-set "enterprise entitled" flag for a contracted cloud Enterprise
+    // customer. When true the account resolves ALL enterprise entitlements
+    // (SAML SSO, SCIM, RBAC, audit) regardless of its billing tier — decoupling
+    // feature entitlements from the billing model. This is what lets a deal
+    // that is BOTH Enterprise (entitlements) AND per-seat (billing) hold both
+    // at once: `tier`/`billing_model` can be `per_seat` for Stripe seat
+    // reconciliation while `enterprise_entitled=true` keeps SSO/SCIM/RBAC/audit
+    // on. Without it, the per-seat Stripe webhook reconciliation clobbers
+    // `tier` to `per_seat` (see webhooks.ts syncSubscriptionState) and strips
+    // the enterprise identity surface on every ordinary subscription update.
+    // Set out-of-band by an operator (admin route / migration), like the
+    // `tier='enterprise'` sales-assignment, but independent of it. Default
+    // false → fail-closed. Distinct from `demo_enterprise` (a self-serve
+    // preview) and from `config.ENTERPRISE_LICENSE_AVAILABLE` (a platform-wide
+    // self-host license): this is the per-account, real-contract flag.
+    enterpriseEntitled: boolean('enterprise_entitled').default(false).notNull(),
     // Operator-set concurrent-session cap for this account. NULL (the default)
     // means "no override" — the account's plan tier decides the limit
     // (TierConfig.concurrentSessionLimit). When set, it takes precedence over

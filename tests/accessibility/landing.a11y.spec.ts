@@ -3,6 +3,21 @@ import { expect, test } from '@playwright/test';
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+// The GTM container injects Google Ads/remarketing beacons (gtag, doubleclick,
+// pagead, ccm/collect — including geo TLDs like google.rs) on every public
+// page, and the landing page prefetches dozens of route chunks after hydration.
+// Neither carries DOM that axe needs, but both keep the network busy — which is
+// why these specs must not gate on `networkidle` (the beacons alone can hang
+// past the 30s navigation timeout on CI runners). Navigation waits for
+// `domcontentloaded` plus the concrete element under test; the beacons are
+// additionally aborted at the route layer to keep runs quiet and fast.
+const THIRD_PARTY_BEACONS =
+  /https:\/\/[^/]*(googletagmanager\.com|google-analytics\.com|doubleclick\.net|googleadservices\.com|googlesyndication\.com)\/|https:\/\/www\.google\.[a-z.]+\/(pagead|ccm|rmkt)\//;
+
+test.beforeEach(async ({ page }) => {
+  await page.route(THIRD_PARTY_BEACONS, (route) => route.abort());
+});
+
 const CONTRAST_CEILING = Number(process.env.A11Y_CONTRAST_MAX ?? '560');
 
 type Violation = {
@@ -35,9 +50,10 @@ test.describe('Accessibility — axe-core', () => {
   test('landing page has no structural serious or critical violations', async ({
     page,
   }, testInfo) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     const decorativeArtwork = page.locator('[data-a11y-decorative]');
+    await decorativeArtwork.first().waitFor({ state: 'attached' });
     const decorativeArtworkCount = await decorativeArtwork.count();
     expect(decorativeArtworkCount).toBeGreaterThan(0);
     const ariaHiddenValues = await decorativeArtwork.evaluateAll((elements) =>
@@ -69,8 +85,9 @@ test.describe('Accessibility — axe-core', () => {
   });
 
   test('login page exposes labelled, accessible controls', async ({ page }, testInfo) => {
-    const response = await page.goto('/auth', { waitUntil: 'networkidle' });
+    const response = await page.goto('/auth', { waitUntil: 'domcontentloaded' });
     test.skip(!response || !response.ok(), 'No /auth route in this deployment');
+    await page.locator('form').first().waitFor();
 
     const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
     await testInfo.attach('axe-login-results.json', {
