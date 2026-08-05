@@ -16,6 +16,9 @@ It manages:
 - Regional Lambda reconcilers triggered by EC2 running-state events, plus a
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.
+- Regional Lambda reconcilers on a five-minute schedule, so Kubernetes-managed
+  ALB creation and replacement receives all three required alarms without
+  waiting for another Terraform apply.
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
@@ -64,6 +67,20 @@ aws lambda invoke --region eu-west-2 \
 Both payloads must report `covered_instances == running_instances` and an empty
 `updated_instances` list on the second invocation.
 
+## Verify ALB alarm coverage
+
+Invoke the reconciler twice in each production-system region. The second
+invocation must report `covered_alarms == load_balancers * 3` and an empty
+`updated_alarms` list.
+
+```bash
+for region in us-west-2 eu-west-2 us-east-2; do
+  aws lambda invoke --region "$region" \
+    --function-name kortix-alb-alarm-reconciler \
+    "/tmp/${region}-alb-reconciler.json"
+done
+```
+
 ## Verify us-east-2 controls
 
 The us-east-2 network ACL excludes inbound TCP ports `22` and `3389`. The
@@ -85,3 +102,13 @@ aws ec2 describe-flow-logs --region us-east-2 \
 Run the Velero backup and restore procedure in
 `docs/runbooks/disaster-recovery.md` after any bucket, role, chart, or schedule
 change.
+
+## Drata monitor exclusions
+
+Drata test `8025`, **Access Policies Restrict Broad Access**, is disabled as a
+false positive. Its only finding is the read-only policy in
+`../security-baseline/iam-gha-nacl-audit.tf`. The policy grants
+`ec2:DescribeRegions` and `ec2:DescribeNetworkAcls` on `Resource = "*"` because
+AWS does not support resource-level permissions for either action. The role's
+GitHub OIDC trust is scoped to the `kortix-ai/suna` repository. The policy
+grants no write action.

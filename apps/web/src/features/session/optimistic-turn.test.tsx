@@ -76,23 +76,23 @@ describe('OptimisticTurn', () => {
     expect(markup).not.toContain('reply_context');
   });
 
-  test('a deferred preview keeps the card box the chat will fill', () => {
+  test('a deferred preview keeps the tile box the chat will fill', () => {
     // deferPreview is the one prop the instant shell sets differently — there is
-    // no sandbox to fetch a thumbnail from yet. The contents differ (a spinner
-    // instead of the render), but the box must not, or the shell → chat
-    // crossfade would reflow the whole thread around it.
+    // no sandbox yet, so MessageAttachments paints tiles as pending. The outer
+    // tile surface must stay identical across the shell → chat crossfade or the
+    // thread reflows under the handover.
     const text = buildOptimisticPromptTextWithUploads('with a file', [
       { kind: 'remote', url: 'https://x/y', mime: 'image/png', filename: '/workspace/a.png', isImage: true },
     ]);
     const shell = render(<OptimisticTurn text={text} deferPreview />);
     const chat = render(<OptimisticTurn text={text} />);
-    for (const box of ['w-[150px]', 'h-[100px]', 'h-[38px]']) {
+    for (const box of ['size-20', 'max-w-[21.5rem]', 'rounded-md border']) {
       expect(shell).toContain(box);
       expect(chat).toContain(box);
     }
     // Both still open with the same bubble and close with the same waiting row.
-    expect(shell.slice(0, shell.indexOf('w-[150px]'))).toBe(
-      chat.slice(0, chat.indexOf('w-[150px]')),
+    expect(shell.slice(0, shell.indexOf('size-20'))).toBe(
+      chat.slice(0, chat.indexOf('size-20')),
     );
     expect(shell).toContain('Thinking');
     expect(chat).toContain('Thinking');

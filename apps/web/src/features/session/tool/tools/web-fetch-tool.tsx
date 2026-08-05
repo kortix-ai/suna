@@ -84,7 +84,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             </span>
             <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 flex-shrink-0" />
           </a>
-          <p className="text-muted-foreground/80 px-3 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+          <p className="text-muted-foreground/80 px-3 py-2 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
             {errorSummary}
           </p>
         </div>
@@ -109,7 +109,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 flex-shrink-0" />
           </a>
 
-          <p className="text-foreground/80 px-3 py-2 text-xs leading-relaxed break-words whitespace-pre-wrap">
+          <p className="text-foreground/80 px-3 py-2 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
             {readable.text.slice(0, 4000) || 'No readable text content.'}
           </p>
 
@@ -126,7 +126,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               </button>
             </DisclosureTrigger>
             <DisclosureContent>
-              <pre className="text-muted-foreground/70 max-h-72 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">
+              <pre className="text-muted-foreground/70 max-h-72 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {output.slice(0, 8000)}
               </pre>
             </DisclosureContent>

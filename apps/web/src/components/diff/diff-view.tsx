@@ -1,5 +1,6 @@
 'use client';
 
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from '@/lib/code-theme';
 import { cn } from '@/lib/utils';
 import type { FileDiffOptions } from '@pierre/diffs';
 import { PatchDiff } from '@pierre/diffs/react';
@@ -10,7 +11,7 @@ import { useMemo } from 'react';
 // ---------------------------------------------------------------------------
 // Shared `DiffView` — single replacement for every custom diff renderer in
 // the app. Wraps @pierre/diffs' React `PatchDiff` with project-wide defaults:
-//   • Pierre's bundled themes (light/dark switch driven by next-themes)
+//   • the app palette from @/lib/code-theme (light/dark driven by next-themes)
 //   • Split layout by default with caller-overridable layout/indicator props
 //   • Word-level inline highlighting so character-level edits read clearly
 // ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ export function DiffView(props: PatchProps | FilesProps) {
 
   const options = useMemo<FileDiffOptions<undefined>>(
     () => ({
-      theme: { dark: 'pierre-dark', light: 'pierre-light' },
+      theme: { dark: SHIKI_THEME_DARK, light: SHIKI_THEME_LIGHT },
       themeType,
       diffStyle: props.layout ?? 'split',
       diffIndicators: props.indicators ?? 'bars',

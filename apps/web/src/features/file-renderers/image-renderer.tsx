@@ -256,9 +256,13 @@ export function ImageRenderer({
     setIsFitToScreen(true);
   };
 
-  // Scroll wheel zoom
-  const handleWheel = (e: React.WheelEvent) => {
+  // Scroll wheel zoom. Must be a *native* non-passive listener: React's
+  // delegated `onWheel` is passive, so `preventDefault()` is a no-op and the
+  // parent (chat / outputs list) scrolls while zoom still runs. Same pattern
+  // as mermaid-renderer.tsx and file-preview-modal.tsx.
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const delta = e.deltaY > 0 ? -1 : 1;
     setZoom((prev) => {
       const step = getZoomStep(prev) * 0.5;
@@ -267,7 +271,16 @@ export function ImageRenderer({
       else setIsFitToScreen(false);
       return next;
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [handleWheel]);
 
   // Function for rotation
   const handleRotate = () => {
@@ -336,7 +349,7 @@ export function ImageRenderer({
   const alwaysOn = controls === 'always';
 
   return (
-    <div className={cn('group relative h-full w-full', className)}>
+    <div className={cn('group relative h-full w-full ', className)}>
       {/* Floating controls — reveal on hover or keyboard focus; pinned open
           while the info panel is. Opacity-only (no movement) so rapid
           hover-in/out retargets cleanly. `controls="always"` opts out of the
@@ -470,7 +483,7 @@ export function ImageRenderer({
           // these are not UI chrome picking up the theme, they are the literal
           // white and black the user asked to see the artwork against.
           !showBackdrop || backdrop === 'transparent'
-            ? 'text-foreground bg-background'
+            ? 'text-foreground bg-secondary'
             : backdrop === 'white'
               ? 'bg-white'
               : 'bg-black',
@@ -479,7 +492,6 @@ export function ImageRenderer({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
         onDoubleClick={imgError ? undefined : toggleFitToScreen}
         style={{
           cursor: isPanning ? 'grabbing' : !isFitToScreen ? 'grab' : 'default',

@@ -298,3 +298,16 @@ export const warningToast = (message: string, options?: ToastOptions) => {
     toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
 };
+
+/**
+ * Dismiss a toast by the `id` it was created with.
+ *
+ * Exists so feature code can retract a PERSISTENT toast when the condition it
+ * reports goes away — a `duration: Infinity` notice with an action button has to
+ * be revocable, or it outlives the problem and offers to fix something already
+ * fixed. Wrapped here rather than importing sonner in a feature: this module is
+ * the toast surface.
+ */
+export const dismissToast = (id: string | number) => {
+  toast.dismiss(id);
+};

@@ -3,7 +3,6 @@
 import { useMemo } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
-import { GridFileCard } from '@/features/session/grid-file-card';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -13,7 +12,12 @@ import {
   parseSessionReferences,
 } from '@/features/session/message-parsing';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
+import {
+  MessageAttachments,
+  type NormalizedAttachment,
+} from '@/features/session/turn/user-message';
 import { cn } from '@/lib/utils';
+import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 
 /** Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`. */
@@ -22,7 +26,7 @@ const BUBBLE_SURFACE = cn(
 );
 const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
-  'break-words whitespace-pre-wrap select-text',
+  'wrap-break-word whitespace-pre-wrap select-text',
 );
 
 /**
@@ -55,16 +59,14 @@ export function OptimisticTurn({
   /** Opens a file mention. Omitted before a runtime exists — mentions then
    *  render as static chips rather than dead buttons. */
   onFileClick,
-  /** Opens an attached file's preview. Omitted before a runtime exists. */
-  onFilePreview,
-  /** Skip thumbnail fetches while there is no sandbox to fetch them from. */
+  /** Paint every tile as still-uploading while there is no sandbox yet
+   *  (instant shell). Same `pending` flag MessageAttachments uses on send. */
   deferPreview,
   className,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
-  onFilePreview?: (path: string) => void;
   deferPreview?: boolean;
   className?: string;
 }) {
@@ -75,7 +77,6 @@ export function OptimisticTurn({
           text={text}
           agentNames={agentNames}
           onFileClick={onFileClick}
-          onFilePreview={onFilePreview}
           deferPreview={deferPreview}
         />
       </div>
@@ -88,18 +89,16 @@ function OptimisticUserBubble({
   text,
   agentNames,
   onFileClick,
-  onFilePreview,
   deferPreview,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
-  onFilePreview?: (path: string) => void;
   deferPreview?: boolean;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
-  // attachments as cards — never raw XML.
+  // attachments as tiles — never raw XML.
   const { replyContext, files, cleanText } = useMemo(() => {
     const { cleanText: afterReply, replyContext } = parseReplyContext(text);
     const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
@@ -110,21 +109,25 @@ function OptimisticUserBubble({
     return { replyContext, files, cleanText };
   }, [text]);
 
+  // Same shape MessageAttachments consumes on a real turn — one strip, one tile
+  // language, so the optimistic bubble and the server turn never disagree.
+  const attachments = useMemo(
+    (): NormalizedAttachment[] =>
+      files.map((f, i) => ({
+        key: `optimistic:${f.path}:${i}`,
+        filename: getFilename(f.filename || f.path),
+        mime: f.mime,
+        src: f.path,
+        path: f.path,
+        pending: deferPreview,
+      })),
+    [files, deferPreview],
+  );
+
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
-      {files.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2">
-          {files.map((f, i) => (
-            <div key={`${f.path}-${i}`} onClick={(e) => e.stopPropagation()}>
-              <GridFileCard
-                filePath={f.path}
-                fileName={f.path.split('/').pop() || f.path}
-                onClick={onFilePreview ? () => onFilePreview(f.path) : undefined}
-                deferPreview={deferPreview}
-              />
-            </div>
-          ))}
-        </div>
+      {attachments.length > 0 && (
+        <MessageAttachments attachments={attachments} pending={deferPreview} />
       )}
       {(cleanText || replyContext) && (
         <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>

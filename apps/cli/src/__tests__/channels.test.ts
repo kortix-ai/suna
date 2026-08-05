@@ -58,7 +58,7 @@ let state: MockState;
 let installationGets = 0;
 let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
 
-function writeConfig(): void {
+function writeConfig(url = 'https://api.test'): void {
   const file = join(tmp, 'config.json');
   writeFileSync(
     file,
@@ -66,7 +66,7 @@ function writeConfig(): void {
       active: 'test',
       hosts: {
         test: {
-          url: 'https://api.test',
+          url,
           token: 'tok_test',
           user_id: 'user_1',
           user_email: 'user@example.test',
@@ -271,6 +271,18 @@ describe('kortix channels status', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
     expect(parsed.installation.workspaceId).toBe('T012AB3CD');
+  });
+
+  test('prints one /v1 mount when the configured host already includes /v1', async () => {
+    writeConfig('https://api.test/v1');
+    state.installation = INSTALLATION;
+
+    const code = await runChannels(['status']);
+
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('https://api.test/v1/webhooks/slack/proj_1');
+    expect(out).not.toContain('/v1/v1/');
   });
 });
 

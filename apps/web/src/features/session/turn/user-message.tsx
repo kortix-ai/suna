@@ -350,7 +350,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Distilled
               </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.distilled}
               </div>
             </div>
@@ -362,7 +362,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Summary
               </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.summary}
               </div>
             </div>
@@ -375,11 +375,11 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
 
 const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
-  'break-words whitespace-pre-wrap select-text',
+  'wrap-break-word whitespace-pre-wrap select-text',
 );
 
 const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
 );
 
 export interface NormalizedAttachment {
@@ -554,7 +554,11 @@ function AttachmentImage({
  * branch turned a 15-attachment message into 15 filename-width rows stacked
  * against the right edge — roughly 700px of staircase.
  */
-function MessageAttachments({
+/**
+ * Shared attachment strip — used by the real user turn and the optimistic turn
+ * so the shell → chat crossfade never swaps card chrome for tile chrome.
+ */
+export function MessageAttachments({
   attachments,
   pending,
 }: {
@@ -1036,7 +1040,7 @@ export function UserMessage({
             </span>
           </div>
           {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm break-words">
+            <div className="text-foreground text-sm wrap-break-word">
               {channelMessageInfo.messageText}
             </div>
           )}
@@ -1064,7 +1068,7 @@ export function UserMessage({
           </div>
           {triggerEventInfo.prompt && (
             <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
               style={{ paddingLeft: '1.375rem' }}
             >
               {triggerEventInfo.prompt}
@@ -1087,7 +1091,7 @@ export function UserMessage({
           </div>
           {effectiveCommandInfo.args && (
             <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
               style={{ paddingLeft: '1.375rem' }}
             >
               {effectiveCommandInfo.args}
@@ -1247,7 +1251,7 @@ export function UserMessage({
               {/* Gradient fade for collapsed long messages. Keyed to `muted`
                   so it dissolves into the bubble it sits on, not the old card. */}
               {canExpand && !expanded && (
-                <div className="from-sidebar pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+                <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
               )}
 
               {/* Expand/collapse indicator */}

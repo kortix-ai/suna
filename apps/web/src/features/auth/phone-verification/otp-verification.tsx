@@ -110,7 +110,7 @@ export function OtpVerification({
     <div>
       {phoneNumber && (
         <p className="text-foreground text-sm">
-          {t('codeSentTo')} <span className="font-semibold break-words">{phoneNumber}</span>
+          {t('codeSentTo')} <span className="font-semibold wrap-break-word">{phoneNumber}</span>
         </p>
       )}
 

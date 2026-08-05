@@ -34,7 +34,10 @@ import {
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
 } from '../../projects/session-title-generate';
-import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import {
+  KORTIX_SERVICE_CALL_HEADER,
+  KORTIX_USER_CONTEXT_HEADER,
+} from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -52,7 +55,7 @@ import {
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
 import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
-import { carriesSessionData } from '../session-data-ports';
+import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -72,7 +75,13 @@ const preview = new Hono<{
 // Accept-Encoding is forced to identity (raw byte passthrough).
 // Cookies may contain the caller's raw __preview_session credential and must
 // never reach arbitrary user-controlled apps running inside the sandbox.
-const STRIP_FORWARD_HEADERS = new Set([
+// `x-kortix-service-call` marks a DIRECT platform→daemon call. The daemon gates
+// its destructive branch reset on it precisely because it cannot appear here:
+// we authenticate every forwarded request with the sandbox's own service key, so
+// the daemon cannot tell a user's request from ours by the bearer alone. Strip
+// it for the same reason we strip `authorization` — a caller must not be able to
+// hand themselves platform authority by naming a header.
+export const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
   'cookie',
@@ -80,6 +89,7 @@ const STRIP_FORWARD_HEADERS = new Set([
   'x-request-id',
   'accept-encoding',
   'content-length',
+  KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
 
 function jsonProxyError(body: Record<string, unknown>, status: number, origin?: string): Response {
@@ -168,8 +178,8 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
 // instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
 // (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
 // out the boot window before falling back to a manual Retry button. Colors and
-// the button mirror the web app's tokens (globals.css --secondary/--foreground;
-// Button variant="secondary" size="sm").
+// the button mirror the web app's tokens (globals.css --background/--foreground/
+// --secondary/--muted-foreground; Button variant="secondary" size="sm").
 function portUnreachableHtml(port: number): string {
   return `<!doctype html>
 <html lang="en">
@@ -181,17 +191,17 @@ function portUnreachableHtml(port: number): string {
   :root {
     color-scheme: light dark;
     --background: oklch(1 0 0);
-    --foreground: oklch(0.1448 0 0);
-    --secondary: oklch(0.9502 0 0);
-    --muted-foreground: oklch(0.5555 0 0);
+    --foreground: oklch(0 0 0);
+    --secondary: oklch(0.9431 0 0);
+    --muted-foreground: oklch(0.5103 0 0);
     --kortix-yellow: oklch(0.732 0.15 90.688);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --background: oklch(0.1448 0 0);
-      --foreground: oklch(0.9851 0 0);
-      --secondary: oklch(0.2686 0 0);
-      --muted-foreground: oklch(0.709 0 0);
+      --background: oklch(0.1398 0 0);
+      --foreground: oklch(1 0 0);
+      --secondary: oklch(0.2264 0 0);
+      --muted-foreground: oklch(0.683 0 0);
     }
   }
   * { box-sizing: border-box; }
@@ -199,10 +209,10 @@ function portUnreachableHtml(port: number): string {
   body {
     display: flex; align-items: center; justify-content: center;
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--background); color: var(--foreground); padding: 24px;
+    background: var(--secondary); color: var(--foreground); padding: 24px;
     -webkit-font-smoothing: antialiased;
   }
-  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;  }
   h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
   .dot {
     width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
@@ -213,7 +223,7 @@ function portUnreachableHtml(port: number): string {
     display: inline-flex; align-items: center; justify-content: center;
     height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
     font: inherit; font-weight: 500; cursor: pointer;
-    background: var(--secondary); color: var(--foreground);
+    background: var(--background); color: var(--foreground);
     transition: background-color .15s;
   }
   button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
@@ -714,6 +724,34 @@ export function shouldAutoResumeStoppedSandbox(
   }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
 }
+/**
+ * Is this a proxied attempt at the daemon's DESTRUCTIVE branch reset?
+ *
+ * `/kortix/refresh?base=1` runs `git checkout -B <branch> <sha>` in the box, and
+ * the branch IS the session id — so it discards every commit the session made
+ * and deletes the files they added. Its one legitimate caller is the
+ * warm-session workspace refresh at session create, which calls the daemon
+ * directly and never comes through here.
+ *
+ * The PATH stays open on purpose: a plain `/kortix/refresh` is the SDK's
+ * `restart` mode and users legitimately reach it. Only the flag is refused.
+ *
+ * Pure + exported so the gate is unit-tested without provisioning a box — the
+ * same reason `shouldAutoResumeStoppedSandbox` is.
+ */
+export function isProxiedBaseReset(
+  upstreamPort: number,
+  remainingPath: string,
+  queryString: string,
+): boolean {
+  if (!carriesSessionData(upstreamPort)) return false;
+  // Strip the in-box `/proxy/{port}` prefix, as the connector gate does — a
+  // request that reaches the daemon that way is the same request.
+  const path = remainingPath.replace(/^\/proxy\/\d+(?=\/)/, '');
+  if (!/^\/kortix\/refresh(?:$|[/?#])/.test(path)) return false;
+  return new URLSearchParams(queryString).get('base') === '1';
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -778,7 +816,7 @@ export async function forwardToSandbox(
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    carriesSessionData(upstreamPort) &&
+    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -795,6 +833,31 @@ export async function forwardToSandbox(
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
   if (carriesSessionData(upstreamPort) && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
+  }
+  // `/kortix/refresh?base=1` force-resets the session's branch onto the base tip
+  // — `git checkout -B <branch> <sha>`, where the branch IS the session id — so
+  // it discards every commit the session made and deletes the files they added.
+  //
+  // The path itself must stay open: the SDK's `restart` mode is a plain
+  // `/kortix/refresh`, and users legitimately reach it. Only the destructive
+  // flag is refused, and refused HERE because this is the layer that knows the
+  // request came from a user at all. Its one legitimate caller is the
+  // warm-session workspace refresh at session create, which calls the daemon
+  // directly and never traverses this proxy.
+  //
+  // The daemon enforces this independently (it also demands the stripped
+  // service-call header) — a destructive primitive should not depend on a remote
+  // allowlist staying correct.
+  if (isProxiedBaseReset(upstreamPort, remainingPath, queryString)) {
+    console.warn(`[PREVIEW] Refused base=1 branch reset on ${sandboxId} from a proxied caller`);
+    return jsonProxyError(
+      {
+        error: 'base reset is not available through the sandbox proxy',
+        code: 'BASE_RESET_FORBIDDEN',
+      },
+      403,
+      origin,
+    );
   }
   // A turn whose required connectors cannot serve it is refused HERE — before the
   // sandbox is woken, before the dedupe claim, before the title is generated from
@@ -1437,7 +1500,7 @@ export async function resolvePreviewWsUpstream(opts: {
   // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
   // side, one function further down the file.
   if (
-    carriesSessionData(upstreamPort) &&
+    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,

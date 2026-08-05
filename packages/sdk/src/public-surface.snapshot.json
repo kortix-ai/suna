@@ -10,6 +10,7 @@
     "FEATURE_NOT_SUPPORTED_CODE",
     "HostBoundaryError",
     "INSTANCE_SCOPED_ROUTES",
+    "MODEL_NOT_SERVABLE_CODE",
     "PublicSessionShareError",
     "PublicVoiceJoinError",
     "RequestTooLargeError",
@@ -296,6 +297,7 @@
     "getProjectSandboxHealth",
     "getProjectSandboxProviderTransition",
     "getProjectSession",
+    "getProjectSessionConfigState",
     "getProjectSessionScope",
     "getProrationPreview",
     "getProviders",
@@ -561,6 +563,7 @@
     "registerService",
     "rejectProjectAccessRequest",
     "relativizePath",
+    "reloadProjectSessionConfig",
     "removeAccountAuditWebhook",
     "removeAccountMember",
     "removeGroupMember",
@@ -813,6 +816,7 @@
     "kortixKeys",
     "loadSessionTranscriptMessages",
     "logRuntimeEvent",
+    "markOptimisticSendDispatched",
     "mergeProjectSecretConnectedProviders",
     "mergeProviderLists",
     "migrateLegacyStash",
@@ -1264,6 +1268,7 @@
     "AuthError",
     "BillingError",
     "FEATURE_NOT_SUPPORTED_CODE",
+    "MODEL_NOT_SERVABLE_CODE",
     "RequestTooLargeError",
     "backendApi",
     "formatBillingErrorForUI",
@@ -1432,6 +1437,7 @@
     "getProjectSandboxHealth",
     "getProjectSandboxProviderTransition",
     "getProjectSession",
+    "getProjectSessionConfigState",
     "getProjectSessionScope",
     "getProrationPreview",
     "getPublicSessionShare",
@@ -1566,6 +1572,7 @@
     "reconcileMemberConnectorAuthorization",
     "refreshReferralCode",
     "rejectProjectAccessRequest",
+    "reloadProjectSessionConfig",
     "removeAccountAuditWebhook",
     "removeAccountMember",
     "removeGroupMember",
@@ -1810,7 +1817,8 @@
     "toDaemonPath",
     "toSandboxAbsolutePath",
     "toWorkspaceRelative",
-    "uploadFile"
+    "uploadFile",
+    "uploadTimeoutMsForBytes"
   ],
   "./session": [
     "appendPreviewToken",
@@ -1873,6 +1881,17 @@
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
     "toInternalUrl"
+  ],
+  "./message-queue": [
+    "claimNext",
+    "completeInFlight",
+    "createSessionQueue",
+    "editQueued",
+    "enqueue",
+    "failInFlight",
+    "removeQueued",
+    "reorderQueued",
+    "retryFailed"
   ],
   "./turns": [
     "COST_MARKUP",

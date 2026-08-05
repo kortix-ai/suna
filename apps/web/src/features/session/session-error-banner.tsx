@@ -2,9 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Checkpoint, CheckpointIcon, CheckpointLabel } from '@/components/ai-elements/checkpoint';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
+import {
+  Checkpoint,
+  CheckpointIcon,
+  CheckpointLabel,
+  CheckpointTrigger,
+} from '@/components/ai-elements/checkpoint';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
@@ -69,20 +73,16 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
   const openBilling = () => openAccountSettings({ tab: 'billing' });
 
   return (
-    <InfoBanner
-      tone="warning"
-      icon={Zap}
-      title="Usage limit reached"
-      className={cn('flex-col gap-2.5', className)}
-    >
-      <p className="break-words">{errorText}</p>
-      <div className="mt-2 flex items-center gap-1.5">
-        <Button size="sm" variant="default" className="h-7 px-2.5 text-xs" onClick={openBilling}>
-          <Zap className="mr-1 size-3" />
-          Upgrade plan
-        </Button>
-      </div>
-    </InfoBanner>
+    <Checkpoint className={className}>
+      <CheckpointIcon>
+        <Zap className="size-4 shrink-0" />
+      </CheckpointIcon>
+      <CheckpointLabel className="overflow-visible whitespace-normal">{errorText}</CheckpointLabel>
+      <CheckpointTrigger onClick={openBilling}>
+        <Zap className="size-3" />
+        Upgrade plan
+      </CheckpointTrigger>
+    </Checkpoint>
   );
 }
 
@@ -105,31 +105,25 @@ function InsufficientCreditsCard({
   const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
   const balance = parseBalance(errorText);
   const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
+  const title = tHardcodedUi.raw(
+    'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
+  );
+  const label = balance ? `${title} (${balance})` : title;
 
   return (
-    <InfoBanner
-      tone="warning"
-      icon={CreditCard}
-      title={tHardcodedUi.raw(
-        'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
-      )}
-      className={cn('flex-col gap-2.5', className)}
-    >
-      <p>
-        {balance
-          ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
-          : 'Top up or enable auto top-up to continue.'}
-      </p>
-      <div className="mt-2 flex items-center gap-1.5">
-        <Button size="sm" variant="default" className="h-7 px-2.5 text-xs" onClick={openBilling}>
-          <Zap className="mr-1 size-3" />
-          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
-        </Button>
-        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={openBilling}>
-          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
-        </Button>
-      </div>
-    </InfoBanner>
+    <Checkpoint className={className}>
+      <CheckpointIcon>
+        <CreditCard className="size-4 shrink-0" />
+      </CheckpointIcon>
+      <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
+      <CheckpointTrigger onClick={openBilling}>
+        <Zap className="size-3" />
+        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+      </CheckpointTrigger>
+      <CheckpointTrigger variant="outline" onClick={openBilling}>
+        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+      </CheckpointTrigger>
+    </Checkpoint>
   );
 }
 
@@ -199,11 +193,10 @@ export function TurnErrorDisplay({
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(text)) {
     return (
-      <Checkpoint>
+      <Checkpoint className={className}>
         <CheckpointIcon>
           <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
         </CheckpointIcon>
-
         <CheckpointLabel>Interrupted</CheckpointLabel>
       </Checkpoint>
     );
@@ -235,40 +228,26 @@ export function TurnErrorDisplay({
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
-  // Real errors → full card. When the failure carries the gateway's
-  // structured envelope (provider/suggestion/request_id), render those too —
-  // otherwise this is just the provider's own raw error text with no clue
-  // which provider it came from or what to actually do about it (the bug
-  // behind a user seeing a bare "Unsupported parameter: max_tokens..." string).
+  // Real errors → Checkpoint row. When the failure carries the gateway's
+  // structured envelope (provider/suggestion/request_id), fold those into the
+  // label so the provider/source of the failure stays visible.
   const suggestion =
     gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  const label = [
+    gateway?.provider ? `${gateway.provider}: ${text}` : text,
+    suggestion,
+    gateway?.requestId,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
-    <div
-      className={cn(
-        'flex items-start gap-2 rounded-2xl border px-3 py-2',
-        'bg-muted/40 dark:bg-muted/30',
-        'border-border/60',
-        className,
-      )}
-    >
-      <AlertCircle className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="text-muted-foreground text-xs break-words">
-          {gateway?.provider && (
-            <span className="text-foreground/80 font-medium">{gateway.provider}: </span>
-          )}
-          {text}
-        </p>
-        {suggestion && (
-          <p className="text-muted-foreground/70 mt-1 text-xs break-words">{suggestion}</p>
-        )}
-        {gateway?.requestId && (
-          <p className="text-muted-foreground/50 mt-1 font-mono text-[10px] break-all">
-            {gateway.requestId}
-          </p>
-        )}
-      </div>
-    </div>
+    <Checkpoint className={className}>
+      <CheckpointIcon>
+        <AlertCircle className="text-muted-foreground size-4 shrink-0" />
+      </CheckpointIcon>
+      <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
+    </Checkpoint>
   );
 }
 
@@ -287,23 +266,26 @@ export function SessionRetryDisplay({
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
-  const line =
-    secondsLeft > 0 ? `Retrying in ${secondsLeft}s (#${attempt})` : `Retrying now (#${attempt})`;
+  const title = secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
 
   return (
-    <div
-      className={cn(
-        'flex items-start gap-2 rounded-2xl border px-3 py-2',
-        'bg-muted/40 dark:bg-muted/30',
-        'border-border/60',
-        className,
-      )}
+    <Item
+      role="status"
+      aria-live="polite"
+      variant="muted"
+      size="sm"
+      className={cn('items-start', className)}
     >
-      <Loading className="text-muted-foreground/70 mt-0.5 size-3.5 flex-shrink-0" />
-      <div className="min-w-0">
-        <p className="text-muted-foreground text-xs break-words">{message}</p>
-        <p className="text-muted-foreground/70 mt-1 text-xs">{line}</p>
-      </div>
-    </div>
+      <ItemMedia variant="icon">
+        <Loading className="text-muted-foreground size-4 shrink-0" />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle className="tabular-nums">
+          {title}
+          <span className="text-muted-foreground font-normal">#{attempt}</span>
+        </ItemTitle>
+        <ItemDescription className="line-clamp-2 text-pretty">{message}</ItemDescription>
+      </ItemContent>
+    </Item>
   );
 }

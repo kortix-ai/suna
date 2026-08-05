@@ -1028,7 +1028,7 @@ export function ShowCarousel({
 
           <FadedScrollArea
             orientation="horizontal"
-            fadeColor="from-background"
+            fadeColor="from-secondary"
             className="min-w-0 flex-1 overscroll-x-contain"
           >
             <div className="flex w-max min-w-0 items-center gap-1">

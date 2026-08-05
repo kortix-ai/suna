@@ -248,7 +248,7 @@ function ShareMessageView({ message }: { message: PublicSessionTranscriptMessage
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="bg-card flex max-w-[90%] overflow-hidden rounded-3xl rounded-br-lg border px-4 py-3 break-words">
+      <div className="bg-card flex max-w-[90%] overflow-hidden rounded-3xl rounded-br-lg border px-4 py-3 wrap-break-word">
         <div className="min-w-0 flex-1 space-y-2">
           <UnifiedMarkdown content={text} />
         </div>
@@ -274,9 +274,9 @@ function AssistantBlock({ text }: { text: string }) {
       </div>
 
       {/* Text content */}
-      <div className="flex w-full break-words">
+      <div className="flex w-full wrap-break-word">
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="overflow-hidden break-words">
+          <div className="overflow-hidden wrap-break-word">
             <UnifiedMarkdown content={text} />
           </div>
 

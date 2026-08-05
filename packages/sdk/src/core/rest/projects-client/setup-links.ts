@@ -92,6 +92,8 @@ export interface ApprovalLinkDetails {
    * never leave the API.
    */
   args_preview: Record<string, unknown> | null;
+  /** False when the API could not preserve every non-secret argument in the preview. */
+  review_complete?: boolean;
   /** One-line rendering of the fields that identify the target. */
   args_summary: string | null;
   policy_source: string | null;

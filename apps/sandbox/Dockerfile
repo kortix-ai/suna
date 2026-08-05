@@ -125,6 +125,20 @@ RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-vers
     && python -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'; print('managed python:', sys.version)" \
     && python3 -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'"
 
+# Python package floor — everything the starter skills import, baked into the
+# managed interpreter so bare `python3` needs no per-script resolution or
+# runtime downloads. Pins live in runtime-versions.json (`pythonPackages`);
+# `uv run --with` stays the escape hatch for packages outside the floor.
+# `--break-system-packages` overrides uv's externally-managed marker on the
+# interpreter installed above — our frozen build-time interpreter, not a
+# distro Python. The interpreter is named by EXPLICIT PATH: `--system` skips
+# uv-managed interpreters and would resolve the distro python3 that
+# LibreOffice's apt deps drag in. Unquoted $(...) expansion is safe here: pins
+# contain no whitespace, and the `markitdown[pptx]` glob matches no file here.
+RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \
+        $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
+    && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
+
 ENV SHELL=/bin/bash
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
     && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \

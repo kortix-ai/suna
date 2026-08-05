@@ -14,7 +14,21 @@ let readRepoFileCalls: string[] = [];
 // DEFAULT branch even for a session on another ref, so a feature-branch session
 // ran main's agents; recording the ref is what makes that visible.
 let refsRead: string[] = [];
+// Paths the mocked git should fail on with a NON-not-found error, so the
+// transient-failure branch is reachable through the same seam as the fixtures.
+let transientFailurePaths = new Set<string>();
 
+// `mock.module` REPLACES the module — it does not merge. `../git` is a barrel,
+// so anything omitted here stops existing for every module loaded afterwards in
+// the same bun process, including ones this file never touches. That is not
+// hypothetical: `session-reload.ts` importing `resolveCommitSha` from the barrel
+// made `session-reload.test.ts` die with "Export named 'resolveCommitSha' not
+// found" — but only when the two files ran together, and the error surfaced as
+// an unhandled error between tests rather than against either of them.
+//
+// So the stubs below are deliberately broader than this file needs: they keep
+// the barrel's shape intact for whoever loads next. Add to them rather than
+// letting a sibling suite break.
 mock.module('../git', () => ({
   readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
     refsRead.push(ref);
@@ -23,9 +37,20 @@ mock.module('../git', () => ({
   readRepoFile: async (_project: unknown, path: string, ref: string) => {
     readRepoFileCalls.push(path);
     refsRead.push(ref);
+    if (transientFailurePaths.has(path)) throw new Error('fatal: unable to access remote');
     if (!(path in mdFileContent)) throw new Error(`no such file: ${path}`);
     return mdFileContent[path];
   },
+  // A missing file is the expected client condition the compiler tolerates; a
+  // git/transport failure is not. The fixtures above throw `no such file: …`
+  // for a declared agent with no .md, so the predicate recognises exactly that
+  // and treats anything else as a real failure — which is the distinction the
+  // compiler now depends on.
+  isRepoFileNotFoundError: (err: unknown) =>
+    /no such file/.test(String((err as Error)?.message ?? '')),
+  // Unused here; present so the barrel keeps its shape for other modules.
+  resolveCommitSha: async () => '0'.repeat(40),
+  invalidateProjectMirror: () => {},
 }));
 
 const {
@@ -573,5 +598,54 @@ describe('resolveCompiledAgentConfigForSession — the ref it compiles from', ()
     await resolveCompiledAgentConfigForSession(PROJECT, '   ');
 
     expect(new Set(refsRead)).toEqual(new Set(['main']));
+  });
+});
+
+/**
+ * A transient git failure must not quietly produce a lobotomised agent.
+ *
+ * Every read error used to be swallowed with a warning, so a blip reading one
+ * agent's `.md` compiled that agent with NO prompt, model, or permissions — and
+ * the reload that triggered it reported success with a fresh etag saying the
+ * session was current. The agent kept answering, just without its instructions.
+ *
+ * A MISSING file is different: the manifest may legitimately declare an agent
+ * that carries no behavior file, and that case must keep working.
+ */
+describe('resolveCompiledAgentConfigForSession — read failures', () => {
+  const project = {
+    projectId: 'proj-1',
+    repoUrl: 'https://example.test/r.git',
+    defaultBranch: 'main',
+    manifestPath: 'kortix.yaml',
+    gitAuthToken: null,
+  };
+
+  test('a MISSING .md still compiles — that agent simply has no behavior', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': supportMd('mode: primary', 'Support prompt.'),
+      // pr-bot.md deliberately absent
+    };
+
+    const compiled = await resolveCompiledAgentConfigForSession(project);
+
+    expect(compiled).not.toBeNull();
+    expect(JSON.parse(compiled as string).agent['pr-bot']).toBeDefined();
+    expect(JSON.parse(compiled as string).agent.support.prompt).toBe('Support prompt.');
+  });
+
+  test('a TRANSIENT git failure yields null, not an agent stripped of its prompt', async () => {
+    // null means "no compiled config": the session keeps what it is running and
+    // `stale` reads null ("could not tell") rather than a confident, wrong
+    // "up to date". Far better than swapping in an agent with no instructions.
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {};
+    transientFailurePaths = new Set(['.kortix/opencode/agents/support.md']);
+    try {
+      expect(await resolveCompiledAgentConfigForSession(project)).toBeNull();
+    } finally {
+      transientFailurePaths = new Set();
+    }
   });
 });

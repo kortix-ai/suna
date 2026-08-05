@@ -106,7 +106,7 @@ const HELP_LINKS: MenuLink[] = [
 /** Kept separate so a divider can hold the legal pages apart from the rest. */
 const LEGAL_LINKS: MenuLink[] = [
   { label: 'Privacy', href: '/legal?tab=privacy', Icon: ShieldCheckIcon },
-  { label: 'Terms and conditions', href: '/legal?tab=terms', Icon: ScrollIcon },
+  { label: 'Terms and conditions', href: '/legal/terms', Icon: ScrollIcon },
 ];
 
 /**

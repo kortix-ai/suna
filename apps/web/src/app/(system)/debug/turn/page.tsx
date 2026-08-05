@@ -257,7 +257,61 @@ Traceback (most recent call last):
     raise FileNotFoundError(path)
 FileNotFoundError: /workspace/src/missing.ts`;
 
+/** Every URL in the batch dead → a full failure, not a partial. */
+const SCRAPE_ALL_FAILED = JSON.stringify({
+  total: 1,
+  successful: 0,
+  failed: 1,
+  results: [
+    {
+      url: SCRAPE_URLS[2],
+      success: false,
+      error: 'DNS lookup failed for example.invalid (ENOTFOUND).',
+    },
+  ],
+});
+
+/** A tool call that THREW, as opposed to one that returned its error. */
+function erroredTool(name: string, input: Record<string, unknown>, error: string): Part {
+  const id = nextId();
+  return {
+    id,
+    messageID: 'msg_dbg',
+    sessionID: 'ses_dbg',
+    type: 'tool',
+    tool: name,
+    callID: `call_${id}`,
+    state: { status: 'error', input, error, time: { start: 1_000_000, end: 1_000_900 } },
+  } as unknown as Part;
+}
+
 const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
+  {
+    // The three shapes side by side. They used to render as three different
+    // things — only the thrown call got a warning mark, while the two that
+    // came back `completed` kept the tool's own globe and the chain still
+    // closed on "Done". Same failure, so they must read the same.
+    label: 'failure · thrown vs returned vs half-landed, and the cap that follows',
+    working: false,
+    parts: [
+      erroredTool(
+        'bash',
+        { command: 'pnpm build' },
+        'Error: Command failed with exit code 1: pnpm build',
+      ),
+      // status: completed. The output IS the error.
+      tool(
+        'scrape_webpage',
+        { urls: [SCRAPE_URLS[2]] },
+        900,
+        'Error: DNS lookup failed for example.invalid (ENOTFOUND).',
+      ),
+      // status: completed, batch contract, every item dead → red.
+      tool('scrape_webpage', { urls: [SCRAPE_URLS[2]] }, 900, SCRAPE_ALL_FAILED),
+      // status: completed, 2 of 3 landed → amber, not red.
+      tool('scrape_webpage', { urls: SCRAPE_URLS }, 3100, SCRAPE_OUTPUT),
+    ],
+  },
   {
     label: 'errors · summary + stack trace, inside the same card',
     working: false,

@@ -17,11 +17,17 @@ import type { Command } from '@kortix/sdk/react';
 import { readStartStash, useRuntimeAgents, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import {
+  useMessageQueueStore,
+  type WebQueuedMessage,
+} from '@/stores/message-queue-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
-import { usePendingQueueStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
+
+/** Stable empty list, so a session with nothing queued does not hand the
+ *  zustand selector a fresh array on every render. */
+const EMPTY_PENDING: WebQueuedMessage[] = [];
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -69,13 +75,12 @@ export function InstantSessionShell({
   // switch on.
   const ready = stage === 'ready';
 
-  // The optimistic turn's two click targets, taken from the same global stores
-  // SessionChat reads them from. Passing them here rather than leaving them
-  // undefined is what keeps the bubble byte-identical across the crossfade — an
-  // unclickable mention renders as a plain span, and it would visibly gain an
-  // underline the moment the real chat took over.
+  // File-mention clicks come from the same store SessionChat reads. Passing the
+  // handler here rather than leaving it undefined keeps the bubble identical
+  // across the crossfade — an unclickable mention renders as a plain span and
+  // would visibly gain an underline the moment the real chat took over.
+  // Attachment clicks live inside MessageAttachments (computer store / lightbox).
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Same reason: an `@agent` mention only renders as an agent chip when the
   // renderer can recognise the name. Without this list it would fall through to
   // "file" and pick up an underline the real chat does not give it. The catalog
@@ -147,16 +152,26 @@ export function InstantSessionShell({
   // draft. They render as the standard queued chips above the input and hand
   // off to the real SessionChat, which seeds its own queue from this store and
   // drains it at the first safe boundary.
-  const queuedMessages = usePendingQueueStore((s) => s.messages);
+  // Written straight into THIS session's queue. The old handoff store was a
+  // single global bucket with no session id, so `consumePendingQueue()` handed
+  // its contents to whichever SessionChat mounted first — a message typed for
+  // one session could surface in another. `SessionChat` reads the same store
+  // under the same key, so there is no handoff step left to get wrong.
+  const queuedMessages = useMessageQueueStore(
+    (s) => s.queues[sessionId]?.pending ?? EMPTY_PENDING,
+  );
   const handleQueueMessage = useCallback(
     (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      usePendingQueueStore.getState().queueMessage(text, files, mentions);
+      useMessageQueueStore.getState().enqueue(sessionId, { text, files, mentions });
     },
-    [],
+    [sessionId],
   );
-  const handleRemoveQueuedMessage = useCallback((id: string) => {
-    usePendingQueueStore.getState().removeMessage(id);
-  }, []);
+  const handleRemoveQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueueStore.getState().remove(sessionId, id);
+    },
+    [sessionId],
+  );
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
@@ -245,15 +260,14 @@ export function InstantSessionShell({
               <div className="flex min-w-0 flex-col">
                 {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
-                    difference the shell is entitled to: there is no sandbox yet
-                    to serve a thumbnail from. The waiting row underneath says
-                    "Thinking" at every boot stage, exactly as it will once the
-                    real chat takes over. */}
+                    difference the shell is entitled to: there is no sandbox yet,
+                    so MessageAttachments paints every tile as pending. The
+                    waiting row underneath says "Thinking" at every boot stage,
+                    exactly as it will once the real chat takes over. */}
                 <OptimisticTurn
                   text={buildOptimisticPromptTextWithUploads(submission.text, submission.files)}
                   agentNames={agentNames}
                   onFileClick={openFileInComputer}
-                  onFilePreview={openPreview}
                   deferPreview
                 />
               </div>

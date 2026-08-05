@@ -582,7 +582,7 @@ function AuthCardForm({
             title="Use single sign-on"
             description={
               <>
-                <span className="text-foreground font-medium break-words">{email}</span> can sign in
+                <span className="text-foreground font-medium wrap-break-word">{email}</span> can sign in
                 through your organization&apos;s identity provider.
               </>
             }
@@ -657,7 +657,7 @@ function AuthCardForm({
             description={
               <>
                 We sent a code to{' '}
-                <span className="text-foreground font-medium break-words">{sentEmail}</span>
+                <span className="text-foreground font-medium wrap-break-word">{sentEmail}</span>
               </>
             }
           />
