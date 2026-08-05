@@ -10,6 +10,7 @@ import {
 } from '@/components/ai-elements/checkpoint';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
+import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
