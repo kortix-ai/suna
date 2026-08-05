@@ -71,9 +71,52 @@ function localAttemptStorage(): Storage | undefined {
 
 const PROVISION_ATTEMPT_KEY_PREFIX = 'kortix:onboarding-provision-key:';
 
+/**
+ * How long a persisted attempt key stays usable, ms.
+ *
+ * One hour is chosen against the slowest provision this repo documents — a
+ * snapshot build of up to ~9 min, on top of the SDK's own 120s per-call
+ * timeout (`provisionProject`). At 6x that ceiling the bound can never expire
+ * a key while the attempt it identifies could still be committing, which is
+ * the only thing it must not do. Anything the user does an hour later is a new
+ * decision, not a retry of the same one, and must not replay the old key.
+ */
+export const PROVISION_ATTEMPT_TTL_MS = 60 * 60 * 1000;
+
+interface ProvisionAttemptRecord {
+  key: string;
+  mintedAt: number;
+}
+
 function randomAttemptToken(): string {
   const uuid = globalThis.crypto?.randomUUID?.();
   return uuid ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * A stored attempt record → the key it still authorizes, or `null`.
+ *
+ * `null` for anything that is not a live record of this attempt: absent,
+ * unparseable, the pre-TTL bare-string format, or older than
+ * {@link PROVISION_ATTEMPT_TTL_MS}. A NEGATIVE age is also rejected — a
+ * future `mintedAt` means the clock moved (or the value was edited), and a
+ * timestamp that cannot be trusted is no evidence the attempt is still live.
+ *
+ * Pure, so the expiry rule is unit-tested without a clock or a DOM.
+ */
+export function liveProvisionAttemptKey(raw: string | null, now: number): string | null {
+  if (!raw) return null;
+  let parsed: Partial<ProvisionAttemptRecord>;
+  try {
+    parsed = JSON.parse(raw) as Partial<ProvisionAttemptRecord>;
+  } catch {
+    return null;
+  }
+  if (typeof parsed?.key !== 'string' || parsed.key.length === 0) return null;
+  if (typeof parsed.mintedAt !== 'number' || !Number.isFinite(parsed.mintedAt)) return null;
+  const age = now - parsed.mintedAt;
+  if (age < 0 || age >= PROVISION_ATTEMPT_TTL_MS) return null;
+  return parsed.key;
 }
 
 /**
@@ -100,18 +143,30 @@ function randomAttemptToken(): string {
  * If this key survived past a successful create, a LATER, genuinely
  * different attempt for the same account (e.g. the user deletes their only
  * project and a fresh auto-create fires) would replay it and get back the
- * archived project instead of creating a new one. `clearProvisionAttemptKey`
- * is what bounds the key to a single attempt's lifetime.
+ * archived project instead of creating a new one.
+ *
+ * TWO BOUNDS, because one is not enough. `clearProvisionAttemptKey` drops the
+ * key the moment `ensureFirstProject` resolves — but that function is only
+ * reached from `/projects/start`, and from `/projects` when the account has
+ * zero projects. So a provision that COMMITS server-side while every client
+ * attempt errors (a 120s SDK timeout, then the retry budget exhausted, then
+ * the "We could not open your project" screen) leaves the key behind with no
+ * caller left to clear it: the user clicks "View all projects", the project is
+ * now there, and nothing calls `ensureFirstProject` again. That stale key is
+ * exactly what would later replay onto the ARCHIVED project. The second bound
+ * is time — see {@link PROVISION_ATTEMPT_TTL_MS} — and it is what makes the
+ * guarantee unconditional: a key is reused only within one hour of being
+ * minted, cleared or not.
  */
-export function getOrCreateProvisionAttemptKey(accountId: string): string {
+export function getOrCreateProvisionAttemptKey(accountId: string, now = Date.now()): string {
   const store = localAttemptStorage();
   if (store) {
     try {
       const storageKey = `${PROVISION_ATTEMPT_KEY_PREFIX}${accountId}`;
-      const existing = store.getItem(storageKey);
+      const existing = liveProvisionAttemptKey(store.getItem(storageKey), now);
       if (existing) return existing;
       const minted = `onboarding-first-project:${randomAttemptToken()}`;
-      store.setItem(storageKey, minted);
+      store.setItem(storageKey, JSON.stringify({ key: minted, mintedAt: now }));
       return minted;
     } catch {
       // Fall through — storage exists but is unusable (quota, blocked write).
@@ -128,6 +183,10 @@ export function getOrCreateProvisionAttemptKey(accountId: string): string {
  * `ensureFirstProject` resolves to a project — by definition the attempt this
  * key identified is over, and keeping it around only risks the stale-replay
  * problem documented on `getOrCreateProvisionAttemptKey`.
+ *
+ * This is the FAST bound, not the only one. Every path that never reaches a
+ * resolution (see the same doc comment) is bounded instead by
+ * {@link PROVISION_ATTEMPT_TTL_MS}.
  */
 export function clearProvisionAttemptKey(accountId: string): void {
   try {
@@ -211,6 +270,10 @@ export function isManagedGitUnavailableError(err: unknown): boolean {
  */
 export function isProvisionInFlightError(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
+  // The literal, not `PROVISION_IN_FLIGHT_CODE` from `@kortix/sdk`: this
+  // module's own test suite replaces `@kortix/sdk` wholesale via `mock.module`,
+  // so an imported constant would read back `undefined` there and make every
+  // code-less error match. Kept in sync with the SDK constant by name.
   if (code === 'provision_in_flight') return true;
   const status = (err as { status?: number } | null)?.status;
   if (status !== 409) return false;

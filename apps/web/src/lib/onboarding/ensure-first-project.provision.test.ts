@@ -390,7 +390,14 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
   });
 
   test('a successful create clears the persisted attempt key', async () => {
-    installStorage(fakeStorage({ [STORAGE_KEY]: 'stale-key-from-a-prior-attempt' }));
+    installStorage(
+      fakeStorage({
+        [STORAGE_KEY]: JSON.stringify({
+          key: 'stale-key-from-a-prior-attempt',
+          mintedAt: Date.now(),
+        }),
+      }),
+    );
     const { ensureFirstProject } = await import('./ensure-first-project');
 
     const client: EnsureFirstProjectClient = {
@@ -406,6 +413,82 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
     await ensureFirstProject(ACCOUNT, {}, client);
 
     expect((globalThis as { localStorage?: Storage }).localStorage?.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  /**
+   * `clearProvisionAttemptKey` alone is a weaker guarantee than the doc
+   * comment claimed: it only runs inside `ensureFirstProject`, which is
+   * reached from `/projects/start` and from `/projects` with zero projects.
+   * A provision that COMMITS server-side while every client attempt errors
+   * therefore strands the key in `localStorage` forever — and the server's
+   * `lookupProvisionByIdempotencyKey` deliberately does not filter by status,
+   * so replaying it after the user archives that project returns the ARCHIVED
+   * row instead of creating a new project. The TTL is the bound that holds
+   * whether or not anything clears the key.
+   */
+  describe('the attempt key expires on its own (PROVISION_ATTEMPT_TTL_MS)', () => {
+    test('a key minted within the TTL is reused', async () => {
+      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
+        './ensure-first-project'
+      );
+      const now = 1_800_000_000_000;
+      installStorage(
+        fakeStorage({
+          [STORAGE_KEY]: JSON.stringify({ key: 'live-key', mintedAt: now }),
+        }),
+      );
+
+      expect(getOrCreateProvisionAttemptKey(ACCOUNT, now)).toBe('live-key');
+      expect(getOrCreateProvisionAttemptKey(ACCOUNT, now + PROVISION_ATTEMPT_TTL_MS - 1)).toBe(
+        'live-key',
+      );
+    });
+
+    test('a key older than the TTL is discarded and replaced, not replayed', async () => {
+      const { getOrCreateProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
+        './ensure-first-project'
+      );
+      const now = 1_800_000_000_000;
+      installStorage(
+        fakeStorage({
+          [STORAGE_KEY]: JSON.stringify({
+            key: 'abandoned-key',
+            mintedAt: now - PROVISION_ATTEMPT_TTL_MS,
+          }),
+        }),
+      );
+
+      const minted = getOrCreateProvisionAttemptKey(ACCOUNT, now);
+      expect(minted).not.toBe('abandoned-key');
+      expect(minted).toStartWith('onboarding-first-project:');
+      // The replacement is persisted, so the retries of THIS attempt still
+      // agree with each other.
+      expect(getOrCreateProvisionAttemptKey(ACCOUNT, now)).toBe(minted);
+    });
+
+    test('liveProvisionAttemptKey rejects every non-record value', async () => {
+      const { liveProvisionAttemptKey, PROVISION_ATTEMPT_TTL_MS } = await import(
+        './ensure-first-project'
+      );
+      const now = 1_800_000_000_000;
+
+      expect(liveProvisionAttemptKey(null, now)).toBeNull();
+      // The pre-TTL bare-string format: not a record, so not trusted.
+      expect(liveProvisionAttemptKey('onboarding-first-project:legacy', now)).toBeNull();
+      expect(liveProvisionAttemptKey('{not json', now)).toBeNull();
+      expect(liveProvisionAttemptKey(JSON.stringify({ key: '', mintedAt: now }), now)).toBeNull();
+      expect(liveProvisionAttemptKey(JSON.stringify({ key: 'k' }), now)).toBeNull();
+      // A future timestamp is a moved clock or an edited value — no evidence
+      // the attempt is still live.
+      expect(liveProvisionAttemptKey(JSON.stringify({ key: 'k', mintedAt: now + 1 }), now)).toBeNull();
+      expect(
+        liveProvisionAttemptKey(
+          JSON.stringify({ key: 'k', mintedAt: now - PROVISION_ATTEMPT_TTL_MS }),
+          now,
+        ),
+      ).toBeNull();
+      expect(liveProvisionAttemptKey(JSON.stringify({ key: 'k', mintedAt: now }), now)).toBe('k');
+    });
   });
 
   test('allowCreate: false never provisions and never touches the attempt key', async () => {
