@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
@@ -217,7 +217,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                     className="text-muted-foreground shrink-0"
                     aria-label="Close"
                   >
-                    <Icon.Close className="text-foreground size-4 stroke-1" />
+                    <Close className="text-foreground size-4 stroke-1" />
                   </Button>
                 </ModalClose>
               </div>

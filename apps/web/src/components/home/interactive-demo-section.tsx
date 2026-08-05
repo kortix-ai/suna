@@ -5,9 +5,9 @@ import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Icon } from '@/features/icon/icon';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
   ArrowRightIcon as ArrowRight,
   SquaresFourIcon as Blocks,
@@ -888,7 +888,7 @@ function ChannelsPage({
                 connected ? 'border-kortix-green/30 bg-kortix-green/5' : 'border-border',
               )}
             >
-              <Icon.Slack className="size-7" />
+              <Slack className="size-7" />
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
@@ -909,7 +909,7 @@ function ChannelsPage({
             </Badge>
           ) : (
             <Button size="sm" className="shrink-0">
-              <Icon.Slack className="size-3.5" />{' '}
+              <Slack className="size-3.5" />{' '}
               {tI18nHardcoded.raw(
                 'autoComponentsHomeInteractiveDemoSectionJsxTextAddToSlacka83dbb5b',
               )}

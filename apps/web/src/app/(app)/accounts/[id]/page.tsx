@@ -88,7 +88,8 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
+import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -1305,7 +1306,7 @@ function MembersCard({
                 className="shrink-0 gap-1.5"
                 onClick={() => setInviteOpen(true)}
               >
-                <Icon.Plus className="size-4" />
+                <Plus className="size-4" />
                 Invite
               </Button>
             ) : null}
@@ -1970,7 +1971,7 @@ function InviteMemberModal({
                       aria-label={`Remove ${addr}`}
                       disabled={mutation.isPending}
                     >
-                      <Icon.Close className="size-3" />
+                      <Close className="size-3" />
                     </button>
                   </Badge>
                 ))}
@@ -2193,7 +2194,7 @@ function PendingInvitesSection({
                           onSelect={() => setCancelTarget(invite)}
                           className="gap-2"
                         >
-                          <Icon.Close className="size-3.5" />
+                          <Close className="size-3.5" />
                           Cancel invite
                         </DropdownMenuItem>
                       </DropdownMenuContent>

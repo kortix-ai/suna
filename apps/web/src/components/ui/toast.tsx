@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 import {
   CheckCircleIcon as GoCheckCircleFill,
@@ -99,7 +99,7 @@ export const successToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -131,7 +131,7 @@ export const progressToast = (message: string, options?: ToastOptions): string |
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -167,7 +167,7 @@ export const loadingToast = <T,>(
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -226,7 +226,7 @@ export const errorToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -258,7 +258,7 @@ export const infoToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -290,7 +290,7 @@ export const warningToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>

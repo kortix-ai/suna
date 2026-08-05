@@ -17,7 +17,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Portal } from '@/components/ui/portal';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
@@ -298,7 +298,7 @@ function ItemSidebar({
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
             >
-              <Icon.Github className="size-3.5" />
+              <Github className="size-3.5" />
               View source
             </Link>
           ) : null}

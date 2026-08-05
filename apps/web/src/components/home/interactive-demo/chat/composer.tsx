@@ -1,7 +1,7 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpIcon as ArrowUp,
@@ -148,7 +148,7 @@ export function Composer({
                   <KortixLogo size={12} /> kortix
                 </span>
                 <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
-                  <Icon.Claude className="size-3.5" />
+                  <Claude className="size-3.5" />
                   {tI18nHardcoded.raw(
                     'autoComponentsHomeInteractiveDemoChatComposerJsxTextClaudeOpusf5c492d2',
                   )}

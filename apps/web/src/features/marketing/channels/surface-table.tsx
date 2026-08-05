@@ -1,11 +1,18 @@
 'use client';
 
-import { Icon } from '@/features/icon/icon';
+import { Gmail } from '@/features/icon/icons/gmail';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { surfaces } from './content';
 
-type IconKey = keyof typeof Icon;
+/** `surfaces.rows[].icon` selects a logo by name at runtime, so it can't be
+ *  statically resolved to a single import — this explicit map is the smallest
+ *  set that covers it, kept in sync by hand with `./content.ts`. */
+const ROW_ICONS = { Slack, MicrosoftTeams, Gmail, Kortix } as const;
+type IconKey = keyof typeof ROW_ICONS;
 
 /**
  * The four channel platforms and the honest state of each one.
@@ -38,9 +45,8 @@ export function SurfaceTable(): ReactNode {
 
       <ul>
         {surfaces.rows.map((row, i) => {
-          const Glyph = Icon[row.icon as IconKey] as
-            | ((p: { className?: string }) => ReactNode)
-            | undefined;
+          const Glyph = ROW_ICONS[row.icon as IconKey] as
+            ((p: { className?: string }) => ReactNode) | undefined;
 
           return (
             <li

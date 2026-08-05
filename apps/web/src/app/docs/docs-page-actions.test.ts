@@ -4,10 +4,12 @@ import { resolve } from 'node:path';
 
 /**
  * `docs-page-actions.tsx` is the only place in the docs surface allowed to
- * dot into the client `Icon` namespace — see the RSC-boundary comments in
- * `page.tsx` and `layout.tsx`. This is a source-text contract (same approach
- * as `rsc-icon-boundary.test.ts` and `project-loading-contract.test.ts`)
- * rather than a render test, since rendering would need a full fumadocs +
+ * use the client-only brand icons (Github, ChatGPT, Claude, Cursor, Kortix,
+ * from `@/features/icon/icons/*`) instead of the RSC-safe set in
+ * `@/lib/icons/ssr` — see the RSC-boundary comments in `page.tsx` and
+ * `layout.tsx`. This is a source-text contract (same approach as
+ * `rsc-icon-boundary.test.ts` and `project-loading-contract.test.ts`) rather
+ * than a render test, since rendering would need a full fumadocs +
  * next/navigation harness for no extra signal: what matters is which module
  * boundary each icon crosses.
  */
@@ -22,8 +24,9 @@ describe('docs page actions', () => {
     expect(firstLine?.trim()).toBe("'use client';");
   });
 
-  test('uses Icon.Github, not the RSC-safe GithubLogoIcon', () => {
-    expect(source).toContain('Icon.Github');
+  test('uses the client Github icon, not the RSC-safe GithubLogoIcon', () => {
+    expect(source).toContain("from '@/features/icon/icons/github'");
+    expect(source).toContain('<Github');
     expect(source).not.toContain('GithubLogoIcon');
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Icon } from '@/features/icon/icon';
+import { Copy } from '@/features/icon/icons/copy';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -58,7 +58,7 @@ export function CopyButton({
             {copied ? (
               <CheckIcon className="text-foreground size-4" />
             ) : (
-              <Icon.Copy className="size-4" />
+              <Copy className="size-4" />
             )}
           </motion.span>
         </AnimatePresence>
