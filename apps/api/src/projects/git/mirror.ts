@@ -355,6 +355,17 @@ function looksLikeBareMirror(repoPath: string): boolean {
   );
 }
 
+/**
+ * Return the existing usable mirror without cloning or fetching it.
+ *
+ * Latency-sensitive remote-ref reads use this to enrich results from a warm
+ * cache. A cache miss must stay a cache miss on those request paths.
+ */
+export function existingProjectMirrorPath(project: GitBackedProject): string | null {
+  const repoPath = repoCachePath(project);
+  return looksLikeBareMirror(repoPath) ? repoPath : null;
+}
+
 async function doRefreshMirror(project: GitBackedProject, force = false) {
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });

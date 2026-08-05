@@ -173,12 +173,18 @@ flow(
   "FILE-6",
   { domain: "files", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/branches"] },
   async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER lists branches → 200 with default_branch", async () => {
+    const p = await ctx.fixtures.sharedSeededProject();
+    await ctx.step("OWNER lists seeded default branch → 200 with remote tip", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/branches", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.default_branch").exists("$.branches");
+      const body = r.json<{ default_branch: string }>();
+      r.status(200)
+        .body()
+        .exists("$.default_branch")
+        .has("$.branches[0].name", body.default_branch)
+        .has("$.branches[0].is_default", true)
+        .exists("$.branches[0].tip");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client

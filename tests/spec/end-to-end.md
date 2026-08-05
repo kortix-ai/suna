@@ -264,7 +264,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-3` `GET /projects/:id/files/search?q=&content=1&ref=&limit=` → filename + grep.
 `FILE-4` `GET /projects/:id/files/history?path=` → commit history for path.
 `FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream.
-`FILE-6` `GET /projects/:id/branches` → branches.
+`FILE-6` `GET /projects/:id/branches` → authoritative remote branch refs without cloning repository history. A warm server mirror can add commit metadata and ahead/behind counts. Cold responses keep those optional display fields empty or `null`.
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to OpenCode file API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
