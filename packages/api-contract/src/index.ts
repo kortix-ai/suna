@@ -715,6 +715,10 @@ export const SessionCreateInputSchema = z
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
+    // The clean text auto-titling derives from, when `initial_prompt` is a
+    // rendered envelope (channel scaffolding, a coordinator's session
+    // contract, a --with-file manifest) rather than the user's own words.
+    title_source: z.string().optional(),
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     session_id: z

@@ -24,6 +24,7 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     authType: command.authType,
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
+    callerSessionId: command.callerSessionId,
   };
 }
 

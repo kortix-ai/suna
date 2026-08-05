@@ -1,5 +1,6 @@
 import type { ComposerOptions } from '@/features/session/composer-chat-input';
 import type { SessionConnectorBindings } from '@kortix/sdk';
+import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
@@ -26,7 +27,11 @@ export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'scope'> & { sandbox_slug?: string } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
-  if (options.sandbox_slug) input.sandbox_slug = options.sandbox_slug;
+  if (isMetaAgentName(options.agent)) {
+    input.sandbox_slug = META_SANDBOX_SLUG;
+  } else if (options.sandbox_slug) {
+    input.sandbox_slug = options.sandbox_slug;
+  }
   if (options.agent) input.agent_name = options.agent;
   if (
     options.scope?.availability.connector_bindings &&

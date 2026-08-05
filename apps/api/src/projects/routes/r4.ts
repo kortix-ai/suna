@@ -132,7 +132,8 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
-import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
+import { childIdleGraceMs, shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretsSnapshot } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
@@ -2312,7 +2313,12 @@ projectsApp.openapi(
     // authed for their own project can't relay turn events into another
     // tenant's live session (IDOR).
     const [turnStreamSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({
+        sessionId: projectSessions.sessionId,
+        accountId: projectSessions.accountId,
+        createdBy: projectSessions.createdBy,
+        metadata: projectSessions.metadata,
+      })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -2321,6 +2327,10 @@ projectsApp.openapi(
     if (!turnStreamSession) {
       return c.json({ error: 'Not found' }, 404);
     }
+    const turnStreamMetadata = (turnStreamSession.metadata ?? {}) as Record<string, unknown>;
+    // Coordinator-spawned worker: its idle tail is minutes, not the default
+    // grace — the box wakes on demand when the coordinator returns to it.
+    const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
     // finish (idle) or die (error) without the agent closing its Slack message;
@@ -2353,12 +2363,39 @@ projectsApp.openapi(
       // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
       // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
       // cannot be re-wired here without it.
-      void shortenSandboxDeadlineOnTurnEnd(sessionId, status, errorInfo).catch((err) =>
+      void shortenSandboxDeadlineOnTurnEnd(
+        sessionId,
+        status,
+        errorInfo,
+        childSession ? childIdleGraceMs() : undefined,
+      ).catch((err) =>
         console.warn(
           `[deadline] shorten failed for session ${sessionId}:`,
           err instanceof Error ? err.message : err,
         ),
       );
+      // Second-chance auto-title: create-time generation is a single in-memory
+      // best-effort call, and a session whose only prompt was baked in-guest
+      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // is the natural retry point — the generator is idempotent (needsTitle +
+      // CAS) so an already-titled session is a cheap no-op. The stored
+      // `title_source` outranks the supplied text inside the generator.
+      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
+        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      if (titleRetrySource && turnStreamSession.createdBy) {
+        void generateSessionTitleFromFirstPrompt({
+          projectId,
+          sessionId,
+          accountId: turnStreamSession.accountId,
+          userId: turnStreamSession.createdBy,
+          firstPromptText: titleRetrySource,
+        }).catch((err) =>
+          console.warn(
+            `[title-generate] turn-end retry failed for session ${sessionId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }

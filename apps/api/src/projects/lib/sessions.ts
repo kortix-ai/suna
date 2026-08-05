@@ -6,6 +6,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
@@ -89,6 +90,11 @@ import {
   parseSessionRuntimeContext,
 } from './session-runtime-context';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
+import {
+  buildPlatformMetaOpenCodeConfig,
+  projectMetaAgentEnabled,
+  resolvePlatformMetaSandbox,
+} from './platform-meta-agent';
 
 export type SessionCreateError = {
   status: number;
@@ -277,6 +283,8 @@ export async function buildSessionSandboxEnvVars(input: {
    *  grant defaults to 'all' (back-compat, no narrowing). */
   defaultBranch?: string;
   manifestPath?: string;
+  /** The reserved platform coordinator receives no project checkout or secrets. */
+  platformMetaAgent?: boolean;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -296,8 +304,10 @@ export async function buildSessionSandboxEnvVars(input: {
   // project's sandbox env is byte-for-byte unaffected by this. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = null;
-  if (input.defaultBranch) {
+  let compiledAgentConfig: string | null = input.platformMetaAgent
+    ? buildPlatformMetaOpenCodeConfig()
+    : null;
+  if (input.defaultBranch && !input.platformMetaAgent) {
     compiledAgentConfig = await resolveCompiledAgentConfigForSession(
       {
         projectId: input.projectId,
@@ -348,10 +358,9 @@ export async function buildSessionSandboxEnvVars(input: {
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  const grantEnvForSession = intersectSecretGrants(
-    agentGrantEnv,
-    sessionPolicyRow?.secretsAllowlist ?? null,
-  );
+  const grantEnvForSession = input.platformMetaAgent
+    ? []
+    : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
 
   // The secrets principal is the session's OWNER (`createdBy`), read here by
   // sessionId — NOT `input.userId`, which is whoever is provisioning this run.
@@ -433,7 +442,8 @@ export async function buildSessionSandboxEnvVars(input: {
     // these names from the opencode process (Codex/OpenCode auth is excluded —
     // that one is an intentional native provider).
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
-    KORTIX_PROJECT_AUTO_CLONE: '1',
+    KORTIX_PROJECT_AUTO_CLONE: input.platformMetaAgent ? '0' : '1',
+    ...(input.platformMetaAgent ? { KORTIX_META_AGENT: '1' } : {}),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -558,6 +568,10 @@ export async function createProjectSession(input: {
   authType?: string | null;
   apiKeyType?: string | null;
   inSession?: boolean | null;
+  /** The caller's own session when the credential is session-bound (the
+   *  executor PAT injected into a sandbox). Used only to stop meta→meta
+   *  recursion — a meta coordinator must spawn project agents, not itself. */
+  callerSessionId?: string | null;
   /** The request-time capability verdict for operator-managed (non-member)
    * connection profiles. Personal profiles ignore this and remain owner-only. */
   mayManageSystemConnectorProfiles?: boolean;
@@ -695,11 +709,52 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  const agentName = resolveSessionAgentName({
-    requestedAgent,
-    manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
-    mirroredDefaultAgent,
-  });
+  // The meta coordinator is a per-project experimental opt-in
+  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
+  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
+  // agent name.
+  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
+  // the meta coordinator, and an omitted agent still defaults to it. The one
+  // exception is a caller that IS a meta session: its omitted agent resolves
+  // to the project default (the observed failure was meta "spawning a worker"
+  // and getting another coordinator), and an explicit meta request is
+  // rejected.
+  let callerIsMeta = false;
+  if (metaAgentEnabled && input.callerSessionId) {
+    const [caller] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, input.callerSessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
+  }
+  const agentName =
+    metaAgentEnabled && !requestedAgent && !callerIsMeta
+      ? META_AGENT_NAME
+      : resolveSessionAgentName({
+          requestedAgent,
+          manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
+          mirroredDefaultAgent,
+        });
+  const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
+  if (platformMetaAgent && callerIsMeta) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error:
+            'The meta coordinator cannot spawn another meta coordinator — pick a project agent',
+          code: 'META_AGENT_RECURSION',
+        },
+      },
+    };
+  }
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
@@ -777,7 +832,9 @@ export async function createProjectSession(input: {
     }
   }
 
-  const agentRequiredConnectors = requiredConnectorsForAgent(agentName, loadedAgents);
+  const agentRequiredConnectors = platformMetaAgent
+    ? []
+    : requiredConnectorsForAgent(agentName, loadedAgents);
   const effectiveRequireConnectors = Array.from(
     new Set<string>([...requireConnectors, ...agentRequiredConnectors]),
   );
@@ -891,7 +948,10 @@ export async function createProjectSession(input: {
   // `.catch` in session-sandbox.ts `mintExecutorToken`, which must stay
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
-  if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
+  if (
+    !platformMetaAgent &&
+    projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)
+  ) {
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,
@@ -905,11 +965,31 @@ export async function createProjectSession(input: {
   const projectDefaultSandboxSlug = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
-  const sandboxSlug = resolveSessionSandboxSlug({
-    explicit: normalizeString(body.sandbox_slug ?? body.sandboxSlug),
-    agent: sandboxFromLoadedAgents(agentName, loadedAgents),
-    project: projectDefaultSandboxSlug,
-  });
+  const requestedSandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug);
+  let sandboxSlug: string;
+  if (platformMetaAgent) {
+    // The meta coordinator is locked to its own sandbox. An explicit request for
+    // any other slug is the only failure here, so scope the catch to this branch.
+    try {
+      sandboxSlug = resolvePlatformMetaSandbox(requestedSandboxSlug);
+    } catch {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Agent "meta" always uses sandbox "${META_SANDBOX_SLUG}"`,
+            code: 'META_SANDBOX_LOCKED',
+          },
+        },
+      };
+    }
+  } else {
+    sandboxSlug = resolveSessionSandboxSlug({
+      explicit: requestedSandboxSlug,
+      agent: sandboxFromLoadedAgents(agentName, loadedAgents),
+      project: projectDefaultSandboxSlug,
+    });
+  }
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
@@ -943,7 +1023,7 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  if (sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
+  if (!platformMetaAgent && sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
     try {
       await resolveTemplate(
         {
@@ -1042,6 +1122,10 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
+    // Persist the coordinator→worker link. The sidebar badges child sessions
+    // with it, and the turn-end deadline shortener stops child sandboxes on a
+    // tight grace so finished workers don't idle at full compute.
+    ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
     sandbox_slug: sandboxSlug,
   };
 
@@ -1209,6 +1293,7 @@ export async function createProjectSession(input: {
           initialPrompt,
           opencodeModel,
           llmGatewayEnabled,
+          platformMetaAgent,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,

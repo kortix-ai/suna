@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
+  groupSessionsByCoordinator,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -256,5 +257,34 @@ describe('resolveSessionListViewState', () => {
       visibleCount: 2,
     });
     expect(state).toBe('content');
+  });
+});
+
+describe('groupSessionsByCoordinator', () => {
+  const meta = makeSession({ session_id: 'meta-1', agent_name: 'meta' } as never);
+  const childA = makeSession({
+    session_id: 'child-a',
+    metadata: { spawned_by_session: 'meta-1' },
+  } as never);
+  const childB = makeSession({
+    session_id: 'child-b',
+    metadata: { spawned_by_session: 'meta-1' },
+  } as never);
+  const solo = makeSession({ session_id: 'solo-1' });
+  const orphan = makeSession({
+    session_id: 'orphan-1',
+    metadata: { spawned_by_session: 'gone-1' },
+  } as never);
+
+  test('nests children under their coordinator, in list order', () => {
+    const groups = groupSessionsByCoordinator([meta, childA, solo, childB]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
+    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a', 'child-b']);
+    expect(groups[1].children).toEqual([]);
+  });
+
+  test('a child whose coordinator is not in the list renders top-level', () => {
+    const groups = groupSessionsByCoordinator([orphan, solo]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
   });
 });
