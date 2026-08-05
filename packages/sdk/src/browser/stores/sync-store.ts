@@ -114,6 +114,23 @@ interface SyncState {
 	 *  whose first prompt the server hasn't registered yet. */
 	hasOptimisticMessages: (sessionID: string) => boolean;
 	clearSession: (sessionID: string) => void;
+	/**
+	 * Take a hold on `sessionID`'s transcript on behalf of one mounted consumer.
+	 * Balanced by exactly one {@link SyncState.releaseSession}. See
+	 * {@link DETACHED_SESSION_LIMIT} for what the holds buy.
+	 */
+	retainSession: (sessionID: string) => void;
+	/**
+	 * Drop one hold. When it was the LAST one, the session becomes a candidate
+	 * for eviction and the oldest candidates beyond
+	 * {@link DETACHED_SESSION_LIMIT} are freed.
+	 *
+	 * Returns the session ids whose data this call actually freed — usually
+	 * empty. Callers that keep their own per-session derived state (the
+	 * `MessageWithParts[]` memo in `use-session-sync.ts`) must drop those
+	 * entries too, or they keep alive the very arrays this just released.
+	 */
+	releaseSession: (sessionID: string) => string[];
 	hydrate: (
 		sessionID: string,
 		msgs: Array<{ info: Message; parts: Part[] }>,
@@ -217,6 +234,79 @@ const bridgedPartIds = new Map<string, Set<string>>();
 // delta-accumulated text. Keying by session and releasing only the ending
 // session's bucket fixes it.
 const deltaActiveParts = new Map<string, Set<string>>();
+
+// ---------------------------------------------------------------------------
+// Session retention — how a transcript ever LEAVES memory again.
+//
+// `messages` and `parts` are keyed by session and nothing removed a key.
+// `clearSession` has one caller (a cache-ownership conflict in
+// use-session-sync.ts) and `reset()` has none in application code, so every
+// session a user opened kept its full transcript and every part for the
+// lifetime of the tab. Open ten long sessions and memory climbs monotonically
+// and never comes back.
+//
+// So: reference-count the mounted consumers of each session and free it once
+// the last one is gone. Same idea as React Query's observer count, but bounded
+// by COUNT rather than by a `gcTime` timer — memory pressure is "how many
+// transcripts are resident", not "how old is this one", and a count needs no
+// timer in a store that has none today and stays deterministic under test.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many sessions keep their transcript resident after their LAST consumer
+ * unmounts, most-recently-detached first.
+ *
+ * Not zero, for three reasons:
+ *  1. React StrictMode double-invokes effects (mount → cleanup → mount) in the
+ *     same commit. Freeing the instant the count hits zero would blank the
+ *     transcript on every dev mount, and again on every fast refresh.
+ *  2. `saveSessionToIDB` batches on a 500 ms timer. A session freed the
+ *     millisecond it detaches can be re-read from disk before its own last
+ *     tail landed there.
+ *  3. Back-and-forth between two or three sessions is the common navigation.
+ *     Holding them costs nothing to correctness and skips a disk round trip.
+ *
+ * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
+ * the on-disk cache at 50 sessions / 7 days.
+ */
+const DETACHED_SESSION_LIMIT = 3;
+
+/** Mounted consumers per session. Absent means "nobody ever retained this" —
+ *  see `releaseSession`, which then leaves the session alone entirely. */
+const sessionConsumers = new Map<string, number>();
+/** Sessions at zero consumers, oldest first (Set preserves insertion order). */
+const detachedSessions = new Set<string>();
+
+type SyncData = Pick<
+	SyncState,
+	"messages" | "parts" | "sessionStatus" | "diffs" | "todos"
+>;
+
+/**
+ * Drop these sessions' data outright.
+ *
+ * DELETES the `messages` key rather than emptying it, unlike `clearSession`.
+ * The difference is load-bearing: `use-session-sync.ts` reads `sessionId in
+ * store.messages` both for `isLoading` and (via `shouldHydrateFromCache`) to
+ * decide whether the IndexedDB transcript may repaint. An empty array reads as
+ * "loaded, and empty", which would leave a returning user staring at a blank
+ * transcript that never repaints.
+ */
+function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncData {
+	const messages = { ...state.messages };
+	const parts = { ...state.parts };
+	const sessionStatus = { ...state.sessionStatus };
+	const diffs = { ...state.diffs };
+	const todos = { ...state.todos };
+	for (const sessionID of sessionIDs) {
+		for (const message of messages[sessionID] ?? []) delete parts[message.id];
+		delete messages[sessionID];
+		delete sessionStatus[sessionID];
+		delete diffs[sessionID];
+		delete todos[sessionID];
+	}
+	return { messages, parts, sessionStatus, diffs, todos };
+}
 
 // ============================================================================
 
@@ -502,6 +592,44 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		}),
 
+	retainSession: (sessionID) => {
+		if (!sessionID) return;
+		detachedSessions.delete(sessionID);
+		sessionConsumers.set(sessionID, (sessionConsumers.get(sessionID) ?? 0) + 1);
+	},
+
+	releaseSession: (sessionID) => {
+		const held = sessionConsumers.get(sessionID);
+		// Never retained, never evicted. Hosts that drive this store without
+		// `useSessionSync` (apps/mobile runs its own event pipeline) hold no
+		// references here, and an unbalanced release must not reach their data.
+		if (held === undefined) return [];
+		// Another consumer still has this session on screen. THE case a raw
+		// unmount gets wrong: a transcript and a context modal, or a split view,
+		// render the same live session at once.
+		if (held > 1) {
+			sessionConsumers.set(sessionID, held - 1);
+			return [];
+		}
+		sessionConsumers.delete(sessionID);
+		// Re-insert so this session is the NEWEST detached one, not wherever a
+		// previous detach left it.
+		detachedSessions.delete(sessionID);
+		detachedSessions.add(sessionID);
+
+		const evicted: string[] = [];
+		while (detachedSessions.size > DETACHED_SESSION_LIMIT) {
+			const oldest: string | undefined = detachedSessions.values().next().value;
+			if (oldest === undefined) break;
+			detachedSessions.delete(oldest);
+			evicted.push(oldest);
+		}
+		if (evicted.length === 0) return evicted;
+		for (const id of evicted) forgetSessionIds(id);
+		set((s) => dropSessionData(s, evicted));
+		return evicted;
+	},
+
 	hydrate: (sessionID, msgs) =>
 		set((s) => {
 			const cmp = (a: string, b: string) =>
@@ -715,6 +843,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		dispatchedOptimisticIds.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
+		// The data these holds protected is gone, so the holds are too —
+		// otherwise a late unmount could free a session the next page opened.
+		sessionConsumers.clear();
+		detachedSessions.clear();
 		set({
 			messages: {},
 			parts: {},

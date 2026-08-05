@@ -118,6 +118,28 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     controller.getSnapshot,
   );
 
+  // Reference-count the mounted consumers of this session's transcript so the
+  // store can free it once the last one is gone — without this, every session
+  // opened in the tab stays resident for the tab's lifetime.
+  //
+  // Deliberately NOT folded into the `retainSessionSyncController` call below.
+  // That hold is also gated on `networkEnabled` + `runtimeHealthy`, and a
+  // session read while its sandbox is still booting is precisely the case the
+  // disk paint exists for: eviction there would blank the transcript the user
+  // is looking at. Consumers are consumers whether or not the runtime is up.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId)) return;
+    useSyncStore.getState().retainSession(sessionId);
+    return () => {
+      for (const evicted of useSyncStore.getState().releaseSession(sessionId)) {
+        // This memo holds the exact message and part arrays the store just
+        // dropped. Leaving it behind would keep up to MESSAGE_CACHE_MAX
+        // transcripts alive and defeat the eviction entirely.
+        messageCache.delete(evicted);
+      }
+    };
+  }, [sessionId]);
+
   useEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !cacheOwnerScope) return;
     const claim = claimSessionCacheOwnership(sessionId, cacheOwnerScope);
