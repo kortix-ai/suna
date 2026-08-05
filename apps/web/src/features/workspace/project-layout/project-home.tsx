@@ -37,7 +37,7 @@ import {
   CAPABILITY_TABS,
   capabilityTabHref,
   type CapabilityTab,
-} from '@/features/workspace/capabilities/tabs';
+} from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';

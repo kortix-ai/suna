@@ -1,4 +1,4 @@
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/capabilities-skeleton';
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 /**
  * Navigation Suspense boundary for /projects/[id]/{connectors,skills,commands}.

@@ -5,6 +5,11 @@ import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
@@ -12,7 +17,6 @@ import {
   Modal,
   ModalBody,
   ModalContent,
-  ModalDescription,
   ModalFooter,
   ModalHeader,
   ModalTitle,
@@ -25,8 +29,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { User, UsersThree } from '@phosphor-icons/react';
+import { CaretDownIcon, PlusIcon, User, UsersThree } from '@phosphor-icons/react';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
+import { ConnectorProfileHeader } from './connector-profile-header';
 import {
   connectorProfileSlugAfterNameChange,
   type EasyConnectProfileInput,
@@ -148,16 +154,29 @@ export function AuthorizationStrategyField({
   );
 }
 
+/**
+ * The "Add connector" dialog: profile header + one primary button.
+ *
+ * Defaults (app name, proposed slug, project authorization) are always valid,
+ * so a non-technical user reads the header and presses "+ Add connector"
+ * without meeting "slug" or "authorization owner". Those fields stay behind a
+ * collapsed disclosure for the rare rename / ownership case. The disclosure
+ * force-opens when the slug inside it becomes invalid, so a submit that
+ * would silently refuse never hides its reason.
+ */
 export function ConnectorProfileModal({
   open,
   idPrefix,
   title,
-  description,
   initialName,
   initialSlug,
   existingSlugs,
   pending,
   authorizationStrategyDisabled = false,
+  icon,
+  byline,
+  summary,
+  submitLabel,
   onOpenChange,
   onSubmit,
 }: {
@@ -170,12 +189,21 @@ export function ConnectorProfileModal({
   existingSlugs: readonly string[];
   pending: boolean;
   authorizationStrategyDisabled?: boolean;
+  /** The app tile — `ConnectorProfileIcon` over the catalogue record. */
+  icon?: React.ReactNode;
+  /** e.g. "by Pipedream". */
+  byline?: string | null;
+  /** The catalogue description, when the source publishes one. */
+  summary?: string | null;
+  /** Defaults to `+ Add connector`. */
+  submitLabel?: string;
   onOpenChange: (open: boolean) => void;
   onSubmit: (profile: EasyConnectProfileInput) => void;
 }) {
   const [name, setName] = useState(initialName);
   const [slug, setSlug] = useState(initialSlug);
   const [slugEdited, setSlugEdited] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [authorizationStrategy, setAuthorizationStrategy] =
     useState<ConnectorAuthorizationStrategy>('project');
 
@@ -184,18 +212,28 @@ export function ConnectorProfileModal({
     setName(initialName);
     setSlug(initialSlug);
     setSlugEdited(false);
+    setOptionsOpen(false);
     setAuthorizationStrategy('project');
   }, [initialName, initialSlug, open]);
 
   const slugAvailable = isConnectorProfileSlugAvailable(slug, existingSlugs);
+  const slugInvalid = slug.length > 0 && !slugAvailable;
   const slugDescriptionId = `${idPrefix}-slug-description`;
+  const displayName = name.trim() || initialName;
 
   return (
     <Modal open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
+      <ModalContent className="lg:max-w-lg" aria-describedby={undefined}>
+        <VisuallyHidden asChild>
           <ModalTitle>{title}</ModalTitle>
-          <ModalDescription>{description}</ModalDescription>
+        </VisuallyHidden>
+        <ModalHeader>
+          <ConnectorProfileHeader
+            icon={icon}
+            name={displayName}
+            byline={byline}
+            description={summary}
+          />
         </ModalHeader>
         <form
           onSubmit={(event) => {
@@ -204,69 +242,94 @@ export function ConnectorProfileModal({
             onSubmit({ name, slug, authorizationStrategy });
           }}
         >
-          <ModalBody className="max-h-[60vh] overflow-y-auto">
-            <FieldGroup className="gap-4">
-              <Field>
-                <FieldLabel htmlFor={`${idPrefix}-name`}>Display name</FieldLabel>
-                <Input
-                  id={`${idPrefix}-name`}
-                  value={name}
-                  onChange={(event) => {
-                    const displayName = event.target.value;
-                    setName(displayName);
-                    setSlug((currentSlug) =>
-                      connectorProfileSlugAfterNameChange({
-                        displayName,
-                        currentSlug,
-                        existingSlugs,
-                        slugEdited,
-                      }),
-                    );
-                  }}
-                  placeholder={initialName}
+          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+            <p className="text-muted-foreground text-sm text-pretty">
+              Adds {displayName} to this project. You connect an account right after.
+            </p>
+            <Disclosure
+              variant="outline"
+              className="overflow-hidden"
+              open={optionsOpen || slugInvalid}
+              onOpenChange={setOptionsOpen}
+            >
+              <DisclosureTrigger variant="outline">
+                <Button
+                  type="button"
                   variant="popover"
-                  autoFocus
-                  maxLength={255}
-                  disabled={pending}
-                  required
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`${idPrefix}-slug`}>Slug</FieldLabel>
-                <Input
-                  id={`${idPrefix}-slug`}
-                  value={slug}
-                  onChange={(event) => {
-                    setSlugEdited(true);
-                    setSlug(normalizeConnectorProfileSlug(event.target.value));
-                  }}
-                  placeholder={initialSlug}
-                  variant="popover"
-                  className="font-mono text-xs"
-                  maxLength={128}
-                  aria-invalid={slug.length > 0 && !slugAvailable}
-                  aria-describedby={slugDescriptionId}
-                  disabled={pending}
-                  required
-                />
-                <FieldDescription
-                  id={slugDescriptionId}
-                  role={slug.length > 0 && !slugAvailable ? 'alert' : undefined}
-                  className={cn(slug.length > 0 && !slugAvailable && 'text-destructive')}
+                  className="flex w-full items-center justify-between rounded-none"
                 >
-                  {slug.length > 0 && !slugAvailable
-                    ? 'This slug already exists in this project.'
-                    : 'Unique within this project. You can change the proposed value.'}
-                </FieldDescription>
-              </Field>
-              <AuthorizationStrategyField
-                idPrefix={idPrefix}
-                value={authorizationStrategy}
-                onChange={setAuthorizationStrategy}
-                disabled={authorizationStrategyDisabled}
-                pending={pending}
-              />
-            </FieldGroup>
+                  <span className="text-muted-foreground truncate text-sm font-medium">
+                    Advanced options
+                  </span>
+                  <CaretDownIcon className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </Button>
+              </DisclosureTrigger>
+              <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                <div className="px-4 py-5">
+                  <FieldGroup className="gap-4">
+                    <Field>
+                      <FieldLabel htmlFor={`${idPrefix}-name`}>Display name</FieldLabel>
+                      <Input
+                        id={`${idPrefix}-name`}
+                        value={name}
+                        onChange={(event) => {
+                          const nextName = event.target.value;
+                          setName(nextName);
+                          setSlug((currentSlug) =>
+                            connectorProfileSlugAfterNameChange({
+                              displayName: nextName,
+                              currentSlug,
+                              existingSlugs,
+                              slugEdited,
+                            }),
+                          );
+                        }}
+                        placeholder={initialName}
+                        variant="popover"
+                        maxLength={255}
+                        disabled={pending}
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor={`${idPrefix}-slug`}>Slug</FieldLabel>
+                      <Input
+                        id={`${idPrefix}-slug`}
+                        value={slug}
+                        onChange={(event) => {
+                          setSlugEdited(true);
+                          setSlug(normalizeConnectorProfileSlug(event.target.value));
+                        }}
+                        placeholder={initialSlug}
+                        variant="popover"
+                        className="font-mono text-xs"
+                        maxLength={128}
+                        aria-invalid={slug.length > 0 && !slugAvailable}
+                        aria-describedby={slugDescriptionId}
+                        disabled={pending}
+                        required
+                      />
+                      <FieldDescription
+                        id={slugDescriptionId}
+                        role={slug.length > 0 && !slugAvailable ? 'alert' : undefined}
+                        className={cn(slug.length > 0 && !slugAvailable && 'text-destructive')}
+                      >
+                        {slug.length > 0 && !slugAvailable
+                          ? 'This slug already exists in this project.'
+                          : 'Unique within this project. You can change the proposed value.'}
+                      </FieldDescription>
+                    </Field>
+                    <AuthorizationStrategyField
+                      idPrefix={idPrefix}
+                      value={authorizationStrategy}
+                      onChange={setAuthorizationStrategy}
+                      disabled={authorizationStrategyDisabled}
+                      pending={pending}
+                    />
+                  </FieldGroup>
+                </div>
+              </DisclosureContent>
+            </Disclosure>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button
@@ -277,9 +340,17 @@ export function ConnectorProfileModal({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={pending || !name.trim() || !slugAvailable}>
-              {pending ? <Loading className="size-4 shrink-0" /> : null}
-              Add profile
+            <Button
+              type="submit"
+              className="gap-1.5 active:scale-[0.96]"
+              disabled={pending || !name.trim() || !slugAvailable}
+            >
+              {pending ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <PlusIcon className="size-4 shrink-0" weight="bold" />
+              )}
+              {submitLabel ?? 'Add connector'}
             </Button>
           </ModalFooter>
         </form>

@@ -1,16 +1,14 @@
 'use client';
 
 import { listConnectors, type AdminConnector } from '@kortix/sdk';
-import { MagnifyingGlassIcon, PlugIcon, PlusIcon, ShieldCheckIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
-  InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
@@ -26,34 +24,32 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { connectorAuthorizationQueryKeys } from '@/features/workspace/customize/sections/connector-profile-form';
-import {
-  ConnectorAppIcon,
-  ConnectorStatusBadge,
-  CustomConnectorForm,
-  providerLabel,
-} from '@/features/workspace/customize/sections/connectors-view';
+import { CustomConnectorForm } from '@/features/workspace/customize/sections/connectors-view';
+
+import { ConnectorAppIcon, ConnectorStatusBadge } from './connector-identity';
+import { providerLabel } from './provider-label';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
-import { CapabilityPageShell } from '../capability-page-shell';
-import { CatalogCard } from '../catalog-card';
-import { catalogEmptyKind } from '../catalog-empty';
-import { CatalogGrid } from '../catalog-grid';
-import { CatalogNoMatch } from '../catalog-no-match';
-import { projectDetailQuery } from '../project-detail-query';
-import { connectedCatalogKeys, type CatalogEntry } from './catalog-entry';
-import { CategorySelect, ConnectorBrowse } from './connector-browse';
-import { ALL_CATEGORIES, catalogCategoryKeys } from './connector-categories';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
+import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
+import { connectedCatalogKeys, type CatalogEntry } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
+import { CategorySelect, ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
+import { ALL_CATEGORIES, catalogCategoryKeys } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import {
   connectorDisplayName,
   connectorSummary,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
-import { ConnectorModal } from './connector-modal';
-import { DiscoverAddFlow } from './discover-add-flow';
-import { EasyConnectAddFlow } from './easy-connect-add-flow';
-import { useCatalog } from './use-catalog';
+import { ConnectorModal } from '@/features/workspace/capabilities/connectors/detail/connector-modal';
+import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
+import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
+import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 
 /**
  * Tab order is deliberate, and so is the landing tab: Discovery leads and is
@@ -76,7 +72,7 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 };
 
 /** Which page-level modal is open, if any. Only one can be at a time. */
-type Panel = 'custom' | 'rules';
+type Panel = 'custom';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
@@ -283,27 +279,20 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
             variant="popover"
             size="sm"
           />
-          <InputGroupSearchClear onClick={() => onQueryChange('')} />
         </InputGroupSearch>
       }
       action={
-        <div className="flex shrink-0 items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setPanel('rules')}>
-            <ShieldCheckIcon className="size-4" />
-            Global rules
+        canWrite ? (
+          <Button
+            size="icon-md"
+            variant="secondary"
+            aria-label="Add a custom connector"
+            onClick={() => setPanel('custom')}
+            className="relative transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
+          >
+            <PlusIcon className="size-4" />
           </Button>
-          {canWrite ? (
-            <Button
-              size="icon-md"
-              variant="secondary"
-              aria-label="Add a custom connector"
-              onClick={() => setPanel('custom')}
-              className="relative transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
-            >
-              <PlusIcon className="size-4" />
-            </Button>
-          ) : null}
-        </div>
+        ) : undefined
       }
       filters={
         <>
@@ -408,26 +397,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onAdded={onCatalogAdded}
       />
 
-      <Modal open={panel === 'rules'} onOpenChange={(open) => !open && setPanel(null)}>
-        <ModalContent className="lg:max-w-3xl">
-          <ModalHeader>
-            <ModalTitle>Global rules</ModalTitle>
-            <ModalDescription>
-              Permissions that apply to every connector in this project.
-            </ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[70vh] overflow-y-auto">
-            <PoliciesPanel projectId={projectId} />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-
       {/* Custom upload only. `CustomConnectorForm` prints no heading of its
           own, so unlike the `AddAppPanel` this replaced it gets a real visible
           `ModalHeader` rather than a `VisuallyHidden` title — the dialog needs
           an accessible name and the user needs to know what the form is for.
           That is why `@radix-ui/react-visually-hidden` is no longer imported
-          on this page. */}
+          on this page. Global rules live on `CapabilityTabs` as a Sheet. */}
       <Modal open={panel === 'custom'} onOpenChange={(open) => !open && setPanel(null)}>
         <ModalContent className="lg:max-w-3xl">
           <ModalHeader>

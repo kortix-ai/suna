@@ -13,7 +13,7 @@ import { useCallback, useEffect } from 'react';
 
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { activeCapabilityTab, capabilityTabHref } from '@/features/workspace/capabilities/tabs';
+import { activeCapabilityTab, capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useDevice } from '@/hooks/use-device';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';

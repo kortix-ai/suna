@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
@@ -11,7 +10,7 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   newConfigPrompt,
@@ -19,20 +18,16 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import {
-  MagnifyingGlassIcon,
-  PlusIcon,
-  SparkleIcon,
-} from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { CapabilityPageShell } from '../capability-page-shell';
-import { CatalogCard } from '../catalog-card';
-import { catalogEmptyKind } from '../catalog-empty';
-import { CatalogGrid } from '../catalog-grid';
-import { CatalogEmptyNote, CatalogNoMatch } from '../catalog-no-match';
-import { EntityDetailModal } from '../entity-modal';
-import { projectDetailQuery } from '../project-detail-query';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
+import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { CatalogEmptyNote, CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
+import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
@@ -78,15 +73,6 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const filtered = useMemo(
     () => filterSkills(skills, { scope: scopeArg, query }),
     [skills, scopeArg, query],
-  );
-
-  const counts = useMemo(
-    () => ({
-      all: filterSkills(skills, { scope: null, query }).length,
-      project: filterSkills(skills, { scope: 'project', query }).length,
-      kortix: filterSkills(skills, { scope: 'kortix', query }).length,
-    }),
-    [skills, query],
   );
 
   // Unfiltered lookup (see the component doc comment above) — deliberately
@@ -144,16 +130,13 @@ export function SkillsPage({ projectId }: { projectId: string }) {
       }
       filters={
         <Tabs value={scope} onValueChange={(value) => setScope(value as ScopeFilter)}>
-          <TabsListCompact>
+          <TabsList>
             {SCOPE_FILTERS.map((filter) => (
-              <TabsTriggerCompact key={filter.value} value={filter.value}>
+              <TabsTrigger key={filter.value} value={filter.value}>
                 {filter.label}
-                <Badge variant="secondary" size="sm">
-                  {counts[filter.value]}
-                </Badge>
-              </TabsTriggerCompact>
+              </TabsTrigger>
             ))}
-          </TabsListCompact>
+          </TabsList>
         </Tabs>
       }
     >
@@ -181,7 +164,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
               action={createButton('Create a skill')}
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                  <a href="https://opencode.ai/docs/skills/" target="_blank" rel="noopener noreferrer">
+                  <a
+                    href="https://opencode.ai/docs/skills/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     Docs
                   </a>
                 </Button>

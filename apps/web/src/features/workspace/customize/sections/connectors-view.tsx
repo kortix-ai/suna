@@ -2,18 +2,15 @@
 
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
-  CubeIcon as Boxes,
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
-  GlobeIcon as Globe,
   KeyIcon as KeyRound,
   LockIcon as Lock,
   type Icon as LucideIcon,
   EnvelopeIcon as Mail,
-  ChatIcon as MessageSquare,
   MonitorIcon as Monitor,
   PencilSimpleIcon,
   PlugIcon as Plug,
@@ -126,9 +123,7 @@ import {
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
-  pipedreamConnect,
   pipedreamConnectConnectionProfile,
-  pipedreamFinalize,
   pipedreamFinalizeConnectionProfile,
   pollConnectionProfileOAuth2DeviceAuthorization,
   putConnectionProfileOAuth2Application,
@@ -178,16 +173,17 @@ import { AuthorizationStrategyField, ConnectorProfileModal } from './connector-p
 import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
-const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
-  pipedream: Zap,
-  mcp: Boxes,
-  openapi: Globe,
-  postman: Globe,
-  graphql: Globe,
-  http: Globe,
-  channel: MessageSquare,
-  computer: Monitor,
-};
+// Both moved OUT of this file. It is 5,219 lines and 50 components; a plain
+// function and a hook exported beside them took the whole module off React Fast
+// Refresh's hot path (every edit = full page reload) and forced any consumer of
+// either symbol to bundle all of it. Imported back so this legacy surface is
+// unchanged.
+import {
+  ConnectorAppIcon,
+  ConnectorStatusBadge,
+} from '@/features/workspace/capabilities/connectors/connector-identity';
+import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
+import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
 
 const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
   read: 'outline',
@@ -197,53 +193,6 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
-
-/** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
-export function providerLabel(p: AdminConnector['provider']): string {
-  if (p === 'pipedream') return 'App';
-  if (p === 'channel') return 'Channel';
-  if (p === 'computer') return 'Computer';
-  if (p === 'postman') return 'Postman';
-  return p.toUpperCase();
-}
-
-export function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
-  return useMutation({
-    mutationFn: async () => {
-      const { token, app } = await pipedreamConnect(projectId, slug);
-      if (!token || !app) throw new Error('App connect is not configured');
-      const pd = createFrontendClient({
-        externalUserId: `${projectId}:${slug}`,
-        tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
-      });
-      const release = withPipedreamOverlayEscape();
-      let connected = false;
-      try {
-        connected = await new Promise<boolean>((resolve, reject) => {
-          pd.connectAccount({
-            app,
-            token,
-            onSuccess: () => resolve(true),
-            onClose: (status: { successful: boolean }) => resolve(status.successful),
-            onError: (err: unknown) =>
-              reject(new Error((err as Error)?.message || 'Connection cancelled')),
-          });
-        });
-      } finally {
-        release();
-      }
-      if (!connected) return { connected: false };
-      await pipedreamFinalize(projectId, slug);
-      return { connected: true };
-    },
-    onSuccess: (res) => {
-      if (!res.connected) return;
-      successToast('Connected');
-      onConnected();
-    },
-    onError: (err: Error) => errorToast(err.message),
-  });
-}
 
 /**
  * Connect another project-owned account under one connector (support@ alongside
@@ -493,44 +442,6 @@ function statusDot(c: AdminConnector): string {
   return 'bg-kortix-green';
 }
 
-export function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const status = connectorSetupStatus(connector);
-  if (status === 'error')
-    return (
-      <Badge variant="destructive" size="sm">
-        Error
-      </Badge>
-    );
-  if (status === 'no_auth')
-    return (
-      <Badge variant="outline" size="sm">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558',
-        )}
-      </Badge>
-    );
-  if (status === 'user_managed')
-    return (
-      <Badge variant="outline" size="sm">
-        User-managed
-      </Badge>
-    );
-  if (status === 'needs_setup')
-    return (
-      <Badge variant="warning" size="sm">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49',
-        )}
-      </Badge>
-    );
-  return (
-    <Badge variant="success" size="sm">
-      Connected
-    </Badge>
-  );
-}
-
 function SaveBar({
   dirty,
   saving,
@@ -719,49 +630,6 @@ function RailGroupLabel({ children }: { children: React.ReactNode }) {
     <div className="text-muted-foreground/50 px-3 pt-3 pb-1 text-xs font-medium tracking-wider uppercase">
       {children}
     </div>
-  );
-}
-
-function appIconTileClass(size: 'sm' | 'lg'): string {
-  return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
-}
-
-export function ConnectorAppIcon({
-  connector,
-  size = 'lg',
-}: {
-  connector: AdminConnector;
-  size?: 'sm' | 'lg';
-}) {
-  const imgSrc = connector.iconUrl ?? null;
-
-  if (imgSrc) {
-    return (
-      <span
-        className={cn(
-          'border-border/60 bg-card flex shrink-0 items-center justify-center overflow-hidden border',
-          'relative',
-          appIconTileClass(size),
-        )}
-      >
-        <Image
-          src={imgSrc}
-          alt=""
-          referrerPolicy="no-referrer"
-          fill
-          sizes={size === 'lg' ? '40px' : '28px'}
-          className="object-contain"
-          unoptimized
-        />
-      </span>
-    );
-  }
-  return (
-    <EntityAvatar
-      icon={PROVIDER_ICON[connector.provider] ?? Plug}
-      size={size}
-      label={connector.name}
-    />
   );
 }
 

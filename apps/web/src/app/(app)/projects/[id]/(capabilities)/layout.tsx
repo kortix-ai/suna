@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { CapabilityTabs } from '@/features/workspace/capabilities/capability-tabs';
+import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 
 /**
  * Shared shell for /projects/[id]/{connectors,skills,commands}. The `(capabilities)`

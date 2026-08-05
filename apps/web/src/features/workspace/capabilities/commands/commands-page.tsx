@@ -20,13 +20,13 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { CommandIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { CapabilityPageShell } from '../capability-page-shell';
-import { CatalogCard } from '../catalog-card';
-import { catalogEmptyKind } from '../catalog-empty';
-import { CatalogGrid } from '../catalog-grid';
-import { CatalogNoMatch } from '../catalog-no-match';
-import { EntityDetailModal } from '../entity-modal';
-import { projectDetailQuery } from '../project-detail-query';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
+import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
+import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterCommands } from './command-filter';
 
 /**
