@@ -869,4 +869,48 @@ describe("useSyncStore — bridgedPartIds tracking is session-scoped", () => {
 		expect(ids).toContain("prt_step");
 		expect(ids).toContain("prt_text");
 	});
+
+	// The test above proves session-scoping (ses_1's bridge doesn't leak into
+	// ses_2), but a Map keyed by session is scoped correctly by construction
+	// even if `clearSession` never released anything — that test alone can't
+	// tell "forgetSessionIds deletes bridgedPartIds's bucket" from "it
+	// doesn't". This one reuses the id in the SAME session after
+	// clearSession, which only passes if that release actually happens. The
+	// realistic trigger: a cache-ownership conflict for the same session
+	// calls clearSession(sessionId) and then re-hydrates the same message
+	// ids (see use-session-sync.ts).
+	test("clearSession releases the session's OWN bridged ids — reusing the id in the same session afterward is not treated as still-bridged", () => {
+		const store = useSyncStore.getState();
+
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		store.clearSession("ses_1");
+
+		// The SAME session, same message id, reused after the clear. It picks
+		// up an unrelated (non-text) part before any text part arrives for it.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_1",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		// The first real text part for this id lands in ses_1 again. If
+		// clearSession released ses_1's bridge tracking, this appends normally.
+		// If it didn't, this id is still marked bridged for ses_1 and the step
+		// part is wiped.
+		store.upsertPart(
+			"msg_reused",
+			textPart("prt_text", "msg_reused", "unrelated text", "ses_1"),
+		);
+
+		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_step");
+		expect(ids).toContain("prt_text");
+	});
 });
