@@ -47,8 +47,39 @@ interface SyncState {
 	applyEvent: (event: OpenCodeEvent) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
-	upsertPart: (messageID: string, part: Part) => void;
+	/**
+	 * `sessionID` is optional. Omitted, the deltaActiveParts guard below reads
+	 * `part.sessionID` directly. Pass it explicitly whenever the caller already
+	 * resolved a more trustworthy session id than the wire part carries — see
+	 * the `message.part.updated` handler in `applyEvent`, which falls back to
+	 * scanning every session's message list specifically because
+	 * `part.sessionID` can be absent on the wire. Without this parameter that
+	 * resolved id has nowhere to go, and the guard silently no-ops for exactly
+	 * the malformed events it exists to protect against.
+	 *
+	 * Kept optional (not merged into `part`, not required) because `upsertPart`
+	 * has real callers outside this file (`apps/web` via `useSessionStateStore`)
+	 * that only ever pass `(messageID, part)` — this stays source-compatible
+	 * with them.
+	 */
+	upsertPart: (messageID: string, part: Part, sessionID?: string) => void;
 	removePart: (messageID: string, partID: string) => void;
+	/**
+	 * `sessionID` is a new REQUIRED leading parameter (was `(messageID, partID,
+	 * field, delta)`) — a breaking arity change for anyone calling this action
+	 * directly. Deliberate, not silent: the only caller of `applyPartDelta` in
+	 * this repo is this file's own `applyEvent` (`message.part.delta` case),
+	 * which already has a reliable `sessionID` on the event itself — no
+	 * "resolve it from an unreliable field" case like `upsertPart` above.
+	 * Kept required, not optional-with-fallback, because there is no
+	 * `part.sessionID`-equivalent to fall back to here that wouldn't be a
+	 * guess. Verified no other in-repo caller exists (`apps/web`, `apps/mobile`
+	 * both use their own stores/methods, not this one). This action is exported
+	 * on `useSyncStore` (`./sync-store`, `./internal/sync-store`), which makes
+	 * it technically part of the published surface, so an out-of-repo consumer
+	 * calling it directly would fail to compile — that needs a semver-relevant
+	 * callout in the next release notes.
+	 */
 	applyPartDelta: (
 		sessionID: string,
 		messageID: string,
@@ -139,6 +170,11 @@ function hasTrackedId(
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	// A session cleared without ever going idle/erroring (the only other
+	// release points, below) would otherwise leave a dead bucket in
+	// deltaActiveParts for the lifetime of the tab — the exact leak class
+	// this function exists to prevent for optimisticIds above.
+	deltaActiveParts.delete(sessionID);
 }
 
 const isOptimistic = (sessionID: string, messageID: string) =>
@@ -226,8 +262,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		}),
 
-	upsertPart: (messageID, part) =>
+	upsertPart: (messageID, part, sessionID) =>
 		set((s) => {
+			// See the `sessionID` param doc above: prefer the caller-resolved id,
+			// fall back to the part's own field only when no caller passed one.
+			const partSessionID = sessionID ?? part.sessionID;
 			// If this message had bridged (optimistic) parts, clear them now
 			// that a real part has arrived — prevents double-rendering.
 			let list: Part[];
@@ -298,7 +337,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// text (missing the beginning). Skip the insert — the delta-
 				// created version already exists in the parts list under the
 				// message entry created by the delta handler.
-					if (hasTrackedId(deltaActiveParts, part.sessionID, part.id) && isTextLikePart(part)) {
+					if (hasTrackedId(deltaActiveParts, partSessionID, part.id) && isTextLikePart(part)) {
 					// Delta-created part already exists — check all messageID
 					// buckets since the delta handler may have stored it under
 					// a different (stub) message entry.
@@ -842,7 +881,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					} as Message);
 				}
 
-				store.upsertPart(part.messageID, part);
+				// Pass resolvedSessionID explicitly — part.sessionID can be absent
+				// on the wire (the fallback chain above exists for exactly that),
+				// and the deltaActiveParts guard in upsertPart must not silently
+				// no-op just because that field is missing.
+				store.upsertPart(part.messageID, part, resolvedSessionID);
 				if (isTextLikePart(part)) {
 					if (!resolvedSessionID) return;
 					const msgInfo = get().messages[resolvedSessionID]?.find(
@@ -909,6 +952,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 					store.upsertPart(props.messageID, {
 						id: props.partID,
+						sessionID: props.sessionID,
 						messageID: props.messageID,
 						type: "text",
 						[props.field]: "",

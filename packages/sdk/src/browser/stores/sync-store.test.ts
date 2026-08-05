@@ -756,4 +756,67 @@ describe("useSyncStore — deltaActiveParts tracking is session-scoped", () => {
 		expect(useSyncStore.getState().parts.msg_a_real).toBeUndefined();
 		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
 	});
+
+	// The `message.part.updated` handler resolves a session id through a
+	// fallback chain (`part.sessionID ?? eventSessionID ?? <scan messages>`)
+	// specifically because `part.sessionID` can be absent on the wire. The
+	// guard above must consult THAT resolved id, not `part.sessionID` alone —
+	// otherwise a wire part with no `sessionID` field silently disables the
+	// guard even though the surrounding handler knew exactly which session it
+	// belonged to.
+	test("message.part.updated with part.sessionID absent still rejects a stale snapshot for a tracked part", () => {
+		const store = useSyncStore.getState();
+
+		store.upsertPart("msg_b_stub", textPart("prt_w", "msg_b_stub", "Hel", "ses_b"));
+		store.applyPartDelta("ses_b", "msg_b_stub", "prt_w", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_b_stub[0] as TextPart).text).toBe("Hello");
+
+		// The incoming part carries NO sessionID field at all (the exact wire
+		// condition the fallback chain exists for). The event's own
+		// properties.sessionID is "ses_b", so the handler's resolvedSessionID
+		// still correctly identifies session B — that resolved id, not the
+		// missing field, is what the guard must see.
+		store.applyEvent({
+			id: "evt_stale_no_session_on_part",
+			type: "message.part.updated",
+			properties: {
+				sessionID: "ses_b",
+				time: Date.now(),
+				part: {
+					id: "prt_w",
+					messageID: "msg_b_real",
+					type: "text",
+					text: "Hel",
+				},
+			},
+		} as never);
+
+		expect(useSyncStore.getState().parts.msg_b_real).toBeUndefined();
+		expect((useSyncStore.getState().parts.msg_b_stub[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("session A's own idle clears its own bucket, allowing a later snapshot to land", () => {
+		const store = useSyncStore.getState();
+
+		store.upsertPart("msg_a_stub", textPart("prt_z", "msg_a_stub", "Hel", "ses_a"));
+		store.applyPartDelta("ses_a", "msg_a_stub", "prt_z", "text", "lo");
+		expect((useSyncStore.getState().parts.msg_a_stub[0] as TextPart).text).toBe("Hello");
+
+		// Session A itself finishes streaming — unlike the cross-session test
+		// above, THIS session's own idle must release its own tracking.
+		store.applyEvent({
+			id: "evt_idle_a",
+			type: "session.idle",
+			properties: { sessionID: "ses_a" },
+		} as never);
+
+		// A later snapshot for the same part id, targeting a different bucket,
+		// now lands normally — session A is no longer streaming, so nothing
+		// should still be guarding prt_a's stale-snapshot rejection.
+		store.upsertPart("msg_a_real", textPart("prt_z", "msg_a_real", "Hel", "ses_a"));
+
+		expect((useSyncStore.getState().parts.msg_a_real?.[0] as TextPart | undefined)?.text).toBe(
+			"Hel",
+		);
+	});
 });
