@@ -6,7 +6,7 @@ import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { PromptPart, SendMessageOptions } from './keys';
-import { unwrap } from './shared';
+import { canQueryOpenCodeSession, unwrap } from './shared';
 
 // ============================================================================
 // Send retry policy — ported from apps/web's `opencode-send-retry.ts` so every
@@ -136,7 +136,16 @@ export function useOpenCodeMessages(sessionId: string) {
   // navigated away from, is otherwise a legitimate eviction candidate while
   // that preview is still on screen; those previews have no re-hydrate path of
   // their own, so they would simply go empty.
-  useEffect(() => useSyncStore.getState().retainSession(sessionId), [sessionId]);
+  //
+  // Guarded exactly like use-session-sync.ts. Callers pass Kortix route ids
+  // here as well as OpenCode ids — a booting session renders this hook with the
+  // project-session UUID — and those can never hold runtime data. Retaining one
+  // would park a permanently empty id in the detach window on unmount, spending
+  // a slot and evicting a real transcript one navigation early.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId)) return;
+    return useSyncStore.getState().retainSession(sessionId);
+  }, [sessionId]);
 
   // Select via the store's shared, referentially-stable join. getMessages()
   // rebuilds via .map() on every call, which breaks useSyncExternalStore's

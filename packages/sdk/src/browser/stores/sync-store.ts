@@ -313,8 +313,28 @@ const sessionMessageRows = new Map<
 >();
 const EMPTY_MESSAGE_ROWS: MessageWithParts[] = [];
 
+/** Insert-or-refresh `sessionID` as the most recently used entry, dropping the
+ *  least recently used one once the map is over {@link MESSAGE_ROWS_LIMIT}.
+ *  Re-inserting is what moves a key to the end of a Map's iteration order. */
+function touchSessionMessageRows(
+	sessionID: string,
+	entry: {
+		msgs: Message[] | undefined;
+		partRefs: (Part[] | undefined)[];
+		result: MessageWithParts[];
+	},
+): void {
+	sessionMessageRows.delete(sessionID);
+	sessionMessageRows.set(sessionID, entry);
+	if (sessionMessageRows.size > MESSAGE_ROWS_LIMIT) {
+		const leastRecentlyUsed = sessionMessageRows.keys().next().value;
+		if (leastRecentlyUsed) sessionMessageRows.delete(leastRecentlyUsed);
+	}
+}
+
 /** Mounted consumers per session. Absent means "nobody ever retained this" —
- *  see `releaseSession`, which then leaves the session alone entirely. */
+ *  see the release returned by `retainSession`, which then leaves the session
+ *  alone entirely. */
 const sessionConsumers = new Map<string, number>();
 /** Sessions at zero consumers, oldest first (Set preserves insertion order). */
 const detachedSessions = new Set<string>();
@@ -364,6 +384,26 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  *
  * The window therefore holds at most LIMIT + (releases since the last retain),
  * and is back to LIMIT the moment any session mounts.
+ *
+ * Synchronous on purpose. Deferring it (a microtask, a post-commit hook) so
+ * that every retain in a commit lands first would help only consumers that
+ * mount in the SAME commit as the session being opened. The case that motivates
+ * deferral — a parent's spawn-tool preview of a child session — is not one of
+ * them: the preview renders off the parent's transcript, which arrives from
+ * IndexedDB or the network a commit or more after the parent mounts, so the
+ * child's retain is always too late no matter how the prune is scheduled.
+ * Deferral would buy nothing there and cost the determinism that keeps unmount
+ * out of the eviction path.
+ *
+ * The residual hazard is real and worth naming: a child session the user opened
+ * directly, then left, can be evicted while a parent's preview of it is about
+ * to render, and previews have no repaint path. Closing it needs the reference
+ * declared before the data is read — either the host retaining child ids when
+ * it parses the parent's transcript, or `useOpenCodeMessages` reading the disk
+ * cache the way `useSessionSync` does. The second needs the child's
+ * `kortixSessionScope` plumbed through from the host: entries written for an
+ * opened session are keyed `…:kortix-session:<scope>`, so a scopeless read
+ * looks up a different key and misses (idb-sync-cache-key.ts:6-9).
  */
 function pruneDetachedSessions(): string[] {
 	const evicted: string[] = [];
@@ -709,7 +749,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 			}
-			if (same) return cached.result;
+			if (same) {
+				// A hit is USE. Without this the order is insertion order, not
+				// recency, and a stable session that renders unchanged for
+				// minutes is pushed out by other sessions' rebuilds — costing it
+				// a needless rebuild and one extra render.
+				touchSessionMessageRows(sessionID, cached);
+				return cached.result;
+			}
 		}
 
 		const partRefs: (Part[] | undefined)[] = [];
@@ -719,12 +766,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			partRefs.push(messageParts);
 			result.push({ info, parts: messageParts ?? [] });
 		}
-		sessionMessageRows.delete(sessionID);
-		sessionMessageRows.set(sessionID, { msgs, partRefs, result });
-		if (sessionMessageRows.size > MESSAGE_ROWS_LIMIT) {
-			const oldest = sessionMessageRows.keys().next().value;
-			if (oldest) sessionMessageRows.delete(oldest);
-		}
+		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
 		return result;
 	},
 

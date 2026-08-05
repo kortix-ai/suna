@@ -1165,6 +1165,22 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		expect(ids).toContain("prt_text");
 	});
 
+	// An id that can never hold runtime data — an empty string here, a Kortix
+	// route UUID at the hook boundary — must not take one of the three slots.
+	// Parking one evicts a real transcript a navigation early.
+	test("an empty session id never takes a slot in the window", () => {
+		visit("ses_a");
+		// Whatever a caller does with an unusable id, it costs nothing.
+		for (let i = 0; i < 5; i++) useSyncStore.getState().retainSession("")();
+		visit("ses_b");
+		visit("ses_c");
+
+		// Three real sessions detached, exactly at the bound: nothing to evict.
+		seedSession("ses_d");
+		useSyncStore.getState().retainSession("ses_d");
+		expect(isResident("ses_a")).toBe(true);
+	});
+
 	test("reset() clears the retention bookkeeping along with the data", () => {
 		seedSession("ses_a");
 		const release = useSyncStore.getState().retainSession("ses_a");
@@ -1253,6 +1269,43 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 
 		expect("ses_1" in useSyncStore.getState().messages).toBe(false);
 		expect(held.rebuild()).not.toBe(held.rows);
+	});
+
+	// The memo is bounded, or a tab that never navigates away still accumulates
+	// one full set of rows per session it has ever rendered.
+	test("the memo is bounded — the least recently used session is dropped", () => {
+		// 21 distinct sessions rendered once each, never re-read: probing one
+		// early would count as use and reorder the very thing under test.
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 21; i++) {
+			const id = `ses_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
+			held.push(capture(id));
+		}
+
+		// 21 > MESSAGE_ROWS_LIMIT. Assert the survivor first — asking about an
+		// evicted session re-inserts it and would evict this one.
+		expect(held[1].rebuild()).toBe(held[1].rows);
+		expect(held[0].rebuild()).not.toBe(held[0].rows);
+	});
+
+	test("a hit counts as use, so a stable session is not pushed out by other sessions", () => {
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 20; i++) {
+			const id = `ses_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
+			held.push(capture(id));
+		}
+
+		// ses_0 renders again, unchanged — a memo HIT. That is use, so it is no
+		// longer the least recently used; ses_1 is.
+		expect(held[0].rebuild()).toBe(held[0].rows);
+
+		useSyncStore.getState().upsertMessage("ses_20", userMessage("msg_20", "ses_20"));
+		capture("ses_20");
+
+		expect(held[0].rebuild()).toBe(held[0].rows);
+		expect(held[1].rebuild()).not.toBe(held[1].rows);
 	});
 
 	test("clearSession drops the memoized rows too", () => {
