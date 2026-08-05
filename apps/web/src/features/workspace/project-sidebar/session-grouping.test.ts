@@ -38,6 +38,78 @@ describe('groupSessions — status mode', () => {
     });
     expect(grouped.sections.flatMap((s) => s.sessions.map((x) => x.session_id))).toEqual(['run']);
   });
+
+  test('a zero review count does not move a session into needs-you', () => {
+    const grouped = groupSessions([makeSession({ session_id: 'run', status: 'running' })], {
+      mode: 'status', order: 'activity', reviewCountBySession: { run: 0 }, now: NOW,
+    });
+    expect(grouped.sections.map((s) => s.id)).toEqual(['running']);
+  });
+
+  test('starting (provisioning) sits in the running section', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({ session_id: 'start', status: 'provisioning' }),
+        makeSession({ session_id: 'done', status: 'completed' }),
+      ],
+      { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+    );
+    const runningSection = grouped.sections.find((s) => s.id === 'running');
+    expect(runningSection?.sessions.map((s) => s.session_id)).toEqual(['start']);
+  });
+
+  test('recent holds completed, stopped and failed', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({ session_id: 'done', status: 'completed' }),
+        makeSession({ session_id: 'stop', status: 'stopped' }),
+        makeSession({ session_id: 'fail', status: 'failed' }),
+        makeSession({ session_id: 'run', status: 'running' }),
+      ],
+      { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+    );
+    const recent = grouped.sections.find((s) => s.id === 'recent');
+    expect(recent?.sessions.map((s) => s.session_id).sort()).toEqual(['done', 'fail', 'stop']);
+  });
+
+  test('omits an empty section entirely (not just a hidden one)', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({ session_id: 'done', status: 'completed' }),
+        makeSession({ session_id: 'stop', status: 'stopped' }),
+      ],
+      { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+    );
+    expect(grouped.sections.map((s) => s.id)).toEqual(['recent']);
+  });
+
+  test('showHeaders is true at two or more populated sections', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({ session_id: 'run', status: 'running' }),
+        makeSession({ session_id: 'done', status: 'completed' }),
+      ],
+      { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+    );
+    expect(grouped.showHeaders).toBe(true);
+  });
+
+  test('sorts newest-first within each section under the default activity order', () => {
+    const older = makeSession({
+      session_id: 'older',
+      status: 'completed',
+      created_at: '2026-01-01T00:00:00.000Z',
+    });
+    const newer = makeSession({
+      session_id: 'newer',
+      status: 'completed',
+      created_at: '2026-02-01T00:00:00.000Z',
+    });
+    const grouped = groupSessions([older, newer], {
+      mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW,
+    });
+    expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
+  });
 });
 
 describe('groupSessions — activity mode', () => {

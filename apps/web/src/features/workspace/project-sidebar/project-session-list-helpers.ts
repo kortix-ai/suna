@@ -11,9 +11,7 @@ import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
  * - what a row is titled, and how its timestamp is abbreviated
  *   (`getSessionDisplayTitle`, `shortRelative`);
  * - which of loading/error/empty/no-matches/content renders
- *   (`resolveSessionListViewState`);
- * - which section each row belongs to, in which order, and whether the section
- *   headers earn their place at all (`groupSessionsForSidebar`).
+ *   (`resolveSessionListViewState`).
  *
  * Display status itself is NOT decided here — `sessionDisplayStatus` in
  * `components/projects/session-label` owns that mapping, and this file reads it.
@@ -125,28 +123,3 @@ export function resolveSessionListViewState(params: {
   return 'content';
 }
 
-export { groupSessions } from './session-grouping';
-export type {
-  SessionSectionId,
-  SessionSection,
-  GroupedSessions,
-  SessionGroupMode,
-  SessionOrderMode,
-} from './session-grouping';
-
-import type { GroupedSessions } from './session-grouping';
-import { groupSessions } from './session-grouping';
-
-/** @deprecated Status-mode shorthand kept for existing callers. Membership is
- *  decided by display status via `groupSessions({ mode: 'status' })` — the
- *  mapping rules live in ONE place (`sessionDisplayStatus`), not here.
- *
- *  `reviewCountBySession` is `useReviewSessionSummary().needsYouBySession`
- *  unchanged. That hook returns `{}` when the review_center flag is off, which
- *  is why this function needs no flag of its own. */
-export function groupSessionsForSidebar(
-  sessions: ProjectSession[],
-  reviewCountBySession: Record<string, number>,
-): GroupedSessions {
-  return groupSessions(sessions, { mode: 'status', order: 'activity', reviewCountBySession });
-}

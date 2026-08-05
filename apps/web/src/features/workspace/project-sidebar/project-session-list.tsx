@@ -246,6 +246,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     hiddenSections,
   });
 
+  // `resolveSessionListViewState` only sees counts before filtering by
+  // `hiddenSections` — it has no way to know every section got hidden. Catch
+  // that case here instead of letting `FadedScrollArea` render nothing with
+  // no explanation.
+  if (grouped.sections.length === 0) {
+    return (
+      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+    );
+  }
+
   return (
     <>
       <FadedScrollArea className="h-full min-h-0 space-y-px">
@@ -393,7 +403,7 @@ function SessionListSection({
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
-        <div className="text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+        <div className="group/section-header text-muted-foreground/60 flex h-6 items-center gap-1.5 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
           <CaretRightIcon
             aria-hidden
             className="size-3 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/section:rotate-90"
@@ -407,20 +417,24 @@ function SessionListSection({
           />
         </div>
       </DisclosureTrigger>
-      <DisclosureContent>{children}</DisclosureContent>
+      <DisclosureContent contentClassName="space-y-px">{children}</DisclosureContent>
     </Disclosure>
   );
 }
 
 /** The section header's own `⋯` — mounts the SAME `SessionFilterMenu` as the
  *  Sessions header (project-sidebar.tsx), no section-scoped filter state.
- *  Hover-revealed via `group/section` on the enclosing `Disclosure`; stays
- *  visible while its own menu is open via `data-[state=open]`, which Radix
- *  stamps on this trigger directly (not the group). The click handler stops
- *  propagation so opening the menu never also toggles the disclosure — same
- *  pattern as the row-level `⋯` in `ProjectSessionRow`. The hit area extends
- *  past the visible button with `before:absolute before:-inset-1` instead of
- *  growing the button, so the `h-6` header never changes height. */
+ *  Hover-revealed via `group/section-header` on the header row only (not the
+ *  whole `group/section` disclosure), so hovering a row inside the section
+ *  doesn't also fade in the header's `⋯`; stays visible while its own menu is
+ *  open via `data-[state=open]`, which Radix stamps on this trigger directly
+ *  (not the group). Both the click AND keydown (Enter/Space) handlers stop
+ *  propagation so opening the menu — by pointer or keyboard — never also
+ *  toggles the disclosure, which Radix's `pointerdown` open would otherwise
+ *  race against the header's `onKeyDown`-driven `toggle()` — same pattern as
+ *  the row-level `⋯` in `ProjectSessionRow`. The hit area extends past the
+ *  visible button with `before:absolute before:-inset-1` instead of growing
+ *  the button, so the `h-6` header never changes height. */
 function SessionSectionMenu({
   projectId,
   sessions,
@@ -443,10 +457,15 @@ function SessionSectionMenu({
           className={cn(
             'relative shrink-0 opacity-0 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
             'before:absolute before:-inset-1',
-            'group-hover/section:opacity-100 data-[state=open]:opacity-100',
+            'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
           )}
           onClick={(event) => {
             event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.stopPropagation();
+            }
           }}
         >
           <MoreHorizontal className="size-3.5" />
