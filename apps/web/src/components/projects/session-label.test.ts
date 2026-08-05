@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
   availableSessionFilterOptions,
+  availableSessionStatusFilterOptions,
+  matchesSessionStatusFilter,
   SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
   type SessionDisplayStatus,
@@ -120,5 +122,74 @@ describe('sessionDisplayStatus', () => {
 
   test('labels never say "Active" — the data cannot support it', () => {
     expect(Object.values(SESSION_DISPLAY_STATUS_LABELS)).not.toContain('Active');
+  });
+});
+
+describe('matchesSessionStatusFilter', () => {
+  test('all matches every lifecycle status', () => {
+    const statuses: ProjectSessionStatus[] = [
+      'queued', 'branching', 'provisioning', 'running', 'completed', 'stopped', 'failed',
+    ];
+    for (const status of statuses) {
+      expect(matchesSessionStatusFilter(makeSession({ status }), 'all')).toBe(true);
+    }
+  });
+
+  test('running covers the whole starting family plus running', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
+      expect(matchesSessionStatusFilter(makeSession({ status }), 'running')).toBe(true);
+    }
+    expect(matchesSessionStatusFilter(makeSession({ status: 'completed' }), 'running')).toBe(false);
+  });
+
+  test('done matches only completed', () => {
+    expect(matchesSessionStatusFilter(makeSession({ status: 'completed' }), 'done')).toBe(true);
+    expect(matchesSessionStatusFilter(makeSession({ status: 'stopped' }), 'done')).toBe(false);
+  });
+
+  test('stopped and failed match only themselves', () => {
+    expect(matchesSessionStatusFilter(makeSession({ status: 'stopped' }), 'stopped')).toBe(true);
+    expect(matchesSessionStatusFilter(makeSession({ status: 'failed' }), 'failed')).toBe(true);
+    expect(matchesSessionStatusFilter(makeSession({ status: 'failed' }), 'stopped')).toBe(false);
+  });
+
+  test('a pending review does not change status matching', () => {
+    // The filter reads the lifecycle, not the review overlay.
+    expect(matchesSessionStatusFilter(makeSession({ status: 'running' }), 'running')).toBe(true);
+  });
+});
+
+describe('availableSessionStatusFilterOptions', () => {
+  test('returns [] for a single represented status — every option would equal All', () => {
+    const sessions = [makeSession({ status: 'running' }), makeSession({ status: 'queued' })];
+    expect(availableSessionStatusFilterOptions(sessions)).toEqual([]);
+  });
+
+  test('prepends All with the total, and omits zero-count options', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'running' }),
+      makeSession({ session_id: 'b', status: 'completed' }),
+      makeSession({ session_id: 'c', status: 'completed' }),
+    ];
+    const options = availableSessionStatusFilterOptions(sessions);
+    expect(options.map((option) => option.value)).toEqual(['all', 'running', 'done']);
+    expect(options[0].count).toBe(3);
+    expect(options[1].count).toBe(1);
+    expect(options[2].count).toBe(2);
+    expect(options.some((option) => option.value === 'failed')).toBe(false);
+  });
+
+  test('returns [] for an empty session list', () => {
+    expect(availableSessionStatusFilterOptions([])).toEqual([]);
+  });
+
+  test('options keep the declared order, not discovery order', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', status: 'failed' }),
+      makeSession({ session_id: 'b', status: 'running' }),
+    ];
+    expect(availableSessionStatusFilterOptions(sessions).map((o) => o.value)).toEqual([
+      'all', 'running', 'failed',
+    ]);
   });
 });

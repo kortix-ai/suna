@@ -197,3 +197,67 @@ export function sessionDisplayStatus(
       return 'failed';
   }
 }
+
+/**
+ * Session-list STATUS filter — independent of, and ANDed with, the source
+ * filter (`SessionFilterValue`). Two dimensions, not one union: folding status
+ * into the source union would make "Slack AND Running" unexpressible.
+ *
+ * `running` deliberately covers the whole starting family. The user filters by
+ * what the list shows them, not by the sandbox lifecycle underneath it.
+ */
+export type SessionStatusFilterValue = 'all' | 'running' | 'done' | 'stopped' | 'failed';
+
+export interface SessionStatusFilterOption {
+  value: SessionStatusFilterValue;
+  label: string;
+  count: number;
+}
+
+/** Declared order — the menu renders these top-to-bottom regardless of which
+ *  statuses the project happens to contain. */
+export const SESSION_STATUS_FILTER_OPTIONS: Array<{
+  value: SessionStatusFilterValue;
+  label: string;
+}> = [
+  { value: 'all', label: 'All' },
+  { value: 'running', label: 'Running' },
+  { value: 'done', label: 'Done' },
+  { value: 'stopped', label: 'Stopped' },
+  { value: 'failed', label: 'Failed' },
+];
+
+export function matchesSessionStatusFilter(
+  session: ProjectSession,
+  filter: SessionStatusFilterValue,
+): boolean {
+  if (filter === 'all') return true;
+  // Read the lifecycle, never the review overlay: someone filtering to
+  // "Running" still wants their review-pending running session.
+  const display = sessionDisplayStatus(session);
+  if (filter === 'running') return display === 'running' || display === 'starting';
+  return display === filter;
+}
+
+/**
+ * Which status filters this session set is worth offering, with their counts.
+ *
+ * Mirrors `availableSessionFilterOptions` exactly: an option earns a slot only
+ * when it matches at least one session ("Failed 0" is a dead end), and the
+ * group as a whole earns its place only at two or more represented statuses —
+ * below that every option renders the same list as "All".
+ */
+export function availableSessionStatusFilterOptions(
+  sessions: ProjectSession[],
+): SessionStatusFilterOption[] {
+  const [allOption, ...statusOptions] = SESSION_STATUS_FILTER_OPTIONS;
+  const present = statusOptions
+    .map((option) => ({
+      ...option,
+      count: sessions.filter((session) => matchesSessionStatusFilter(session, option.value)).length,
+    }))
+    .filter((option) => option.count > 0);
+
+  if (present.length < 2) return [];
+  return [{ ...allOption, count: sessions.length }, ...present];
+}
