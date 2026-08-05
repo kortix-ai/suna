@@ -9,6 +9,7 @@ import { AGENT_ENV_SH } from './agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
+import { declaredAgentNames, pruneUndeclaredAgentFiles } from './declared-agents'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
@@ -1009,6 +1010,16 @@ export function createOpencodeSupervisor(
       })
     }
     const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
+
+    // Neutralize agent files the platform never declared, BEFORE opencode reads
+    // them. On every spawn, not once at boot: the escalation needs a restart to
+    // take effect, so the check has to sit on the same path it does. See
+    // declared-agents.ts for the reproduced exploit this closes.
+    pruneUndeclaredAgentFiles(
+      currentOpencodeConfigDir,
+      declaredAgentNames(baseEnv.KORTIX_COMPILED_AGENT_CONFIG),
+    )
+
     let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
