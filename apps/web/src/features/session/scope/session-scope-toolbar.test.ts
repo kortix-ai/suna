@@ -65,16 +65,21 @@ describe('getSessionScopeAvailability', () => {
 });
 
 describe('createNewSessionScopeInitialization', () => {
-  test('commits default-deny scope before the first prompt', () => {
+  test('commits an unrestricted (null) secrets scope before the first prompt', () => {
+    // `null` is the no-override state — the session inherits the agent's grant,
+    // exactly like a server-created session. `[]` would be an explicit "inject
+    // zero project secrets", which silently denied every browser-created session
+    // its grant. The connector axes stay opt-in (empty defaults) per the scope
+    // opt-in design; only secrets default to unrestricted.
     expect(createNewSessionScopeInitialization(catalog())).toEqual({
       draft: {
-        secrets: [],
+        secrets: null,
         connector_bindings: {},
         require_connectors: [],
       },
       commit: {
         draft: {
-          secrets: [],
+          secrets: null,
           connector_bindings: {},
           require_connectors: [],
         },

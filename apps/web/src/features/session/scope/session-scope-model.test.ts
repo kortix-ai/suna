@@ -133,7 +133,13 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('createNewSessionScopeDraft', () => {
-  test('starts with no secrets or connector authorizations selected', () => {
+  test('starts with unrestricted secrets (null) and no connector authorizations selected', () => {
+    // `null` is the no-override state — "inherit everything the agent's grant
+    // allows", identical to how a server-created session starts. `[]` would be an
+    // explicit "inject zero project secrets", which silently denied every
+    // browser-created session its grant. A user who deliberately wants zero can
+    // still get `[]` via `setAllSessionSecrets(draft, false)`; the two are
+    // opposite and must not be conflated.
     const catalog = buildSessionScopeSelectionCatalog({
       secrets: ready([secret('MAIL_TOKEN')]),
       connectors: ready([connector('mail-read', 'project'), connector('issues', 'user')]),
@@ -147,7 +153,26 @@ describe('createNewSessionScopeDraft', () => {
     });
 
     expect(createNewSessionScopeDraft(catalog)).toEqual({
-      secrets: [],
+      secrets: null,
+      connector_bindings: {},
+      require_connectors: [],
+    });
+  });
+
+  test('preserves null secrets even when the secret catalog is ready but empty', () => {
+    // An empty (but loaded) secret catalog is still "no override" for a new
+    // session — the grant ceiling happens to list nothing, so `null` and `[]`
+    // happen to deliver the same set, but the SEMANTICS differ and a later grant
+    // expansion must widen a `null` session automatically. Stay `null`.
+    const catalog = buildSessionScopeSelectionCatalog({
+      secrets: ready([]),
+      connectors: ready([]),
+      authorizations: ready([]),
+      grants: { secrets: 'all', connectors: 'all' },
+    });
+
+    expect(createNewSessionScopeDraft(catalog)).toEqual({
+      secrets: null,
       connector_bindings: {},
       require_connectors: [],
     });
@@ -204,6 +229,24 @@ describe('buildSessionScopeReplacement', () => {
     // about them. Omitted and empty are opposite here, exactly as for secrets.
     expect(buildSessionScopeReplacement({ connector_bindings: {} })).toEqual({
       connector_bindings: {},
+    });
+  });
+
+  test('a new-session draft with null secrets stays null in the replacement', () => {
+    // Regression: `createNewSessionScopeDraft` returns `secrets: null` (no
+    // override). The replacement MUST carry `null` — "stop narrowing, inherit the
+    // grant" — not `[]` ("inject zero project secrets"). The two are opposite, and
+    // flipping null to [] silently denied every browser-created session its grant.
+    expect(
+      buildSessionScopeReplacement({
+        secrets: null,
+        connector_bindings: {},
+        require_connectors: [],
+      }),
+    ).toEqual({
+      secrets: null,
+      connector_bindings: {},
+      require_connectors: [],
     });
   });
 
