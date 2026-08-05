@@ -114,7 +114,6 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const createButton = (label: string) =>
     canWrite ? (
       <Button
-        size="sm"
         variant="secondary"
         onClick={() => configure.start(newConfigPrompt('skill'))}
         disabled={configure.pending}

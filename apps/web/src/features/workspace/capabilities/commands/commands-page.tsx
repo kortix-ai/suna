@@ -101,7 +101,6 @@ export function CommandsPage({ projectId }: { projectId: string }) {
   const createButton = (label: string) =>
     canWrite ? (
       <Button
-        size="sm"
         variant="secondary"
         onClick={() => configure.start(newConfigPrompt('command'))}
         disabled={configure.pending}
