@@ -108,7 +108,12 @@ export default function ProjectStartPage() {
       // a bug. `ensureFirstProject` already re-checked once before throwing;
       // this loop's own retry (below, same key) is what waits out the rest,
       // so this must not be logged as though something went wrong.
-      if (!isProvisionInFlightError(err)) {
+      //
+      // The LAST attempt is different: it ends on the "We could not open your
+      // project" screen, and an onboarding that is genuinely stuck must leave
+      // a trace. Silence there is the one state that produces a support ticket
+      // with nothing to read.
+      if (!isProvisionInFlightError(err) || attempts.current >= MAX_RESOLVE_ATTEMPTS) {
         console.error('[onboarding] could not resolve a landing project', err);
       }
       const delay = RETRY_DELAY_MS[attempts.current - 1];
