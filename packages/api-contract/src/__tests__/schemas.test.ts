@@ -832,6 +832,64 @@ describe('session scope contracts', () => {
       }).success,
     ).toBe(false);
   });
+
+  test('reports applied_live when the scope was pushed to the running sandbox', () => {
+    // Mirrors the model route's applied_live: the caller can tell "in effect
+    // now" from "stored, applies at next boot". The field is optional so a
+    // response that omits it (e.g. a secrets-untouched re-scope) still parses.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: ['STRIPE_KEY'],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: true,
+      detail: 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+    };
+    expect(SessionScopeSchema.parse(value)).toEqual(value);
+  });
+
+  test('reports push_failed when a required live push failed (half-applied change)', () => {
+    // The row is written but the running harness still answers from the OLD
+    // scope. `applied_live: false` alone cannot express this (it is also the
+    // benign no-active-sandbox answer), so a client must read push_failed to
+    // tell a half-applied change from a stored one. Mirrors the model route's
+    // push_failed.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: ['STRIPE_KEY'],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: false,
+      push_failed: true as const,
+      push_reason: 'daemon unreachable',
+      detail: 'Applies from the next prompt.',
+    };
+    expect(SessionScopeSchema.parse(value)).toEqual(value);
+  });
+
+  test('rejects an unknown extra field even with the new optional ones', () => {
+    // .strict() is preserved: adding a field the schema does not name fails,
+    // so the contract stays exhaustive.
+    const value = {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      applied_live: false,
+      detail: 'No change to the secrets scope.',
+      surprise: true,
+    };
+    expect(SessionScopeSchema.safeParse(value).success).toBe(false);
+  });
 });
 
 describe('connector authorization required contracts', () => {
