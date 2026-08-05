@@ -599,7 +599,20 @@ const envSchema = z.object({
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN: optStr, // optional: authenticated GitHub API calls for changelog
 
-  // ── Mailtrap (optional — provisioning email notifications) ────────────────
+  // ── Transactional email (provider chain: SES → Resend → Mailtrap) ─────────
+  // Every provider is optional; the transport tries each configured one in
+  // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
+  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
+  // AWS SES (SigV4-signed SESv2 HTTP API; IAM user kortix-ses-sender).
+  AWS_SES_REGION: optStrDefault('us-east-2'),
+  AWS_SES_ACCESS_KEY_ID: optStr,
+  AWS_SES_SECRET_ACCESS_KEY: optStr,
+  // Resend (https://resend.com).
+  RESEND_API_KEY: optStr,
+  // Override sender for the Resend leg only — needed while the primary from-
+  // domain is not yet claimed/verified in the Resend team. The intended from
+  // address is preserved as Reply-To.
+  RESEND_FROM_EMAIL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
@@ -1134,7 +1147,13 @@ export const config = {
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
-  // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
+  // ─── Transactional email (provider chain) ──────────────────────────────────
+  EMAIL_PROVIDER_ORDER: env.EMAIL_PROVIDER_ORDER,
+  AWS_SES_REGION: env.AWS_SES_REGION,
+  AWS_SES_ACCESS_KEY_ID: env.AWS_SES_ACCESS_KEY_ID,
+  AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
+  RESEND_API_KEY: env.RESEND_API_KEY,
+  RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
