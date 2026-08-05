@@ -58,7 +58,7 @@ export const cmdLine = (input: string, note = false): Line =>
 
 export function LineView({ line }: { line: Line }) {
   return (
-    <div className="break-words whitespace-pre-wrap">
+    <div className="wrap-break-word whitespace-pre-wrap">
       {line.length === 0
         ? ' '
         : line.map((s, i) =>

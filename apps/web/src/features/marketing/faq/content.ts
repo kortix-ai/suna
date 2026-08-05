@@ -20,22 +20,20 @@
  * copy wearing a question mark, and readers know it on sight. The reference case
  * is Claude Cowork's own page, which states outright that Cowork activity is not
  * yet captured in audit logs — that single admission buys more trust than three
- * paragraphs of security prose. Four of the seven answers below concede
+ * paragraphs of security prose. Three of the six answers below concede
  * something: gates ship off, self-hosting is not air-gapped, audit READ is an
- * Enterprise entitlement, and we hold no certification today. None of those may
- * be softened. If an edit makes an answer more flattering, it has made the
- * section worthless.
+ * Enterprise entitlement. None of those may be softened. If an edit makes an
+ * answer more flattering, it has made the section worthless.
  *
- * SEVEN, NOT EIGHT OR TEN. Each question is one a reader of THIS page actually
+ * SIX, NOT EIGHT OR TEN. Each question is one a reader of THIS page actually
  * arrives with. Nothing was added to reach a round number, and a question that
  * stops being asked should be deleted rather than rewritten.
  *
  * EVERY QUESTION STAYS NEUTRAL. The section renders as a collapsed accordion, so
- * in the resting state a reader sees the seven QUESTIONS and none of the
- * answers. That only stays honest while each question is a question — "Do you
- * hold a security certification?", never "Is Kortix secure?" A question rewritten
- * into a claim turns the collapsed list into seven pieces of marketing and
- * buries the four concessions completely. Keep them neutral, and keep the
+ * in the resting state a reader sees the six QUESTIONS and none of the answers.
+ * That only stays honest while each question is a question. A question rewritten
+ * into a claim turns the collapsed list into six pieces of marketing and buries
+ * the three concessions completely. Keep them neutral, and keep the
  * unflattering ones visibly present.
  *
  * ==========================================================================
@@ -72,9 +70,6 @@
  *    Only READ, EXPORT and STREAM are entitlement-gated (`auditAccess` in
  *    `apps/api/src/types.ts:129-135`). That distinction is the honest answer and
  *    must survive editing.
- *  - CERTIFICATION. Kortix holds none. SOC 2 Type I and Type II are in progress
- *    (`marketing/landing/content.ts:83-87`). Never write "certified" or
- *    "compliant".
  *  - ISOLATION. "Its own isolated machine" only. NEVER a blanket "microVM" —
  *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
  *    Never "container" in external copy. Never claim egress is controlled at the
@@ -101,7 +96,7 @@ export const faq = {
   eyebrow: 'Straight answers',
   title: 'The questions people ask before the first session.',
   /** One link out, to the page that carries the longest of these answers. */
-  /* No trailing link. One 'How Kortix is secured →' under a list of seven
+  /* No trailing link. One 'How Kortix is secured →' under a list of six
      questions pointed at the answer to only one of them, and reads as an
      apology for the section. Each answer carries its own link where it needs
      one. */
@@ -141,12 +136,6 @@ export const faq = {
       question: 'What does it cost?',
       answer:
         'Free is $0 — one project and 200 credits a month of sandbox compute, with your own key for any premium model. Team is $40 per seat per month and pools 2,500 credits a seat. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.',
-    },
-    {
-      id: 'certification',
-      question: 'Do you hold a security certification?',
-      answer:
-        'Not today. SOC 2 Type I and Type II are both in progress, and we will say so rather than imply otherwise on a badge. What exists now is the mechanism: one isolated machine per session, per-resource permissions for people and agents, encrypted secrets, approval gates you configure, a full audit record, and the option to run the whole control plane inside your own network.',
     },
   ] satisfies readonly FaqItem[],
 } as const;

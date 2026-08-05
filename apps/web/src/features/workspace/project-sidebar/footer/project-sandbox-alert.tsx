@@ -203,7 +203,7 @@ function SandboxAlertContent({
             </Button>
           </div>
           {failure.error && (
-            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs break-words whitespace-pre-wrap">
+            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs wrap-break-word whitespace-pre-wrap">
               {failure.error}
             </pre>
           )}

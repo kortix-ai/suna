@@ -8,7 +8,9 @@ import {
   CheckpointLabel,
   CheckpointTrigger,
 } from '@/components/ai-elements/checkpoint';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
+import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
@@ -264,17 +266,26 @@ export function SessionRetryDisplay({
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
-  const line =
-    secondsLeft > 0 ? `Retrying in ${secondsLeft}s (#${attempt})` : `Retrying now (#${attempt})`;
+  const title = secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
 
   return (
-    <Checkpoint className={className}>
-      <CheckpointIcon>
+    <Item
+      role="status"
+      aria-live="polite"
+      variant="muted"
+      size="sm"
+      className={cn('items-start', className)}
+    >
+      <ItemMedia variant="icon">
         <Loading className="text-muted-foreground size-4 shrink-0" />
-      </CheckpointIcon>
-      <CheckpointLabel className="overflow-visible whitespace-normal">
-        {message} · {line}
-      </CheckpointLabel>
-    </Checkpoint>
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle className="tabular-nums">
+          {title}
+          <span className="text-muted-foreground font-normal">#{attempt}</span>
+        </ItemTitle>
+        <ItemDescription className="line-clamp-2 text-pretty">{message}</ItemDescription>
+      </ItemContent>
+    </Item>
   );
 }

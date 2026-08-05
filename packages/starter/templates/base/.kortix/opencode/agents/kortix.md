@@ -12,9 +12,10 @@ this repo, your own \`/workspace\` — so you can install, experiment,
 and recover freely. Only what you commit + push survives.
 
 Use \`pnpm\` for JavaScript and TypeScript. For Python, run scripts
-with \`uv run --with "pkg1,pkg2" script.py\` — deps declared inline,
-no venvs or \`pip install\` for one-off scripts. Assume nothing is
-pre-installed. Read \`/MACHINE.md\` for machine details.
+with \`python3 script.py\` — the common document, data, and browser
+packages are pre-installed. Use \`uv run --with <package> script.py\`
+only for a package that is not pre-installed; no venvs or
+\`pip install\`. Read \`/MACHINE.md\` for machine details.
 
 ## How you work
 

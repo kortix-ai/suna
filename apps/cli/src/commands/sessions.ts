@@ -663,6 +663,7 @@ async function sessionsReload(
       previous_etag: string | null;
       etag: string | null;
       repo_refreshed: boolean;
+      agent_files?: string;
       detail: string;
     }>(`/projects/${projectId}/sessions/${sessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
@@ -672,11 +673,24 @@ async function sessionsReload(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
     }
-    process.stdout.write(
-      result.applied
-        ? `${status.ok(`Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}. The next prompt runs the new config.${C.reset}`)}\n`
-        : `${status.warn(result.detail)}\n`,
-    );
+    if (!result.applied) {
+      process.stdout.write(`${status.warn(result.detail)}\n`);
+      return 0;
+    }
+    // `detail` is the server's sentence and it is the only thing entitled to say
+    // whether the AGENT changed. This line used to hardcode "The next prompt
+    // runs the new config" for every applied reload, which was false whenever
+    // the session's agent files were left alone — the etag moved and the agent
+    // did not. The etag transition is still worth printing; the claim is not
+    // ours to make.
+    //
+    // Only two outcomes deserve a warning. An earlier version keyed off a
+    // boolean and warned on `already-current` and `not-applicable`, which are
+    // plain successes.
+    const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
+    const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
+    const line = `Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${etags}\n  ${result.detail}`;
+    process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);

@@ -30,8 +30,8 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
   };
   const terms = (
     <Link
-      href="/legal?tab=terms"
-      onClick={(event) => onLegalClick(event, '/legal?tab=terms')}
+      href="/legal/terms"
+      onClick={(event) => onLegalClick(event, '/legal/terms')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
       Terms of Service

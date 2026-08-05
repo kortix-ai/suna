@@ -31,11 +31,16 @@ export interface ExecutorCallResult<T = unknown> {
   risk?: ExecutorRisk;
   status?: string;
   reason?: string;
-  /** For a `pending_approval` result: the execution awaiting a human decision.
-   *  Re-issue `call()` with this id to keep waiting (indefinite pause). */
+  /** For a `pending_approval` result: the execution awaiting a human decision. */
   execution_id?: string | null;
-  /** true = still unresolved after the server's hold; poll again to keep pausing. */
+  /** Always false on callback-based approval handoffs. */
   retryable?: boolean;
+  /** Authenticated page a human opens to approve or deny this one call. */
+  approval_url?: string | null;
+  /** Redacted one-line description safe to relay with the URL. */
+  approval_summary?: string | null;
+  /** Agent instruction for the asynchronous approval handoff. */
+  approval_instructions?: string | null;
 }
 
 export interface ExecutorAttachmentUploadInput {
@@ -160,7 +165,7 @@ export class ExecutorClient {
         connector,
         action,
         args,
-        // Present only on a poll-loop retry of a call awaiting approval.
+        // Kept for compatibility with older clients. The gateway does not poll it.
         ...(opts.approvalExecutionId ? { approval_execution_id: opts.approvalExecutionId } : {}),
       },
     });

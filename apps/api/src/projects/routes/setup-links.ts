@@ -95,7 +95,7 @@ projectsApp.openapi(
     const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId },
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

@@ -24,7 +24,7 @@ import { randomBytes } from 'node:crypto';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 
 const TOKEN_PREFIX = 'ksl_';
-const DEFAULT_TTL_MINUTES = 30;
+const DEFAULT_TTL_MINUTES = 24 * 60; // 24 hours — async human-in-the-loop
 const MIN_TTL_MINUTES = 1;
 const MAX_TTL_MINUTES = 24 * 60;
 
@@ -46,7 +46,7 @@ interface BasePayload {
 }
 
 export type SetupLinkPayload =
-  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope })
+  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
   | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
   /**
    * A human-in-the-loop APPROVAL for one gated executor call.
@@ -70,6 +70,9 @@ type SecretSpec = {
   fields: SecretFieldSpec[];
   scope?: SecretScope;
   uid?: string | null;
+  /** The session that requested this secret, so the intake form can
+   *  notify it when the value is submitted. */
+  sid?: string | null;
 };
 type ConnectorSpec = {
   kind: 'connector';
@@ -106,7 +109,7 @@ export function mintSetupLink(
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
-      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime' }
+      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime', sid: spec.sid ?? null }
       : spec.kind === 'approval'
         ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
         : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
@@ -180,7 +183,11 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
 
   if (payload.pid !== projectId)
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
-  if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
+  // 60-second clock-skew buffer: in a load-balanced deployment the instance
+  // that MINTED the token and the instance that RESOLVES it may have slightly
+  // different system clocks. Without a buffer, a freshly-minted token can
+  // resolve as expired on an instance whose clock is a few seconds ahead.
+  if (typeof payload.exp !== 'number' || Date.now() > payload.exp + 60_000) {
     return {
       ok: false,
       status: 410,

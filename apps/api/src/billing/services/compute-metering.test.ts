@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realProviders from '../../platform/providers';
 
 let billingEnabled = true;
 
@@ -103,7 +104,11 @@ interface FakeSandboxRow {
 let sandboxRows: FakeSandboxRow[] = [];
 let providerStatusById: Record<string, string> = {};
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../platform/providers', () => ({
+  ...realProviders,
   // 60 minutes — the provider's own idle auto-stop, which is also the ceiling on
   // how long a compute window may bill past its last liveness observation
   // (services/compute-liveness.ts).

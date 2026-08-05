@@ -316,13 +316,16 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'restart-full',
-    label: 'Restart: Full',
+    // Says what it does. This maps to the daemon's /kortix/refresh, which pulls
+    // the workspace AND restarts the runtime — "Full" alone did not warn that it
+    // touches the working tree, or that it ends the turn in flight.
+    label: 'Restart: Pull & Restart Runtime',
     icon: RefreshCw,
     group: 'actions',
     showIn: ['commandPalette'],
     kind: 'action',
     actionId: 'restartFull',
-    keywords: 'reload restart full services kill nuclear',
+    keywords: 'reload restart full services kill nuclear pull refresh workspace',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

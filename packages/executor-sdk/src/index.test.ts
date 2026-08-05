@@ -136,6 +136,26 @@ describe('call', () => {
     await createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).call('slack', 'auth_test');
     expect(calls[0]!.body).toEqual({ connector: 'slack', action: 'auth_test', args: {} });
   });
+
+  test('preserves the approval handoff URL and human-readable summary', async () => {
+    const pending = {
+      ok: false,
+      status: 'pending_approval',
+      execution_id: 'exec-1',
+      retryable: false,
+      approval_url: 'https://app.kortix.test/approve/token',
+      approval_summary: 'to: finance@example.com',
+      approval_instructions:
+        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.',
+    };
+    const { fetchImpl } = harness(() => ({ status: 202, body: pending }));
+    const result = await createExecutorClient({
+      apiUrl: 'http://x',
+      token: 't',
+      fetchImpl,
+    }).call('gmail', 'send_email', { to: 'finance@example.com' });
+    expect(result).toEqual(pending);
+  });
 });
 
 /* ─── attachment upload ──────────────────────────────────────────────────── */

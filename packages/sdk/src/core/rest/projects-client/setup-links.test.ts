@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { requestProjectConnector, requestProjectSecret } from './setup-links';
+import {
+  type ApprovalLinkDetails,
+  requestProjectConnector,
+  requestProjectSecret,
+} from './setup-links';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -27,7 +31,13 @@ const last = () => calls[calls.length - 1];
 test('requestProjectSecret posts names/labels/descriptions/scope to secret-requests', async () => {
   nextResponse = {
     status: 200,
-    body: { kind: 'secret', url: 'https://app.local/secret-intake/tok', names: ['STRIPE_KEY'], scope: 'runtime', expires_at: '2026-01-01' },
+    body: {
+      kind: 'secret',
+      url: 'https://app.local/secret-intake/tok',
+      names: ['STRIPE_KEY'],
+      scope: 'runtime',
+      expires_at: '2026-01-01',
+    },
   };
   const result = await requestProjectSecret('P1', { names: ['STRIPE_KEY'], scope: 'runtime' });
   expect(last().url).toContain('/projects/P1/secret-requests');
@@ -44,11 +54,45 @@ test('requestProjectSecret throws on failure', async () => {
 test('requestProjectConnector posts slug to connect-requests', async () => {
   nextResponse = {
     status: 200,
-    body: { kind: 'connector', url: 'https://app.local/connect/tok', slug: 'github', app: 'github', expires_at: '2026-01-01' },
+    body: {
+      kind: 'connector',
+      url: 'https://app.local/connect/tok',
+      slug: 'github',
+      app: 'github',
+      expires_at: '2026-01-01',
+    },
   };
   const result = await requestProjectConnector('P1', { slug: 'github' });
   expect(last().url).toContain('/projects/P1/connect-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
   expect(result.slug).toBe('github');
+});
+
+test('ApprovalLinkDetails exposes whether every action parameter is reviewable', () => {
+  const details: ApprovalLinkDetails = {
+    kind: 'approval',
+    project_id: 'project-1',
+    project_name: 'Inbox automation',
+    execution_id: 'execution-1',
+    session_id: 'session-1',
+    action: 'gmail.send_email',
+    connector: 'gmail',
+    risk: 'write',
+    status: 'pending_approval',
+    pending: true,
+    args_preview: {
+      to: 'customer@example.com',
+      subject: 'Delivery update',
+      body: 'Your order is ready.',
+    },
+    args_summary: 'to: customer@example.com · subject: Delivery update',
+    review_complete: true,
+    policy_source: 'project',
+    requested_at: '2026-08-03T10:00:00.000Z',
+    resolved_at: null,
+    expires_at: '2026-08-03T10:15:00.000Z',
+  };
+
+  expect(details.review_complete).toBe(true);
 });

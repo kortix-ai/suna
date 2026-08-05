@@ -4,8 +4,8 @@ Strips formatting whitespace from XML, preserving text content in DrawingML
 text elements, then compresses everything into a ZIP archive.
 
 Usage:
-    uv run --with lxml pack.py <unpacked_dir> <output.pptx>
-    uv run --with lxml pack.py working/ presentation.pptx
+    python3 pack.py <unpacked_dir> <output.pptx>
+    python3 pack.py working/ presentation.pptx
 """
 
 import shutil

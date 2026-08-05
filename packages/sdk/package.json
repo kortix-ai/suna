@@ -50,6 +50,7 @@
     "./files": "./src/deprecated/files.ts",
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
+    "./message-queue": "./src/core/session/message-queue.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -128,6 +129,10 @@
       "./session/url": {
         "types": "./dist/deprecated/session-url.d.ts",
         "import": "./dist/deprecated/session-url.js"
+      },
+      "./message-queue": {
+        "types": "./dist/core/session/message-queue.d.ts",
+        "import": "./dist/core/session/message-queue.js"
       },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {

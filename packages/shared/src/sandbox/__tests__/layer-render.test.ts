@@ -24,8 +24,11 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
+  PYTHON_PACKAGE_FLOOR,
+  PYTHON_PACKAGE_FLOOR_IMPORTS,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
 } from '../../runtime-versions';
@@ -129,8 +132,35 @@ describe('the Python runtime is managed by uv', () => {
 
   test('does not install or mutate the distro Python', () => {
     expect(toolchain).not.toContain('python3 python3-dev python3-pip python3-venv');
-    expect(toolchain).not.toContain('--break-system-packages');
-    expect(toolchain).not.toContain('uv pip install');
+    expect(toolchain.match(/uv pip install/g)).toHaveLength(1);
+    expect(toolchain).toContain(
+      'uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages',
+    );
+    expect(toolchain).not.toContain('uv pip install --system');
+  });
+
+  test('bakes every floor package exactly-pinned into the managed Python', () => {
+    for (const [pkg, version] of Object.entries(PYTHON_PACKAGE_FLOOR)) {
+      expect(toolchain).toContain(`"${pkg}==${version}"`);
+    }
+  });
+
+  test('proves every floor import at build time in a single-line check', () => {
+    for (const importName of Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS)) {
+      expect(toolchain).toContain(`"${importName}"`);
+    }
+    expect(toolchain).toContain('python package floor OK');
+    expect(toolchain).not.toContain('<<');
+  });
+
+  test('every floor package has an import mapping and vice versa', () => {
+    expect(Object.keys(PYTHON_PACKAGE_FLOOR_IMPORTS).sort()).toEqual(
+      Object.keys(PYTHON_PACKAGE_FLOOR).sort(),
+    );
+  });
+
+  test('python-playwright matches the Node playwright that bakes Chromium', () => {
+    expect(PYTHON_PACKAGE_FLOOR.playwright).toBe(PLAYWRIGHT_VERSION);
   });
 
   test('installs an exact managed Python as python and python3', () => {

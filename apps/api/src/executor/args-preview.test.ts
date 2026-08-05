@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { REDACTED, buildArgsPreview, isSecretKey, summarizeArgsPreview } from './args-preview';
+import {
+  REDACTED,
+  buildArgsPreview,
+  buildArgsPreviewDetails,
+  isSecretKey,
+  summarizeArgsPreview,
+} from './args-preview';
 
 describe('isSecretKey', () => {
   test('redacts credential-shaped keys across naming styles', () => {
@@ -29,6 +35,8 @@ describe('isSecretKey', () => {
 
   test('leaves a bare map key readable but redacts a qualified one', () => {
     expect(isSecretKey('key')).toBe(false);
+    expect(isSecretKey('access')).toBe(false);
+    expect(isSecretKey('access_key')).toBe(true);
     expect(isSecretKey('signing_key')).toBe(true);
   });
 });
@@ -50,6 +58,18 @@ describe('buildArgsPreview', () => {
     });
   });
 
+  test('keeps a normal Gmail body complete and approvable', () => {
+    const body = `${'Delivery details for the customer. '.repeat(200)}Please reply today.`;
+    const details = buildArgsPreviewDetails({
+      to: 'customer@example.com',
+      subject: 'Delivery update',
+      body,
+    });
+
+    expect(details.complete).toBe(true);
+    expect(details.preview?.body).toBe(body);
+  });
+
   test('never copies a secret value, not even truncated', () => {
     const secret = 'ya29.a0ARrdaM-super-secret-oauth-token-value';
     const preview = buildArgsPreview({ to: 'a@b.com', access_token: secret });
@@ -60,18 +80,22 @@ describe('buildArgsPreview', () => {
 
   test('describes an opaque blob instead of sampling its prefix', () => {
     const blob = 'A'.repeat(400);
-    const preview = buildArgsPreview({ attachment: blob });
+    const details = buildArgsPreviewDetails({ attachment: blob });
+    const preview = details.preview;
 
     expect(preview?.attachment).toBe('[400 chars omitted]');
     expect(String(preview?.attachment)).not.toContain('AAAA');
+    expect(details.complete).toBe(false);
   });
 
   test('truncates long prose but keeps it readable', () => {
-    const body = `${'word '.repeat(80)}end`;
-    const preview = buildArgsPreview({ body });
+    const body = `${'word '.repeat(4_100)}end`;
+    const details = buildArgsPreviewDetails({ body });
+    const preview = details.preview;
 
     expect(String(preview?.body)).toStartWith('word word');
     expect(String(preview?.body)).toContain('chars]');
+    expect(details.complete).toBe(false);
   });
 
   test('caps array breadth with a remainder note', () => {

@@ -59,17 +59,17 @@ describe('desktop external routes', () => {
       writable: true,
     });
 
-    expect(openExternalRoute('/legal?tab=terms')).toBe(true);
+    expect(openExternalRoute('/legal/terms')).toBe(true);
     expect(openExternalRoute('/legal?tab=privacy')).toBe(true);
     expect(clicks).toEqual([
-      { href: 'https://kortix.com/legal?tab=terms', target: undefined, rel: undefined },
+      { href: 'https://kortix.com/legal/terms', target: undefined, rel: undefined },
       { href: 'https://kortix.com/legal?tab=privacy', target: undefined, rel: undefined },
     ]);
   });
 
   test('leaves legal navigation to Next.js in a regular browser', () => {
     setNavigator('Mozilla/5.0 Safari/605.1.15', 'MacIntel');
-    expect(openExternalRoute('/legal?tab=terms')).toBe(false);
+    expect(openExternalRoute('/legal/terms')).toBe(false);
   });
 });
 

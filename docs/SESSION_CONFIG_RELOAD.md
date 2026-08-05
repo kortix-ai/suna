@@ -136,9 +136,11 @@ after the edit. The clean run above is the one to trust.
 2. The mid-session model change, the compiled-agent-config push, and
    `kortix sessions reload` all take the fast path. When dispose wins they **no
    longer sever an in-flight turn**, because nothing restarts.
-3. **`systemReload()` in the SDK is broken** — `packages/sdk/src/core/runtime/client.ts`
-   POSTs `/kortix/services/system/reload`, gets 200 + HTML, and throws on
-   `response.json()`. Its only caller is the web command palette's
-   "Restart: Config Only" (`apps/web/src/lib/menu-registry.ts`). Mobile never used
-   it — it POSTs `/global/dispose` directly, which is why mobile works and web
-   does not. Left as a separate follow-up rather than widened into this change.
+3. **`systemReload()` in the SDK was broken and is now fixed.** It POSTed
+   `/kortix/services/system/reload`, got 200 + HTML, and threw on
+   `response.json()` — so both command-palette entries built on it had never
+   worked. Mobile was unaffected: it POSTs `/global/dispose` directly.
+   `'dispose-only'` now targets `/global/dispose` and `'full'` targets
+   `/kortix/refresh` (the only client-reachable path that restarts the runtime —
+   it pulls the workspace too, and the palette label says so). Both check
+   `content-type` before trusting a 200, for the reason above.

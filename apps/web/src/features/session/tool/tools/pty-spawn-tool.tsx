@@ -58,7 +58,7 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
         <ToolResultCard>
           <div className="space-y-2 px-2 py-1.5">
             {command && (
-              <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+              <div className="font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                 <span className="text-muted-foreground/50 select-none">$</span>{' '}
                 <span className="text-foreground/80">{command}</span>
               </div>

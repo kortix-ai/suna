@@ -6,13 +6,20 @@ import {
   executorExecutions,
   executorProjectPolicies,
   executorProjectSettings,
-  projectSessionConnectorBindings,
   projectSessions,
   projects,
-  sessionToolApprovals,
 } from '@kortix/db';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
-import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from 'drizzle-orm';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
@@ -49,7 +56,6 @@ import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
-  resolveProjectDefaultConnectorProfile,
   resolveSessionConnectorProfile,
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -125,92 +131,6 @@ function isUuid(value: string): boolean {
   return UUID_REGEX.test(value);
 }
 
-/**
- * Poll a `pending_approval` execution until a human resolves it (approve/deny)
- * or `timeoutMs` elapses. Powers the gateway's in-session pause: a require-
- * approval call blocks here so the agent's turn waits, then resumes on approve.
- * The resolve endpoint stamps `resolvedAt` with a terminal status (`denied` for
- * a refusal, otherwise approved).
- */
-export async function waitForApprovalDecision(
-  executionId: string,
-  timeoutMs: number,
-  expect?: { sessionId: string | null; connectorId: string; actionPath: string },
-): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'> {
-  const deadline = Date.now() + timeoutMs;
-  const POLL_MS = 1000;
-  // Bind the approval row to the (session, connector, action) actually being
-  // authorized. A client supplies approvalExecutionId in the request body; without
-  // this binding it could point at ANY resolved execution row to auto-approve an
-  // unrelated sensitive call (confused-deputy replay of the require_approval gate).
-  const conds = [eq(executorExecutions.executionId, executionId)];
-  if (expect) {
-    if (expect.sessionId) conds.push(eq(executorExecutions.sessionId, expect.sessionId));
-    conds.push(eq(executorExecutions.connectorId, expect.connectorId));
-    conds.push(eq(executorExecutions.actionPath, expect.actionPath));
-  }
-  while (Date.now() < deadline) {
-    const [row] = await db
-      .select({
-        status: executorExecutions.status,
-        resolvedAt: executorExecutions.resolvedAt,
-        approvedBy: executorExecutions.approvedBy,
-        resultSummary: executorExecutions.resultSummary,
-      })
-      .from(executorExecutions)
-      .where(and(...conds))
-      .limit(1);
-    // No row under the expected binding → the supplied id belongs to a different
-    // session/connector/action (or doesn't exist). Never wait on it.
-    if (!row) return 'mismatch';
-    if (row.resolvedAt) {
-      if (row.status === 'denied') return 'denied';
-      // Only a GENUINE, still-UNCONSUMED human approve authorizes the call —
-      // mirror consumeApprovedExecution's guard exactly. A resolved row that is
-      // NOT that (a plain ok/error run row, which never has approvedBy, or an
-      // already-consumed approval being REPLAYED, which has consumed_at stamped)
-      // must never resolve to 'approved' — treating any resolved non-denied row
-      // as approved is the require_approval bypass (replay a resolved execution
-      // id to auto-authorize a sensitive call). The legit FIRST waiter still
-      // passes: the gateway stamps consumed_at only AFTER this returns 'approved'
-      // (gateway.ts markApprovalConsumed), so consumed_at is still null in-band;
-      // only LATER replays see it set and are rejected here.
-      const rs: Record<string, unknown> = row.resultSummary ?? {};
-      if (row.approvedBy != null && rs.decision === 'approve' && rs.consumed_at == null) {
-        return 'approved';
-      }
-      // Resolved but not a genuine, unconsumed approve. Don't authorize: the
-      // bound row can't flip to genuine, so keep polling until it hits 'timeout'
-      // (the gateway then leaves the call paused, exactly as if never approved).
-    }
-    await new Promise((r) => setTimeout(r, POLL_MS));
-  }
-  return 'timeout';
-}
-
-/** "Allow for this session" check (gateway hot path): is this exact
- *  (session, connector, action) already session-approved? A `*` actionPath row
- *  is the "allow everything for this session" grant (resolve scope
- *  `session_all` records one per enabled connector) and matches any action. */
-export async function isSessionToolApproved(
-  sessionId: string,
-  connectorId: string,
-  actionPath: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: sessionToolApprovals.id })
-    .from(sessionToolApprovals)
-    .where(
-      and(
-        eq(sessionToolApprovals.sessionId, sessionId),
-        eq(sessionToolApprovals.connectorId, connectorId),
-        inArray(sessionToolApprovals.actionPath, [actionPath, '*']),
-      ),
-    )
-    .limit(1);
-  return !!row;
-}
-
 /** How long an unconsumed human approve stays claimable by a fresh call. Long
  *  enough for the "agent gave up → approve lands → nudge/`continue` retries"
  *  round-trip, short enough that a stale yes can't silently authorize a much
@@ -218,15 +138,16 @@ export async function isSessionToolApproved(
 const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
- * Claim a recent approve of (session, connector, action) that no held/poll
- * request consumed — see GatewayDeps.consumeApprovedExecution. Atomic via the
- * guarded UPDATE on the not-yet-consumed marker: two racing calls can't both
- * claim the same grant. Newest grant first; one claim per approve.
+ * Claim a recent approval for one exact request digest. The guarded UPDATE on
+ * the not-yet-consumed marker is atomic, so two racing calls cannot both claim
+ * it. Newest approval first; one claim per approval.
  */
 export async function consumeApprovedExecution(input: {
-  sessionId: string;
+  sessionId: string | null;
+  actingUserId: string;
   connectorId: string;
   actionPath: string;
+  requestDigest: string;
 }): Promise<boolean> {
   const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
   const candidates = await db
@@ -237,9 +158,13 @@ export async function consumeApprovedExecution(input: {
     .from(executorExecutions)
     .where(
       and(
-        eq(executorExecutions.sessionId, input.sessionId),
+        input.sessionId
+          ? eq(executorExecutions.sessionId, input.sessionId)
+          : isNull(executorExecutions.sessionId),
+        eq(executorExecutions.actingUserId, input.actingUserId),
         eq(executorExecutions.connectorId, input.connectorId),
         eq(executorExecutions.actionPath, input.actionPath),
+        eq(executorExecutions.requestDigest, input.requestDigest),
         // A human-approved gate: the resolve endpoint flips the pending row to
         // `ok` + stamps approvedBy. Rows from actual runs never have approvedBy.
         eq(executorExecutions.status, 'ok'),
@@ -274,41 +199,37 @@ export async function consumeApprovedExecution(input: {
   return false;
 }
 
-/** Mark an approve consumed by the held/poll request that resumed on it — see
- *  GatewayDeps.markApprovalConsumed. */
-export async function markApprovalConsumed(executionId: string): Promise<void> {
-  await db
-    .update(executorExecutions)
-    .set({
-      resultSummary: sql`coalesce(${executorExecutions.resultSummary}, '{}'::jsonb) || jsonb_build_object('consumed_at', ${new Date().toISOString()}::text)`,
-    })
-    .where(
-      and(
-        eq(executorExecutions.executionId, executionId),
-        sql`${executorExecutions.resultSummary} ->> 'consumed_at' IS NULL`,
-      ),
-    );
-}
-
-/** Record an "allow for the rest of this session" grant (resolve endpoint).
- *  Idempotent: a repeat of the same (session, connector, action) is a no-op. */
-export async function recordSessionToolApproval(input: {
-  sessionId: string;
+/** Bind a legacy retry identifier to the exact unresolved request it names. */
+export async function isPendingApprovalExecution(input: {
+  executionId: string;
   projectId: string;
+  sessionId: string | null;
+  actingUserId: string;
   connectorId: string;
   actionPath: string;
-  grantedBy: string | null;
-}): Promise<void> {
-  await db
-    .insert(sessionToolApprovals)
-    .values({
-      sessionId: input.sessionId,
-      projectId: input.projectId,
-      connectorId: input.connectorId,
-      actionPath: input.actionPath,
-      grantedBy: input.grantedBy,
-    })
-    .onConflictDoNothing();
+  requestDigest: string;
+}): Promise<boolean> {
+  const [row] = await db
+    .select({ executionId: executorExecutions.executionId })
+    .from(executorExecutions)
+    .where(
+      and(
+        eq(executorExecutions.executionId, input.executionId),
+        eq(executorExecutions.projectId, input.projectId),
+        input.sessionId
+          ? eq(executorExecutions.sessionId, input.sessionId)
+          : isNull(executorExecutions.sessionId),
+        eq(executorExecutions.actingUserId, input.actingUserId),
+        eq(executorExecutions.connectorId, input.connectorId),
+        eq(executorExecutions.actionPath, input.actionPath),
+        eq(executorExecutions.requestDigest, input.requestDigest),
+        eq(executorExecutions.status, 'pending_approval'),
+        isNull(executorExecutions.approvedBy),
+        isNull(executorExecutions.resolvedAt),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 type ConnectorRow = typeof executorConnectors.$inferSelect;
@@ -463,6 +384,24 @@ function toGatewayConnector(
   };
 }
 
+/**
+ * Resolve the one active connector profile this principal may use.
+ *
+ * Catalog discovery and call execution must use this same function. A session
+ * with an explicit fail-closed scope cannot advertise a project-default profile
+ * in the catalog and then lose it when the gateway resolves the call.
+ */
+async function resolveActiveConnectorProfile(principal: ExecutorPrincipal, row: ConnectorRow) {
+  const profile = await resolveSessionConnectorProfile({
+    accountId: principal.accountId,
+    projectId: row.projectId,
+    sessionId: principal.sessionId,
+    alias: row.slug,
+    actingUserId: principal.userId,
+  });
+  return profile?.status === 'active' ? profile : null;
+}
+
 const nodeFetch: FetchImpl = async (url, init) => {
   const res = await fetch(url, {
     method: init.method,
@@ -483,14 +422,8 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
         .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      const profile = await resolveSessionConnectorProfile({
-        accountId: principal.accountId,
-        projectId,
-        sessionId: principal.sessionId,
-        alias: slug,
-        actingUserId: principal.userId,
-      });
-      if (!profile || profile.status !== 'active') return null;
+      const profile = await resolveActiveConnectorProfile(principal, row);
+      if (!profile) return null;
       return toGatewayConnector(row, profile);
     },
     loadAction: async (connectorId, relPath) => {
@@ -573,6 +506,7 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
           sessionId: rec.sessionId,
           status: rec.status,
           risk: rec.risk,
+          requestDigest: rec.requestDigest ?? null,
           resultSummary: rec.resultSummary,
           // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
           // approve/deny (the approvals inbox). Every terminal status (ok/error/
@@ -589,14 +523,33 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
       }
       return row.id;
     },
-    waitForApprovalDecision: waitForApprovalDecision,
-    isSessionToolApproved: isSessionToolApproved,
     consumeApprovedExecution: consumeApprovedExecution,
-    markApprovalConsumed: markApprovalConsumed,
-    executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
-      runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
-    executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
-      runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
+    isPendingApprovalExecution: isPendingApprovalExecution,
+    executePipedream: ({
+      projectId,
+      connectorSlug,
+      app,
+      actionKey,
+      args,
+      accountId,
+      userId,
+    }) =>
+      runPipedreamAction(
+        projectId,
+        connectorSlug,
+        app,
+        actionKey,
+        args,
+        accountId,
+        userId,
+      ),
+    executePipedreamProxy: ({
+      projectId,
+      connectorSlug,
+      args,
+      accountId,
+      userId,
+    }) => runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
     // Computer connectors relay through the shared tunnel RPC core (permission
     // check → relay → audit). The machine is resolved from the `computer`
     // selector, scoped to this account.
@@ -935,22 +888,6 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
   ]);
 
-  // SAFETY NET — the durable binding aliases this session has explicitly bound.
-  // A session created before the create-path `inherit_unbound` default fix
-  // (absent → `false`) with `connector_bindings` set would have
-  // `connector_bindings_configured = true, inherit_unbound = false`, and
-  // `resolveSessionConnectorProfile` returns null for EVERY unbound alias,
-  // emptying the catalog. For those, we fall back to the PROJECT DEFAULT
-  // profile — but ONLY for aliases with NO durable binding row. A present
-  // binding that resolves to null because it is revoked/error/strategy-
-  // mismatched still fails closed (the security invariant: a present but
-  // revoked/error binding never falls through to a project default). Loading
-  // the bound-alias set once here keeps the per-connector fallback a cheap
-  // set lookup rather than an extra query per connector.
-  const boundAliases: Set<string> | null = p.sessionId
-    ? await loadSessionBoundAliases(p.accountId, p.projectId, p.sessionId)
-    : null;
-
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
@@ -959,30 +896,8 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
     if (!agentMayUseConnector(p.agentGrant ?? null, canonicalConnectorAlias(row.slug))) continue;
-    let profile = await resolveSessionConnectorProfile({
-      accountId: p.accountId,
-      projectId: p.projectId,
-      sessionId: p.sessionId,
-      alias: row.slug,
-      actingUserId: p.userId,
-    });
-    // Safety net: a pre-fix session (configured + not-inherit-unbound) hides
-    // unbound aliases. For an alias with NO durable binding, fall back to the
-    // project default so the catalog isn't empty. An alias WITH a binding that
-    // resolved null stays null (revoked/error fails closed).
-    if ((!profile || profile.status !== 'active') && boundAliases !== null) {
-      const alias = canonicalConnectorAlias(row.slug);
-      if (!boundAliases.has(alias)) {
-        const fallback = await resolveProjectDefaultConnectorProfile({
-          accountId: p.accountId,
-          projectId: p.projectId,
-          alias: row.slug,
-          actingUserId: p.userId,
-        });
-        if (fallback && fallback.status === 'active') profile = fallback;
-      }
-    }
-    if (!profile || profile.status !== 'active') continue;
+    const profile = await resolveActiveConnectorProfile(p, row);
+    if (!profile) continue;
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
@@ -1021,31 +936,6 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     });
   }
   return out;
-}
-
-/**
- * The canonical aliases a session has explicitly bound (durable
- * `project_session_connector_bindings` rows). Used by `listCatalog`'s safety
- * net to distinguish "no binding → fall back to project default" from
- * "present-but-null binding → fail closed". Returns null only when there is
- * no session in scope.
- */
-async function loadSessionBoundAliases(
-  accountId: string,
-  projectId: string,
-  sessionId: string,
-): Promise<Set<string>> {
-  const rows = await db
-    .select({ alias: projectSessionConnectorBindings.connectorAlias })
-    .from(projectSessionConnectorBindings)
-    .where(
-      and(
-        eq(projectSessionConnectorBindings.sessionId, sessionId),
-        eq(projectSessionConnectorBindings.accountId, accountId),
-        eq(projectSessionConnectorBindings.projectId, projectId),
-      ),
-    );
-  return new Set(rows.map((r) => canonicalConnectorAlias(r.alias)));
 }
 
 async function resolveProjectUserWith(

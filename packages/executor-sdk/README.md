@@ -45,7 +45,10 @@ const result = await executor.call('slack', 'send_message', {
   text: 'Shipped',
 });
 
-if (!result.ok) {
+if (result.status === 'pending_approval') {
+  console.log(result.approval_summary);
+  console.log(result.approval_url);
+} else if (!result.ok) {
   throw new Error(`Executor call failed: ${result.reason ?? result.status ?? 'unknown'}`);
 }
 ```
@@ -139,6 +142,11 @@ the legacy flat routes that derive the project from an in-sandbox session token.
 - Do not load provider API keys into scripts. The gateway attaches upstream
   credentials server-side.
 - Handle `ok: false` envelopes and `ExecutorError` exceptions explicitly.
+- A governed call returns one `pending_approval` envelope immediately. Relay
+  `approval_url` to the human. Do not poll. Kortix sends the decision back into
+  the session through a durable callback.
+- One approval is bound to the exact connector, action, and argument digest.
+  Changing any argument requires another approval.
 - Treat write/destructive actions as real side effects.
 
 ## License

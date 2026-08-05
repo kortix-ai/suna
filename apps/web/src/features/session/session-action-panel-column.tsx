@@ -26,8 +26,20 @@
  * session is the chat plus the one thing being looked at. No state is written
  * for that — closing the detail brings the column back as it was.
  *
- * ⌘I / Ctrl+I toggles it — same binding the old right-hand panel used, now
- * aimed at this column. The chevron stays as the visible control.
+ * ⌘I / Ctrl+I lives here, but it does NOT mean "toggle this column". It means
+ * "toggle the right side", which is `toggleRightPanel` in the store: close
+ * whatever is docked there — this column, a detail panel, or both — and, when
+ * nothing is, reopen what this session was last showing, falling back to this
+ * column. One key for one visual region. The memory is session-scoped: leave
+ * the session and the key is back to opening this column.
+ *
+ * The binding lives on this component only because this is the surface that is
+ * always mounted for a session (the detail panel is content-driven and may
+ * have nothing to render). It stays mounted while `hidden` under a detail,
+ * which is what lets the key close that detail.
+ *
+ * The chevron is unaffected: it is this column's own control, so it toggles
+ * this column and nothing else.
  */
 
 import Hint from '@/components/ui/hint';
@@ -41,6 +53,7 @@ import {
   useIsSidePanelOpen,
   useReadyChip,
   useToggleActionPanel,
+  useToggleRightPanel,
 } from '@/stores/kortix-computer-store';
 import { useTabStore } from '@/stores/tab-store';
 import { CaretDoubleLeftIcon, CaretDoubleRightIcon } from '@phosphor-icons/react';
@@ -74,7 +87,11 @@ export function SessionActionPanelColumn() {
   const panel = useOptionalSessionPanel();
   const isMobile = useIsMobile();
   const isOpen = useIsActionPanelOpen();
+  // The chevron's own action — it is this column's control, so it moves this
+  // column and nothing else.
   const toggle = useToggleActionPanel();
+  // ⌘I's action — the whole right side, whichever surface is docked there.
+  const toggleRight = useToggleRightPanel();
   const readyChip = useReadyChip();
   const reduce = useReducedMotion();
   // The right-hand detail panel is showing a browser, a terminal, a file
@@ -95,12 +112,17 @@ export function SessionActionPanelColumn() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
         e.preventDefault();
-        toggle();
+        // NOT `toggle()` — see this file's header. The key owns the right side;
+        // the chevron owns this column. Binding the key to the column left the
+        // detail panel (browser, terminal, files, a preview) with no keyboard
+        // close at all, and pressing ⌘I under one silently moved a column the
+        // detail was covering.
+        toggleRight();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [shouldHandleHotkey, toggle]);
+  }, [shouldHandleHotkey, toggleRight]);
 
   // No provider means no panel to render: `SessionChat` also renders read-only
   // inside `sub-session-modal.tsx`, outside `SessionLayout`. Mobile has no
@@ -196,9 +218,25 @@ export function SessionActionPanelColumn() {
         transition={reduce ? { duration: 0 } : isOpen ? ENTER : EXIT}
         aria-hidden={!isOpen}
         inert={!isOpen || undefined}
-        className="max-h-full min-h-0 overflow-hidden"
+        // `self-stretch` against the column's `items-start`: the cards inside
+        // divide the available height between them, and "available" has to be
+        // a real number for that to mean anything. Left at `items-start` this
+        // box was only as tall as its content, so `h-full` further down
+        // resolved against nothing and every card fell back to its natural
+        // height — the stack the panel used to be.
+        className="min-h-0 self-stretch overflow-hidden"
       >
-        <div className="max-h-full overflow-y-auto pr-3" style={{ width: PANEL_WIDTH }}>
+        {/* `h-full` hands that height down to the card column. The
+            `overflow-y-auto` stays as the last resort: the cards below Outputs
+            are deliberately unshrinkable, so if they alone exceed the panel —
+            a fully expanded Context with a long file list on a short window —
+            something has to give, and scrolling the whole column is a better
+            failure than clipping a card. In every ordinary case Outputs
+            absorbs the difference and this never engages. */}
+        <div
+          className="scrollbar-minimal h-full overflow-y-auto overscroll-contain pr-3"
+          style={{ width: PANEL_WIDTH }}
+        >
           <ActionPanel />
         </div>
       </motion.div>

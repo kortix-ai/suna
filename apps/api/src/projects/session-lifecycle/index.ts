@@ -4,7 +4,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
 } from './engine';
-export { enqueueContinueSessionCommand } from './store';
+export { buildContinueSessionCommandValues, enqueueContinueSessionCommand } from './store';
 export { deleteSession, restartSession } from './actions';
 export { stopSession } from './stop';
 export { reconcileUndeliveredPrompts } from './undelivered-prompts';

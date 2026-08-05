@@ -250,7 +250,7 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             )}
           </div>
           <div className="px-2.5 py-1.5">
-            <div className="text-foreground/90 text-xs leading-relaxed break-words whitespace-pre-wrap">
+            <div className="text-foreground/90 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
               {msg.content.slice(0, 800)}
               {msg.content.length > 800 && (
                 <span className="text-muted-foreground/50">

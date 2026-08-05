@@ -10,6 +10,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 const SANDBOX_ID = 'sandbox-xyz';
 let allowedAccounts = new Set<string>(['acct-owner']);
@@ -93,7 +94,11 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ userId, accountId }: { userId?: string; accountId?: string }) => {
     if (accountId && allowedAccounts.has(accountId)) return true;
     if (userId && allowedUsers.has(userId)) return true;

@@ -17,6 +17,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { listSandboxTemplates, type SandboxTemplateView } from './builder';
+import * as realSnapshotProviders from './providers';
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -107,7 +108,11 @@ const mockProvider = {
   getSnapshotState: async () => 'active',
 };
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('./providers', () => ({
+  ...realSnapshotProviders,
   getSandboxProvider: () => mockProvider,
 }));
 

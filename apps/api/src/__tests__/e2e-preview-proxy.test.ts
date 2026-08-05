@@ -17,6 +17,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import * as realProviders from '../platform/providers';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -206,6 +208,7 @@ mock.module('../iam', () => ({
 }));
 
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
   // ignored callerSessionId entirely, so a test could pass one and prove
@@ -258,7 +261,11 @@ mock.module('../shared/daytona', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../platform/providers', () => ({
+  ...realProviders,
   // Whole-module replacement: every export the graph touches must be present or
   // the file loads to 0 tests (see the secrets mock above).
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},

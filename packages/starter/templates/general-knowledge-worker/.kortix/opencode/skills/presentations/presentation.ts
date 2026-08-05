@@ -110,18 +110,9 @@ function generateViewer(presPath: string, metadata: PresentationMetadata): void 
 function runPythonScript(script: string, args: string[], timeoutMs = 300_000): string {
   const shellArg = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   const scriptArgs = [script, ...args].map(shellArg).join(" ");
-  const packages = script === "convert_pdf.py"
-    ? ["playwright", "pypdf"]
-    : script === "convert_pptx.py"
-      ? ["playwright", "python-pptx"]
-      : ["playwright"];
-  const withPackages = packages.map(pkg => `--with ${shellArg(pkg)}`).join(" ");
-  const cmd = `uv run --managed-python --python 3.12 ${withPackages} ${scriptArgs}`;
-  const env: Record<string, string | undefined> = { ...process.env };
-  env.UV_CACHE_DIR = env.UV_CACHE_DIR ?? join(process.env.HOME ?? "/tmp", ".cache", "uv");
-  env.PYENV_VERSION = "system";
+  const cmd = `python3 ${scriptArgs}`;
   try {
-    return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env }).trim();
+    return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch (e: unknown) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
     const stdout = err.stdout?.trim() ?? "";

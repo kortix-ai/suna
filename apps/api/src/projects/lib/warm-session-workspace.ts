@@ -2,6 +2,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import { resolveCommitSha, type GitBackedProject } from '../git';
 
 export interface WarmSessionWorkspaceRefresh {
@@ -79,6 +80,11 @@ export async function refreshWarmSessionWorkspace(
     ]);
     const headers = new Headers(ingress.headers);
     headers.set('Authorization', `Bearer ${sandbox.serviceKey}`);
+    // `base=1` below is the destructive branch reset, so the daemon demands
+    // proof this is a DIRECT call and not one relayed through the user-facing
+    // proxy — which authenticates user traffic with this same service key. The
+    // proxy strips this header, so only a direct caller can present it.
+    headers.set(KORTIX_SERVICE_CALL_HEADER, '1');
     const query = new URLSearchParams({
       base: '1',
       base_sha: baseSha,

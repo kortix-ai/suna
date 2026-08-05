@@ -799,20 +799,61 @@ function isAllowedSourceRef(ref: RegistryRef): boolean {
   return false;
 }
 
+/**
+ * Stable error code for the expected "user supplied a source address we refuse
+ * to fetch / read" validation state (non-https URL, private host, local-folder
+ * path). Surfaced on the typed {@link AllowedSourceValidationError} so the
+ * executor route handlers can catch it and return a structured 400 instead of
+ * letting the throw propagate to `app.onError` → `captureException` → Sentry
+ * (Better Stack pattern `f5c0ce61…`). Mirrors the `feature_not_supported`
+ * (#5240) + `RepoFileNotFoundError` (#5652) typed-error pattern: an EXPECTED
+ * user-input validation state must NOT page like a server defect.
+ */
+export const INVALID_SOURCE_ADDRESS_CODE = "invalid_source_address";
+
+/**
+ * Typed error thrown by {@link assertAllowedSourceAddress} when a source
+ * address isn't a safe source to add (the LFI/SSRF guard). Carries a stable
+ * `code` so route handlers branch on it (400) without swallowing genuine
+ * server failures. Distinct from a bare `Error` so callers catch the expected
+ * validation case and let real errors fall through.
+ */
+export class AllowedSourceValidationError extends Error {
+  readonly code = INVALID_SOURCE_ADDRESS_CODE;
+  constructor(message: string) {
+    super(message);
+    this.name = "AllowedSourceValidationError";
+  }
+}
+
+/** Narrow an unknown to {@link AllowedSourceValidationError} (the typed
+ *  validation throw from {@link assertAllowedSourceAddress}). */
+export function isAllowedSourceValidationError(
+  err: unknown,
+): err is AllowedSourceValidationError {
+  return err instanceof AllowedSourceValidationError;
+}
+
 /** Throw with a clear reason if an address isn't a safe source to add (LFI/SSRF guard). */
 export function assertAllowedSourceAddress(address: string): void {
   let ref: RegistryRef;
   try {
     ref = parseRegistryAddress(address);
   } catch (err) {
-    throw new Error(`Unrecognized source address: ${(err as Error).message}`);
+    throw new AllowedSourceValidationError(
+      `Unrecognized source address: ${(err as Error).message}`,
+    );
   }
   if (isAllowedSourceRef(ref)) return;
   if (ref.kind === "local")
-    throw new Error("Local-folder sources are not allowed on this server.");
+    throw new AllowedSourceValidationError(
+      "Local-folder sources are not allowed on this server.",
+    );
   if (ref.kind === "url")
-    throw new Error("Only https registry URLs on public hosts are allowed.");
-  throw new Error("This source type is not allowed.");
+    throw new AllowedSourceValidationError(
+      "Only https registry URLs on public hosts are allowed.",
+    );
+  throw new AllowedSourceValidationError("This source type is not allowed.");
 }
 
 /** Start (or join) a build of the external catalog — resolves when every source

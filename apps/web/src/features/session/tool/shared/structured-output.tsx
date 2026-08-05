@@ -33,7 +33,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 <WarningIcon className={cn('mt-0.5 size-4 shrink-0', STATUS_TEXT.warning)} />
                 <p
                   className={cn(
-                    'font-mono text-xs leading-relaxed break-words',
+                    'font-mono text-xs leading-relaxed wrap-break-word',
                     STATUS_TEXT.warning,
                   )}
                 >
@@ -55,7 +55,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                       {section.errorType}
                     </span>
                   )}
-                  <p className="text-muted-foreground font-mono text-xs leading-relaxed break-words">
+                  <p className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word">
                     {section.summary}
                   </p>
                 </div>
@@ -129,7 +129,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 className="text-muted-foreground flex items-center gap-2 px-2.5 py-1 font-mono text-xs"
               >
                 <span className="bg-muted-foreground/30 size-1 flex-shrink-0 rounded-full" />
-                <span className="break-words">{section.text}</span>
+                <span className="wrap-break-word">{section.text}</span>
               </div>
             );
 
@@ -137,7 +137,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <pre
                 key={i}
-                className="text-foreground/70 px-2.5 py-1 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap"
+                className="text-foreground/70 px-2.5 py-1 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap"
               >
                 {section.text}
               </pre>

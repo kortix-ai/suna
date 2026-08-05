@@ -15,6 +15,25 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
 
+/**
+ * Marks a request the API makes DIRECTLY to a sandbox daemon, server-to-server.
+ *
+ * It exists because the bearer token cannot express that distinction: the
+ * preview proxy authenticates every request it relays — an ordinary user's
+ * included — with the target sandbox's own service key, so the daemon sees the
+ * same `Authorization` either way.
+ *
+ * The proxy therefore STRIPS this header from everything it forwards (see
+ * STRIP_FORWARD_HEADERS in sandbox-proxy/routes/preview.ts), which makes its
+ * presence positive proof of a direct call and impossible to forge through the
+ * proxy — the same mechanism that already protects `authorization` and `cookie`.
+ *
+ * Only for platform→daemon control calls whose blast radius warrants it (today:
+ * the destructive `base=1` branch reset). Mirrored, with the same reasoning, in
+ * apps/kortix-sandbox-agent-server/src/kortix-user-context.ts.
+ */
+export const KORTIX_SERVICE_CALL_HEADER = 'X-Kortix-Service-Call';
+
 /** TTL for a signed context — short enough that revocations take effect quickly. */
 const KORTIX_USER_CONTEXT_TTL_SECONDS = 60;
 

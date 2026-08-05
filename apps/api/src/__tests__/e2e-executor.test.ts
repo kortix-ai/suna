@@ -124,8 +124,9 @@ function makeGatewayDeps(): GatewayDeps {
     enforcePolicies: true,
     recordExecution: async (r) => {
       world.executions.push(r);
-      return null;
+      return `exec-${world.executions.length}`;
     },
+    mintApprovalLink: ({ executionId }) => `https://app.kortix.test/approve/token-${executionId}`,
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
       return {
@@ -653,11 +654,20 @@ describe('connector-scoped policy enforcement', () => {
     expect(world.upstream).toHaveLength(0);
   });
 
-  test('require_approval → 202', async () => {
+  test('require_approval returns the one-time approval link and summary immediately', async () => {
     world.policiesByConnector.set('conn-stripe', [
       { match: 'charges.*', action: 'require_approval', position: 0 },
     ]);
-    expect((await callCharges()).status).toBe(202);
+    const res = await callCharges();
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      status: 'pending_approval',
+      execution_id: 'exec-1',
+      retryable: false,
+      approval_url: 'https://app.kortix.test/approve/token-exec-1',
+      approval_instructions:
+        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.',
+    });
   });
 
   test('always_run catch-all → 200', async () => {
