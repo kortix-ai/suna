@@ -25,6 +25,7 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Slack } from '@/features/icon/icons/slack';
@@ -117,6 +118,7 @@ function ProjectSessionListSkeleton() {
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const { holdPeek } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -166,6 +168,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     (s) => s.collapsedSectionsByProject[projectId] ?? EMPTY_LIST,
   );
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+  // The two facets are PERSISTED per project, so a filter survives navigation,
+  // ⌘J, and a full remount — a user can come back days later to a short list
+  // with no clue why. The in-menu dots only help once the closed menu is
+  // opened; this dot is the signal that fires from outside it.
+  const hasActiveSessionFilters = statusFilters.length > 0 || sourceFilters.length > 0;
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
@@ -210,133 +217,144 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     visibleCount: visibleSessions.length,
   });
 
-  if (viewState === 'loading') {
-    return <ProjectSessionListSkeleton />;
-  }
+  // Everything below the header — skeleton, error, empty, or the grouped list.
+  // Kept as one function so the header stays mounted across all four states
+  // instead of being re-declared at every early return.
+  function renderBody() {
+    if (viewState === 'loading') {
+      return <ProjectSessionListSkeleton />;
+    }
 
-  if (viewState === 'error') {
-    const message = error instanceof Error ? error.message : undefined;
-    return (
-      <div className="space-y-1.5 px-2 py-2">
-        <p className="text-destructive/80 text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
-          )}
-        </p>
-        {message && (
-          <p className="text-muted-foreground/70 truncate text-xs" title={message}>
-            {message}
+    if (viewState === 'error') {
+      const message = error instanceof Error ? error.message : undefined;
+      return (
+        <div className="space-y-1.5 px-2 py-2">
+          <p className="text-destructive/80 text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
+            )}
           </p>
-        )}
-        <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
+          {message && (
+            <p className="text-muted-foreground/70 truncate text-xs" title={message}>
+              {message}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      );
+    }
 
-  if (viewState === 'empty') {
-    return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
-      </div>
-    );
-  }
+    if (viewState === 'empty') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
+        </div>
+      );
+    }
 
-  if (viewState === 'no-matches') {
-    return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
-      </div>
-    );
-  }
+    if (viewState === 'no-matches') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0',
+          )}
+        </div>
+      );
+    }
 
-  // Below the early returns: grouping is only ever read by the content state,
-  // and computing it above meant every loading/error/empty render paid for a
-  // result it threw away.
-  const grouped = groupSessions(visibleSessions, {
-    mode: groupMode,
-    order: orderMode,
-    reviewCountBySession: reviewSummary.needsYouBySession,
-    hiddenSections,
-  });
+    // Below the early returns: grouping is only ever read by the content state,
+    // and computing it above meant every loading/error/empty render paid for a
+    // result it threw away.
+    const grouped = groupSessions(visibleSessions, {
+      mode: groupMode,
+      order: orderMode,
+      reviewCountBySession: reviewSummary.needsYouBySession,
+      hiddenSections,
+    });
 
-  // `resolveSessionListViewState` only sees counts before filtering by
-  // `hiddenSections` — it has no way to know every section got hidden. Catch
-  // that case here instead of letting `FadedScrollArea` render nothing with
-  // no explanation.
-  if (grouped.sections.length === 0) {
-    return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
-    );
-  }
+    // `resolveSessionListViewState` only sees counts before filtering by
+    // `hiddenSections` — it has no way to know every section got hidden. Catch
+    // that case here instead of letting `FadedScrollArea` render nothing with
+    // no explanation.
+    if (grouped.sections.length === 0) {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+      );
+    }
 
-  // One session row plus its opencode sub-sessions. `nested` marks a row drawn
-  // under its coordinator: the indent already carries the spawn link, so the
-  // row drops its own spawned-by icon.
-  const renderSessionNode = (session: ProjectSession, nested: boolean) => {
-    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-    const isSwitchTarget = switchingToSessionId === session.session_id;
-    const children = directSubsessions(session);
-    return (
-      <div key={session.session_id} className="space-y-px">
-        <ProjectSessionRow
-          nested={nested}
-          session={session}
-          href={href}
-          isActive={!!isActive && !activeOpenCodeSessionId}
-          isSwitching={isSwitchTarget}
-          onNavigate={(event) => {
-            if (switchingToSessionId && session.session_id === activeSessionId) {
-              event.preventDefault();
-              cancelSessionSwitch();
-              router.replace(href, { scroll: false });
-              return;
+    // One session row plus its opencode sub-sessions. `nested` marks a row drawn
+    // under its coordinator: the indent already carries the spawn link, so the
+    // row drops its own spawned-by icon.
+    const renderSessionNode = (session: ProjectSession, nested: boolean) => {
+      const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+      const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+      const isSwitchTarget = switchingToSessionId === session.session_id;
+      const children = directSubsessions(session);
+      return (
+        <div key={session.session_id} className="space-y-px">
+          <ProjectSessionRow
+            nested={nested}
+            session={session}
+            href={href}
+            isActive={!!isActive && !activeOpenCodeSessionId}
+            isSwitching={isSwitchTarget}
+            onNavigate={(event) => {
+              if (switchingToSessionId && session.session_id === activeSessionId) {
+                event.preventDefault();
+                cancelSessionSwitch();
+                router.replace(href, { scroll: false });
+                return;
+              }
+              if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+                beginSessionSwitch(session.session_id);
+              }
+            }}
+            displayTitle={getSessionDisplayTitle(session)}
+            childCount={children.length}
+            reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+            onDelete={(id, label) => setSessionToDelete({ id, label })}
+            onShare={(s) => setSessionToShare(s)}
+            onRename={(id, name) => setSessionToRename({ id, name })}
+            onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
+            isRestarting={
+              restartMutation.isPending &&
+              restartMutation.variables?.sessionId === session.session_id
             }
-            if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
-              beginSessionSwitch(session.session_id);
+            onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
+            isStopping={
+              stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
             }
-          }}
-          displayTitle={getSessionDisplayTitle(session)}
-          childCount={children.length}
-          reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
-          onDelete={(id, label) => setSessionToDelete({ id, label })}
-          onShare={(s) => setSessionToShare(s)}
-          onRename={(id, name) => setSessionToRename({ id, name })}
-          onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
-          isRestarting={
-            restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
-          }
-          onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
-          isStopping={
-            stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-          }
-        />
-        {children.length > 0 && isActive && (
-          <div className="border-border ml-3.5 border-l-2 pl-2">
-            {children.map((child) => {
-              const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-              const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-              return (
-                <ProjectSubsessionRow
-                  key={child.id}
-                  title={child.title || 'Sub-session'}
-                  href={childHref}
-                  isActive={activeChild}
-                  updatedAt={child.updated_at}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
+          />
+          {children.length > 0 && isActive && (
+            <div className="border-border ml-3.5 border-l-2 pl-2">
+              {children.map((child) => {
+                const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                return (
+                  <ProjectSubsessionRow
+                    key={child.id}
+                    title={child.title || 'Sub-session'}
+                    href={childHref}
+                    isActive={activeChild}
+                    updatedAt={child.updated_at}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
 
-  return (
-    <>
-      <FadedScrollArea className="h-full min-h-0 space-y-px">
+    return (
+      <FadedScrollArea className="h-full min-h-0 space-y-1">
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -365,6 +383,20 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           </SessionListSection>
         ))}
       </FadedScrollArea>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col space-y-2">
+      <SessionListHeader
+        projectId={projectId}
+        sessions={sessions}
+        reviewCountBySession={reviewSummary.needsYouBySession}
+        hasActiveFilters={hasActiveSessionFilters}
+        onMenuOpenChange={holdPeek}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
 
       <ShareSessionModal
         projectId={projectId}
@@ -389,7 +421,58 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-    </>
+    </div>
+  );
+}
+
+/** The `Sessions` row above the list. Lives here — not in `project-sidebar.tsx`
+ *  — because everything it needs (the session list, the review summary, the
+ *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
+ *  a second `['project-sessions', projectId]` query and two files owning the
+ *  same horizontal padding. The label opens the full sessions page; the `⋯`
+ *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
+ *  and appears whenever there is at least one session. */
+function SessionListHeader({
+  projectId,
+  sessions,
+  reviewCountBySession,
+  hasActiveFilters,
+  onMenuOpenChange,
+}: {
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+  hasActiveFilters: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <div className="text-foreground flex w-full shrink-0 flex-row items-center gap-0.5 px-2">
+      <Link
+        href={`/projects/${projectId}/sessions`}
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch text-sm font-medium transition-colors duration-150"
+      >
+        <span className="truncate">Sessions</span>
+      </Link>
+      {sessions.length > 0 && (
+        <DropdownMenu onOpenChange={onMenuOpenChange}>
+          <SessionFilterMenu
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+            align="start"
+          />
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton
+              type="button"
+              aria-label="Session view options"
+              className="text-muted-foreground hover:text-sidebar-foreground relative flex size-6 shrink-0 items-center justify-center rounded-sm"
+            >
+              <DotsThreeIcon className="size-4" />
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }
 
@@ -435,11 +518,8 @@ function SessionListSection({
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
-        <div className="group/section-header text-muted-foreground/60 flex h-6 items-center gap-1 px-2 pt-2 text-[11px] font-medium tracking-wider uppercase">
+        <div className="group/section-header text-muted-foreground flex h-8 items-center gap-1 px-2 text-sm font-medium">
           <span className="truncate">{section.label}</span>
-          {/* Label first, caret after it — the caret is a modifier on the label,
-              not a bullet in front of it. Hidden until the header is hovered so a
-              resting sidebar is just words; rotates rather than swapping glyphs. */}
           <CaretRightIcon
             aria-hidden
             className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
@@ -485,7 +565,7 @@ function SessionSectionMenu({
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon-xs"
           type="button"
           aria-label="Section options"
           className={cn(
@@ -502,7 +582,7 @@ function SessionSectionMenu({
             }
           }}
         >
-          <DotsThreeIcon className="size-3.5" />
+          <DotsThreeIcon className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <SessionFilterMenu
@@ -661,13 +741,13 @@ function ProjectSessionRow({
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-xs"
                   type="button"
                   aria-label={tHardcodedUi.raw(
                     'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
                   )}
                   className={cn(
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    'absolute top-1/2 right-0 -translate-y-1/2 rounded-sm transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
                     activity
                       ? cn(
                           'pointer-events-none opacity-0',
@@ -681,10 +761,10 @@ function ProjectSessionRow({
                     e.stopPropagation();
                   }}
                 >
-                  <DotsThreeIcon className="size-3.5" />
+                  <DotsThreeIcon className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuContent align="start" side="right" className="w-44">
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}

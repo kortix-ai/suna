@@ -1,7 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
@@ -9,7 +8,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -19,7 +17,6 @@ import {
 } from '@/components/ui/sidebar';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
@@ -34,23 +31,13 @@ import {
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
-import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { useIsMobile } from '@/hooks/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { useSessionFilterStore } from '@/stores/session-filter-store';
-import { listProjectSessions } from '@kortix/sdk';
-import {
-  DotsThreeIcon as HiDotsHorizontal,
-  MagnifyingGlassIcon,
-  SidebarSimpleIcon as PanelLeft,
-} from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { MagnifyingGlassIcon, SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
@@ -61,42 +48,10 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, holdPeek, toggleSidebar } = useSidebar();
+  const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
-
-  // Backs the nested filter menu (SessionFilterMenu): grouping, ordering, and
-  // the two multi-select facets all live in the persisted session-filter
-  // store, keyed by project, so the chosen view survives the project shell
-  // remounting on navigation — opening a session, ⌘J, switching sessions.
-  const { data: filterSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
-    queryFn: () => listProjectSessions(projectId),
-    staleTime: 10_000,
-    refetchOnWindowFocus: false,
-  });
-  const sessions = filterSessions ?? [];
-  // The two facets are a PERSISTED, per-project store, so a filter survives
-  // navigation, ⌘J, and a full remount — a user can come back days later to a
-  // short list with no clue why. The in-menu dots only help once the closed
-  // menu is opened; this is the signal that fires from outside it.
-  const hasActiveSessionFilters = useSessionFilterStore(
-    (s) =>
-      (s.statusFiltersByProject[projectId]?.length ?? 0) > 0 ||
-      (s.sourceFiltersByProject[projectId]?.length ?? 0) > 0,
-  );
-
-  // Same pair project-session-list.tsx reads (see the comment on `reviewSummary`
-  // there): the query keys (`['project-detail', projectId]` /
-  // `['review-center', projectId, 'list']`) are shared with that component, so
-  // this second pair of observers dedupes onto the SAME react-query cache
-  // entries and does not add a second poll. Wiring the real summary in here —
-  // not the `{}` default — is what lets `status` grouping's `needs-you`
-  // section appear in this menu's `Show` list and be reached by `Collapse
-  // all`, matching the section-header menu in project-session-list.tsx.
-  const reviewEnabled = useReviewCenterEnabled(projectId);
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -259,57 +214,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </SidebarMenu>
           </SidebarGroup>
 
+          {/* Sessions are always expanded — no collapse toggle. The `Sessions`
+              header (label + ⋯ filter menu) now lives inside ProjectSessionList
+              so it shares that component's data and horizontal padding. */}
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {/* Sessions are always expanded — no collapse toggle. The header
-                label opens the full sessions page; the ⋯ button opens the
-                nested Grouping/Ordering/Show/Filters menu (SessionFilterMenu)
-                and appears whenever there is at least one session — Grouping
-                and Ordering are always meaningful, unlike the old flat
-                STATUS/SOURCE dropdown this replaced. */}
-            <div className="flex min-h-0 flex-1 flex-col space-y-2">
-              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-[11px] font-medium tracking-wider uppercase">
-                <div className="flex w-full flex-row items-center gap-0.5">
-                  <Link
-                    href={`/projects/${projectId}/sessions`}
-                    className="hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center gap-1.5 self-stretch px-2 transition-colors duration-150"
-                  >
-                    <span>Sessions</span>
-                  </Link>
-                  {sessions.length > 0 && (
-                    <DropdownMenu onOpenChange={holdPeek}>
-                      <SessionFilterMenu
-                        projectId={projectId}
-                        sessions={sessions}
-                        reviewCountBySession={reviewSummary.needsYouBySession}
-                        align="start"
-                      />
-                      <DropdownMenuTrigger asChild>
-                        <SidebarMenuButton
-                          type="button"
-                          aria-label={tI18nHardcoded.raw(
-                            'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
-                          )}
-                          className="text-muted-foreground/90 hover:text-sidebar-foreground relative flex size-8 shrink-0 items-center justify-center px-2"
-                        >
-                          <HiDotsHorizontal className="size-3" />
-                          {hasActiveSessionFilters && (
-                            <span
-                              aria-hidden
-                              className="bg-foreground absolute top-1.5 right-1.5 size-1.5 rounded-full"
-                            />
-                          )}
-                        </SidebarMenuButton>
-                      </DropdownMenuTrigger>
-                    </DropdownMenu>
-                  )}
-                </div>
-              </SidebarGroupLabel>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="flex h-full min-h-0 flex-col">
-                  <ProjectSessionList projectId={projectId} />
-                </div>
-              </div>
-            </div>
+            <ProjectSessionList projectId={projectId} />
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto py-0.5">

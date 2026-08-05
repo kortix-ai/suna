@@ -229,7 +229,7 @@ export function SessionFilterMenu({
   const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
 
   return (
-    <DropdownMenuContent align={align} className="w-56 p-1">
+    <DropdownMenuContent align={align} side='right' className="w-56 p-1">
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <span className="min-w-0 flex-1 truncate">Grouping</span>
