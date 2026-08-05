@@ -924,11 +924,11 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// for the lifetime of the tab. Open ten long sessions and memory climbed
 	// monotonically and never came back.
 	//
-	// The fix is a consumer refcount: `retainSession` on mount, `releaseSession`
-	// on unmount, and the store frees a session once its LAST consumer is gone.
-	// Freeing is deferred through a small LRU of detached sessions so a remount
-	// (React StrictMode's mount → cleanup → mount, a fast-refresh, a tab flip)
-	// reclaims the transcript instead of repainting it from disk.
+	// The fix is a consumer refcount: `retainSession` on mount, its returned
+	// release on unmount, and the store frees a session once its LAST consumer
+	// is gone. Freeing is deferred through a small window of detached sessions
+	// so a remount (React StrictMode's mount → cleanup → mount, a fast refresh,
+	// a tab flip) reclaims the transcript instead of repainting it from disk.
 
 	/** Mirrors `DETACHED_SESSION_LIMIT` in sync-store.ts. */
 	const RETENTION_BOUND = 3;
@@ -952,48 +952,39 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		return sessionID in useSyncStore.getState().messages;
 	}
 
-	/** Open and close `count` throwaway sessions — the "user browses on" churn
-	 *  that pushes anything already detached out of the retention window. */
-	function churn(count: number): string[] {
-		const evicted: string[] = [];
-		for (let i = 0; i < count; i++) {
-			const sessionID = `ses_churn_${i}`;
-			seedSession(sessionID);
-			useSyncStore.getState().retainSession(sessionID);
-			evicted.push(...useSyncStore.getState().releaseSession(sessionID));
-		}
-		return evicted;
+	/** Open a session and leave again — one full mount/unmount cycle. */
+	function visit(sessionID: string): void {
+		seedSession(sessionID);
+		useSyncStore.getState().retainSession(sessionID)();
+	}
+
+	/** Browse `count` other sessions. Eviction happens on the NEXT mount, so
+	 *  RETENTION_BOUND + 1 visits are what guarantee an already-detached
+	 *  session is pushed out. */
+	function browseAway(count: number): void {
+		for (let i = 0; i < count; i++) visit(`ses_churn_${i}`);
 	}
 
 	test("the last consumer leaving eventually frees the session's messages and parts", () => {
-		const store = useSyncStore.getState();
-		const ids = ["ses_a", "ses_b", "ses_c", "ses_d"];
-		const messageIDs = ids.map((id) => seedSession(id));
+		const messageIDs = ["ses_a", "ses_b", "ses_c", "ses_d"].map((id) => {
+			const messageID = seedSession(id);
+			useSyncStore.getState().retainSession(id)();
+			return messageID;
+		});
 
-		const evicted: string[] = [];
-		for (const id of ids) {
-			store.retainSession(id);
-			evicted.push(...store.releaseSession(id));
-		}
+		// Four detached, three fit in the window — the oldest goes on the next
+		// mount.
+		seedSession("ses_e");
+		useSyncStore.getState().retainSession("ses_e");
 
-		// Four sessions detached, three fit in the window — the oldest goes.
-		expect(evicted).toEqual(["ses_a"]);
 		expect(isResident("ses_a")).toBe(false);
 		expect(useSyncStore.getState().parts[messageIDs[0]]).toBeUndefined();
-
-		// Everything still inside the window is untouched.
-		for (let i = 1; i < ids.length; i++) {
-			expect(isResident(ids[i])).toBe(true);
-			expect(useSyncStore.getState().parts[messageIDs[i]]).toHaveLength(1);
-		}
+		for (const id of ["ses_b", "ses_c", "ses_d"]) expect(isResident(id)).toBe(true);
 	});
 
 	test("freeing a session drops its status, diffs and todos too", () => {
-		const store = useSyncStore.getState();
-		seedSession("ses_a");
-		store.retainSession("ses_a");
-		store.releaseSession("ses_a");
-		churn(RETENTION_BOUND);
+		visit("ses_a");
+		browseAway(RETENTION_BOUND + 1);
 
 		const state = useSyncStore.getState();
 		expect("ses_a" in state.sessionStatus).toBe(false);
@@ -1001,65 +992,103 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		expect("ses_a" in state.todos).toBe(false);
 	});
 
-	// THE criterion most likely to be got wrong. Two components can render the
-	// same live session at once (transcript + context modal, split view, a
-	// sub-agent panel). Tying eviction to a raw unmount would free the data out
-	// from under the one still on screen.
-	test("a session with two consumers survives one of them leaving", () => {
-		const store = useSyncStore.getState();
-		const messageID = seedSession("ses_live");
+	// React runs every passive destroy before any passive create in a commit.
+	// Pruning on release therefore let the unmount of the session being LEFT
+	// evict the session being ENTERED, in the very commit that mounts it: it
+	// was the oldest of four detached sessions at exactly the wrong moment.
+	// Costs a loading flash and a disk round trip — or a permanently blank
+	// transcript when nothing was ever written to disk (unauthenticated:
+	// `getCurrentCacheScope()` returns null and `saveSessionToIDB` no-ops).
+	test("returning to the oldest detached session does not evict it — unmount never frees", () => {
+		for (const id of ["ses_a", "ses_x", "ses_y", "ses_b"]) visit(id);
+		// Four detached and ses_a is the oldest. Now go back to it: React
+		// destroys ses_b's effects first, then creates ses_a's.
+		const messageID = `msg_ses_a`;
 
-		store.retainSession("ses_live");
-		store.retainSession("ses_live");
-		expect(store.releaseSession("ses_live")).toEqual([]);
+		useSyncStore.getState().retainSession("ses_a");
+
+		expect(isResident("ses_a")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
+	test("nothing is freed by a release on its own — only by the next mount", () => {
+		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) visit(id);
+		// Over the bound, but no session has mounted since.
+		for (const id of ["ses_a", "ses_b", "ses_c", "ses_d"]) {
+			expect(isResident(id)).toBe(true);
+		}
+
+		seedSession("ses_e");
+		useSyncStore.getState().retainSession("ses_e");
+		expect(isResident("ses_a")).toBe(false);
+	});
+
+	// THE criterion most likely to be got wrong. Two components can render the
+	// same live session at once (transcript + context modal, split view, or a
+	// parent's spawn-tool preview of a child session). Tying eviction to a raw
+	// unmount would free the data out from under the one still on screen.
+	test("a session with two consumers survives one of them leaving", () => {
+		const messageID = seedSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		useSyncStore.getState().retainSession("ses_live");
+
+		releaseFirst();
 
 		// Not merely un-evicted — never even detached, so no amount of browsing
 		// elsewhere can push it out of the window.
-		const evicted = churn(RETENTION_BOUND * 2);
-		expect(evicted).not.toContain("ses_live");
+		browseAway(RETENTION_BOUND * 2);
 		expect(isResident("ses_live")).toBe(true);
 		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
 	});
 
 	test("the second consumer leaving does free the session", () => {
-		const store = useSyncStore.getState();
 		seedSession("ses_live");
-		store.retainSession("ses_live");
-		store.retainSession("ses_live");
-		store.releaseSession("ses_live");
-		store.releaseSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		const releaseSecond = useSyncStore.getState().retainSession("ses_live");
+		releaseFirst();
+		releaseSecond();
 
-		expect(churn(RETENTION_BOUND)).toContain("ses_live");
+		browseAway(RETENTION_BOUND + 1);
 		expect(isResident("ses_live")).toBe(false);
 	});
 
+	// A release that ran twice would drop a hold the second consumer still
+	// owns, which is the two-consumer bug through a side door. React can invoke
+	// a cleanup once, but nothing stops a caller from holding onto it.
+	test("releasing twice drops one hold, not two", () => {
+		const messageID = seedSession("ses_live");
+		const releaseFirst = useSyncStore.getState().retainSession("ses_live");
+		useSyncStore.getState().retainSession("ses_live");
+
+		releaseFirst();
+		releaseFirst();
+
+		browseAway(RETENTION_BOUND * 2);
+		expect(isResident("ses_live")).toBe(true);
+		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
+	});
+
 	// StrictMode double-invokes effects in dev: mount → cleanup → mount, in the
-	// same commit. Freeing the instant the count hits zero would blank a session
-	// the user is actively looking at, on every single mount, in development.
+	// same commit. Freeing the instant the count hits zero would blank the
+	// transcript on every single mount, in development.
 	test("StrictMode's mount → cleanup → mount does not free the session", () => {
-		const store = useSyncStore.getState();
 		const messageID = seedSession("ses_strict");
 
-		store.retainSession("ses_strict");
-		expect(store.releaseSession("ses_strict")).toEqual([]);
+		useSyncStore.getState().retainSession("ses_strict")();
 		expect(isResident("ses_strict")).toBe(true);
-		store.retainSession("ses_strict");
+		useSyncStore.getState().retainSession("ses_strict");
 
-		// Re-retained, so it is held again and browsing on cannot evict it.
-		expect(churn(RETENTION_BOUND * 2)).not.toContain("ses_strict");
+		browseAway(RETENTION_BOUND * 2);
 		expect(isResident("ses_strict")).toBe(true);
 		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
 	});
 
-	// Hosts that read this store without going through `useSessionSync`
-	// (apps/mobile drives it from its own event pipeline) never retain, and must
-	// therefore never be evicted — the fix must not change their behaviour.
+	// Hosts that read this store without ever retaining (apps/mobile drives it
+	// from its own event pipeline) must keep exactly today's behaviour.
 	test("a session that was never retained is never freed", () => {
-		const store = useSyncStore.getState();
 		const messageID = seedSession("ses_unmanaged");
 
-		expect(store.releaseSession("ses_unmanaged")).toEqual([]);
-		expect(churn(RETENTION_BOUND * 2)).not.toContain("ses_unmanaged");
+		browseAway(RETENTION_BOUND * 2);
 		expect(isResident("ses_unmanaged")).toBe(true);
 		expect(useSyncStore.getState().parts[messageID]).toHaveLength(1);
 	});
@@ -1071,32 +1100,28 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// empty": a returning user would get a blank transcript that never repaints.
 	// Eviction must DELETE the key.
 	test("eviction deletes the session key rather than emptying it, so the cache can repaint", () => {
-		const store = useSyncStore.getState();
 		seedSession("ses_a");
 
-		store.clearSession("ses_a");
+		useSyncStore.getState().clearSession("ses_a");
 		expect("ses_a" in useSyncStore.getState().messages).toBe(true);
 		expect(useSyncStore.getState().messages.ses_a).toEqual([]);
 
-		store.retainSession("ses_a");
-		store.releaseSession("ses_a");
-		churn(RETENTION_BOUND);
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
 		expect("ses_a" in useSyncStore.getState().messages).toBe(false);
 	});
 
 	test("returning to a freed session repaints it from the cache without data loss", () => {
-		const store = useSyncStore.getState();
 		const messageID = seedSession("ses_a");
-		const cached = store.getMessages("ses_a");
+		const cached = useSyncStore.getState().getMessages("ses_a");
 
-		store.retainSession("ses_a");
-		store.releaseSession("ses_a");
-		churn(RETENTION_BOUND);
+		useSyncStore.getState().retainSession("ses_a")();
+		browseAway(RETENTION_BOUND + 1);
 		expect(isResident("ses_a")).toBe(false);
 
 		// What the IDB cache round-trips: the same `{ info, parts }` rows.
-		store.retainSession("ses_a");
-		store.hydrate("ses_a", cached);
+		useSyncStore.getState().retainSession("ses_a");
+		useSyncStore.getState().hydrate("ses_a", cached);
 
 		expect(useSyncStore.getState().messages.ses_a.map((m) => m.id)).toEqual([messageID]);
 		expect(useSyncStore.getState().parts[messageID]).toEqual([
@@ -1118,9 +1143,8 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
 		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
 
-		store.retainSession("ses_1");
-		store.releaseSession("ses_1");
-		churn(RETENTION_BOUND);
+		store.retainSession("ses_1")();
+		browseAway(RETENTION_BOUND + 1);
 		expect(isResident("ses_1")).toBe(false);
 
 		// The same session id comes back and reuses the message id. It picks up
@@ -1142,17 +1166,104 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	});
 
 	test("reset() clears the retention bookkeeping along with the data", () => {
-		const store = useSyncStore.getState();
 		seedSession("ses_a");
-		store.retainSession("ses_a");
+		const release = useSyncStore.getState().retainSession("ses_a");
 
 		useSyncStore.getState().reset();
+		release();
 
-		// The hold is gone with everything else, so a late unmount cannot free a
+		// The hold is gone with everything else, so a late unmount cannot park a
 		// session the next page just opened.
 		seedSession("ses_a");
-		expect(useSyncStore.getState().releaseSession("ses_a")).toEqual([]);
-		expect(churn(RETENTION_BOUND * 2)).not.toContain("ses_a");
+		browseAway(RETENTION_BOUND * 2);
 		expect(isResident("ses_a")).toBe(true);
+	});
+});
+
+describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
+	// This memo used to exist TWICE — once in use-session-sync.ts, once in
+	// use-opencode-sessions/messages.ts — and neither copy was dropped when a
+	// session's data was. Every session the user opened stayed reachable
+	// through whichever memo still held its rows, up to 20 transcripts per
+	// copy, so freeing the store alone freed nothing. One memo, owned by the
+	// store, beside the eviction that invalidates it.
+
+	function rowsFor(sessionID: string) {
+		const state = useSyncStore.getState();
+		return state.buildSessionMessages(sessionID, state.messages[sessionID], state.parts);
+	}
+
+	test("returns a stable reference while the underlying arrays are unchanged", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+
+		expect(rowsFor("ses_1")).toBe(rowsFor("ses_1"));
+	});
+
+	test("rebuilds when a part changes, so a new tail actually renders", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const before = rowsFor("ses_1");
+
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi there"), "ses_1");
+
+		const after = rowsFor("ses_1");
+		expect(after).not.toBe(before);
+		expect((after[0].parts[0] as TextPart).text).toBe("hi there");
+	});
+
+	test("an empty session is a stable empty array, never a fresh one", () => {
+		expect(rowsFor("ses_missing")).toBe(rowsFor("ses_other_missing"));
+		expect(rowsFor("ses_missing")).toEqual([]);
+	});
+
+	// The actual leak assertion, and the only way to observe the memo from
+	// outside: re-present the SAME arrays it memoized on. A surviving entry
+	// hands back the identical rows — which is precisely the retention being
+	// fixed, since those rows hold the whole transcript. Re-seeding the session
+	// instead would prove nothing: `upsertMessage` builds a new array, so the
+	// memo would rebuild whether or not the old entry was ever dropped.
+	function capture(sessionID: string) {
+		const state = useSyncStore.getState();
+		const msgs = state.messages[sessionID];
+		const parts = state.parts;
+		return {
+			rows: state.buildSessionMessages(sessionID, msgs, parts),
+			rebuild: () =>
+				useSyncStore.getState().buildSessionMessages(sessionID, msgs, parts),
+		};
+	}
+
+	test("eviction drops the memoized rows, not just the store slices", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const held = capture("ses_1");
+		expect(held.rebuild()).toBe(held.rows); // memoized while resident
+
+		store.retainSession("ses_1")();
+		for (let i = 0; i < 4; i++) {
+			const id = `ses_churn_${i}`;
+			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
+			useSyncStore.getState().retainSession(id)();
+		}
+		useSyncStore.getState().retainSession("ses_fresh");
+
+		expect("ses_1" in useSyncStore.getState().messages).toBe(false);
+		expect(held.rebuild()).not.toBe(held.rows);
+	});
+
+	test("clearSession drops the memoized rows too", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_1"));
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
+		const held = capture("ses_1");
+		expect(held.rebuild()).toBe(held.rows);
+
+		store.clearSession("ses_1");
+
+		expect(held.rebuild()).not.toBe(held.rows);
 	});
 });

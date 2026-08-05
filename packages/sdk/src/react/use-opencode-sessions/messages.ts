@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
-import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
+import type { PromptPart, SendMessageOptions } from './keys';
 import { unwrap } from './shared';
 
 // ============================================================================
@@ -126,76 +126,25 @@ export function getSendRetryDelayMs(
  * for backward compatibility with consumers (session-layout, tool-renderers,
  * snapshot-dialog, session-diff-viewer).
  */
-/**
- * Message cache for useOpenCodeMessages — prevents creating new array references
- * on every render. Same pattern as buildMessages() in use-session-sync.ts.
- * Without this, the Zustand selector returns a new array from .map() on every
- * call, breaking useSyncExternalStore's Object.is check → infinite re-render.
- */
-const MSG_HOOK_CACHE_MAX = 20;
-const msgHookCache = new Map<
-  string,
-  {
-    msgs: Message[] | undefined;
-    partRefs: (Part[] | undefined)[];
-    result: MessageWithParts[];
-  }
->();
-
-function touchMsgHookCache(sessionId: string) {
-  const entry = msgHookCache.get(sessionId);
-  if (entry) {
-    msgHookCache.delete(sessionId);
-    msgHookCache.set(sessionId, entry);
-  }
-  if (msgHookCache.size > MSG_HOOK_CACHE_MAX) {
-    const oldest = msgHookCache.keys().next().value;
-    if (oldest) msgHookCache.delete(oldest);
-  }
-}
-
-const EMPTY_MSGS: MessageWithParts[] = [];
-
-function buildMsgsForHook(
-  sessionId: string,
-  msgs: Message[] | undefined,
-  parts: Record<string, Part[]>,
-): MessageWithParts[] {
-  if (!msgs || msgs.length === 0) return EMPTY_MSGS;
-
-  const cached = msgHookCache.get(sessionId);
-  if (cached && cached.msgs === msgs) {
-    let same = cached.partRefs.length === msgs.length;
-    if (same) {
-      for (let i = 0; i < msgs.length; i++) {
-        if (parts[msgs[i].id] !== cached.partRefs[i]) {
-          same = false;
-          break;
-        }
-      }
-    }
-    if (same) return cached.result;
-  }
-
-  const partRefs: (Part[] | undefined)[] = [];
-  const result: MessageWithParts[] = [];
-  for (const info of msgs) {
-    const pa = parts[info.id];
-    partRefs.push(pa);
-    result.push({ info, parts: pa ?? [] });
-  }
-  msgHookCache.set(sessionId, { msgs, partRefs, result });
-  touchMsgHookCache(sessionId);
-  return result;
-}
-
 export function useOpenCodeMessages(sessionId: string) {
-  // Select via a referentially-stable selector that uses an external cache.
-  // getMessages() in the store creates new arrays via .map() on every call,
-  // which breaks useSyncExternalStore → infinite loop. buildMsgsForHook()
-  // returns the same reference if nothing changed for this session.
+  // Hold this session's transcript for as long as this hook is mounted.
+  //
+  // Not optional bookkeeping: the store frees a session once its last consumer
+  // is gone, and this hook has consumers that are NOT the session view — a
+  // parent transcript previews a spawned child session through it (task-tool,
+  // session-spawn-tool). A child the user had opened directly, and has since
+  // navigated away from, is otherwise a legitimate eviction candidate while
+  // that preview is still on screen; those previews have no re-hydrate path of
+  // their own, so they would simply go empty.
+  useEffect(() => useSyncStore.getState().retainSession(sessionId), [sessionId]);
+
+  // Select via the store's shared, referentially-stable join. getMessages()
+  // rebuilds via .map() on every call, which breaks useSyncExternalStore's
+  // Object.is check → infinite re-render. This hook used to keep its own copy
+  // of that memo, which meant an evicted session stayed reachable through it;
+  // the store owns the memo now, beside the eviction that invalidates it.
   const messages = useSyncStore((s) =>
-    buildMsgsForHook(sessionId, s.messages[sessionId], s.parts),
+    s.buildSessionMessages(sessionId, s.messages[sessionId], s.parts),
   );
   const isLoading = !useSyncStore((s) => sessionId in s.messages);
 

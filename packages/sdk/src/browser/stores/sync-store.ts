@@ -115,22 +115,43 @@ interface SyncState {
 	hasOptimisticMessages: (sessionID: string) => boolean;
 	clearSession: (sessionID: string) => void;
 	/**
-	 * Take a hold on `sessionID`'s transcript on behalf of one mounted consumer.
-	 * Balanced by exactly one {@link SyncState.releaseSession}. See
-	 * {@link DETACHED_SESSION_LIMIT} for what the holds buy.
-	 */
-	retainSession: (sessionID: string) => void;
-	/**
-	 * Drop one hold. When it was the LAST one, the session becomes a candidate
-	 * for eviction and the oldest candidates beyond
-	 * {@link DETACHED_SESSION_LIMIT} are freed.
+	 * Take a hold on `sessionID`'s transcript for one mounted consumer, and get
+	 * back the release for it. The session's data stays resident until every
+	 * hold is released; see {@link DETACHED_SESSION_LIMIT} for what happens
+	 * after that.
 	 *
-	 * Returns the session ids whose data this call actually freed — usually
-	 * empty. Callers that keep their own per-session derived state (the
-	 * `MessageWithParts[]` memo in `use-session-sync.ts`) must drop those
-	 * entries too, or they keep alive the very arrays this just released.
+	 * Returning the release rather than exposing a separate `releaseSession`
+	 * makes the pairing structural — a caller cannot take a hold without
+	 * receiving the matching release, and a React effect returns it directly:
+	 *
+	 * ```ts
+	 * useEffect(() => useSyncStore.getState().retainSession(id), [id]);
+	 * ```
+	 *
+	 * Same shape as `retainSessionSyncController` in session-sync-registry.ts.
+	 * The release is idempotent: calling it twice drops one hold, not two.
 	 */
-	releaseSession: (sessionID: string) => string[];
+	retainSession: (sessionID: string) => () => void;
+	/**
+	 * Join this session's messages with their parts, memoized on the identity of
+	 * the arrays it read.
+	 *
+	 * Every consumer selects through here — `useSessionSync` and
+	 * `useOpenCodeMessages` alike. It has to be one shared memo rather than one
+	 * per hook: `getMessages` rebuilds via `.map()` on every call, so a raw
+	 * selector returns a new array each time, fails `useSyncExternalStore`'s
+	 * `Object.is` check and re-renders forever. The memo previously existed
+	 * TWICE, once in each hook file, and neither copy was dropped when a
+	 * session's data was — so an evicted transcript stayed reachable through
+	 * whichever memo still held its rows. Keeping it in the store, next to the
+	 * eviction that invalidates it, is what makes that impossible rather than
+	 * merely fixed.
+	 */
+	buildSessionMessages: (
+		sessionID: string,
+		msgs: Message[] | undefined,
+		parts: Record<string, Part[]>,
+	) => MessageWithParts[];
 	hydrate: (
 		sessionID: string,
 		msgs: Array<{ info: Message; parts: Part[] }>,
@@ -183,10 +204,15 @@ function hasTrackedId(
 	return store.get(sessionID)?.has(id) ?? false;
 }
 
-/** Release every id this session was tracking — called from `clearSession`. */
+/** Release every id this session was tracking — called from `clearSession`
+ *  and from eviction. */
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	// The joined rows hold the very message and part arrays this session's
+	// data is being dropped from. Left behind, they keep the transcript
+	// reachable and the drop achieves nothing.
+	sessionMessageRows.delete(sessionID);
 	// A session cleared without ever going idle/erroring (the only other
 	// release points, below) would otherwise leave a dead bucket in
 	// deltaActiveParts for the lifetime of the tab — the exact leak class
@@ -256,20 +282,36 @@ const deltaActiveParts = new Map<string, Set<string>>();
  * How many sessions keep their transcript resident after their LAST consumer
  * unmounts, most-recently-detached first.
  *
- * Not zero, for three reasons:
+ * Not zero, for two reasons:
  *  1. React StrictMode double-invokes effects (mount → cleanup → mount) in the
  *     same commit. Freeing the instant the count hits zero would blank the
  *     transcript on every dev mount, and again on every fast refresh.
- *  2. `saveSessionToIDB` batches on a 500 ms timer. A session freed the
- *     millisecond it detaches can be re-read from disk before its own last
- *     tail landed there.
- *  3. Back-and-forth between two or three sessions is the common navigation.
- *     Holding them costs nothing to correctness and skips a disk round trip.
+ *  2. Back-and-forth between two or three sessions is the common navigation.
+ *     Holding them costs nothing to correctness and skips a disk round trip —
+ *     and a round trip is the GOOD case: `getCurrentCacheScope()` returns null
+ *     when unauthenticated, and then nothing was ever written to disk to
+ *     return to.
  *
  * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
  * the on-disk cache at 50 sessions / 7 days.
  */
 const DETACHED_SESSION_LIMIT = 3;
+
+/**
+ * The joined `MessageWithParts[]` rows, per session — see
+ * {@link SyncState.buildSessionMessages}. Bounded, and dropped for real by
+ * `forgetSessionIds`.
+ */
+const MESSAGE_ROWS_LIMIT = 20;
+const sessionMessageRows = new Map<
+	string,
+	{
+		msgs: Message[] | undefined;
+		partRefs: (Part[] | undefined)[];
+		result: MessageWithParts[];
+	}
+>();
+const EMPTY_MESSAGE_ROWS: MessageWithParts[] = [];
 
 /** Mounted consumers per session. Absent means "nobody ever retained this" —
  *  see `releaseSession`, which then leaves the session alone entirely. */
@@ -306,6 +348,32 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
 		delete todos[sessionID];
 	}
 	return { messages, parts, sessionStatus, diffs, todos };
+}
+
+/**
+ * Prune the detached window down to {@link DETACHED_SESSION_LIMIT}, freeing the
+ * oldest sessions past it. Returns the ids it freed.
+ *
+ * Runs when a session is RETAINED, never when one is released. React runs every
+ * passive destroy before any passive create in a commit, so pruning on release
+ * would let the unmount of B evict A in the very commit that mounts A: visit
+ * A → X → Y → B and go back to A, and A is the oldest of four detached
+ * sessions at exactly the wrong moment. Pruning after the incoming session has
+ * been removed from the window makes that unreachable, and keeps `set()` out of
+ * the unmount path entirely.
+ *
+ * The window therefore holds at most LIMIT + (releases since the last retain),
+ * and is back to LIMIT the moment any session mounts.
+ */
+function pruneDetachedSessions(): string[] {
+	const evicted: string[] = [];
+	while (detachedSessions.size > DETACHED_SESSION_LIMIT) {
+		const oldest: string | undefined = detachedSessions.values().next().value;
+		if (oldest === undefined) break;
+		detachedSessions.delete(oldest);
+		evicted.push(oldest);
+	}
+	return evicted;
 }
 
 // ============================================================================
@@ -593,41 +661,71 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		}),
 
 	retainSession: (sessionID) => {
-		if (!sessionID) return;
+		if (!sessionID) return () => {};
+		// Out of the detach window BEFORE pruning it, so mounting a session can
+		// never be what evicts it.
 		detachedSessions.delete(sessionID);
 		sessionConsumers.set(sessionID, (sessionConsumers.get(sessionID) ?? 0) + 1);
+
+		const evicted = pruneDetachedSessions();
+		if (evicted.length > 0) {
+			for (const id of evicted) forgetSessionIds(id);
+			set((s) => dropSessionData(s, evicted));
+		}
+
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			const held = sessionConsumers.get(sessionID);
+			if (held === undefined) return;
+			// Another consumer still has this session on screen. THE case a raw
+			// unmount gets wrong: a transcript and a context modal, a split
+			// view, or a parent's spawn-tool preview of a child session.
+			if (held > 1) {
+				sessionConsumers.set(sessionID, held - 1);
+				return;
+			}
+			sessionConsumers.delete(sessionID);
+			// Re-insert so this session is the NEWEST detached one, not wherever
+			// a previous detach left it. Nothing is freed here — see
+			// `pruneDetachedSessions`.
+			detachedSessions.delete(sessionID);
+			detachedSessions.add(sessionID);
+		};
 	},
 
-	releaseSession: (sessionID) => {
-		const held = sessionConsumers.get(sessionID);
-		// Never retained, never evicted. Hosts that drive this store without
-		// `useSessionSync` (apps/mobile runs its own event pipeline) hold no
-		// references here, and an unbalanced release must not reach their data.
-		if (held === undefined) return [];
-		// Another consumer still has this session on screen. THE case a raw
-		// unmount gets wrong: a transcript and a context modal, or a split view,
-		// render the same live session at once.
-		if (held > 1) {
-			sessionConsumers.set(sessionID, held - 1);
-			return [];
-		}
-		sessionConsumers.delete(sessionID);
-		// Re-insert so this session is the NEWEST detached one, not wherever a
-		// previous detach left it.
-		detachedSessions.delete(sessionID);
-		detachedSessions.add(sessionID);
+	buildSessionMessages: (sessionID, msgs, parts) => {
+		if (!msgs || msgs.length === 0) return EMPTY_MESSAGE_ROWS;
 
-		const evicted: string[] = [];
-		while (detachedSessions.size > DETACHED_SESSION_LIMIT) {
-			const oldest: string | undefined = detachedSessions.values().next().value;
-			if (oldest === undefined) break;
-			detachedSessions.delete(oldest);
-			evicted.push(oldest);
+		const cached = sessionMessageRows.get(sessionID);
+		if (cached && cached.msgs === msgs) {
+			let same = cached.partRefs.length === msgs.length;
+			if (same) {
+				for (let i = 0; i < msgs.length; i++) {
+					if (parts[msgs[i].id] !== cached.partRefs[i]) {
+						same = false;
+						break;
+					}
+				}
+			}
+			if (same) return cached.result;
 		}
-		if (evicted.length === 0) return evicted;
-		for (const id of evicted) forgetSessionIds(id);
-		set((s) => dropSessionData(s, evicted));
-		return evicted;
+
+		const partRefs: (Part[] | undefined)[] = [];
+		const result: MessageWithParts[] = [];
+		for (const info of msgs) {
+			const messageParts = parts[info.id];
+			partRefs.push(messageParts);
+			result.push({ info, parts: messageParts ?? [] });
+		}
+		sessionMessageRows.delete(sessionID);
+		sessionMessageRows.set(sessionID, { msgs, partRefs, result });
+		if (sessionMessageRows.size > MESSAGE_ROWS_LIMIT) {
+			const oldest = sessionMessageRows.keys().next().value;
+			if (oldest) sessionMessageRows.delete(oldest);
+		}
+		return result;
 	},
 
 	hydrate: (sessionID, msgs) =>
@@ -847,6 +945,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		// otherwise a late unmount could free a session the next page opened.
 		sessionConsumers.clear();
 		detachedSessions.clear();
+		sessionMessageRows.clear();
 		set({
 			messages: {},
 			parts: {},
