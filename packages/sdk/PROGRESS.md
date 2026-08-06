@@ -12,6 +12,58 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `client-cache-unification` — Task 3 claim
+
+Claiming Task 3 of the `client-cache-unification` plan
+(`docs/superpowers/plans/2026-08-06-client-cache-unification.md`): the `qk`
+query-key factory.
+
+Scope:
+
+- Add `packages/sdk/src/react/query-keys.ts` — one additive module exporting
+  `qk` (a project/projects query-key factory) plus the `ProjectScopeKey` and
+  `ProjectsListKey` types.
+- `qk.project.scope(id)` is an invalidation prefix, never a query key itself;
+  every project-scoped key nests under it.
+- Distinct from `kortixKeys` in `use-kortix-master.ts` (the Kortix-Master
+  multi-server surface) — not extended, not imported, not renamed.
+- Not wired into `react/index.ts` in this task — that export wiring belongs to
+  Task 6.
+- No published name changes. No `version` bump.
+
+Added `packages/sdk/src/react/query-keys.ts`, exporting `qk`, `ProjectScopeKey`,
+and `ProjectsListKey`. `qk.project.scope(id)` returns `['kortix', 'project', id]`
+as an invalidation-only prefix; every other `qk.project.*` member spreads it and
+appends a segment, so `invalidateQueries({ queryKey: qk.project.scope(id) })`
+provably reaches the whole subtree. `qk.projects.list(accountId?)` partitions by
+account and is not nested under any project scope. The module is standalone —
+not re-exported from `react/index.ts` (Task 6's job) — so it has zero effect on
+the public surface snapshot.
+
+RED:
+
+- `bun test --isolate src/react/query-keys.test.ts`: `0 pass`, `1 fail`,
+  `error: Cannot find module './query-keys'`.
+
+GREEN:
+
+- `bun test --isolate src/react/query-keys.test.ts`: `6 pass`, `0 fail`,
+  `22 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1577 pass`, `0 fail`, `6394 expect()`
+  calls across `123` files (above the documented `1069`/`71` baseline).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+The public surface is unchanged — `query-keys.ts` is not imported anywhere yet.
+The `version` field was not touched.
+
+**Status:** COMPLETE (Task 3 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `connector-secret-binding` completion
 
 No **Now** task claimed. This is an additive connector credential-source fix.
