@@ -46,13 +46,24 @@ describe('/new page: no invented constraints', () => {
     expect(code).toContain('id="workspace-name"');
   });
 
-  test('makes no request on mount — the only network call is behind submit', () => {
-    // Zero effects at all: this component has no data to fetch on mount.
+  test('issues no MUTATING request on mount — only reads, and only submit ever writes', () => {
+    // Task 12 wires an accounts READ on mount (below), so "zero requests" is
+    // no longer the right bar. The bar this page must hold is "zero WRITES":
+    // no effect, and no mutation, can fire without the user pressing submit.
     expect(code).not.toContain('useEffect(');
-    expect(code).not.toContain('useQuery(');
     expect(code).not.toContain('useMutation(');
     // Paired presence check: there IS a submit path, just not an eager one.
     expect(code).toContain('onSubmit');
+  });
+
+  test('reads the account list on mount through the shared ["accounts"] cache key, not a page-local one', () => {
+    // Regression pin: an idempotent GET is allowed and expected here — it is
+    // what makes AccountPicker and the real submit-gate count possible. A
+    // page-local query key would duplicate the request WorkspaceSwitcher /
+    // AccountSwitcher already make instead of sharing their cache entry.
+    expect(code).toContain('useQuery({');
+    expect(code).toContain("queryKey: ['accounts']");
+    expect(code).toContain('queryFn: listAccounts');
   });
 });
 
@@ -80,13 +91,14 @@ describe('/new page: uses the shared form model, not local rules', () => {
     expect(code).toContain("from '@/features/workspace/new/workspace-name'");
   });
 
-  test('gates canSubmit on the form model, an implicit single account, and the in-flight state', () => {
-    // Task 12 has not landed yet in this task — no accounts query exists here.
-    // `isSubmittable(state, 1)` is the brief's own documented stand-in, marked
-    // so a later task cannot mistake it for a considered choice.
-    expect(code).toContain('isSubmittable(state, 1)');
+  test('gates canSubmit on the form model, the REAL account count, and the loading + in-flight state', () => {
+    // Job 2's whole point: the Task-11 placeholder `isSubmittable(state, 1)`
+    // is gone, replaced by the real query-derived count plus an explicit
+    // loading gate — not just `isSubmittable`'s own internal floor.
+    expect(code).toContain('isSubmittable(state, accounts.length)');
+    expect(code).not.toContain('isSubmittable(state, 1)');
+    expect(code).toContain('!accountsQuery.isLoading');
     expect(code).toContain('!submitting');
-    expect(source).toContain('accounts wiring lands in Task 12');
   });
 
   test('only surfaces the name error after the field has been blurred once', () => {
@@ -154,6 +166,31 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     const submitButton = afterCard.match(/<Button type="submit"[\s\S]*?<\/Button>/)?.[0];
     expect(submitButton).toBeDefined();
     expect(submitButton).toContain('className="w-full"');
+  });
+});
+
+describe('/new page: AccountPicker wiring', () => {
+  test('renders AccountPicker inside the card, wired to the real accounts list and state.accountId', () => {
+    const cardStart = code.indexOf('rounded-md border');
+    const divStart = code.lastIndexOf('<div', cardStart);
+    const card = elementText(code, 'div', divStart);
+
+    // Paired presence check: it lives INSIDE the card, not bolted on beside
+    // it — same field-group treatment as the name field and Advanced.
+    expect(card).toContain('<AccountPicker');
+    const pickers = card.match(/<AccountPicker[\s\S]*?\/>/g) ?? [];
+    expect(pickers).toHaveLength(1);
+    const picker = pickers[0]!;
+
+    expect(picker).toContain('accounts={accounts}');
+    expect(picker).toContain('value={state.accountId}');
+    expect(picker).toContain(
+      "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
+    );
+  });
+
+  test('imports AccountPicker from its own module, not re-implemented inline', () => {
+    expect(code).toContain("from '@/features/workspace/new/account-picker'");
   });
 });
 

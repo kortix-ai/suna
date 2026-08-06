@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
+import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
@@ -18,14 +20,23 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { listAccounts } from '@kortix/sdk';
 
 /**
  * Create a workspace.
  *
- * This page makes ZERO backend calls on mount. Visiting `/new` has no side
- * effects — the only request it ever issues is the one the submit button
- * fires, and that wiring lands in Task 13. A page that creates something
- * because you looked at it is a page nobody can link to safely.
+ * This page issues no MUTATING request on mount. Visiting `/new` never
+ * creates anything — the only write it ever fires is the one the submit
+ * button drives, and that wiring lands in Task 13. A page that creates
+ * something because you looked at it is a page nobody can link to safely.
+ *
+ * It DOES read the account list on mount (`useQuery(['accounts'],
+ * listAccounts)`) — an idempotent GET, needed to know whether there is
+ * anything to disambiguate (`AccountPicker`) and to gate submission on the
+ * REAL account count instead of a placeholder. `['accounts']` is the exact
+ * cache key `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
+ * who reaches `/new` from either menu (the common path) hits a warm cache,
+ * not a second request.
  *
  * Layout is fixed by the spec: one centered column, fields in a single
  * bordered card, primary button OUTSIDE the card at card width. The button
@@ -57,9 +68,28 @@ export function NewWorkspacePage() {
     return result.ok ? null : result.error;
   }, [state.name, touched]);
 
-  // accounts wiring lands in Task 12 — there is no accounts query in this
-  // task, so `1` stands in for "exactly one implicit account, nothing to
-  // disambiguate". `isSubmittable` still refuses at count < 1.
+  // Same `['accounts']` cache entry `WorkspaceSwitcher`/`AccountSwitcher` read
+  // — one shared query, not a page-local duplicate.
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+  });
+  const accounts = accountsQuery.data ?? [];
+
+  // `accountsQuery.isLoading` is checked here AS WELL AS inside
+  // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
+  // purpose, not redundant: during the loading window `accounts.length` is
+  // `0` for every user, no matter how many accounts they really have.
+  // `isSubmittable`'s floor already blocks a submit at that `0` — so a
+  // multi-account user could not slip through even without this line. What
+  // this line adds is making the REASON legible at the call site: without it,
+  // a reader sees the button disabled and has no way to tell "no accounts
+  // yet" apart from "accounts still loading". The bug this whole gate exists
+  // to prevent — a multi-account user submitting with no `account_id`, and
+  // the server silently defaulting the workspace into the wrong account — is
+  // exactly what a stale reading of `accounts.length` during that window
+  // would let through.
   //
   // `state.source === 'managed'` is gated here, not in the shared
   // `isSubmittable`: `POST /provision` (the only wired submit path, landing in
@@ -67,7 +97,11 @@ export function NewWorkspacePage() {
   // `github-import` source can never be submittable through it. `AdvancedFields`
   // explains this inline and links to the real GitHub connect flow instead of
   // shipping a form that would 400.
-  const canSubmit = isSubmittable(state, 1) && state.source === 'managed' && !submitting;
+  const canSubmit =
+    isSubmittable(state, accounts.length) &&
+    !accountsQuery.isLoading &&
+    state.source === 'managed' &&
+    !submitting;
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -147,6 +181,12 @@ export function NewWorkspacePage() {
               {nameError}
             </p>
           ) : null}
+
+          <AccountPicker
+            accounts={accounts}
+            value={state.accountId}
+            onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+          />
 
           <AdvancedFields state={state} onChange={setState} />
         </div>
