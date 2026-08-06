@@ -165,6 +165,22 @@ const eslintConfig = [
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
         {
+          // Same as the rule above, but through a trailing `as const` —
+          // THIS REPO'S OWN IDIOM (every `qk` member ends `as const`;
+          // apps/web has 223 `] as const` sites). `as const` wraps the array
+          // in a TSAsExpression, so `Property > ArrayExpression` never
+          // matches: the array's immediate parent becomes the TSAsExpression,
+          // not the Property. Probed directly against this rule set:
+          // `queryKey: ['project-detail', id] as const` passed clean before
+          // this selector existed. Same fix as the sibling `as const`
+          // selectors below.
+          selector:
+            "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
+            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
           // The migrated root itself is exactly as easy to hand-roll as the
           // literals above, and the rule above is blind to it: `'kx'` does
           // not match /^projects?(-[a-z-]+)?$/. qk.projects.scope() is
@@ -178,7 +194,18 @@ const eslintConfig = [
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
         {
-          // The two rules above only see a key written as the `queryKey:`
+          // The `'kx'`-root rule's own `as const` blind spot — see the
+          // family rule's `as const` sibling above for why the selector has
+          // to change shape (TSAsExpression sits between the Property and
+          // the ArrayExpression) rather than just widening a value pattern.
+          selector:
+            "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
+            "Literal:first-child[value='kx']",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The four rules above only see a key written as the `queryKey:`
           // PROPERTY of an options object (`useQuery({ queryKey: [...] })`).
           // TanStack's direct cache API instead takes the key as a
           // positional first argument (`setQueryData(['project-detail',
@@ -191,6 +218,17 @@ const eslintConfig = [
           // argument is (or can be) a query key.
           selector:
             "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The positional-call rule's own `as const` blind spot
+          // (`setQueryData(['project-detail', id] as const, v)`) — same
+          // TSAsExpression indirection, this time between the CallExpression
+          // and its first-argument ArrayExpression instead of between a
+          // Property and its value.
+          selector:
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },

@@ -545,13 +545,17 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
   const queryClient = useQueryClient();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
-  const queryKey = useMemo(() => ['project-triggers', projectId], [projectId]);
+  // Same entity/fetcher the Customize settings pause switch
+  // (settings-view.tsx's `TriggersActivationCard`) reads — both must share
+  // this key, via `qk.project.triggers`, or a pause/resume in one goes
+  // unseen in the other.
+  const queryKey = useMemo(() => qk.project.triggers(projectId), [projectId]);
 
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
     refetchInterval: 10_000,
-    staleTime: 5_000,
+    ...contract('config'),
   });
 
   const [query, setQuery] = useState('');

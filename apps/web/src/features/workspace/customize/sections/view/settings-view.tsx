@@ -547,11 +547,13 @@ function TriggersActivationCard({
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
-  const queryKey = ['project-triggers', projectId];
+  // Same entity/fetcher `ScheduleView` (components/projects/schedule-view.tsx)
+  // reads — both must share this key or a pause/resume here goes unseen there.
+  const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
