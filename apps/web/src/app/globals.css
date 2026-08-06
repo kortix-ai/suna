@@ -1,9 +1,22 @@
 @import 'tailwindcss';
+@import 'shadow-plugin';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 @import 'tw-animate-css';
 @plugin 'tailwind-scrollbar';
 @plugin 'tailwind-scrollbar-hide';
+
+@utility shadow-sm {
+  @apply smooth-shadow-ring-sm smooth-ring-neutral-300/30;
+}
+
+@utility shadow-md {
+  @apply smooth-shadow-ring-md smooth-ring-neutral-300/30;
+}
+
+@utility shadow-lg {
+  @apply smooth-shadow-ring-lg smooth-ring-neutral-300/30;
+}
 
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";

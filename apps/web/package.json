@@ -186,6 +186,7 @@
     "remark-math": "^6.0.0",
     "server-only": "^0.0.1",
     "shaders": "^2.5.94",
+    "shadow-plugin": "2.1.0",
     "sonner": "^2.0.3",
     "sql.js": "^1.14.1",
     "streamdown": "^1.6.11",

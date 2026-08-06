@@ -1215,6 +1215,9 @@ importers:
       shaders:
         specifier: ^2.5.94
         version: 2.5.135(react-dom@19.2.8)(react@19.2.8)(svelte@5.56.4)(vue@3.5.39)
+      shadow-plugin:
+        specifier: 2.1.0
+        version: 2.1.0
       sonner:
         specifier: ^2.0.3
         version: 2.0.7(react-dom@19.2.8)(react@19.2.8)
@@ -26771,6 +26774,10 @@ packages:
       svelte: 5.56.4
       three: 0.185.1
       vue: 3.5.39(typescript@5.9.3)
+    dev: false
+
+  /shadow-plugin@2.1.0:
+    resolution: {integrity: sha512-LPzD22Hsa5+DPIc4iOZAswuTDzgs8Ypy6GS2kf+nh7FvADa4Yq5WtRBkdAuIomVljRxluhgdMuOWcckuoBALKQ==}
     dev: false
 
   /shallowequal@1.1.0:
