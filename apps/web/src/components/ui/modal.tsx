@@ -183,10 +183,22 @@ const ModalVariants = cva(
       side: 'bottom',
       variant: 'default',
       animation: 'default',
-      elevation: 'default',
     },
   },
 );
+
+type ModalElevation = NonNullable<VariantProps<typeof ModalVariants>['elevation']>;
+type ModalVariant = NonNullable<VariantProps<typeof ModalVariants>['variant']>;
+type ModalSide = NonNullable<VariantProps<typeof ModalVariants>['side']>;
+
+export function resolveModalElevation(
+  elevation: ModalElevation | null | undefined,
+  variant: ModalVariant | null | undefined,
+  side: ModalSide | null | undefined,
+): ModalElevation {
+  if (elevation) return elevation;
+  return variant === 'transparent' || side === 'fullscreen' ? 'none' : 'default';
+}
 
 interface ModalContentProps
   extends
@@ -234,7 +246,7 @@ const ModalContentInner = React.forwardRef<
     {
       side = 'bottom',
       animation = 'default',
-      elevation = 'default',
+      elevation,
       className,
       modalClassName,
       closeClassName,
@@ -250,6 +262,7 @@ const ModalContentInner = React.forwardRef<
     ref,
   ) => {
     const depth = useDialogDepth();
+    const resolvedElevation = resolveModalElevation(elevation, variant, side);
 
     const handleInteractOutside = (
       event: Parameters<
@@ -279,7 +292,13 @@ const ModalContentInner = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          ModalVariants({ side, animation, elevation, className: modalClassName, variant }),
+          ModalVariants({
+            side,
+            animation,
+            elevation: resolvedElevation,
+            className: modalClassName,
+            variant,
+          }),
           className,
           'rounded-xl rounded-b-none lg:rounded-b-xl',
         )}
