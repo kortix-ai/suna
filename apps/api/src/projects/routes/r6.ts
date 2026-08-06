@@ -50,6 +50,46 @@ function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferS
   };
 }
 
+const ONBOARDING_USE_CASES = new Set([
+  'sales',
+  'support',
+  'marketing',
+  'engineering',
+  'finance_ops',
+  'hr_recruiting',
+  'other',
+]);
+const ONBOARDING_COMPANY_SIZES = new Set(['1-10', '11-50', '51-200', '201-1000', '1000+']);
+
+/**
+ * Allowlist the guided-onboarding profile. Returns `null` when there is nothing
+ * to write, so the caller can skip the UPDATE entirely rather than issue a
+ * no-op that still bumps `updated_at`.
+ *
+ * Unknown keys and out-of-range values are DROPPED, not rejected. This is
+ * best-effort survey capture fired as the user answers each question — a client
+ * that sends a field we retired must not break somebody's onboarding.
+ */
+function pickOnboardingProfile(input: unknown): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const raw = input as Record<string, unknown>;
+  const out: Record<string, string> = {};
+
+  if (typeof raw.use_case === 'string' && ONBOARDING_USE_CASES.has(raw.use_case)) {
+    out.use_case = raw.use_case;
+  }
+  if (typeof raw.company_size === 'string' && ONBOARDING_COMPANY_SIZES.has(raw.company_size)) {
+    out.company_size = raw.company_size;
+  }
+  if (typeof raw.company_domain === 'string') {
+    // 253 is the maximum length of a DNS name.
+    const domain = raw.company_domain.trim().toLowerCase().slice(0, 253);
+    if (domain) out.company_domain = domain;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'patch',
@@ -72,12 +112,37 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const completed = body.completed === true;
-  // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set / delete)
-  // so this write can't revert a routing pin written concurrently.
-  const metadataExpr = completed
-    ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
-    : metadataMerge({}, ['onboarding_completed_at']);
+  // Two independent writes share this route. `completed` is a TOP-LEVEL
+  // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
+  // the user moves through the onboarding wizard. A request carries one or the
+  // other, never both.
+  const profile = pickOnboardingProfile(body.profile);
+
+  let metadataExpr;
+  if (profile) {
+    // Nested → metadataMergeSubtree, which re-reads `metadata->'onboarding'`
+    // inside the statement. A top-level `||` of the whole sub-object would let
+    // two concurrent writers into DIFFERENT sub-keys lose each other's update
+    // one level down.
+    metadataExpr = metadataMergeSubtree('onboarding', profile);
+  } else if ('completed' in body) {
+    // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set /
+    // delete) so this write can't revert a routing pin written concurrently.
+    metadataExpr =
+      body.completed === true
+        ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
+        : metadataMerge({}, ['onboarding_completed_at']);
+  } else {
+    // Nothing survived the allowlist and no completion flag was sent. Return
+    // the project unchanged rather than issue a no-op UPDATE that would still
+    // bump `updated_at` and reorder project lists for no reason.
+    return c.json(
+      serializeProject(loaded.row, {
+        projectRole: loaded.projectRole,
+        effectiveRole: loaded.effectiveRole,
+      }),
+    );
+  }
 
   const [row] = await db
     .update(projects)

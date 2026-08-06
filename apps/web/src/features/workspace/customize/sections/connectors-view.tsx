@@ -1413,7 +1413,7 @@ export function ConnectorDetail({
       <div className="mt-7 space-y-5">
         <section className="space-y-2">
           <Label>Authorization</Label>
-          <div className="bg-popover rounded-md border px-4 py-5">
+          <div className="bg-popover rounded-md border px-4 py-3">
             <AuthorizationStrategyField
               idPrefix={`connector-${connector.slug}`}
               value={connector.authorizationStrategy}
@@ -1751,7 +1751,7 @@ export function ChannelConnectionSection({
     return (
       <section className="space-y-4">
         <Label>Connection</Label>
-        <div className="bg-popover rounded-md border px-4 py-5">
+        <div className="bg-popover rounded-md border px-4 py-3">
           <p className="text-muted-foreground text-sm">
             Nothing to connect — voice calls run on Kortix&apos;s own infrastructure. Your agent can
             start a call, follow what is said, and speak into it. Use the Permissions tab to choose
@@ -1764,7 +1764,7 @@ export function ChannelConnectionSection({
   return (
     <section className="space-y-4">
       <Label>Connection</Label>
-      <div className="bg-popover rounded-md border px-4 py-5">
+      <div className="bg-popover rounded-md border px-4 py-3">
         <InfoBanner tone="warning">
           This channel connection is missing its platform setting.
         </InfoBanner>
@@ -1794,7 +1794,7 @@ function EmailChannelConnection({
       <p className="text-muted-foreground -mt-2 text-xs">
         AgentMail inbox assigned to this connection.
       </p>
-      <div className="bg-popover rounded-md border px-4 py-5">
+      <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
           <Skeleton className="h-24 w-full rounded-2xl" />
         ) : install.data ? (
@@ -2325,7 +2325,7 @@ function SlackChannelConnection({
       <p className="text-muted-foreground -mt-2 text-xs">
         Slack workspace assigned to this connection.
       </p>
-      <div className="bg-popover rounded-md border px-4 py-5">
+      <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
           <Skeleton className="h-24 w-full rounded-2xl" />
         ) : install.data ? (
@@ -2407,9 +2407,11 @@ function ConnectedSlackConnection({
 export function SlackConnectForm({
   projectId,
   onConnected,
+  customOnly = false,
 }: {
   projectId: string;
   onConnected: () => void;
+  customOnly?: boolean;
 }) {
   const mode = useSlackMode(projectId);
   const manifest = useSlackManifest(projectId);
@@ -2420,7 +2422,7 @@ export function SlackConnectForm({
   const [copiedManifest, setCopiedManifest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const installUrl = mode.data?.oauth_available ? mode.data.install_url : null;
-  const showCustom = customOpen || (!mode.isLoading && !installUrl);
+  const showCustom = customOnly || customOpen || (!mode.isLoading && !installUrl);
 
   const submit = () => {
     setError(null);
@@ -2447,57 +2449,74 @@ export function SlackConnectForm({
 
   return (
     <div className="space-y-4">
-      {mode.isLoading ? (
-        <Skeleton className="h-24 w-full rounded-2xl" />
-      ) : installUrl ? (
-        <InfoBanner
-          tone="info"
-          icon={<SlackLogo />}
-          title="Add Kortix to your Slack workspace"
-          action={
-            <Button size="sm" className="shrink-0 gap-1.5" asChild>
-              <a href={installUrl}>
-                Add to Slack
-                <ChevronRight className="h-4 w-4" />
-              </a>
-            </Button>
-          }
-        >
-          One-click install - authorize Kortix in your workspace, no setup required.
-        </InfoBanner>
-      ) : (
-        <InfoBanner
-          tone="warning"
-          icon={<SlackLogo />}
-          title="Managed Slack install is not configured"
-        >
-          Use a custom Slack app for this deployment.
-        </InfoBanner>
-      )}
-      <div className="space-y-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 px-0"
-          onClick={() => setCustomOpen((open) => !open)}
-        >
-          <ChevronDown
-            className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
-          />
-          Use custom Slack app
-        </Button>
+      {!customOnly &&
+        (mode.isLoading ? (
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        ) : installUrl ? (
+          <InfoBanner
+            tone="info"
+            icon={<SlackLogo />}
+            title="Add Kortix to your Slack workspace"
+            action={
+              <Button size="sm" className="shrink-0 gap-1.5" asChild>
+                <a href={installUrl}>
+                  Add to Slack
+                  <ChevronRight className="h-4 w-4" />
+                </a>
+              </Button>
+            }
+          >
+            One-click install - authorize Kortix in your workspace, no setup required.
+          </InfoBanner>
+        ) : (
+          <InfoBanner
+            tone="warning"
+            icon={<SlackLogo />}
+            title="Managed Slack install is not configured"
+          >
+            Use a custom Slack app for this deployment.
+          </InfoBanner>
+        ))}
+      <div className={cn(!customOnly && 'space-y-3')}>
+        {!customOnly && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-0"
+            onClick={() => setCustomOpen((open) => !open)}
+          >
+            <ChevronDown
+              className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
+            />
+            Use custom Slack app
+          </Button>
+        )}
         {showCustom ? (
-          <div className="border-border/60 bg-card space-y-5 rounded-2xl border p-4">
-            <div className="space-y-1">
-              <h3 className="text-foreground text-base font-semibold">Bring your own Slack app</h3>
-              <p className="text-muted-foreground text-sm">
-                For self-hosted setups or custom-scoped installs.
-              </p>
-            </div>
+          <div
+            className={cn(
+              'space-y-5',
+              !customOnly && 'border-border/60 bg-card rounded-2xl border p-4',
+            )}
+          >
+            {!customOnly && (
+              <div className="space-y-1">
+                <h3 className="text-foreground text-base font-semibold">
+                  Bring your own Slack app
+                </h3>
+                <p className="text-muted-foreground text-sm">
+                  For self-hosted setups or custom-scoped installs.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div
+                className={cn(
+                  'flex flex-col gap-3',
+                  !customOnly && 'sm:flex-row sm:items-end sm:justify-between',
+                )}
+              >
                 <div className="space-y-1">
                   <div className="text-foreground text-sm font-medium">
                     Step 1 of 2 - paste the manifest into Slack and install the app.
@@ -2530,13 +2549,15 @@ export function SlackConnectForm({
               </div>
 
               {manifest.isLoading ? (
-                <Skeleton className="h-52 w-full rounded-2xl" />
+                <Skeleton className={cn('h-52 w-full', !customOnly && 'rounded-2xl')} />
               ) : manifest.isError ? (
                 <InfoBanner tone="destructive">
                   {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
                 </InfoBanner>
               ) : manifest.data ? (
-                <div className="max-h-[26rem] overflow-auto rounded-2xl">
+                <div
+                  className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-2xl')}
+                >
                   <CodeSnippet code={manifest.data} language="json" />
                 </div>
               ) : null}
@@ -2566,7 +2587,7 @@ export function SlackConnectForm({
                   Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className={cn('grid gap-3', !customOnly && 'sm:grid-cols-2')}>
                 <Field>
                   <Input
                     id="slack-channel-bot-token"
@@ -2714,7 +2735,7 @@ export function ConnectionSection({
           'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
         )}
       </p>
-      <div className="bg-popover rounded-md border px-4 py-5">
+      <div className="bg-popover rounded-md border px-4 py-3">
         {configQuery.isError ? (
           <InfoBanner
             tone="destructive"
@@ -3096,7 +3117,7 @@ export function PermissionsSection({
           whatever you set here is ignored. They are marked below.
         </InfoBanner>
       )}
-      <div className="bg-popover rounded-md border px-4 py-5">
+      <div className="bg-popover rounded-md border px-4 py-3">
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Default</Label>

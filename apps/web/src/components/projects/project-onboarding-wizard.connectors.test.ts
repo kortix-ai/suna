@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const source = readFileSync(join(import.meta.dir, 'project-onboarding-wizard.tsx'), 'utf8');
+// The wizard shell is now a frame only; `ConnectorProfileModal` and the whole
+// tools flow moved into their own module during the single-column refactor.
+// These assertions follow the code — they are not weakened.
+const source = readFileSync(
+  join(import.meta.dir, 'onboarding', 'steps', 'tools-step.tsx'),
+  'utf8',
+);
 
 describe('project onboarding connections', () => {
   test('collects an explicit connection before connecting', () => {
