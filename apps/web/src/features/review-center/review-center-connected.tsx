@@ -24,7 +24,7 @@ import {
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
-import { clearStartStash } from '@kortix/sdk/react';
+import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
@@ -65,10 +65,10 @@ export function ReviewCenterConnected({
   // Session names for the per-session filter + group headers (sessionId → label).
   // Also names the originating session in each approval's description.
   const { data: sessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const sessionLabels = useMemo(() => {
     const m: Record<string, string> = {};

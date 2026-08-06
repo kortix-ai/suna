@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast } from '@/components/ui/toast';
 import { restartProjectSession, sessionStartKey } from '@kortix/sdk';
-import { clearRuntimeEnsureGuard } from '@kortix/sdk/react';
+import { clearRuntimeEnsureGuard, qk } from '@kortix/sdk/react';
 
 /** The optimistic `/start` payload a restart puts in the cache on click. */
 export function restartPendingStartSeed() {
@@ -61,7 +61,7 @@ export function useRestartProjectSession(projectId: string, sessionId: string) {
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
       });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
     },
     onError: (error, _vars, context) => {
       // Put the real state back: an optimistic `provisioning` seed left behind

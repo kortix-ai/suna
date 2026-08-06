@@ -417,10 +417,10 @@ export function CommandPalette() {
     ...contract('inventory'),
   });
   const { data: projectSessionsList } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!),
     enabled: open && !!projectId,
-    staleTime: 15_000,
+    ...contract('inventory'),
   });
 
   const { data: projectDetail } = useQuery({

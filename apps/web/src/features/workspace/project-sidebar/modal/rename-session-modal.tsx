@@ -15,6 +15,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -52,7 +53,7 @@ export function RenameSessionModal({
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
 
-  const sessionsQueryKey = ['project-sessions', projectId];
+  const sessionsQueryKey = qk.project.sessions(projectId);
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => {

@@ -37,6 +37,7 @@ import {
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
 import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -131,10 +132,10 @@ export function SessionSiteHeader({
   const isProjectSession = !!projectId && !!projectSessionId;
 
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!),
     enabled: isProjectSession,
-    staleTime: 10_000,
+    ...contract('inventory'),
   });
   const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
@@ -143,7 +144,7 @@ export function SessionSiteHeader({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Restarting session…');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -154,7 +155,7 @@ export function SessionSiteHeader({
     mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Session stopped');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
@@ -447,7 +448,7 @@ export function SessionSiteHeader({
             open={shareOpen}
             onOpenChange={setShareOpen}
             onSaved={() =>
-              queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })
+              queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') })
             }
           />
           <RenameSessionModal

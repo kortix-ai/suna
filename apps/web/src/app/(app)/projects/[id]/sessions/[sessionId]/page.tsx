@@ -160,11 +160,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    staleTime: 10_000,
     refetchOnWindowFocus: false,
+    ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
@@ -256,7 +256,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // query that /start never touches, so opening a session left the dot stale
       // until a manual refresh. Refresh the list once the runtime switches in so
       // the status flips to running on its own.
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 
