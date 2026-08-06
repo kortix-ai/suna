@@ -48,6 +48,7 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+import { validateGoalsV2 } from './goals.v2';
 
 export {
   type ManifestFormat,
@@ -88,6 +89,9 @@ export {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  GOAL_METRIC_DIRECTIONS_V2,
+  GOAL_PUSH_TRIGGER_PREFIX,
+  GOAL_STATUSES_V2,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
@@ -103,6 +107,7 @@ export {
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
+  goalPushTriggerSlug,
 } from './constants';
 
 // Re-exported for backward compatibility — the v2 types + validators lived
@@ -126,6 +131,13 @@ export {
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
+
+export {
+  type GoalStatusV2,
+  type GoalMetricDirectionV2,
+  type GoalMetricV2,
+  type GoalBlockV2,
+} from './goals.v2';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -281,6 +293,7 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  validateGoalsV2(parsed.goals, 'goals', parsed.triggers, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */

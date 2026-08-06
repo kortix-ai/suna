@@ -40,6 +40,7 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
+import type { GoalBlockV2 } from './goals.v2';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } from './index';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
@@ -162,6 +163,7 @@ export interface ManifestV2 {
   opencode?: Record<string, unknown>;
   sandbox?: Record<string, unknown>;
   triggers?: Array<Record<string, unknown>>;
+  goals?: GoalBlockV2[];
   connectors?: Array<Record<string, unknown>>;
 }
 
