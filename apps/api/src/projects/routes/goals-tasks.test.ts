@@ -1,0 +1,96 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  type GoalsTasksServiceError,
+  claimTaskForProject,
+  completeTaskForProject,
+  mapGeneratedStateError,
+} from './goals-tasks-service';
+
+const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+const TASK_ID = '22222222-2222-4222-8222-222222222222';
+
+describe('goals/tasks route wiring', () => {
+  test('registers the route module immediately after r11', () => {
+    const index = readFileSync(join(import.meta.dir, '..', 'index.ts'), 'utf8');
+    expect(index).toContain("import './routes/r11';\nimport './routes/goals-tasks';");
+
+    const route = readFileSync(join(import.meta.dir, 'goals-tasks.ts'), 'utf8');
+    for (const path of [
+      '/{projectId}/goals',
+      '/{projectId}/goals/{slug}',
+      '/{projectId}/goals/{slug}/push',
+      '/{projectId}/goals/{slug}/observations',
+      '/{projectId}/tasks',
+      '/{projectId}/tasks/{taskId}',
+      '/{projectId}/tasks/{taskId}/claim',
+      '/{projectId}/tasks/{taskId}/done',
+      '/{projectId}/tasks/{taskId}/block',
+    ]) {
+      expect(route).toContain(`path: '${path}'`);
+    }
+  });
+});
+
+describe('goals/tasks service boundaries', () => {
+  test('rejects a task claim when the session belongs to another project', async () => {
+    let claimCalls = 0;
+    await expect(
+      claimTaskForProject(
+        {
+          sessionBelongsToProject: async () => false,
+          claimTask: async () => {
+            claimCalls += 1;
+            return { taskId: TASK_ID };
+          },
+        },
+        {
+          projectId: PROJECT_ID,
+          taskId: TASK_ID,
+          sessionId: 'session-from-another-project',
+          leaseSeconds: 300,
+          now: new Date('2026-08-07T12:00:00.000Z'),
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: 'session_not_in_project',
+    } satisfies Partial<GoalsTasksServiceError>);
+    expect(claimCalls).toBe(0);
+  });
+
+  test('refuses done without cited evidence before calling the store', async () => {
+    let transitionCalls = 0;
+    await expect(
+      completeTaskForProject(
+        {
+          sessionBelongsToProject: async () => true,
+          transitionTask: async () => {
+            transitionCalls += 1;
+            return { taskId: TASK_ID };
+          },
+        },
+        {
+          projectId: PROJECT_ID,
+          taskId: TASK_ID,
+          evidence: [],
+          sessionId: 'session-1',
+          now: new Date('2026-08-07T12:00:00.000Z'),
+        },
+      ),
+    ).rejects.toMatchObject({ status: 400, code: 'evidence_required' });
+    expect(transitionCalls).toBe(0);
+  });
+
+  test('maps live claim and transition conflicts to HTTP 409', () => {
+    for (const code of ['TASK_CLAIM_CONFLICT', 'TASK_TRANSITION_CONFLICT']) {
+      expect(mapGeneratedStateError(Object.assign(new Error('claimed'), { code }))).toEqual({
+        status: 409,
+        code: code.toLowerCase(),
+        error: 'claimed',
+      });
+    }
+    expect(mapGeneratedStateError(new Error('other'))).toBeNull();
+  });
+});
