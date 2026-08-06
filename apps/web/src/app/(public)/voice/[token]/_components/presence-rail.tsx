@@ -33,7 +33,8 @@ function PresenceTile({ entry }: { entry: PresenceEntry }) {
       <div
         className={cn(
           'rounded-md p-0.5 transition-shadow duration-200',
-          entry.speaking && 'ring-kortix-green shadow-kortix-green/20 shadow-md ring-2',
+          entry.speaking &&
+            'smooth-shadow-md shadow-kortix-green/20 outline-2 outline-offset-2 outline-kortix-green',
         )}
       >
         <div className="relative">
