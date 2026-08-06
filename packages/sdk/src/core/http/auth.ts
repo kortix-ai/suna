@@ -176,7 +176,8 @@ export async function authenticatedFetch(
     return syntheticUnauthenticatedResponse();
   }
 
-  const headers = buildAuthHeaders(input, init, token);
+  const clientSource = platformConfig().clientSource;
+  const headers = buildAuthHeaders(input, init, token, clientSource);
   // 30s default timeout for everything EXCEPT the long-lived SSE event
   // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
   // never have a hung sandbox/daemon request wedge its handler forever.
@@ -199,7 +200,7 @@ export async function authenticatedFetch(
       invalidateTokenCache();
       const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
       if (newToken && newToken !== token) {
-        const retryHeaders = buildAuthHeaders(input, init, newToken);
+        const retryHeaders = buildAuthHeaders(input, init, newToken, clientSource);
         return fetchWithAuth(input, init, retryHeaders, signal);
       }
     }

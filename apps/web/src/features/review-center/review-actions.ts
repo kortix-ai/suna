@@ -8,7 +8,7 @@
  * endpoint, which 409s on them by design (see review-center-connected.tsx).
  */
 
-import { type ReviewItem, type ReviewRisk, isSafeRisk } from './types';
+import type { ReviewItem, ReviewRisk } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
 export const EXEC_ID_PREFIX = 'exec:';
@@ -27,11 +27,8 @@ export function crChangeRequestId(id: string): string | null {
 }
 
 /**
- * True when the row can show Approve/Deny buttons directly — no modal hop —
- * because the item resolves to exactly one clear decision: a single-action
- * executor approval. Multi-action approvals (the prototype's bulk-approval
- * shape) still need the detail modal, since one button pair can't represent
- * several independent decisions.
+ * Executor approvals are never quick-decidable. The approver must open the
+ * parameter-review modal before either decision becomes available.
  */
 export function isQuickDecidableApproval(
   // `detail` is `unknown` (not `{ actions?: ... }`) so every ReviewItem union
@@ -39,11 +36,8 @@ export function isQuickDecidableApproval(
   // weak object type would reject them at the call sites.
   item: Pick<ReviewItem, 'kind' | 'id'> & { detail?: unknown },
 ): boolean {
-  if (item.kind !== 'approval') return false;
-  if (execExecutionId(item.id) === null) return false;
-  const detail = item.detail as { actions?: readonly unknown[] } | undefined;
-  const count = detail?.actions?.length ?? 0;
-  return count <= 1;
+  void item;
+  return false;
 }
 
 /** Build the deep link that lands the user exactly where they can act on an
@@ -61,7 +55,7 @@ export function itemDeepLink(
 /**
  * Split a set of selected ids into the ones a bulk verdict can cover
  * natively (`/review/bulk`) vs. ones that need their own per-item resolve
- * call (executor approvals) vs. ones with no bulk path at all (Change
+ * review (executor approvals) vs. ones with no bulk path at all (Change
  * Requests — merging in bulk needs full diff context per item, so they're
  * excluded rather than silently no-op'd).
  */
@@ -87,15 +81,14 @@ export function planBulkAction(ids: Iterable<string>): BulkActionPlan {
  * What a bulk verdict on a connected selection will REALLY do, decided before
  * any optimistic UI update so the toast/removal can never claim more than the
  * server was asked. The rules the buckets encode:
- *  - Executor approvals are a live question to the agent: "dismiss" doesn't
- *    answer it, so they're KEPT (never mapped to a deny) under any non-approve
- *    verdict, and an approve sweep still respects the safe-risk floor.
+ *  - Executor approvals are a live question to the agent. Bulk verdicts never
+ *    answer them. Each exact call needs a complete parameter review.
  *  - Change Requests have no bulk path at all (merging needs the diff in view).
  */
 export interface BulkOutcome {
   /** Ids the verdict genuinely acts on — safe to optimistically update. */
   act: string[];
-  /** Exec approvals blocked by the approve safe-risk floor. */
+  /** Retained for compatibility with native bulk-outcome consumers. */
   skippedRisky: string[];
   /** Exec approvals kept under a non-approve verdict (dismiss ≠ deny). */
   skippedApprovals: string[];
@@ -108,6 +101,7 @@ export function resolveBulkOutcome(
   verdict: 'approve' | 'dismiss',
   riskOf: (id: string) => ReviewRisk | undefined,
 ): BulkOutcome {
+  void riskOf;
   const act: string[] = [];
   const skippedRisky: string[] = [];
   const skippedApprovals: string[] = [];
@@ -116,9 +110,7 @@ export function resolveBulkOutcome(
     if (crChangeRequestId(id) !== null) {
       skippedChanges.push(id);
     } else if (execExecutionId(id) !== null) {
-      if (verdict !== 'approve') skippedApprovals.push(id);
-      else if (!isSafeRisk(riskOf(id) ?? 'high')) skippedRisky.push(id);
-      else act.push(id);
+      skippedApprovals.push(id);
     } else {
       act.push(id);
     }
@@ -133,7 +125,7 @@ export function bulkSkipMessage(outcome: BulkOutcome): string {
   const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
   if (outcome.skippedApprovals.length > 0)
     parts.push(
-      `${outcome.skippedApprovals.length} ${plural(outcome.skippedApprovals.length, 'approval', 'approvals')} kept — dismissing doesn't answer the agent; approve or deny ${plural(outcome.skippedApprovals.length, 'it', 'them')}`,
+      `${outcome.skippedApprovals.length} ${plural(outcome.skippedApprovals.length, 'approval', 'approvals')} kept — review the parameters and decide ${plural(outcome.skippedApprovals.length, 'it', 'each one')} individually`,
     );
   if (outcome.skippedRisky.length > 0)
     parts.push(

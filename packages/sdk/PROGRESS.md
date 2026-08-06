@@ -12,6 +12,64 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-05 — session `cli-audit-source` claim
+
+No **Now** task claimed. This is a narrow additive transport-metadata fix.
+
+Scope:
+
+- Let an SDK host identify its client surface without replacing the transport.
+- Send the client surface on every SDK-authenticated Kortix request.
+- Mark the Kortix CLI as `cli` so central audit filters reconstruct its actions.
+- Preserve every published name and existing configuration field.
+
+The listed `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-05 — session `cli-audit-source` completion
+
+Added the optional `clientSource` platform configuration field. The SDK sends
+the validated value on authenticated backend and session-runtime requests. The
+CLI sets the value to `cli`. Explicit request headers still take precedence.
+The API preserves agent and service-account attribution before it considers the
+client surface. Unknown source labels fall back to `api`.
+
+RED:
+
+- SDK tests expected the `cli` request header and received no header.
+- CLI tests expected `clientSource: "cli"` and received no value.
+- API tests expected a CLI audit event and received source `api`.
+
+GREEN:
+
+- Focused SDK tests: `37 pass`, `0 fail`, and `90 expect()` calls.
+- Focused CLI tests: `13 pass`, `0 fail`, and `16 expect()` calls.
+- Focused API tests: `8 pass`, `0 fail`, and `28 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1544 pass`, `0 fail`, and `6321 expect()`
+  calls across `121` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+- The complete CLI suite passed `701` tests. The complete API suite passed
+  `5476` tests and skipped `62` tests. Both typechecks exited `0`.
+- A real localhost CLI `projects ls --json` request produced a central audit
+  event with source `cli`, actor type `human`, outcome `success`, and HTTP `200`.
+
+The public configuration type changed additively. No export was removed or
+renamed. The package version was not edited.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-05 — session `better-queue` completion
 
 No **Now** task claimed. This is an additive module for a host-side defect: a

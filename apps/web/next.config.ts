@@ -136,8 +136,7 @@ function resolveTurbopackMemoryEviction(): false | 'auto' | 'full' {
 
 // Local `pnpm preview` (scripts/dev-local.sh --build) sets KORTIX_PREVIEW_BUILD=1
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
-// (next start never reads .next/standalone) and skip ESLint. Prod/CI/Vercel builds
-// don't set this flag, so they are completely unaffected.
+// (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
 
 // --- Cross-origin dev / preview access -----------------------------------
@@ -180,10 +179,12 @@ const nextConfig = (): NextConfig => ({
   // The frontend data layer lives in the @kortix/sdk workspace package (TS
   // source), so Next must transpile it.
   transpilePackages: ['@kortix/sdk'],
-  // Standalone bundles the app for Docker/Vercel via a slow monorepo-wide
-  // file-tracing pass. `next start` (what `pnpm preview` uses) ignores it, so
-  // skip it locally for a faster build.
-  output: IS_PREVIEW_BUILD ? undefined : 'standalone',
+  // Standalone bundles the app for Docker via a slow monorepo-wide file-tracing
+  // pass. Vercel injects a Next adapter. Next 16.3 does not emit the whole-app
+  // NFT for adapter builds, but its standalone finalizer still requires that
+  // file. Disable standalone on Vercel, where the platform does not use it.
+  // See https://github.com/vercel/next.js/issues/96646.
+  output: IS_PREVIEW_BUILD || process.env.VERCEL ? undefined : 'standalone',
   // Inline the resolved version so NEXT_PUBLIC_KORTIX_VERSION is available in
   // both the server (runtime-config) and client bundles, even on Vercel.
   env: {
@@ -269,8 +270,8 @@ const nextConfig = (): NextConfig => ({
   //   · import.meta.glob is a Turbopack capability, available without a flag.
   //   · Immutable static assets reusable across deploys is an ADAPTER feature
   //     (/docs/app/api-reference/adapters/immutable-static-assets). This app
-  //     ships `output: 'standalone'` on Vercel + a runner-only Docker image and
-  //     wires no custom adapter, so there is nothing to opt into here.
+  //     uses Vercel's injected adapter and `standalone` only for Docker, so
+  //     there is no custom adapter to configure here.
   //
   // Turbopack configuration
   turbopack: {

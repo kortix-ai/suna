@@ -157,7 +157,11 @@ function safeMap<T, R>(label: string, rows: T[], fn: (row: T) => R): R[] {
  */
 export async function collectInboxItems(
   sources: InboxSources,
-  opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
+  opts: {
+    segment?: ReviewSegment;
+    kind?: ReviewItemRow['kind'];
+    canExposeExecutorPreview?: (row: ExecutorExecutionRow) => boolean;
+  } = {},
 ) {
   const [nativeRows, crRows, execRows] = await Promise.all([
     safeSource('native', sources.native),
@@ -167,7 +171,11 @@ export async function collectInboxItems(
   const items = [
     ...safeMap('native', nativeRows, serializeReviewItem),
     ...safeMap('change_requests', crRows, changeRequestToReviewItem),
-    ...safeMap('executor_executions', execRows, executorExecutionToReviewItem),
+    ...safeMap('executor_executions', execRows, (row) =>
+      executorExecutionToReviewItem(row, {
+        includeArgsPreview: opts.canExposeExecutorPreview?.(row) === true,
+      }),
+    ),
   ];
   const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
   return items
@@ -181,12 +189,15 @@ export async function collectInboxItems(
 
 export async function listInboxItems(
   projectId: string,
-  opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
+  opts: {
+    segment?: ReviewSegment;
+    kind?: ReviewItemRow['kind'];
+    canExposeExecutorPreview?: (row: ExecutorExecutionRow) => boolean;
+  } = {},
 ) {
   return collectInboxItems(
     {
-      native: () =>
-        db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
+      native: () => db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
       changeRequests: () =>
         db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
       executorApprovals: () =>

@@ -5,8 +5,8 @@
  * labels and the actor are derived from the kind + agent. See review-center.tsx.
  */
 
-import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import { looksLikeMarkdown } from '@/lib/markdown-detect';
+import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import type {
   ApprovalAction,
   ApprovalActionIcon,
@@ -104,7 +104,13 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     !native && description && looksLikeMarkdown(description) ? description : undefined;
   const whatChanged =
     native ??
-    (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
+    (descriptionMarkdown
+      ? []
+      : description
+        ? lines(description)
+        : row.summary
+          ? [row.summary]
+          : []);
   return {
     crId: str(d.cr_id),
     number: typeof d.number === 'number' ? d.number : undefined,
@@ -151,6 +157,17 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
   // `connector_id` is an opaque UUID, so we take the connector NAME from the path.
   const path = str(d.action_path) ?? '';
   const { connector, action } = splitActionPath(path);
+  const rawArgsPreview = rec(d.args_preview);
+  const hasArgsPreview = Object.keys(rawArgsPreview).length > 0;
+  const argsPreview = Object.entries(rawArgsPreview).map(([key, value]) => ({
+    key,
+    value:
+      value === '[redacted]'
+        ? 'Hidden credential'
+        : typeof value === 'string'
+          ? value
+          : JSON.stringify(value, null, 2),
+  }));
   return {
     actions: [
       {
@@ -161,7 +178,11 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
         consequence: 'Runs against the real connector once you approve',
         risk: row.risk,
         icon: 'generic',
-        argsPreview: [],
+        argsPreview,
+        actionPath: path,
+        rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
+        reviewComplete: d.args_preview_complete === true,
+        executorRisk: str(d.risk) ?? null,
         policySource: 'Requires approval',
       },
     ],

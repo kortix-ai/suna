@@ -450,6 +450,7 @@ Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
+  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -459,6 +460,10 @@ interface KortixPlatformConfig {
   featureFlags?: KortixFeatureFlagOverrides; // per-flag overrides for non-Next.js hosts
 }
 ```
+
+Set `clientSource` when a non-web host needs its requests separated in the
+centralized audit log. The SDK sends the validated value as request metadata.
+Actor identity and permissions still come from the bearer token.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
