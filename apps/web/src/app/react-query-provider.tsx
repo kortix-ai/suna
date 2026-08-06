@@ -38,10 +38,26 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
               if (error?.status === 404) return false;
               return failureCount < 3;
             },
-            // With staleTime: 5min+, refetchOnMount is unnecessary — data is
-            // already fresh from boot or SSE events. Hooks that need fresh-on-mount
-            // data (e.g. billing) override this per-query.
-            refetchOnMount: false,
+            // `invalidateQueries` defaults to `refetchType: 'active'`: it marks
+            // an entry invalidated WITHOUT refetching it when nothing currently
+            // observes it — the exact shape of a route the user just navigated
+            // away from. With `refetchOnMount: false`, the next mount then
+            // serves that stale (or worse, wrongly-optimistic) value for the
+            // rest of `gcTime` — 30 minutes, since this branch raised `gcTime`
+            // from 5 to 30 minutes and, with it, how long a deleted/renamed
+            // entity can keep rendering. `true` is NOT `'always'`: it still
+            // gates on `staleTime`, so an entry that is genuinely fresh costs
+            // zero extra fetches on remount — this is a correctness fix, not a
+            // "refetch more" tradeoff. Verified against the real
+            // `@tanstack/query-core` engine (`queryObserver.js`'s
+            // `shouldFetchOn`: `value === 'always' || (value !== false &&
+            // isStale(...))`):
+            //   refetchOnMount:false -> stale/optimistic value survives, 0 corrective fetches
+            //   refetchOnMount:true  -> self-heals to the server value, 0 EXTRA fetches when fresh
+            // Every per-entity `contract()` (`@kortix/sdk/react`) already sets
+            // this explicitly for exactly this reason; this is the default for
+            // the ~119 `useQuery` sites across 54 files that don't spread one.
+            refetchOnMount: true,
             refetchOnWindowFocus: false,
             refetchOnReconnect: false,
           },
