@@ -98,9 +98,11 @@ export function WorkspaceSwitcher({
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
-  // Account switching lives in the Account·You menu; here the selected
-  // account only decides which group sorts first (via `groupWorkspacesByAccount`
-  // below) and gates the header-variant loading skeleton until it resolves.
+  // Account switching lives in the Account·You menu. `activeAccount` has
+  // exactly one live use below: gating the header-variant loading skeleton
+  // until accounts resolve. Group sort-first priority is NOT this selection —
+  // `groupWorkspacesByAccount` computes it from the OPEN PROJECT's account via
+  // `activeProjectId`, independent of what's selected here.
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -119,16 +121,34 @@ export function WorkspaceSwitcher({
   // resolveAccountId), so there is no single unscoped call that returns
   // everything — one listProjectsForAccount call per account, fanned out with
   // useQueries and flattened below.
+  const accountsForWorkspaces = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
   const workspaceQueries = useQueries({
-    queries: (accountsQuery.data ?? []).map((account) => ({
+    queries: accountsForWorkspaces.map((account) => ({
       queryKey: ['projects', account.account_id],
       queryFn: () => listProjectsForAccount(account.account_id),
       staleTime: 30_000,
     })),
   });
-  // Loading until every account's workspaces are in, not just the first.
-  const workspacesLoading = workspaceQueries.some((q) => q.isLoading);
+  // Loading until accounts themselves are known AND every account's
+  // workspaces are in. Without `accountsQuery.isLoading` this is `false`
+  // while accounts are still in flight (`workspaceQueries` starts as `[]`,
+  // and `[].some(...)` is `false` by definition) — the menu would paint "No
+  // workspaces yet" before it has even asked how many accounts exist.
+  const workspacesLoading = accountsQuery.isLoading || workspaceQueries.some((q) => q.isLoading);
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
+
+  // Accounts whose workspace fetch failed. `workspaceQueries[i]` belongs to
+  // `accountsForWorkspaces[i]` — both built from the same array in the same
+  // order — so this is a zip by index, not a second fetch or a lookup by id.
+  // A failed account still gets its group header and a single retry row
+  // instead of silently looking empty: `groupWorkspacesByAccount` drops any
+  // account with zero workspaces, and `undefined` data folds to `[]` on
+  // error, so without this the account would vanish indistinguishably from
+  // "genuinely has no workspaces" — exactly the failure this menu exists to
+  // prevent now that it is the only complete workspace directory.
+  const failedAccounts = accountsForWorkspaces
+    .map((account, i) => ({ account, result: workspaceQueries[i] }))
+    .filter(({ result }) => result.isError);
 
   const activeProject = useMemo(
     () =>
@@ -165,14 +185,18 @@ export function WorkspaceSwitcher({
   const groups = useMemo(
     () =>
       groupWorkspacesByAccount({
-        accounts: accountsQuery.data ?? [],
+        accounts: accountsForWorkspaces,
         workspaces: allWorkspaces,
         activeWorkspaceId: activeProjectId ?? null,
       }),
-    [accountsQuery.data, allWorkspaces, activeProjectId],
+    [accountsForWorkspaces, allWorkspaces, activeProjectId],
   );
   const visibleGroups = useMemo(() => filterWorkspaceGroups(groups, query), [groups, query]);
-  const isEmpty = visibleGroups.length === 0;
+  // A failed account never appears in `groups` (it has zero workspaces, and
+  // `groupWorkspacesByAccount` drops those), so it must not count toward
+  // "empty" either — that would show "No workspaces yet" over an account we
+  // simply failed to load, instead of that account's own retry row.
+  const isEmpty = visibleGroups.length === 0 && failedAccounts.length === 0;
 
   const close = () => setMenuOpen(false);
   const switchProject = (project: KortixProject) => {
@@ -303,36 +327,60 @@ export function WorkspaceSwitcher({
               {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
             </div>
           ) : (
-            visibleGroups.map((group) => (
-              <DropdownMenuGroup key={group.accountId}>
-                <DropdownMenuLabel>{group.accountName}</DropdownMenuLabel>
-                {group.workspaces.map((workspace) => {
-                  const active = workspace.project_id === activeProjectId;
-                  const loading = switching && workspace.project_id !== activeProjectId;
-                  return (
-                    <DropdownMenuItem
-                      key={workspace.project_id}
-                      disabled={loading}
-                      onSelect={() => switchProject(workspace)}
-                      className={cn('cursor-pointer', active && 'bg-muted/80')}
+            <>
+              {visibleGroups.map((group) => (
+                <DropdownMenuGroup key={group.accountId}>
+                  <DropdownMenuLabel>{group.accountName}</DropdownMenuLabel>
+                  {group.workspaces.map((workspace) => {
+                    const active = workspace.project_id === activeProjectId;
+                    const loading = switching && workspace.project_id !== activeProjectId;
+                    return (
+                      <DropdownMenuItem
+                        key={workspace.project_id}
+                        disabled={loading}
+                        onSelect={() => switchProject(workspace)}
+                        className={cn('cursor-pointer', active && 'bg-muted/80')}
+                      >
+                        <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {workspace.name}
+                        </span>
+                        {loading ? (
+                          <Loading className="text-muted-foreground size-3.5" />
+                        ) : active ? (
+                          <CheckCircleSolid
+                            weight="fill"
+                            className="text-kortix-green size-3.5 shrink-0"
+                          />
+                        ) : null}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuGroup>
+              ))}
+              {/* Rendered after the successful groups, and NOT filtered by
+                  `query`: a search match could be hiding inside the account
+                  that failed, so hiding this on a search would tell the user
+                  something false. */}
+              {failedAccounts.map(({ account, result }) => (
+                <DropdownMenuGroup key={account.account_id}>
+                  <DropdownMenuLabel>{account.name?.trim() || 'Account'}</DropdownMenuLabel>
+                  <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
+                    <span className="min-w-0 flex-1 truncate">Couldn't load</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={result.isFetching}
+                      onClick={() => result.refetch()}
+                      className="shrink-0"
                     >
-                      <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {workspace.name}
-                      </span>
-                      {loading ? (
-                        <Loading className="text-muted-foreground size-3.5" />
-                      ) : active ? (
-                        <CheckCircleSolid
-                          weight="fill"
-                          className="text-kortix-green size-3.5 shrink-0"
-                        />
-                      ) : null}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuGroup>
-            ))
+                      {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : 'Retry'}
+                    </Button>
+                  </div>
+                </DropdownMenuGroup>
+              ))}
+            </>
           )}
         </div>
 

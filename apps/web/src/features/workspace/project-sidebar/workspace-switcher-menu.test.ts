@@ -28,4 +28,24 @@ describe('workspace switcher menu', () => {
   test('create points at /new', () => {
     expect(source).toContain("'/new'");
   });
+
+  test('a failed account keeps its group header, not a vanished group', () => {
+    // An account whose workspace fetch errors must still render (header +
+    // retry row), not silently look like it has zero workspaces —
+    // `groupWorkspacesByAccount` drops any account with zero workspaces, and
+    // without an explicit isError branch that's indistinguishable from a
+    // genuinely empty account.
+    expect(source).toContain('result.isError');
+    expect(source).toContain('result.refetch()');
+    expect(source).toContain("Couldn't load");
+    expect(source).toContain('Retry');
+  });
+
+  test('the loading gate covers the accounts query, not just the per-account fetches', () => {
+    // `useQueries` is fed accounts data that is `[]` while accounts are still
+    // in flight, so `workspaceQueries.some(isLoading)` alone is `false` before
+    // the account count is even known — a false "No workspaces yet" on the
+    // product's only complete workspace directory.
+    expect(source).toContain('accountsQuery.isLoading || workspaceQueries.some(');
+  });
 });
