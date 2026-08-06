@@ -23,3 +23,28 @@ describe('router client cache', () => {
     expect(Number(staticTtl)).toBeGreaterThanOrEqual(300);
   });
 });
+
+describe('react-query defaults', () => {
+  const provider = () =>
+    readFileSync(resolve(import.meta.dir, '../app/react-query-provider.tsx'), 'utf8');
+
+  // gcTime === staleTime evicts an unobserved entry at the exact moment it
+  // goes stale, so there is never a stale-while-revalidate window to render
+  // from. gcTime must strictly exceed staleTime for cached content to survive
+  // long enough to be worth having.
+  test('gcTime strictly exceeds staleTime', () => {
+    const source = provider();
+    const stale = source.match(/staleTime:\s*([\d\s*]+),/)?.[1];
+    const gc = source.match(/gcTime:\s*([\d\s*]+),/)?.[1];
+    expect(stale).toBeTruthy();
+    expect(gc).toBeTruthy();
+    // eslint-disable-next-line no-eval -- arithmetic literals only, from our own source
+    expect(eval(gc!)).toBeGreaterThan(eval(stale!));
+  });
+
+  test('gcTime is at least thirty minutes', () => {
+    const gc = provider().match(/gcTime:\s*([\d\s*]+),/)?.[1];
+    // eslint-disable-next-line no-eval -- arithmetic literals only, from our own source
+    expect(eval(gc!)).toBeGreaterThanOrEqual(30 * 60 * 1000);
+  });
+});

@@ -20,7 +20,16 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
             // override this to Infinity. Non-SSE hooks (files, billing, etc.)
             // set their own shorter staleTime as needed.
             staleTime: 5 * 60 * 1000,
-            gcTime: 5 * 60 * 1000,
+            // gcTime must strictly EXCEED staleTime. Set equal (both 5 min, as
+            // they were), an entry with no mounted observer is garbage
+            // collected at the exact instant it goes stale, so React Query can
+            // never serve stale content while revalidating — every return
+            // visit past the window is a cold fetch and a skeleton.
+            //
+            // 30 min is chosen to outlast a working session, not a workday.
+            // Cost is a few hundred KB of JSON; the payoff is that revisiting
+            // any surface inside a session renders from cache.
+            gcTime: 30 * 60 * 1000,
             // Enable request deduplication - React Query will batch simultaneous requests
             structuralSharing: true,
             // Deduplicate requests within 1000ms window (default)
