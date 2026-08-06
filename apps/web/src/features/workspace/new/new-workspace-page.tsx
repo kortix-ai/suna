@@ -17,6 +17,7 @@ import {
   isSubmittable,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
@@ -28,8 +29,10 @@ import { listAccounts } from '@kortix/sdk';
  *
  * This page issues no MUTATING request on mount. Visiting `/new` never
  * creates anything — the only write it ever fires is the one the submit
- * button drives, and that wiring lands in Task 13. A page that creates
- * something because you looked at it is a page nobody can link to safely.
+ * button drives, routed through `useCreateWorkspace` (`use-create-workspace.ts`),
+ * which POSTs `/projects/provision` with a stable `idempotency_key`. A page
+ * that creates something because you looked at it is a page nobody can link
+ * to safely.
  *
  * It DOES read the account list on mount (`useQuery(['accounts'],
  * listAccounts)`) — an idempotent GET, needed to know whether there is
@@ -62,7 +65,8 @@ export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
   const [state, setState] = useState<NewWorkspaceFormState>(INITIAL_FORM_STATE);
   const [touched, setTouched] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { create, status, error: createError } = useCreateWorkspace();
+  const submitting = status === 'creating';
 
   // Only surface a name error after the field has been left once. Validating
   // on the first keystroke would tell the user "Name is required" while they
@@ -105,11 +109,11 @@ export function NewWorkspacePage() {
   // loading window would let through.
   //
   // `state.source === 'managed'` is gated here, not in the shared
-  // `isSubmittable`: `POST /provision` (the only wired submit path, landing in
-  // Task 13) has no installation-id or repo fields, so a `github-create` /
-  // `github-import` source can never be submittable through it. `AdvancedFields`
-  // explains this inline and links to the real GitHub connect flow instead of
-  // shipping a form that would 400.
+  // `isSubmittable`: `POST /provision` (the only wired submit path —
+  // `useCreateWorkspace`) has no installation-id or repo fields, so a
+  // `github-create` / `github-import` source can never be submittable through
+  // it. `AdvancedFields` explains this inline and links to the real GitHub
+  // connect flow instead of shipping a form that would 400.
   const canSubmit =
     isSubmittable(state, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
@@ -155,8 +159,7 @@ export function NewWorkspacePage() {
           event.preventDefault();
           setTouched(true);
           if (!canSubmit) return;
-          setSubmitting(true);
-          // Submit wiring lands in Task 13.
+          void create(state);
         }}
       >
         <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
@@ -220,6 +223,17 @@ export function NewWorkspacePage() {
         <Button type="submit" disabled={!canSubmit} className="w-full">
           {submitting ? <Loading className="size-4 shrink-0" /> : 'Create workspace'}
         </Button>
+        {/* Form-level, not a field error: every failure `messageFor`
+            (`use-create-workspace.ts`) maps — 403 wrong-account, 400 bad
+            name, 502/503, or a generic retry hint — is about the SUBMIT, not
+            one input, so it sits below the button rather than inside the
+            card. `role="alert"` announces it the moment `status` flips to
+            `'error'`, matching the a11y treatment already on the name field. */}
+        {status === 'error' && createError ? (
+          <p role="alert" className="text-destructive text-center text-xs">
+            {createError}
+          </p>
+        ) : null}
       </form>
     </main>
   );
