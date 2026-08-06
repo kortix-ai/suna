@@ -166,8 +166,16 @@ including worktrees whose recorded status has drifted from reality.
 ### `nuke` (alias `rm`) — tear down and free the slot
 
 ```sh
-pnpm worktree nuke <n> [--force]
+pnpm worktree nuke <n> [n2 …] [--force] [--yes]
+pnpm worktree nuke            # TTY: type/paste one name per prompt, blank line finishes
 ```
+
+Accepts one or many worktree names. **Every target is confirmed individually**
+before anything is destroyed (answer no to skip one, Esc/Ctrl+C to stop the
+rest); `--yes` or a non-TTY stdin skips the prompts for scripts and agents.
+Bare `pnpm worktree nuke` in a TTY collects names one prompt at a time — type
+or paste each name, press Enter, and submit a blank line when done. The
+interactive menu (`pnpm worktree` → nuke) multi-selects targets instead.
 
 Stops servers, removes the git worktree, **deletes the branch**, drops the slot,
 and frees the app ports. In shared-DB mode it does **not** stop or delete the
