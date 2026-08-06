@@ -437,6 +437,35 @@ async function commandMatrix(): Promise<void> {
   );
 
   await seedCallableAction();
+  const inheritedCatalog = await expectCli(
+    'unconfigured session scope inherits the active project connection',
+    ['connectors', 'ls', '--session', sessionId],
+    { stdout: new RegExp(FIXTURE_SLUG) },
+  );
+  check('inherited connector catalog stdout is valid JSON', (() => {
+    try { JSON.parse(inheritedCatalog.stdout); return true; } catch { return false; }
+  })());
+  await expectCli(
+    'inherited project connection is callable with the agent token',
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"inherited-agent-token"}'],
+    { stdout: /inherited-agent-token/ },
+  );
+  await expectCli(
+    'sessions scope creates an explicit empty connector scope',
+    ['sessions', 'scope', sessionId, '--no-connectors', '--json'],
+    { stdout: /"connector_bindings"\s*:\s*\{\}/ },
+  );
+  await expectCli(
+    'explicit empty connector scope returns an empty agent catalog',
+    ['connectors', 'ls', '--session', sessionId],
+    { stdout: /"connectors"\s*:\s*\[\s*\]/ },
+  );
+  await expectCli(
+    'explicit empty connector scope denies a forced call',
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"must-not-run"}'],
+    { code: 1, stderr: /connector_not_found|not found/i },
+  );
+
   const createdConnection = await expectCli(
     'connections add creates a second project connection',
     [
@@ -500,8 +529,85 @@ async function commandMatrix(): Promise<void> {
   );
   await expectCli('connectors rename persists a display name', ['connectors', 'rename', FIXTURE_SLUG, 'Agent HTTP']);
   await expectCli('connectors mode keeps the shared connection mode', ['connectors', 'mode', FIXTURE_SLUG, 'shared']);
-  await expectCli('connectors policy set persists allow', ['connectors', 'policy', FIXTURE_SLUG, 'set', 'get', 'allow']);
-  await expectCli('connectors policy ls reads the rule', ['connectors', 'policy', FIXTURE_SLUG, 'ls'], { stdout: /get.*always_run/s });
+  await expectCli('connectors policy set persists approval requirement', [
+    'connectors',
+    'policy',
+    FIXTURE_SLUG,
+    'set',
+    'get',
+    'require_approval',
+  ]);
+  await expectCli('connectors policy ls reads the rule', ['connectors', 'policy', FIXTURE_SLUG, 'ls'], {
+    stdout: /get.*require_approval/s,
+  });
+
+  const pendingApproval = await expectCli(
+    'connector call returns a machine-readable approval handoff',
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"approve-agent-token"}'],
+    { stdout: /"status"\s*:\s*"pending_approval"/ },
+  );
+  let approvalExecutionId = '';
+  try {
+    const payload = JSON.parse(pendingApproval.stdout);
+    approvalExecutionId = payload.execution_id ?? '';
+    check(
+      'approval handoff includes execution_id and approval_url',
+      !!approvalExecutionId && /^https?:\/\//.test(payload.approval_url ?? ''),
+    );
+  } catch {
+    check('approval handoff stdout is valid JSON', false, pendingApproval.stdout);
+  }
+  if (!approvalExecutionId) throw new Error('approval execution id was not returned');
+  const agentApproval = await api(
+    `/projects/${projectId}/approvals/${approvalExecutionId}`,
+    { method: 'POST', body: JSON.stringify({ decision: 'approve' }) },
+    agentToken,
+  );
+  check(
+    'session-scoped agent token cannot approve its own connector call',
+    agentApproval.status === 403 && agentApproval.body?.code === 'APPROVAL_REQUIRES_HUMAN',
+    `${agentApproval.status} ${agentApproval.text}`,
+  );
+  const humanApproval = await api(`/projects/${projectId}/approvals/${approvalExecutionId}`, {
+    method: 'POST',
+    body: JSON.stringify({ decision: 'approve' }),
+  });
+  check(
+    'human session launcher approves the pending connector call',
+    humanApproval.status === 200 && humanApproval.body?.ok === true,
+    `${humanApproval.status} ${humanApproval.text}`,
+  );
+  await expectCli(
+    'approved exact connector call executes once on retry',
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"approve-agent-token"}'],
+    { stdout: /approve-agent-token/ },
+  );
+
+  const pendingDenial = await expectCli(
+    'changed connector arguments require a new approval',
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"deny-agent-token"}'],
+    { stdout: /"status"\s*:\s*"pending_approval"/ },
+  );
+  let denialExecutionId = '';
+  try {
+    denialExecutionId = JSON.parse(pendingDenial.stdout)?.execution_id ?? '';
+  } catch {
+    // The assertion below reports invalid JSON without exposing credentials.
+  }
+  check(
+    'changed connector arguments return a distinct approval execution_id',
+    !!denialExecutionId && denialExecutionId !== approvalExecutionId,
+  );
+  if (!denialExecutionId) throw new Error('denial execution id was not returned');
+  const humanDenial = await api(`/projects/${projectId}/approvals/${denialExecutionId}`, {
+    method: 'POST',
+    body: JSON.stringify({ decision: 'deny' }),
+  });
+  check(
+    'human session launcher denies the second pending connector call',
+    humanDenial.status === 200 && humanDenial.body?.ok === true,
+    `${humanDenial.status} ${humanDenial.text}`,
+  );
   await expectCli('connectors policy rm removes the rule', ['connectors', 'policy', FIXTURE_SLUG, 'rm', 'get']);
   await expectCli('connectors policy clear is idempotent', ['connectors', 'policy', FIXTURE_SLUG, 'clear']);
   await expectCli('connectors ls lists project connectors', ['connectors', 'ls'], { stdout: new RegExp(FIXTURE_SLUG) });
