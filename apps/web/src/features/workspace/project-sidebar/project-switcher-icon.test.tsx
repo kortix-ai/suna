@@ -31,7 +31,7 @@ const source = readFileSync(join(import.meta.dir, 'workspace-switcher.tsx'), 'ut
 /** Source with comments stripped, so prose about a prop cannot stand in for it. */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-const mapStart = code.indexOf('filteredProjects.map(');
+const mapStart = code.indexOf('group.workspaces.map(');
 const rowJsx =
   mapStart < 0 ? '' : code.slice(mapStart, code.indexOf('</DropdownMenuItem>', mapStart));
 
@@ -43,18 +43,18 @@ describe('project switcher: the row the source renders', () => {
   test('the scan actually found the list row', () => {
     // Guard the guards: every assertion below is a substring check on
     // `rowAvatar`, and `''.toContain(…)` fails loudly while `''.not.toContain(…)`
-    // passes silently. A renamed `filteredProjects` would otherwise make half
+    // passes silently. A renamed `group.workspaces` would otherwise make half
     // this file vacuous rather than red.
     expect(mapStart).toBeGreaterThan(-1);
     expect(rowAvatar).toMatch(/^<EntityAvatar\b/);
   });
 
   test('each row shows the icon of the project THAT row is rendering', () => {
-    // `project` is the map's own parameter, so this is per-row by construction.
+    // `workspace` is the map's own parameter, so this is per-row by construction.
     // Reading anything else — the active project's icon, a constant — would
     // paint every row the same.
-    expect(rowAvatar).toContain('emoji={project.icon}');
-    expect(rowAvatar).toContain('label={project.name}');
+    expect(rowAvatar).toContain('emoji={workspace.icon}');
+    expect(rowAvatar).toContain('label={workspace.name}');
   });
 
   test('the row is the only tile in this file that took an emoji', () => {
