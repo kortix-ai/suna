@@ -8,12 +8,16 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
+import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
   isSubmittable,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
-import { validateWorkspaceName } from '@/features/workspace/new/workspace-name';
+import {
+  WORKSPACE_NAME_MAX_LENGTH,
+  validateWorkspaceName,
+} from '@/features/workspace/new/workspace-name';
 
 /**
  * Create a workspace.
@@ -56,7 +60,14 @@ export function NewWorkspacePage() {
   // accounts wiring lands in Task 12 — there is no accounts query in this
   // task, so `1` stands in for "exactly one implicit account, nothing to
   // disambiguate". `isSubmittable` still refuses at count < 1.
-  const canSubmit = isSubmittable(state, 1) && !submitting;
+  //
+  // `state.source === 'managed'` is gated here, not in the shared
+  // `isSubmittable`: `POST /provision` (the only wired submit path, landing in
+  // Task 13) has no installation-id or repo fields, so a `github-create` /
+  // `github-import` source can never be submittable through it. `AdvancedFields`
+  // explains this inline and links to the real GitHub connect flow instead of
+  // shipping a form that would 400.
+  const canSubmit = isSubmittable(state, 1) && state.source === 'managed' && !submitting;
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -67,15 +78,25 @@ export function NewWorkspacePage() {
           stays reachable regardless of form state. */}
       <div className="absolute top-4 right-6 flex items-center gap-3">
         <span className="text-muted-foreground max-w-40 truncate text-xs">{user?.email}</span>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void signOut()}>
+        {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
+            default) so this reads as one quiet secondary row at rest, same
+            treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
+            otherwise it sits at full-contrast `text-foreground` beside the
+            email's dim `text-xs text-muted-foreground` and reads louder than
+            the page's actual primary action. */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => void signOut()}
+        >
           Log out
         </Button>
       </div>
 
       <header className="flex flex-col gap-2 text-center">
-        <h1 className="text-foreground text-xl font-semibold tracking-tight">
-          Create a workspace
-        </h1>
+        <h1 className="text-foreground text-xl font-semibold tracking-tight">Create a workspace</h1>
         <p className="text-muted-foreground text-sm text-balance">
           A workspace is where your agents, files and sessions live.
         </p>
@@ -114,6 +135,7 @@ export function NewWorkspacePage() {
                 onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                 onBlur={() => setTouched(true)}
                 placeholder="my-agi-company"
+                maxLength={WORKSPACE_NAME_MAX_LENGTH}
                 disabled={submitting}
                 aria-invalid={nameError ? true : undefined}
                 aria-describedby={nameError ? 'workspace-name-error' : undefined}
@@ -125,6 +147,8 @@ export function NewWorkspacePage() {
               {nameError}
             </p>
           ) : null}
+
+          <AdvancedFields state={state} onChange={setState} />
         </div>
 
         <Button type="submit" disabled={!canSubmit} className="w-full">
