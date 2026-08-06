@@ -74,7 +74,13 @@ export interface VirtualListRow<TRow> {
   key: string;
   index: number;
   row: TRow;
-  /** Offset inside the positioned container. Already scroll-margin corrected. */
+  /**
+   * Offset inside the positioned container, scroll-margin corrected.
+   *
+   * Informational under `directDomUpdates`: the virtualizer writes the
+   * transform itself, and a competing `style.transform` in JSX would be
+   * overwritten every frame (and fight it in between).
+   */
   translate: number;
 }
 
@@ -173,9 +179,14 @@ export function useVirtualList<TRow>({
     setScrollMargin((current) => (current === next ? current : next));
   }, [scrollElementRef]);
 
+  // Composed: the virtualizer OWNS the container's height under
+  // `directDomUpdates`, and we still need the node to measure the scroll
+  // margin. Both refs must see it.
+  const virtualizerContainerRef = useRef<((node: HTMLElement | null) => void) | null>(null);
   const containerRef = useCallback(
     (node: HTMLElement | null) => {
       containerElRef.current = node;
+      virtualizerContainerRef.current?.(node);
       if (node) measureScrollMargin();
     },
     [measureScrollMargin],
@@ -209,6 +220,16 @@ export function useVirtualList<TRow>({
   const [restored] = useState(() => readSnapshot(initialSnapshot, cacheKey));
 
   const shared = {
+    // Skip React re-renders for scroll-only updates: the virtualizer writes
+    // each row's transform and the container height STRAIGHT TO THE DOM, and
+    // only re-renders when the visible index range changes.
+    //
+    // Without it, every scroll frame re-renders ~30 rows through React on the
+    // main thread. That is not a position bug — offsets stay correct — it is
+    // frame-budget: the compositor is ready and React is still reconciling, so
+    // the scroll stutters even though nothing has moved incorrectly.
+    directDomUpdates: true,
+    directDomUpdatesMode: 'transform' as const,
     count: rows.length,
     estimateSize,
     getItemKey,
@@ -263,6 +284,13 @@ export function useVirtualList<TRow>({
   //
   // Instance property, not an option (virtual-core index.d.ts:117).
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+
+  // `containerRef` on the react-virtual instance is what `directDomUpdates`
+  // writes the container height through. Publish it so our composed ref feeds
+  // it the node.
+  virtualizerContainerRef.current = (
+    virtualizer as unknown as { containerRef: (node: HTMLElement | null) => void }
+  ).containerRef;
 
   const virtualItems = virtualizer.getVirtualItems();
 

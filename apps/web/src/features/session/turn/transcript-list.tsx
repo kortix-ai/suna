@@ -77,7 +77,7 @@ export function TranscriptList({
   onMountedKeysChange,
   apiRef,
 }: TranscriptListProps) {
-  const { items, totalSize, measureRef, containerRef, scrollToKey, scrollToEnd, takeSnapshot } =
+  const { items, measureRef, containerRef, scrollToKey, scrollToEnd, takeSnapshot } =
     useVirtualList({
       rows,
       getRowKey,
@@ -172,12 +172,14 @@ export function TranscriptList({
   return (
     <div
       ref={containerRef}
+      // NO `style={{ height: totalSize }}`. Under `directDomUpdates` the
+      // virtualizer writes the container height itself; setting it here too
+      // means React and the virtualizer overwrite each other every frame.
       className="relative w-full"
-      style={{ height: totalSize }}
       onPointerOver={handlePointerOver}
       onPointerLeave={handlePointerLeave}
     >
-      {items.map(({ key, index, row, translate }) => (
+      {items.map(({ key, index, row }) => (
         <MessageScrollerItem
           key={key}
           // The scroller's anchoring unit is the ROW, keyed exactly as the
@@ -242,7 +244,6 @@ export function TranscriptList({
                 : // Between segments: the old `space-y-2`.
                   'pt-2',
           )}
-          style={{ transform: `translateY(${translate}px)` }}
         >
           <div
             // On EVERY row. The minimap's IntersectionObserver highlights the
