@@ -1107,10 +1107,10 @@ Expected: web listens on `http://localhost:13400` and API listens on `http://loc
 Run in a second terminal:
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:13400 \
+E2E_BASE_URL=http://localhost:13400 \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/shadows.visual.spec.ts \
+  shadows.visual.spec.ts \
   --project=chromium \
   --update-snapshots
 ```
@@ -1133,10 +1133,10 @@ Record the image dimensions and review result in the audit report.
 - [ ] **Step 5: Re-run without updating snapshots**
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:13400 \
+E2E_BASE_URL=http://localhost:13400 \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/shadows.visual.spec.ts \
+  shadows.visual.spec.ts \
   --project=chromium
 ```
 
@@ -1147,10 +1147,10 @@ Expected: `8 passed`, `0 failed`.
 Run the existing landing suite against the same server:
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:13400 \
+E2E_BASE_URL=http://localhost:13400 \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/landing.visual.spec.ts \
+  landing.visual.spec.ts \
   --project=chromium
 ```
 
@@ -1244,10 +1244,10 @@ Expected: Next.js exits `0` and reports a successful production build.
 - [ ] **Step 6: Re-run headless visual verification**
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:13400 \
+E2E_BASE_URL=http://localhost:13400 \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/shadows.visual.spec.ts \
+  shadows.visual.spec.ts \
   --project=chromium
 ```
 
@@ -1366,7 +1366,7 @@ Expected: the runtime config contains `VERSION` with suffix `-dev.${merge_sha8}`
 E2E_BASE_URL=https://dev.kortix.com \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/shadows.visual.spec.ts \
+  shadows.visual.spec.ts \
   --project=chromium \
   --grep 'aliases expose depth|shared overlays keep one visible edge'
 ```
@@ -1379,7 +1379,7 @@ Expected: `4 passed`. This command is headless and checks light and dark themes.
 E2E_BASE_URL=https://dev.kortix.com \
   pnpm --dir apps/web exec playwright test \
   --config ../../tests/visual/playwright.config.ts \
-  ../../tests/visual/shadows.visual.spec.ts \
+  shadows.visual.spec.ts \
   --project=chromium \
   --grep 'shadow reference'
 ```

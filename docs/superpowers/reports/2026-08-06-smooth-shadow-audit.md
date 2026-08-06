@@ -167,18 +167,19 @@ elevation owners.
 
 ## Verification evidence
 
-| Gate                         | Evidence                                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Baseline web suite           | 4572 pass, 2 fail. Both customize-overlay failures reproduce on `main`.                                      |
-| Global adapter               | `cbbc240636`; 4 pass, 0 fail, 21 assertions.                                                                 |
-| Edge-policy red state        | 36 violations found before migration.                                                                        |
-| Shared primitive migration   | 225 pass, 0 fail; ESLint 0 errors and 3 pre-existing React Compiler warnings; edge violations reduced to 22. |
-| Product and media migration  | 198 pass, 0 fail; ESLint 0 errors and 15 pre-existing React Compiler warnings; violations reduced to 12.    |
-| Public surface migration     | 58 pass, 0 fail; ESLint 0 errors and 2 pre-existing React Compiler warnings; violations reduced to 3.       |
-| Design-system migration      | 9 shadow tests pass; ESLint 0 errors and 1 pre-existing React Compiler warning; policy scan is green.        |
-| Headless local visual QA     | Open until the migrated design-system route is available.                                                    |
-| PR and merge                 | Open until all local gates pass.                                                                             |
-| Deploy Dev and dev QA        | Open until the merged SHA is deployed.                                                                       |
+| Gate                        | Evidence                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Baseline web suite          | 4572 pass, 2 fail. Both customize-overlay failures reproduce on `main`.                                      |
+| Global adapter              | `cbbc240636`; 4 pass, 0 fail, 21 assertions.                                                                 |
+| Edge-policy red state       | 36 violations found before migration.                                                                        |
+| Shared primitive migration  | 225 pass, 0 fail; ESLint 0 errors and 3 pre-existing React Compiler warnings; edge violations reduced to 22. |
+| Product and media migration | 198 pass, 0 fail; ESLint 0 errors and 15 pre-existing React Compiler warnings; violations reduced to 12.     |
+| Public surface migration    | 58 pass, 0 fail; ESLint 0 errors and 2 pre-existing React Compiler warnings; violations reduced to 3.        |
+| Design-system migration     | 9 shadow tests pass; ESLint 0 errors and 1 pre-existing React Compiler warning; policy scan is green.        |
+| Headless local visual QA    | 8 pass. Reviewed light/dark baselines at 948×688 desktop and 346×1351 narrow.                                |
+| Landing visual regression   | 2 pre-existing baseline failures. Full baseline is 1344×9927; current fixed viewport produces 1280×8635.     |
+| PR and merge                | Open until all local gates pass.                                                                             |
+| Deploy Dev and dev QA       | Open until the merged SHA is deployed.                                                                       |
 
 ## Linear
 
