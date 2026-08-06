@@ -73,12 +73,10 @@ import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
-
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 /** Slack has its own dedicated step, so keep it out of the tools grid. */
 const SLACK_SLUGS = new Set(['slack', 'slack_v2']);
@@ -153,17 +151,18 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
 
   const isPending = onboarding.hydrated && onboarding.status === 'pending';
   const connectors = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
     enabled: isPending,
-    ...Q,
+    ...contract('config'),
+    refetchOnWindowFocus: false,
   });
   const connectorSlugs = useMemo(
     () => (connectors.data?.connectors ?? []).map((connector) => connector.slug),
     [connectors.data],
   );
   const refreshConnectors = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
   }, [queryClient, projectId]);
 
   const shouldRender = isPending;

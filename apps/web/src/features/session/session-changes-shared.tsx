@@ -13,6 +13,7 @@ import { useCallback, useState } from 'react';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { getProjectSession } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useChatSendStore } from '@/stores/chat-send-store';
 
 /** git-status status → single-letter badge, using the canonical status tones. */
@@ -28,10 +29,10 @@ export function useSessionBaseRef(
   gitSessionId: string | undefined,
 ): string {
   const sessionQuery = useQuery({
-    queryKey: ['project', 'session', projectId, gitSessionId],
+    queryKey: qk.project.session(projectId ?? '', gitSessionId ?? ''),
     queryFn: () => getProjectSession(projectId!, gitSessionId!),
     enabled: !!projectId && !!gitSessionId,
-    staleTime: 60_000,
+    ...contract('inventory'),
   });
   return sessionQuery.data?.base_ref ?? 'main';
 }

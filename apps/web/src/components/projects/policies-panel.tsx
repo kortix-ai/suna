@@ -46,6 +46,7 @@ import {
   listProjectPolicies,
   setProjectPolicies,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 interface DraftRule {
   id: string;
@@ -155,11 +156,17 @@ export function seedDraft(data: {
 export function PoliciesPanel({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ['project-policies', projectId] as const, [projectId]);
+  // qk.project.executorPolicies — sandbox tool-execution allow/deny rules
+  // (`listProjectPolicies`, `/executor/projects/:id/policies`). NOT
+  // qk.project.policies, the unrelated account-IAM role-policy family
+  // members-view.tsx reads: both used to share the literal
+  // ['project-policies', id] pre-migration, so whichever fetch resolved
+  // last clobbered the other's cache entry with an incompatible shape.
+  const queryKey = useMemo(() => qk.project.executorPolicies(projectId), [projectId]);
   const query = useQuery({
     queryKey,
     queryFn: () => listProjectPolicies(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const [draft, setDraft] = useState<DraftRule[]>([]);

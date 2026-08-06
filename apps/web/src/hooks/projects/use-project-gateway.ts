@@ -21,55 +21,56 @@ import {
   runGatewayPlayground,
   setGatewayBudget,
 } from '@/lib/projects-gateway-client';
+import { contract, qk } from '@kortix/sdk/react';
 
 export function useGatewayOverview(projectId: string | undefined, days = 30) {
   return useQuery({
-    queryKey: ['project-gateway-overview', projectId, days],
+    queryKey: qk.project.gatewayOverview(projectId ?? '', days),
     queryFn: () => getGatewayOverview(projectId!, days),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('volatile'),
   });
 }
 
 export function useGatewaySeries(projectId: string | undefined, days = 30) {
   return useQuery({
-    queryKey: ['project-gateway-series', projectId, days],
+    queryKey: qk.project.gatewaySeries(projectId ?? '', days),
     queryFn: () => getGatewaySeries(projectId!, days),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('volatile'),
   });
 }
 
 export function useGatewayBreakdown(projectId: string | undefined, days = 30) {
   return useQuery({
-    queryKey: ['project-gateway-breakdown', projectId, days],
+    queryKey: qk.project.gatewayBreakdown(projectId ?? '', days),
     queryFn: () => getGatewayBreakdown(projectId!, days),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('volatile'),
   });
 }
 
 export function useGatewaySessions(projectId: string | undefined, days = 30) {
   return useQuery({
-    queryKey: ['project-gateway-sessions', projectId, days],
+    queryKey: qk.project.gatewaySessions(projectId ?? '', days),
     queryFn: () => getGatewaySessions(projectId!, days),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('volatile'),
   });
 }
 
 export function useGatewayErrors(projectId: string | undefined, days = 30) {
   return useQuery({
-    queryKey: ['project-gateway-errors', projectId, days],
+    queryKey: qk.project.gatewayErrors(projectId ?? '', days),
     queryFn: () => getGatewayErrors(projectId!, days),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('volatile'),
   });
 }
 
 export function useGatewayLogs(projectId: string | undefined, opts?: { ok?: boolean }) {
   return useQuery({
-    queryKey: ['project-gateway-logs', projectId, opts?.ok ?? null],
+    queryKey: qk.project.gatewayLogs(projectId ?? '', opts?.ok ?? null),
     queryFn: () => listGatewayLogs(projectId!, { ok: opts?.ok, limit: 100 }),
     enabled: !!projectId,
     refetchInterval: 10_000,
@@ -78,7 +79,7 @@ export function useGatewayLogs(projectId: string | undefined, opts?: { ok?: bool
 
 export function useGatewayLog(projectId: string | undefined, logId: string | null) {
   return useQuery({
-    queryKey: ['project-gateway-log', projectId, logId],
+    queryKey: qk.project.gatewayLog(projectId ?? '', logId),
     queryFn: () => getGatewayLog(projectId!, logId!),
     enabled: !!projectId && !!logId,
   });
@@ -86,10 +87,10 @@ export function useGatewayLog(projectId: string | undefined, logId: string | nul
 
 export function useGatewayBudgets(projectId: string | undefined) {
   return useQuery({
-    queryKey: ['project-gateway-budgets', projectId],
+    queryKey: qk.project.gatewayBudgets(projectId ?? ''),
     queryFn: () => getGatewayBudgets(projectId!),
     enabled: !!projectId,
-    staleTime: 15_000,
+    ...contract('volatile'),
   });
 }
 
@@ -97,7 +98,8 @@ export function useSetGatewayBudget(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: SetGatewayBudgetInput) => setGatewayBudget(projectId!, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-budgets', projectId] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
   });
 }
 
@@ -105,16 +107,17 @@ export function useDeleteGatewayBudget(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (budgetId: string) => deleteGatewayBudget(projectId!, budgetId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-budgets', projectId] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
   });
 }
 
 export function useGatewayKeys(projectId: string | undefined, enabled = true) {
   return useQuery({
-    queryKey: ['project-gateway-keys', projectId],
+    queryKey: qk.project.gatewayKeys(projectId ?? ''),
     queryFn: () => getGatewayKeys(projectId!),
     enabled: !!projectId && enabled,
-    staleTime: 15_000,
+    ...contract('volatile'),
   });
 }
 
@@ -122,7 +125,7 @@ export function useCreateGatewayKey(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => createGatewayKey(projectId!, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-keys', projectId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayKeys(projectId ?? '') }),
   });
 }
 
@@ -130,7 +133,7 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (keyId: string) => revokeGatewayKey(projectId!, keyId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-keys', projectId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayKeys(projectId ?? '') }),
   });
 }
 

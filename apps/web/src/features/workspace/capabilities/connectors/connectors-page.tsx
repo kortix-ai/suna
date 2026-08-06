@@ -135,7 +135,7 @@ type Panel = 'custom';
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
  *
- * Reads the project's own connectors off `['project-connectors', projectId]`,
+ * Reads the project's own connectors off `qk.project.connectors(projectId)`,
  * the same key `ConnectorsMasterDetail` uses, so the two surfaces cannot
  * disagree about what a project has.
  *

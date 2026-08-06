@@ -53,7 +53,7 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -67,9 +67,9 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;
@@ -191,9 +191,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
   const branchesQuery = useQuery({
-    queryKey: ['project-branches', project.project_id],
+    queryKey: qk.project.branches(project.project_id),
     queryFn: () => listProjectBranches(project.project_id),
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const branchNames = Array.from(
     new Set([
@@ -222,13 +222,13 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
       // qk.projects.scope(): reaches every account's list (and the
       // accountless slot the marketplace picker reads), restoring the reach
       // the old bare projects-literal prefix match had. Repo-settings edits
       // are rare — over-invalidating costs nothing.
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -390,7 +390,7 @@ function ExperimentalFeatureRow({
     mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
     onSettled: () => setPendingValue(null),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', projectId], updated);
+      queryClient.setQueryData(qk.project.summary(projectId), updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
         qk.project.detail(projectId),
         (current) => (current ? { ...current, project: updated } : current),
@@ -470,7 +470,10 @@ function SandboxProviderRow({
         // and refresh the project once it settles so the now-active provider shows.
         void pollSandboxProviderTransition(project.project_id, {
           onSettled: (state) => {
-            queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
+            // invalidateProject() reaches qk.project.scope(project.project_id),
+            // which qk.project.summary(project.project_id) nests under — so it
+            // already covers the bare-project row too; no separate summary
+            // invalidation needed here.
             void invalidateProject(queryClient, project.project_id);
             // qk.projects.scope(): restores the reach the old bare
             // projects-literal prefix match had. A sandbox-provider switch
@@ -728,7 +731,7 @@ function GeneralProjectCard({
         name: nextName,
       }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
       // qk.projects.scope(): restores the reach the old bare
       // projects-literal prefix match had. A rename is rare —
       // over-invalidating a few extra account lists costs nothing.

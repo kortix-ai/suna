@@ -208,7 +208,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId, sessionId),
       });
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },

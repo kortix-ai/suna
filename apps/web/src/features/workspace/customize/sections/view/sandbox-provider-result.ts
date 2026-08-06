@@ -35,10 +35,10 @@ type CacheClient = Pick<QueryClient, 'setQueryData' | 'invalidateQueries'>;
  *
  * Writes the project caches ONLY for the immediate `kind:'project'` result. A
  * `kind:'preparation'` result is a durable TRANSITION object, not a project —
- * writing it into `['project', id]` would corrupt the cached project shape (it
- * has no repo_url / metadata / experimental_features …). On preparation we leave
- * the project cache untouched and return `'preparation'` so the caller polls the
- * transition instead. Returns the result's kind.
+ * writing it into `qk.project.summary(id)` would corrupt the cached project
+ * shape (it has no repo_url / metadata / experimental_features …). On
+ * preparation we leave the project cache untouched and return `'preparation'`
+ * so the caller polls the transition instead. Returns the result's kind.
  */
 export function applySandboxProviderResult(
   queryClient: CacheClient,
@@ -49,7 +49,7 @@ export function applySandboxProviderResult(
   // Strip the discriminant so the cached value is a pure KortixProject.
   const { kind: _kind, ...project } = result;
   const cached = project as KortixProject;
-  queryClient.setQueryData(['project', projectId], cached);
+  queryClient.setQueryData(qk.project.summary(projectId), cached);
   queryClient.setQueryData<ProjectDetail | undefined>(qk.project.detail(projectId), (c) =>
     c ? { ...c, project: cached } : c,
   );

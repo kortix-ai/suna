@@ -744,9 +744,9 @@ function EntityDetail<T extends ConfigEntity>({
   // project repo, so there is nothing to fetch.
   const platformSource = entity.path.startsWith('/');
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, entity.path],
+    queryKey: qk.project.fileSource(projectId, entity.path),
     queryFn: () => readProjectFile(projectId, configEntitySourcePath(entity.path)),
-    staleTime: 30_000,
+    ...contract('config'),
     enabled: !platformSource,
   });
 

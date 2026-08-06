@@ -34,7 +34,13 @@ import {
   setAgentScope,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { invalidateProject, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
+import {
+  contract,
+  invalidateProject,
+  qk,
+  useModelDefaults,
+  useRuntimeProviders,
+} from '@kortix/sdk/react';
 import {
   RobotIcon as Bot,
   CheckIcon as Check,
@@ -150,10 +156,12 @@ function DefaultAgentSelector({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
       successToast(`${result.default_agent} is now the project default`);
-      await Promise.all([
-        invalidateProject(queryClient, projectId),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-      ]);
+      // useProjectConfig now rides the shared qk.project.detail(id) entry, so
+      // invalidateProject() — which reaches qk.project.scope(projectId), and
+      // detail(id) nests under it — already covers the config projection
+      // too. The old standalone ['project-config', id] invalidation is gone
+      // because that standalone key is gone.
+      await invalidateProject(queryClient, projectId);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
   });
@@ -200,17 +208,17 @@ function DefaultAgentSelector({
  */
 function AgentAssignments({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const grantsQuery = useQuery({
-    queryKey: ['project-resource-grants', projectId],
+    queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
     enabled: canManage,
     retry: false,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   // Live capability gate: even if the grants cache still holds data from when the
   // viewer was a manager, a now-non-manager never sees it.
@@ -257,9 +265,9 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
  */
 function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const { data: providers } = useRuntimeProviders();
@@ -380,9 +388,9 @@ function AgentScopeCard({
   const queryClient = useQueryClient();
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
 
@@ -399,16 +407,16 @@ function AgentScopeCard({
   }, [agentName, scope.env, scope.connectors]);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
     enabled: canManage,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
     enabled: canManage,
-    staleTime: 30_000,
+    ...contract('config'),
   });
 
   const secretOptions = useMemo(() => {

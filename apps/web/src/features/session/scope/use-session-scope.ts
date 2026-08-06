@@ -11,7 +11,7 @@ import {
   type ProjectSecret,
   type SessionScopeInput,
 } from '@kortix/sdk';
-import { useProjectConfig } from '@kortix/sdk/react';
+import { qk, useProjectConfig } from '@kortix/sdk/react';
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -123,7 +123,10 @@ const unavailableCatalog = (): SessionScopeSelectionCatalog => ({
 export function useSessionScope({ projectId, sessionId, agentName }: UseSessionScopeInput) {
   const queryClient = useQueryClient();
   const projectConfig = useProjectConfig(projectId);
-  const projectConfigKey = ['project-config', projectId] as const;
+  // useProjectConfig now rides the shared qk.project.detail(id) entry (a
+  // `select` projection, not its own key) — track fetch/error state on THAT
+  // key, not the retired standalone ['project-config', id] slot.
+  const projectConfigKey = qk.project.detail(projectId ?? '');
   const projectConfigFetches = useIsFetching({
     queryKey: projectConfigKey,
     exact: true,

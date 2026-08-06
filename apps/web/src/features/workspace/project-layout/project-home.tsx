@@ -94,9 +94,9 @@ export function ProjectHome({
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
-    queryKey: ['project-sandboxes', projectId],
+    queryKey: qk.project.sandboxes(projectId),
     queryFn: () => listProjectSandboxes(projectId),
-    staleTime: 60_000,
+    ...contract('volatile'),
     refetchOnWindowFocus: false,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
@@ -111,10 +111,10 @@ export function ProjectHome({
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const accessRequests = useQuery({
-    queryKey: ['project-access-requests', projectId],
+    queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
     retry: false,
-    staleTime: 60_000,
+    ...contract('inventory'),
     refetchOnWindowFocus: false,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;

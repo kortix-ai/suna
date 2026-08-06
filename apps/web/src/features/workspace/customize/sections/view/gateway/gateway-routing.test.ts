@@ -191,7 +191,7 @@ describe('gateway routing editor helpers', () => {
     expect(routingSource).toContain('routing.set.isPending ||');
     expect(routingSource).toContain('routing.reset.isPending ||');
     expect(routingSource).toContain("queryKey: ['model-defaults', projectId]");
-    expect(routingSource).toContain("queryKey: ['project-model-picker', projectId]");
+    expect(routingSource).toContain('queryKey: qk.project.modelPicker(projectId)');
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {

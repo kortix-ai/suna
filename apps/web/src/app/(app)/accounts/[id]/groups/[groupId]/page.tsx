@@ -779,8 +779,8 @@ function GroupProjectGrantsCard({
       // every group member's effective access — detaching this group
       // removes a path. Invalidate so a stale tab refetches on next
       // focus.
-      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to detach'),
   });
@@ -894,8 +894,8 @@ function GroupProjectGrantsCard({
           // The target project's Members card (in another tab) shows
           // group-derived access for every member — without these the
           // tab would be stale until the next focus + 20s staleTime.
-          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
-          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.access(attachedProjectId) });
+          queryClient.invalidateQueries({ queryKey: qk.project.summary(attachedProjectId) });
           setAttachOpen(false);
         }}
       />

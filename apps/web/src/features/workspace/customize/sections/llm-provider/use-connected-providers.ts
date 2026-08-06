@@ -32,9 +32,9 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
     enabled,
   });
 

@@ -774,12 +774,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
-    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
-      'project',
-      'session-sandbox',
-      projectId,
-      sessionId,
-    ]);
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>(
+      qk.project.sessionSandbox(projectId, sessionId),
+    );
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 

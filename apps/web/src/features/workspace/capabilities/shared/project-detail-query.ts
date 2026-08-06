@@ -31,7 +31,7 @@ export function projectDetailQuery(projectId: string) {
  * loads — the hint `useProjectCan` wants.
  *
  * Without it `useProjectCan` resolves the account through its OWN
- * `getProject` under `['project', projectId]`, and keeps the IAM probe
+ * `getProject` under `qk.project.summary(projectId)`, and keeps the IAM probe
  * `enabled: false` until that lands. That is two costs on every capability
  * page: a second network call for a project the page is already holding, and
  * a serialized `getProject → probe → canWrite` waterfall, so every write

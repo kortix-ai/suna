@@ -61,10 +61,10 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     [models, llmGatewayEnabled],
   );
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
     enabled: !!projectId && llmGatewayEnabled,
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`

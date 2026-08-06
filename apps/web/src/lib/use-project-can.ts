@@ -10,7 +10,8 @@
  * Rides the existing `usePermission`/`usePermissions` probe (no new endpoint):
  * a project-scoped probe `{ action, resourceType: 'project', resourceId }`.
  * The accountId the probe needs is resolved from the shared react-query cache of
- * the project itself (`['project', projectId]`), so callers pass only projectId.
+ * the project itself (`qk.project.summary(projectId)`), so callers pass only
+ * projectId.
  *
  * NOT a security boundary — the API re-checks every mutating route via
  * assertProjectCapability. This only decides what to show/enable. Probes are
@@ -21,6 +22,7 @@
 import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
 import { usePermission, usePermissions, type UsePermissionResult } from '@/lib/use-permission';
 import { getProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -45,18 +47,18 @@ export function projectPermissionProbes(
  * should pass `accountIdHint` — that skips the extra getProject round-trip AND,
  * more importantly, lets the IAM probe run on the FIRST render instead of being
  * disabled while a second fetch resolves. Without the hint we fall back to the
- * shared ['project', projectId] cache.
+ * shared qk.project.summary(projectId) cache.
  */
 function useProjectAccountId(
   projectId: string | undefined,
   accountIdHint?: string,
 ): string | undefined {
   const { data } = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId ?? ''),
     queryFn: () => getProject(projectId!),
     // Don't even fire the query when the caller already handed us the account.
     enabled: !!projectId && !accountIdHint,
-    staleTime: 60_000,
+    ...contract('config'),
   });
   return projectId ? (accountIdHint ?? data?.account_id) : undefined;
 }

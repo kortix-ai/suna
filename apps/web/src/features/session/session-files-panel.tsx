@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { getProjectSession } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
@@ -63,10 +64,10 @@ export function SessionFilesPanel({
   const isLoadingChanges = !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
   const sessionQuery = useQuery({
-    queryKey: ['project', 'session', projectId, gitSessionId],
+    queryKey: qk.project.session(projectId ?? '', gitSessionId ?? ''),
     queryFn: () => getProjectSession(projectId!, gitSessionId!),
     enabled: !!projectId && !!gitSessionId,
-    staleTime: 60_000,
+    ...contract('inventory'),
   });
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
 

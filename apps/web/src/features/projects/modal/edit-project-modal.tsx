@@ -19,6 +19,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { updateProject, type ProjectInput } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patch';
 import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
@@ -99,7 +100,7 @@ export const EditProjectModal = ({
     // runs the draft could already have moved on.
     onSuccess: (updated, patch) => {
       if (projectId) {
-        queryClient.setQueryData(['project', projectId], updated);
+        queryClient.setQueryData(qk.project.summary(projectId), updated);
       }
       // This modal only ever receives a projectId, never the owning
       // account_id, so it cannot target one qk.projects.list(accountId)
