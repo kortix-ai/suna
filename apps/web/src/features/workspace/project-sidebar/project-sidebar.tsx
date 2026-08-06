@@ -43,7 +43,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
-import { ProjectSwitcher } from './project-switcher';
+import { WorkspaceSwitcher } from './workspace-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -122,11 +122,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             The Kortix mark used to be a separate button sitting beside the
             switcher. Same subject, two mismatched controls, and dead space
             between them. It is one segmented control now (see
-            ProjectSwitcher): the mark still links to the project's home, the
+            WorkspaceSwitcher): the mark still links to the project's home, the
             name still opens the switcher, and the whole row between them is
             live instead of inert. */}
         <div className="flex w-full items-center gap-1">
-          <ProjectSwitcher variant="sidebar" className="min-w-0 flex-1" />
+          <WorkspaceSwitcher variant="sidebar" className="min-w-0 flex-1" />
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile

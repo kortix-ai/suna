@@ -15,7 +15,7 @@ import { EntityAvatar } from '../../../components/ui/entity-avatar';
  * identity.
  *
  * SPLIT INTO TWO LINKS, because the component itself cannot be rendered here.
- * `ProjectSwitcher` needs a router, three react-query caches and two zustand
+ * `WorkspaceSwitcher` needs a router, three react-query caches and two zustand
  * stores, and its list lives inside a `DropdownMenuContent` that renders
  * nothing while the menu is closed — which it always is on a first paint. The
  * alternative, `mock.module`-ing next/navigation and @kortix/sdk, is
@@ -26,7 +26,7 @@ import { EntityAvatar } from '../../../components/ui/entity-avatar';
  *
  * Neither half is worth much alone. Together they cover the whole path.
  */
-const source = readFileSync(join(import.meta.dir, 'project-switcher.tsx'), 'utf8');
+const source = readFileSync(join(import.meta.dir, 'workspace-switcher.tsx'), 'utf8');
 
 /** Source with comments stripped, so prose about a prop cannot stand in for it. */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');

@@ -15,10 +15,10 @@ import { join } from 'node:path';
  * observing this otherwise means mounting the sidebar with its auth, query,
  * i18n and sidebar providers to look at one row.
  */
-const source = readFileSync(join(import.meta.dir, 'project-switcher.tsx'), 'utf8');
+const source = readFileSync(join(import.meta.dir, 'workspace-switcher.tsx'), 'utf8');
 
 const control = source.slice(
-  source.indexOf('data-slot="project-switcher"'),
+  source.indexOf('data-slot="workspace-switcher"'),
   source.indexOf('// Sidebar: never blank the control'),
 );
 
@@ -33,13 +33,13 @@ describe('merged brand/switcher control', () => {
 
   test('the name opens the switcher menu', () => {
     expect(control).toContain('<DropdownMenuTrigger asChild>');
-    expect(control).toContain('aria-label="Switch project"');
+    expect(control).toContain('aria-label="Switch workspace"');
   });
 
   // Two hit areas, never overlapping, each nameable by a screen reader.
   test('the two segments are separately labelled', () => {
     expect(control).toContain('aria-label={homeLabel}');
-    expect(control).toContain('aria-label="Switch project"');
+    expect(control).toContain('aria-label="Switch workspace"');
   });
 
   // This is what makes it one control instead of two: hover, press and open

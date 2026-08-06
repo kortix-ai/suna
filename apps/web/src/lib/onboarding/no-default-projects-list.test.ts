@@ -40,7 +40,7 @@ const ALLOWED = new Map<string, string>([
     'Explicit "Projects" menu item — the user asking for the list by name.',
   ],
   [
-    'features/workspace/project-sidebar/project-switcher.tsx',
+    'features/workspace/project-sidebar/workspace-switcher.tsx',
     'Explicit "All projects" control inside the switcher.',
   ],
   [

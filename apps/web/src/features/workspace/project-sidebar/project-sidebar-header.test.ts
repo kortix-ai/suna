@@ -9,7 +9,7 @@ import { join } from 'node:path';
  * The Kortix mark used to be its own button next to the switcher. Both answered
  * "which project am I in / where do I go", looked nothing alike, and left dead
  * space between them. They are one segmented control now, owned by
- * ProjectSwitcher — the mark keeps its link to the project's home.
+ * WorkspaceSwitcher — the mark keeps its link to the project's home.
  *
  * Asserted against the source because the alternative is mounting the whole
  * sidebar (sidebar + auth + query + i18n providers) to observe which controls
@@ -21,11 +21,11 @@ const header = source.slice(source.indexOf('<SidebarHeader'), source.indexOf('</
 
 describe('project sidebar header', () => {
   test('the merged brand/switcher control leads the row', () => {
-    expect(header).toContain('<ProjectSwitcher variant="sidebar"');
+    expect(header).toContain('<WorkspaceSwitcher variant="sidebar"');
   });
 
   // The whole point of the merge: one control, not a mark button parked beside
-  // a switcher. The mark now lives inside ProjectSwitcher.
+  // a switcher. The mark now lives inside WorkspaceSwitcher.
   test('no standalone Kortix mark button is left beside it', () => {
     expect(header).not.toContain('<Icon.Kortix');
   });

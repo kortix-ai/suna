@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * ProjectSwitcher — the standalone "which project" switcher.
+ * WorkspaceSwitcher — the standalone "which project" switcher.
  *
  * Scoped to the currently-selected account (account switching lives in the
  * Account·You menu, not here). Rendered in two places via `variant`:
@@ -54,13 +54,13 @@ import {
 import { formatRelative } from '@kortix/shared';
 import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
-export type ProjectSwitcherVariant = 'header' | 'sidebar';
+export type WorkspaceSwitcherVariant = 'header' | 'sidebar';
 
-export function ProjectSwitcher({
+export function WorkspaceSwitcher({
   variant = 'header',
   className,
 }: {
-  variant?: ProjectSwitcherVariant;
+  variant?: WorkspaceSwitcherVariant;
   className?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -198,7 +198,7 @@ export function ProjectSwitcher({
       </DropdownMenuTrigger>
     ) : (
       <div
-        data-slot="project-switcher"
+        data-slot="workspace-switcher"
         className={cn(
           'group/switcher flex h-8 w-fit max-w-full min-w-0 items-center overflow-hidden rounded-sm border border-transparent',
           'transition-[background-color,border-color,transform] duration-150 ease-out',
@@ -227,7 +227,7 @@ export function ProjectSwitcher({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Switch project"
+                aria-label="Switch workspace"
                 className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
               >
                 <span className="text-foreground min-w-0 truncate text-sm font-medium tracking-tight whitespace-nowrap">
