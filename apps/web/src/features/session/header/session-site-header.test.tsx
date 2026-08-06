@@ -70,6 +70,35 @@ describe('SessionSiteHeader session title', () => {
     const precedingChunk = source.slice(trailingClusterStart - 40, trailingClusterStart);
     expect(precedingChunk.trim().endsWith('>')).toBe(true);
   });
+
+  test('renders the title and down caret as a padded dropdown trigger', () => {
+    const titleIndex = source.indexOf('{sessionTitle}');
+    const triggerStart = source.lastIndexOf('<DropdownMenuTrigger', titleIndex);
+    const trigger = source.slice(
+      triggerStart,
+      source.indexOf('</DropdownMenuTrigger>', titleIndex),
+    );
+
+    expect(triggerStart).toBeGreaterThan(-1);
+    expect(trigger).toContain('rounded-md');
+    expect(trigger).toContain('px-2.5');
+    expect(trigger).toContain('py-1');
+    expect(trigger).toContain('data-[state=open]:bg-card');
+    expect(trigger).toContain('<CaretDownIcon');
+    expect(trigger).toContain('group-data-[state=open]:rotate-180');
+  });
+
+  test('uses the complete action list in the title menu', () => {
+    expect(source.split('{sessionActionItems}').length - 1).toBe(1);
+    expect(source).toContain('setRenameOpen(true)');
+    expect(source).toContain('setShareOpen(true)');
+    expect(source).toContain('restartMutation.mutate()');
+    expect(source).toContain('reloadConfig.reload()');
+    expect(source).toContain('stopMutation.mutate()');
+    expect(source).toContain('setExportOpen(true)');
+    expect(source).toContain('setCompactOpen(true)');
+    expect(source).toContain('setDeleteOpen(true)');
+  });
 });
 
 describe('SessionSiteHeader transcript ownership', () => {
@@ -77,9 +106,7 @@ describe('SessionSiteHeader transcript ownership', () => {
     expect(source).toContain(
       'kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}',
     );
-    expect(exportModalSource).toContain(
-      'useSessionSync(sessionId, { kortixSessionScope })',
-    );
+    expect(exportModalSource).toContain('useSessionSync(sessionId, { kortixSessionScope })');
   });
 });
 
@@ -174,7 +201,9 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     const deleteIndex = source.indexOf('<TrashIcon');
     const exportIndex = source.indexOf('Export conversation');
     const compactIndex = source.indexOf('Summarize conversation');
-    const renameIndex = source.indexOf("'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'");
+    const renameIndex = source.indexOf(
+      "'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53'",
+    );
 
     expect(deleteIndex).toBeGreaterThan(exportIndex);
     expect(deleteIndex).toBeGreaterThan(compactIndex);
@@ -190,11 +219,17 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(source).toContain('Summarize conversation');
 
     const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(Math.max(0, exportItemStart), source.indexOf('Export conversation'));
+    const exportItem = source.slice(
+      Math.max(0, exportItemStart),
+      source.indexOf('Export conversation'),
+    );
     expect(exportItem).toContain('text-muted-foreground');
 
     const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(Math.max(0, compactItemStart), source.indexOf('Summarize conversation'));
+    const compactItem = source.slice(
+      Math.max(0, compactItemStart),
+      source.indexOf('Summarize conversation'),
+    );
     expect(compactItem).toContain('text-muted-foreground');
   });
 });
@@ -245,7 +280,7 @@ describe('SessionConfigIndicator wiring', () => {
     expect(source).toContain('<SessionConfigReloadConfirm');
     const confirm = source.split('<SessionConfigReloadConfirm')[1]?.split('/>')[0];
     expect(confirm).toContain('busyReason={reloadConfig.busyReason}');
-    expect(confirm).toContain("reloadConfig.reload({ force: true })");
+    expect(confirm).toContain('reloadConfig.reload({ force: true })');
   });
 
   test('Reload config is distinct from Restart and sits beside it', () => {

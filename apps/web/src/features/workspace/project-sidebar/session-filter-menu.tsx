@@ -35,6 +35,7 @@ import {
 } from '@phosphor-icons/react';
 
 import {
+  DEFAULT_SESSION_GROUP_MODE,
   groupSessions,
   SESSION_GROUP_MODES,
   SESSION_ORDER_MODES,
@@ -200,7 +201,9 @@ export function SessionFilterMenu({
   align = 'start',
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
-  const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
+  const groupMode = useSessionFilterStore(
+    (s) => s.groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE,
+  );
   const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
   const statusFilters = useSessionFilterStore(
     (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,
@@ -229,7 +232,7 @@ export function SessionFilterMenu({
   const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
 
   return (
-    <DropdownMenuContent align={align} side='right' className="w-56 p-1">
+    <DropdownMenuContent align={align} side="right" className="w-56 p-1">
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <span className="min-w-0 flex-1 truncate">Grouping</span>

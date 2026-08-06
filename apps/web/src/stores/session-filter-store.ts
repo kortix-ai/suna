@@ -4,9 +4,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
-import type {
-  SessionGroupMode,
-  SessionOrderMode,
+import {
+  DEFAULT_SESSION_GROUP_MODE,
+  type SessionGroupMode,
+  type SessionOrderMode,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
@@ -74,7 +75,7 @@ export const useSessionFilterStore = create<State & Actions>()(
     (set, get) => ({
       groupByProject: {},
       setGroupMode: (projectId, mode) => {
-        if ((get().groupByProject[projectId] ?? 'status') === mode) return;
+        if ((get().groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE) === mode) return;
         set({ groupByProject: { ...get().groupByProject, [projectId]: mode } });
       },
 

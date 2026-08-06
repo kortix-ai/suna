@@ -44,6 +44,7 @@ import {
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
+  DEFAULT_SESSION_GROUP_MODE,
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
@@ -175,7 +176,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
   // which writes to the same store from the nested `⋯` menu.
-  const groupMode = useSessionFilterStore((s) => s.groupByProject[projectId] ?? 'status');
+  const groupMode = useSessionFilterStore(
+    (s) => s.groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE,
+  );
   const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
   const statusFilters = useSessionFilterStore(
     (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,

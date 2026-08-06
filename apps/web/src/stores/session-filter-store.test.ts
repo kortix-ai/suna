@@ -26,10 +26,7 @@ describe('toggleStatusFilter', () => {
 
     toggleStatusFilter('p1', 'running');
     toggleStatusFilter('p1', 'done');
-    expect(useSessionFilterStore.getState().statusFiltersByProject.p1).toEqual([
-      'running',
-      'done',
-    ]);
+    expect(useSessionFilterStore.getState().statusFiltersByProject.p1).toEqual(['running', 'done']);
   });
 });
 
@@ -105,6 +102,15 @@ describe('collapseAllSections', () => {
 });
 
 describe('setGroupMode / setOrderMode', () => {
+  test('treats activity as the default grouping without persisting a redundant value', () => {
+    const state = useSessionFilterStore.getState();
+    const groupMapRef = state.groupByProject;
+
+    state.setGroupMode('p1', 'activity');
+
+    expect(useSessionFilterStore.getState().groupByProject).toBe(groupMapRef);
+  });
+
   test('no-op guard: setting the same value does not trigger a new object identity', () => {
     const state = useSessionFilterStore.getState();
     state.setGroupMode('p1', 'source');
@@ -120,9 +126,9 @@ describe('setGroupMode / setOrderMode', () => {
 });
 
 describe('defaults for an unknown project', () => {
-  test('reads status/activity/empty arrays', () => {
+  test('reads activity/activity/empty arrays', () => {
     const state = useSessionFilterStore.getState();
-    expect(state.groupByProject.unknown ?? 'status').toBe('status');
+    expect(state.groupByProject.unknown ?? 'activity').toBe('activity');
     expect(state.orderByProject.unknown ?? 'activity').toBe('activity');
     expect(state.statusFiltersByProject.unknown ?? []).toEqual([]);
     expect(state.sourceFiltersByProject.unknown ?? []).toEqual([]);
@@ -142,7 +148,7 @@ describe('project isolation', () => {
     const after = useSessionFilterStore.getState();
     expect(after.statusFiltersByProject.p2 ?? []).toEqual([]);
     expect(after.sourceFiltersByProject.p2 ?? []).toEqual([]);
-    expect(after.groupByProject.p2 ?? 'status').toBe('status');
+    expect(after.groupByProject.p2 ?? 'activity').toBe('activity');
     expect(after.collapsedSectionsByProject.p2 ?? []).toEqual([]);
 
     // p1 unaffected by reading p2

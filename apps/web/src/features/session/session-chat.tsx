@@ -3686,7 +3686,7 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Optimistic turn — the user's message plus the waiting row,

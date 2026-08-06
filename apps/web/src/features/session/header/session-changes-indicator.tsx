@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
@@ -61,17 +62,17 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" sideOffset={8} className="w-[320px] overflow-hidden p-0">
+      <PopoverContent align="end" className="w-[320px] overflow-hidden p-0">
         <div className="border-border border-b px-4 pt-4 pb-3">
           <div className="flex items-center gap-2.5">
             <span
               className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-md',
+                'flex size-9 shrink-0 items-center justify-center rounded-sm',
                 STATUS_BG.warning,
                 STATUS_TEXT.warning,
               )}
             >
-              <FileDiff className="size-4" />
+              <FileDiff className="size-5" />
             </span>
             <div className="min-w-0">
               <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
@@ -106,7 +107,11 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
           </p>
         </div>
 
-        <div className="max-h-40 overflow-auto px-1.5 py-1.5">
+        <FadedScrollArea
+          fadeColor="from-popover"
+          rootClassName="h-auto max-h-40"
+          className="max-h-40 overscroll-contain px-1.5 py-1.5"
+        >
           {changedFiles.map((file) => {
             const badge = CHANGE_STATUS_BADGE[file.status] ?? CHANGE_STATUS_BADGE.modified;
             const name = file.path.split('/').pop() || file.path;
@@ -128,16 +133,16 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
               </div>
             );
           })}
-        </div>
+        </FadedScrollArea>
 
-        <div className="border-border flex items-center gap-2 border-t px-3 py-2.5">
+        <div className="border-border grid w-full grid-cols-2 gap-1 border-t px-3 py-2.5">
           <Button size="sm" onClick={openChangeRequest} disabled={asking}>
             {asking ? <Loading className="size-3.5" /> : <FileDiff className="size-3.5" />}
             {tI18nHardcoded.raw(
               'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624',
             )}
           </Button>
-          <Button variant="ghost" size="sm" onClick={viewChanges}>
+          <Button variant="secondary" size="sm" onClick={viewChanges}>
             {tI18nHardcoded.raw(
               'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b',
             )}

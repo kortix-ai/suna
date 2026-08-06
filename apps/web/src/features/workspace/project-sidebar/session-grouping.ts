@@ -20,6 +20,8 @@ import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session
 export type SessionGroupMode = 'status' | 'activity' | 'source' | 'none';
 export type SessionOrderMode = 'activity' | 'created' | 'name';
 
+export const DEFAULT_SESSION_GROUP_MODE: SessionGroupMode = 'activity';
+
 export const SESSION_GROUP_MODES: Array<{ value: SessionGroupMode; label: string }> = [
   { value: 'status', label: 'Status' },
   { value: 'activity', label: 'Activity' },
