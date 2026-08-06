@@ -113,3 +113,13 @@ export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
 export * from './run-pty-command';
 export * from './runtime-actions';
+
+// The client-cache-unification `qk` key factory (rooted at `'kx'`, disjoint
+// from `kortixKeys`'s `'kortix'` root above) + its four freshness tiers, the
+// single `useProjectName` accessor, and the invalidation/optimistic-write
+// helpers that keep the projects-list and project-detail caches in sync. See
+// `query-keys.ts` for why the root segment is `'kx'` and not `'kortix'`.
+export * from './query-keys';
+export * from './query-contracts';
+export * from './use-project-name';
+export * from './invalidate-project';

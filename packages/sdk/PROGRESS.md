@@ -12,6 +12,86 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `client-cache-unification` — Tasks 3–6 completion
+
+Consolidated entry for Tasks 3 through 6 of the `client-cache-unification` plan
+(`docs/superpowers/plans/2026-08-06-client-cache-unification.md`). Tasks 4 and
+5's briefs restricted their commits to code files only, so neither left a
+`PROGRESS.md` entry. This entry closes that gap and records everything the
+plan shipped through Task 6.
+
+Task by task:
+
+- **Task 3** — `packages/sdk/src/react/query-keys.ts`: the `qk`
+  project/projects query-key factory plus `ProjectScopeKey` and
+  `ProjectsListKey`. `qk.project.scope(id)` is an invalidation-only prefix;
+  every project-scoped key nests under it. `qk` roots at `'kx'`, not
+  `'kortix'` — re-rooted in `d6e3d481b7` after the first commit
+  (`ecdb5e9c02`) used `'kortix'`. `kortixKeys` (`use-kortix-master.ts:276-279`)
+  already owns `['kortix', 'projects']` / `['kortix', 'projects', id]`; had
+  `qk` also rooted at `'kortix'`, `kortixKeys.projects()` — already used as an
+  `invalidateQueries` prefix at `use-kortix-master.ts:371,384` — would
+  prefix-match every key `qk` produces too, since TanStack matches query keys
+  by prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
+  can ever reach into the other's cache entries on invalidation.
+- **Task 4** — `packages/sdk/src/react/query-contracts.ts`: one
+  `FreshnessTier` per entity (`'live' | 'config' | 'inventory' | 'volatile'`),
+  `contract(tier)` returning `{ staleTime, gcTime: 30 * 60_000,
+  refetchOnMount: false }`, and the `FRESHNESS` map pinning 14 entities to
+  exactly one tier each (`as const satisfies Record<string, FreshnessTier>`,
+  so a new entity added without a tier is a compile error). Commit
+  `8f4d8a1021`.
+- **Task 5** — `packages/sdk/src/react/use-project-name.ts` +
+  `invalidate-project.ts`: `useProjectName(projectId)`, the one accessor for a
+  project's display name (`data?.project?.name`, no `??` fallback to another
+  cache — this is what closes the two-titles bug, where the switcher read the
+  projects list and the project home read the detail, and the two caches
+  could disagree); `invalidateProject` (whole-scope invalidation via
+  `qk.project.scope`); `invalidateProjectIdentity` (invalidates the list AND
+  detail entries together, since a project's name lives in both);
+  `writeProjectNameOptimistically` (paints a rename into both caches before
+  the round-trip settles). Commit `d1e29a200f`.
+- **Task 6** (this entry's trigger) — `packages/sdk/src/react/index.ts`:
+  `export * from './query-keys'`, `'./query-contracts'`,
+  `'./use-project-name'`, `'./invalidate-project'`. Makes `qk`, `contract`,
+  `FRESHNESS`, `FreshnessTier`, `ProjectScopeKey`, `ProjectsListKey`,
+  `useProjectName`, `invalidateProject`, `invalidateProjectIdentity`, and
+  `writeProjectNameOptimistically` importable from `@kortix/sdk/react` for the
+  first time. Checked every name against the full `./react` barrel, including
+  `use-kortix-master.ts`'s `kortixKeys` — no collision.
+
+Tripwires (`AGENTS.md:311`), run before any edit and again after:
+
+- `bun test --isolate src/index.isomorphic.test.ts src/package-exports.test.ts`:
+  `72 pass`, `0 fail`. `./react` is an existing subpath — adding files
+  underneath it needed no `package.json` `exports` / `publishConfig.exports` /
+  `SUBPATH_TIERS` edit.
+
+GREEN (Task 6 gates):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1609 pass`, `0 fail`, `6455 expect()`
+  calls across `125` files (same counts as Task 5's completion — Task 6 adds
+  no new test file, only barrel wiring).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and constructed `createKortix` from Node ESM.
+
+Wiring the four modules into the barrel made their exports reachable from
+`./react` for the first time, so `public-surface.snapshot.json` and
+`public-type-surface.snapshot.json` both drifted — 7 new runtime names, 10 new
+type-level names (the extra 3 are type-only: `FreshnessTier`,
+`ProjectScopeKey`, `ProjectsListKey`). Every line in both diffs is `+ added —
+additive, fine`; nothing removed or renamed. Re-recorded with
+`UPDATE_SURFACE_SNAPSHOT=1` and `UPDATE_TYPE_SURFACE_SNAPSHOT=1` and reviewed
+by hand before committing. The `version` field was not touched throughout
+Tasks 3–6.
+
+**Status:** COMPLETE (Tasks 3–6 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `client-cache-unification` — Task 3 claim
 
 Claiming Task 3 of the `client-cache-unification` plan
