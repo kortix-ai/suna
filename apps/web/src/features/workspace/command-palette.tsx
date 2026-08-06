@@ -52,7 +52,7 @@ import {
 } from '@kortix/sdk';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -424,10 +424,10 @@ export function CommandPalette() {
   });
 
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId!),
     enabled: open && !!projectId,
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const isExperimentalEnabled = useCallback(
     (key: ExperimentalFeatureKey) => {

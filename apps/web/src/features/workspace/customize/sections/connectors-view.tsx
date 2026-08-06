@@ -142,6 +142,7 @@ import {
   syncConnectors,
   updateConnectorAuthorizationCredential,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -282,9 +283,9 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
   const projectQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.project?.experimental?.agentmail_email === true;

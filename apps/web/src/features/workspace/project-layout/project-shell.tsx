@@ -29,7 +29,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { useGatewayCatalogSync } from '@kortix/sdk/react';
+import { contract, qk, useGatewayCatalogSync } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 
 const CommandPalette = lazy(() =>
@@ -68,9 +68,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const { user, isLoading: authLoading } = useAuth();
 
   const { data: projectDetail, error: projectDetailError } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
+    ...contract('config'),
   });
 
   useGatewayCatalogSync(projectId);

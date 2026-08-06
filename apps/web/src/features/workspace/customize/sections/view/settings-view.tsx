@@ -53,7 +53,7 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -383,10 +383,10 @@ function ExperimentalFeatureRow({
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', projectId], updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
-        ['project-detail', projectId],
+        qk.project.detail(projectId),
         (current) => (current ? { ...current, project: updated } : current),
       );
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      void invalidateProject(queryClient, projectId);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       if (feature.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
@@ -458,7 +458,7 @@ function SandboxProviderRow({
         void pollSandboxProviderTransition(project.project_id, {
           onSettled: (state) => {
             queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
-            queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
+            void invalidateProject(queryClient, project.project_id);
             queryClient.invalidateQueries({ queryKey: ['projects'] });
             const status = state?.latest?.status;
             if (status === 'activated') {

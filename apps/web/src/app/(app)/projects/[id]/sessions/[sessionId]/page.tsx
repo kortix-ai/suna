@@ -68,7 +68,9 @@ import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  contract,
   migrateStash,
+  qk,
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
@@ -134,12 +136,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
       return getProjectDetail(projectId);
     },
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { data: accountState } = useAccountState({

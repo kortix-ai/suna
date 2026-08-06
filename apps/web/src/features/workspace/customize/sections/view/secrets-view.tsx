@@ -81,7 +81,7 @@ import {
   setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -152,9 +152,9 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 

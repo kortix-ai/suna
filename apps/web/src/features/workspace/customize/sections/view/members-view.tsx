@@ -107,6 +107,7 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
+import { invalidateProject } from '@kortix/sdk/react';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
@@ -1897,7 +1898,7 @@ function ResourceAccessCard({
     // The agent/skill lists the rest of the UI renders are now filtered, so the
     // project detail must refetch to reflect what this user can see.
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    void invalidateProject(queryClient, projectId);
   }
 
   function splitOnce(v: string): [string, string] {

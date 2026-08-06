@@ -34,7 +34,7 @@ import {
   setAgentScope,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
+import { invalidateProject, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import {
   RobotIcon as Bot,
   CheckIcon as Check,
@@ -151,7 +151,7 @@ function DefaultAgentSelector({
     onSuccess: async (result) => {
       successToast(`${result.default_agent} is now the project default`);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
+        invalidateProject(queryClient, projectId),
         queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
       ]);
     },
@@ -429,7 +429,7 @@ function AgentScopeCard({
     onSuccess: () => {
       successToast(`Scope updated for ${agentName}`);
       // Refetch the project config so the committed scope (this card's source) updates.
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      void invalidateProject(queryClient, projectId);
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
   });

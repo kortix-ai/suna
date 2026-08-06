@@ -51,6 +51,7 @@ import {
   listProjectsForAccount,
   type KortixProject,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { formatRelative } from '@kortix/shared';
 import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
@@ -128,9 +129,10 @@ export function ProjectSwitcher({
   // already fetches on mount, so subscribing costs no extra request and names
   // the project as early as anything on the page can.
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', activeProjectId],
+    queryKey: qk.project.detail(activeProjectId ?? ''),
     queryFn: () => getProjectDetail(activeProjectId as string),
     enabled: !!activeProjectId,
+    ...contract('config'),
   });
   const { label: switcherLabel, pending: labelPending } = resolveSwitcherLabel({
     activeProjectId,

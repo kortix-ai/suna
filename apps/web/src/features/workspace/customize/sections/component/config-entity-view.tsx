@@ -27,6 +27,7 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon as ChevronRight,
   CopyIcon as Copy,
@@ -163,9 +164,9 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   } = props;
 
   const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const config = detailQuery.data?.config ?? null;

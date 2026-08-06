@@ -49,11 +49,9 @@ import {
   listProjectAccessRequests,
   listProjectSandboxes,
 } from '@kortix/sdk';
-import type { Command } from '@kortix/sdk/react';
+import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
-
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -98,7 +96,8 @@ export function ProjectHome({
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],
     queryFn: () => listProjectSandboxes(projectId),
-    ...Q,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
@@ -115,7 +114,8 @@ export function ProjectHome({
     queryKey: ['project-access-requests', projectId],
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
     retry: false,
-    ...Q,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
@@ -276,9 +276,9 @@ export function ProjectHomeWelcomeBody({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    ...Q,
+    ...contract('config'),
   });
   const name = detail.data?.project?.name ?? '';
   const displayName = name.trim() || 'this project';

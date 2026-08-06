@@ -41,7 +41,7 @@ export function projectPermissionProbes(
 
 /**
  * Resolve the owning account id. Callers that already hold it (e.g. a screen
- * that loaded the project under a DIFFERENT query key like ['project-detail'])
+ * that loaded the project under a DIFFERENT query key like qk.project.detail(id))
  * should pass `accountIdHint` — that skips the extra getProject round-trip AND,
  * more importantly, lets the IAM probe run on the FIRST render instead of being
  * disabled while a second fetch resolves. Without the hint we fall back to the

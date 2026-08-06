@@ -35,7 +35,7 @@ import { filterCommands } from './command-filter';
 
 /**
  * /projects/[id]/commands — the standalone Commands catalog. Reads
- * `config.commands` off the same `['project-detail', projectId]` query
+ * `config.commands` off the same `qk.project.detail(id)` query
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
  * about what a project's commands are.
  *

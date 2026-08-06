@@ -6,6 +6,7 @@ import {
   type SandboxProviderTransitionState,
   type UpdateProjectSandboxProviderResult,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 /**
  * A provider-migration transition never changes again once it reaches one of
@@ -49,10 +50,10 @@ export function applySandboxProviderResult(
   const { kind: _kind, ...project } = result;
   const cached = project as KortixProject;
   queryClient.setQueryData(['project', projectId], cached);
-  queryClient.setQueryData<ProjectDetail | undefined>(['project-detail', projectId], (c) =>
+  queryClient.setQueryData<ProjectDetail | undefined>(qk.project.detail(projectId), (c) =>
     c ? { ...c, project: cached } : c,
   );
-  queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+  queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
   queryClient.invalidateQueries({ queryKey: ['projects'] });
   return 'project';
 }

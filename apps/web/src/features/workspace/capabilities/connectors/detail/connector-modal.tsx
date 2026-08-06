@@ -220,7 +220,7 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
-  // `accountId` rides the ['project-detail'] cache the connectors page
+  // `accountId` rides the qk.project.detail(id) cache the connectors page
   // already filled, so the profiles probe resolves on the modal's first
   // render instead of after its own getProject round-trip.
   const accountId = useProjectAccountId(projectId);

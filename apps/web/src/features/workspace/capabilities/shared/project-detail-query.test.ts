@@ -1,32 +1,34 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 
-import { PROJECT_DETAIL_STALE_MS, projectDetailQuery } from './project-detail-query';
+import { contract, qk } from '@kortix/sdk/react';
+
+import { projectDetailQuery } from './project-detail-query';
+
+const PROJECT_DETAIL_STALE_MS = contract('config').staleTime;
 
 describe('projectDetailQuery', () => {
-  test('refreshes stale cached data when a capability page remounts', () => {
+  test('reads through the shared qk.project.detail key on the config contract', () => {
     const options = projectDetailQuery('project-1');
 
+    expect(options.queryKey).toEqual(qk.project.detail('project-1'));
     expect(options.staleTime).toBe(PROJECT_DETAIL_STALE_MS);
-    expect(options.refetchOnMount).toBe(true);
+    // refetchOnMount is false everywhere on purpose (contract('config')):
+    // explicit invalidation is the freshness channel, not a component mount.
+    expect(options.refetchOnMount).toBe(false);
   });
 
-  test('keeps stale data visible while concurrent observers share one refresh', async () => {
+  test('two observers mounting on stale cached data share it without a background refetch', () => {
     const cached = { value: 'cached' };
-    const fresh = { value: 'fresh' };
     let fetchCount = 0;
-    let resolveFetch: (value: typeof fresh) => void = () => {};
-    const fetchResult = new Promise<typeof fresh>((resolve) => {
-      resolveFetch = resolve;
-    });
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, refetchOnMount: false } },
+      defaultOptions: { queries: { retry: false } },
     });
     const options = {
       ...projectDetailQuery('project-1'),
       queryFn: () => {
         fetchCount += 1;
-        return fetchResult;
+        return Promise.resolve({ value: 'fresh' });
       },
     };
     queryClient.setQueryData(options.queryKey, cached, {
@@ -39,14 +41,7 @@ describe('projectDetailQuery', () => {
 
     expect(first.getCurrentResult().data).toEqual(cached);
     expect(second.getCurrentResult().data).toEqual(cached);
-    expect(fetchCount).toBe(1);
-
-    resolveFetch(fresh);
-    await fetchResult;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(first.getCurrentResult().data).toEqual(fresh);
-    expect(second.getCurrentResult().data).toEqual(fresh);
+    expect(fetchCount).toBe(0);
 
     unsubscribeFirst();
     unsubscribeSecond();

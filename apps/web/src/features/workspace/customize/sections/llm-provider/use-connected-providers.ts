@@ -5,7 +5,7 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -24,9 +24,9 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // won't otherwise notice). See use-live-catalog.ts.
   const catalogRevision = useLlmProviderCatalogRevision();
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
     enabled,
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);

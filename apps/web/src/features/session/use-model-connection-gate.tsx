@@ -14,7 +14,7 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { type ModelKey } from '@kortix/sdk/react';
+import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
 export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
@@ -40,10 +40,10 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   const projectId = typeof params?.id === 'string' ? params.id : null;
 
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId as string),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const canWriteProviders =
