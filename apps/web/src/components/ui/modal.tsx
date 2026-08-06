@@ -121,7 +121,7 @@ ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const ModalVariants = cva(
   cn(
-    'fixed gap-0 overflow-y-auto p-0 smooth-shadow-lg',
+    'fixed gap-0 overflow-y-auto p-0 max-lg:smooth-shadow-lg lg:shadow-lg',
     'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
   ),
@@ -133,10 +133,12 @@ const ModalVariants = cva(
         transparent: 'bg-transparent border-none p-0',
       },
       side: {
-        top: 'inset-x-0 top-0 border-b rounded-b-xl max-h-[90%] lg:h-fit',
-        bottom: 'inset-x-0 bottom-0 lg:bottom-auto border-t lg:h-auto max-h-[90%] rounded-t-xl',
-        left: 'inset-y-0 left-0 h-full lg:h-fit w-3/4 border-r rounded-r-xl sm:max-w-sm',
-        right: 'inset-y-0 right-0 h-full lg:h-fit w-3/4 border-l rounded-l-xl sm:max-w-sm',
+        top: 'inset-x-0 top-0 max-h-[90%] max-lg:rounded-b-xl max-lg:border-b lg:h-fit',
+        bottom:
+          'inset-x-0 bottom-0 max-h-[90%] max-lg:rounded-t-xl max-lg:border-t lg:bottom-auto lg:h-auto',
+        left: 'inset-y-0 left-0 h-full w-3/4 max-lg:rounded-r-xl max-lg:border-r sm:max-w-sm lg:h-fit',
+        right:
+          'inset-y-0 right-0 h-full w-3/4 max-lg:rounded-l-xl max-lg:border-l sm:max-w-sm lg:h-fit',
         fullscreen: 'inset-0 bg-black/60 dark:bg-black/85',
       },
       animation: {

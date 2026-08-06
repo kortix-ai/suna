@@ -71,7 +71,11 @@ test.describe("Smooth shadow system", () => {
       await page.getByTestId("shadow-trigger-modal").click();
       const modal = page.getByTestId("shadow-demo-modal");
       await expect(modal).toBeVisible();
-      await expect(modal).not.toHaveCSS("box-shadow", "none");
+      await expect(modal).toHaveCSS("border-top-width", "0px");
+      const modalShadow = await modal.evaluate(
+        (element) => getComputedStyle(element).boxShadow,
+      );
+      expect(modalShadow).toContain("0px 0px 0px 1px");
       await page.keyboard.press("Escape");
 
       await page.getByTestId("shadow-trigger-sheet").click();

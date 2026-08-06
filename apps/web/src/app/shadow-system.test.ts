@@ -54,7 +54,8 @@ describe('Kortix smooth shadow system', () => {
     for (const rule of [sm, md, lg]) {
       expect(rule).toContain('var(--smooth-ring-color)');
       expect(rule).toContain('0 0 0 var(--smooth-ring-width, 1px)');
-      expect(rule).toContain('--smooth-ring-color:');
+      expect(rule).toContain('var(--color-neutral-300)');
+      expect(rule).toContain('calc(30 * 1%)');
     }
   });
 

@@ -52,7 +52,7 @@ the migration baseline for Tasks 4–7.
 | `components/ui/dialog.tsx`                                     | elevated owner            | Remove the decorative border; keep `shadow-lg`.                                                     |
 | `components/ui/hover-card.tsx`                                 | elevated owner            | Remove the decorative border; use the documented `shadow-md` hover-card step.                       |
 | `components/ui/menu-recipe.ts`                                 | elevated owner            | Remove the decorative border; keep `shadow-md`.                                                     |
-| `components/ui/modal.tsx`                                      | structural owner          | Use ringless `smooth-shadow-lg`; preserve directional seams.                                        |
+| `components/ui/modal.tsx`                                      | responsive owner          | Keep ringless depth and seams below `lg`; use the standard full ring when centered.                  |
 | `components/ui/preview-image.tsx`                              | full-screen               | Remove depth from the full-screen root.                                                             |
 | `components/ui/sheet.tsx`                                      | structural owner          | Use ringless `smooth-shadow-lg`; preserve directional seams.                                        |
 | `components/ui/sidebar.tsx`                                    | mixed                     | Remove the floating border, use explicit smooth ring xl for peek, and flatten inset content.        |
@@ -97,6 +97,8 @@ The following non-standard uses were reviewed before migration.
 - `components/ui/slider-native.tsx`
 - `components/ui/slider.tsx`
 - `components/ui/trigger-variants.ts`
+- `components/home/interactive-demo-section.tsx`
+- `components/home/interactive-demo/primitives.tsx`
 - `features/file-renderers/shared/document-viewer-sidebar.tsx`
 - `features/file-renderers/shared/scroll-area-compat.tsx`
 - `features/session/action-panel/shared/action-navigator.tsx`
