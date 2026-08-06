@@ -540,7 +540,11 @@ function InviteDialog({
         <div className="relative flex flex-col items-center gap-3 px-6 pt-8 pb-6">
           <div className="relative">
             {emailValid ? (
-              <UserAvatar email={trimmed} size="xl" className="ring-background shadow-sm ring-4" />
+              <UserAvatar
+                email={trimmed}
+                size="xl"
+                className="smooth-shadow-sm outline-4 outline-background"
+              />
             ) : (
               <div className="bg-muted/40 border-border/60 text-muted-foreground/40 flex size-14 items-center justify-center rounded-full border border-dashed">
                 <IconInvite className="h-5 w-5" />
@@ -661,7 +665,7 @@ function RoleCard({
         'group relative flex h-full flex-col items-start gap-1 rounded-2xl border p-3 text-left transition-all',
         'disabled:cursor-not-allowed disabled:opacity-50',
         selected
-          ? 'bg-foreground/10 shadow-sm'
+          ? 'bg-foreground/10'
           : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
       )}
     >

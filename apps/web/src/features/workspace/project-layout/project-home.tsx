@@ -38,6 +38,10 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -73,23 +77,14 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const {
-    state: sidebarState,
-    toggleSidebar,
-    peek,
-    peekEnter,
-    peekLeave,
-    isMobile: isMobileViewport,
-  } = useSidebar();
-  const sidebarToggleLabel =
-    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
-  // Same rule as the session header: on desktop this toggle only brings a
-  // hidden panel back, because the collapse control lives in the panel's own
-  // header (ProjectSidebar) — so it self-hides while the panel is docked.
-  // Mobile keeps it unconditionally: `sidebarState` there tracks the desktop
-  // cookie, not the Sheet, so gating on it would strand the only way to open
-  // the sheet on this page.
-  const showSidebarToggle = isMobileViewport || sidebarState !== 'expanded';
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
+  // Shared gate — see sidebar-opener.ts. This used to be a local
+  // `isMobileViewport || state !== 'expanded'`, which is true on the desktop
+  // shell too: the button below is `absolute top-2 left-2`, so on macOS it
+  // rendered directly on top of the traffic lights, alongside the shell's own
+  // opener at x=72. The shell owns that corner; this one stands down there.
+  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);

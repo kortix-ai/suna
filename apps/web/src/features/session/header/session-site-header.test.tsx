@@ -18,27 +18,20 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('peekLeave');
   });
 
-  // The collapse control lives in the panel's own header now
-  // (ProjectSidebar), so this one exists purely to bring a hidden panel back.
-  // Rendering it while the panel is docked would put two toggles for one
-  // panel on screen at once.
-  test('the toggle self-hides while the sidebar is docked open', () => {
+  // The collapse control lives in the panel's own header now (ProjectSidebar)
+  // and the desktop shell draws its own opener in the title-bar band, so this
+  // one exists purely to bring a hidden panel back on the web. The rule —
+  // docked-open, mobile, and desktop-shell clauses — is pinned as a truth
+  // table in project-layout/sidebar-opener.test.ts; this header only has to
+  // defer to it rather than re-implement it, which is how four sibling views
+  // ended up drawing a second opener over the macOS traffic lights.
+  test('visibility comes from the shared gate, not a local rule', () => {
     const gate = source.slice(
       source.indexOf('const showSidebarToggle ='),
       source.indexOf(';', source.indexOf('const showSidebarToggle =')),
     );
-    expect(gate).toContain("sidebarState !== 'expanded'");
+    expect(gate).toContain('useShowPageSidebarOpener()');
     expect(source).toContain('{showSidebarToggle && (');
-  });
-
-  // `sidebarState` tracks the desktop dock cookie, not the mobile Sheet — so
-  // an ungated `!== 'expanded'` would strand mobile with no way to open it.
-  test('mobile is exempt from that gate', () => {
-    const gate = source.slice(
-      source.indexOf('const showSidebarToggle ='),
-      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
-    );
-    expect(gate).toContain('isMobileViewport ||');
   });
 });
 

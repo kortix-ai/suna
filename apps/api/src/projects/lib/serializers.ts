@@ -336,8 +336,7 @@ export function buildSecretView(input: {
       : deliveryRow?.scope === 'connector'
         ? 'connector'
         : (deliveryRow?.consumer ?? legacyConsumer);
-  // Old rows used `executor` for the service now named `connector`.
-  const consumer = storedConsumer === 'executor' ? 'connector' : storedConsumer;
+  const consumer = storedConsumer;
   return {
     identifier,
     name,

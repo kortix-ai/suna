@@ -290,7 +290,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       {/* `items-stretch` + matching `py-1` keep left/right tabs one height.
           `items-center` + asymmetric padding floated them off the shared
           baseline (toolbar buttons are taller than the title text). */}
-      <div className="shadow-custom flex w-full items-stretch justify-between overflow-hidden">
+      <div className="flex w-full items-stretch justify-between overflow-hidden">
         <span
           aria-current="page"
           className="text-foreground relative flex min-w-0 shrink items-stretch"

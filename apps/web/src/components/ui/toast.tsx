@@ -33,6 +33,8 @@ const getErrorMessage = (error: unknown): string => {
 
 const DEFAULT_DURATION = 3000;
 const DEFAULT_POSITION = 'bottom-right';
+const TOAST_SURFACE =
+  'bg-background text-foreground w-full rounded-[0.64rem] px-4 py-3 shadow-lg sm:w-[var(--width)]';
 
 const toastRowAlign = (options?: Pick<ToastOptions, 'description' | 'button'>) =>
   options?.description || options?.button ? 'items-start mt-0.5' : 'items-center';
@@ -81,7 +83,7 @@ export const successToast = (message: string, options?: ToastOptions) => {
 
   toast.custom(
     (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <GoCheckCircleFill weight="fill" className="text-kortix-green size-5 shrink-0" />
@@ -114,7 +116,7 @@ export const progressToast = (message: string, options?: ToastOptions): string |
 
   return toast.custom(
     (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <Loading className="text-primary size-4 shrink-0 animate-spin" />
@@ -150,7 +152,7 @@ export const loadingToast = <T,>(
 
   const toastId = toast.custom(
     (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <Loading className="text-primary size-4 shrink-0 animate-spin" />
@@ -204,11 +206,7 @@ export const errorToast = (message: string, options?: ToastOptions) => {
 
   toast.custom(
     (t) => (
-      <div
-        className={cn(
-          'border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]',
-        )}
-      >
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <HiOutlineXCircle className="text-kortix-red size-6 shrink-0" />
@@ -240,7 +238,7 @@ export const infoToast = (message: string, options?: ToastOptions) => {
 
   toast.custom(
     (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <HiOutlineExclamationCircle className="text-kortix-blue size-6 shrink-0" />
@@ -272,7 +270,7 @@ export const warningToast = (message: string, options?: ToastOptions) => {
 
   toast.custom(
     (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
+      <div data-slot="toast-surface" className={TOAST_SURFACE}>
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
             <HiOutlineExclamationCircle className="text-kortix-yellow size-6 shrink-0" />

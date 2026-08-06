@@ -1466,7 +1466,7 @@ export function InteractiveDemoSection({
             {/* Scalloped feature tabs */}
             <div
               ref={tabStripRef}
-              className="shadow-custom flex w-full [scrollbar-width:none] items-center gap-0.5 overflow-hidden overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="flex w-full [scrollbar-width:none] items-center gap-0.5 overflow-hidden overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               {ORDER.map((id, index) => {
                 const { label, icon: Icon } = PAGES[id];

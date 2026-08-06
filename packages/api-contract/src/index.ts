@@ -424,21 +424,6 @@ export const ReconcileConnectionInputSchema = z
   .strict();
 export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
 
-/** @deprecated Use `ConnectionOwnerTypeSchema`. */
-export const ConnectorAuthorizationOwnerTypeSchema = ConnectionOwnerTypeSchema;
-/** @deprecated Use `ConnectionStatusSchema`. */
-export const ConnectorAuthorizationStatusSchema = ConnectionStatusSchema;
-/** @deprecated Use `ConnectionMetadataSchema`. */
-export const ConnectorAuthorizationMetadataSchema = ConnectionMetadataSchema;
-/** @deprecated Use `ConnectionSchema`. */
-export const ConnectorAuthorizationSchema = ConnectionSchema;
-/** @deprecated Use `Connection`. */
-export type ConnectorAuthorization = Connection;
-/** @deprecated Use `ReconcileConnectionInputSchema`. */
-export const ReconcileConnectorAuthorizationInputSchema = ReconcileConnectionInputSchema;
-/** @deprecated Use `ReconcileConnectionInput`. */
-export type ReconcileConnectorAuthorizationInput = ReconcileConnectionInput;
-
 export const OAuth2ClientCredentialsSchema = z
   .object({
     type: z.literal('oauth2_client_credentials'),
@@ -638,16 +623,6 @@ export const UpdateConnectionCredentialInputSchema = z.union([
 export type UpdateConnectionCredentialInput = z.infer<
   typeof UpdateConnectionCredentialInputSchema
 >;
-/** @deprecated Use `UpdateConnectionCredentialInputSchema`. */
-export const UpdateConnectorAuthorizationCredentialInputSchema =
-  UpdateConnectionCredentialInputSchema;
-/** @deprecated Use `UpdateConnectionCredentialInput`. */
-export type UpdateConnectorAuthorizationCredentialInput = UpdateConnectionCredentialInput;
-/** @deprecated Use `UpdateConnectionCredentialInputSchema`. */
-export const UpdateConnectionProfileCredentialInputSchema = UpdateConnectionCredentialInputSchema;
-/** @deprecated Use `UpdateConnectionCredentialInput`. */
-export type UpdateConnectionProfileCredentialInput = UpdateConnectionCredentialInput;
-
 export const PendingSessionPromptSchema = z
   .object({
     text: z.string().max(1_000_000),
@@ -960,7 +935,6 @@ export const SecretConsumerSchema = z.enum([
   'sandbox',
   'llm_gateway',
   'connector',
-  'executor',
   'git_proxy',
   'http_broker',
   'network',

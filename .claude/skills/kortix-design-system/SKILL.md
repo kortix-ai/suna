@@ -352,23 +352,21 @@ Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind pa
 
 ### Elevation (shadows)
 
-The ladder lives in `@theme` in `globals.css`. Each step layers a tight contact shadow, a directional depth layer with negative spread, and a 0-offset ambient halo — so every shadow reads **softly on all four sides**, hugging the surface, never a hard bottom-only smear. Colors are `light-dark()`: dark mode switches automatically — **never** write `dark:shadow-*`.
+`apps/web/src/app/globals.css` maps the standard Kortix API to `shadow-plugin@2.1.0`.
 
-| Step | Use |
-| --- | --- |
-| *(none — border only)* | Panels, rows, tables: anything sitting in the page flow is flat |
-| `shadow-2xs` | Hairline lift: inputs, thumbnails |
-| `shadow-xs` | Chips, slider thumbs, glass panels |
-| `shadow-sm` | Sticky bars, segmented controls, hover lift |
-| `shadow-md` | Dropdowns, selects, popovers, hover cards |
-| `shadow-lg` | Modals, sheets, toasts |
-| `shadow-xl` | Command palette, floating windows |
-| `shadow-2xl` | Marketing surfaces, large previews |
+| Step                                | Use                                                                    |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| _(none — border or substrate only)_ | Panels, rows, tables, and other in-flow surfaces                       |
+| `shadow-sm`                         | Compact floating controls and raised active states                     |
+| `shadow-md`                         | Dropdowns, selects, popovers, hover cards, and compact floating panels |
+| `shadow-lg`                         | Modals, sheets, toasts, and substantial overlays                       |
 
-- **Elevation = floats above the page.** In-flow surfaces get a border, not a shadow.
-- Overlays pair shadow **with** a hairline border (`bg-popover border shadow-md`) — the shadow adds depth, the border still draws the edge.
-- Tinting is allowed where a glow carries meaning: `shadow-md shadow-kortix-base/20`. Neutral elevation never needs a tint.
-- Don't hand-roll `shadow-[…]` when a ladder step fits.
+- Standard elevation already includes `smooth-ring-neutral-300/30`. Do not add a decorative full border or `ring-1`.
+- Preserve directional structural borders. Pair them with ringless `smooth-shadow-*` depth.
+- Preserve focus, selection, validation, and status states with outlines or explicit smooth-ring colors.
+- Use `smooth-shadow-ring-*`, `smooth-shadow-*`, `shadow-*` colors, and `smooth-ring-*` colors only for explicit exceptions.
+- Never stack a native shadow size and an explicit plugin shadow size on one element.
+- Never hand-roll `shadow-[…]` when a standard or explicit plugin step fits.
 
 ### Typography
 

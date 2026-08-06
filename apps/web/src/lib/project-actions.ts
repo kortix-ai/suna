@@ -83,7 +83,12 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
   // itself on PROJECT_AGENT_READ/WRITE directly (project-settings-nav's
   // TAB_PREFERENCE and the page's own useProjectCan). This map only covers
-  // sections the Customize rail renders.
+  // sections the Customize rail renders — Commands is one of them again, since
+  // its standalone page was deleted (#6169).
+  commands: {
+    read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+    write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+  },
   secrets: {
     read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,

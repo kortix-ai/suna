@@ -165,6 +165,20 @@ Carve-outs where you don't need to ask — just proceed: read-only
 investigation/questions, and trivial single-file typo/comment fixes on the
 current branch.
 
+## Linear tracking: Smooth Shadow System — Web
+
+The `apps/web` smooth-shadow migration is tracked in the Jay team project
+`Smooth Shadow System — Web`:
+https://linear.app/sutharjay/project/smooth-shadow-system-web-8db242952484
+
+- Use issues `JAY-416` through `JAY-422` in dependency order.
+- Move an issue from `Backlog` to `In Progress` when its work starts.
+- Keep unfinished work `In Progress` with a comment that names the remaining gate.
+- Set issues to `Done` only after the PR is merged, Deploy Dev succeeds, the
+  deployed runtime version contains the merge SHA, and headless dev checks pass.
+- Add test output, commit SHAs, the PR URL, and deployment evidence to the active
+  issue. Comments stay at three lines or fewer.
+
 ## Default delivery: PR, merge to main, then prove it on dev
 
 Unless the user explicitly asks for a different delivery path, complete every

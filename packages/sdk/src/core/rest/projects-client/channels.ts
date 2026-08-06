@@ -158,14 +158,9 @@ export interface EmailSenderPolicy {
 }
 
 export interface EmailInstallation {
-  /** @deprecated Use `connectionId`. */
-  profileId: string | null;
-  /** Canonical Kortix connection to pass in connector_bindings.email. */
-  connectionId?: string | null;
-  /** Canonical connector slug for this email installation. */
-  connectorSlug?: string;
-  /** @deprecated Use `connectorSlug`. */
-  profileSlug: string;
+  /** Kortix connection to pass in connector_bindings.email. */
+  connectionId: string | null;
+  connectorSlug: string;
   inboxId: string;
   email: string;
   displayName: string | null;
@@ -174,44 +169,32 @@ export interface EmailInstallation {
   installedAt: string;
 }
 
-export type EmailConnectionInstallation = Omit<EmailInstallation, 'connectionId' | 'connectorSlug'> & {
-  connectionId: string | null;
-  connectorSlug: string;
-};
+export type EmailConnectionInstallation = EmailInstallation;
 
 type EmailInstallationWire = Omit<
   EmailInstallation,
-  'connectionId' | 'profileId' | 'connectorSlug' | 'profileSlug'
+  'connectionId' | 'connectorSlug'
 > & {
   connection_id?: string | null;
   connectionId?: string | null;
-  profile_id?: string | null;
-  profileId?: string | null;
   connector_slug?: string | null;
   connectorSlug?: string | null;
   connection_slug?: string | null;
   connectionSlug?: string | null;
-  profile_slug?: string | null;
-  profileSlug?: string | null;
 };
 
 function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnectionInstallation {
-  const connectionId =
-    value.connectionId ?? value.connection_id ?? value.profileId ?? value.profile_id ?? null;
+  const connectionId = value.connectionId ?? value.connection_id ?? null;
   const connectorSlug =
     value.connectorSlug ??
     value.connector_slug ??
     value.connectionSlug ??
     value.connection_slug ??
-    value.profileSlug ??
-    value.profile_slug ??
     'kortix_email';
   return {
     ...value,
     connectionId,
-    profileId: connectionId,
     connectorSlug,
-    profileSlug: connectorSlug,
   };
 }
 

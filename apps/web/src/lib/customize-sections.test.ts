@@ -21,13 +21,16 @@ describe('customize sections', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('dev');
   });
 
-  test('connectors, skills, and commands graduated out of the overlay', () => {
+  test('connectors and skills graduated out of the overlay', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('connectors');
     expect(CUSTOMIZE_SECTIONS).not.toContain('skills');
-    expect(CUSTOMIZE_SECTIONS).not.toContain('commands');
     expect(parseCustomizeSection('connectors')).toBeNull();
     expect(parseCustomizeSection('skills')).toBeNull();
-    expect(parseCustomizeSection('commands')).toBeNull();
+  });
+
+  test('commands remains in the overlay because its standalone page was removed', () => {
+    expect(CUSTOMIZE_SECTIONS).toContain('commands');
+    expect(parseCustomizeSection('commands')).toBe('commands');
   });
 
   test('parses every canonical section and rejects unknowns', () => {
@@ -52,12 +55,10 @@ describe('legacyCustomizeRedirect', () => {
     expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
   });
 
-  test('commands never bounces to its deleted standalone page', () => {
-    // Commands had a #6054 standalone page that was deleted, so the deep link
-    // must never bounce to /projects/<id>/commands (a dead route).
-    // (This body used to be wrapped in a `withCapabilityPages` helper that no
-    // longer exists — the NEXT_PUBLIC_CAPABILITY_PAGES flag was removed. The
-    // dead call never threw only because the test itself never registered.)
+  test('commands stays in the overlay — its standalone page was removed', () => {
+    // Commands had a #6054 standalone page that #6169 deleted, so the deep
+    // link must never bounce to /projects/<id>/commands (a dead route). It
+    // resolves inside the overlay instead — see the resolve test below.
     expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
   });
 
@@ -97,6 +98,12 @@ describe('resolveCustomizeOverlayHref', () => {
       opensOverlay: true,
       section: 'secrets',
     });
+    // Commands came back INTO the overlay when #6169 deleted its standalone
+    // page, so unlike skills/connectors/agents its deep link resolves here.
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+      opensOverlay: true,
+      section: 'commands',
+    });
   });
 
   test('a graduated or unknown segment does NOT open the overlay — the regression tripwire', () => {
@@ -111,13 +118,6 @@ describe('resolveCustomizeOverlayHref', () => {
     // navigation (legacyCustomizeRedirect sends it to /projects/<id>/agent),
     // not reopen the overlay on the user's last section.
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/agents')).toEqual({
-      opensOverlay: false,
-    });
-    // NOTE: `commands` is NOT in CUSTOMIZE_SECTIONS and customize-panel has no
-    // case for it, so this resolves false today. #6169's claim that Commands
-    // "stays reachable through the Customize overlay" is not implemented —
-    // tracked separately; this asserts what the code actually does.
-    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
       opensOverlay: false,
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/connectors')).toEqual({

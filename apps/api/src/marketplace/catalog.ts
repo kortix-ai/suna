@@ -74,11 +74,9 @@ export interface CatalogItem {
   defaultProjectInstallOrder?: number;
   hidden?: boolean;
   /** Set when this item also ships inside a whole `registry:project` (e.g. a
-   *  starter skill) — the UI badges it "Part of <project>" and links to it. */
+   *  starter skill, or a use-case runbook skill inside the Use-case pack) —
+   *  the UI badges it "Part of <project>" and links to it. */
   partOfProject?: { id: string; title: string };
-  /** A use-case template dependency (runbook skill): installed through the
-   *  guided use-case wizard, resolvable by id, but not a browse tile. */
-  useCase?: boolean;
 }
 
 export interface DependencyItem {
@@ -308,7 +306,6 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
       typeof (e.item.meta.partOfProject as { id?: unknown }).id === "string"
         ? (e.item.meta.partOfProject as { id: string; title: string })
         : undefined,
-    useCase: e.item.meta?.useCase === true ? true : undefined,
   };
 }
 
@@ -393,11 +390,13 @@ function buildStarterRegistry(): RegistryJson {
       primaryPath?.startsWith("runtime/")
     ) {
       // A use-case runbook skill (declared in the marketplace template's
-      // kortix.registry.json): it exists as a use-case template dependency and
-      // installs through the guided wizard. Not starter content, and not a
-      // standalone browse tile — resolvable by id only, like the use-case
-      // templates and agents themselves.
-      item.meta = { ...(item.meta ?? {}), useCase: true };
+      // kortix.registry.json): it ships inside the Use-case pack project, not
+      // the Kortix Starter. Tag it so the explore grid folds it under the
+      // pack tile while it stays resolvable for the use-case install wizard.
+      item.meta = {
+        ...(item.meta ?? {}),
+        partOfProject: { id: USE_CASE_PACK_ITEM_ID, title: USE_CASE_PACK_TITLE },
+      };
     }
     // Remaining marketplace-layer skills (deep-research, search, coding, …)
     // are ordinary standalone browse tiles: optional installs, not part of
@@ -480,6 +479,14 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
 export const STARTER_KIT_ITEM_NAME = "starter";
 export const STARTER_KIT_ITEM_ID = `kortix-projects:${STARTER_KIT_ITEM_NAME}`;
 
+// The second synthetic project: the Use-case pack. One browse tile that groups
+// every use-case runbook skill + persona agent from the marketplace template
+// layer (`packages/starter/templates/marketplace/runtime/**`) — visible and
+// clonable in the marketplace, but never advertised as Kortix Starter content.
+export const USE_CASE_PACK_ITEM_NAME = "use-case-pack";
+export const USE_CASE_PACK_ITEM_ID = `kortix-projects:${USE_CASE_PACK_ITEM_NAME}`;
+export const USE_CASE_PACK_TITLE = "Use-case pack";
+
 const STARTER_KIT_README = `# Kortix Starter
 
 The default Kortix project — a general knowledge worker that's ready to do real
@@ -514,7 +521,10 @@ function buildStarterKitProjectItem(): RegistryItem {
   // do not ship in a cloned starter project.
   const skillNames = (registry.items ?? [])
     .filter(
-      (it) => it.type === "registry:skill" && it.meta?.partOfProject != null,
+      (it) =>
+        it.type === "registry:skill" &&
+        (it.meta?.partOfProject as { id?: string } | undefined)?.id ===
+          STARTER_KIT_ITEM_ID,
     )
     .map((it) => it.name)
     .sort((a, b) => a.localeCompare(b));
@@ -542,6 +552,72 @@ function buildStarterKitProjectItem(): RegistryItem {
   };
 }
 
+const USE_CASE_PACK_README = `# Use-case pack
+
+Every Kortix use-case runbook in one place: the day-to-day operations playbooks
+(sales, finance, support, recruiting, engineering, and more) plus the persona
+agents that run them.
+
+## How to use it
+
+- **Guided (recommended):** each use case installs individually through the
+  [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
+  its skill, grants, and any scheduled trigger into your project.
+- **Bulk clone:** clone this pack as a project to get every runbook skill under
+  \`.kortix/opencode/skills/\` and every persona agent file under
+  \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
+  want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before
+  using them.
+
+Everything is plain files in your repo: read, edit, and adapt them to how your
+team actually works.
+`;
+
+/** Rewrite a marketplace-template `runtime/` path to its conventional
+ *  in-project location, mirroring the install wizard's target mapping
+ *  (`@skills/y` → `.kortix/opencode/skills/y`, `@agents/x.md` →
+ *  `.kortix/opencode/agents/x.md`). Non-runtime paths return undefined. */
+function useCasePackRepoPath(path: string): string | undefined {
+  if (path.startsWith("runtime/skills/"))
+    return `.kortix/opencode/skills/${path.slice("runtime/skills/".length)}`;
+  if (path.startsWith("runtime/agents/"))
+    return `.kortix/opencode/agents/${path.slice("runtime/agents/".length)}`;
+  return undefined;
+}
+
+function buildUseCasePackProjectItem(): RegistryItem {
+  const registry = buildStarterRegistry();
+  const skillNames = (registry.items ?? [])
+    .filter(
+      (it) =>
+        it.type === "registry:skill" &&
+        (it.meta?.partOfProject as { id?: string } | undefined)?.id ===
+          USE_CASE_PACK_ITEM_ID,
+    )
+    .map((it) => it.name)
+    .sort((a, b) => a.localeCompare(b));
+  const files = [
+    { path: "README.md", type: "registry:file" as const, content: USE_CASE_PACK_README },
+    ...getMarketplaceFiles().flatMap((f) => {
+      const repoPath = useCasePackRepoPath(f.path);
+      return repoPath
+        ? [{ path: repoPath, type: "registry:file" as const, content: f.content }]
+        : [];
+    }),
+  ];
+  return {
+    name: USE_CASE_PACK_ITEM_NAME,
+    type: "registry:project",
+    title: USE_CASE_PACK_TITLE,
+    description:
+      "Every Kortix use-case runbook and persona agent in one pack — sales, finance, support, recruiting, engineering ops, and more. Install use cases one at a time from the use-case pages, or clone the whole pack.",
+    categories: ["project", "use-case"],
+    registryDependencies: skillNames,
+    files,
+    meta: { source: "kortix", visibility: "global" },
+  };
+}
+
 let BASE: Catalog | null = null;
 
 const KORTIX_REPO = "https://github.com/kortix-ai/suna";
@@ -550,6 +626,8 @@ const KORTIX_REPO = "https://github.com/kortix-ai/suna";
  *  are real files in this repo, not a synthetic/external registry, so "View
  *  source" can point straight at them. */
 function projectTemplateSourceUrl(slug: string): string {
+  if (slug === USE_CASE_PACK_ITEM_NAME)
+    return `${KORTIX_REPO}/tree/main/packages/starter/templates/marketplace`;
   return `${KORTIX_REPO}/tree/main/packages/starter/templates/marketplace-projects/${slug}`;
 }
 
@@ -580,7 +658,11 @@ function getBaseCatalog(): Catalog {
     { name: "kortix-starter", items: buildStarterRegistry().items ?? [] },
     {
       name: "kortix-projects",
-      items: [buildStarterKitProjectItem(), ...buildProjectTemplateRegistry()],
+      items: [
+        buildStarterKitProjectItem(),
+        buildUseCasePackProjectItem(),
+        ...buildProjectTemplateRegistry(),
+      ],
     },
   ];
   const items: CatalogItem[] = [];
@@ -1762,22 +1844,19 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).
   if (it.managedBy === "kortix") return false;
-  if (it.useCase) return false;
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
 /** Resolvable-by-id (detail + file fetch) but not necessarily browse-listed.
- *  Use-case templates, the agents they install, and their runbook skills stay
- *  OUT of the browse grid (that's the use-case pages' job), yet
- *  `kortix marketplace show <id>` / install-session must read them — so they
- *  resolve by id. */
+ *  Use-case templates and the agents they install stay OUT of the browse grid
+ *  (that's the use-case pages' job), yet `kortix marketplace show <id>` /
+ *  install-session must read them — so they resolve by id. Runbook skills are
+ *  ordinary browseable items badged into the Use-case pack, so the web folds
+ *  them under that tile. */
 function isResolvableCatalogItem(it: CatalogItem): boolean {
   if (isBrowseableCatalogItem(it)) return true;
-  if (it.hidden) return false;
   return (
-    it.type === "registry:template" ||
-    it.type === "registry:agent" ||
-    it.useCase === true
+    (it.type === "registry:template" || it.type === "registry:agent") && !it.hidden
   );
 }
 

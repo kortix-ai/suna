@@ -119,8 +119,8 @@ describe('railGroups', () => {
   });
 });
 
-describe('graduated sections', () => {
-  test('the rail no longer offers agents, connectors, skills, or commands', () => {
+describe('capability sections', () => {
+  test('the rail excludes standalone agents, connectors and skills pages', () => {
     const sections = sectionsOf(
       flags({
         tunnelEnabled: true,
@@ -136,7 +136,10 @@ describe('graduated sections', () => {
     expect(sections).not.toContain('agent');
     expect(sections).not.toContain('connectors');
     expect(sections).not.toContain('skills');
-    expect(sections).not.toContain('commands');
+  });
+
+  test('the rail offers commands because its standalone page was removed', () => {
+    expect(sectionsOf(flags())).toContain('commands');
   });
 
   test('the sections that stay are untouched', () => {
@@ -146,18 +149,21 @@ describe('graduated sections', () => {
     expect(sections).toContain('members');
   });
 
-  test('the Build group drops out entirely when its flagged items are off', () => {
-    // Agents was Build's only static item. With Marketplace and Review off the
-    // group has nothing left, and customize-panel filters empty groups — so no
-    // orphan "Build" header renders above nothing.
+  test('the Build group keeps Commands when every flagged item is off', () => {
+    // Agents was Build's only static item until it graduated; Commands took
+    // that slot when #6169 deleted its standalone page. So the group no longer
+    // empties out. customize-panel still filters empty groups — that guard
+    // simply has nothing to catch in Build today.
     const groups = railGroups(flags({ marketplaceEnabled: false, reviewEnabled: false }));
-    expect(groups.find((g) => g.label === 'Build')?.items).toEqual([]);
+    expect(groups.find((g) => g.label === 'Build')?.items.map((i) => i.section)).toEqual([
+      'commands',
+    ]);
   });
 
-  test('the Build group still carries Marketplace and Review when enabled', () => {
+  test('the Build group appends Marketplace and Review when enabled', () => {
     const build = railGroups(flags({ marketplaceEnabled: true, reviewEnabled: true })).find(
       (g) => g.label === 'Build',
     );
-    expect(build?.items.map((i) => i.section)).toEqual(['marketplace', 'review']);
+    expect(build?.items.map((i) => i.section)).toEqual(['commands', 'marketplace', 'review']);
   });
 });

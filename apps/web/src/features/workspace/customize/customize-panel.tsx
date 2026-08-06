@@ -9,6 +9,7 @@ import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
@@ -159,6 +160,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
       <ModalContent
         animation="none"
+        elevation="none"
         showCloseButton={false}
         closeOnOutsideClick={false}
         variant="base"
@@ -174,6 +176,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
         )}
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
+
+        {/* Desktop shell: this modal is `inset-0`, so its first row starts at
+            the window's top-left — under the macOS traffic lights, and under
+            the Win/Linux control cluster. The rail's "Back to workspace"
+            button landed straight on the lights.
+
+            A `.kx-titlebar-spacer` (display:none on the web, band-height and
+            draggable on desktop) drops the WHOLE modal below the band, which
+            covers the narrow-window variant too — the old guard was a
+            left-only `.kx-customize-header` indent that only ever fixed the
+            wide layout, and whose class stopped being rendered when this
+            became a two-column grid. */}
+        <div className="kx-titlebar-spacer shrink-0" />
 
         <div
           className={cn(
@@ -376,6 +391,8 @@ function SectionContent({
     // No `agents` case: Agents graduated to /projects/<id>/agent. A stale
     // `/customize/agents` deep link redirects there (see
     // `legacyCustomizeRedirect`) rather than opening the overlay.
+    case 'commands':
+      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'secrets':

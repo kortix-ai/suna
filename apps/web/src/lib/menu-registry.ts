@@ -429,7 +429,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/commands',
+    href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
     keywords: 'commands slash project customize',
   },
