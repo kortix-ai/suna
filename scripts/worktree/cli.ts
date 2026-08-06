@@ -8,6 +8,7 @@
  *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--db] [--no-start] [--yes]
  *   pnpm worktree start|stop|status <feat>
  *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
+ *   pnpm worktree nuke            (TTY: pick from a list, then confirm each)
  *   pnpm worktree list · doctor
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
@@ -284,39 +285,6 @@ async function pickWorktrees(action: string): Promise<string[] | null> {
   });
   if (cancelled(sel)) return null;
   return (sel as string[]).map(String);
-}
-
-/**
- * Bare `pnpm worktree nuke` (TTY): collect names one prompt at a time so each
- * can be typed or pasted; a blank line finishes the list. One paste holding
- * several names (whitespace/comma separated) is accepted too.
- */
-async function promptNukeNames(): Promise<string[] | null> {
-  const reg = loadRegistry();
-  const existing = new Set(Object.keys(reg.slots));
-  if (!existing.size) { clack.cancel('No worktrees yet — create one first.'); return null; }
-  const names: string[] = [];
-  for (;;) {
-    const v = await clack.text({
-      message: names.length
-        ? `Worktree to nuke ${pc.dim(`(${names.length} queued — leave blank to continue)`)}`
-        : 'Worktree to nuke (one or more names; blank line finishes)',
-      placeholder: 'feat-one feat-two',
-    });
-    if (cancelled(v)) return null;
-    const parts = String(v ?? '').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
-    if (!parts.length) {
-      if (names.length) break;
-      continue;
-    }
-    for (const p of parts) {
-      const n = sanitizeName(p);
-      if (!existing.has(n)) { clack.log.warn(`unknown worktree "${p}" — skipped`); continue; }
-      if (names.includes(n)) { clack.log.warn(`"${n}" already queued`); continue; }
-      names.push(n);
-    }
-  }
-  return names;
 }
 
 async function menu(): Promise<Args | null> {
@@ -865,7 +833,7 @@ try {
     a = r;
   } else if (tty && (a.cmd === 'nuke' || a.cmd === 'rm') && !a.names.length) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
-    const names = await promptNukeNames();
+    const names = await pickWorktrees(a.cmd);
     if (!names || !names.length) process.exit(0);
     a.names = names;
     a.name = names[0];
