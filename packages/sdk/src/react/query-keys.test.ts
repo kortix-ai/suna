@@ -1,8 +1,55 @@
 import { describe, expect, test } from 'bun:test';
 import { qk } from './query-keys';
+import { kortixKeys } from './use-kortix-master';
 
 const startsWith = (key: readonly unknown[], prefix: readonly unknown[]) =>
   prefix.every((segment, i) => key[i] === segment);
+
+// `kortixKeys` (use-kortix-master.ts) addresses the multi-server Kortix
+// Master surface. `qk` addresses the platform project surface. Both used to
+// root at `'kortix'`, so `kortixKeys.project(id)` and `qk.projects.list(id)`
+// were the same array for a matching id, and `kortixKeys.projects()` — used
+// as an `invalidateQueries` prefix — would prefix-match every `qk` key too.
+// `qk` now roots at `'kx'`; this test fails immediately if that ever drifts
+// back to `'kortix'`.
+describe('qk vs kortixKeys — disjoint key spaces', () => {
+  const id = 'p1';
+
+  const qkKeys: Record<string, readonly unknown[]> = {
+    'qk.projects.list()': qk.projects.list(),
+    "qk.projects.list('acct_1')": qk.projects.list('acct_1'),
+    // Same id as `kortixKeys.project(id)` below — this is the exact pair that
+    // collided when both factories rooted at `'kortix'`:
+    // `['kortix', 'projects', id]` for both.
+    'qk.projects.list(id)': qk.projects.list(id),
+    'qk.project.scope(id)': qk.project.scope(id),
+    'qk.project.detail(id)': qk.project.detail(id),
+  };
+
+  const kortixMasterKeys: Record<string, readonly unknown[]> = {
+    'kortixKeys.projects()': kortixKeys.projects(),
+    'kortixKeys.project(id)': kortixKeys.project(id),
+  };
+
+  for (const [qkName, qkKey] of Object.entries(qkKeys)) {
+    for (const [kmName, kmKey] of Object.entries(kortixMasterKeys)) {
+      test(`${kmName} is not a prefix of ${qkName}`, () => {
+        expect(startsWith(qkKey, kmKey)).toBe(false);
+      });
+
+      test(`${qkName} is not a prefix of ${kmName}`, () => {
+        expect(startsWith(kmKey, qkKey)).toBe(false);
+      });
+    }
+  }
+
+  // The exact collision from the review finding, asserted directly and by
+  // name rather than only via the parameterized loop above: with a matching
+  // id and a `'kortix'` root, these two would be the identical array.
+  test('qk.projects.list(id) never equals kortixKeys.project(id) for the same id', () => {
+    expect(qk.projects.list(id)).not.toEqual(kortixKeys.project(id) as never);
+  });
+});
 
 describe('qk.project', () => {
   const id = 'proj_123';

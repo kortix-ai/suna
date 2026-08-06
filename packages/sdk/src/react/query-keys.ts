@@ -18,16 +18,28 @@
  *
  * Not to be confused with `kortixKeys` in `use-kortix-master.ts`, which
  * addresses the multi-server Kortix Master surface and means something else.
+ *
+ * The root segment below is `'kx'`, not `'kortix'`. `'kortix'` is already
+ * `kortixKeys`'s root (`use-kortix-master.ts:276-279`):
+ * `kortixKeys.projects() = ['kortix', 'projects']` and
+ * `kortixKeys.project(id) = ['kortix', 'projects', id]`. If this factory also
+ * rooted at `'kortix'`, `kortixKeys.project(id)` and `qk.projects.list(id)`
+ * would be the identical array for a matching id — one cache entry standing
+ * in for two unrelated concepts — and `kortixKeys.projects()` (used as an
+ * `invalidateQueries` prefix at `use-kortix-master.ts:371,384`) would also
+ * match every key this factory produces, since TanStack matches query keys by
+ * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
+ * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
   projects: {
     /** Every project the account can see. `undefined` means the active account. */
-    list: (accountId?: string) => ['kortix', 'projects', accountId ?? 'all'] as const,
+    list: (accountId?: string) => ['kx', 'projects', accountId ?? 'all'] as const,
   },
 
   project: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
-    scope: (id: string) => ['kortix', 'project', id] as const,
+    scope: (id: string) => ['kx', 'project', id] as const,
 
     detail: (id: string) => [...qk.project.scope(id), 'detail'] as const,
     config: (id: string) => [...qk.project.scope(id), 'config'] as const,
