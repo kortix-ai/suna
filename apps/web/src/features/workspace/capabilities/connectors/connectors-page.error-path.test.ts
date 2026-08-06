@@ -82,10 +82,10 @@ describe('connectors page error path', () => {
 
   test('a catalogue card can only open the flow that made it', () => {
     // `CatalogEntry` is a discriminated union precisely so a Discover entry
-    // cannot be handed to Pipedream's profile modal. Dropping either guard
+    // cannot be handed to Pipedream's connection modal. Dropping either guard
     // would pass the wrong raw item to a flow that cannot build a draft
     // from it.
-    expect(source).toContain("catalogTarget?.source === 'discover' ? catalogTarget.integration");
+    expect(source).toContain("catalogTarget?.source === 'discover' ? catalogTarget.connector");
     expect(source).toContain("catalogTarget?.source === 'easy-connect' ? catalogTarget.app");
   });
 });

@@ -64,7 +64,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "Connector profile slugs that must resolve before the session starts."
+            "description": "Connector slugs that must resolve before the session starts."
           },
           "connectors_personal": {
             "type": "array",
@@ -157,7 +157,7 @@
                     "project.secret.read",
                     "project.secret.write",
                     "project.connector.read",
-                    "project.connector.profiles.manage",
+                    "project.connector.connections.manage",
                     "project.connector.write",
                     "project.review.read",
                     "project.review.submit",

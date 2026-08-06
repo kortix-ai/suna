@@ -1,7 +1,7 @@
 /**
  * Two rows of the widest grid (`xl:grid-cols-3`). The live catalogue makes
  * this load-bearing rather than theoretical: one page of
- * `listDiscoverIntegrations` puts 26 of its 48 items under `productivity`
+ * `listDiscoverConnectors` puts 26 of its 48 items under `productivity`
  * alone, so a category section renders its first 6 and defers the rest to
  * "View all".
  */
@@ -309,7 +309,7 @@ export function sectionTitle(key: string): string {
  * Bucket catalog items into browse sections, in `CURATED_SECTIONS` order.
  *
  * Items are duplicated across the sections they claim on purpose — that is how
- * a browse surface works, and `DiscoverIntegration.categories` is genuinely
+ * a browse surface works, and `DiscoverConnector.categories` is genuinely
  * multi-valued. What must NOT duplicate is one item inside one section, which
  * is why the `Set` is taken over the MAPPED section keys rather than the raw
  * names: `project-management` and `task-management` are two distinct raw

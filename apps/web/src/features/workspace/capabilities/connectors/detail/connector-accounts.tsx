@@ -15,7 +15,7 @@ export interface ConnectorAccountsProps {
   connector: AdminConnector;
   displayName: string;
   canWrite: boolean;
-  canManageProfiles: boolean;
+  canManageConnections: boolean;
   strategyUpdating: boolean;
   onChanged: () => void;
   onRemoved: () => void;
@@ -41,7 +41,7 @@ export function ConnectorAccounts({
   connector,
   displayName,
   canWrite,
-  canManageProfiles,
+  canManageConnections,
   strategyUpdating,
   onChanged,
   onRemoved,
@@ -52,7 +52,7 @@ export function ConnectorAccounts({
   const isChannel = connector.provider === 'channel';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const showRoster =
-    isPipedream && canManageProfiles && connector.authorizationStrategy === 'user';
+    isPipedream && canManageConnections && connector.authorizationStrategy === 'user';
 
   if (isPipedream) {
     return (
@@ -61,7 +61,7 @@ export function ConnectorAccounts({
           projectId={projectId}
           connector={connector}
           displayName={displayName}
-          canManageProfiles={canManageProfiles}
+          canManageConnections={canManageConnections}
           onChanged={onChanged}
           onStartSession={onStartSession}
           disabled={strategyUpdating}
@@ -83,7 +83,7 @@ export function ConnectorAccounts({
   // `ConnectionSection` fetches its config with `enabled: canWrite` and renders
   // a skeleton until that resolves, so showing it to a reader would leave three
   // grey bars on screen for good. The old panel had the same gate
-  // (`showProfileTab = canWrite && …`); a reader is told why instead.
+  // (`showConnectionTab = canWrite && …`); a reader is told why instead.
   if (!canWrite) {
     return (
       <p className="text-muted-foreground text-sm text-pretty">

@@ -35,9 +35,9 @@ const secret = (
     ...over,
   }) as ProjectSecret;
 
-const profile = (over: Record<string, unknown> = {}) =>
+const connection = (over: Record<string, unknown> = {}) =>
   ({
-    profile_id: 'p1',
+    connection_id: 'p1',
     connector_alias: 'gmail',
     owner_type: 'project',
     owner_id: null,
@@ -264,9 +264,9 @@ describe('scopeDraftIssues', () => {
 describe('scopeBarConnectors', () => {
   test('an alias with nothing bindable carries the reason and a teammate-shaped remedy', () => {
     const choices = selectConnectorBindingChoices([
-      profile({ owner_type: 'member', owner_id: 'u1' }),
+      connection({ owner_type: 'member', owner_id: 'u1' }),
     ]);
-    const [row] = scopeBarConnectors({ choices, boundAuthorizations: {} }).rows;
+    const [row] = scopeBarConnectors({ choices, boundConnections: {} }).rows;
     expect(row!.unavailable).toBe('private_only');
     expect(row!.notice!.detail).toContain('teammate');
     // A wrapper has no personal upstream identity, so "connect it yourself"
@@ -276,17 +276,17 @@ describe('scopeBarConnectors', () => {
 
   test('a revoked project connection asks for a reconnect, not a first-time share', () => {
     const choices = selectConnectorBindingChoices([
-      profile({ status: 'revoked' }),
+      connection({ status: 'revoked' }),
     ]);
     expect(
-      scopeBarConnectors({ choices, boundAuthorizations: {} }).rows[0]!.notice!
+      scopeBarConnectors({ choices, boundConnections: {} }).rows[0]!.notice!
         .detail,
     ).toContain('reconnect');
   });
 
   test('a bindable alias gets no notice — the picker speaks for itself', () => {
-    const choices = selectConnectorBindingChoices([profile()]);
-    const [row] = scopeBarConnectors({ choices, boundAuthorizations: {} }).rows;
+    const choices = selectConnectorBindingChoices([connection()]);
+    const [row] = scopeBarConnectors({ choices, boundConnections: {} }).rows;
     expect(row!.notice).toBeNull();
     expect(row!.choices.map((connection) => connection.label)).toEqual([
       'Support',
@@ -295,16 +295,16 @@ describe('scopeBarConnectors', () => {
 
   test("this session's binding is shown per alias, with the unbound ones on the default", () => {
     const choices = selectConnectorBindingChoices([
-      profile(),
-      profile({
+      connection(),
+      connection({
         connector_alias: 'slack',
-        profile_id: 'p2',
+        connection_id: 'p2',
         label: 'Team slack',
       }),
     ]);
     const { rows, summary } = scopeBarConnectors({
       choices,
-      boundAuthorizations: { gmail: 'p1' },
+      boundConnections: { gmail: 'p1' },
     });
     expect(rows.map((row) => [row.alias, row.bound])).toEqual([
       ['gmail', 'Support'],
@@ -318,7 +318,7 @@ describe('scopeBarConnectors', () => {
     // exactly what it does not do — the binding is frozen into the sandbox.
     const { rows } = scopeBarConnectors({
       choices: [],
-      boundAuthorizations: { gmail: 'auth-removed' },
+      boundConnections: { gmail: 'auth-removed' },
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.bound).toBe('auth-removed');
@@ -328,12 +328,12 @@ describe('scopeBarConnectors', () => {
   });
 
   test('nothing bound reads as project defaults, and no connectors reads as none', () => {
-    const choices = selectConnectorBindingChoices([profile()]);
+    const choices = selectConnectorBindingChoices([connection()]);
     expect(
-      scopeBarConnectors({ choices, boundAuthorizations: {} }).summary,
+      scopeBarConnectors({ choices, boundConnections: {} }).summary,
     ).toBe('Project defaults');
     expect(
-      scopeBarConnectors({ choices: undefined, boundAuthorizations: {} })
+      scopeBarConnectors({ choices: undefined, boundConnections: {} })
         .summary,
     ).toBe('None');
   });
@@ -355,7 +355,7 @@ describe('the draft carried into the next session', () => {
     expect(body).toMatchObject({
       agent_name: 'support',
       secrets: ['STRIPE'],
-      connector_bindings: { gmail: { authorization_id: 'p1' } },
+      connector_bindings: { gmail: { connection_id: 'p1' } },
       // Binding one alias must not unplug every other connector.
       inherit_unbound: true,
     });

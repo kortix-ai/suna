@@ -4,7 +4,7 @@
  * `relayBootTimelineToApi`), persisted via boot-timeline-store.ts's
  * `recordBootTimeline`.
  *
- * WIRING NOTES FOR THE INTEGRATOR (both outside this file's scope):
+ * WIRING NOTES FOR THE CONNECTOR (both outside this file's scope):
  *   1. Mount this router in platform/index.ts:
  *        import { bootTimelineRouter } from './routes/boot-timeline';
  *        platformApp.route('/boot-timeline', bootTimelineRouter);

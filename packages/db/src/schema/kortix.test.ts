@@ -33,8 +33,10 @@ import {
   usageEvents,
   gatewayRequestLogs,
   accountSsoProviders,
-  executorConnectorAuthorizationStrategyEnum,
-  executorConnectors,
+  connectorAuthorizationStrategyEnum,
+  connectorCalls,
+  connectorConnections,
+  connectors,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -142,16 +144,52 @@ describe('kortix enums', () => {
   });
 
   test('connector authorization strategy is project or user', () => {
-    expect(executorConnectorAuthorizationStrategyEnum.enumName).toBe(
+    expect(connectorAuthorizationStrategyEnum.enumName).toBe(
       'executor_connector_authorization_strategy',
     );
-    expect(executorConnectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
+    expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
   });
 });
 
-describe('connector profiles', () => {
-  test('store one authorization strategy on each connector profile', () => {
-    expect(columnNames(executorConnectors)).toContain('authorization_strategy');
+describe('connectors', () => {
+  test('uses canonical exports over the transition database identifiers', () => {
+    expect(getTableConfig(connectors).name).toBe('executor_connectors');
+    expect(getTableConfig(connectorCalls).name).toBe('executor_executions');
+  });
+
+  test('store one authorization strategy on each connector', () => {
+    expect(columnNames(connectors)).toContain('authorization_strategy');
+  });
+
+  test('maps connector call identifiers to the transition execution_id column', () => {
+    expect(primaryColumn(connectorCalls)).toBe('execution_id');
+  });
+
+  test('keeps physical index identifiers stable until the database migration release', () => {
+    expect(indexNames(connectors)).toEqual([
+      'idx_executor_connectors_project',
+      'idx_executor_connectors_account',
+      'idx_executor_connectors_project_slug',
+      'idx_executor_connectors_tenant_identity',
+      'idx_executor_connectors_tenant_alias',
+    ]);
+    expect(indexNames(connectorConnections)).toEqual([
+      'idx_executor_connection_profiles_tenant_identity',
+      'idx_executor_connection_profiles_connector_identity',
+      'idx_executor_connection_profiles_default_project',
+      'idx_executor_connection_profiles_default_owner',
+      'idx_executor_connection_profiles_owner_label',
+      'idx_executor_connection_profiles_project_label',
+      'idx_executor_connection_profiles_project',
+      'idx_executor_connection_profiles_connector',
+    ]);
+    expect(indexNames(connectorCalls)).toEqual([
+      'idx_executor_executions_project',
+      'idx_executor_executions_project_session_created',
+      'idx_executor_executions_connector',
+      'idx_executor_executions_profile',
+      'idx_executor_executions_status',
+    ]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { channelApiBase, channelCatalog, channelLabel } from '../executor/channels';
+import { channelApiBase, channelCatalog, channelLabel } from '../connectors/channels';
 
 describe('teams channel catalog', () => {
   test('maps the platform to the Graph base + label', () => {

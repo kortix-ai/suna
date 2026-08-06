@@ -42,7 +42,7 @@ export const STAGED_CONTEXT_ENTRIES = [
   'kortix.gz',
   'kortix-entrypoint',
   'kortix-slack-cli/',
-  'kortix-executor-sdk/',
+  'kortix-connectors-sdk/',
   'kortix-opencode-config/',
   'kortix-llm-catalog.json',
   'scaffold.git',

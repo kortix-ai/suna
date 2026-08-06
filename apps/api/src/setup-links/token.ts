@@ -49,7 +49,7 @@ export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
   | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
   /**
-   * A human-in-the-loop APPROVAL for one gated executor call.
+   * A human-in-the-loop APPROVAL for one gated connector call.
    *
    * Unlike the other two kinds, this token is NOT a bearer capability: the
    * endpoints behind it require a signed-in Kortix account that is authorised to
@@ -82,7 +82,7 @@ type ConnectorSpec = {
 };
 type ApprovalSpec = {
   kind: 'approval';
-  /** The `executor_executions.execution_id` awaiting a decision. */
+  /** The `connector_calls.execution_id` awaiting a decision. */
   executionId: string;
   sessionId?: string | null;
   uid?: string | null;

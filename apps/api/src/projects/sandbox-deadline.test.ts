@@ -346,7 +346,7 @@ describe('isSandboxAuthored — the box may never extend its own life', () => {
   });
 
   test('a SESSION-SCOPED PAT is sandbox-authored even though apiKeyType is unset', () => {
-    // KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN: injected into every box and used
+    // `KORTIX_CLI_TOKEN`: injected into every box and used
     // by the in-box `kortix` CLI. Its auth branch never sets apiKeyType, so a
     // gate testing apiKeyType alone let the box hold itself open indefinitely.
     expect(isSandboxAuthored(undefined, 'session-abc')).toBe(true);

@@ -10,7 +10,7 @@ An enterprise audit + hardening of the Kortix test estate. The codebase already 
 ## 2. Headline result
 
 - **831 unit tests passing, 0 failing** across all 11 bun-native workspaces (was: ~50 of these orphaned and unrunnable, with hidden red tests).
-- **5 previously-untested packages now covered** — `db`, `shared`, `executor-sdk`, `manifest-schema`, `starter` (18 new test files; all typecheck clean).
+- **5 previously-untested packages now covered** — `db`, `shared`, `connector-sdk`, `manifest-schema`, `starter` (18 new test files; all typecheck clean).
 - **10 pre-existing red/bitrotted tests discovered and fixed** — they were red precisely because they were excluded from CI (the audit's central thesis, now proven).
 - **Every package and app is wired to a `test` script and run in CI** via a new pnpm-cached `package-tests` lane.
 - The `kortix-api` runner no longer silently skips 12 files or fails-fast.
@@ -21,7 +21,7 @@ An enterprise audit + hardening of the Kortix test estate. The codebase already 
 |---|---|---|
 | `packages/db` | untested | 77 tests (schema/enum/FK/PK introspection, lazy client) |
 | `packages/shared` | 1 file | 189 tests (utils, tools, constants, formatters) |
-| `packages/executor-sdk` | untested | 39 tests (client, URL norm, error mapping, discovery) |
+| `packages/connector-sdk` | untested | 39 tests (client, URL norm, error mapping, discovery) |
 | `packages/manifest-schema` | 1 file | 116 tests (schema validation, grants, triggers, sandbox bounds) |
 | `packages/starter` | 1 file | 27 tests (template layers, interpolation, skill listing) |
 | `apps/web`, `apps/cli`, `apps/kortix-sandbox-agent-server`, `apps/mobile`, `packages/agent-tunnel` | orphaned (no `test` script) | wired + green in CI |
@@ -77,7 +77,7 @@ make perf-regression              # k6 regression vs baseline
 3. **Capture the perf baseline** — first clean k6 run → `test:perf:baseline` → commit, then the regression gate enforces.
 4. **Biome ratchet → blocking** — run `pnpm lint:biome:fix`, resolve residue, make `make lint` fail on findings.
 5. **Clean up `apps/api` in-test anti-patterns** — convert `expect(true).toBe(false)` to `rejects.toThrow`; make `helpers.ts` import the real Hono app (F-8).
-6. **Pre-existing product typecheck errors in `apps/cli`** (`@kortix/executor-sdk` resolution, implicit anys in `registry.ts`/`mcp.ts`) — out of test-suite scope but worth a follow-up; `apps/web`/`apps/mobile` have no `typecheck` script.
+6. **Pre-existing product typecheck errors in `apps/cli`** (`@kortix/connector-sdk` resolution, implicit anys in `registry.ts`/`mcp.ts`) — out of test-suite scope but worth a follow-up; `apps/web`/`apps/mobile` have no `typecheck` script.
 7. **Wire ke2e flows as a blocking PR gate** (audit F-10) and add rollback-wrapped DB integration tests (F-12).
 
 ## 10. Files added / changed

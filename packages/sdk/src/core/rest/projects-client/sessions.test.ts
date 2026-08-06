@@ -142,21 +142,21 @@ test('createProjectSession serializes non-secret runtime_context unchanged', asy
   });
 });
 
-test('createProjectSession serializes canonical connector authorization bindings', async () => {
+test('createProjectSession serializes canonical connection bindings', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-BINDING', name: null } };
   await createProjectSession('P1', {
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
   expect(last().body).toEqual({
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
 });
 
-test('createProjectSession retains deprecated profile_id input compatibility', async () => {
+test('createProjectSession normalizes published profile_id input compatibility', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-LEGACY-BINDING', name: null } };
   await createProjectSession('P1', {
     connector_bindings: {
@@ -165,7 +165,7 @@ test('createProjectSession retains deprecated profile_id input compatibility', a
   });
   expect(last().body).toEqual({
     connector_bindings: {
-      gmail: { profile_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
 });
@@ -465,7 +465,7 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
     required_connectors: null,
-    connector_bindings: { gmail: { authorization_id: 'AUTH-1' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-1' } },
     dropped_secrets: [],
     added_secrets: [],
     dropped_bindings: [],
@@ -476,15 +476,18 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   const result = await getProjectSessionScope('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
-  expect(result).toEqual(scope);
+  expect(result.connector_bindings.gmail).toEqual({
+    connection_id: 'AUTH-1',
+    authorization_id: 'AUTH-1',
+  });
 });
 
-test('setProjectSessionScope replaces connector authorizations with canonical input', async () => {
+test('setProjectSessionScope replaces connections with canonical input', async () => {
   nextResponse = {
     status: 200,
     body: {
       secrets_allowlist: [],
-      connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+      connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
       dropped_secrets: [],
       added_secrets: [],
       dropped_bindings: [],
@@ -494,16 +497,38 @@ test('setProjectSessionScope replaces connector authorizations with canonical in
   };
   const result = await setProjectSessionScope('P1', 'S1', {
     secrets: [],
-    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({
     secrets: [],
-    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
   expect(result.connector_bindings).toEqual({
-    gmail: { authorization_id: 'AUTH-2' },
+    gmail: { connection_id: 'AUTH-2', authorization_id: 'AUTH-2' },
+  });
+});
+
+test('setProjectSessionScope normalizes published authorization_id input compatibility', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: {},
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      detail: 'Applies from the next prompt.',
+    },
+  };
+  await setProjectSessionScope('P1', 'S1', {
+    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+  });
+  expect(last().body).toEqual({
+    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
 });
 

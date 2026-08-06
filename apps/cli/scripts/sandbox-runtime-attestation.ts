@@ -3,7 +3,7 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  buildCliExecutorSourceDigest,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
 
@@ -17,7 +17,7 @@ function usage(): never {
   process.exit(2);
 }
 
-const digest = await buildCliExecutorSourceDigest(cliRoot);
+const digest = await buildCliConnectorSourceDigest(cliRoot);
 
 if (command === 'print-source') {
   console.log(digest);

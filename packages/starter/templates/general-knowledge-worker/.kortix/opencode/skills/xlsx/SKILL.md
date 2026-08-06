@@ -537,3 +537,7 @@ Quick checks to ensure formulas work correctly:
 - **Type inference** — specify dtypes to avoid silent coercion: `pd.read_excel('file.xlsx', dtype={'id': str})`
 - **Large files** — read only needed columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`
 - **Dates** — parse explicitly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`
+
+# Reading a workbook as text
+
+`anydoc file.xlsx -o out.md` (pre-installed) dumps every sheet as Markdown tables — use it to inspect contents before choosing an edit approach. For live values, formulas, and typed data, use openpyxl or pandas as above.

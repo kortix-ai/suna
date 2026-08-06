@@ -212,7 +212,7 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // ---------------------------------------------------------------------------
 // Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
 // memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
-// an executor call (tokens + OutputBlock), session-stats + dcp-compress (one
+// a connector call (tokens + OutputBlock), session-stats + dcp-compress (one
 // representative each), triggers' non-bracket fallback path (OutputBlock,
 // not the parsed row list), and project-delete (chrome-only, no output).
 // ---------------------------------------------------------------------------
@@ -273,7 +273,7 @@ const AGENT_STATUS_OUTPUT = [
   '**task-c9d0e1f2** QA the report on mobile — pending',
 ].join('\n');
 
-const EXECUTOR_CALL_OUTPUT = JSON.stringify({
+const CONNECTOR_CALL_OUTPUT = JSON.stringify({
   ok: true,
   status: 'ok',
   risk: 'read',
@@ -734,16 +734,16 @@ const GROUPS: Group[] = [
         node: part('agent_status', done({}, AGENT_STATUS_OUTPUT)),
       },
       {
-        label: 'kortix-executor_call',
+        label: 'kortix-connectors_call',
         node: part(
-          'kortix-executor_call',
+          'kortix-connectors_call',
           done(
             {
               connector: 'linear',
               action: 'list_issues',
               args: { teamId: 'ENG', limit: 5 },
             },
-            EXECUTOR_CALL_OUTPUT,
+            CONNECTOR_CALL_OUTPUT,
           ),
         ),
       },

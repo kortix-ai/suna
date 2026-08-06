@@ -70,7 +70,7 @@ import {
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
-  resolveRequiredConnectorProfiles,
+  resolveRequiredConnectorConnections,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
@@ -404,7 +404,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
   // The Slack BOT TOKEN no longer belongs in the sandbox either: the `slack`
-  // shim now runs every Web API call through the Executor (server-side token)
+  // shim now runs every Web API call through the Connector (server-side token)
   // and its file ops through the server-side file proxy. Keeping it out means a
   // compromised/prompt-injected agent can't exfiltrate the raw bot token — only
   // make scoped, audited, policy-gated channel calls. (KORTIX-206 Phase C2.)
@@ -565,12 +565,12 @@ export async function createProjectSession(input: {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   /** The caller's own session when the credential is session-bound (the
-   *  executor PAT injected into a sandbox). Used only to stop meta→meta
+   *  connector PAT injected into a sandbox). Used only to stop meta→meta
    *  recursion — a meta coordinator must spawn project agents, not itself. */
   callerSessionId?: string | null;
   /** The request-time capability verdict for operator-managed (non-member)
-   * connection profiles. Personal profiles ignore this and remain owner-only. */
-  mayManageSystemConnectorProfiles?: boolean;
+   * connections. Personal connections ignore this and remain owner-only. */
+  mayManageSystemConnections?: boolean;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -608,7 +608,7 @@ export async function createProjectSession(input: {
   // `inherit_unbound` is a benign binding modifier: when this session binds any
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
-  // owner's profile), so unlike secrets it is NOT origin-gated.
+  // owner's connection), so unlike secrets it is NOT origin-gated.
   //
   // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
   // connectors keeps the project-default fallback for the rest unless the caller
@@ -617,8 +617,8 @@ export async function createProjectSession(input: {
   // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
   // deliberately never flips this flag on a scope save. Before this, a caller
   // sending `connector_bindings: {...}` without `inherit_unbound` left it
-  // `false`, hiding EVERY unbound connector from `kortix executor connectors`
-  // / `kortix executor call` — the whole catalog went empty.
+  // `false`, hiding EVERY unbound connector from `kortix connectors ls`
+  // / `kortix connectors call` — the whole catalog went empty.
   let inheritUnbound = body.inherit_unbound !== false;
   const connectorBindingsConfigured = body.connector_bindings !== undefined;
   const requireConnectors: string[] = Array.isArray(body.require_connectors)
@@ -863,13 +863,13 @@ export async function createProjectSession(input: {
     projectId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
-    mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
+    mayManageSystemConnections: input.mayManageSystemConnections ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
   if (!validatedConnectorBindings.ok) {
     return {
       error: {
-        status: validatedConnectorBindings.code === 'CONNECTOR_PROFILE_NOT_FOUND' ? 404 : 409,
+        status: validatedConnectorBindings.code === 'CONNECTOR_CONNECTION_NOT_FOUND' ? 404 : 409,
         body: {
           error: validatedConnectorBindings.error,
           code: validatedConnectorBindings.code,
@@ -878,7 +878,7 @@ export async function createProjectSession(input: {
     };
   }
   if (effectiveRequireConnectors.length > 0) {
-    const required = await resolveRequiredConnectorProfiles({
+    const required = await resolveRequiredConnectorConnections({
       accountId,
       projectId,
       actingUserId: userId,
@@ -887,14 +887,14 @@ export async function createProjectSession(input: {
       explicitBindings: validatedConnectorBindings.bindings,
     });
     if (!required.ok) {
-      if (required.code === 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE') {
+      if (required.code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE') {
         return {
           error: {
             status: 409,
             body: {
-              error: `Required connector profile ${required.aliases
+              error: `Required ${required.aliases.length === 1 ? 'connection' : 'connections'} ${required.aliases
                 .map((alias) => `"${alias}"`)
-                .join(', ')} is unavailable`,
+                .join(', ')} ${required.aliases.length === 1 ? 'is' : 'are'} unavailable`,
               code: required.code,
               // The prose names the aliases too, but a client that wants to list
               // them (or diff them across retries) must not have to parse it.
@@ -908,8 +908,8 @@ export async function createProjectSession(input: {
           status: 409,
           body: {
             code: required.code,
-            message: 'Connect the required connector profiles before starting this session.',
-            connector_profiles: required.connectorProfiles,
+            message: 'Create the required connections before starting this session.',
+            connector_connections: required.connectorConnections,
           },
         },
       };
@@ -928,8 +928,8 @@ export async function createProjectSession(input: {
       error: {
         status: 409,
         body: {
-          error: 'Sessions using a personal connector profile must remain private',
-          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+          error: 'Sessions using a personal connection must remain private',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
         },
       },
     };
@@ -941,7 +941,7 @@ export async function createProjectSession(input: {
   // an undeclared agent is REJECTED with an explicit 400 before any row is
   // inserted or sandbox provisioned — never left to resolve to the permissive
   // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
-  // `.catch` in session-sandbox.ts `mintExecutorToken`, which must stay
+  // `.catch` in session-sandbox.ts `mintConnectorToken`, which must stay
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (
@@ -1183,7 +1183,7 @@ export async function createProjectSession(input: {
               projectId,
               connectorAlias: binding.alias,
               connectorId: binding.connectorId,
-              profileId: binding.profileId,
+              connectionId: binding.connectionId,
               source: 'request' as const,
               createdBy: userId,
             })),
@@ -1199,7 +1199,7 @@ export async function createProjectSession(input: {
     // resolveSessionProvider validates against config, never against the DB.
     // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
-    // Session, context and profile bindings are one transaction. Nothing is
+    // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };

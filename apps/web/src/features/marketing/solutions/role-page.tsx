@@ -205,7 +205,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
               <Link href="/security">How the isolation works</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/integrations">How connectors are brokered</Link>
+              <Link href="/connectors">How connectors are brokered</Link>
             </Button>
           </div>
         </Reveal>

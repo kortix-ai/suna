@@ -6,15 +6,15 @@ import { useMutation } from '@tanstack/react-query';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { withPipedreamOverlayEscape } from '@/hooks/connectors/use-pipedream-connect-member';
 import {
-  pipedreamConnectConnectorAuthorization,
-  pipedreamFinalizeConnectorAuthorization,
-  reconcileConnectorAuthorization,
+  pipedreamConnectConnection,
+  pipedreamFinalizeConnection,
+  reconcileConnection,
 } from '@kortix/sdk';
 
 /**
- * Create and connect one project-owned authorization.
+ * Create and connect one project-owned connection.
  *
- * The API enforces the project connector-profile management capability.
+ * The API enforces the project connector-connection management capability.
  */
 export function usePipedreamConnectProject(
   projectId: string,
@@ -23,19 +23,19 @@ export function usePipedreamConnectProject(
 ) {
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
-      const authorization = await reconcileConnectorAuthorization(projectId, {
+      const connection = await reconcileConnection(projectId, {
         connector_alias: slug,
         owner_type: 'project',
-        label: input?.label?.trim() || 'Project authorization',
+        label: input?.label?.trim() || 'Project connection',
       });
-      const { token, app } = await pipedreamConnectConnectorAuthorization(
+      const { token, app } = await pipedreamConnectConnection(
         projectId,
-        authorization.profile_id,
+        connection.connection_id,
       );
       if (!token || !app) throw new Error('App connect is not configured');
 
       const client = createFrontendClient({
-        externalUserId: `${projectId}:${slug}:${authorization.profile_id}`,
+        externalUserId: `${projectId}:${slug}:${connection.connection_id}`,
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -56,12 +56,12 @@ export function usePipedreamConnectProject(
       }
       if (!connected) return { connected: false };
 
-      await pipedreamFinalizeConnectorAuthorization(projectId, authorization.profile_id);
+      await pipedreamFinalizeConnection(projectId, connection.connection_id);
       return { connected: true };
     },
     onSuccess: (result) => {
       if (!result.connected) return;
-      successToast('Project authorization connected');
+      successToast('Project connection created');
       onConnected();
     },
     onError: (error: Error) => errorToast(error.message),

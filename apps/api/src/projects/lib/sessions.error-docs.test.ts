@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// The KaaB error tables have twice documented a code the routes never return
-// (`CONNECTOR_CONNECTION_REQUIRED` most recently). A published code that does
-// not exist is worse than an undocumented one: integrators branch on it, and the
+// The KaaB error tables have twice documented a code the routes never return.
+// A published code that does
+// not exist is worse than an undocumented one: connectors branch on it, and the
 // branch is dead forever. These tests read the shipped tables and check them
 // against the shipped source, so the third occurrence fails here instead of in
 // somebody's error handler.
@@ -99,11 +99,11 @@ describe('KaaB error tables match the codes the API emits', () => {
     }
   });
 
-  test('the retired CONNECTOR_CONNECTION_REQUIRED name stays out of the tables', () => {
-    // The name that caused this test to exist. It is still referenced by older
-    // planning docs, so pin the assertion to the published tables.
+  test('the active CONNECTOR_CONNECTION_REQUIRED code stays in the tables', () => {
+    // The required-connection gate emits this code from session creation and
+    // prompt preflight. Keep both public error tables aligned with that contract.
     for (const relativePath of ERROR_TABLES) {
-      expect(documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'))).not.toContain(
+      expect(documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'))).toContain(
         'CONNECTOR_CONNECTION_REQUIRED',
       );
     }
@@ -120,8 +120,8 @@ describe('KaaB error tables match the codes the API emits', () => {
       ([, code]) => code,
     );
     expect(gateCodes.sort()).toEqual([
-      'CONNECTOR_AUTHORIZATION_REQUIRED',
-      'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+      'CONNECTOR_CONNECTION_REQUIRED',
+      'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
     ]);
 
     for (const relativePath of ERROR_TABLES) {

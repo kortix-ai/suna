@@ -3,10 +3,10 @@
  *
  * Two layers, both exercised here:
  *   1. the shared ruleset (`@kortix/manifest-schema`) that the CR-merge gate,
- *      apps/api's manifest parser and the executor all validate against —
+ *      apps/api's manifest parser and the connector all validate against —
  *      RFC 7230 token names, no CR/LF (header injection), caps, and the
  *      round-trip of a header table through parse → normalized map;
- *   2. the executor merge (`executor/execute.ts`), where the SECURITY rule
+ *   2. the connector merge (`connector/call.ts`), where the SECURITY rule
  *      lives: the credential always wins, so a static header can never spoof
  *      or clobber the connector's auth header.
  *
@@ -26,13 +26,13 @@ import {
 import {
   applyConnectorHeaders,
   executeCall,
-  type ExecutorAuth,
+  type ConnectorAuth,
   type FetchImpl,
-} from '../executor/execute';
+} from '../connectors/call';
 
-const BEARER: ExecutorAuth = { type: 'bearer', in: 'header', name: null, prefix: null };
-const API_KEY: ExecutorAuth = { type: 'custom', in: 'header', name: 'X-API-Key', prefix: null };
-const NO_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
+const BEARER: ConnectorAuth = { type: 'bearer', in: 'header', name: null, prefix: null };
+const API_KEY: ConnectorAuth = { type: 'custom', in: 'header', name: 'X-API-Key', prefix: null };
+const NO_AUTH: ConnectorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 
 function recordingFetch(status = 200, responseBody = '{"ok":true}') {
   const calls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
@@ -150,7 +150,7 @@ describe('parseConnectorHeaders — caps', () => {
   });
 });
 
-describe('sanitizeConnectorHeaders — the executor fail-safe', () => {
+describe('sanitizeConnectorHeaders — the connector fail-safe', () => {
   test('drops only the illegal entries', () => {
     expect(
       sanitizeConnectorHeaders({
@@ -187,7 +187,7 @@ describe('applyConnectorHeaders — the credential always wins', () => {
   });
 
   test('the auth header name is only reserved when the credential is in a header', () => {
-    const queryAuth: ExecutorAuth = { type: 'custom', in: 'query', name: 'api_key', prefix: null };
+    const queryAuth: ConnectorAuth = { type: 'custom', in: 'query', name: 'api_key', prefix: null };
     const headers: Record<string, string> = {};
     applyConnectorHeaders(headers, { Authorization: 'Basic static' }, queryAuth);
     expect(headers).toEqual({ Authorization: 'Basic static' });
@@ -311,7 +311,7 @@ describe('executeCall — static headers on the wire', () => {
       binding: { kind: 'http', method: 'GET', path: '/users' },
       baseUrl: 'https://api.example.com',
       auth: NO_AUTH,
-      // Shape a pre-validation row could hold; the executor must not emit it.
+      // Shape a pre-validation row could hold; the connector must not emit it.
       headers: { 'X-Injected': 'a\r\nX-Admin: true', Host: 'evil.example.com', 'X-Ok': 'v' },
       fetchImpl,
     });

@@ -12,8 +12,8 @@
  * This used to be the OTHER direction: the Kortix agent's own tool surface
  * for driving a call (voice_spawn/voice_read/send_prompt/run_command/
  * voice_end). That surface has moved to the `kortix_voice` channel connector
- * (executor/channels.ts's VOICE_ACTIONS, executed by executeVoiceCall in
- * executor/db-deps.ts) so it goes through the executor gateway like every
+ * (connector/channels.ts's VOICE_ACTIONS, executed by executeVoiceCall in
+ * connector/db-deps.ts) so it goes through the connector gateway like every
  * other connector call — policies, approvals, audit trail included, which a
  * direct MCP route never had. This file is now free to be what the worker
  * actually needs.

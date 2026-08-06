@@ -22,7 +22,7 @@ export function effectiveChoice(
 
 /**
  * Project-scope rules are evaluated first and win
- * (`resolveEffectiveAction`, apps/api/src/executor/policy.ts:342). Editing the
+ * (`resolveEffectiveAction`, apps/api/src/connectors/policy.ts:342). Editing the
  * connector-scope rule under one would change nothing, so the control is
  * disabled and says where the rule actually lives.
  */
@@ -45,7 +45,7 @@ export function isLockedByProject(
  *
  * Replacement is case-INSENSITIVE, because that is how the engine matches: it
  * compiles every glob with the `i` flag (`globToRegex`,
- * apps/api/src/executor/policy.ts:69), so a rule written `GetPetById` already
+ * apps/api/src/connectors/policy.ts:69), so a rule written `GetPetById` already
  * governs `getpetbyid`. De-duping on exact string equality would leave that
  * rule sitting in front of the new one, dead behind it.
  *
@@ -69,7 +69,7 @@ export function applyBulkPolicy(
  * Is this matcher a pattern rather than one exact tool path?
  *
  * Same grammar the engine compiles (`compileMatcher`,
- * apps/api/src/executor/policy.ts:92): a glob if it contains `*`, or an
+ * apps/api/src/connectors/policy.ts:92): a glob if it contains `*`, or an
  * explicit regex when slash-wrapped. Everything else is a literal path.
  */
 export function isPatternRule(match: string): boolean {
@@ -80,7 +80,7 @@ export function isPatternRule(match: string): boolean {
  * Order a rule set for the wire.
  *
  * The runtime takes the FIRST matching rule
- * (`resolveEffectiveAction` -> `firstMatchOrNull`, executor/policy.ts), so a
+ * (`resolveEffectiveAction` -> `firstMatchOrNull`, connectors/policy.ts), so a
  * `*` rule ahead of an exact rule makes that exact rule dead: the user clicks
  * Block on one tool, the request succeeds, and nothing changes. Exact rules
  * therefore go first, patterns after — the same order the shipped panel wrote
@@ -88,7 +88,10 @@ export function isPatternRule(match: string): boolean {
  * two overlapping patterns still resolve by authoring order.
  */
 export function orderPolicyRules(rules: readonly ConnectorPolicyRule[]): ConnectorPolicyRule[] {
-  return [...rules.filter((r) => !isPatternRule(r.match)), ...rules.filter((r) => isPatternRule(r.match))];
+  return [
+    ...rules.filter((r) => !isPatternRule(r.match)),
+    ...rules.filter((r) => isPatternRule(r.match)),
+  ];
 }
 
 /**
@@ -98,7 +101,7 @@ export function orderPolicyRules(rules: readonly ConnectorPolicyRule[]): Connect
  * the call gate uses, so it is preferred whenever it covers the tool. It does
  * not always: a connector that exists only in kortix.yaml with no materialized
  * row comes back with `effective: []`
- * (apps/api/src/executor/db-deps.ts:1151), and older servers omit the field
+ * (apps/api/src/connectors/db-deps.ts:1151), and older servers omit the field
  * entirely. Falling back to the stored exact rule keeps the control live in
  * both cases instead of showing every tool as unset.
  */

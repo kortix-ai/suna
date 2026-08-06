@@ -122,7 +122,7 @@ export interface AgentBlockV2 {
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   connectors?: GrantSetV2;
-  /** Connector profiles that must resolve before the session starts. Each
+  /** Connectors that must resolve before the session starts. Each
    *  entry must also exist in this agent's resolved `connectors` grant. */
   connectors_required?: string[];
   /** @deprecated Input alias for `connectors_required`. Serializers emit only
@@ -198,7 +198,7 @@ function normalizeRequiredConnectorList(
   if (!Array.isArray(value)) {
     issues.push({
       path: where,
-      message: 'must be an array of connector profile slugs.',
+      message: 'must be an array of connector slugs.',
       severity: 'error',
     });
     return null;
@@ -210,7 +210,7 @@ function normalizeRequiredConnectorList(
     if (typeof item !== 'string' || item.trim() === '') {
       issues.push({
         path: `${where}[${index}]`,
-        message: 'entries must be non-empty connector profile slugs.',
+        message: 'entries must be non-empty connector slugs.',
         severity: 'error',
       });
       continue;
@@ -637,7 +637,7 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
   issues.push({
     path,
     message:
-      '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel integration itself is expressed as a connector (provider="channel").',
+      '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel connection is expressed as a connector (provider="channel").',
     severity: 'error',
   });
 }

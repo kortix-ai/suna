@@ -14,6 +14,15 @@ export type ConnectorBindingOption = {
   description: string;
 };
 
+export type BrokerConsumer = 'llm_gateway' | 'connector' | 'http_broker';
+
+/** Normalize the deprecated persisted consumer without exposing it in the UI. */
+export function brokerConsumerForSecret(consumer?: SecretConsumer | null): BrokerConsumer {
+  if (consumer === 'llm_gateway') return 'llm_gateway';
+  if (consumer === 'connector' || consumer === 'executor') return 'connector';
+  return 'http_broker';
+}
+
 export function connectorBindingOptions(
   connectors: readonly AdminConnector[],
   secretIdentifier: string,
@@ -114,13 +123,6 @@ export function secretDeliveryPresentation(
     return {
       label: 'Git service',
       description: 'Used for repository access without entering the sandbox.',
-      tone: 'secondary',
-    };
-  }
-  if (strategy === 'broker' && consumer === 'executor') {
-    return {
-      label: 'Automation',
-      description: 'Used by server-side triggers and actions without entering the sandbox.',
       tone: 'secondary',
     };
   }

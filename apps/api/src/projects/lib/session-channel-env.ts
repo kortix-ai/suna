@@ -24,7 +24,7 @@ export function sessionChannelEnvFromMetadata(metadata: unknown): Record<string,
   if (email && typeof email === 'object' && !Array.isArray(email)) {
     // The metadata itself is the durable email-origin marker. This also
     // upgrades sessions created before the explicit MCP flag existed.
-    env.KORTIX_EXECUTOR_MCP_ENABLED = '1';
+    env.KORTIX_CONNECTORS_MCP_ENABLED = '1';
     if (typeof email.inbox_id === 'string') env.KORTIX_EMAIL_INBOX_ID = email.inbox_id;
     if (typeof email.thread_id === 'string') env.KORTIX_EMAIL_THREAD_ID = email.thread_id;
     if (typeof email.message_id === 'string') env.KORTIX_EMAIL_MESSAGE_ID = email.message_id;

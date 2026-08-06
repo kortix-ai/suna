@@ -1,9 +1,9 @@
 /**
- * Pure helpers for acting on adapted review items (Change Requests + executor
+ * Pure helpers for acting on adapted review items (Change Requests + connector
  * approvals) from the inbox. Kept free of React/query so the id-parsing and
  * URL-building logic — the part worth getting right — is unit-testable.
  *
- * Adapted items carry a namespaced id (`cr:<id>` / `exec:<id>`) so the inbox
+ * Adapted items carry a namespaced id (`cr:<id>` / `call:<id>`) so the inbox
  * can route a verdict to the right source instead of the native `/act`
  * endpoint, which 409s on them by design (see review-center-connected.tsx).
  */
@@ -11,13 +11,13 @@
 import type { ReviewItem, ReviewRisk } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
-export const EXEC_ID_PREFIX = 'exec:';
+export const CALL_ID_PREFIX = 'call:';
 
-/** Strip the `exec:` namespace prefix, returning the underlying
- *  `executorExecutions.executionId` that `resolveApproval` expects — or
- *  `null` if `id` isn't an adapted executor-approval id. */
-export function execExecutionId(id: string): string | null {
-  return id.startsWith(EXEC_ID_PREFIX) ? id.slice(EXEC_ID_PREFIX.length) : null;
+/** Strip the `call:` namespace prefix, returning the underlying
+ *  `connectorCalls.executionId` that `resolveApproval` expects — or
+ *  `null` if `id` isn't an adapted connector-approval id. */
+export function connectorCallId(id: string): string | null {
+  return id.startsWith(CALL_ID_PREFIX) ? id.slice(CALL_ID_PREFIX.length) : null;
 }
 
 /** Strip the `cr:` namespace prefix, returning the underlying Change Request
@@ -27,7 +27,7 @@ export function crChangeRequestId(id: string): string | null {
 }
 
 /**
- * Executor approvals are never quick-decidable. The approver must open the
+ * Connector approvals are never quick-decidable. The approver must open the
  * parameter-review modal before either decision becomes available.
  */
 export function isQuickDecidableApproval(
@@ -55,7 +55,7 @@ export function itemDeepLink(
 /**
  * Split a set of selected ids into the ones a bulk verdict can cover
  * natively (`/review/bulk`) vs. ones that need their own per-item resolve
- * review (executor approvals) vs. ones with no bulk path at all (Change
+ * review (connector approvals) vs. ones with no bulk path at all (Change
  * Requests — merging in bulk needs full diff context per item, so they're
  * excluded rather than silently no-op'd).
  */
@@ -70,7 +70,7 @@ export function planBulkAction(ids: Iterable<string>): BulkActionPlan {
   const resolvable: string[] = [];
   const unsupported: string[] = [];
   for (const id of ids) {
-    if (execExecutionId(id) !== null) resolvable.push(id);
+    if (connectorCallId(id) !== null) resolvable.push(id);
     else if (crChangeRequestId(id) !== null) unsupported.push(id);
     else native.push(id);
   }
@@ -81,7 +81,7 @@ export function planBulkAction(ids: Iterable<string>): BulkActionPlan {
  * What a bulk verdict on a connected selection will REALLY do, decided before
  * any optimistic UI update so the toast/removal can never claim more than the
  * server was asked. The rules the buckets encode:
- *  - Executor approvals are a live question to the agent. Bulk verdicts never
+ *  - Connector approvals are a live question to the agent. Bulk verdicts never
  *    answer them. Each exact call needs a complete parameter review.
  *  - Change Requests have no bulk path at all (merging needs the diff in view).
  */
@@ -90,7 +90,7 @@ export interface BulkOutcome {
   act: string[];
   /** Retained for compatibility with native bulk-outcome consumers. */
   skippedRisky: string[];
-  /** Exec approvals kept under a non-approve verdict (dismiss ≠ deny). */
+  /** Connector-call approvals that require individual parameter review. */
   skippedApprovals: string[];
   /** Change Requests — each needs its own review. */
   skippedChanges: string[];
@@ -109,7 +109,7 @@ export function resolveBulkOutcome(
   for (const id of ids) {
     if (crChangeRequestId(id) !== null) {
       skippedChanges.push(id);
-    } else if (execExecutionId(id) !== null) {
+    } else if (connectorCallId(id) !== null) {
       skippedApprovals.push(id);
     } else {
       act.push(id);

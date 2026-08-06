@@ -184,12 +184,12 @@ await kortix.project(projectId).sessions.create({
 ```
 
 Do not put credentials in this map. For a white-label/backend wrapper, create an
-operator-managed connection profile, store its credential through the dedicated
-credential endpoint, and pass only the non-secret profile id at session create:
+operator-managed connection, store its credential through the dedicated
+credential endpoint, and pass only the non-secret connection id at session create:
 
 ```ts
 const project = kortix.project(projectId);
-const profile = await project.connectors.profiles.reconcile({
+const connection = await project.connectors.connections.reconcile({
   connector_alias: "customer-data",
   owner_type: "external",
   owner_id: wrapperUserId,
@@ -203,39 +203,39 @@ const auth = await project.connectors.auth.discover({
   provider: "postman",
   spec: "https://github.com/HubSpot/HubSpot-public-api-spec-collection",
 });
-await project.connectors.profiles.updateCredential(profile.profile_id, {
+await project.connectors.connections.updateCredential(connection.connection_id, {
   value: shortLivedCapability,
   kind: "secret",
 });
 await project.sessions.create({
   runtime_context: { locale: "de" },
   connector_bindings: {
-    "customer-data": { profile_id: profile.profile_id },
+    "customer-data": { connection_id: connection.connection_id },
   },
 });
 ```
 
 For bring-your-own authorization, each logged-in member creates their own
-profile without supplying an owner id; Kortix derives ownership from the bearer
+connection without supplying an owner id; Kortix derives ownership from the bearer
 token:
 
 ```ts
-const profile = await project.connectors.profiles.reconcileMember({
+const connection = await project.connectors.connections.reconcileMember({
   connector_alias: "gmail",
   label: "My Gmail",
 });
-await project.connectors.profiles.pipedreamConnect(profile.profile_id);
+await project.connectors.connections.pipedreamConnect(connection.connection_id);
 // Complete OAuth, then:
-await project.connectors.profiles.pipedreamFinalize(profile.profile_id);
+await project.connectors.connections.pipedreamFinalize(connection.connection_id);
 await project.sessions.create({
-  connector_bindings: { gmail: { profile_id: profile.profile_id } },
+  connector_bindings: { gmail: { connection_id: connection.connection_id } },
 });
 ```
 
-Member profiles are owner-only even for project managers, and sessions using
+Member connections are owner-only even for project managers, and sessions using
 one must remain private. Project defaults remain shared; external/agent/subject
-profiles remain operator-managed. Every profile is project/connector scoped
-and resolved on every Executor request, so revocation takes effect without a
+connections remain operator-managed. Every connection is project/connector scoped
+and resolved on every Connector request, so revocation takes effect without a
 restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.

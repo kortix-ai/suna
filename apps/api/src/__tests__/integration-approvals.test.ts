@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
-  executorExecutions,
+  connectorCalls,
   projectMembers,
   projectSessions,
   sessionLifecycleCommands,
@@ -153,7 +153,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const id of execIds)
-    await db.delete(executorExecutions).where(eq(executorExecutions.executionId, id));
+    await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
   for (const id of minted)
@@ -197,7 +197,7 @@ afterAll(async () => {
 async function seedPending(argsPreviewComplete = true): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
   const [row] = await db
-    .insert(executorExecutions)
+    .insert(connectorCalls)
     .values({
       accountId: ctx.accountId,
       projectId: ctx.projectId,
@@ -212,7 +212,7 @@ async function seedPending(argsPreviewComplete = true): Promise<string> {
         args_preview_complete: argsPreviewComplete,
       },
     })
-    .returning({ id: executorExecutions.executionId });
+    .returning({ id: connectorCalls.executionId });
   execIds.push(row.id);
   return row.id;
 }
@@ -255,8 +255,8 @@ describe('approvals inbox + resolution', () => {
     expect(ap.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     // Approve clears the gate to the terminal `ok` + stamps the resolver.
     expect(after.status).toBe('ok');
     expect(after.approvedBy).toBe(humanUserId);
@@ -324,8 +324,8 @@ describe('approvals inbox + resolution', () => {
     expect(dn.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     expect(after.status).toBe('denied');
     expect(after.resolvedAt).toBeTruthy();
     // The denier is recorded too, so the audit trail attributes the refusal.
@@ -445,7 +445,7 @@ describe('approvals inbox + resolution', () => {
     if (!ctx) return;
     const missingSessionId = crypto.randomUUID();
     const [row] = await db
-      .insert(executorExecutions)
+      .insert(connectorCalls)
       .values({
         accountId: ctx.accountId,
         projectId: ctx.projectId,
@@ -458,7 +458,7 @@ describe('approvals inbox + resolution', () => {
           args_preview_complete: true,
         },
       })
-      .returning({ id: executorExecutions.executionId });
+      .returning({ id: connectorCalls.executionId });
     execIds.push(row.id);
 
     const response = await authPost(`/v1/projects/${ctx.projectId}/approvals/${row.id}`, {
@@ -468,8 +468,8 @@ describe('approvals inbox + resolution', () => {
 
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, row.id));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, row.id));
     expect(after.status).toBe('pending_approval');
     expect(after.approvedBy).toBeNull();
     expect(after.resolvedAt).toBeNull();

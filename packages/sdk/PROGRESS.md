@@ -12,6 +12,43 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-05 — session `cli-connectors-refactor` claim
+
+Claimed scope:
+
+- Replace active `executor`, connector `profile`, and product `integration`
+  terminology with `connector` and `connection` across
+  the SDK, CLI, API, runtime, npm package, documentation, and tests.
+- Preserve published `@kortix/sdk` compatibility with deprecated aliases where
+  removal would break existing consumers.
+- Collapse the agent-facing CLI into one `kortix connectors` command tree.
+- Fix and black-box verify the complete CLI defect list in
+  `kortix-cli-refactor-report.md` with a real agent-minted session token.
+
+The required `tdd` skill is unavailable in this session. The work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required SDK gates are typecheck, the full test suite, and packed-install smoke.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1575 pass`, `0 fail`, and
+  `6401 expect()` calls across `122` files after the final rebase.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+- `bun apps/api/scripts/e2e-cli-agent-token.ts`: `85 pass`, `0 fail`. Every
+  assertion launched the real CLI with a production-minted project/session PAT.
+
+Published `profile` and `integration` names remain as deprecated aliases.
+Canonical new code uses `connector` and `connection`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `connector-secret-binding` completion
 
 No **Now** task claimed. This is an additive connector credential-source fix.
@@ -194,6 +231,26 @@ web host reimplemented a worse one inline. It stays exported because it is
 published API; new host code should use `message-queue` instead. Its weakness is
 structural, not a bug: it holds `dispatch` closures, and a closure cannot be
 persisted across a reload, reordered, or edited by a user.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-06 — session `cli-connectors-refactor` channel terminology claim
+
+Add canonical `connectorSlug` to `EmailInstallation`.
+Preserve `profileSlug` as a deprecated compatibility field.
+Normalize canonical and legacy API wire fields onto both public properties.
+
+The required `tdd` skill is unavailable in this session.
+This work uses the required RED, GREEN, and REFACTOR sequence directly.
+
+Final SDK gates:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1537 pass`, `0 fail`, and
+  `6316 expect()` calls across `121` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
 
 **Status:** COMPLETE.
 
@@ -465,8 +522,8 @@ Also stop if the same failure survives three different fixes (use
 
 ## COMPLETED PLAN — native integration authentication lifecycle
 
-- **Plan:** `docs/superpowers/plans/2026-07-25-native-integration-auth-lifecycle.md`
-- **Spec:** `docs/superpowers/specs/2026-07-25-native-integration-auth-lifecycle-design.md`
+- **Plan:** `docs/superpowers/plans/2026-07-25-native-connector-auth-lifecycle.md`
+- **Spec:** `docs/superpowers/specs/2026-07-25-native-connector-auth-lifecycle-design.md`
 
 | # | Task | Status | Session | Last touched | Commit |
 |---|---|---|---|---|---|
@@ -474,7 +531,7 @@ Also stop if the same failure survives three different fixes (use
 | 2 | Database lifecycle | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `572bedb5a` |
 | 3 | OAuth2 protocol engine | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `db31d216e` |
 | 4 | API lifecycle routes | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `63dda6afe` |
-| 5 | Executor and non-OAuth request authentication | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `35daeda10` |
+| 5 | Connector and non-OAuth request authentication | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `35daeda10` |
 | 6 | SDK and web integration | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `b3826fa8f` |
 | 7 | Local verification | DONE WITH BROWSER BLOCKER | `native-oauth-full-lifecycle` | 2026-07-25 | `4575346db` |
 | 8 | Delivery and dev proof | DONE | `native-oauth-full-lifecycle` | 2026-07-25 | `00bc29065` + `8a1249883` |
@@ -528,13 +585,13 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability.                                                                                                                                                                                                                  | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`.                                                                                                                                                                               | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green                                                                                                                                                                                                 |
 | B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.**                                                                                                                                                                                                                                                                                                                           | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`.                                                                                                                      | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green                                                                                                                                                                                                 |
 | B10 | **Expose the managed Git username alongside the push token.** Code Storage uses `t:<token>` while GitHub uses `x-access-token:<token>`; clients need the provider-selected username to clone and push without hard-coding GitHub credentials.                                                                                                                                                                                                | `src/core/rest/projects-client/projects.ts` models `ProjectGitToken` with only `push_token`; the Code Storage end-to-end flow requires an additive `git_username`.                                                                                                                                      | **DONE 2026-07-19** — implementation `ab80f9305`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
-| B11 | **Expose owner-scoped member connection-profile creation and profile-specific Pipedream connect/finalize.**                                                                                                                                                                                                                                                                                                                                  | Existing profile lifecycle methods only target manager-owned `/connector-profiles` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connector-profiles/me` and `/{profileId}/connect`.                                                   | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
+| B11 | **Expose owner-scoped member connection creation and profile-specific Pipedream connect/finalize.**                                                                                                                                                                                                                                                                                                                                  | Existing profile lifecycle methods only target manager-owned `/connections` and the shared connector Pipedream identity; session-selected member profiles need additive typed methods for `/connections/me` and `/{connectionId}/connect`.                                                   | **DONE 2026-07-21** — implementation `3eb18b361`; full SDK suite, typecheck, and packed-install smoke green                                                                                                                                                            |
 | B12 | **Allow daemon-owned PTY queries before OpenCode reports ready.**                                                                                                                                                                                                                                                                                                                                                                            | `useOpenCodePtyList()` gates `/kortix/pty` on `useOpenCodeRuntimeReady()`, while `apps/kortix-sandbox-agent-server/src/proxy.ts` owns `/kortix/pty` independently of OpenCode.                                                                                                                          | **DONE 2026-07-22** — implementation `c973f9209`; SDK and web suites, packed-install smoke, isolated proxy tests, and live Platinum/Daytona PTY smokes green                                                                                                           |
 | B13 | **Add bounded GitHub repository discovery for large managed owners.** The current client can only request the full owner repository list, which exceeds the API processing deadline for `managed-kortix`.                                                                                                                                                                                                                                    | Production `GET /v1/projects/github/repositories?...&installation_id=pat` returned `503` after 25 seconds; `packages/sdk/src/core/rest/projects-client/github.ts` exposes no page or search input.                                                                                                      | **DONE 2026-07-23** — `0748271116`; session `github-repo-selector`                                                                                                                                                                                                     |
 | B14 | **Remove the synthetic `auto` model and enforce paid-tier access for every Kortix-managed model in every environment.** Free-tier wallet credits are sandbox-only; stale `auto` requests must fail closed instead of selecting a managed fallback.                                                                                                                                                                                           | `packages/sdk/src/react/use-opencode-local.ts` sends `kortix/auto`; `apps/api/src/billing/services/tiers.ts` disables managed-model entitlement enforcement for every dev/preview account.                                                                                                              | **DONE 2026-07-24** — implementation `406eb5e9a`; session `fix-free-tier-model-entitlement`                                                                                                                                                                            |
 | B15 | **Top-level `runtime()` on a scoped client bled to the process-global sandbox (cross-tenant).** `createScopedKortix`'s `wrapScoped` scopes the token but not the top-level `runtime()`, which resolves the process-global active runtime (`getActiveOpenCodeUrl()` → last session to `ensureReady()`). In a multi-tenant KaaB wrapper `kortixA.runtime()` reached another end-user's sandbox. #5273 scoped `session().runtime` but not this. | `src/node/server.ts` (`createScopedKortix`); `src/core/client/kortix.ts:43,752,1000`; `src/core/session/server-store/active.ts:21`. RED-proven in `src/node/server.test.ts` (scoped `runtime()` returned a client instead of throwing).                                                                 | **DONE 2026-07-23** — session `sdk-scoped-runtime`; scoped `runtime()` now throws + steers to `session(pid,sid).runtime`; adds no public export (surface snapshot unchanged); typecheck + full suite (1156 pass) + `smoke:install` green                               |
 | B16 | **Retry transient transport failures on idempotent REST reads before reporting them.** Browser CORS preflight failures surface as opaque `TypeError: Failed to fetch`, bypass the existing HTTP 502/503/504 retry loop, and call the host error handler before React Query retries successfully. Cache successful preflights to reduce exposure without retrying mutations.                                                                  | Production session `d9abee06-5af1-48b9-ba92-53ca0fcf0589` logged continuous audit `200` responses after one browser preflight failure; `src/core/http/api-client.ts` retries response statuses but reports initial fetch throws immediately; `apps/api/src/index.ts` emits no `Access-Control-Max-Age`. | **DONE 2026-07-24** — implementation `9f6e5b615`; session `cors-transport-resilience`                                                                                                                                                                                  |
-| B17 | **Add native OAuth2 client-credentials lifecycle support to existing connector connection profiles.** Static bearer credentials cannot acquire, cache, refresh, or revoke OAuth2 access tokens. Microsoft Graph and SharePoint require OAuth2 and cannot use a static API key.                                                                                                                                                               | `apps/api/src/executor/credentials.ts` decrypts one opaque value; `apps/api/src/executor/db-deps.ts` passes that value directly to `executeCall`; `packages/sdk/src/core/rest/projects-client/connectors.ts` accepts only `{ value }`.                                                                  | **DONE 2026-07-24** — session `native-oauth-sharepoint`; full SDK gates and real SharePoint proof green                                                                                                                                                                |
+| B17 | **Add native OAuth2 client-credentials lifecycle support to existing connector connections.** Static bearer credentials cannot acquire, cache, refresh, or revoke OAuth2 access tokens. Microsoft Graph and SharePoint require OAuth2 and cannot use a static API key.                                                                                                                                                               | `apps/api/src/connectors/credentials.ts` decrypts one opaque value; `apps/api/src/connectors/db-deps.ts` passes that value directly to `executeCall`; `packages/sdk/src/core/rest/projects-client/connectors.ts` accepts only `{ value }`.                                                                  | **DONE 2026-07-24** — session `native-oauth-sharepoint`; full SDK gates and real SharePoint proof green                                                                                                                                                                |
 | B18 | **Keep the managed-model playground pin synchronized with the managed catalog.** The playground exits before API access when its pinned IDs differ from `MANAGED_MODELS`.                                                                                                                                                                                                                                                                    | `packages/sdk/playground/chat/14-change-default-model.ts` still pins retired `qwen3.7-max` and `deepseek-v4-pro`.                                                                                                                                                                                       | **DONE 2026-07-24** — session `managed-models-aster`; full SDK gates green                                                                                                                                                                                             |
 | B19 | **Preserve explicit managed-model pricing and cache-write rates through the project catalog and turn-cost estimator.** Browser-side `models.dev` lookup can substitute another provider's price for a Kortix-managed model, and the turn estimator does not accept a distinct cache-write rate.                                                                                                                                              | `src/core/rest/projects-client/projects.ts`, `src/core/turns/types.ts`, `src/core/turns/state.ts`; confirmed for managed Aster `glm-5.2`.                                                                                                                                                               | **DONE 2026-07-25** — implementation `28c18cbfa`; full SDK suite, typecheck, public-surface snapshot, and packed-install smoke green                                                                                                                                   |
 | B20 | **Keep ACP SSE connections outside the shared 30-second authenticated-fetch timeout.** The ACP controller uses `/kortix/acp/:sessionId` as a long-lived SSE stream.                                                                                                                                                                                                                                                                            | `src/platform/auth-core.ts` exempted only `/global/event`; deployed cold Chromium aborted the ACP stream before `session/load` settled.                                                                                                                                                                | **DONE 2026-07-25** — implementation `89b97f4cc`; RED test, full SDK gates, and local cold ACP plus REST browser matrix pass                                                                                                                                                                                                         |
@@ -599,12 +656,12 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `ab099b6a`               | Original preview-token malformed-200 guard was itself broken: `upstreamRes.status \|\| 502` returns 200 on that path, so the "error" response shipped as HTTP 200. Fixed by the Task 6 rewrite (now a real 502, e2e-covered)                                                                                                                                                                                                                                                                                                                                                                          | `apps/whitelabel-demo/src/app/api/preview-token/route.ts` (pre-`19e500e50`)                                       |
 | 2026-07-10 | `ab099b6a`               | **CRITICAL (final review): the CDN claim is unfulfillable by the release pipeline.** Publish runs tsc only (`publish-npm-package.sh:36`; `prepublishOnly` tsc-only) so tsup bundles never land in the tarball; `stage-npm-publish.mjs:37` promotes only `type/main/types/exports/files/bin`, so `browser`/`unpkg`/`jsdelivr` stay nested in `publishConfig` where npm/unpkg/jsDelivr never look; nothing validates them at release. Plan flaw (plan `:1253-1278` said "pass through untouched"), faithfully implemented. Decision with Jay: wire the pipeline vs walk back the README/CHANGELOG claim | `scripts/{publish-npm-package.sh,stage-npm-publish.mjs}`, `packages/sdk/{README,CHANGELOG}.md`                    |
 | 2026-07-10 | `ab099b6a`               | `bundle.test.ts` never executes in CI (no workflow runs `build:bundles` → both tests skip forever) and NO workflow runs `pnpm --filter @kortix/sdk typecheck` at all (examples' "typechecked in CI" claim is local-only). Two cheap CI steps close both                                                                                                                                                                                                                                                                                                                                               | `.github/workflows/package-tests.yml`                                                                             |
-| 2026-07-10 | `4003a41b`               | GETTING-STARTED step 3 was un-followable: the web "API keys" tab's **Create button only rendered in the empty state**, and the executor auto-mints "Executor Session" tokens, so real accounts never see it — no way to mint a PAT from the UI. Fixed (uncommitted, this worktree): `CreateApiKeyAction` header button + regression test; doc wording updated ("CLI tokens tab" → "API keys")                                                                                                                                                                                                         | `apps/web/src/features/accounts/settings/cli-tokens-tab.tsx`, `packages/sdk/GETTING-STARTED.md`                   |
+| 2026-07-10 | `4003a41b`               | GETTING-STARTED step 3 was un-followable: the web "API keys" tab's **Create button only rendered in the empty state**, and the connector auto-mints "Connector Session" tokens, so real accounts never see it — no way to mint a PAT from the UI. Fixed (uncommitted, this worktree): `CreateApiKeyAction` header button + regression test; doc wording updated ("CLI tokens tab" → "API keys")                                                                                                                                                                                                         | `apps/web/src/features/accounts/settings/cli-tokens-tab.tsx`, `packages/sdk/GETTING-STARTED.md`                   |
 | 2026-07-10 | `4003a41b`               | **`ensureReady()` is single-shot** — one `/start` with `wait_ms=30_000`, then throws `RUNTIME_UNAVAILABLE`; a cold provision (observed: minutes) makes EVERY ensureReady example (02/04/06/07) fail — callers must hand-roll a retry loop (examples 09/step4 in this worktree do). Live-observed worse: the server returned near-instantly ~99× in 5min (long-poll not held), and one session went provisioning→stopped and then **disappeared from `projects.sessions()`**. SDK DX gap: `ensureReady({ deadlineMs })` or documented retry                                                            | `packages/sdk/src/core/client/kortix.ts:674` (verified live against local stack)                                  |
 | 2026-07-10 | `4003a41b`               | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config                                                                                                                                                              | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252`         |
 | 2026-07-11 | `4003a41b`               | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack                                                                                                                                                                                                                                                                                          | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`)                                 |
 | 2026-07-11 | `4003a41b`               | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally                                                                                                                                                                                                                                                                                                       | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33`                                                 |
-| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/executor/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
+| 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/connectors/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 ---
 
@@ -784,7 +841,7 @@ pipeline, `api.kortix.com`, both CI gates now.
   staging call sites (`smoke-install.mjs`, CI dry-pack loop) also build
   bundles — required, or the new validation would redline them. Tarball
   simulation: both bundles in the tarball, top-level CDN fields staged,
-  manifests restored byte-identical. Siblings (llm-catalog, executor-sdk)
+  manifests restored byte-identical. Siblings (llm-catalog, connector-sdk)
   provably unaffected (promote-if-present; pinned by test).
 - `695908713` — README standardized on `api.kortix.com` (Jay's call).
 - `e48a48489` — `package-tests.yml`: SDK typecheck step + `build:bundles`
@@ -1609,7 +1666,7 @@ PR #4920. The earlier first-class Postman provider remains accepted by connector
 drafts and responses; only the integrations.sh list/detail functions and
 `project(id).connectors.discover` facade binding were removed.
 
-**Focused evidence:** executor/Postman tests passed **68 / 0**; the restored
+**Focused evidence:** connector/Postman tests passed **68 / 0**; the restored
 Connectors/Channels source regression passed **6 / 0**; API typecheck exited 0;
 and the ke2e coverage gate passed at **405 / 493 routes** with the two Discover
 routes absent.
@@ -1784,7 +1841,7 @@ feature lifecycle.
 
 ### 2026-07-21 — session `profile-owned-bindings` (B11 completion)
 
-Completed the additive member-owned connection-profile and session-binding
+Completed the additive member-owned connection and session-binding
 surface in implementation commit `3eb18b361`. A member can reconcile a profile
 whose owner is derived from the bearer token, connect/finalize its distinct
 Pipedream identity, and select it explicitly when starting a private session.
@@ -1794,7 +1851,7 @@ member's profile. Runtime resolution fails closed on owner or visibility drift.
 No exported SDK name or existing field was removed or renamed.
 
 **TDD and focused evidence:** profile/Postgres integration reported **15 pass / 0
-fail**; authenticated HTTP authorization reported **5 pass / 0 fail**; Executor
+fail**; authenticated HTTP authorization reported **5 pass / 0 fail**; Connector
 gateway reported **32 pass / 0 fail**; and the computer connector regression
 reported **8 pass / 0 fail**. The public runtime and type snapshots contain
 additions only.
@@ -1802,7 +1859,7 @@ additions only.
 **Real local E2E:** two real Supabase users created, listed, mutated, and bound
 only their own profiles; two real session starts persisted distinct bindings;
 project/public sharing was rejected for the personal-profile session; and two
-real Executor calls resolved distinct hidden credentials. The black-box proof
+real Connector calls resolved distinct hidden credentials. The black-box proof
 reported **21 pass / 0 fail**. Cleanup then verified zero synthetic projects,
 users, tokens, and sandbox rows remained.
 
@@ -1815,7 +1872,7 @@ and constructed `@kortix/sdk` successfully. API typecheck exited 0 and `git diff
 **Post-rebase addendum:** after rebasing onto current `origin/main` at
 `962498c4f`, SDK typecheck and packed-install smoke remained green; the full SDK
 suite reported **1147 pass / 0 fail** across 86 files with 5080 assertions; API
-typecheck exited 0; and the focused profile/authorization/Executor run reported
+typecheck exited 0; and the focused profile/authorization/Connector run reported
 **52 pass / 0 fail**. The unrelated computer integration finding is recorded in
 Discovered this session rather than changed inside B11.
 
@@ -1827,7 +1884,7 @@ the parent feature lifecycle.
 
 ### 2026-07-21 — session `revert-owner-profile-bindings` (completion)
 
-Reverted the unfinished owner-scoped connector-profile session-start surface
+Reverted the unfinished owner-scoped connector-connection session-start surface
 introduced by #5139 so `main` returns to the previously published SDK contract.
 This is an exact feature rollback rather than a new SDK behavior; the feature
 will continue in a separate draft PR before it is considered shippable.
@@ -1844,14 +1901,14 @@ feature itself is **NOT YET** shippable and remains open as WIP.
 
 ### 2026-07-21 — session `service-account-profile-hardening` (claim)
 
-Claimed the user-directed restoration of owner-scoped connector-profile bindings
+Claimed the user-directed restoration of owner-scoped connector-connection bindings
 after the security rollback, including the late Strix findings on both #5139 and
 #5143. The restored additive SDK contract will remain unchanged; API enforcement
 will additionally prove that service-account principals cannot create, list,
 mutate, OAuth-connect, bind, or execute human `member` profiles, including
 queued session creation and pre-existing forged bindings. Work will follow
 RED → GREEN → REFACTOR and finish with the full SDK typecheck, test, and packed-
-install smoke gates plus real HTTP/Executor proof.
+install smoke gates plus real HTTP/Connector proof.
 
 **Status:** IN PROGRESS.
 
@@ -1862,7 +1919,7 @@ install smoke gates plus real HTTP/Executor proof.
 Completed the security restoration in `de11be3b0` and the post-rebase WhatsApp
 principal propagation in `396a63823`. Direct service-account principals can no
 longer create, enumerate, mutate, OAuth-connect, bind, or execute `member`
-connection profiles, even when a forged row uses the service-account UUID as its
+connections, even when a forged row uses the service-account UUID as its
 owner. Principal type survives durable queue persistence; older queued commands
 infer it from the stored actor. Runtime resolution also rejects pre-existing
 service-account sessions bound to forged member profiles. The restored manager
@@ -1870,8 +1927,8 @@ ownership and personal-session privacy checks cover every Strix thread from
 #5139 and #5143.
 
 **Focused evidence:** authenticated profile HTTP authorization reported **9 pass
-/ 0 fail**; profile binding and Executor resolution reported **18 pass / 0
-fail**; Executor gateway, sharing, public share, transcript, share endpoint,
+/ 0 fail**; profile binding and Connector resolution reported **18 pass / 0
+fail**; Connector gateway, sharing, public share, transcript, share endpoint,
 session sandbox, and queue payload suites reported **86 pass / 0 fail**. Email,
 Slack selection/dispatch, Teams, Telegram, trigger attribution, and WhatsApp
 reported **60 pass / 0 fail**. API typecheck exited 0 and `git diff --check` was
@@ -1885,7 +1942,7 @@ and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface and locally verified API
 hardening. Replacement PR review, Deploy Dev, deployed-SHA proof, and live-dev
-HTTP/Executor verification remain part of the repository lifecycle.
+HTTP/Connector verification remain part of the repository lifecycle.
 
 ---
 
@@ -2133,8 +2190,8 @@ part of the repository lifecycle.
 
 ### 2026-07-24 — session `native-oauth-sharepoint` (B17 claim)
 
-Claimed the additive native OAuth2 client-credentials connection-profile
-contract. The existing Executor and Connector architecture remains unchanged.
+Claimed the additive native OAuth2 client-credentials connection
+contract. The existing Connector and Connector architecture remains unchanged.
 The server will acquire, cache, refresh, revoke, and inject OAuth2 access tokens.
 The first slice supports client secrets and certificate-based client assertions.
 Existing static credentials and Pipedream connections remain backward compatible.
@@ -2145,21 +2202,21 @@ Existing static credentials and Pipedream connections remain backward compatible
 
 ### 2026-07-24 — session `native-oauth-sharepoint` (B17 completion)
 
-Added OAuth2 client credentials to the existing Connector and Executor
+Added OAuth2 client credentials to the existing Connector and Connector
 credential routes. Static credentials remain compatible. The new contract
 supports `client_secret_post`, `client_secret_basic`, and `private_key_jwt`.
 Certificate assertions use `PS256` and include `x5t#S256`.
 
 The API validates the token endpoint before storage. It encrypts the OAuth2
-configuration and cached access token with the project key. Executor resolution
+configuration and cached access token with the project key. Connector resolution
 refreshes tokens with 60 seconds or less remaining. A PostgreSQL advisory lock
 serializes concurrent refreshes for each credential row. Profile revocation
-removes the credential from the next Executor resolution.
+removes the credential from the next Connector resolution.
 
 **Final SDK gates:** the SDK typecheck exited 0. The full SDK suite reported
 **1187 pass / 0 fail** across 89 files. The packed-install smoke built,
 packed, installed, imported, and constructed `@kortix/sdk`. The public type
-snapshot adds only `ConnectionProfileCredentialInput` and
+snapshot adds only `ConnectionCredentialInput` and
 `OAuth2ClientCredentials` under the root and `projects-client` exports.
 
 **Cross-surface evidence:** the API contract reported **37 pass / 0 fail**.
@@ -2171,12 +2228,12 @@ ESLint and `git diff --check` exited 0.
 
 The repository-wide API suite is not green on this base. Unrelated baseline
 failures include missing `getTraceHeaders`, stale sandbox-reaper exports, and
-incomplete maintenance mocks. The changed OAuth2 and Executor suites pass.
+incomplete maintenance mocks. The changed OAuth2 and Connector suites pass.
 
 **Real SharePoint evidence:** the isolated API acquired a Microsoft Graph token.
 Graph returned 200 for the configured SharePoint site. Graph returned 200 for
 the document-library list and returned one drive. Local profile revocation
-returned 200. The next Executor call returned 404.
+returned 200. The next Connector call returned 404.
 
 The browser runtime exposed zero browsers. Browser DOM and network verification
 remain unexecuted. The temporary browser fixture was deleted. The isolated
@@ -2286,13 +2343,13 @@ and cookies; generic HMAC-SHA256; AWS Signature Version 4; and mutual TLS.
 Existing bearer, HTTP Basic, custom, OAuth 1.0a, and no-auth behavior remains.
 The manifest schema and SDK types expose the same authentication matrix.
 
-**RED evidence:** four executor tests failed before implementation. They showed
+**RED evidence:** four connector tests failed before implementation. They showed
 missing cookie placement, raw HMAC and SigV4 credentials in headers, and absent
 TLS options.
 
 **Verification:**
 
-- Focused executor, OAuth, manifest, contract, and SDK suites:
+- Focused connector, OAuth, manifest, contract, and SDK suites:
   **205 pass / 0 fail**.
 - Added manifest conformance proof: **108 pass / 0 fail** in the final focused
   wave.
@@ -2548,9 +2605,9 @@ tenant ownership.
 - Database typecheck: exit 0.
 - Migration lint: 72 files pass with eight existing destructive warnings.
 - Isolated database migration: applied
-  `20260725120000000_executor_oauth_lifecycle`.
-- Database query returned `executor_oauth_applications` and
-  `executor_oauth_sessions`.
+  `20260725120000000_connector_oauth_lifecycle`.
+- Database query returned `connection_oauth_applications` and
+  `connection_oauth_sessions`.
 
 **Shippable to production: NOT YET.** Tasks 3 through 8 remain incomplete.
 
@@ -2589,13 +2646,13 @@ proof remains open for Task 7.
 
 ### 2026-07-25 — session `native-oauth-full-lifecycle` (authentication Task 7)
 
-Completed the local contract, API, executor, SDK, database, web, and live HTTP
+Completed the local contract, API, connector, SDK, database, web, and live HTTP
 verification.
 
 **Verification:**
 
 - OAuth and request-authentication API suite: **44 pass / 0 fail**.
-- Executor faces and authentication discovery suite: **80 pass / 0 fail**.
+- Connector faces and authentication discovery suite: **80 pass / 0 fail**.
 - OAuth web suite: **18 pass / 0 fail**.
 - Full web suite: **2064 pass / 0 fail**.
 - Full SDK suite: **1214 pass / 0 fail**.
@@ -4149,7 +4206,7 @@ Cleanup verification:
 - Five Platinum sandbox IDs returned `404`.
 - The managed GitHub repository returned `404`.
 - The Supabase test user count was `0`.
-- The test PAT and all five executor tokens were revoked.
+- The test PAT and all five connector tokens were revoked.
 - The temporary `OPENAI_API_KEY` project secret was deleted.
 
 **Status:** COMPLETE.
@@ -5301,7 +5358,7 @@ RED:
 
 - The new SDK audit contract tests failed before the event fields and list
   filters existed.
-- The executor privacy test failed while an access token remained in the result
+- The connector privacy test failed while an access token remained in the result
   summary. The redaction fix changed the value to `[redacted]`.
 
 GREEN:
@@ -6327,7 +6384,7 @@ the bug being fixed.
 
 ---
 
-### 2026-08-03 — session `integrator-policy-approvals` claim
+### 2026-08-03 — session `connector-policy-approvals` claim
 
 No **Now** task claimed. This is a narrow additive approval-link contract fix.
 
@@ -6348,7 +6405,7 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 
 ---
 
-### 2026-08-03 — session `integrator-policy-approvals` completion
+### 2026-08-03 — session `connector-policy-approvals` completion
 
 Added the optional `review_complete` field to `ApprovalLinkDetails`. Existing
 consumers that construct this public interface remain source-compatible. The web

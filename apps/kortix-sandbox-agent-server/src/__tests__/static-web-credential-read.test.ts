@@ -6,7 +6,7 @@
  * where the daemon writes:
  *
  *   ~/.config/kortix-opencode.json          the session's LLM gateway key and,
- *                                           on Daytona, its executor PAT
+ *                                           on Daytona, its connector PAT
  *   ~/.local/share/opencode/auth.json       the account's Codex/OpenCode
  *                                           subscription credential
  *

@@ -52,7 +52,7 @@ import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
 import {
   bulkSkipMessage,
-  execExecutionId,
+  connectorCallId,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
@@ -158,7 +158,7 @@ function ItemRow({
   fresh: boolean;
   /** prefers-reduced-motion: collapse enter/stagger to instant. */
   reduce: boolean;
-  /** Whether this row exposes inline decisions. Executor approvals are false. */
+  /** Whether this row exposes inline decisions. Connector approvals are false. */
   quickDecidable: boolean;
   /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
   pendingDecision?: 'approve' | 'deny' | null;
@@ -538,7 +538,7 @@ export function ReviewCenter({
   };
 
   /** Legacy quick-decision handler. The eligibility helper currently returns
-   *  false because Executor approvals require the parameter-review modal. */
+   *  false because Connector approvals require the parameter-review modal. */
   const quickDecide = (item: ReviewItem, decision: 'approve' | 'deny') => {
     actions.resolve(
       item.id,
@@ -586,7 +586,7 @@ export function ReviewCenter({
 
   /** Connected mode: decide up-front what the verdict will really act on so
    *  the optimistic removal + toast never claim more than the server was
-   *  asked. Bulk verdicts skip executor approvals and Change Requests. */
+   *  asked. Bulk verdicts skip connector approvals and Change Requests. */
   const connectedBulkOutcome = (ids: string[], verdict: 'approve' | 'dismiss') => {
     const riskById = new Map(items.map((i) => [i.id, i.risk]));
     return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
@@ -652,7 +652,7 @@ export function ReviewCenter({
 
   const toggleSelect = (id: string) => {
     const item = items.find((candidate) => candidate.id === id);
-    if (item?.kind === 'approval' || (connected && execExecutionId(id))) return;
+    if (item?.kind === 'approval' || (connected && connectorCallId(id))) return;
     setSelectedIds((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
@@ -1010,7 +1010,7 @@ export function ReviewCenter({
                           pendingDecision={pendingId === item.id ? pendingDecision : null}
                           bulkSelectable={
                             item.kind !== 'approval' &&
-                            (!connected || execExecutionId(item.id) === null)
+                            (!connected || connectorCallId(item.id) === null)
                           }
                           onOpen={() => setSelectedId(item.id)}
                           onToggleSelect={() => toggleSelect(item.id)}
@@ -1047,7 +1047,7 @@ export function ReviewCenter({
                   quickDecidable={connected && isQuickDecidableApproval(item)}
                   pendingDecision={pendingId === item.id ? pendingDecision : null}
                   bulkSelectable={
-                    item.kind !== 'approval' && (!connected || execExecutionId(item.id) === null)
+                    item.kind !== 'approval' && (!connected || connectorCallId(item.id) === null)
                   }
                   sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
                   onOpen={() => setSelectedId(item.id)}

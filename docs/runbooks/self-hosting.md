@@ -407,7 +407,7 @@ kortix self-host env set SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=... 
 kortix self-host env set ENABLE_EMAIL_AUTOCONFIRM=false KORTIX_PUBLIC_AUTH_METHODS=password,magic
 
 # Pipedream connectors (optional)
-kortix self-host env set INTEGRATION_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
+kortix self-host env set CONNECTOR_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
   PIPEDREAM_CLIENT_SECRET=... PIPEDREAM_PROJECT_ID=...
 ```
 

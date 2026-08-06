@@ -8,24 +8,6 @@ import {
   resolveCustomizeOverlayHref,
 } from './customize-sections';
 
-
-/**
- * #6054 was put behind NEXT_PUBLIC_CAPABILITY_PAGES, so three of the
- * assertions below are flag-dependent. They assert the ON position — the
- * behaviour #6054 shipped — and `capability-pages.test.ts` covers OFF plus
- * both positions of every other entry point.
- */
-function withCapabilityPages<T>(on: boolean, fn: () => T): T {
-  const previous = process.env.NEXT_PUBLIC_CAPABILITY_PAGES;
-  process.env.NEXT_PUBLIC_CAPABILITY_PAGES = String(on);
-  try {
-    return fn();
-  } finally {
-    if (previous === undefined) delete process.env.NEXT_PUBLIC_CAPABILITY_PAGES;
-    else process.env.NEXT_PUBLIC_CAPABILITY_PAGES = previous;
-  }
-}
-
 describe('customize sections', () => {
   test('files is not a customize section — it lives on the standalone files page', () => {
     expect(parseCustomizeSection('files')).toBeNull();
@@ -39,14 +21,13 @@ describe('customize sections', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('dev');
   });
 
-  test('connectors, skills, and commands are overlay sections again', () => {
-    // They graduated in #6054 and came back when it was flagged off: the
-    // overlay has to be able to host them, or a deep link with the flag off
-    // resolves to nothing and reopens on the last-viewed section.
-    for (const section of ['connectors', 'skills', 'commands'] as const) {
-      expect(CUSTOMIZE_SECTIONS).toContain(section);
-      expect(parseCustomizeSection(section)).toBe(section);
-    }
+  test('connectors, skills, and commands graduated out of the overlay', () => {
+    expect(CUSTOMIZE_SECTIONS).not.toContain('connectors');
+    expect(CUSTOMIZE_SECTIONS).not.toContain('skills');
+    expect(CUSTOMIZE_SECTIONS).not.toContain('commands');
+    expect(parseCustomizeSection('connectors')).toBeNull();
+    expect(parseCustomizeSection('skills')).toBeNull();
+    expect(parseCustomizeSection('commands')).toBeNull();
   });
 
   test('parses every canonical section and rejects unknowns', () => {
@@ -66,12 +47,20 @@ describe('legacyCustomizeRedirect', () => {
       '/projects/p1/files?panel=proposed-changes',
     );
   });
-  test('routes the graduated sections to their own pages when the flag is ON', () => {
-    withCapabilityPages(true, () => {
-      expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
-      expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-      expect(legacyCustomizeRedirect('p1', 'commands')).toBe('/projects/p1/commands');
+  test('routes the graduated sections to their own pages', () => {
+    expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
+    expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
     });
+  });
+  test('commands stays in the overlay — its standalone page was removed', () => {
+    // Commands had a #6054 standalone page that was deleted, so the deep link
+    // must never bounce to /projects/<id>/commands (a dead route). It falls
+    // through to the overlay in both flag positions.
+    withCapabilityPages(true, () => {
+    expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
+    });
+    withCapabilityPages(false, () => {
+      expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
   });
   test('leaves overlay sections alone', () => {
     expect(legacyCustomizeRedirect('p1', 'agents')).toBeNull();
@@ -108,15 +97,17 @@ describe('resolveCustomizeOverlayHref', () => {
     // an unresolvable segment fell back to `openCustomize(undefined)`, which
     // silently opened the overlay on whatever section the user last viewed
     // instead of navigating anywhere.
-    withCapabilityPages(true, () => {
-      expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
-        opensOverlay: false,
-      });
-      expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
-        opensOverlay: false,
-      });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
+      opensOverlay: false,
     });
-    expect(resolveCustomizeOverlayHref('/projects/p1/customize/nope')).toEqual({
+      // Commands is no longer a capability section (its standalone page was
+      // removed), so a /customize/commands deep link opens the overlay on the
+      // commands section — it must NOT navigate to a dead route.
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+      opensOverlay: true,
+        section: 'commands',
+    });
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/connectors')).toEqual({
       opensOverlay: false,
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/nonsense')).toEqual({

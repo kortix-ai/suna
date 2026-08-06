@@ -109,6 +109,9 @@ function appWithProbe() {
   app.get('/v1/projects/:projectId', (c) =>
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
+  app.get('/v1/connectors/projects/:projectId/catalog', (c) =>
+    c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
+  );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
   app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
@@ -165,6 +168,24 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT can reach its own canonical /v1/connectors/projects/:id/* routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_A}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT cannot reach another project through connector routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_B}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('Project-scoped token cannot access a different project');
   });
 
   // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and

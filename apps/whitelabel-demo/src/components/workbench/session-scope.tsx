@@ -100,7 +100,7 @@ export function SessionScope({
   const agentName = session.data.agent_name ?? null;
   const connectionRows = scopeBarConnectors({
     choices: connectors.data?.connectors,
-    boundAuthorizations: readScopeBindingIds(scope.data.connector_bindings),
+    boundConnections: readScopeBindingIds(scope.data.connector_bindings),
   }).rows;
   const rows = sessionScopeRows({
     agentName: session.data.agent_name,
@@ -163,7 +163,7 @@ export function SessionScope({
 
       <div className="rounded-md border border-dashed border-border px-3 py-2.5">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          The secret allowlist and connector authorizations above come from the
+          The secret allowlist and connections above come from the
           session scope endpoint. Saving a change sends one complete
           replacement.
         </p>

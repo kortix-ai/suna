@@ -1,7 +1,7 @@
 /**
  * How many pages of the catalogue to hold, including the first.
  *
- * One page is 48 apps (`apps/api/src/executor/pipedream.ts:349`), which spread
+ * One page is 48 apps (`apps/api/src/connectors/pipedream.ts:349`), which spread
  * across ~11 category sections leaves several of them with a handful of cards
  * — "View all" on Productivity opened 8. Four pages is ~192 apps, enough for
  * 25-40 in the large categories.

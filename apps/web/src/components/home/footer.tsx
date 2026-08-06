@@ -29,7 +29,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
     links: [
       { label: 'Agent Computer', href: '/agent-computer' },
       { label: 'Company as Code', href: '/company-as-code' },
-      { label: 'Integrations', href: '/integrations' },
+      { label: 'Connectors', href: '/connectors' },
       { label: 'Automations', href: '/automations' },
       { label: 'Channels', href: '/channels' },
       { label: 'Agents & Skills', href: '/agents-and-skills' },

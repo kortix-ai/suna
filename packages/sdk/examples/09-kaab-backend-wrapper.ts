@@ -8,9 +8,9 @@
  *
  * This example does the entire path with no browser:
  *   1. mint a CONNECTOR definition           (headless: mcp/http/openapi/graphql)
- *   2. mint a per-end-user connection PROFILE (owner_type 'external' = your user)
+ *   2. mint a per-end-user connection (owner_type 'external' = your user)
  *      + store that user's own credential + activate it            (by reference)
- *   3. start a BACKEND-origin session, binding the profile, pinning the model
+ *   3. start a BACKEND-origin session, binding the connection, pinning the model
  *      and agent, and narrowing secrets                              (overrides)
  *   4. STREAM the agent's answer live to your terminal / your own SSE endpoint
  *
@@ -66,7 +66,7 @@ if (!upstreamApiKey || !projectId) {
  * auth store, keyed off the incoming request — never a hardcoded env var. Here
  * every user shares the wrapper's own key; origin still derives to 'backend',
  * and per-user isolation comes from wrapper-owned metadata and the end-user's
- * connection profile, not from distinct Kortix logins.
+ * connection, not from distinct Kortix logins.
  */
 function upstreamTokenFor(_endUserId: string): string {
   return upstreamApiKey!;
@@ -88,7 +88,7 @@ async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<vo
   // credential and need no OAuth (pipedream is the browser-only exception).
   // NB: an `mcp` connector uses `url` (openapi/postman use `spec`, http uses
   // `baseUrl`). The connector must be declared in the project's kortix.yaml for
-  // per-user PROFILES to reconcile against it.
+  // per-user CONNECTIONS to reconcile against it.
   await project.connectors.create({
     slug: CONNECTOR_SLUG,
     provider: 'mcp',
@@ -99,19 +99,19 @@ async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<vo
   });
 }
 
-// ─── step 2: mint + credential + activate this user's connection profile ─────
-/** Returns the `profile_id` you bind by reference, or null if the project has
+// ─── step 2: mint + credential + activate this user's connection ─────────────
+/** Returns the `connection_id` you bind by reference, or null if the project has
  *  no connector declared (a bare project without kortix.yaml). Idempotent per
  *  (connector, owner). `owner_type: 'external'` = your app's user, independent
  *  of any Kortix member/agent. */
-async function ensureUserProfile(
+async function ensureUserConnection(
   kortix: ReturnType<typeof clientFor>,
   endUserId: string,
   usersOwnCredential: string,
 ): Promise<string | null> {
   const project = kortix.project(projectId!);
   try {
-    const profile = await project.connectors.profiles.reconcile({
+    const connection = await project.connectors.connections.reconcile({
       connector_alias: CONNECTOR_SLUG,
       owner_type: 'external',
       owner_id: endUserId,
@@ -119,12 +119,12 @@ async function ensureUserProfile(
     });
     // Store THAT user's own credential (never sent again; resolved server-side
     // at connector-call time — it never enters the sandbox env).
-    await project.connectors.profiles.updateCredential(profile.profile_id, {
+    await project.connectors.connections.updateCredential(connection.connection_id, {
       value: usersOwnCredential,
       kind: 'secret',
     });
-    await project.connectors.profiles.activate(profile.profile_id);
-    return profile.profile_id;
+    await project.connectors.connections.activate(connection.connection_id);
+    return connection.connection_id;
   } catch (err) {
     // ONLY the "connector not declared in the project's kortix.yaml" case (404)
     // is a benign skip — run the rest of the flow without a binding. Every other
@@ -146,12 +146,12 @@ async function ensureUserProfile(
 // ─── step 3: start a backend-origin session bound to this user ───────────────
 async function startSession(
   kortix: ReturnType<typeof clientFor>,
-  profileId: string | null,
+  connectionId: string | null,
 ): Promise<string> {
   const body: Record<string, unknown> = {
-    // Bind the connector alias → this user's profile (credential by reference).
+    // Bind the connector alias → this user's connection (credential by reference).
     // NB: connector_bindings is all-or-nothing — bind every alias the agent needs.
-    ...(profileId ? { connector_bindings: { [CONNECTOR_SLUG]: { profile_id: profileId } } } : {}),
+    ...(connectionId ? { connector_bindings: { [CONNECTOR_SLUG]: { connection_id: connectionId } } } : {}),
     ...(AGENT_NAME ? { agent_name: AGENT_NAME } : {}),
     ...(MODEL ? { opencode_model: MODEL } : {}),
     // Backend-only secret narrowing. KAAB_OVERRIDES=off omits it.
@@ -224,12 +224,12 @@ async function serveOneUser(endUserId: string, prompt: string, onText: (t: strin
   // The connector layer is optional: on a bare project (no kortix.yaml / no
   // connector) it degrades to "no binding" and the session + streaming path
   // still runs. Set KAAB_NO_CONNECTOR=1 to skip it entirely.
-  let profileId: string | null = null;
+  let connectionId: string | null = null;
   if (process.env.KAAB_NO_CONNECTOR !== '1') {
     try {
       await ensureConnector(kortix);
       // In a real wrapper this credential is the user's own connected account.
-      profileId = await ensureUserProfile(
+      connectionId = await ensureUserConnection(
         kortix,
         endUserId,
         process.env.KAAB_USER_CREDENTIAL ?? 'placeholder-token',
@@ -238,7 +238,7 @@ async function serveOneUser(endUserId: string, prompt: string, onText: (t: strin
       console.error(`[connector] unavailable, continuing without a binding: ${String(err)}`);
     }
   }
-  const sessionId = await startSession(kortix, profileId);
+  const sessionId = await startSession(kortix, connectionId);
   await runTurn(kortix, sessionId, prompt, onText);
 }
 

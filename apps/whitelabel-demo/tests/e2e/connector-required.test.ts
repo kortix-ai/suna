@@ -24,14 +24,14 @@ const apiError = (body: Record<string, unknown>) =>
   );
 
 const authorizationRequired = (
-  profiles: Array<Record<string, unknown>>,
+  connections: Array<Record<string, unknown>>,
 ): Record<string, unknown> => ({
-  code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-  message: 'Connect the required connector profiles before starting this session.',
-  connector_profiles: profiles,
+  code: 'CONNECTOR_CONNECTION_REQUIRED',
+  message: 'Connect the required connectors before starting this session.',
+  connector_connections: connections,
 });
 
-const gmailProfile = (strategy: string) => ({
+const gmailConnection = (strategy: string) => ({
   id: '0f2f2c2e-0000-4000-8000-000000000001',
   slug: 'gmail',
   name: 'Gmail',
@@ -42,24 +42,24 @@ describe('connectorRequirement', () => {
   test('names every connector the 409 lists, with the strategy that decides the remedy', () => {
     const requirement = connectorRequirement(
       apiError(
-        authorizationRequired([gmailProfile('user'), { ...gmailProfile('project'), slug: 'slack', name: 'Slack' }]),
+        authorizationRequired([gmailConnection('user'), { ...gmailConnection('project'), slug: 'slack', name: 'Slack' }]),
       ),
     );
-    expect(requirement?.code).toBe('CONNECTOR_AUTHORIZATION_REQUIRED');
+    expect(requirement?.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
     expect(requirement?.connectors).toEqual([
       { alias: 'gmail', name: 'Gmail', strategy: 'user', remedy: 'own_account' },
       { alias: 'slack', name: 'Slack', strategy: 'project', remedy: 'shared_connection' },
     ]);
   });
 
-  test('an unavailable required profile names the alias the prose quotes', () => {
+  test('an unavailable required connection names the alias the prose quotes', () => {
     // The API sends no structured alias on this code — only
-    // `Required connector profile "gmail" is unavailable`. Without the alias the
+    // `Required connector "gmail" is unavailable`. Without the alias the
     // card says "something is missing", which is not a call to action.
     const requirement = connectorRequirement(
       apiError({
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
-        error: 'Required connector profile "gmail" is unavailable',
+        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
+        error: 'Required connector "gmail" is unavailable',
       }),
     );
     expect(requirement?.connectors).toEqual([
@@ -70,8 +70,8 @@ describe('connectorRequirement', () => {
   test('a structured alias wins over the prose, so the API can stop quoting', () => {
     const requirement = connectorRequirement(
       apiError({
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
-        error: 'Required connector profile "gmail" is unavailable',
+        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
+        error: 'Required connector "gmail" is unavailable',
         alias: 'google_mail',
       }),
     );
@@ -81,9 +81,9 @@ describe('connectorRequirement', () => {
   test('a body already normalised to camelCase classifies identically', () => {
     const requirement = connectorRequirement(
       apiError({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
         message: 'x',
-        connectorProfiles: [
+        connectorConnections: [
           { slug: 'gmail', name: 'Gmail', authorizationStrategy: 'project' },
         ],
       }),
@@ -91,13 +91,13 @@ describe('connectorRequirement', () => {
     expect(requirement?.connectors[0]?.remedy).toBe('shared_connection');
   });
 
-  test('CONNECTOR_CONNECTION_REQUIRED is NOT a platform code and must never classify', () => {
+  test('CONNECTOR_AUTHORIZATION_REQUIRED is not a platform code and never classifies', () => {
     // This demo classified it for months. It exists nowhere in the API, so the
     // connect prompt behind it was unreachable and every real refusal fell
     // through to a generic toast. Matching it again would resurrect that lie.
     expect(
       connectorRequirement(
-        apiError({ code: 'CONNECTOR_CONNECTION_REQUIRED', error: 'connect gmail' }),
+        apiError({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED', error: 'connect gmail' }),
       ),
     ).toBeNull();
   });
@@ -112,14 +112,14 @@ describe('connectorRequirement', () => {
     // Better a card that says "a connector is missing" than a generic toast:
     // the class of failure is known even when the connector is not.
     const requirement = connectorRequirement(apiError(authorizationRequired([])));
-    expect(requirement?.code).toBe('CONNECTOR_AUTHORIZATION_REQUIRED');
+    expect(requirement?.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
     expect(requirement?.connectors).toEqual([]);
     expect(requirement?.message.length).toBeGreaterThan(0);
   });
 
-  test('an unusable profile entry is dropped, not rendered as a nameless connector', () => {
+  test('an unusable connection entry is dropped, not rendered as a nameless connector', () => {
     const requirement = connectorRequirement(
-      apiError(authorizationRequired([{ name: 'Mystery' }, gmailProfile('project')])),
+      apiError(authorizationRequired([{ name: 'Mystery' }, gmailConnection('project')])),
     );
     expect(requirement?.connectors.map((c) => c.alias)).toEqual(['gmail']);
   });
@@ -185,10 +185,10 @@ describe('connectorRemedy', () => {
 describe('connectorRequirementSummary and the toast that uses it', () => {
   test('both real codes produce a specific, non-retryable create failure', () => {
     for (const body of [
-      authorizationRequired([gmailProfile('project')]),
+      authorizationRequired([gmailConnection('project')]),
       {
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
-        error: 'Required connector profile "gmail" is unavailable',
+        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
+        error: 'Required connector "gmail" is unavailable',
       },
     ]) {
       const failure = sessionCreateFailure(apiError(body));
@@ -201,7 +201,7 @@ describe('connectorRequirementSummary and the toast that uses it', () => {
 
   test('the toast and the card tell the same story', () => {
     const requirement = connectorRequirement(
-      apiError(authorizationRequired([gmailProfile('project')])),
+      apiError(authorizationRequired([gmailConnection('project')])),
     );
     const summary = connectorRequirementSummary(requirement!);
     const copy = connectorRemedy(requirement!.connectors[0], { wrapperMode: null });
@@ -214,8 +214,8 @@ describe('connectorRequirementSummary and the toast that uses it', () => {
       connectorRequirement(
         apiError(
           authorizationRequired([
-            gmailProfile('project'),
-            { ...gmailProfile('user'), slug: 'slack', name: 'Slack' },
+            gmailConnection('project'),
+            { ...gmailConnection('user'), slug: 'slack', name: 'Slack' },
           ]),
         ),
       )!,

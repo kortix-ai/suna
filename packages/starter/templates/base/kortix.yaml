@@ -160,6 +160,6 @@ triggers:
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack
 # today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel integration
+# (Customize → Channels), not committed to git. The channel connection
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.

@@ -23,8 +23,8 @@ import { useCustomizeStore } from '@/stores/customize-store';
  * surfaces, and which one is which does not follow from the labels:
  *
  *  - ProjectCustomizeNavItem — top of the panel, under New session. Navigates
- *    to the capability pages (Connectors / Skills / Commands). Gated, because
- *    those pages can 403.
+ *    to the capability pages (Connectors / Skills). Gated, because those
+ *    pages can 403.
  *  - ProjectSettingsNavItem — bottom of the footer group, on the line the old
  *    Customize row held. Opens the Customize overlay and carries the Mod+,
  *    keycap. Ungated.
@@ -32,15 +32,19 @@ import { useCustomizeStore } from '@/stores/customize-store';
 
 /**
  * The tab the Customize row lands on, in preference order. Connectors is the
- * default landing tab; the fallbacks exist because the three tabs carry three
+ * default landing tab; the fallback exists because the two tabs carry two
  * separate IAM leaves. A caller denied `project.connector.read` but allowed
  * `project.skill.read` used to still get a Skills row of their own — sending
  * them to a 403 Connectors page instead would be a regression, not a cleanup.
+ *
+ * Commands is intentionally absent: its standalone capability page was removed,
+ * so there is no `/projects/<id>/commands` route to land on. Commands stays
+ * reachable through the Customize overlay (`/customize/commands` via the
+ * `proj-commands` palette entry and the Settings row).
  */
 const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: string }[] = [
   { key: 'connectors', action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ },
   { key: 'skills', action: PROJECT_ACTIONS.PROJECT_SKILL_READ },
-  { key: 'commands', action: PROJECT_ACTIONS.PROJECT_COMMAND_READ },
 ];
 
 /**
@@ -48,15 +52,14 @@ const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: string }[] =
  * deny. Optimistic while a probe loads — same rule as ProjectFilesNavItem: the
  * entry only disappears on a denial we actually received.
  *
- * The three probes are unconditional and fixed-order on purpose. Hooks cannot
+ * The probes are unconditional and fixed-order on purpose. Hooks cannot
  * be called from a loop that short-circuits.
  */
 function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
   const canConnectors = useProjectCan(projectId, TAB_PREFERENCE[0].action);
   const canSkills = useProjectCan(projectId, TAB_PREFERENCE[1].action);
-  const canCommands = useProjectCan(projectId, TAB_PREFERENCE[2].action);
 
-  const probes = [canConnectors, canSkills, canCommands];
+  const probes = [canConnectors, canSkills];
   const hit = probes.findIndex((p) => p.allowed || p.isLoading);
   return hit === -1 ? null : TAB_PREFERENCE[hit].key;
 }
@@ -91,12 +94,11 @@ export function useSettingsKeyboardShortcut() {
 
 /**
  * Customize — the top-of-panel entry, mounted directly under New session. It
- * navigates to the project's capability pages (Connectors / Skills / Commands),
- * landing on Connectors by default.
+ * navigates to the project's capability pages (Connectors / Skills), landing on
+ * Connectors by default.
  *
- * Gated on the three capability leaves via useCapabilityTab(): those pages 403
- * per-leaf, so a caller who may read none of them gets no row rather than a
- * dead one.
+ * Gated on the two capability leaves via useCapabilityTab(): those pages 403
+ * per-leaf, so a caller who may read neither gets no row rather than a dead one.
  *
  * A real `<Link prefetch>`, not `router.push` — same reason as
  * ProjectFilesNavItem: the button form cannot be prefetched, so every click
@@ -166,10 +168,11 @@ export function ProjectCustomizeNavItem() {
  * rules out a `<Link prefetch>` — there is no href to prefetch — and it is why
  * active state reads the store's `open` flag rather than the pathname.
  *
- * Ungated on purpose. The Customize row gates on the three capability leaves
+ * Ungated on purpose. The Customize row gates on the two capability leaves
  * because that is where it navigates; the overlay also holds Agents, LLM
- * providers, and Members, so gating it on connector/skill/command read would
- * hide it from a caller who can still use most of what is inside.
+ * providers, and Members (and Commands, whose standalone page was removed),
+ * so gating it on connector/skill read would hide it from a caller who can
+ * still use most of what is inside.
  */
 export function ProjectSettingsNavItem() {
   const isMobile = useIsMobile();

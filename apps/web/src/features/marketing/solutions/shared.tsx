@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
  */
 export const SOLUTIONS_MEASURE = 'mx-auto max-w-7xl px-6';
 
-/** Section shell. Same vertical rhythm as `/channels` and `/integrations`. */
+/** Section shell. Same vertical rhythm as `/channels` and `/connectors`. */
 export function Section({
   id,
   children,

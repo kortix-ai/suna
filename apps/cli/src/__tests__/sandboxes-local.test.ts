@@ -40,7 +40,7 @@ describe('composeLocalDockerfile', () => {
       'kortix.gz',
       'kortix-entrypoint',
       'kortix-slack-cli',
-      'kortix-executor-sdk',
+      'kortix-connectors-sdk',
       'scaffold.git',
       'install-shims.sh',
       'ENTRYPOINT',

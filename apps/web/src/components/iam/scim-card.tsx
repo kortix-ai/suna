@@ -412,7 +412,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     )}
                   </p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    Each token authenticates a single IdP integration — rotate by minting a new one
+                    Each token authenticates a single IdP connection — rotate by minting a new one
                     and revoking the old.
                   </p>
                 </div>
@@ -571,7 +571,7 @@ function CreateScimTokenDialog({
           <ModalDescription>
             {created
               ? 'Copy the token now — it will not be shown again. Then configure it in your IdP.'
-              : 'Mint a bearer token for an IdP integration. Each integration should get its own token so revocation is targeted.'}
+              : 'Mint a bearer token for an IdP connection. Each connection should get its own token so revocation is targeted.'}
           </ModalDescription>
         </ModalHeader>
 

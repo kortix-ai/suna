@@ -168,7 +168,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
   for (const row of rows) {
     if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
     // Connector credentials / Pipedream bindings are resolved server-side by the
-    // Executor gateway — never injected into the sandbox env.
+    // Connector gateway — never injected into the sandbox env.
     if (row.scope === 'connector') continue;
     const canonical = row.identifier === row.name;
     if (row.name in env && winnerIsCanonical.has(row.name) && !canonical) continue;

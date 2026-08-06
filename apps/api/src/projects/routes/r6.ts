@@ -24,7 +24,7 @@ import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isExperimentalFeatureKey } from '../../experimental/features';
-import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
+import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../connectors/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
@@ -827,6 +827,7 @@ projectsApp.openapi(
       if (!grant || !('project_id' in grant)) return null;
       return {
         invite_id: r.inviteId,
+        email: r.email,
         // Normalize a legacy `viewer`/`user` grant to `member` so the API never
         // emits a retired role.
         project_role: normalizeProjectRole(grant.role) ?? 'member',

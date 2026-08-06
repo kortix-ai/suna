@@ -20,7 +20,7 @@ export interface SessionOverrides {
   agent: string | null;
   /** Secret IDENTIFIERS (not env keys — several identifiers can share a key). */
   secrets: SecretsAllowlist;
-  /** Connector alias -> authorization id. Empty = bind nothing. */
+  /** Connector alias -> connection id. Empty = bind nothing. */
   bindings: Record<string, string>;
   /**
    * Arbitrary non-secret key/values handed to the run as context — the one
@@ -73,7 +73,7 @@ export function buildSessionCreateInput(
           connector_bindings: Object.fromEntries(
             aliases.map((alias) => [
               alias,
-              { authorization_id: overrides.bindings[alias]! },
+              { connection_id: overrides.bindings[alias]! },
             ]),
           ),
           // Binding ANY alias otherwise switches every other alias off its

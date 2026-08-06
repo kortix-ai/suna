@@ -123,7 +123,7 @@ export const isolation = {
    Grounded in apps/api/src/projects/secrets.ts (AES-256-GCM, per-project key
    from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
    envelope), apps/api/src/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
-   apps/api/src/executor/pipedream.ts (connector credentials resolved
+   apps/api/src/connectors/pipedream.ts (connector credentials resolved
    server-side), apps/api/src/platform/sandbox-env.ts (the allowlist that keeps
    Kortix's own upstream keys out of every sandbox) and
    apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,

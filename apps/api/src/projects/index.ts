@@ -63,7 +63,7 @@ export {
   resolveProjectAutomationActor,
 } from './session-lifecycle';
 
-// Trigger + manifest helpers (consumed by channels / executor / the boot
+// Trigger + manifest helpers (consumed by channels / connector / the boot
 // sequence in src/index.ts).
 export {
   drainTriggerExecutionQueue,

@@ -142,12 +142,19 @@ function isLoopbackName(hostname: string): boolean {
  * race — and the credential strip above is unconditional, so a request that does
  * win the race still carries none of our secrets.
  */
+type HostResolver = (hostname: string) => Promise<ReadonlyArray<{ address: string }>>
+
+async function defaultHostResolver(hostname: string): Promise<ReadonlyArray<{ address: string }>> {
+  return lookup(hostname, { all: true })
+}
+
 async function reachesThisBox(
   hostname: string,
+  resolveHost: HostResolver,
 ): Promise<{ self: boolean; address: string | null }> {
   if (isLoopbackName(hostname)) return { self: true, address: null }
   try {
-    const resolved = await lookup(hostname.replace(/\.+$/, ''), { all: true })
+    const resolved = await resolveHost(hostname.replace(/\.+$/, ''))
     if (resolved.some((entry) => isLoopbackAddress(entry.address))) {
       return { self: true, address: null }
     }
@@ -171,6 +178,8 @@ export interface WebProxyOptions {
    * that spelling entirely.
    */
   blockedSelfPorts: ReadonlySet<number>
+  /** Resolver seam for deterministic DNS-rebinding tests. Production uses DNS. */
+  resolveHost?: HostResolver
 }
 
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -547,7 +556,10 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
   // browser needs to see.
   let fetchTarget = targetUrl
   if (opts.blockedSelfPorts.has(targetPort)) {
-    const target = await reachesThisBox(parsedTarget.hostname)
+    const target = await reachesThisBox(
+      parsedTarget.hostname,
+      opts.resolveHost ?? defaultHostResolver,
+    )
     if (target.self) {
       logger.warn('[web-proxy] refused a request to the box control plane', {
         host: parsedTarget.hostname,

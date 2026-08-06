@@ -5,23 +5,23 @@ import { useMutation } from '@tanstack/react-query';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
-  buildEasyConnectProfileDraft,
+  buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
-  proposeConnectorProfileSlug,
-} from '@/features/workspace/customize/sections/connector-profile-form';
-import { ConnectorProfileIcon } from '@/features/workspace/customize/sections/connector-profile-header';
-import { ConnectorProfileModal } from '@/features/workspace/customize/sections/connector-profile-modal';
+  proposeConnectorConnectionSlug,
+} from '@/features/workspace/customize/sections/connector-connection-form';
+import { ConnectorConnectionIcon } from '@/features/workspace/customize/sections/connector-connection-header';
+import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 /**
- * Add one Easy Connect (Pipedream) app to the project: name the profile,
+ * Add one Easy Connect (Pipedream) app to the project: name the connection,
  * create the connector, hand the slug back so the page can open its detail.
  *
  * ── Known duplication, read before changing either side ────────────────────
  * `AppCatalogue` in `connectors-view.tsx` runs this identical mutation for the
  * Add-connector modal's Easy Connect tab. This is the same split, for the same
  * reason, as `DiscoverAddFlow` vs `discover-catalogue.tsx` — see that file's
- * header. What is shared is already shared: `ConnectorProfileModal`,
- * `buildEasyConnectProfileDraft`, `proposeConnectorProfileSlug` and
+ * header. What is shared is already shared: `ConnectorConnectionModal`,
+ * `buildEasyConnectConnectorDraft`, `proposeConnectorConnectionSlug` and
  * `connectorSyncErrorForSlug` are imported by both; only the mutation wrapper
  * is restated.
  *
@@ -49,9 +49,9 @@ export function EasyConnectAddFlow({
   onAdded: (slug?: string) => void;
 }) {
   const add = useMutation({
-    mutationFn: async (profile: Parameters<typeof buildEasyConnectProfileDraft>[1]) => {
+    mutationFn: async (connection: Parameters<typeof buildEasyConnectConnectorDraft>[1]) => {
       if (!app) throw new Error('Select an app');
-      const draft = buildEasyConnectProfileDraft(app, profile);
+      const draft = buildEasyConnectConnectorDraft(app, connection);
       const result = await createConnector(projectId, draft);
       return {
         name: draft.name ?? app.name,
@@ -59,17 +59,17 @@ export function EasyConnectAddFlow({
         syncError: connectorSyncErrorForSlug(result, draft.slug),
       };
     },
-    onSuccess: (profile) => {
-      if (profile.syncError) {
+    onSuccess: (connection) => {
+      if (connection.syncError) {
         warningToast(
-          `Added ${profile.name} to the manifest, but synchronization failed: ${profile.syncError}. Use Sync to retry.`,
+          `Added ${connection.name} to the manifest, but synchronization failed: ${connection.syncError}. Use Sync to retry.`,
         );
         onAdded();
         onClose();
         return;
       }
-      successToast(`Added ${profile.name} — click Connect to authorize`);
-      onAdded(profile.slug);
+      successToast(`Added ${connection.name} — click Connect to authorize`);
+      onAdded(connection.slug);
       onClose();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to add'),
@@ -79,19 +79,19 @@ export function EasyConnectAddFlow({
   if (!canWrite) return null;
 
   return (
-    <ConnectorProfileModal
+    <ConnectorConnectionModal
       open={app !== null}
-      idPrefix="easy-connect-profile"
+      idPrefix="easy-connect-connection"
       title={`Add ${app?.name ?? 'app'}`}
-      description="Create a connector profile for this app. The profile name and slug identify it in sessions and project configuration."
+      description="Create a connection for this app. The connection name and slug identify it in sessions and project configuration."
       initialName={app?.name ?? ''}
-      initialSlug={app ? proposeConnectorProfileSlug(app.name, existingSlugs) : ''}
+      initialSlug={app ? proposeConnectorConnectionSlug(app.name, existingSlugs) : ''}
       existingSlugs={existingSlugs}
       pending={add.isPending}
-      icon={<ConnectorProfileIcon src={app?.imgSrc} name={app?.name ?? ''} />}
+      icon={<ConnectorConnectionIcon src={app?.imgSrc} name={app?.name ?? ''} />}
       summary={app?.description ?? null}
       onOpenChange={(open) => !open && onClose()}
-      onSubmit={(profile) => add.mutate(profile)}
+      onSubmit={(connection) => add.mutate(connection)}
     />
   );
 }

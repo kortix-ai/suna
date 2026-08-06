@@ -76,4 +76,4 @@
 
 - **Continuous support.** The customer's operator owns day-2 operations via the runbook. Kortix FDE stays available for escalations.
 - **Updates.** The `stable` channel is curated — not every prod release ships to self-hosted boxes overnight. A human runs the `Promote Self-Host Stable` workflow to repoint `:stable` → a proven version. Self-hosts pick it up on their next nightly auto-updater cycle.
-- **Learning / education.** Bring Kortix into the customer's teams as a practice — the agent/skill/connector/session/memory model, the change-request workflow, the IAM surface. The goal is the customer's team running Kortix autonomously, not depending on FDE for routine work.
+- **Learning / education.** Bring Kortix into the customer's teams as a practice — the agent/skill/connectors/session/memory model, the change-request workflow, the IAM surface. The goal is the customer's team running Kortix autonomously, not depending on FDE for routine work.

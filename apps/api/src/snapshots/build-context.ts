@@ -2,7 +2,7 @@
  * Shared build-context staging for sandbox snapshots.
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
- * runtime layer (agent binary + CLI + entrypoint + slack-cli + executor-sdk +
+ * runtime layer (agent binary + CLI + entrypoint + slack-cli + connector-sdk +
  * opencode/agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
@@ -57,13 +57,13 @@ const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
 const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
 const cliAttestationPath = () => process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH
-  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-executor-runtime.attestation.json');
+  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-connectors-runtime.attestation.json');
 const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
+const connectorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_CONNECTOR_SDK_PATH
+  || resolve(REPO_ROOT, 'packages/connector-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
@@ -494,7 +494,7 @@ export async function stageBuildContext(
   const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
+  const CONNECTOR_SDK_SRC_PATH = connectorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
   const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
   const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
@@ -502,7 +502,7 @@ export async function stageBuildContext(
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+  await assertExistsDir(CONNECTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_CONNECTOR_SDK_PATH');
   await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
   await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
@@ -547,7 +547,7 @@ export async function stageBuildContext(
   // every context entry before upload, so copying those links produces an
   // immediate ENOENT outside the original checkout. Keep the provider context
   // self-contained by staging source/package metadata only.
-  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), {
+  await cp(CONNECTOR_SDK_SRC_PATH, join(contextDir, 'kortix-connectors-sdk'), {
     recursive: true,
     filter: (source) => basename(source) !== 'node_modules',
   });
@@ -601,7 +601,7 @@ export async function stageBuildContext(
     entrypointScriptPath: 'kortix-entrypoint',
     machineDocPath: 'MACHINE.md',
     slackCliPath: 'kortix-slack-cli',
-    executorSdkPath: 'kortix-executor-sdk',
+    connectorSdkPath: 'kortix-connectors-sdk',
     opencodeConfigPath,
     opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     catalogPath: 'kortix-llm-catalog.json',
@@ -631,7 +631,7 @@ export async function stageBuildContext(
  * Chromium download to lose a cache race on.
  *
  * Unlike `stageBuildContext`, this does NOT stage the agent/CLI binaries,
- * entrypoint, slack-cli, executor-sdk, catalog, or scaffold.git — none of the
+ * entrypoint, slack-cli, connector-sdk, catalog, or scaffold.git — none of the
  * artifact tail is re-COPY'd; it's inherited from `baseImageRef`. Only the
  * starter opencode config (if present) is staged, for the instance re-warm.
  *

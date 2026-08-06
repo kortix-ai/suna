@@ -12,7 +12,7 @@ const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   secrets_allowlist: ['MAIL_TOKEN'],
   required_connectors: null,
   connector_bindings: {
-    mail: { authorization_id: 'authorization-mail' },
+    mail: { connection_id: 'connection-mail' },
   },
   dropped_secrets: [],
   added_secrets: [],
@@ -29,16 +29,16 @@ const catalog = (
     status: 'ready',
     items: [{ identifier: 'MAIL_TOKEN', name: 'Mail token' }],
   },
-  connector_profiles: {
+  connector_connections: {
     status: 'ready',
     items: [
       {
         slug: 'mail',
         name: 'Mail',
         authorization_strategy: 'project',
-        authorizations: [
+        connections: [
           {
-            authorization_id: 'authorization-mail',
+            connection_id: 'connection-mail',
             label: 'Project mail',
             is_default: true,
           },
@@ -139,7 +139,7 @@ describe('commitSessionScopeDraft', () => {
     expect(replacement).toEqual({
       secrets: ['ISSUE_TOKEN'],
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail' },
+        mail: { connection_id: 'connection-mail' },
       },
       require_connectors: [],
     });
@@ -153,7 +153,7 @@ describe('commitSessionScopeDraft', () => {
       sessionId: 'session-1',
       draft: {
         connector_bindings: {
-          mail: { authorization_id: 'authorization-mail-2' },
+          mail: { connection_id: 'connection-mail-2' },
         },
         require_connectors: [],
       },
@@ -169,7 +169,7 @@ describe('commitSessionScopeDraft', () => {
 
     expect(replacement).toEqual({
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail-2' },
+        mail: { connection_id: 'connection-mail-2' },
       },
       require_connectors: [],
     });
@@ -183,7 +183,7 @@ describe('commitSessionScopeDraft', () => {
       draft: {
         secrets: null,
         connector_bindings: {
-          mail: { authorization_id: 'authorization-mail' },
+          mail: { connection_id: 'connection-mail' },
         },
         require_connectors: [],
       },
@@ -201,7 +201,7 @@ describe('commitSessionScopeDraft', () => {
         draft: {
           secrets: null,
           connector_bindings: {
-            mail: { authorization_id: 'authorization-mail' },
+            mail: { connection_id: 'connection-mail' },
           },
           require_connectors: [],
         },
@@ -220,7 +220,7 @@ describe('commitSessionScopeDraft', () => {
       draft: {},
       catalog: {
         secrets: { status: 'unavailable' },
-        connector_profiles: { status: 'unavailable' },
+        connector_connections: { status: 'unavailable' },
       },
       replaceScope: async () => scope(),
       onCommittedDraft: (commit) => committed.push(commit),

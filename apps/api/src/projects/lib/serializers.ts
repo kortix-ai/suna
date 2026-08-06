@@ -10,7 +10,7 @@ import {
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { type SandboxProviderName, config } from '../../config';
-import { type SecretGrant, visibilityToIntent } from '../../executor/share';
+import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -323,19 +323,21 @@ export function buildSecretView(input: {
           ? 'network'
           : backend === 'llm_gateway'
             ? 'llm_gateway'
-            : backend === 'executor'
-              ? 'executor'
+            : backend === 'connector'
+              ? 'connector'
               : backend === 'git_proxy'
                 ? 'git_proxy'
                 : backend === 'kortix_fetch'
                   ? 'http_broker'
                   : null;
-  const consumer =
+  const storedConsumer =
     strategy === 'denied'
       ? null
       : deliveryRow?.scope === 'connector'
         ? 'connector'
         : (deliveryRow?.consumer ?? legacyConsumer);
+  // Old rows used `executor` for the service now named `connector`.
+  const consumer = storedConsumer === 'executor' ? 'connector' : storedConsumer;
   return {
     identifier,
     name,
@@ -364,7 +366,6 @@ export function buildSecretView(input: {
     delivery_status:
       (strategy === 'runtime' && consumer === 'sandbox') ||
       (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'executor') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
       consumer === 'connector'

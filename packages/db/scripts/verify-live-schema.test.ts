@@ -40,19 +40,19 @@ describe('diffMissing (presence: canonical ⊆ live)', () => {
 
   test('a missing enum value is reported', () => {
     const canon = objsWithEnums(
-      ['executor_connectors'],
-      ['executor_connectors.provider_type'],
-      ['executor_connector_provider.pipedream', 'executor_connector_provider.channel'],
+      ['connectors'],
+      ['connectors.provider_type'],
+      ['connector_provider.pipedream', 'connector_provider.channel'],
     );
     const live = objsWithEnums(
-      ['executor_connectors'],
-      ['executor_connectors.provider_type'],
-      ['executor_connector_provider.pipedream'],
+      ['connectors'],
+      ['connectors.provider_type'],
+      ['connector_provider.pipedream'],
     );
     expect(diffMissing(canon, live)).toEqual({
       missingTables: [],
       missingColumns: [],
-      missingEnumValues: ['executor_connector_provider.channel'],
+      missingEnumValues: ['connector_provider.channel'],
     });
   });
 

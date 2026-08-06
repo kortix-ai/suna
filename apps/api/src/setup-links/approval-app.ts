@@ -1,4 +1,4 @@
-import { executorConnectors, executorExecutions, projectSessions, projects } from '@kortix/db';
+import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
  *
@@ -27,7 +27,7 @@ import { executorConnectors, executorExecutions, projectSessions, projects } fro
  */
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { summarizeArgsPreview } from '../executor/args-preview';
+import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
@@ -53,22 +53,22 @@ approvalLinksApp.get('/:token', async (c) => {
 
   const [row] = await db
     .select({
-      executionId: executorExecutions.executionId,
-      sessionId: executorExecutions.sessionId,
-      actingUserId: executorExecutions.actingUserId,
-      actionPath: executorExecutions.actionPath,
-      connectorId: executorExecutions.connectorId,
-      status: executorExecutions.status,
-      risk: executorExecutions.risk,
-      resultSummary: executorExecutions.resultSummary,
-      createdAt: executorExecutions.createdAt,
-      resolvedAt: executorExecutions.resolvedAt,
+      executionId: connectorCalls.executionId,
+      sessionId: connectorCalls.sessionId,
+      actingUserId: connectorCalls.actingUserId,
+      actionPath: connectorCalls.actionPath,
+      connectorId: connectorCalls.connectorId,
+      status: connectorCalls.status,
+      risk: connectorCalls.risk,
+      resultSummary: connectorCalls.resultSummary,
+      createdAt: connectorCalls.createdAt,
+      resolvedAt: connectorCalls.resolvedAt,
     })
-    .from(executorExecutions)
+    .from(connectorCalls)
     .where(
       and(
-        eq(executorExecutions.executionId, executionId),
-        eq(executorExecutions.projectId, projectId),
+        eq(connectorCalls.executionId, executionId),
+        eq(connectorCalls.projectId, projectId),
       ),
     )
     .limit(1);
@@ -140,9 +140,9 @@ approvalLinksApp.get('/:token', async (c) => {
   let connectorSlug: string | null = null;
   if (row.connectorId) {
     const [connector] = await db
-      .select({ slug: executorConnectors.slug })
-      .from(executorConnectors)
-      .where(eq(executorConnectors.connectorId, row.connectorId))
+      .select({ slug: connectors.slug })
+      .from(connectors)
+      .where(eq(connectors.connectorId, row.connectorId))
       .limit(1);
     connectorSlug = connector?.slug ?? null;
   }

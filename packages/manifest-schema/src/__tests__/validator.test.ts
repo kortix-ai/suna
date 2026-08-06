@@ -470,7 +470,7 @@ spec = "https://example.com/openapi.json"
   });
 
   // The platform itself writes an equivalent entry into kortix.yaml when a Slack
-  // channel is connected (executor/channel-manifest.ts); this exercises the same
+  // channel is connected (connector/channel-manifest.ts); this exercises the same
   // shape against the legacy v1 (kortix.toml) validator. The gate must accept it,
   // or it blocks merging a manifest the backend produced.
   test('a platform-written channel connector is valid', () => {

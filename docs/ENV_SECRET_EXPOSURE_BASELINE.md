@@ -115,7 +115,7 @@ for *trusted internal users* and not for a multi-tenant backend.
   exposed, not *whether* they are.
 - That connectors leak. They do not — the connector broker resolves third-party
   credentials server-side and they never enter the sandbox
-  ([executor](../apps/api/src/executor)). That is the prior art the refactor
+  ([connector](../apps/api/src/connectors)). That is the prior art the refactor
   should generalise.
 - That any specific design is correct. This document deliberately stops before
   the proposal.

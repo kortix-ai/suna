@@ -64,6 +64,7 @@ export interface ProjectSecret {
     | 'sandbox'
     | 'llm_gateway'
     | 'connector'
+    /** @deprecated Older servers can still return this value. */
     | 'executor'
     | 'git_proxy'
     | 'http_broker'

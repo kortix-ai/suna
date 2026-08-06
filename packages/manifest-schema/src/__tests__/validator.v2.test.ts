@@ -471,7 +471,7 @@ connectors:
 });
 
 describe('validateManifest — connector authorization strategy', () => {
-  test('accepts project and user connector profiles for the same provider app', () => {
+  test('accepts project and user connectors for the same provider app', () => {
     const { valid, errorPaths } = summarize(`
 kortix_version: 2
 default_agent: worker

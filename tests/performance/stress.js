@@ -5,7 +5,7 @@ import { makeHandleSummary } from './lib/summary.js';
 export const options = {
   scenarios: {
     stress: {
-      executor: 'ramping-vus',
+      connector: 'ramping-vus',
       startVUs: 0,
       stages: [
         { duration: '2m', target: 50 },

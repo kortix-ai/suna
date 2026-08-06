@@ -7,7 +7,7 @@
  * items act through THEIR OWN source flow — a Change Request ships via merge,
  * is dismissed via close, and "request changes" persists the feedback + delivers
  * it to the change's agent (the review `/act` endpoint 409s on adapted ids by
- * design). Executor approvals (`exec:`) open the shared full-parameter review
+ * design). Connector approvals (`call:`) open the shared full-parameter review
  * component. That component resolves one exact call through `resolveApproval`.
  * The presentational inbox (review-center.tsx) is shared with the mock
  * prototype. See docs/REVIEW_CENTER_DESIGN.md.
@@ -35,7 +35,7 @@ import {
   useReviewItems,
 } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
-import { crChangeRequestId, execExecutionId, itemDeepLink, planBulkAction } from './review-actions';
+import { crChangeRequestId, connectorCallId, itemDeepLink, planBulkAction } from './review-actions';
 import { ReviewCenter } from './review-center';
 
 export function ReviewCenterConnected({
@@ -110,7 +110,7 @@ export function ReviewCenterConnected({
 
   function handleAct(id: string, verdict: ReviewVerdict, feedback?: string) {
     // The shared parameter-review component calls this for one exact action.
-    const executionId = execExecutionId(id);
+    const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
         { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
@@ -197,7 +197,7 @@ export function ReviewCenterConnected({
   // arrives here is already actionable. Only native ids can reach the bulk
   // mutation. The
   // guards below are defense in depth, not the primary filter:
-  //  - an executor approval is a live question to the agent; a bulk
+  //  - an connector approval is a live question to the agent; a bulk
   //    "dismiss" must NEVER answer it with a deny, so exec ids resolve only
   //    from a bulk action. Each exact call needs its own parameter review.
   //  - Change Requests have no bulk path (merging needs the diff in view).

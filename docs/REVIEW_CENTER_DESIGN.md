@@ -2,7 +2,7 @@
 
 **Status:** Design + clickable prototype + **native-items vertical slice implemented** (DB · API · web data layer).
 **Owner:** ino@kortix.ai
-**Related:** KORTIX-207 (one-call Executor approval UX), KORTIX-208 (sandbox git authorization / CR-only main merge path)
+**Related:** KORTIX-207 (one-call Connector approval UX), KORTIX-208 (sandbox git authorization / CR-only main merge path)
 **Prototype:** `apps/web/src/features/review-center/*`, route `/review` (mock data only).
 
 ### Implementation status (this branch)
@@ -24,8 +24,8 @@ Also built since:
   registered in `customize-panel.tsx`; `CustomizeSection`/`project-actions.ts` updated). Visible when the
   project's `review_center` experimental flag is on.
 - **Adapters** — the inbox read model (`listInboxItems`) now **folds in real Change Requests** (`kind:change`,
-  id `cr:<id>`) and **executor pending-approvals** (`kind:approval`, id `exec:<id>`) via `review-adapters.ts`
-  (unit-tested). Change Requests act through their source routes. Executor decisions use the shared
+  id `cr:<id>`) and **connector pending-approvals** (`kind:approval`, id `call:<id>`) via `review-adapters.ts`
+  (unit-tested). Change Requests act through their source routes. Connector decisions use the shared
   full-parameter approval component and the one-call approval route.
 - **Slack** — full in-thread bridge wired. `channels/slack/review-cards.ts`: the Block Kit **review-card
   builder** + the `review_<verb>_<id>` action-id codec + `reviewVerbToVerdict` (unit-tested).
@@ -62,15 +62,15 @@ in plain language, from the web or from Slack.
 | Capability | State today | Files |
 | --- | --- | --- |
 | Change Requests | **Mature backend**, technical UI. `changeRequests` table; full `/v1/projects/:id/change-requests/*` API (list/detail/diff/merge-preview/merge/close/reopen); IAM gates `project.cr.merge`, `project.gitops.merge`; reusable hooks. UI exposes branch UUIDs, SHAs, merge-mode jargon, raw conflicts, diff hunks. | `apps/api/src/projects/change-requests.ts`, `routes/r8.ts`, `routes/r9.ts`, `git/merge.ts`; `apps/web/src/features/project-files/components/change-request-detail-dialog.tsx`, `change-requests-panel.tsx`; `hooks/use-change-requests.ts` |
-| Tool-call approvals (Executor) | **Implemented.** `require_approval` records one exact pending call and returns HTTP `202` with an authenticated `approval_url`. The standalone page, session Audit panel, and Review Center use the same full-parameter component. Approve or deny creates one durable session callback. | `apps/api/src/executor/gateway.ts`, `setup-links/approval-app.ts`, `projects/routes/r7.ts`; `apps/web/src/components/approvals/approval-request.tsx` |
+| Tool-call approvals (Connector) | **Implemented.** `require_approval` records one exact pending call and returns HTTP `202` with an authenticated `approval_url`. The standalone page, session Audit panel, and Review Center use the same full-parameter component. Approve or deny creates one durable session callback. | `apps/api/src/connector/gateway.ts`, `setup-links/approval-app.ts`, `projects/routes/r7.ts`; `apps/web/src/components/approvals/approval-request.tsx` |
 | Permission approvals (Tunnel) | **The one real structured approval surface.** `tunnelPermissionRequests` table (pending/approved/denied/expired) + SSE stream + approve/deny/scoped/expiry dialog. The reuse template. | `apps/api/src/tunnel/routes/permission-requests.ts`; `apps/web/src/features/tunnel/tunnel-permission-request-dialog.tsx`; `hooks/tunnel/use-tunnel.ts` |
 | Agent outputs / tasks | **Proto-primitive already exists.** `KortixTask` has statuses `awaiting_review` and `input_needed`, a `result`, a `blocking_question`, an events timeline, and an approve endpoint. But no generic "submit an artifact/decision for review" separate from a code diff. | `apps/web/src/hooks/kortix/use-kortix-tasks.ts`; `components/kortix/task-*.tsx`; `lib/kortix/task-meta.ts` |
 | Slack | Agent questions render as Block Kit **buttons**; a click resumes the agent via `spawnAgentTurn`. No pending-items surface; App Home shows projects only. | `apps/api/src/channels/slack/questions.ts`, `interactivity.ts`, `home.ts` |
-| Unifying data | **None.** No generic `notification`/`inbox`/`review_item` table. Approval state is scattered across `projectAccessRequests`, `chatThreadParticipants`, `executorExecutions`, `tunnelPermissionRequests`, `KortixTask`. Web notifications are transient (toast/OS only). | `packages/db/src/schema/kortix.ts`; `apps/web/src/lib/web-notifications.ts` |
+| Unifying data | **None.** No generic `notification`/`inbox`/`review_item` table. Approval state is scattered across `projectAccessRequests`, `chatThreadParticipants`, `connectorExecutions`, `tunnelPermissionRequests`, `KortixTask`. Web notifications are transient (toast/OS only). | `packages/db/src/schema/kortix.ts`; `apps/web/src/lib/web-notifications.ts` |
 
 **Conclusion:** most of the parts already exist but are scattered and engineer-facing. The win is
 **activation + fusion**, not greenfield. The Review Center is a thin friendly layer + the few missing
-primitives (a unified read model, an agent-submission API, and executor approval+resume).
+primitives (a unified read model, an agent-submission API, and connector approval+resume).
 
 ---
 
@@ -109,8 +109,8 @@ interface ReviewItem {
 The five kinds map onto the existing systems:
 
 - **`change`** → a Change Request. Friendly wrapper over `changeRequests`.
-- **`approval`** → a pending action needing go-ahead. An executor `require_approval` row maps to one
-  exact action. Executor approvals never support bulk decisions or persistent allow shortcuts.
+- **`approval`** → a pending action needing go-ahead. An connector `require_approval` row maps to one
+  exact action. Connector approvals never support bulk decisions or persistent allow shortcuts.
 - **`output`** → an artifact/result the agent submits for feedback (landing page, document, API result,
   image, dataset). The genuinely new capability.
 - **`decision`** → a question / "input needed" — the agent is blocked on a human choice. Mirrors the
@@ -120,7 +120,7 @@ The five kinds map onto the existing systems:
 ### Storage architecture (for the build, documented not built)
 
 A **canonical `review_items` table** is the native home for `output` / `decision` / `batch`. `change` and
-`approval` are **adapted from their existing tables** (no data duplication — the CR and the executor
+`approval` are **adapted from their existing tables** (no data duplication — the CR and the connector
 execution stay the source of truth). A read API normalizes native + adapted rows into the `ReviewItem`
 shape above. Every action **dispatches back to the source of truth** (merge the CR, approve the execution,
 answer the question), so there is exactly one writer per fact.
@@ -128,7 +128,7 @@ answer the question), so there is exactly one writer per fact.
 ```
               ┌─────────────────────────── Review Center read model ───────────────────────────┐
  changeRequests ──adapter──▶ kind:change                                                        │
- executorExecutions(pending)─▶ kind:approval ─┐                                                  │
+ connectorExecutions(pending)─▶ kind:approval ─┐                                                  │
  tunnelPermissionRequests ────▶ kind:approval ┘  (merged into one approval inbox)               │
  review_items (NEW) ─────────▶ kind:output | decision | batch                                    │
               └────────────────────────────────────────────────────────────────────────────────┘
@@ -173,7 +173,7 @@ plainly, a **risk pill**, and the **consequence** spelled out ("Sends a real ema
 
 - **Approve this call** authorizes one exact request digest once.
 - **Deny** rejects that one call.
-- The inbox does not expose row-level or bulk executor decisions. Opening the detail is mandatory.
+- The inbox does not expose row-level or bulk connector decisions. Opening the detail is mandatory.
 - The decision surface does not create an `always_run` policy or a session-wide grant.
 
 **Per-action detail:** the shared `ApprovalRequest` component shows every redacted connector parameter.
@@ -181,7 +181,7 @@ Recipients, subject, body, channel, URL, and nested values remain visible withou
 is incomplete, approval is disabled and denial remains available.
 
 **Resume:** the decision route updates the execution and inserts one `continue_session` lifecycle command
-in the same transaction. It then starts the lifecycle queue drain. The original Executor HTTP call already
+in the same transaction. It then starts the lifecycle queue drain. The original Connector HTTP call already
 ended with `202`, so no agent request remains blocked while the human decides.
 
 ---
@@ -192,7 +192,7 @@ The new capability: agents can submit **concrete reviewable items** — even aft
 or completed — and get a verdict + feedback back. One agent-facing primitive:
 
 ```ts
-// From an agent / the Executor SDK:
+// From an agent / the Connector SDK:
 review.submit({
   kind: 'output' | 'decision' | 'batch',
   title: string,
@@ -270,11 +270,11 @@ tangible during review.
 ## 8. Phased rollout (after this design + prototype is approved)
 
 - **Phase A — primitives.** `review_items` table; the read/submit/act/bulk API; the source adapters
-  (CR, executor, tunnel); executor approval record + **resume** (close the 202 gap). Ships with tests.
+  (CR, connector, tunnel); connector approval record + **resume** (close the 202 gap). Ships with tests.
 - **Phase B — web Review Center.** Productionize the prototype against the real read model + the
   tunnel/kortix-task hooks. Add a nav entry. A11y + visual tests.
 - **Phase C — Slack.** ✅ Review cards in-thread (`postReviewCard`) + `handleReviewAction` (verdict +
-  resume) built. Remaining: App Home "Needs you (N)". Executor approvals stay one action per decision.
+  resume) built. Remaining: App Home "Needs you (N)". Connector approvals stay one action per decision.
 - Each phase follows the repo testing discipline (unit/integration/contract/api/e2e as the change demands).
 
 ---
@@ -294,7 +294,7 @@ shareable/clickable without login; mock data only, safe to expose).
   (`j`/`k` move, `Enter` open, `a` approve/ship, `e` ask-changes, `d` dismiss, `x` select, `1`–`3` switch
   lists, `/` search, `?` help), **every action is undoable** (toast with Undo), **multi-select + bulk
   approve/dismiss**, live **search**, sticky controls, per-row summaries and a focus cursor. **Needs you /
-  Waiting / Done** segments and kind filters carry live counts. Bulk actions exclude Executor approvals.
+  Waiting / Done** segments and kind filters carry live counts. Bulk actions exclude Connector approvals.
 - `features/review-center/review-detail-modal.tsx` — per-kind friendly detail in a `Modal`, each with an
   **Advanced** disclosure and a Slack-preview. Implements the friendly-conflict flow (disabled "Ship it" +
   "Resolve with agent") and an optional **feedback composer** that returns free-text to the agent.

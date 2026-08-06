@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TriggerList } from '@kortix/api-contract';
-import { executorConnectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -512,8 +512,8 @@ async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
     )`,
     sql`exists (
       select 1
-      from ${executorConnectors}
-      where ${executorConnectors.projectId} = ${projects.projectId}
+      from ${connectors}
+      where ${connectors.projectId} = ${projects.projectId}
     )`,
   );
   const rows = await db
@@ -571,7 +571,7 @@ export async function runProjectConnectorSweep(): Promise<{
   let catalogCycleCompleted = false;
   let discoveryCycleCompleted = false;
   try {
-    const { syncProjectConnectors } = await import('../../executor/sync');
+    const { syncProjectConnectors } = await import('../../connectors/sync');
     const [catalogProjects, discoveryProjects] = await Promise.all([
       selectManifestCatalogProjects(),
       selectManifestDiscoveryProjects(),

@@ -297,17 +297,17 @@ flow(
 );
 
 flow(
-  "EXEC-ATT-AUTH",
+  "CONN-ATT-AUTH",
   {
     domain: "secrets",
     routes: [
-      "POST /v1/executor/attachments",
-      "POST /v1/executor/projects/:projectId/attachments",
+      "POST /v1/connectors/attachments",
+      "POST /v1/connectors/projects/:projectId/attachments",
     ],
   },
   async (ctx) => {
     await ctx.step("anonymous attachment upload is rejected", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/executor/attachments", {});
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/connectors/attachments", {});
       r.status(401);
     });
 
@@ -315,7 +315,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/executor/projects/:projectId/attachments",
+          "/v1/connectors/projects/:projectId/attachments",
           {},
           { params: { projectId: "00000000-0000-4000-a000-000000000000" } },
         );

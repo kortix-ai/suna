@@ -23,7 +23,7 @@ const HELP = help`Usage: kortix secrets <subcommand> [options]
 Manage encrypted secrets on the linked Kortix project. A delivery policy
 controls whether each value reaches a sandbox or stays on Kortix services.
 
-A secret is profile-like: an IDENTIFIER (the unique handle an agent's
+A secret has an IDENTIFIER (the unique handle an agent's
 \`secrets\` grant references), a KEY (the env var injected into the sandbox),
 and a value. Runtime delivery uses KEY as an environment variable. Leave the
 identifier blank and it defaults to the key. Set it explicitly to keep a
@@ -407,13 +407,14 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
   if (!ctx) return 1;
   const strategy = strategyRaw as SecretStrategy;
   const normalizedConsumer = consumerFlag?.replace(/-/g, '_') ?? 'http_broker';
-  const consumer = normalizedConsumer === 'automation' ? 'executor' : normalizedConsumer;
+  // Preserve the old `automation` flag as an input alias. Send only the canonical value.
+  const consumer = normalizedConsumer === 'automation' ? 'connector' : normalizedConsumer;
   if (
     strategy === 'broker' &&
-    !['llm_gateway', 'connector', 'executor', 'http_broker'].includes(consumer)
+    !['llm_gateway', 'connector', 'http_broker'].includes(consumer)
   ) {
     process.stderr.write(
-      `${status.err('--consumer must be llm-gateway, connector, automation, or http-broker.')}\n`,
+      `${status.err('--consumer must be llm-gateway, connector, or http-broker.')}\n`,
     );
     return 2;
   }
@@ -494,7 +495,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     const result = await withKortixScope(ctx.auth, () =>
       setProjectSecretStrategy(ctx.projectId, identifier, strategy, {
         ...(strategy === 'broker'
-          ? { consumer: consumer as 'llm_gateway' | 'connector' | 'executor' | 'http_broker' }
+          ? { consumer: consumer as 'llm_gateway' | 'connector' | 'http_broker' }
           : {}),
         ...(policy ? { egress_policy: policy } : {}),
         ...(handlePrefix ? { handle_prefix: handlePrefix } : {}),

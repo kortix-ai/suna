@@ -50,7 +50,7 @@ describe('buildNewSessionCreateInput', () => {
           draft: {
             secrets: ['MAIL_TOKEN'],
             connector_bindings: {
-              mail: { authorization_id: 'authorization-mail-private' },
+              mail: { connection_id: 'connection-mail-private' },
             },
           },
           availability: { secrets: true, connector_bindings: true },
@@ -59,7 +59,7 @@ describe('buildNewSessionCreateInput', () => {
     ).toEqual({
       agent_name: 'builder',
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail-private' },
+        mail: { connection_id: 'connection-mail-private' },
       },
       inherit_unbound: false,
     });
@@ -71,7 +71,7 @@ describe('buildNewSessionCreateInput', () => {
         scope: {
           draft: {
             connector_bindings: {
-              mail: { authorization_id: 'authorization-mail-private' },
+              mail: { connection_id: 'connection-mail-private' },
             },
           },
           availability: { secrets: true, connector_bindings: false },

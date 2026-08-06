@@ -24,7 +24,7 @@ Three layers, mapped:
 1. **Gateway (already correct).** Entitlement is enforced *entirely server-side*.
    The gateway authenticates the token → resolves the account tier → (a) filters
    the `/llm-catalog` per tier and (b) rejects an unavailable managed model at
-   request time (402/400). `executor-sdk` has **zero** tier logic. Kortix is
+   request time (402/400). `connector-sdk` has **zero** tier logic. Kortix is
    injected into OpenCode as an OpenAI-compatible provider (`kortix`) via
    `KORTIX_LLM_API_KEY` + `KORTIX_LLM_BASE_URL`. **This is exactly the architecture
    you want — it already exists.**
