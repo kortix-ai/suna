@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isValidMatcher,
   resolveEffectiveAction,
+  selectPoliciesForRead,
   type Policy,
 } from '../connectors/policy';
 
@@ -20,6 +21,23 @@ function resolveWithConnector(path: string, policies: Policy[]) {
     defaultMode: 'risk',
   });
 }
+
+describe('policy read consistency', () => {
+  const staleManifest: Policy[] = [{ match: 'get', action: 'always_run' }];
+
+  test('materialized runtime policies win over a stale manifest read', () => {
+    const materialized: Policy[] = [{ match: 'get', action: 'require_approval' }];
+    expect(selectPoliciesForRead(materialized, staleManifest)).toBe(materialized);
+  });
+
+  test('an explicit empty runtime policy set does not fall through to the manifest', () => {
+    expect(selectPoliciesForRead([], staleManifest)).toEqual([]);
+  });
+
+  test('the manifest is the fallback before a connector materializes', () => {
+    expect(selectPoliciesForRead(null, staleManifest)).toBe(staleManifest);
+  });
+});
 
 describe('matcher semantics', () => {
   test('* matches everything', () => {

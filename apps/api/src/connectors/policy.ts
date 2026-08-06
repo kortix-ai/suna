@@ -63,6 +63,20 @@ export interface Policy {
   conditionsInvalid?: boolean;
 }
 
+/**
+ * Select the policy view that matches gateway enforcement.
+ *
+ * A synchronized runtime catalog is authoritative for active calls. A manifest
+ * read can lag the commit that produced those rows. An empty runtime array is a
+ * real value and must not fall through to stale manifest rules.
+ */
+export function selectPoliciesForRead(
+  materialized: Policy[] | null,
+  manifest: Policy[] | null,
+): Policy[] | null {
+  return materialized ?? manifest;
+}
+
 /** Convert a glob (`*`, `vercel.*`, `*.delete*`, exact) into an anchored regex. */
 function globToRegex(glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');

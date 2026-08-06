@@ -102,6 +102,7 @@ import {
   type PolicyAction,
   parseStoredConditions,
   resolveEffectiveAction,
+  selectPoliciesForRead,
 } from './policy';
 import type {
   AdminConnectorView,
@@ -1191,12 +1192,13 @@ async function getConnectorPolicies(
   ]);
   if (!fromManifest && !row) return null;
 
-  const policies = row
+  const materialized = row
     ? (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
         match: p.match,
-        action: p.action as string,
+        action: p.action,
       }))
-    : fromManifest!.policies;
+    : null;
+  const policies = selectPoliciesForRead(materialized, fromManifest?.policies ?? null)!;
 
   // The editor also needs to know WHICH scope decides each tool. A project-scope
   // rule is evaluated first and cannot be overridden here (see policy.ts), so
