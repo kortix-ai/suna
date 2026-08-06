@@ -1,17 +1,19 @@
 'use client';
 
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { listAccounts, provisionProject } from '@kortix/sdk';
 import {
   SignInIcon as LogIn,
   ChatsIcon as MessagesSquare,
   SparkleIcon as Sparkles,
 } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -21,12 +23,18 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import Loading from '@/components/ui/loading';
+import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
 // First-party use-case templates ship in the bundled `kortix-starter` registry,
 // so a use-case slug maps to the catalog id the install-session resolves by.
 const TEMPLATE_CATALOG_NAMESPACE = 'kortix-starter';
+
+// Same sentinel the unified AddToProjectModal uses: "create a project inline,
+// then install into it" as one Select choice next to the existing projects.
+const NEW_PROJECT = '__new__';
 
 export function TemplateSessionInstallDialog({
   templateId,
@@ -40,48 +48,74 @@ export function TemplateSessionInstallDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   const pathname = usePathname();
   const signInHref = `/auth?returnUrl=${encodeURIComponent(pathname ?? '/')}`;
 
   const [error, setError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<KortixProject[]>([]);
-  const [projectId, setProjectId] = useState('');
+  const [target, setTarget] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
   const [opening, setOpening] = useState(false);
+
+  const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
+  const activeProjects = useMemo(
+    () => projects.filter((p) => p.status === 'active'),
+    [projects],
+  );
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setOpening(false);
-    if (!user) {
-      setProjects([]);
-      setProjectId('');
-      return;
-    }
-    listProjectsForAccount()
-      .then((list) => {
-        const active = (list ?? []).filter((p) => p.status === 'active');
-        setProjects(active);
-        setProjectId((prev) => prev || active[0]?.project_id || '');
-      })
-      .catch(() => setProjects([]));
-  }, [open, user]);
+    setNewProjectName(title ?? '');
+  }, [open, title]);
+
+  // Default the target once the list is known: the first project, or inline
+  // creation when the account genuinely has none.
+  useEffect(() => {
+    if (!open || target || !projectsQuery.isSuccess) return;
+    setTarget(activeProjects[0]?.project_id ?? NEW_PROJECT);
+  }, [open, target, projectsQuery.isSuccess, activeProjects]);
 
   async function openSession() {
-    if (!projectId) return;
     setOpening(true);
     setError(null);
     try {
+      let projectId = target;
+      if (target === NEW_PROJECT) {
+        const accounts = await listAccounts();
+        // No `personal_account` flag on this API — the bootstrapped personal
+        // account is the one where the caller is the primary owner.
+        const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
+        if (!account) throw new Error('No account available to create a project in');
+        const project = await provisionProject({
+          account_id: account.account_id,
+          name: newProjectName.trim() || title || 'My project',
+          starter_template: 'general-knowledge-worker',
+        });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        projectId = project.project_id;
+      }
       const { session_id } = await installMarketplaceItemAsSession(
         projectId,
         `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
       );
       router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
-      setError((e as Error).message || 'Could not open the install session');
+      setError(
+        isManagedGitUnavailableError(e)
+          ? "Managed git isn't set up on this server — an admin needs to connect GitHub in Git settings before projects can be created."
+          : (e as Error).message || 'Could not open the install session',
+      );
       setOpening(false);
     }
   }
+
+  const confirmDisabled =
+    opening ||
+    !target ||
+    (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -129,31 +163,59 @@ export function TemplateSessionInstallDialog({
                   </p>
                 </div>
               </div>
-            ) : projects.length === 0 ? (
+            ) : projectsQuery.isPending ? (
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <Loading className="size-4" /> Loading your projects…
+              </div>
+            ) : projectsQuery.isError ? (
               <div className="border-border/60 bg-muted/30 rounded-xl border px-4 py-4">
-                <p className="text-foreground text-sm font-medium">No projects yet</p>
-                <p className="text-muted-foreground mt-0.5 text-xs">
-                  Create a project first, then come back to set this up.
+                <p className="text-foreground text-sm font-medium">
+                  Couldn&apos;t load your projects
                 </p>
-                <Button asChild size="sm" variant="outline" className="mt-3">
-                  <Link href="/projects">Go to projects</Link>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {(projectsQuery.error as Error)?.message || 'The request failed.'}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => projectsQuery.refetch()}
+                >
+                  Try again
                 </Button>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <Label className="text-sm">Open the install chat in</Label>
-                <Select value={projectId} onValueChange={setProjectId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.project_id} value={p.project_id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Open the install chat in</Label>
+                  <Select value={target} onValueChange={setTarget}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Choose a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeProjects.map((p) => (
+                        <SelectItem key={p.project_id} value={p.project_id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {target === NEW_PROJECT && (
+                  <div className="space-y-1.5">
+                    <Label className="text-sm" htmlFor="use-case-new-project-name">
+                      Project name
+                    </Label>
+                    <Input
+                      id="use-case-new-project-name"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="My project"
+                      autoFocus
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -174,14 +236,16 @@ export function TemplateSessionInstallDialog({
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" disabled={!projectId || opening} onClick={openSession}>
+              <Button size="sm" disabled={confirmDisabled} onClick={openSession}>
                 {opening ? (
                   <>
-                    <Loading className="size-4" /> Opening chat…
+                    <Loading className="size-4" />{' '}
+                    {target === NEW_PROJECT ? 'Creating project…' : 'Opening chat…'}
                   </>
                 ) : (
                   <>
-                    <MessagesSquare className="size-4" /> Open install session
+                    <MessagesSquare className="size-4" />{' '}
+                    {target === NEW_PROJECT ? 'Create project & install' : 'Open install session'}
                   </>
                 )}
               </Button>
