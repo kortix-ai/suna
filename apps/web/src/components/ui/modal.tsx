@@ -121,7 +121,7 @@ ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const ModalVariants = cva(
   cn(
-    'fixed gap-0 overflow-y-auto p-0 max-lg:smooth-shadow-lg lg:shadow-lg',
+    'fixed gap-0 overflow-y-auto p-0',
     'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
   ),
@@ -146,6 +146,10 @@ const ModalVariants = cva(
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
           'lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95',
         ),
+        none: '',
+      },
+      elevation: {
+        default: 'max-lg:smooth-shadow-lg lg:shadow-lg',
         none: '',
       },
     },
@@ -179,6 +183,7 @@ const ModalVariants = cva(
       side: 'bottom',
       variant: 'default',
       animation: 'default',
+      elevation: 'default',
     },
   },
 );
@@ -229,6 +234,7 @@ const ModalContentInner = React.forwardRef<
     {
       side = 'bottom',
       animation = 'default',
+      elevation = 'default',
       className,
       modalClassName,
       closeClassName,
@@ -273,7 +279,7 @@ const ModalContentInner = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          ModalVariants({ side, animation, className: modalClassName, variant }),
+          ModalVariants({ side, animation, elevation, className: modalClassName, variant }),
           className,
           'rounded-xl rounded-b-none lg:rounded-b-xl',
         )}

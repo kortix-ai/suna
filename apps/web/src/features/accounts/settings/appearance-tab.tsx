@@ -118,7 +118,7 @@ export function AppearanceTab() {
         <label className="text-muted-foreground text-sm font-medium">
           {tHardcodedUi.raw('componentsSettingsAppearanceTab.line127JsxTextColorMode')}
         </label>
-        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
+        <div className="bg-foreground/10 flex w-fit items-center gap-1 rounded-sm p-0.5">
           <button
             aria-label={tI18nHardcoded.raw(
               'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707',
@@ -178,7 +178,7 @@ export function AppearanceTab() {
         <div
           role="radiogroup"
           aria-label="Session panel mode"
-          className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5"
+          className="bg-foreground/10 flex w-fit items-center gap-1 rounded-sm p-0.5"
         >
           <button
             type="button"

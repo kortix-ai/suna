@@ -78,6 +78,17 @@ test.describe("Smooth shadow system", () => {
       expect(modalShadow).toContain("0px 0px 0px 1px");
       await page.keyboard.press("Escape");
 
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByTestId("shadow-trigger-modal").click();
+      await expect(modal).toBeVisible();
+      await expect(modal).toHaveCSS("border-top-width", "1px");
+      const narrowModalShadow = await modal.evaluate(
+        (element) => getComputedStyle(element).boxShadow,
+      );
+      expect(narrowModalShadow).not.toBe("none");
+      expect(narrowModalShadow).not.toContain("0px 0px 0px 1px");
+      await page.keyboard.press("Escape");
+
       await page.getByTestId("shadow-trigger-sheet").click();
       const sheet = page.getByTestId("shadow-demo-sheet");
       await expect(sheet).toBeVisible();

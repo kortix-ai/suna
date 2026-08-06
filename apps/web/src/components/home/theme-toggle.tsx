@@ -33,7 +33,7 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
 
   if (variant === 'compact') {
     return (
-      <div className="bg-foreground/10 shadow-custom flex items-center gap-0.5 rounded-sm p-0.5">
+      <div className="bg-foreground/10 flex items-center gap-0.5 rounded-sm p-0.5">
         <button
           aria-label={tI18nHardcoded.raw(
             'autoComponentsHomeThemeToggleJsxAttrAriaLabelLightTheme26963d69',

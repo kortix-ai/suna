@@ -32,6 +32,9 @@ Excluding `*.test.*`, the pre-migration production inventory contains:
 The source-policy red test found 36 decorative double-edge literals. This is
 the migration baseline for Tasks 4–7.
 
+Six legacy `shadow-custom` tokens across five files emitted no CSS. The
+migration removes these no-op classes instead of assigning unearned elevation.
+
 ## Standard alias migration
 
 | File                                                           | Category                  | Decision                                                                                            |
