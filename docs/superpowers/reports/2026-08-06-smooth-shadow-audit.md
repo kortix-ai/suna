@@ -175,7 +175,7 @@ elevation owners.
 | Shared primitive migration   | 225 pass, 0 fail; ESLint 0 errors and 3 pre-existing React Compiler warnings; edge violations reduced to 22. |
 | Product and media migration  | 198 pass, 0 fail; ESLint 0 errors and 15 pre-existing React Compiler warnings; violations reduced to 12.    |
 | Public surface migration     | 58 pass, 0 fail; ESLint 0 errors and 2 pre-existing React Compiler warnings; violations reduced to 3.       |
-| Design-system migration      | Open; Task 7 removes the remaining 3 violations.                                                             |
+| Design-system migration      | 9 shadow tests pass; ESLint 0 errors and 1 pre-existing React Compiler warning; policy scan is green.        |
 | Headless local visual QA     | Open until the migrated design-system route is available.                                                    |
 | PR and merge                 | Open until all local gates pass.                                                                             |
 | Deploy Dev and dev QA        | Open until the merged SHA is deployed.                                                                       |

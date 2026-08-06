@@ -504,55 +504,23 @@ const SPACING_SCALE = [
   { token: '16', px: 64 },
 ] as const;
 
-const SHADOW_SCALE: ReadonlyArray<{
-  label: string;
-  cssVar: string;
-  use: string;
-  twClass?: string;
-}> = [
-  {
-    label: 'shadow-2xs',
-    twClass: 'shadow-2xs',
-    cssVar: '--shadow-2xs',
-    use: 'Hairline lift — inputs, thumbnails',
-  },
-  {
-    label: 'shadow-xs',
-    twClass: 'shadow-xs',
-    cssVar: '--shadow-xs',
-    use: 'Chips, slider thumbs, glass panels',
-  },
+const SHADOW_SCALE = [
   {
     label: 'shadow-sm',
     twClass: 'shadow-sm',
-    cssVar: '--shadow-sm',
-    use: 'Tabs, sticky bars, hover lift',
+    use: 'Compact floating controls and raised active states',
   },
   {
     label: 'shadow-md',
     twClass: 'shadow-md',
-    cssVar: '--shadow-md',
-    use: 'Dropdowns, selects, popovers',
+    use: 'Popovers, menus, dropdowns, and compact floating panels',
   },
   {
     label: 'shadow-lg',
     twClass: 'shadow-lg',
-    cssVar: '--shadow-lg',
-    use: 'Modals, sheets, toasts',
+    use: 'Modals, sheets, toasts, and substantial overlays',
   },
-  {
-    label: 'shadow-xl',
-    twClass: 'shadow-xl',
-    cssVar: '--shadow-xl',
-    use: 'Command palette, floating windows',
-  },
-  {
-    label: 'shadow-2xl',
-    twClass: 'shadow-2xl',
-    cssVar: '--shadow-2xl',
-    use: 'Marketing, large previews',
-  },
-];
+] as const;
 
 const TOC_SECTIONS = [
   { id: 'hero', label: 'Overview' },
@@ -693,7 +661,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           download={downloadName}
           className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
         >
-          <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
+          <span className="bg-background flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm">
             <Download className="size-3" /> {fmt.toUpperCase()}
           </span>
         </a>
@@ -730,7 +698,7 @@ function SocialCard({ asset }: { asset: SocialAsset }) {
           download={downloadName}
           className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
         >
-          <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
+          <span className="bg-background flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm">
             <Download className="size-3" /> PNG
           </span>
         </a>
@@ -817,7 +785,7 @@ function FormatToggle({
           className={cn(
             'cursor-pointer rounded-full px-3 py-1 font-mono text-xs transition-colors',
             value === f
-              ? 'bg-background text-foreground ring-foreground/[0.06] shadow-sm ring-1'
+              ? 'bg-background text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground',
           )}
         >
@@ -1730,36 +1698,56 @@ export default function BrandPage() {
                 label="Shadows"
                 summary="The elevation ladder. In-flow surfaces stay flat; shadows belong to overlays."
               >
-                <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-                  {tI18nHardcoded.raw(
-                    'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation8c9f8cda',
-                  )}{' '}
-                  <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code>{' '}
-                  values.
+                <p className="text-muted-foreground mb-6 max-w-3xl text-base leading-relaxed">
+                  Use <code>shadow-sm</code>, <code>shadow-md</code>, or <code>shadow-lg</code> for
+                  standard elevation. Each class already includes a neutral smooth hairline ring.
+                  Do not add a decorative border to the same elevated surface. Use{' '}
+                  <code>smooth-shadow-*</code> for ringless depth and{' '}
+                  <code>smooth-shadow-ring-*</code> plus <code>smooth-ring-*</code> for custom size or
+                  tint. Keep in-flow panels flat.
                 </p>
 
                 <DemoContainer>
-                  <div className="bg-muted/40 rounded-2xl p-8">
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="bg-muted/40 space-y-8 rounded-2xl p-8">
+                    <div className="grid gap-6 sm:grid-cols-3">
                       {SHADOW_SCALE.map((s) => (
                         <div key={s.label} className="flex flex-col gap-3">
                           <div
+                            data-testid={`shadow-demo-${s.label.slice('shadow-'.length)}`}
                             className={cn(
-                              'bg-card border-border/50 flex h-28 items-center justify-center rounded-2xl border',
+                              'bg-card flex h-28 items-center justify-center rounded-lg',
                               s.twClass,
                             )}
-                            style={s.twClass ? undefined : { boxShadow: `var(${s.cssVar})` }}
                           >
                             <span className="text-muted-foreground font-mono text-xs">
                               {s.label}
                             </span>
                           </div>
-                          <div>
-                            <p className="font-mono text-xs">{s.cssVar}</p>
-                            <p className="text-muted-foreground mt-0.5 text-xs">{s.use}</p>
-                          </div>
+                          <p className="text-muted-foreground text-xs">{s.use}</p>
                         </div>
                       ))}
+                    </div>
+
+                    <div className="grid items-center gap-4 border-t pt-8 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+                      <div
+                        data-testid="shadow-demo-explicit"
+                        className="smooth-shadow-ring shadow-black smooth-ring-neutral-300/30"
+                        style={{
+                          height: '7rem',
+                          borderRadius: 'var(--radius-lg)',
+                          background: 'var(--card)',
+                        }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">Explicit escape hatch</p>
+                        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                          Use explicit utilities only when a custom size or tint is required. The
+                          three standard aliases remain the default API.
+                        </p>
+                        <code className="bg-background mt-3 block overflow-x-auto rounded-md px-3 py-2 font-mono text-xs">
+                          {'<div className="smooth-shadow-ring shadow-black smooth-ring-neutral-300/30" />'}
+                        </code>
+                      </div>
                     </div>
                   </div>
                 </DemoContainer>
@@ -2428,11 +2416,11 @@ export default function BrandPage() {
                   <DemoContainer>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline">
+                        <Button data-testid="shadow-trigger-dialog" variant="outline">
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1472JsxTextOpenDialog')}
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent data-testid="shadow-demo-dialog">
                         <DialogHeader>
                           <DialogTitle>
                             {tHardcodedUi.raw('appHomeDesignSystemPage.line1476JsxTextDialogTitle')}
@@ -2470,13 +2458,13 @@ export default function BrandPage() {
                   <DemoContainer>
                     <Modal>
                       <ModalTrigger asChild>
-                        <Button variant="outline">
+                        <Button data-testid="shadow-trigger-modal" variant="outline">
                           {tI18nHardcoded.raw(
                             'autoAppPublicMarketingDesignSystemPageJsxTextOpenModal87b8fff8',
                           )}
                         </Button>
                       </ModalTrigger>
-                      <ModalContent>
+                      <ModalContent data-testid="shadow-demo-modal">
                         <ModalHeader>
                           <ModalTitle>
                             {tI18nHardcoded.raw(
@@ -2515,11 +2503,11 @@ export default function BrandPage() {
                   <DemoContainer>
                     <Sheet>
                       <SheetTrigger asChild>
-                        <Button variant="outline">
+                        <Button data-testid="shadow-trigger-sheet" variant="outline">
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1505JsxTextOpenSheet')}
                         </Button>
                       </SheetTrigger>
-                      <SheetContent>
+                      <SheetContent data-testid="shadow-demo-sheet">
                         <SheetHeader>
                           <SheetTitle>
                             {tHardcodedUi.raw('appHomeDesignSystemPage.line1509JsxTextSheetTitle')}
@@ -2558,12 +2546,12 @@ export default function BrandPage() {
                   <DemoContainer>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
+                        <Button data-testid="shadow-trigger-menu" variant="outline">
                           <MoreHorizontal className="size-4" />
                           Options
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent>
+                      <DropdownMenuContent data-testid="shadow-demo-menu">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem>Edit</DropdownMenuItem>
@@ -2631,11 +2619,11 @@ export default function BrandPage() {
                   <DemoContainer>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline">
+                        <Button data-testid="shadow-trigger-popover" variant="outline">
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1603JsxTextOpenPopover')}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-64">
+                      <PopoverContent data-testid="shadow-demo-popover" className="w-64">
                         <div className="space-y-2">
                           <p className="text-sm font-medium">
                             {tHardcodedUi.raw(
@@ -2763,11 +2751,8 @@ export default function BrandPage() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <Button
-                            onClick={() =>
-                              successToast('Saved', {
-                                description: 'Your changes were saved.',
-                              })
-                            }
+                            data-testid="shadow-trigger-toast"
+                            onClick={() => successToast('Saved')}
                             variant="success"
                           >
                             Success
