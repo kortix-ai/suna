@@ -36,10 +36,10 @@ export function goalPushTriggerSlug(goalSlug: string): string {
   const candidate = `${GOAL_PUSH_TRIGGER_PREFIX}${goalSlug}`;
   if (candidate.length <= 128) return candidate;
 
-  let hash = 0xcbf29ce484222325n;
+  let hash = BigInt('0xcbf29ce484222325');
   for (let index = 0; index < goalSlug.length; index += 1) {
     hash ^= BigInt(goalSlug.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+    hash = BigInt.asUintN(64, hash * BigInt('0x100000001b3'));
   }
   const suffix = hash.toString(16).padStart(16, '0');
   const retainedLength = 128 - GOAL_PUSH_TRIGGER_PREFIX.length - suffix.length - 1;
