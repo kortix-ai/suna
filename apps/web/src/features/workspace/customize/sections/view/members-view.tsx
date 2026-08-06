@@ -365,8 +365,9 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
         // Only projectId is in scope here, not the owning account_id, so
         // this can't target one qk.projects.list(accountId) entry —
-        // 'kx','projects' is the shared prefix every list form lives under.
-        queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
+        // qk.projects.scope() is the shared prefix every list form lives
+        // under.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
       }
 

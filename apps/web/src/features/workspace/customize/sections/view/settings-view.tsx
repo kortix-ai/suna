@@ -403,9 +403,9 @@ function ExperimentalFeatureRow({
       void invalidateProject(queryClient, projectId);
       // Only projectId is passed down to this row, not the owning
       // account_id, so this can't target one qk.projects.list(accountId)
-      // entry — 'kx','projects' is the shared prefix every list form
+      // entry — qk.projects.scope() is the shared prefix every list form
       // (every account's, plus the accountless slot) lives under.
-      queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       if (feature.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
       }

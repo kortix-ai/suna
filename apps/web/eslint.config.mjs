@@ -145,6 +145,38 @@ const eslintConfig = [
             'ImportDeclaration[source.value=/(^@kortix\\/sdk(\\/|$))|opencode/i] > ImportSpecifier[imported.name=/OpenCode/i]',
           message: 'Import a runtime-neutral alias from @kortix/sdk.',
         },
+        {
+          // 176 hand-typed literals across 30 `project*` families produced
+          // duplicate cache entries for one dataset (`['project-sessions',
+          // id]` and `['project-session-inventory', id]` held the same
+          // server response), silent write/read key mismatches, and
+          // per-observer `staleTime` drift, because nothing forced two call
+          // sites naming the same entity to agree on a key. This rule is
+          // what makes the migration to `qk` permanent: a reintroduced
+          // literal is a build failure, not something a reviewer has to
+          // spot in a 100-file diff.
+          //
+          // The pattern matches the whole family rather than an allowlist,
+          // so a NEW literal (`['project-widgets', id]`) is caught too.
+          selector:
+            "Property[key.name='queryKey'] > ArrayExpression > " +
+            "Literal[value=/^projects?(-[a-z-]+)?$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The migrated root itself is exactly as easy to hand-roll as the
+          // literals above, and the rule above is blind to it: `'kx'` does
+          // not match /^projects?(-[a-z-]+)?$/. qk.projects.scope() is
+          // ['kx', 'projects'] and qk.project.scope(id) is ['kx', 'project',
+          // id] (see packages/sdk/src/react/query-keys.ts) — three call
+          // sites hand-typed ['kx', 'projects'] instead of calling the
+          // factory, which is exactly the hole this closes.
+          selector:
+            "Property[key.name='queryKey'] > ArrayExpression > Literal[value='kx']",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
       ],
     },
   },

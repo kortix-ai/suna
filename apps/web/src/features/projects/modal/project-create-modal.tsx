@@ -309,12 +309,12 @@ export const ProjectCreateModal = ({
     queryClient.setQueryData<KortixProject[]>(qk.projects.list(project.account_id), (projects) =>
       upsertProject(projects, project),
     );
-    // ['kx', 'projects'] is the shared prefix under which every
+    // qk.projects.scope() is the shared prefix under which every
     // qk.projects.list(...) form lives (every account's list AND the bare
     // "no account" slot) — unlike qk.projects.list() alone, which only
     // matches its own sibling entry.
-    void queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
-    void queryClient.refetchQueries({ queryKey: ['kx', 'projects'], type: 'active' });
+    void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+    void queryClient.refetchQueries({ queryKey: qk.projects.scope(), type: 'active' });
 
     if (effectiveSourceItemId) {
       const sessionId = await startTemplateSetupSession(project, {
@@ -494,9 +494,9 @@ export const ProjectCreateModal = ({
         qk.projects.list(result.project.account_id),
         (projects) => upsertProject(projects, result.project),
       );
-      void queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
+      void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       void queryClient.refetchQueries({
-        queryKey: ['kx', 'projects'],
+        queryKey: qk.projects.scope(),
         type: 'active',
       });
       resetAndClose();
