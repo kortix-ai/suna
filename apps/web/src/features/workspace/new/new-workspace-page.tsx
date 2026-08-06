@@ -1,7 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+
+import { readCloneParam } from '@/features/workspace/new/clone-param';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,7 +66,13 @@ import { listAccounts } from '@kortix/sdk';
  */
 export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
-  const [state, setState] = useState<NewWorkspaceFormState>(INITIAL_FORM_STATE);
+  const searchParams = useSearchParams();
+  const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
+
+  const [state, setState] = useState<NewWorkspaceFormState>(() => ({
+    ...INITIAL_FORM_STATE,
+    templateId: cloneItemId,
+  }));
   const [touched, setTouched] = useState(false);
   const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();
   const submitting = status === 'creating';
@@ -162,6 +171,12 @@ export function NewWorkspacePage() {
           void create(state);
         }}
       >
+        {state.templateId && (
+          <p className="text-muted-foreground text-center text-xs">
+            This workspace will be seeded from the template you picked.
+          </p>
+        )}
+
         <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
           <Label htmlFor="workspace-name">Name</Label>
           {/* `items-start`, not `items-center`: the icon trigger and the input
