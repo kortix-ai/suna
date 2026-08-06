@@ -85,7 +85,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
       successToast('Project archived');
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: qk.projects.list(project?.account_id) });
       setArchiveOpen(false);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
@@ -218,7 +218,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
       queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
@@ -387,7 +387,11 @@ function ExperimentalFeatureRow({
         (current) => (current ? { ...current, project: updated } : current),
       );
       void invalidateProject(queryClient, projectId);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // Only projectId is passed down to this row, not the owning
+      // account_id, so this can't target one qk.projects.list(accountId)
+      // entry — 'kx','projects' is the shared prefix every list form
+      // (every account's, plus the accountless slot) lives under.
+      queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
       if (feature.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
       }
@@ -459,7 +463,7 @@ function SandboxProviderRow({
           onSettled: (state) => {
             queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
             void invalidateProject(queryClient, project.project_id);
-            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
             const status = state?.latest?.status;
             if (status === 'activated') {
               successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
@@ -712,7 +716,7 @@ function GeneralProjectCard({
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
   });

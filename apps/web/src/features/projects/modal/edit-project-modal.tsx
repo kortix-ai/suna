@@ -101,7 +101,13 @@ export const EditProjectModal = ({
       if (projectId) {
         queryClient.setQueryData(['project', projectId], updated);
       }
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // This modal only ever receives a projectId, never the owning
+      // account_id, so it cannot target one qk.projects.list(accountId)
+      // entry. 'kx','projects' is the shared prefix every list form lives
+      // under (every account's list plus the accountless slot) — the same
+      // broad reach the old bare projects-list literal had via prefix
+      // matching.
+      queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
       successToast(summarizeProjectEdit(patch, updated?.name ?? name.trim()));
       onSaved?.();
       onOpenChange(false);

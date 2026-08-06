@@ -75,6 +75,7 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   CubeIcon as Boxes,
   CheckCircleIcon as CheckCircleSolid,
@@ -296,14 +297,24 @@ export const ProjectCreateModal = ({
 
   async function finishCreatedProject(project: KortixProject) {
     successToast('Project created');
-    queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
+    // Optimistic write goes ONLY into the account this project actually
+    // belongs to — the one entry a merge here can never get wrong.
+    // qk.projects.list() (no account) is a DIFFERENT, sibling cache entry —
+    // it backs the marketplace "add to project" picker, which fetches
+    // whatever account the API resolves with no account_id (the caller's
+    // primary account, not necessarily this one). Hand-merging this project
+    // into that slot could inject it into the wrong account's cached list.
+    // The broad invalidate + active refetch below reaches that slot too,
+    // correctly, via a real network fetch instead of a guess.
+    queryClient.setQueryData<KortixProject[]>(qk.projects.list(project.account_id), (projects) =>
       upsertProject(projects, project),
     );
-    queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
-      upsertProject(projects, project),
-    );
-    void queryClient.invalidateQueries({ queryKey: ['projects'] });
-    void queryClient.refetchQueries({ queryKey: ['projects'], type: 'active' });
+    // ['kx', 'projects'] is the shared prefix under which every
+    // qk.projects.list(...) form lives (every account's list AND the bare
+    // "no account" slot) — unlike qk.projects.list() alone, which only
+    // matches its own sibling entry.
+    void queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
+    void queryClient.refetchQueries({ queryKey: ['kx', 'projects'], type: 'active' });
 
     if (effectiveSourceItemId) {
       const sessionId = await startTemplateSetupSession(project, {
@@ -474,16 +485,18 @@ export const ProjectCreateModal = ({
     mutationFn: linkRepository,
     onSuccess: (result) => {
       successToast('Repository linked');
+      // Same reasoning as finishCreatedProject: the optimistic write targets
+      // only the linked project's own account; the bare qk.projects.list()
+      // slot is a different account's data (whatever the API resolves with
+      // no account_id) and is refreshed via the broad invalidate below
+      // instead of a hand-merge that could target the wrong account.
       queryClient.setQueryData<KortixProject[]>(
-        ['projects', result.project.account_id],
+        qk.projects.list(result.project.account_id),
         (projects) => upsertProject(projects, result.project),
       );
-      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
-        upsertProject(projects, result.project),
-      );
-      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
       void queryClient.refetchQueries({
-        queryKey: ['projects'],
+        queryKey: ['kx', 'projects'],
         type: 'active',
       });
       resetAndClose();

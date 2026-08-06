@@ -54,7 +54,10 @@ export function applySandboxProviderResult(
     c ? { ...c, project: cached } : c,
   );
   queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-  queryClient.invalidateQueries({ queryKey: ['projects'] });
+  // cached.account_id is real (stripped straight off the API result above),
+  // so this can target the one list entry the provider switch actually
+  // changed instead of every account's.
+  queryClient.invalidateQueries({ queryKey: qk.projects.list(cached.account_id) });
   return 'project';
 }
 

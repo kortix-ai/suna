@@ -110,10 +110,10 @@ export function ProjectSwitcher({
     null;
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', activeAccount?.account_id],
+    queryKey: qk.projects.list(activeAccount?.account_id),
     queryFn: () => listProjectsForAccount(activeAccount?.account_id),
     enabled: !!activeAccount,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
   const activeProject = useMemo(

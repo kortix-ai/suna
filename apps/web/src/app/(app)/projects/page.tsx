@@ -46,6 +46,7 @@ import {
   listAccounts,
   listProjectsForAccount,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { FolderPlusIcon as FolderPlus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -160,10 +161,10 @@ export default function ProjectsPage() {
   const activeAccountId = activeAccount?.account_id ?? null;
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', activeAccountId],
+    queryKey: qk.projects.list(activeAccountId ?? undefined),
     queryFn: () => listProjectsForAccount(activeAccountId || undefined),
     enabled: !!user && !!activeAccountId,
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
 
   const canCreateProjects =
@@ -182,14 +183,15 @@ export default function ProjectsPage() {
   );
 
   // In "all" view we fetch projects for every account. These reuse the exact
-  // same ['projects', accountId] cache keys as the single-account query above,
-  // so toggling between views is instant once each account has loaded once.
+  // same qk.projects.list(accountId) cache keys as the single-account query
+  // above, so toggling between views is instant once each account has loaded
+  // once.
   const allAccountQueries = useQueries({
     queries: viewAll
       ? accounts.map((a) => ({
-          queryKey: ['projects', a.account_id],
+          queryKey: qk.projects.list(a.account_id),
           queryFn: () => listProjectsForAccount(a.account_id),
-          staleTime: 20_000,
+          ...contract('inventory'),
         }))
       : [],
   });
@@ -284,7 +286,7 @@ export default function ProjectsPage() {
             return;
           }
           writeLastProjectId(user?.id, project.project_id);
-          queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
+          queryClient.invalidateQueries({ queryKey: qk.projects.list(accountId) });
           router.replace(`/projects/${project.project_id}`);
         })
         .catch((err) => {
@@ -340,7 +342,11 @@ export default function ProjectsPage() {
         suppressAutoProjectAfterDelete();
       }
       if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // Scoped to the archived project's own account — the account this
+      // mutation actually changed. Every reader of that account's list
+      // (this page, the sidebar switcher, the command palette, …) is a
+      // qk.projects.list(accountId) observer, so this alone reaches them.
+      queryClient.invalidateQueries({ queryKey: qk.projects.list(archiveTarget?.account_id) });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');
       setArchiveTarget(null);

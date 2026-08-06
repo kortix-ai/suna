@@ -411,10 +411,10 @@ export function CommandPalette() {
     null;
   const activeAccountId = activeAccount?.account_id ?? null;
   const { data: projectsList } = useQuery({
-    queryKey: ['projects', activeAccountId],
+    queryKey: qk.projects.list(activeAccountId ?? undefined),
     queryFn: () => listProjectsForAccount(activeAccountId || undefined),
     enabled: open && !!activeAccountId,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const { data: projectSessionsList } = useQuery({
     queryKey: ['project-sessions', projectId],

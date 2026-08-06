@@ -44,6 +44,7 @@ import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-proj
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
 import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';
@@ -155,7 +156,7 @@ export function AddToProjectModal({
           starter_template: 'general-knowledge-worker',
           source_item_id: isProject ? item.id : undefined,
         });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        queryClient.invalidateQueries({ queryKey: qk.projects.list(account.account_id) });
 
         const sessionId = isProject
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })

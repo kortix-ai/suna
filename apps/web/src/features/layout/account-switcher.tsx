@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   CaretUpDownIcon as ChevronsUpDown,
@@ -282,7 +283,7 @@ export function AccountSwitcher({
           void queryClient.invalidateQueries({ queryKey: ['accounts'] });
           setSelectedAccountId(account.account_id);
           void queryClient.invalidateQueries({
-            queryKey: ['projects', account.account_id],
+            queryKey: qk.projects.list(account.account_id),
           });
           // The landing door, NOT the remembered project: that cookie names a
           // project in the account being left. The door re-resolves the latest

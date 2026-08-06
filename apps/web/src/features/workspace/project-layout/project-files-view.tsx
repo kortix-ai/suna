@@ -28,8 +28,8 @@ export function ProjectFilesView({ projectId }: { projectId: string }) {
   // entry calls that hook to decide whether to render itself, so this slot is
   // already populated before the user can click through: first render reads it
   // synchronously instead of paying a second round trip for identical data.
-  // This view used to own a private `['projects', id, 'meta']` key, which made
-  // that duplicate fetch unavoidable and blocked the whole page behind it.
+  // This view used to own a private projects/id/meta key, which made that
+  // duplicate fetch unavoidable and blocked the whole page behind it.
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),

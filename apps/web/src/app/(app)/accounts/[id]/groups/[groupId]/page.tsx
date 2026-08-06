@@ -73,6 +73,7 @@ import {
   listProjectsForAccount,
   type ProjectRole,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -965,10 +966,10 @@ function AttachToProjectDialog({
   // Only fetch the project list when the dialog is open. Includes
   // effective_project_role so we can filter to manageable projects.
   const projectsQuery = useQuery({
-    queryKey: ['projects-for-account', accountId],
+    queryKey: qk.projects.list(accountId),
     queryFn: () => listProjectsForAccount(accountId),
     enabled: open,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
   const candidates = useMemo(() => {

@@ -107,7 +107,7 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
-import { invalidateProject } from '@kortix/sdk/react';
+import { invalidateProject, qk } from '@kortix/sdk/react';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
@@ -363,7 +363,10 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       }
       if (added.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        // Only projectId is in scope here, not the owning account_id, so
+        // this can't target one qk.projects.list(accountId) entry —
+        // 'kx','projects' is the shared prefix every list form lives under.
+        queryClient.invalidateQueries({ queryKey: ['kx', 'projects'] });
         queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       }
 
@@ -631,7 +634,7 @@ function ProjectAccessCard({
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['projects'] });
+    queryClient.invalidateQueries({ queryKey: qk.projects.list(accountId ?? undefined) });
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   };
 
