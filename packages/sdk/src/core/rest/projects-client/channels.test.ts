@@ -115,8 +115,8 @@ test('connectEmail posts the connect payload', async () => {
   nextResponse = {
     status: 200,
     body: {
-      connection_id: 'profile-email-1',
-      profileSlug: 'inbox-1',
+      connection_id: 'connection-email-1',
+      connector_slug: 'inbox-1',
       inboxId: 'i1',
       email: 'a@b.com',
       displayName: null,
@@ -133,11 +133,10 @@ test('connectEmail posts the connect payload', async () => {
   const installation = await connectEmail('P1', { email: 'a@b.com' });
   expect(last().url).toContain('/projects/P1/channels/email/connect');
   expect(last().body).toEqual({ email: 'a@b.com' });
-  expect(installation.connectionId).toBe('profile-email-1');
-  expect(installation.profileId).toBe('profile-email-1');
+  expect(installation.connectionId).toBe('connection-email-1');
 });
 
-test('connectEmail normalizes the canonical connector slug onto the deprecated alias', async () => {
+test('connectEmail normalizes the canonical connector slug', async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -160,16 +159,15 @@ test('connectEmail normalizes the canonical connector slug onto the deprecated a
   const installation = await connectEmail('P1', { connector_slug: 'support_inbox' });
 
   expect(installation.connectorSlug).toBe('support_inbox');
-  expect(installation.profileSlug).toBe('support_inbox');
 });
 
-test('connectEmail preserves a legacy profile slug on the canonical property', async () => {
+test('connectEmail accepts the canonical camel-case connector slug', async () => {
   nextResponse = {
     status: 200,
     body: {
-      profileSlug: 'legacy_inbox',
+      connectorSlug: 'support_inbox',
       inboxId: 'i1',
-      email: 'legacy@example.com',
+      email: 'support@example.com',
       displayName: null,
       webhookId: null,
       senderPolicy: {
@@ -182,10 +180,9 @@ test('connectEmail preserves a legacy profile slug on the canonical property', a
     },
   };
 
-  const installation = await connectEmail('P1', { connector_slug: 'legacy_inbox' });
+  const installation = await connectEmail('P1', { connector_slug: 'support_inbox' });
 
-  expect(installation.connectorSlug).toBe('legacy_inbox');
-  expect(installation.profileSlug).toBe('legacy_inbox');
+  expect(installation.connectorSlug).toBe('support_inbox');
 });
 
 test('disconnectEmail throws with the server error message on failure', async () => {
@@ -236,7 +233,7 @@ test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
   nextResponse = {
     status: 200,
     body: {
-      profileSlug: 'inbox-1',
+      connectorSlug: 'inbox-1',
       inboxId: 'i1',
       email: 'a@b.com',
       displayName: null,

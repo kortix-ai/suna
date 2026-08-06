@@ -2,18 +2,19 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   AlarmIcon as AlarmClock,
   ArrowCircleUpIcon as ArrowUpCircle,
-  ChatsIcon as ChatMessages,
-  CubeIcon as Boxes,
-  GearSixIcon as LucideSettings,
-  GitForkIcon as GitFork,
-  KeyIcon as KeyRound,
-  MonitorIcon as Monitor,
-  RobotIcon as Bot,
-  ShippingContainerIcon as Container,
-  StorefrontIcon as Store,
-  TrayIcon as Inbox,
-  UsersThreeIcon as LucideUsersRound,
   WaveformIcon as AudioLines,
+  RobotIcon as Bot,
+  CubeIcon as Boxes,
+  ChatsIcon as ChatMessages,
+  CommandIcon as Command,
+  ShippingContainerIcon as Container,
+  GitForkIcon as GitFork,
+  TrayIcon as Inbox,
+  KeyIcon as KeyRound,
+  GearSixIcon as LucideSettings,
+  UsersThreeIcon as LucideUsersRound,
+  MonitorIcon as Monitor,
+  StorefrontIcon as Store,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { RailGroup, RailItem } from './type';
@@ -60,7 +61,10 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 const GROUPS: readonly RailGroup[] = [
   {
     label: 'Build',
-    items: [{ section: 'agents', label: 'Agents', icon: Bot }],
+    items: [
+      { section: 'agents', label: 'Agents', icon: Bot },
+      { section: 'commands', label: 'Commands', icon: Command },
+    ],
   },
   {
     label: 'Connect',

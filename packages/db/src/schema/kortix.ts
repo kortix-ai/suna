@@ -76,7 +76,6 @@ export const projectSecretConsumerEnum = kortixSchema.enum('project_secret_consu
   'sandbox',
   'llm_gateway',
   'connector',
-  'executor',
   'git_proxy',
   'http_broker',
   'network',
@@ -4013,15 +4012,14 @@ export const accountSsoGroupMappings = kortixSchema.table(
 
 /* ─── Connector (connectors) ───────────────────────────────────────────────
  * One unified connector layer the agent reaches via the Connector (CLI/MCP/SDK).
- * Existing `executor_*` table, enum, index, and constraint identifiers are a
- * physical compatibility boundary. Rename them only through a migration that
- * preserves mixed-version deploys. TypeScript exports use connector terms now.
+ * Physical table, enum, index, constraint, and connection-column identifiers
+ * use the same connector and connection terms as the public product surface.
  * Connectors are DEFINED in kortix.yaml (`connectors`) and materialized here
  * on push (manifest = config source of truth, like triggers). Credentials are
  * project_secrets (scope handled by sharing above); the Pipedream connection
  * binding is also a project secret. See docs/specs/connector.md.
  */
-export const connectorProviderEnum = kortixSchema.enum('executor_connector_provider', [
+export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   'pipedream',
   'mcp',
   'openapi',
@@ -4040,26 +4038,26 @@ export const connectorProviderEnum = kortixSchema.enum('executor_connector_provi
   'computer',
 ]);
 
-export const connectorStatusEnum = kortixSchema.enum('executor_connector_status', [
+export const connectorStatusEnum = kortixSchema.enum('connector_status', [
   'active',
   'disabled',
   'needs_auth',
   'error',
 ]);
 
-export const connectorPolicyActionEnum = kortixSchema.enum('executor_policy_action', [
+export const connectorPolicyActionEnum = kortixSchema.enum('connector_policy_action', [
   'always_run',
   'require_approval',
   'block',
 ]);
 
-export const connectorRiskEnum = kortixSchema.enum('executor_risk', [
+export const connectorRiskEnum = kortixSchema.enum('connector_risk', [
   'read',
   'write',
   'destructive',
 ]);
 
-export const connectorCallStatusEnum = kortixSchema.enum('executor_execution_status', [
+export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status', [
   'ok',
   'error',
   'denied',
@@ -4087,18 +4085,18 @@ export const connectorCallStatusEnum = kortixSchema.enum('executor_execution_sta
  * feature (interactive-sessions-only, tracked separately) will need a new,
  * differently-named mechanism — not a revival of this one.
  */
-export const connectorCredentialModeEnum = kortixSchema.enum('executor_credential_mode', [
+export const connectorCredentialModeEnum = kortixSchema.enum('connector_credential_mode', [
   'shared',
   'per_user',
 ]);
 
 export const connectorAuthorizationStrategyEnum = kortixSchema.enum(
-  'executor_connector_authorization_strategy',
+  'connector_authorization_strategy',
   ['project', 'user'],
 );
 
 export const connectors = kortixSchema.table(
-  'executor_connectors',
+  'connectors',
   {
     connectorId: uuid('connector_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
@@ -4148,15 +4146,15 @@ export const connectors = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_executor_connectors_project').on(table.projectId),
-    index('idx_executor_connectors_account').on(table.accountId),
-    uniqueIndex('idx_executor_connectors_project_slug').on(table.projectId, table.slug),
-    uniqueIndex('idx_executor_connectors_tenant_identity').on(
+    index('idx_connectors_project').on(table.projectId),
+    index('idx_connectors_account').on(table.accountId),
+    uniqueIndex('idx_connectors_project_slug').on(table.projectId, table.slug),
+    uniqueIndex('idx_connectors_tenant_identity').on(
       table.accountId,
       table.projectId,
       table.connectorId,
     ),
-    uniqueIndex('idx_executor_connectors_tenant_alias').on(
+    uniqueIndex('idx_connectors_tenant_alias').on(
       table.accountId,
       table.projectId,
       table.connectorId,
@@ -4166,20 +4164,20 @@ export const connectors = kortixSchema.table(
 );
 
 export const connectorConnectionOwnerTypeEnum = kortixSchema.enum(
-  'executor_connection_profile_owner_type',
+  'connector_connection_owner_type',
   ['project', 'agent', 'member', 'subject', 'external'],
 );
 
 export const connectorConnectionStatusEnum = kortixSchema.enum(
-  'executor_connection_profile_status',
+  'connector_connection_status',
   ['active', 'revoked', 'error'],
 );
 
 /** A concrete server-side identity behind one logical connector definition. */
 export const connectorConnections = kortixSchema.table(
-  'executor_connection_profiles',
+  'connector_connections',
   {
-    connectionId: uuid('profile_id').defaultRandom().primaryKey(),
+    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
     connectorId: uuid('connector_id').notNull(),
@@ -4201,15 +4199,15 @@ export const connectorConnections = kortixSchema.table(
         connectors.projectId,
         connectors.connectorId,
       ],
-      name: 'executor_connection_profiles_connector_tenant_fk',
+      name: 'connector_connections_connector_tenant_fk',
     }).onDelete('cascade'),
-    uniqueIndex('idx_executor_connection_profiles_tenant_identity').on(
+    uniqueIndex('idx_connector_connections_tenant_identity').on(
       table.accountId,
       table.projectId,
       table.connectorId,
       table.connectionId,
     ),
-    uniqueIndex('idx_executor_connection_profiles_connector_identity').on(
+    uniqueIndex('idx_connector_connections_connector_identity').on(
       table.connectorId,
       table.connectionId,
     ),
@@ -4219,33 +4217,33 @@ export const connectorConnections = kortixSchema.table(
     // per member/agent/external owner. Split into two partial indexes so the
     // project case (owner_id IS NULL, where SQL NULLs would compare distinct)
     // is still capped at one.
-    uniqueIndex('idx_executor_connection_profiles_default_project')
+    uniqueIndex('idx_connector_connections_default_project')
       .on(table.connectorId)
       .where(sql`${table.isDefault} = true and ${table.ownerType} = 'project'`),
-    uniqueIndex('idx_executor_connection_profiles_default_owner')
+    uniqueIndex('idx_connector_connections_default_owner')
       .on(table.connectorId, table.ownerType, table.ownerId)
       .where(sql`${table.isDefault} = true and ${table.ownerId} is not null`),
     // Identity is (connector, owner, LABEL) — the label is the discriminator that
     // lets one owner hold several connections ("Work", "Personal") while keeping
     // reconcile idempotent: the same label updates in place, a new label adds a
     // new connection.
-    uniqueIndex('idx_executor_connection_profiles_owner_label')
+    uniqueIndex('idx_connector_connections_owner_label')
       .on(table.connectorId, table.ownerType, table.ownerId, table.label)
       .where(sql`${table.ownerId} is not null`),
     // Project-owned rows carry owner_id NULL, so the index above (partial on
     // owner_id IS NOT NULL) can't dedupe them. Several project connections per
     // connector are allowed, distinguished by label — this keeps that set unique.
-    uniqueIndex('idx_executor_connection_profiles_project_label')
+    uniqueIndex('idx_connector_connections_project_label')
       .on(table.connectorId, table.label)
       .where(sql`${table.ownerId} is null`),
-    index('idx_executor_connection_profiles_project').on(table.projectId),
-    index('idx_executor_connection_profiles_connector').on(table.connectorId),
+    index('idx_connector_connections_project').on(table.projectId),
+    index('idx_connector_connections_connector').on(table.connectorId),
     check(
-      'executor_connection_profiles_owner_check',
+      'connector_connections_owner_check',
       sql`(${table.ownerType} = 'project' AND ${table.ownerId} IS NULL) OR (${table.ownerType} <> 'project' AND ${table.ownerId} IS NOT NULL AND btrim(${table.ownerId}) <> '')`,
     ),
     check(
-      'executor_connection_profiles_metadata_check',
+      'connector_connections_metadata_check',
       sql`jsonb_typeof(${table.metadata}) = 'object' AND octet_length(${table.metadata}::text) <= 16384`,
     ),
   ],
@@ -4265,7 +4263,7 @@ export const projectSessionConnectorBindings = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     connectorAlias: varchar('connector_alias', { length: 128 }).notNull(),
     connectorId: uuid('connector_id').notNull(),
-    connectionId: uuid('profile_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
     source: projectSessionConnectorBindingSourceEnum('source').default('request').notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4300,9 +4298,9 @@ export const projectSessionConnectorBindings = kortixSchema.table(
         connectorConnections.connectorId,
         connectorConnections.connectionId,
       ],
-      name: 'project_session_connector_bindings_profile_tenant_fk',
+      name: 'project_session_connector_bindings_connection_tenant_fk',
     }).onDelete('restrict'),
-    index('idx_project_session_connector_bindings_profile').on(table.connectionId),
+    index('idx_project_session_connector_bindings_connection').on(table.connectionId),
     index('idx_project_session_connector_bindings_project').on(table.projectId),
   ],
 );
@@ -4313,7 +4311,7 @@ export const projectSessionConnectorBindings = kortixSchema.table(
  *  anymore. Kept (empty) rather than dropped — see the shareScope/agentScope
  *  comments on connectors. */
 export const connectorGrants = kortixSchema.table(
-  'executor_connector_grants',
+  'connector_grants',
   {
     grantId: uuid('grant_id').defaultRandom().primaryKey(),
     connectorId: uuid('connector_id')
@@ -4324,8 +4322,8 @@ export const connectorGrants = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_executor_connector_grants_connector').on(table.connectorId),
-    uniqueIndex('idx_executor_connector_grants_unique').on(
+    index('idx_connector_grants_connector').on(table.connectorId),
+    uniqueIndex('idx_connector_grants_unique').on(
       table.connectorId,
       table.principalType,
       table.principalId,
@@ -4343,14 +4341,14 @@ export const connectorGrants = kortixSchema.table(
  * today passes `userId: null`. Value/binding encrypted; resolved server-side only.
  */
 export const connectionCredentials = kortixSchema.table(
-  'executor_credentials',
+  'connection_credentials',
   {
     credentialId: uuid('credential_id').defaultRandom().primaryKey(),
     connectorId: uuid('connector_id')
       .notNull()
       .references(() => connectors.connectorId, { onDelete: 'cascade' }),
     /** Connection identity. Nullable only during legacy dual-read rollout. */
-    connectionId: uuid('profile_id'),
+    connectionId: uuid('connection_id'),
     /** NULL = shared project credential (the only mode written today). */
     userId: uuid('user_id'),
     /** `secret` (api key / token) or `connection` (Pipedream account binding id). */
@@ -4361,9 +4359,9 @@ export const connectionCredentials = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_executor_credentials_connector').on(table.connectorId),
-    index('idx_executor_credentials_profile').on(table.connectionId),
-    uniqueIndex('idx_executor_credentials_profile_unique')
+    index('idx_connection_credentials_connector').on(table.connectorId),
+    index('idx_connection_credentials_connection').on(table.connectionId),
+    uniqueIndex('idx_connection_credentials_connection_unique')
       .on(table.connectionId)
       .where(sql`${table.connectionId} is not null`),
     foreignKey({
@@ -4372,9 +4370,9 @@ export const connectionCredentials = kortixSchema.table(
         connectorConnections.connectorId,
         connectorConnections.connectionId,
       ],
-      name: 'executor_credentials_connector_profile_fk',
+      name: 'connection_credentials_connector_connection_fk',
     }).onDelete('cascade'),
-    uniqueIndex('idx_executor_credentials_legacy_connector_unique')
+    uniqueIndex('idx_connection_credentials_legacy_connector_unique')
       .on(table.connectorId)
       .where(sql`${table.connectionId} is null`),
   ],
@@ -4382,13 +4380,13 @@ export const connectionCredentials = kortixSchema.table(
 
 /** Encrypted provider-independent OAuth2 application configuration per connection. */
 export const connectionOAuthApplications = kortixSchema.table(
-  'executor_oauth_applications',
+  'connection_oauth_applications',
   {
     applicationId: uuid('application_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
     connectorId: uuid('connector_id').notNull(),
-    connectionId: uuid('profile_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
     configEnc: text('config_enc').notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4403,10 +4401,10 @@ export const connectionOAuthApplications = kortixSchema.table(
         connectorConnections.connectorId,
         connectorConnections.connectionId,
       ],
-      name: 'executor_oauth_applications_profile_tenant_fk',
+      name: 'connection_oauth_applications_connection_tenant_fk',
     }).onDelete('cascade'),
-    uniqueIndex('idx_executor_oauth_applications_profile').on(table.connectionId),
-    index('idx_executor_oauth_applications_project').on(table.projectId),
+    uniqueIndex('idx_connection_oauth_applications_connection').on(table.connectionId),
+    index('idx_connection_oauth_applications_project').on(table.projectId),
   ],
 );
 
@@ -4415,13 +4413,13 @@ export const connectionOAuthApplications = kortixSchema.table(
  * State is hashed. PKCE verifiers and device codes are encrypted.
  */
 export const connectionOAuthSessions = kortixSchema.table(
-  'executor_oauth_sessions',
+  'connection_oauth_sessions',
   {
     sessionId: uuid('session_id').defaultRandom().primaryKey(),
     applicationId: uuid('application_id').notNull(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
-    connectionId: uuid('profile_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
     initiatedBy: uuid('initiated_by').notNull(),
     flow: varchar('flow', { length: 32 }).notNull(),
     status: varchar('status', { length: 32 }).default('pending').notNull(),
@@ -4443,30 +4441,30 @@ export const connectionOAuthSessions = kortixSchema.table(
     foreignKey({
       columns: [table.applicationId],
       foreignColumns: [connectionOAuthApplications.applicationId],
-      name: 'executor_oauth_sessions_application_fk',
+      name: 'connection_oauth_sessions_application_fk',
     }).onDelete('cascade'),
-    uniqueIndex('idx_executor_oauth_sessions_state_hash')
+    uniqueIndex('idx_connection_oauth_sessions_state_hash')
       .on(table.stateHash)
       .where(sql`${table.stateHash} is not null`),
-    index('idx_executor_oauth_sessions_profile').on(table.connectionId),
-    index('idx_executor_oauth_sessions_expires').on(table.expiresAt),
+    index('idx_connection_oauth_sessions_connection').on(table.connectionId),
+    index('idx_connection_oauth_sessions_expires').on(table.expiresAt),
     check(
-      'executor_oauth_sessions_flow_check',
+      'connection_oauth_sessions_flow_check',
       sql`${table.flow} IN ('authorization_code', 'device_authorization')`,
     ),
     check(
-      'executor_oauth_sessions_status_check',
+      'connection_oauth_sessions_status_check',
       sql`${table.status} IN ('pending', 'active', 'consumed', 'error', 'expired')`,
     ),
     check(
-      'executor_oauth_sessions_material_check',
+      'connection_oauth_sessions_material_check',
       sql`(${table.flow} = 'authorization_code' AND ${table.stateHash} IS NOT NULL AND ${table.pkceVerifierEnc} IS NOT NULL AND ${table.deviceCodeEnc} IS NULL) OR (${table.flow} = 'device_authorization' AND ${table.stateHash} IS NULL AND ${table.pkceVerifierEnc} IS NULL AND ${table.deviceCodeEnc} IS NOT NULL)`,
     ),
   ],
 );
 
 export const connectorActions = kortixSchema.table(
-  'executor_connector_actions',
+  'connector_actions',
   {
     actionId: uuid('action_id').defaultRandom().primaryKey(),
     connectorId: uuid('connector_id')
@@ -4485,8 +4483,8 @@ export const connectorActions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_executor_connector_actions_connector').on(table.connectorId),
-    uniqueIndex('idx_executor_connector_actions_path').on(table.connectorId, table.path),
+    index('idx_connector_actions_connector').on(table.connectorId),
+    uniqueIndex('idx_connector_actions_path').on(table.connectorId, table.path),
   ],
 );
 
@@ -4512,7 +4510,7 @@ export interface ConnectorPolicyCondition {
 }
 
 export const connectorPolicies = kortixSchema.table(
-  'executor_connector_policies',
+  'connector_policies',
   {
     policyId: uuid('policy_id').defaultRandom().primaryKey(),
     connectorId: uuid('connector_id')
@@ -4527,7 +4525,7 @@ export const connectorPolicies = kortixSchema.table(
     conditions: jsonb('conditions').$type<ConnectorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_executor_connector_policies_connector').on(table.connectorId)],
+  (table) => [index('idx_connector_policies_connector').on(table.connectorId)],
 );
 
 /**
@@ -4538,10 +4536,10 @@ export const connectorPolicies = kortixSchema.table(
  * migration removes the stored rows and physical schema.
  */
 export const connectionPolicies = kortixSchema.table(
-  'executor_connection_policies',
+  'connection_policies',
   {
     policyId: uuid('policy_id').defaultRandom().primaryKey(),
-    connectionId: uuid('profile_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
     /** Connector-relative glob, same grammar as the connector-scoped rules. */
     match: varchar('match', { length: 512 }).notNull(),
     action: connectorPolicyActionEnum('action').notNull(),
@@ -4553,13 +4551,13 @@ export const connectionPolicies = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_executor_connection_policies_profile').on(table.connectionId),
+    index('idx_connection_policies_connection').on(table.connectionId),
     // Named explicitly: the derived name would exceed Postgres's 63-char
     // identifier limit and be silently truncated.
     foreignKey({
       columns: [table.connectionId],
       foreignColumns: [connectorConnections.connectionId],
-      name: 'executor_connection_policies_profile_id_fk',
+      name: 'connection_policies_connection_id_fk',
     }).onDelete('cascade'),
   ],
 );
@@ -4571,7 +4569,7 @@ export const connectionPolicies = kortixSchema.table(
  * rule. See docs/specs/connector.md §8.
  */
 export const connectorProjectPolicies = kortixSchema.table(
-  'executor_project_policies',
+  'connector_project_policies',
   {
     policyId: uuid('policy_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
@@ -4586,10 +4584,10 @@ export const connectorProjectPolicies = kortixSchema.table(
     conditions: jsonb('conditions').$type<ConnectorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_executor_project_policies_project').on(table.projectId)],
+  (table) => [index('idx_connector_project_policies_project').on(table.projectId)],
 );
 
-export const connectorDefaultModeEnum = kortixSchema.enum('executor_default_mode', [
+export const connectorDefaultModeEnum = kortixSchema.enum('connector_default_mode', [
   'risk',
   'allow_all',
 ]);
@@ -4599,7 +4597,7 @@ export const connectorDefaultModeEnum = kortixSchema.enum('executor_default_mode
  * today). Materialized from `policy` in kortix.yaml; missing block = allow_all
  * for back-compat with existing projects.
  */
-export const connectorProjectSettings = kortixSchema.table('executor_project_settings', {
+export const connectorProjectSettings = kortixSchema.table('connector_project_settings', {
   projectId: uuid('project_id')
     .primaryKey()
     .references(() => projects.projectId, { onDelete: 'cascade' }),
@@ -4609,7 +4607,7 @@ export const connectorProjectSettings = kortixSchema.table('executor_project_set
 
 /** Audit + approval ledger for every connector call. */
 export const connectorCalls = kortixSchema.table(
-  'executor_executions',
+  'connector_calls',
   {
     executionId: uuid('execution_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
@@ -4621,7 +4619,7 @@ export const connectorCalls = kortixSchema.table(
     connectorId: uuid('connector_id').references(() => connectors.connectorId, {
       onDelete: 'set null',
     }),
-    connectionId: uuid('profile_id').references(() => connectorConnections.connectionId, {
+    connectionId: uuid('connection_id').references(() => connectorConnections.connectionId, {
       onDelete: 'set null',
     }),
     actionPath: varchar('action_path', { length: 512 }).notNull(),
@@ -4639,15 +4637,15 @@ export const connectorCalls = kortixSchema.table(
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },
   (table) => [
-    index('idx_executor_executions_project').on(table.projectId),
-    index('idx_executor_executions_project_session_created').on(
+    index('idx_connector_calls_project').on(table.projectId),
+    index('idx_connector_calls_project_session_created').on(
       table.projectId,
       table.sessionId,
       table.createdAt.desc(),
     ),
-    index('idx_executor_executions_connector').on(table.connectorId),
-    index('idx_executor_executions_profile').on(table.connectionId),
-    index('idx_executor_executions_status').on(table.status),
+    index('idx_connector_calls_connector').on(table.connectorId),
+    index('idx_connector_calls_connection').on(table.connectionId),
+    index('idx_connector_calls_status').on(table.status),
   ],
 );
 
@@ -4665,7 +4663,7 @@ export const connectorCalls = kortixSchema.table(
  * key before the expiry sweeper can remove the private blob.
  */
 export const connectorAttachments = kortixSchema.table(
-  'executor_attachments',
+  'connector_attachments',
   {
     attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
@@ -4689,16 +4687,16 @@ export const connectorAttachments = kortixSchema.table(
   },
   (table) => [
     check(
-      'executor_attachments_disposition_check',
+      'connector_attachments_disposition_check',
       sql`${table.contentDisposition} IN ('attachment', 'inline')`,
     ),
     check(
-      'executor_attachments_status_check',
+      'connector_attachments_status_check',
       sql`${table.status} IN ('uploaded', 'claimed', 'consumed')`,
     ),
-    check('executor_attachments_size_check', sql`${table.sizeBytes} > 0`),
-    index('idx_executor_attachments_scope').on(table.projectId, table.sessionId, table.userId),
-    index('idx_executor_attachments_expiry').on(table.expiresAt),
+    check('connector_attachments_size_check', sql`${table.sizeBytes} > 0`),
+    index('idx_connector_attachments_scope').on(table.projectId, table.sessionId, table.userId),
+    index('idx_connector_attachments_expiry').on(table.expiresAt),
   ],
 );
 

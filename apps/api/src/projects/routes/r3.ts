@@ -33,13 +33,6 @@ import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViews
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
-/** Accept the pre-connectors wire value, but never persist or return it. */
-function canonicalSecretConsumer(
-  consumer: ProjectSecretConsumer | null | undefined,
-): Exclude<ProjectSecretConsumer, 'executor'> | null | undefined {
-  return consumer === 'executor' ? 'connector' : consumer;
-}
-
 async function connectorSecretBindings(projectId: string, identifier: string): Promise<string[]> {
   const rows = await db
     .select({ slug: connectors.slug })
@@ -566,7 +559,7 @@ projectsApp.openapi(
     return c.json({ error: 'consumer is invalid' }, 400);
   }
   const requestedConsumerData = requestedConsumer?.success
-    ? canonicalSecretConsumer(requestedConsumer.data)
+    ? requestedConsumer.data
     : undefined;
   const requestedStrategy = body.strategy;
   if (
@@ -820,7 +813,7 @@ projectsApp.openapi(
     const nextConsumer =
       parsed.data.consumer === undefined
         ? inferredConsumer
-        : canonicalSecretConsumer(parsed.data.consumer);
+        : parsed.data.consumer;
 
     if (parsed.data.strategy === 'runtime' && nextConsumer !== 'sandbox') {
       return c.json({ error: 'runtime delivery requires the sandbox consumer' }, 400);

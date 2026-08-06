@@ -17,6 +17,7 @@ import {
   ReconcileConnectionInputSchema,
   SecretSchema,
   SecretDeliveryStrategySchema,
+  SecretConsumerSchema,
   UpdateSecretStrategyInputSchema,
   ConnectorConnectionRequiredErrorSchema,
   RequiredConnectorConnectionSchema,
@@ -74,6 +75,11 @@ describe('connection terminology', () => {
     expect(
       UpdateConnectionCredentialInputSchema.parse({ value: 'secret-value' }),
     ).toEqual({ value: 'secret-value' });
+  });
+
+  test('secret consumers accept connector and reject removed product nouns', () => {
+    expect(SecretConsumerSchema.parse('connector')).toBe('connector');
+    expect(SecretConsumerSchema.safeParse('executor').success).toBe(false);
   });
 });
 

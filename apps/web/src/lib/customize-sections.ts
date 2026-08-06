@@ -7,17 +7,17 @@
  * so the page, the sidebar, and any deep-link helpers all agree on the
  * canonical list.
  *
- * Files, Connectors, Skills, and Commands are NOT customize sections — they
- * are standalone `/projects/[id]/<section>` pages (any member can browse
- * Files; Connectors/Skills/Commands gate on their own read leaf — see
- * capabilities/tabs.ts). Deep-link routes still accept the legacy section
- * names and redirect there.
+ * Files, Connectors, and Skills are NOT customize sections. They are standalone
+ * `/projects/[id]/<section>` pages. Commands remains in this overlay because its
+ * standalone page no longer exists. Deep-link routes still accept the legacy
+ * section names and redirect them where applicable.
  */
 
 export type CustomizeSection =
   | 'git'
   | 'review'
   | 'agents'
+  | 'commands'
   | 'marketplace'
   | 'secrets'
   | 'llm-management'
@@ -43,6 +43,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'git',
   'review',
   'agents',
+  'commands',
   'marketplace',
   'secrets',
   'llm-management',
@@ -91,8 +92,7 @@ export function parseCustomizeSection(raw: string | null | undefined): Customize
 
 /** Whether an href matching `/customize(/<segment>)?` should open the overlay. */
 export type CustomizeOverlayMatch =
-  | { opensOverlay: true; section: CustomizeSection | undefined }
-  | { opensOverlay: false };
+  { opensOverlay: true; section: CustomizeSection | undefined } | { opensOverlay: false };
 
 /**
  * Decide whether a menu-registry href should open the Customize overlay, and
@@ -101,8 +101,8 @@ export type CustomizeOverlayMatch =
  *
  * A bare `/customize` (no segment) opens the overlay on its default section.
  * A named segment only opens the overlay when it resolves through
- * `parseCustomizeSection` to a REAL overlay section. Connectors/Skills/
- * Commands graduated out of `CustomizeSection`, so a stale `/customize/skills`
+ * `parseCustomizeSection` to a REAL overlay section. Connectors and Skills
+ * graduated out of `CustomizeSection`, so a stale `/customize/skills`
  * href (or any other unresolvable segment) must NOT open the overlay —
  * `openCustomize(undefined)` would otherwise silently reopen it on whatever
  * section the user last viewed instead of navigating anywhere. The caller is

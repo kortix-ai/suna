@@ -260,6 +260,20 @@
       "when": 1785963447201,
       "tag": "20260805205727_provision_idempotency_key",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786024867650,
+      "tag": "20260806140107_connector_physical_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786028633408,
+      "tag": "20260806150353_connector_compat_removal",
+      "breakpoints": true
     }
   ]
 }

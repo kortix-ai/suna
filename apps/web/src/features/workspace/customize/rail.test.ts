@@ -119,8 +119,8 @@ describe('railGroups', () => {
   });
 });
 
-describe('graduated sections', () => {
-  test('the rail no longer offers connectors, skills, or commands', () => {
+describe('capability sections', () => {
+  test('the rail excludes standalone connectors and skills pages', () => {
     const sections = sectionsOf(
       flags({
         tunnelEnabled: true,
@@ -132,7 +132,10 @@ describe('graduated sections', () => {
     );
     expect(sections).not.toContain('connectors');
     expect(sections).not.toContain('skills');
-    expect(sections).not.toContain('commands');
+  });
+
+  test('the rail offers commands because its standalone page was removed', () => {
+    expect(sectionsOf(flags())).toContain('commands');
   });
   test('the sections that stay are untouched', () => {
     const sections = sectionsOf(flags());

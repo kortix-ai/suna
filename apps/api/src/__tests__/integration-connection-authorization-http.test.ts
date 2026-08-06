@@ -793,7 +793,7 @@ describe('connection owner authorization over HTTP', () => {
       dropped_bindings: [],
       retroactive: true,
     });
-    expect(JSON.stringify(body)).not.toContain('connection_id');
+    expect(JSON.stringify(body)).not.toContain('profile_id');
 
     const effective = await request(
       'GET',
@@ -808,7 +808,7 @@ describe('connection owner authorization over HTTP', () => {
     });
   });
 
-  test('scope updates return effective bindings and replace inherited defaults', async () => {
+  test('scope updates return effective bindings and preserve inherited defaults', async () => {
     const token = await mint(ALICE);
     const connected = await request(
       'PUT',
@@ -847,8 +847,10 @@ describe('connection owner authorization over HTTP', () => {
     );
     expect(replaced.status).toBe(200);
     expect(await replaced.json()).toMatchObject({
-      connector_bindings: {},
-      dropped_bindings: ['personal_data'],
+      connector_bindings: {
+        personal_data: { connection_id: ALICE_CONNECTION },
+      },
+      dropped_bindings: [],
     });
 
     const readBack = await request(
@@ -858,7 +860,9 @@ describe('connection owner authorization over HTTP', () => {
     );
     expect(readBack.status).toBe(200);
     expect(await readBack.json()).toMatchObject({
-      connector_bindings: {},
+      connector_bindings: {
+        personal_data: { connection_id: ALICE_CONNECTION },
+      },
     });
 
     const [session] = await db
@@ -870,7 +874,7 @@ describe('connection owner authorization over HTTP', () => {
       .where(eq(projectSessions.sessionId, DEFAULT_SCOPE_SESSION));
     expect(session).toEqual({
       configured: true,
-      inheritUnbound: false,
+      inheritUnbound: true,
     });
   });
 

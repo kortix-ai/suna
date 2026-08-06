@@ -7,8 +7,6 @@ export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
 export type SecretConsumer =
   | 'sandbox'
   | 'llm_gateway'
-  /** @deprecated Use `connector`. */
-  | 'executor'
   | 'connector'
   | 'git_proxy'
   | 'http_broker'
@@ -25,7 +23,7 @@ export interface SecretEgressRule {
   inject?: SecretInjectionSlot;
 }
 export interface SecretEgressPolicy {
-  backend?: 'llm_gateway' | 'connector' | 'executor' | 'git_proxy' | 'kortix_fetch';
+  backend?: 'llm_gateway' | 'connector' | 'git_proxy' | 'kortix_fetch';
   base_url_env?: string;
   rules: SecretEgressRule[];
   inject: SecretInjectionSlot;

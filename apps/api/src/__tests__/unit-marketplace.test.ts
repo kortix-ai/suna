@@ -77,14 +77,37 @@ describe('marketplace catalog', () => {
     expect(deepResearch).toBeTruthy();
     expect(deepResearch!.partOfProject).toBeUndefined();
 
-    // A use-case runbook skill (a use-case template dependency) is not a browse
-    // tile at all…
-    expect(all.find((i) => i.name === 'invoice-math')).toBeUndefined();
-    // …but stays resolvable by id for the use-case install wizard.
-    const invoiceMath = await getCatalogItemDetail('kortix-starter:invoice-math');
+    // A use-case runbook skill is browseable but badged into the Use-case
+    // pack — the explore grid folds it under that tile, never the starter.
+    const invoiceMath = all.find((i) => i.name === 'invoice-math');
     expect(invoiceMath).toBeTruthy();
-    expect(invoiceMath!.useCase).toBe(true);
-    expect(invoiceMath!.partOfProject).toBeUndefined();
+    expect(invoiceMath!.partOfProject).toEqual({
+      id: 'kortix-projects:use-case-pack',
+      title: 'Use-case pack',
+    });
+    expect(starterDetail!.dependencyItems.some((d) => d.name === 'invoice-math')).toBe(false);
+  });
+
+  test('the Use-case pack groups every runbook skill and clones to conventional paths', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    expect(all.find((i) => i.id === 'kortix-projects:use-case-pack')).toBeTruthy();
+
+    const pack = await getCatalogItemDetail('kortix-projects:use-case-pack');
+    expect(pack).toBeTruthy();
+    expect(pack!.type).toBe('registry:project');
+    // Every runbook skill lives in the pack's "what's inside" list — dozens of
+    // them — and none of them leak into the Kortix Starter.
+    expect(pack!.dependencyItems.length).toBeGreaterThan(40);
+    expect(pack!.dependencyItems.some((d) => d.name === 'invoice-math')).toBe(true);
+    expect(pack!.dependencyItems.every((d) => d.type === 'registry:skill')).toBe(true);
+
+    // Clone layout: runbook skills + persona agents land at their conventional
+    // in-project paths (same mapping the install wizard uses), plus a README.
+    const targets = pack!.files.map((f) => f.target);
+    expect(targets).toContain('README.md');
+    expect(targets.some((t) => t.startsWith('.kortix/opencode/skills/'))).toBe(true);
+    expect(targets.some((t) => t.startsWith('.kortix/opencode/agents/'))).toBe(true);
+    expect(targets.every((t) => !t.startsWith('runtime/'))).toBe(true);
   });
 
   test('lists optional Kortix skills through the marketplace', async () => {
@@ -228,13 +251,12 @@ describe('marketplace catalog', () => {
     expect(kortix).toBeTruthy();
     expect(kortix.label).toBe('Kortix');
     expect(kortix.external).toBe(false);
-    // Kortix browses as the "Kortix Starter" project PLUS every individual
-    // kortix-starter skill as its own top-level browse tile — so the facet
-    // count is the full browseable kortix set, not the folded model's single
-    // hero tile (1). Use-case runbook skills (wizard installs) are excluded
-    // from browse, so the count stays in the tens, not the hundreds.
-    expect(kortix.count).toBeGreaterThan(10);
-    expect(kortix.count).toBeLessThan(40);
+    // Kortix browses as the "Kortix Starter" + "Use-case pack" projects PLUS
+    // every individual kortix-starter skill as its own top-level browse tile
+    // (starter-floor and runbook skills carry a partOfProject badge, so the
+    // web folds them under their project tile) — the facet count is the full
+    // browseable kortix set, not the folded model's single hero tile (1).
+    expect(kortix.count).toBeGreaterThan(20);
 
     // The base registries (kortix bundles + kortix-starter skills) collapse to one id…
     expect(marketplaceIdOf('kortix-starter')).toBe('kortix');

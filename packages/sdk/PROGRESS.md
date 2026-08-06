@@ -12,6 +12,56 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `connector-compat-removal` completion
+
+No **Now** task claimed. This is the second phase of the user-directed connector
+terminology cutover after PR #6173 deployed successfully to Dev.
+
+Claimed scope:
+
+- Remove remaining active `executor` and connector `profile` compatibility from
+  the SDK, API, CLI, web, connector SDK, and database schema.
+- Make `connector`, `connection`, and `connector call` the only active product
+  nouns and wire identifiers.
+- Remove deprecated published SDK aliases such as `ConnectionProfile*` and
+  legacy `profile_id` response handling.
+- Run RED, GREEN, and REFACTOR manually because the required `tdd` skill is not
+  available in this session.
+
+This is an intentional user-authorized breaking public SDK cutover. The package
+version field was not edited.
+
+RED:
+
+- The new terminology test failed because published connection-profile and
+  connector-authorization aliases remained reachable.
+- The database integration test failed three assertions before the compatibility
+  views, binding mirror, and secret-consumer enum value were removed.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1572 pass`, `2 skip`, `0 fail`, and
+  `6380 expect()` calls across `123` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+- Focused migrated PostgreSQL proof: `3 pass`, `0 fail`.
+- Complete database package suite: `175 pass`, `6 skip`, `0 fail`.
+- Complete CLI suite: `737 pass`, `0 fail`.
+- Complete API suite: `5599 pass`, `62 skip`, `0 fail`.
+- Complete web suite: `4577 pass`, `0 fail`.
+
+The public SDK now exposes only `connector`, `connection`, and `connector call`
+product terms. Removed compatibility includes connection-profile types and
+functions, connector-authorization entity aliases, legacy binding identifiers,
+and legacy email-installation fields.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-05 — session `cli-connectors-refactor` claim
 
 Claimed scope:

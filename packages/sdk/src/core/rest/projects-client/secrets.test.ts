@@ -1,8 +1,4 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { SecretConsumer } from './secrets';
-
-const publishedExecutorSecretConsumer: SecretConsumer = 'executor';
-void publishedExecutorSecretConsumer;
 import { configureKortix } from '../../http/config';
 import {
   deletePersonalProjectSecret,
