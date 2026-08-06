@@ -24,6 +24,7 @@ export function projectDetailQuery(projectId: string) {
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
     staleTime: PROJECT_DETAIL_STALE_MS,
+    refetchOnMount: true,
   };
 }
 

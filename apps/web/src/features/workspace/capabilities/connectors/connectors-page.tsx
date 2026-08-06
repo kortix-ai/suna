@@ -1,6 +1,6 @@
 'use client';
 
-import { listConnectors, type AdminConnector } from '@kortix/sdk';
+import { type AdminConnector } from '@kortix/sdk';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -35,6 +35,7 @@ import {
   ConnectorConnectedMark,
   ConnectorStatusBadge,
 } from './connector-identity';
+import { projectConnectorsQuery } from './project-connectors-query';
 import { providerLabel } from './provider-label';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -196,11 +197,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [replaceParams],
   );
 
-  const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
-    queryFn: () => listConnectors(projectId),
-    staleTime: 10_000,
-  });
+  const connectorsQuery = useQuery(projectConnectorsQuery(projectId));
   const projectQuery = useQuery(projectDetailQuery(projectId));
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
