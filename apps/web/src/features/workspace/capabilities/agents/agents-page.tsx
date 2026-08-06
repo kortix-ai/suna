@@ -22,6 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { AgentEditorPanel } from '@/features/workspace/customize/sections/view/agent-editor';
 import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import {
   newConfigPrompt,
@@ -96,6 +97,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<ModeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // When set, the detail modal's source pane is swapped for the agent
+  // configuration editor (`paneOverride`) — a pane, not a modal on a modal.
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const detailQuery = useQuery(projectDetailQuery(projectId));
   const config = detailQuery.data?.config ?? null;
@@ -122,6 +126,16 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     if (detail.isMissing) setSelectedPath(null);
   }, [detail.isMissing]);
 
+  // Switching agents (or closing the modal) always drops back to the source
+  // pane — an editor left open for agent A must never frame agent B's files.
+  // Adjusted during render: React's documented alternative to a
+  // setState-in-effect reset (same trick, no cascading render).
+  const [prevPath, setPrevPath] = useState(selectedPath);
+  if (prevPath !== selectedPath) {
+    setPrevPath(selectedPath);
+    setEditorOpen(false);
+  }
+
   // `null` = render the grid. Otherwise which "nothing to show" copy applies:
   // genuinely zero agents vs. agents exist but this filter/search hid all of
   // them. Telling the user "No agents yet" in the second case is false and
@@ -134,10 +148,14 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // title beside it and can be terse; the empty state is the whole screen and
   // has to name what it creates. Both start the same configure thread, so they
   // cannot drift apart.
+  // `size="sm"` is `h-8` — the same height as the search input beside it in the
+  // header group. The Button default is `h-9`, which left the pair 4px
+  // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
       <Button
         variant="secondary"
+        size="sm"
         onClick={() => configure.start(newConfigPrompt('agent'))}
         disabled={configure.pending}
       >
@@ -165,7 +183,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
-            size='sm'
+            size="sm"
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
@@ -242,7 +260,25 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         }
         aside={
           detail.record && config ? (
-            <AgentDetailAside projectId={projectId} agent={detail.record} config={config} />
+            <AgentDetailAside
+              projectId={projectId}
+              agent={detail.record}
+              config={config}
+              onEditConfig={() => setEditorOpen(true)}
+            />
+          ) : null
+        }
+        paneOverride={
+          editorOpen && detail.record && config ? (
+            <AgentEditorPanel
+              projectId={projectId}
+              agentName={detail.record.name}
+              skillsOptions={toArray(config.skills).map((skill) => ({
+                id: skill.name,
+                label: skill.name,
+              }))}
+              onClose={() => setEditorOpen(false)}
+            />
           ) : null
         }
         onOpenChange={(next) => {
@@ -368,7 +404,7 @@ function DefaultAgentSelector({
         <SelectTrigger aria-label="Default agent" className="w-44 shrink-0" size="sm">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent align='end'>
+        <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
               {agent.name}

@@ -60,7 +60,7 @@ function Slider({
       max={max}
       onValueChange={handleValueChange}
       className={cn(
-        'relative flex w-full cursor-pointer touch-none items-center select-none',
+        'group/slider relative flex w-full cursor-pointer touch-none items-center select-none',
         'data-disabled:pointer-events-none data-disabled:cursor-default data-disabled:opacity-50',
         'data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col',
         className,
@@ -70,15 +70,16 @@ function Slider({
       <SliderPrimitive.Track
         data-slot="slider-track"
         className={cn(
-          'bg-primary/20 relative grow overflow-hidden rounded-full',
-          'data-[orientation=horizontal]:h-4 data-[orientation=horizontal]:w-full',
-          'data-[orientation=vertical]:h-full data-[orientation=vertical]:w-4',
+          // Hairline rail: the whole control is one thin ink stroke.
+          'bg-primary/10 relative grow overflow-hidden rounded-full',
+          'data-[orientation=horizontal]:h-2 data-[orientation=horizontal]:w-full',
+          'data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1',
         )}
       >
         <SliderPrimitive.Range
           data-slot="slider-range"
           className={cn(
-            'bg-primary absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
+            'bg-primary absolute rounded-full data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
           )}
         />
       </SliderPrimitive.Track>
@@ -90,15 +91,17 @@ function Slider({
           aria-labelledby={ariaLabelledBy}
           aria-valuetext={formatValue ? formatValue(values[index] ?? min, index) : undefined}
           className={cn(
-            // Surface-coloured knob with an ink outline: the only fill that clears
-            // 3:1 against BOTH the filled range and the unfilled track.
-            'bg-background border-primary block size-[15px] shrink-0 rounded-full border-2 shadow-xs',
+            // Caret thumb: a short vertical bar in the same ink as the fill, so
+            // the range reads as one continuous stroke that rises into a handle.
+            'bg-primary block h-4 w-2 shrink-0 rounded-full',
+            'group-data-[orientation=vertical]/slider:h-1 group-data-[orientation=vertical]/slider:w-4',
             // 44x51px touch target without shifting layout.
             'hit-area-x-4 hit-area-y-5 cursor-pointer',
-            'transition-[box-shadow] duration-fast ease-default',
-            // Hover / drag: soft neutral halo hugging the knob.
-            'outline-none hover:ring-4 hover:ring-primary/15',
-            'active:ring-4 active:ring-primary/25',
+            // `scale` composes with Radix's inline `translate(-50%)` (Tailwind v4
+            // uses the standalone `scale` property), so the bar grows around its
+            // own center without breaking thumb positioning.
+            'duration-fast ease-default transition-[scale,box-shadow] outline-none',
+            'active:scale-x-150 active:scale-y-125',
             // Focus: accent ring with a surface-coloured gap that punches through
             // the track, so the indicator reads as "on the thumb".
             // `:focus`, not `:focus-visible` — Chrome resolves focus-visible once, at
@@ -107,7 +110,7 @@ function Slider({
             'focus:ring-ring focus:ring-offset-background focus:ring-2 focus:ring-offset-2',
             // Forced-colors mode strips box-shadow rings; a transparent outline is
             // repainted there as a real system-coloured focus ring.
-            'focus:outline-solid focus:outline-2 focus:outline-offset-2 focus:outline-transparent',
+            'focus:outline-2 focus:outline-offset-2 focus:outline-transparent focus:outline-solid',
             'data-disabled:pointer-events-none data-disabled:cursor-default',
           )}
         />

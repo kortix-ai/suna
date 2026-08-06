@@ -65,6 +65,10 @@ export interface EntityDetailModalProps {
    *  flagging — a chip every entity carries is noise, and the source path
    *  already renders under the title as its own line. */
   meta?: ReactNode;
+  /** Replaces the source pane while set — the agent configuration editor
+   *  uses this so editing happens in this same shell (one level deep), not
+   *  in a modal stacked on the modal. Omit for the normal file pane. */
+  paneOverride?: ReactNode;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -116,6 +120,7 @@ export function EntityDetailModal({
   isResolving = false,
   aside,
   meta,
+  paneOverride,
   onOpenChange,
 }: EntityDetailModalProps) {
   // A skill/command with no description renders no `ModalDescription`, so
@@ -141,6 +146,7 @@ export function EntityDetailModal({
             kind={kind}
             aside={aside}
             meta={meta}
+            paneOverride={paneOverride}
           />
         ) : isResolving ? (
           <EntityModalSkeleton kind={kind} />
@@ -193,12 +199,14 @@ function EntityModalBody({
   kind,
   aside,
   meta,
+  paneOverride,
 }: {
   projectId: string;
   entity: EntityDetailEntity;
   kind: EntityKind;
   aside?: ReactNode;
   meta?: ReactNode;
+  paneOverride?: ReactNode;
 }) {
   const configure = useConfigureThread(projectId);
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
@@ -381,17 +389,27 @@ function EntityModalBody({
             </aside>
           ) : null}
 
-          {/* Right — the selected file's source. */}
-          <div className="bg-popover min-w-0 flex-1 overflow-hidden overflow-y-auto">
-            <EntityFilePane
-              key={selectedPath}
-              path={selectedPath}
-              content={fileQuery.data?.content}
-              isLoading={fileQuery.isLoading}
-              isError={fileQuery.isError}
-              error={fileQuery.error}
-              onRetry={() => fileQuery.refetch()}
-            />
+          {/* Right — the selected file's source, or the caller's override
+              (the agent configuration editor). The override manages its own
+              scroll and sticky footer, so it gets a flex column with
+              `overflow-hidden` instead of the file pane's page scroll. */}
+          <div
+            className={cn(
+              'bg-popover min-w-0 flex-1 overflow-hidden',
+              paneOverride ? 'flex flex-col' : 'overflow-y-auto',
+            )}
+          >
+            {paneOverride ?? (
+              <EntityFilePane
+                key={selectedPath}
+                path={selectedPath}
+                content={fileQuery.data?.content}
+                isLoading={fileQuery.isLoading}
+                isError={fileQuery.isError}
+                error={fileQuery.error}
+                onRetry={() => fileQuery.refetch()}
+              />
+            )}
           </div>
         </div>
       </ModalBody>

@@ -4,10 +4,10 @@
  * The right-hand column of the agent detail modal: who inherits this agent,
  * and how it is configured.
  *
- * Moved verbatim out of the Customize overlay's `agents-view.tsx` when Agents
- * graduated to `/projects/[id]/agent`. The cards are unchanged on purpose —
- * the configuration surface is being reworked separately, and porting it and
- * redesigning it in one change would make the redesign impossible to review.
+ * Moved out of the Customize overlay's `agents-view.tsx` when Agents
+ * graduated to `/projects/[id]/agent`. "Edit configuration" does not open a
+ * modal — it calls `onEditConfig`, and the page swaps the editor into the
+ * detail modal's source pane (`paneOverride`).
  *
  * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) project; the
  * `fallback` below is what a v1 project still gets — the legacy model + scope
@@ -50,10 +50,14 @@ export function AgentDetailAside({
   projectId,
   agent,
   config,
+  onEditConfig,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
+  /** Opens the full configuration editor — the page swaps it into the detail
+   *  modal's source pane (`paneOverride`), so it is not a modal on a modal. */
+  onEditConfig: () => void;
 }) {
   return (
     <div className="space-y-3">
@@ -62,6 +66,7 @@ export function AgentDetailAside({
         projectId={projectId}
         agent={agent}
         skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
+        onEditConfig={onEditConfig}
         fallback={
           <>
             <AgentModel projectId={projectId} agentName={agent.name} />
