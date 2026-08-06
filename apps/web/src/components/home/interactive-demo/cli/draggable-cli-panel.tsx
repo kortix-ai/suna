@@ -176,7 +176,7 @@ export function DraggableCliPanel({
         show ? 'absolute inset-x-4 bottom-4 mx-auto h-80 w-auto sm:h-120' : 'relative mx-auto',
         canDrag && 'lg:absolute lg:mx-0 lg:touch-none',
         canDrag && dragging
-          ? 'ring-border/40 z-60 scale-[1.02] cursor-grabbing shadow-2xl ring-1'
+          ? 'smooth-shadow-ring-2xl smooth-ring-border/40 z-60 scale-[1.02] cursor-grabbing'
           : cn(
               'shadow-md transition-[transform,box-shadow] duration-150',
               canDrag && 'cursor-grab',

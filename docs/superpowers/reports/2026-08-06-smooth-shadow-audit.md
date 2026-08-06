@@ -173,7 +173,8 @@ elevation owners.
 | Global adapter               | `cbbc240636`; 4 pass, 0 fail, 21 assertions.                                                                 |
 | Edge-policy red state        | 36 violations found before migration.                                                                        |
 | Shared primitive migration   | 225 pass, 0 fail; ESLint 0 errors and 3 pre-existing React Compiler warnings; edge violations reduced to 22. |
-| Product and public migration | Open; Tasks 5–7 remove the remaining 22 violations.                                                          |
+| Product and media migration  | 198 pass, 0 fail; ESLint 0 errors and 15 pre-existing React Compiler warnings; violations reduced to 12.    |
+| Public and design migration  | Open; Tasks 6–7 remove the remaining 12 violations.                                                          |
 | Headless local visual QA     | Open until the migrated design-system route is available.                                                    |
 | PR and merge                 | Open until all local gates pass.                                                                             |
 | Deploy Dev and dev QA        | Open until the merged SHA is deployed.                                                                       |

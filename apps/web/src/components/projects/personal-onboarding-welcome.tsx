@@ -74,7 +74,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
     <>
       <Card
         className={cn(
-          'bg-sidebar fixed z-40 gap-4 py-4 shadow-sm',
+          'bg-sidebar fixed z-40 gap-4 py-4 smooth-shadow-sm',
           'right-4 bottom-4 sm:right-6 sm:bottom-6',
           'w-[min(500px,calc(100vw-2rem))]',
         )}
