@@ -58,6 +58,7 @@ describe('marketplace catalog', () => {
     const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
     expect(starterDetail!.dependencyItems.map((d) => d.name).sort()).toEqual([
       'agent-browser',
+      'convert-documents-to-markdown',
       'design-foundations',
       'docx',
       'pdf',
