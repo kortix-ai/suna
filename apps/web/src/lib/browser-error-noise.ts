@@ -143,7 +143,10 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   // `no_account` — no credit account found.
   'No credit account found. Complete account setup first.',
   // `subscription_required` — per-seat account with no active subscription.
-  'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+  // Must match apps/api/src/billing/services/billing-gate.ts VERBATIM. The seat
+  // price moved to $40 there and this copy was left at $20, so the filter
+  // stopped matching and an expected billing state has been paging as an error.
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's
