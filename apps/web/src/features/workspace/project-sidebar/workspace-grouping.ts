@@ -64,3 +64,30 @@ export function groupWorkspacesByAccount({
 
   return groups;
 }
+
+/**
+ * Filter grouped workspaces by a free-text query.
+ *
+ * NEVER caps the result. The old switcher sliced to 8 because `/projects` was
+ * the real directory; it is not any more, and a cap here silently hides
+ * workspaces a user can otherwise reach. Render cost is handled by
+ * virtualisation in the component, not by dropping data here.
+ *
+ * A match on the ACCOUNT name keeps that account's whole group, so "acme"
+ * answers "show me everything in Acme" as well as "find a workspace".
+ */
+export function filterWorkspaceGroups(groups: WorkspaceGroup[], query: string): WorkspaceGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return groups;
+
+  const filtered: WorkspaceGroup[] = [];
+  for (const group of groups) {
+    if (group.accountName.toLowerCase().includes(needle)) {
+      filtered.push(group);
+      continue;
+    }
+    const workspaces = group.workspaces.filter((w) => w.name.toLowerCase().includes(needle));
+    if (workspaces.length > 0) filtered.push({ ...group, workspaces });
+  }
+  return filtered;
+}

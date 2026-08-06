@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { groupWorkspacesByAccount } from './workspace-grouping';
+import { groupWorkspacesByAccount, filterWorkspaceGroups } from './workspace-grouping';
 
 const account = (accountId: string, name: string) => ({ account_id: accountId, name });
 
@@ -88,5 +88,47 @@ describe('groupWorkspacesByAccount', () => {
     });
 
     expect(groups[0].accountName).toBe('Account');
+  });
+});
+
+describe('filterWorkspaceGroups', () => {
+  const groups = [
+    {
+      accountId: 'a1',
+      accountName: 'Kortix',
+      workspaces: [workspace('p1', 'a1', 'suna-web', null), workspace('p2', 'a1', 'kortix-api', null)],
+    },
+    { accountId: 'a2', accountName: 'Acme', workspaces: [workspace('p3', 'a2', 'acme-agent', null)] },
+  ];
+
+  test('an empty query returns every group untouched', () => {
+    expect(filterWorkspaceGroups(groups, '')).toEqual(groups);
+    expect(filterWorkspaceGroups(groups, '   ')).toEqual(groups);
+  });
+
+  test('matches workspace names case-insensitively', () => {
+    const result = filterWorkspaceGroups(groups, 'SUNA');
+    expect(result).toHaveLength(1);
+    expect(result[0].workspaces.map((w) => w.name)).toEqual(['suna-web']);
+  });
+
+  test('matches the account name too, keeping all its workspaces', () => {
+    const result = filterWorkspaceGroups(groups, 'acme');
+    expect(result).toHaveLength(1);
+    expect(result[0].accountName).toBe('Acme');
+    expect(result[0].workspaces).toHaveLength(1);
+  });
+
+  test('drops groups with no surviving workspaces', () => {
+    expect(filterWorkspaceGroups(groups, 'nothing-matches-this')).toEqual([]);
+  });
+
+  test('never truncates — 200 matching workspaces all survive', () => {
+    const many = Array.from({ length: 200 }, (_, i) => workspace(`p${i}`, 'a1', `ws-${i}`, null));
+    const result = filterWorkspaceGroups(
+      [{ accountId: 'a1', accountName: 'Kortix', workspaces: many }],
+      'ws-',
+    );
+    expect(result[0].workspaces).toHaveLength(200);
   });
 });
