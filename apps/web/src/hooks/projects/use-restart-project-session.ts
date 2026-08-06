@@ -61,7 +61,7 @@ export function useRestartProjectSession(projectId: string, sessionId: string) {
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
       });
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (error, _vars, context) => {
       // Put the real state back: an optimistic `provisioning` seed left behind

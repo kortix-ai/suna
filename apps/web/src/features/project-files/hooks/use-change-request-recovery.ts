@@ -49,7 +49,7 @@ export function useChangeRequestRecovery() {
           },
         });
         prefetchSessionStart(queryClient, projectId, sessionId);
-        queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+        queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
         onNavigate?.();
         router.push(href);
       } catch (error) {

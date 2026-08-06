@@ -144,7 +144,7 @@ export function SessionSiteHeader({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Restarting session…');
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -155,7 +155,7 @@ export function SessionSiteHeader({
     mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Session stopped');
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
@@ -448,7 +448,9 @@ export function SessionSiteHeader({
             open={shareOpen}
             onOpenChange={setShareOpen}
             onSaved={() =>
-              queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId ?? '') })
+              queryClient.invalidateQueries({
+                queryKey: qk.project.sessionsScope(projectId ?? ''),
+              })
             }
           />
           <RenameSessionModal

@@ -31,7 +31,7 @@ export function SessionDeleteModal({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
     onSuccess: () => {
       successToast(sessionLabel ? `"${sessionLabel}" deleted` : 'Session deleted');
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       onDeleted?.();
       onOpenChange(false);
     },

@@ -200,7 +200,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`Restarting "${label}"…`);
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -212,7 +212,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`"${label}" stopped`);
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
@@ -423,7 +423,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         session={sessionToShare}
         open={!!sessionToShare}
         onOpenChange={(open) => !open && setSessionToShare(null)}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) })}
+        onSaved={() =>
+          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) })
+        }
       />
 
       <RenameSessionModal

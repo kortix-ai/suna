@@ -12,6 +12,97 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 1: scope missing from `qk.project.sessions`
+
+Fix for a defect a review caught in Task 9 (`docs/superpowers/plans/2026-08-06-client-cache-unification.md`,
+`.superpowers/sdd/2026-08-06-client-cache-unification/task-9-report.md`). Task 9
+collapsed two web query keys (`['project-sessions', id]` and
+`['project-session-inventory', id]`) onto `qk.project.sessions(id)`. That was
+correct for 13 of 14 read sites, but one —
+`apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx`
+— calls `listProjectSessions(id, { scope: 'project' })`, the manager-only
+**unfiltered full inventory**
+(`core/rest/projects-client/sessions.ts`, `apps/api/src/projects/lib/session-inventory.ts`).
+That is a DIFFERENT server request than the default `scope: 'visible'` every
+other site uses, not a client-side filter of the same response. The original
+`sessions(id)` key omitted `scope` entirely, so both requests wrote into ONE
+cache slot: whichever resolved last silently overwrote what the other
+scope's readers saw. The general rule this violated: **anything that changes
+the response must be part of the query key.**
+
+**Fix**, `src/react/query-keys.ts`:
+
+- `sessions(id, scope: 'visible' | 'project' = 'visible')` — scope is now
+  part of the key. The zero-arg call (`sessions(id)`) still works and still
+  means the default scope, so the 13 default-scope call sites in `apps/web`
+  needed no change; the one `scope: 'project'` site now calls
+  `qk.project.sessions(projectId, 'project')`.
+- `sessionsScope(id)` — new invalidation-only prefix
+  (`[...scope(id), 'sessions']`, one level above the scope segment).
+  `sessions(id)` and `sessions(id, 'project')` are SIBLINGS under it, not
+  parent/child, so every INVALIDATION site had to move from `sessions(id)` to
+  this prefix or the scope it didn't touch would go silently stale after a
+  rename/delete/restart/stop/share. Enumerated and fixed all 15 invalidation
+  call sites in `apps/web` (full list in the task-9 report addendum).
+- `session(id, sessionId)` / `messages(id, sessionId)` now nest under the
+  scope-LESS `sessionsScope(id)` prefix instead of under a specific
+  `sessions(id, scope)` slot — a session is not owned by whichever list scope
+  discovered it, so its own cache entry does not carry a scope segment
+  either. This is a considered nesting decision, not a fallout: the
+  alternative (nesting under one scope's key) would make an individual
+  session's cache entry only reachable through ONE of the two list scopes.
+
+`rename-session-modal.tsx`'s optimistic write is a documented exception:
+`cancelQueries`/`setQueryData`/`getQueryData` keep targeting the exact
+default-scope `sessions(projectId)` key (that's the only cache entry it has
+a row to paint over), while its `onSettled` invalidation moved to the
+`sessionsScope` prefix so the 'project'-scoped inventory page — never painted
+optimistically — still catches up via a real refetch.
+
+`schedule-view.tsx`'s two `pinnableSessions` queries were re-checked under
+the new shape: both call `listProjectSessions(projectId)` with no options
+(default scope), so they correctly stay on the zero-arg `sessions(projectId)`
+form — no scope segment needed.
+
+**Tests**, `src/react/query-keys.test.ts` (TDD: written against the OLD
+factory first, confirmed RED — `qk.project.sessionsScope is not a function`,
+and `sessions(id)` equal to `sessions(id, 'project')` — then GREEN after the
+factory change): `sessions(id)` defaults to `'visible'`; `sessions(id)` and
+`sessions(id, 'project')` are different keys; `sessionsScope(id)` strictly
+prefixes both scoped forms and is itself never equal to either; every
+project-scoped key (including both new forms) stays prefixed by
+`qk.project.scope(id)`; `session`/`messages` nest under `sessionsScope`, not
+under one specific scope. The `qk` vs `kortixKeys` disjointness tests and the
+Task 3/5 tests (`invalidate-project.test.ts`, which reads/writes
+`qk.project.sessions(ID)` at its default scope) needed no changes and stayed
+green throughout.
+
+GREEN (all three SDK gates, this fix round):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1620 pass`, `0 fail`, `6476 expect()` calls
+  across `125` files (up from Task 6's `1609`/`125` — this round added 5 new
+  assertions to `query-keys.test.ts`, no new test file).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarball
+  imported and constructed `createKortix` from Node ESM.
+- `public-surface.test.ts` + `public-type-surface.test.ts`: `2 pass`, `0
+  fail`, no snapshot drift — `sessionsScope` is a new property on the
+  already-exported `qk` const (the snapshot records top-level identifiers,
+  not nested member shapes), and the `sessions` signature change is a
+  backward-compatible optional-parameter widening. No re-recording needed.
+  `version` field not touched.
+- Downstream `apps/web`: `npx tsc --noEmit | grep -v test.each` byte-identical
+  to the pre-fix baseline (21 error lines, all pre-existing/documented);
+  `bun test src/features/workspace src/features/review-center src/app`:
+  `1063 pass`, `0 fail` (unchanged from before the fix); `eslint` on every
+  changed file: `0 errors`.
+
+**Status:** COMPLETE (Task 9 fix round 1 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `client-cache-unification` — Tasks 3–6 completion
 
 Consolidated entry for Tasks 3 through 6 of the `client-cache-unification` plan

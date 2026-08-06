@@ -210,7 +210,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
       });
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     // Defining `onError` here REPLACES the provider's default mutation
     // `onError`, which is what keeps a 409 from also raising a generic toast.

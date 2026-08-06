@@ -256,7 +256,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // query that /start never touches, so opening a session left the dot stale
       // until a manual refresh. Refresh the list once the runtime switches in so
       // the status flips to running on its own.
-      queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 

@@ -62,7 +62,9 @@ describe('qk.project', () => {
     const scope = qk.project.scope(id);
     const scoped = [
       qk.project.detail(id),
+      qk.project.sessionsScope(id),
       qk.project.sessions(id),
+      qk.project.sessions(id, 'project'),
       qk.project.session(id, 'sess_1'),
       qk.project.messages(id, 'sess_1'),
       qk.project.connectors(id),
@@ -89,9 +91,56 @@ describe('qk.project', () => {
     expect(qk.project.detail(id)).not.toEqual(scope as never);
   });
 
-  test('session keys nest under sessions so one session invalidates alone', () => {
-    expect(startsWith(qk.project.session(id, 's1'), qk.project.sessions(id))).toBe(true);
+  // `listProjectSessions(id, { scope })` is a DIFFERENT server request per
+  // scope ('visible' filters to what the caller can see; 'project' is the
+  // manager-only unfiltered full inventory) — not a client-side filter of one
+  // response. The scope therefore has to be part of the key: sharing one
+  // scope-less slot let a 'project' reader and a default reader silently
+  // overwrite what the other saw. The two scoped forms are SIBLINGS, not
+  // parent and child — proven below by both being distinct AND both sitting
+  // directly under `sessionsScope(id)`.
+  describe('sessions is scoped, sessionsScope is the shared invalidation prefix', () => {
+    test('default scope is "visible", matching listProjectSessions\' own default', () => {
+      expect(qk.project.sessions(id)).toEqual(qk.project.sessions(id, 'visible'));
+    });
+
+    test('sessions(id) and sessions(id, "project") are different keys', () => {
+      expect(qk.project.sessions(id)).not.toEqual(qk.project.sessions(id, 'project') as never);
+    });
+
+    test('sessionsScope(id) is a strict prefix of BOTH scoped forms', () => {
+      const prefix = qk.project.sessionsScope(id);
+      expect(startsWith(qk.project.sessions(id), prefix)).toBe(true);
+      expect(startsWith(qk.project.sessions(id, 'project'), prefix)).toBe(true);
+      // Strict: the prefix itself is shorter than either scoped key, so it is
+      // never returned as a query key by mistake.
+      expect(qk.project.sessions(id).length).toBeGreaterThan(prefix.length);
+      expect(qk.project.sessions(id, 'project').length).toBeGreaterThan(prefix.length);
+    });
+
+    test('sessionsScope(id) is NOT itself a prefix match trick — it is not equal to either scoped form', () => {
+      const prefix = qk.project.sessionsScope(id);
+      expect(prefix).not.toEqual(qk.project.sessions(id) as never);
+      expect(prefix).not.toEqual(qk.project.sessions(id, 'project') as never);
+    });
+  });
+
+  // A session is addressed by id, not by which list scope happened to
+  // discover it — a session found via the manager-only 'project' scope and
+  // the SAME session found via the default 'visible' scope are the same
+  // entity and must resolve to the same detail/messages cache entries. So
+  // `session`/`messages` nest under the scope-less `sessionsScope` prefix,
+  // never under a specific `sessions(id, scope)` slot.
+  test('session keys nest under sessionsScope (not under one specific list scope) so one session invalidates alone', () => {
+    expect(startsWith(qk.project.session(id, 's1'), qk.project.sessionsScope(id))).toBe(true);
     expect(startsWith(qk.project.messages(id, 's1'), qk.project.session(id, 's1'))).toBe(true);
+  });
+
+  test('the same session id resolves to one key regardless of which list scope found it', () => {
+    // There is no "session found via scope X" — session() takes no scope
+    // argument at all, which is the point: a session's own cache entry is
+    // reached the same way no matter which list surfaced it.
+    expect(qk.project.session(id, 's1')).toEqual(qk.project.session(id, 's1'));
   });
 
   test('different projects never collide', () => {

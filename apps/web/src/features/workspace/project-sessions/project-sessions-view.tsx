@@ -137,7 +137,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
-    queryKey: qk.project.sessions(projectId),
+    // 'project' scope: the manager-only, unfiltered full inventory — a
+    // DIFFERENT server request than the default 'visible' scope every other
+    // reader uses, so it MUST carry its own scope segment in the key (see
+    // qk.project.sessions' doc comment). Sharing the default-scope key here
+    // is the exact bug this file existed to fix.
+    queryKey: qk.project.sessions(projectId, 'project'),
     queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
     refetchInterval: (query) =>
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
@@ -148,7 +153,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   });
 
   const invalidateSessions = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+    // The PREFIX, not the scoped read key: this view reads the 'project'
+    // scope, but every other surface (sidebar, header, palette, ...) reads
+    // the default 'visible' scope. A rename/share/delete here has to reach
+    // BOTH, or the other scope goes stale — see qk.project.sessionsScope.
+    queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   }, [projectId, queryClient]);
 
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
@@ -486,10 +495,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         sessionLabel={sessionToDelete?.label}
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
-        // The modal's own onSuccess already invalidates qk.project.sessions —
-        // the SAME key this view now reads — so this is a harmless duplicate,
-        // kept so the two do not silently diverge again if either is edited
-        // independently.
+        // The modal's own onSuccess already invalidates qk.project.sessionsScope
+        // — the prefix that reaches the 'project'-scoped key this view reads
+        // — so this is a harmless duplicate, kept so the two do not silently
+        // diverge again if either is edited independently.
         onDeleted={invalidateSessions}
       />
     </>

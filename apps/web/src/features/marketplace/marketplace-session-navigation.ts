@@ -23,6 +23,6 @@ export function prepareMarketplaceInstallSessionNavigation(
   const href = marketplaceInstallSessionHref(projectId, sessionId);
   router.prefetch(href);
   prefetchSessionStart(queryClient, projectId, sessionId);
-  void queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+  void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   return href;
 }

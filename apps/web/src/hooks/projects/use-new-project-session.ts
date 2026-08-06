@@ -170,7 +170,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           useNewSessionGuardStore.getState().target(projectId, sessionId);
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
-          queryClient.invalidateQueries({ queryKey: qk.project.sessions(projectId) });
+          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },
