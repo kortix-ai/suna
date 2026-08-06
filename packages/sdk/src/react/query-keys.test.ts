@@ -77,6 +77,7 @@ describe('qk.project', () => {
       qk.project.groupGrants(id),
       qk.project.resourceGrants(id),
       qk.project.secrets(id),
+      qk.project.triggers(id),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
       qk.project.branches(id),
@@ -254,6 +255,17 @@ describe('qk.project', () => {
     // argument at all, which is the point: a session's own cache entry is
     // reached the same way no matter which list surfaced it.
     expect(qk.project.session(id, 's1')).toEqual(qk.project.session(id, 's1'));
+  });
+
+  // `listProjectTriggers` is its own endpoint/shape — must not collide with a
+  // sibling like `secrets`, and it is the fix for a live evasion: apps/web's
+  // Customize settings pause switch and the schedule/triggers view both used
+  // to build their own local `['project-triggers', projectId]` array by hand
+  // instead of calling a shared factory.
+  test('triggers(id) is a sibling of secrets(id), not a prefix relationship', () => {
+    expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
+    expect(startsWith(qk.project.triggers(id), qk.project.secrets(id))).toBe(false);
+    expect(startsWith(qk.project.secrets(id), qk.project.triggers(id))).toBe(false);
   });
 
   test('different projects never collide', () => {

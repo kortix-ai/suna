@@ -12,6 +12,98 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `client-cache-unification` — whole-branch review fix wave (BLOCKED → fixed)
+
+Fixed all four items from the FINAL WHOLE-BRANCH REVIEW entry below (the review
+itself stays as the historical record just under this entry).
+
+- **C1 (Critical) — `packages/sdk/src/react` migrated onto `qk`.** Fixed every
+  file the review named plus two it didn't (found by sweeping the whole
+  directory for the same literal families): `use-canonical-opencode-session.ts`
+  (the REAL populator of the per-session Kortix row — `session-title-sync.ts`'s
+  reads were dead without this one too) and `use-model-defaults.ts:76`'s
+  `invalidateQueries`. `use-opencode-events/helpers.ts`'s
+  `refetchKortixSessionMirrors` took a `projectId` param (threaded from
+  `useKortixRouteProjectId()` in `index.ts` → `handle-event.ts`) instead of the
+  old bare "any project" prefix — no `qk` member expresses "sessions, any
+  project" without also reaching every OTHER project-scoped family for every
+  project, so the correct fix narrows to the route's own project rather than
+  inventing an over-broad one. `providers.ts`'s `project-detail` duplicate now
+  shares `qk.project.detail(id)` (dedup, not just a key swap) and picked up
+  `contract('config')` to match every other reader of that entry — same for
+  `use-project-models.ts`, `use-model-enablement.ts`, `use-project-secrets.ts`,
+  `use-gateway-catalog-sync.ts` (all now `qk.project.secrets`/`modelPicker`
+  readers, all aligned to `contract('config')` so they can't disagree about
+  freshness on a key they now share). Deliberately OUT of scope, documented:
+  `project-providers`, `gateway-routing-policy`, `model-defaults` — hand-typed
+  identically on both `apps/web` and the SDK side, so no divergence exists
+  there (unlike the four migrated families); `use-change-requests.ts`'s
+  `project-change-requests` family — a genuinely different feature (Kortix PR
+  layer) that happens to share a name prefix with `apps/web`'s unrelated
+  `project-files`-rooted change-request keys; flagged in Discovered-this-session
+  below, not touched.
+  Guard: `query-key-literals.test.ts` — a `bun test` that walks
+  `src/react/**/*.{ts,tsx}` (excluding `query-keys.ts`, the definition) and
+  fails on a hand-typed `project-detail`/`sessions`/`secrets`/`model-picker`
+  array literal. Chosen over an eslint config for this package because
+  `packages/sdk` has none and adding one for a single rule was judged out of
+  proportion (per the review's own framing) — this runs inside the existing
+  `bun test` gate instead, no new tooling. Proven to fail: reintroduced the
+  banned literal into `use-project-secrets.ts`, ran the guard, watched it name
+  the exact file:line, reverted. Scoped to the four named families, not
+  `apps/web`'s broader `/^projects?(-[a-z-]+)?$/` net — `project-change-requests`
+  above would false-flag a broader pattern.
+- **C1 also closed a second gap while migrating `use-project-triggers.ts`:**
+  `settings-view.tsx:550` and (found while checking for the SAME literal
+  elsewhere so the fix wouldn't split one working cache entry into two)
+  `schedule-view.tsx:548` both hand-typed `['project-triggers', projectId]`
+  locally instead of calling the SDK hook. Added `qk.project.triggers(id)`,
+  made `projectTriggersKey` delegate to it, migrated both call sites plus
+  `use-project-triggers.ts` itself, all now `contract('config')`.
+- **I3 (Important) — `refetchOnMount` flipped to `true` globally**
+  (`apps/web/src/app/react-query-provider.tsx:44`). Full apps/web suite (4619
+  tests) run before and after: 1 failure, unrelated (a source-scan test
+  asserting the SDK's OLD `use-model-defaults.ts` literal text — fixed as part
+  of the C1 migration, not a behavioral regression from the flip itself). Zero
+  tests depended on the old `false` default's behavior.
+- **I1 (Important) — `as const` eslint evasion closed.** Added
+  `TSAsExpression`-mediated sibling selectors for both `queryKey:`-property
+  rules (family + `'kx'` root) and the positional-call rule. Probed against
+  the exact matrix the review specified: `['project-detail', id] as const` as
+  a `queryKey` → ERROR; `setQueryData([...] as const, v)` → ERROR;
+  `['session-costs','projects','x'] as const` → still PASSES (anchoring
+  survives); all three pre-existing non-`as const` cases still ERROR.
+- **M1 (Minor) — `query-keys.ts`'s `modelPicker` doc comment corrected.** Was
+  "dead", is live at 5 call sites (now migrated, so also no longer a
+  same-family-different-key situation).
+
+GATES:
+  `pnpm --filter @kortix/sdk typecheck`: exit 0.
+  `bun test --isolate src`: 1658 pass, 0 fail, 6577 expect() calls, 129 files
+    (up from Task 13's 1645/126 — new: `query-key-literals.test.ts`,
+    `use-opencode-events/helpers.test.ts`, `use-project-triggers.test.ts`,
+    plus assertions added to `query-keys.test.ts`/`provider-refresh.test.ts`/
+    `use-project-secrets.test.ts`/`session-title-sync.test.ts`).
+  `pnpm --filter @kortix/sdk run smoke:install`: exit 0.
+  `apps/web`: `bun test` — 4619 pass, 0 fail, 17938 expect() calls, 426 files.
+    `npx eslint src` — 0 errors (481 pre-existing `react-hooks/*` warnings,
+    unrelated), `grep -c "Never hand-type an entity key"` → 0.
+    `npx tsc --noEmit` — 21 error lines, byte-identical to the Task 13
+    baseline (zero new).
+
+**SDK package shippable to production: YES.**
+
+Discovered this session (not fixed, flagged for later):
+  `packages/sdk/src/react/use-change-requests.ts`'s `project-change-requests`
+  family and `apps/web/src/features/project-files/hooks/use-change-requests.ts`
+  (a DIFFERENT file, `project-files`-rooted keys) share a name but are two
+  separate features (Kortix-native PR layer vs. git file-diff browsing) —
+  worth a dedicated pass to confirm neither is secretly reading the other's
+  data, but out of scope for this fix wave (not part of the review's four
+  items, not caught by its acceptance grep).
+
+---
+
 ### 2026-08-06 — session `client-cache-unification` — Task 10: migrate the remaining 26 `project*` families
 
 Task 10 of `docs/superpowers/plans/2026-08-06-client-cache-unification.md`

@@ -1,5 +1,6 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
+import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
@@ -89,10 +90,36 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   }
 }
 
-export function refetchKortixSessionMirrors(queryClient: QueryClient): void {
-  // OpenCode title/tree mirroring is owned by API session reads. When OpenCode
-  // emits a title/tree change, refetch the active Kortix session reads so tabs
-  // and sidebars pick up the server-side mirror without browser-side writes.
-  void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
-  void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
+/**
+ * OpenCode title/tree mirroring is owned by API session reads. When OpenCode
+ * emits a title/tree change, refetch the active Kortix session reads so tabs
+ * and sidebars pick up the server-side mirror without browser-side writes.
+ *
+ * `projectId` is the route-scoped project the connected SSE stream belongs to
+ * (`useKortixRouteProjectId()` at the `useOpenCodeEventStream` call site) —
+ * required, not optional-and-ignored. Pre-migration this used a BARE,
+ * id-less flat `project-sessions` array prefix, which TanStack's default
+ * partial-key match treats as "any project's sessions list currently
+ * mounted". Under `qk` a
+ * project id is not a suffix that can be omitted — `qk.project.scope(id)`
+ * requires it up front — so there is no key that means "the sessions family,
+ * for every project, whichever happens to be mounted" without ALSO matching
+ * every other project-scoped family (secrets, connectors, gateway, …) for
+ * every project, via the bare `['kx', 'project']` prefix. That reach would be
+ * strictly wrong here: an SSE connection is per-runtime, so at most one
+ * project's session queries are ever the ones this event is actually about,
+ * and firing a broader refetch would refresh unrelated data (a different
+ * project's secrets/gateway state) on every title/tree change for no reason.
+ * `qk.project.sessionsScope(projectId)` — the current route's project — is
+ * the correct reach: the list (every scope) and every session/messages entry
+ * beneath it, and nothing outside the sessions family, and nothing for a
+ * project this event was never about. Outside a project route (`projectId`
+ * null) there is nothing to mirror, so this is a no-op.
+ */
+export function refetchKortixSessionMirrors(
+  queryClient: QueryClient,
+  projectId: string | null,
+): void {
+  if (!projectId) return;
+  void queryClient.refetchQueries({ queryKey: qk.project.sessionsScope(projectId), type: 'active' });
 }

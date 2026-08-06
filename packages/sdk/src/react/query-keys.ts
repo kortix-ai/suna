@@ -2,9 +2,9 @@
  * The one place a Kortix query key is constructed.
  *
  * Before this existed, `apps/web` hand-typed roughly 176 key literals across
- * 30 `project*` families. One entity therefore had several cache entries
- * (`['project-sessions', id]` and `['project-session-inventory', id]` held the
- * same server data), and one key had several freshness contracts, because
+ * 30 `project*` families. One entity therefore had several cache entries (the
+ * flat `project-sessions` key and the flat `project-session-inventory` key
+ * held the same server data), and one key had several freshness contracts, because
  * `staleTime` is per-observer and seven call sites disagreed about it.
  *
  * The first version of `sessions(id)` repeated that exact mistake one level
@@ -99,10 +99,20 @@ export const qk = {
      */
     config: (id: string) => [...qk.project.scope(id), 'config'] as const,
     /**
-     * Dead as of this migration: nothing calls `useQuery` on it. One
-     * `invalidateQueries` call fires after a routing-policy save, but no
-     * reader was ever found for it — kept as a real key (not deleted)
-     * because the invalidation site is real code that still runs today.
+     * `getProjectModelPicker`, `GET /projects/:id/model-picker` — the compact,
+     * connection-aware model catalog. LIVE: `useProjectModels` (`use-project-
+     * models.ts`) `useQuery`s it directly, rendered at `gateway-view.tsx`,
+     * `gateway-routing.tsx`, `gateway-playground.tsx`, `models-tab.tsx`, and
+     * `use-session.ts`. `useModelEnablement` (`use-model-enablement.ts`) reads
+     * and optimistically writes the SAME entry so a toggle and the picker never
+     * disagree. A routing-policy save's `invalidateQueries` targets this key
+     * too (`gateway-routing.tsx`) — before the `packages/sdk/src/react`
+     * migration that call and every reader above hand-typed the same flat
+     * `project-model-picker` array literal independently; an earlier
+     * version of this comment called the key "dead" because that literal
+     * search only ever turned up the invalidation site, never the readers —
+     * they lived one file away, under `packages/sdk/src/react`, which this
+     * factory did not yet reach.
      */
     modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
@@ -192,6 +202,14 @@ export const qk = {
     resourceGrants: (id: string) => [...qk.project.access(id), 'grants'] as const,
 
     secrets: (id: string) => [...qk.project.scope(id), 'secrets'] as const,
+
+    /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
+     *  listing (file-defined in the repo manifest). Shared by
+     *  `useProjectTriggers` (`use-project-triggers.ts`), the Customize
+     *  settings pause switch, and the schedule/triggers view — all three read
+     *  and write the identical entity through `listProjectTriggers(id)`, so
+     *  they must share this one key. */
+    triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

@@ -6,6 +6,7 @@ import { getProjectSession } from '../core/rest/projects-client';
 
 import { resolveSessionPin } from './initial-session-pin';
 import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
+import { qk } from './query-keys';
 
 /**
  * OpenCode ↔ Kortix session mapping — READ side.
@@ -61,7 +62,13 @@ export function useCanonicalOpenCodeSession(params: {
   // On a warm start pinFromStart is always present, so this saves a redundant
   // round-trip that otherwise contends for connections during boot.
   const projectSessionQuery = useQuery({
-    queryKey: ['project-session', projectId, sessionId],
+    // Same fetcher (`getProjectSession`) apps/web's `session-changes-shared.tsx`
+    // / `session-files-panel.tsx` already key on `qk.project.session(id, sid)`
+    // — and the entry `session-title-sync.ts`'s title-refresh ladder reads via
+    // `getQueryData`/refetches. This hook is the one that actually POPULATES it
+    // for the session page's own (non-git) session id, so it has to share the
+    // key, not a standalone flat `project-session` array literal.
+    queryKey: qk.project.session(projectId, sessionId),
     queryFn: () => getProjectSession(projectId, sessionId, { showErrors: false }),
     enabled: !!projectId && !!sessionId && !pinFromStart && !initialPin,
     staleTime: 10_000,

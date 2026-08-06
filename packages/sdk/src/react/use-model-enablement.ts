@@ -8,6 +8,8 @@ import { getProjectModelPicker } from '../core/rest/projects-client';
 import { setProjectModelEnablement } from '../core/rest/projects-client/model-enablement';
 import { applyEnablementToProviderList } from './provider-selection';
 import type { ProviderListResponse } from './use-opencode-sessions';
+import { contract } from './query-contracts';
+import { qk } from './query-keys';
 
 type ProjectModelPicker = ProjectLlmCatalogResponse;
 
@@ -37,7 +39,9 @@ export interface UseModelEnablement {
  */
 export function useModelEnablement(projectId: string | null | undefined): UseModelEnablement {
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ['project-model-picker', projectId], [projectId]);
+  // Same entry `useProjectModels` reads and the routing-policy save
+  // invalidates — see `qk.project.modelPicker`'s doc comment.
+  const queryKey = useMemo(() => qk.project.modelPicker(projectId ?? ''), [projectId]);
   // The session picker does NOT render from the query above — it renders from
   // the gateway provider list (`useOpenCodeProviders`), a SECOND cache of the
   // same `/model-picker` payload with `staleTime: Infinity`. Every write must
@@ -49,7 +53,7 @@ export function useModelEnablement(projectId: string | null | undefined): UseMod
     queryKey,
     queryFn: () => getProjectModelPicker(projectId as string),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('config'),
     retry: false,
   });
 

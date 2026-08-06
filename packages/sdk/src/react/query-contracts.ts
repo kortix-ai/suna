@@ -2,7 +2,7 @@
  * One freshness contract per entity, declared once.
  *
  * `staleTime` is per-OBSERVER in React Query, not per-key. Seven call sites
- * reading `['project-detail', id]` therefore declared seven answers to "when
+ * reading the flat `project-detail` key therefore declared seven answers to "when
  * does a server-side change reach the user", and which one governed depended
  * on which pages happened to be mounted. Tiers remove the choice from the call
  * site: a consumer spreads a contract, it never authors one.
@@ -85,4 +85,5 @@ export const FRESHNESS = {
   snapshots: 'config',
   modelPicker: 'config',
   gateway: 'volatile',
+  triggers: 'config',
 } as const satisfies Record<string, FreshnessTier>;
