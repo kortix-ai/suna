@@ -22,7 +22,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { ConnectorError, createConnectorClient } from '@kortix/connector-sdk';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   accountTokens,
@@ -36,6 +35,7 @@ import {
 } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
+import { ConnectorError, createConnectorClient } from '../../../packages/connector-sdk/src/index';
 
 const ROOT = resolve(import.meta.dir, '../../..');
 const CLI_ENTRY = resolve(ROOT, 'apps/cli/src/index.ts');
@@ -496,7 +496,7 @@ async function commandMatrix(): Promise<void> {
   await expectCli(
     'explicit empty connector scope denies a forced call',
     ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"must-not-run"}'],
-    { code: 1, stderr: /connector_not_found|not found/i },
+    { code: 1, stdout: /connector_not_found|not found/i },
   );
 
   const createdConnection = await expectCli(

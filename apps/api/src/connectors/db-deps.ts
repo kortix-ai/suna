@@ -1165,13 +1165,12 @@ async function setConnectorSecretBinding(
 /**
  * Read a connector's per-tool policies for the dashboard/settings surface.
  *
- * Declared connectors are manifest-first (kortix.yaml is their source of truth).
- * Install-driven SYNTHETIC connectors (channel/computer) are never in the
- * manifest, so the manifest read returns null and the route would 404
- * ("connector not found") — even though the connector exists, works, and its
- * policies are enforced at call time from the DB. Fall back to the materialized
- * rows (connector_policies) so the settings panel renders. Only a slug
- * that is neither declared NOR a real DB row returns null (→ a true 404).
+ * Return materialized policy rows when the connector exists in the runtime
+ * catalog. The write route commits kortix.yaml and then synchronizes these rows.
+ * Reading the manifest again can return a stale git view immediately after the
+ * write, which makes the CLI report no rules while the gateway enforces them.
+ * Synthetic channel/computer connectors also exist only in the runtime catalog.
+ * Use the manifest only when a declared connector has not materialized yet.
  */
 async function getConnectorPolicies(
   projectId: string,
@@ -1192,12 +1191,12 @@ async function getConnectorPolicies(
   ]);
   if (!fromManifest && !row) return null;
 
-  const policies = fromManifest
-    ? fromManifest.policies
-    : (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
+  const policies = row
+    ? (await loadConnectorPoliciesFor(row.connectorId)).map((p) => ({
         match: p.match,
         action: p.action as string,
-      }));
+      }))
+    : fromManifest!.policies;
 
   // The editor also needs to know WHICH scope decides each tool. A project-scope
   // rule is evaluated first and cannot be overridden here (see policy.ts), so
