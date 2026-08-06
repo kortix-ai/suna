@@ -12,6 +12,26 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `agi-kernel-goals-tasks` claim
+
+No **Now** task claimed. This is the additive SDK contract for the autonomous-agent vertical slice in `docs/specs/2026-08-06-autonomous-agent-harness.md`.
+
+Claimed scope:
+
+- Add framework-free goal and generated-task REST clients.
+- Export the clients through the canonical root and `createKortix().project(projectId)` facade.
+- Keep goal declarations git-authored and task/observation coordination API-owned.
+- Add public contract tests, type-surface snapshots, packed-install proof, and user documentation.
+- Do not change the package version field or rename an existing export.
+
+The required `tdd` skill is unavailable in this session. This work will use the same RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-08-06 — session `sdk-connectors-unified` claim
 
 No **Now** task claimed. This is the user-directed final SDK consolidation.
