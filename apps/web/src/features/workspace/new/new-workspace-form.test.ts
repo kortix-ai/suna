@@ -41,6 +41,14 @@ describe('isSubmittable', () => {
   test('false when the name breaks the charset rule', () => {
     expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'my/agi' }, 1)).toBe(false);
   });
+
+  test('false at zero accounts — the query has not resolved, or there is nowhere to create', () => {
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web' }, 0)).toBe(false);
+  });
+
+  test('false at zero accounts even when an account id is somehow set', () => {
+    expect(isSubmittable({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'a1' }, 0)).toBe(false);
+  });
 });
 
 describe('buildProvisionPayload', () => {

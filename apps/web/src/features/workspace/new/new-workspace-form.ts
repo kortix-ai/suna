@@ -30,8 +30,14 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {
   if (!validateWorkspaceName(state.name).ok) return false;
-  // With one account there is nothing to disambiguate, so the picker is not
-  // rendered and `accountId` stays null legitimately.
+  // Zero is never a legitimate "ready to submit" state. It means either the
+  // accounts query has not resolved yet — in which case a multi-account user
+  // would submit with no account_id and the server would silently fall back to
+  // a default account — or the user genuinely has no account to create in.
+  // Both must block submission.
+  if (accountCount < 1) return false;
+  // With exactly one account there is nothing to disambiguate, so the picker is
+  // not rendered and `accountId` stays null legitimately.
   if (accountCount > 1 && !state.accountId) return false;
   return true;
 }
