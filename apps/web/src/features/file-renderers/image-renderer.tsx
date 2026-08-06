@@ -548,7 +548,9 @@ export function ImageRenderer({
                   // A soft lift so the image reads as content over the canvas.
                   // SVGs are usually transparent artwork — a shadow under them
                   // draws a box that isn't there.
-                  imgLoaded && !isSvg && 'smooth-shadow-md',
+                  imgLoaded &&
+                    !isSvg &&
+                    'smooth-shadow-md outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10',
                 )}
                 style={{ transform: imageTransform }}
                 draggable={false}

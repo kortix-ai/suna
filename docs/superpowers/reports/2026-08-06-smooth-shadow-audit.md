@@ -50,7 +50,7 @@ the migration baseline for Tasks 4–7.
 | `components/ui/command.tsx`                                    | elevated owner            | Remove the nested hover-card border; keep its `shadow-md` override.                                 |
 | `components/ui/date-range-picker.tsx`                          | duplicate owner           | Remove caller depth; `PopoverContent` owns it.                                                      |
 | `components/ui/dialog.tsx`                                     | elevated owner            | Remove the decorative border; keep `shadow-lg`.                                                     |
-| `components/ui/hover-card.tsx`                                 | elevated owner            | Remove the decorative border; keep `shadow-sm`.                                                     |
+| `components/ui/hover-card.tsx`                                 | elevated owner            | Remove the decorative border; use the documented `shadow-md` hover-card step.                       |
 | `components/ui/menu-recipe.ts`                                 | elevated owner            | Remove the decorative border; keep `shadow-md`.                                                     |
 | `components/ui/modal.tsx`                                      | structural owner          | Use ringless `smooth-shadow-lg`; preserve directional seams.                                        |
 | `components/ui/preview-image.tsx`                              | full-screen               | Remove depth from the full-screen root.                                                             |
@@ -62,7 +62,7 @@ the migration baseline for Tasks 4–7.
 | `components/use-cases/covers.tsx`                              | media/marketing           | Replace native ring pairs with explicit smooth ring utilities and preserve tint.                    |
 | `features/file-renderers/docx/docx-annotation-card.tsx`        | elevated                  | Keep `shadow-sm`; no duplicate full border exists.                                                  |
 | `features/file-renderers/docx/docx-viewer.tsx`                 | raised active state       | Keep `shadow-sm` over a `border-0 ring-0` base.                                                     |
-| `features/file-renderers/image-renderer.tsx`                   | elevated/media            | Remove the control border and use ringless media depth for opaque images.                           |
+| `features/file-renderers/image-renderer.tsx`                   | elevated/media            | Remove the control border and use explicit smooth depth plus a neutral image outline.               |
 | `features/file-renderers/shared/document-viewer-sidebar.tsx`   | structural                | Use ringless `smooth-shadow-lg`; preserve `border-r`.                                               |
 | `features/file-renderers/sqlite-renderer.tsx`                  | raised active state       | Keep `shadow-sm` on the selected segmented-control item.                                            |
 | `features/file-renderers/video-renderer.tsx`                   | elevated control          | Keep `shadow-lg`; no duplicate border exists.                                                       |
@@ -74,7 +74,7 @@ the migration baseline for Tasks 4–7.
 | `features/review-center/review-center.tsx`                     | elevated                  | Remove the fixed toolbar border; keep `shadow-lg`.                                                  |
 | `features/session/action-panel/easy/panel-card.tsx`            | documentation             | Update the stale recipe comment only.                                                               |
 | `features/session/scope/session-scope-control.tsx`             | duplicate owner           | Remove caller depth; `PopoverContent` owns it.                                                      |
-| `features/workspace/customize/migrate-to-v2/upgrade-view.tsx`  | semantic                  | Replace the tinted border with a tinted smooth ring.                                                |
+| `features/workspace/customize/migrate-to-v2/upgrade-view.tsx`  | semantic/in-flow          | Keep the row flat and replace its tinted border with an inset outline.                               |
 | `features/workspace/project-sidebar/project-switcher.tsx`      | duplicate owner           | Remove caller depth; `DropdownMenuContent` owns it.                                                 |
 
 Negative assertions in `get-mem-tool.test.tsx` and
