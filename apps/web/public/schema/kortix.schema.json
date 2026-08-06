@@ -1051,6 +1051,85 @@
               "additionalProperties": false
             }
           },
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "slug",
+                "title",
+                "done_when",
+                "status"
+              ],
+              "properties": {
+                "slug": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "done_when": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "achieved",
+                    "paused",
+                    "abandoned"
+                  ]
+                },
+                "push": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "timezone": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agent": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "metrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "direction"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "direction": {
+                        "type": "string",
+                        "enum": [
+                          "increase",
+                          "decrease"
+                        ]
+                      },
+                      "target": {
+                        "type": "number"
+                      },
+                      "unit": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
           "project": {
             "type": "object",
             "properties": {
