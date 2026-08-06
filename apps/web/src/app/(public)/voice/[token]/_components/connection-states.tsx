@@ -82,7 +82,7 @@ export function AudioGestureOverlay() {
       className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center px-4 backdrop-blur-sm"
       role="status"
     >
-      <div className="bg-popover flex flex-col items-center gap-3 rounded-md px-6 py-8 text-center shadow-lg">
+      <div className="border-border bg-popover flex flex-col items-center gap-3 rounded-md border px-6 py-8 text-center shadow-lg">
         <span className="bg-kortix-yellow/10 text-kortix-yellow flex size-12 items-center justify-center rounded-md">
           <IconVolume className="size-6" strokeWidth={1.5} />
         </span>

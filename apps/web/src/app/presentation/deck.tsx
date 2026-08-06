@@ -197,7 +197,7 @@ export function Deck({
       </div>
 
       {/* ── Floating controls ──────────────────────────────────────────── */}
-      <div className="bg-card/90 absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-sm p-1.5 shadow-sm backdrop-blur-md">
+      <div className="border-border bg-card/90 absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-sm border p-1.5 shadow-sm backdrop-blur-md">
         <Ctrl onClick={prev} disabled={index === 0} label="Previous">
           <ChevronLeft className="size-4" />
         </Ctrl>

@@ -32,7 +32,7 @@ Everything below was verified against the repo, not assumed.
 | Claim | Evidence |
 |---|---|
 | Package is live on npm | `npm view @kortix/sdk version` → `0.9.100` |
-| Real adoption is ~zero | 436 downloads/month, package `created` 2026-07-07 (2 days). `@kortix/connector-sdk` does 5,854/mo for scale. |
+| Real adoption is ~zero | 436 downloads/month, package `created` 2026-07-07 (2 days). The former standalone Connector client had 5,854 downloads/month for scale. |
 | The 400k Kortix users are **not** SDK installers | They consume it transitively via `apps/web`; a break surfaces at *our* build time, not their runtime |
 | `version` in `package.json` is inert | `scripts/stage-npm-publish.mjs:32` — `pkg.version = version` from the root `VERSION` file (`0.9.102`) |
 | Baseline is green | 1046 tests pass / 0 fail across 65 files; `typecheck` exits 0 |

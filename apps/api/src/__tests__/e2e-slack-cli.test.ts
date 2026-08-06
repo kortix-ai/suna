@@ -13,6 +13,7 @@ import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
+const CONNECTOR_CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 const PROJECT = 'proj-slack-cli';
 const SESSION = 'sess-slack-cli';
@@ -111,6 +112,7 @@ async function runSlack(args: string[], opts: { ok?: boolean } = {}): Promise<Cl
       KORTIX_CLI_TOKEN: TOKEN,
       KORTIX_PROJECT_ID: PROJECT,
       KORTIX_SESSION_ID: SESSION,
+      KORTIX_CLI_BIN: CONNECTOR_CLI_ENTRY,
     },
     stdout: 'pipe',
     stderr: 'pipe',

@@ -93,8 +93,7 @@ material, or OAuth transaction state.
 The current `integrations.sh` importer converts OAuth metadata into static bearer
 input. Kortix does not acquire or refresh that token.
 
-The published `@kortix/connector-sdk` package exposes connector and connection
-terminology.
+The published `@kortix/sdk` package exposes connector and connection terminology.
 
 ## 4. Architecture
 
@@ -623,15 +622,14 @@ Add public types:
 - `ConnectorExecution`;
 - `ConnectorCallResult`.
 
-### 9.2 Published Connector SDK
+### 9.2 Published SDK
 
-Replace `@kortix/connector-sdk` with a thin compatibility wrapper over
-`@kortix/sdk`.
+`@kortix/sdk` owns the Connector client and all HTTP behavior.
 
-- Mark the npm package deprecated.
-- Keep existing imports working for one major version.
-- Keep no duplicate HTTP or business logic.
-- Remove the package after the compatibility window.
+- Publish one final `@kortix/executor-sdk` adapter for existing production users.
+- Mark that final package version deprecated on npm.
+- Keep the adapter free of Connector business logic.
+- Remove the adapter after the compatibility window.
 
 ### 9.3 CLI
 

@@ -206,7 +206,7 @@ function CommandItemHoverCard({
         align={align}
         sideOffset={sideOffset}
         style={{ zIndex: floatingZ(depth) + 1 }}
-        className={cn('w-60 rounded-md p-3 shadow-md', className)}
+        className={cn('w-60 rounded-md border p-3 shadow-md', className)}
       >
         {content}
       </HoverCardContent>

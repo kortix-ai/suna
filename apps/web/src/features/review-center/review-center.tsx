@@ -1071,7 +1071,7 @@ export function ReviewCenter({
             transition={{ duration: 0.2, ease: EASE }}
             className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4"
           >
-            <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full px-2 py-2 shadow-lg">
+            <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full border px-2 py-2 shadow-lg">
               <span className="text-foreground flex items-center gap-1 px-2 text-sm font-medium">
                 <AnimatedCount value={selectionCount} /> selected
               </span>

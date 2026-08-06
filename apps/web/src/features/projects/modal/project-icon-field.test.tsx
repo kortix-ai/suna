@@ -325,8 +325,8 @@ describe('ProjectIconField trigger', () => {
  * else ties them together.
  */
 describe('ProjectIconField popover geometry', () => {
-  /** `w-[calc(<track>*var(--spacing))]` on the PopoverContent. */
-  const declared = code.match(/w-\[calc\((\d+(?:\.\d+)?)\*var\(--spacing\)\)\]/);
+  /** `w-[calc(<track>*var(--spacing)+<border>px)]` on the PopoverContent. */
+  const declared = code.match(/w-\[calc\((\d+(?:\.\d+)?)\*var\(--spacing\)\+(\d+)px\)\]/);
 
   /** frimousse's own default column count, read from the installed package. */
   const columns = Number(
@@ -357,11 +357,16 @@ describe('ProjectIconField popover geometry', () => {
     expect(Number(declared?.[1])).toBe(columns * cell + 2 * rowPadding);
   });
 
-  test('the width does not reserve space for the removed decorative border', () => {
+  test('the width allows for the popover border on each side', () => {
+    // PopoverContent is border-box, so its 1px border eats into the declared
+    // width. Without the correction the grid is 2px short and the cells shrink.
+    // The surface comes from the shared FLOATING_PANEL recipe, not a literal
+    // in popover.tsx.
     const classes = FLOATING_PANEL.split(/\s+/);
 
-    expect(classes).not.toContain('border');
-    expect(code).not.toContain('var(--spacing)+2px');
+    expect(classes).toContain('border');
+    expect(classes.filter((c) => /^border-\d/.test(c))).toEqual([]);
+    expect(Number(declared?.[2])).toBe(2);
   });
 
   test('the popover hangs off the trigger’s leading edge', () => {

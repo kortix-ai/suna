@@ -250,13 +250,16 @@ export function ProjectSwitcher({
   const dropdown = (
     <DropdownMenu open={menuOpen} onOpenChange={handleOpenChange}>
       {trigger}
-      {/* Fixed width, not the trigger's: in the sidebar the trigger is the
-          name segment, so trigger-width would size the menu to a fragment of
-          the control it belongs to. */}
       <DropdownMenuContent
         align="start"
         side="bottom"
-        className="bg-background dark:bg-sidebar w-64 overflow-hidden p-0"
+        className={cn(
+          'bg-background dark:bg-sidebar overflow-hidden p-0',
+          // Fixed width, not the trigger's: in the sidebar the trigger is the
+          // name segment, so trigger-width would size the menu to a fragment of
+          // the control it belongs to.
+          variant === 'sidebar' ? 'w-64 shadow-md' : 'w-64',
+        )}
       >
         {showSearch && (
           <div className="border-border/40 border-b px-2 py-2">

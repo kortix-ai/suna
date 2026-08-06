@@ -68,8 +68,6 @@ const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const CONNECTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_CONNECTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/connector-sdk');
 // Source of the `kortix` CLI binary baked into every sandbox. We fingerprint
 // the SOURCE (not the compiled binary, which `bun build --compile` produces
 // non-deterministically) so a CLI code change rebuilds snapshots while a
@@ -601,7 +599,7 @@ export async function computeTemplateIdentity(
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
   // the spec, and the NON-agent runtime layer (opencode/entrypoint/CLI/slack-cli/
-  // connector-sdk/manifest-schema/layer+browser versions). It is computed by hashing
+  // SDK/manifest-schema/layer+browser versions). It is computed by hashing
   // the same inputs with the non-agent runtime fingerprint in place of the full one.
   // Two identities with the SAME swapKey differ ONLY by the agent binary → the swap
   // is sound. A change to the user image, spec, OR any non-agent runtime artifact
@@ -895,7 +893,8 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
 
 // The runtime layer bakes source artifacts into every template's rootfs. Exactly
 // TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
-// slack-cli, connector-sdk) are the non-agent runtime. The agent-swap fast path
+// slack-cli, SDK-backed Connector client) are the non-agent runtime. The
+// agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
 // byte-identical before swapping — hence the split into two artifact sets.
 const AGENT_RUNTIME_ARTIFACTS = [
@@ -907,10 +906,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
   { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-  { label: 'kortix-connectors-sdk', path: CONNECTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   // Only the in-sandbox `kortix connectors` closure (NOT the whole apps/cli/src) —
-  // see CLI_CONNECTOR_RUNTIME_FILES in @kortix/shared. Labels carry the relative
-  // path so two files cannot collide.
+  // see CLI_CONNECTOR_RUNTIME_FILES in @kortix/shared. This artifact set also
+  // includes @kortix/sdk because the compiled CLI owns the Connector client.
   ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
@@ -976,7 +974,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
 
 /**
  * Fingerprint of the runtime layer EXCLUDING the kortix-agent binary. Changes iff
- * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/connector-sdk/
+ * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/SDK/
  * manifest-schema source, or the layer/browser/sandbox version constants. The
  * agent-swap fast path is sound ONLY when this is byte-identical between the
  * predecessor and the new identity (i.e. the agent binary is the SOLE runtime

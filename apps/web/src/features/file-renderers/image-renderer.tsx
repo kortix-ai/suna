@@ -368,7 +368,7 @@ export function ImageRenderer({
                 ],
           )}
         >
-          <ButtonGroup className="bg-background rounded-md shadow-sm">
+          <ButtonGroup className="bg-background rounded-md border shadow-sm">
             <Hint label={zoomOutLabel} side="bottom">
               <Button
                 variant="accent"
@@ -548,9 +548,7 @@ export function ImageRenderer({
                   // A soft lift so the image reads as content over the canvas.
                   // SVGs are usually transparent artwork — a shadow under them
                   // draws a box that isn't there.
-                  imgLoaded &&
-                    !isSvg &&
-                    'smooth-shadow-md outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10',
+                  imgLoaded && !isSvg && 'shadow-md',
                 )}
                 style={{ transform: imageTransform }}
                 draggable={false}

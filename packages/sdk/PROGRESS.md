@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `sdk-connectors-unified` claim
+
+No **Now** task claimed. This is the user-directed final SDK consolidation.
+
+Claimed scope:
+
+- Move the Connector gateway client, types, catalog search, connector calls,
+  approval results, and attachment uploads into the framework-free
+  `@kortix/sdk` core.
+- Expose one direct project interface through
+  `kortix.project(projectId).connectors` and the existing `getToken` seam.
+- Migrate the CLI, MCP server, sandbox Slack client, snapshot build inputs,
+  tests, documentation, and package publishing to `@kortix/sdk`.
+- Delete the unpublished standalone Connector workspace package.
+- Publish one final deprecated `@kortix/executor-sdk` adapter over `@kortix/sdk`
+  for existing production users.
+- Verify the packed SDK, complete CLI, and real CLI with an agent-minted token.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-08-06 — session `connector-compat-removal` completion
 
 No **Now** task claimed. This is the second phase of the user-directed connector
@@ -55,6 +82,61 @@ The public SDK now exposes only `connector`, `connection`, and `connector call`
 product terms. Removed compatibility includes connection-profile types and
 functions, connector-authorization entity aliases, legacy binding identifiers,
 and legacy email-installation fields.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-06 — session `sdk-connectors-unified` completion
+
+Consolidated the Connector data plane into `@kortix/sdk`. The canonical
+surface is `kortix.project(projectId).connectors`, with `kortix.connectors` for
+an agent-minted token that already carries project scope. Both expose
+`catalog`, `tools`, `search`, `describe`, `call`, and `uploadAttachment`.
+
+Deleted the unpublished standalone Connector SDK. Added one final
+`@kortix/executor-sdk@0.12.5` compatibility adapter for existing production
+consumers. The adapter preserves the published `0.12.4` names, signatures,
+raw `request()` escape hatch, `approval_execution_id`, and `ExecutorError`.
+The production workflow publishes this adapter only when `VERSION=0.12.5`,
+then applies the npm deprecation notice.
+
+Migrated the CLI, optional MCP server, sandbox Slack and Teams shims, snapshot
+artifact pipeline, Docker images, starter guidance, SDK documentation, tests,
+and npm release gates to the unified SDK. Active product surfaces use only the
+Connector and Connection nouns.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1587 pass`, `0 fail`, and
+  `6465 expect()` calls across `124` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; clean tarball install
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk`.
+- `pnpm --filter @kortix/executor-sdk test`: `6 pass`, `0 fail`, and
+  `23 expect()` calls.
+- `pnpm --filter @kortix/executor-sdk typecheck`: exit `0`.
+- `node scripts/stage-npm-publish.test.mjs`: `24 assertions passed`.
+- Complete CLI suite: `737 pass`, `0 fail`, and `2382 expect()` calls.
+- Complete API suite: `5604 pass`, `62 skip`, `0 fail`, and
+  `21839 expect()` calls.
+- Database suite: `175 pass`, `6 skip`, `0 fail`.
+- Connector contract migration: `3 pass`, `0 fail`.
+- Starter suite: `70 pass`, `0 fail`, and `1043 expect()` calls.
+- Real Linux sandbox CLI build: `103905408 bytes`, target `bun-linux-x64`.
+- Local agent-minted-token matrix: `105 passed`, `0 failed`. This includes
+  Connector creation and removal, Connections, credential stdin, SDK, final
+  compatibility adapter, CLI, MCP, approval, policies, Pipedream, upstream
+  HTTP, and real model traffic.
+- `docker build -f apps/api/Dockerfile --target deps --build-arg SERVICE=apps/api .`:
+  exit `0`, image `sha256:c7457e0d2f3d222a0221849e6b9a14ed593e2a8a9fd06039748869bf3bff1d43`.
+- `git diff --check`: exit `0`.
+- Tracked search for the deleted Connector SDK package name: zero matches.
+
+No published `@kortix/sdk` name was removed or renamed. The SDK version field
+remains `0.3.0`; the release script stamps the root `VERSION` value.
 
 **Status:** COMPLETE.
 
@@ -891,7 +973,7 @@ pipeline, `api.kortix.com`, both CI gates now.
   staging call sites (`smoke-install.mjs`, CI dry-pack loop) also build
   bundles — required, or the new validation would redline them. Tarball
   simulation: both bundles in the tarball, top-level CDN fields staged,
-  manifests restored byte-identical. Siblings (llm-catalog, connector-sdk)
+  manifests restored byte-identical. Sibling packages
   provably unaffected (promote-if-present; pinned by test).
 - `695908713` — README standardized on `api.kortix.com` (Jay's call).
 - `e48a48489` — `package-tests.yml`: SDK typecheck step + `build:bundles`

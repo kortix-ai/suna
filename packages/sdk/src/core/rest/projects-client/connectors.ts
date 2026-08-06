@@ -3,6 +3,9 @@
 // grant (kortix.yaml [[agents]].connectors), not anything configured here.
 
 import { backendApi } from '../../http/api-client';
+import { ApiError } from '../../http/api/errors';
+import { authenticatedFetch } from '../../http/auth';
+import { platformConfig } from '../../http/config';
 import { unwrap } from './shared';
 
 // ─── Connectors ────────────────────────────────────────────────────────────
@@ -13,6 +16,195 @@ export interface ConnectorAction {
   description: string;
   risk: 'read' | 'write' | 'destructive';
   inputSchema: Record<string, unknown> | null;
+}
+
+/** One connector as exposed by the callable project catalog. */
+export interface ConnectorCatalogEntry {
+  slug: string;
+  name: string;
+  provider: string;
+  status: string;
+  actions: ConnectorAction[];
+}
+
+/** One callable connector action, identified by `<connector>.<action>`. */
+export interface ConnectorTool {
+  tool: string;
+  connector: string;
+  action: string;
+  risk: ConnectorAction['risk'];
+  description: string;
+  inputSchema: ConnectorAction['inputSchema'];
+}
+
+export interface ConnectorCallResult<T = unknown> {
+  ok: boolean;
+  data?: T;
+  risk?: ConnectorAction['risk'];
+  status?: string;
+  reason?: string;
+  execution_id?: string | null;
+  retryable?: boolean;
+  approval_url?: string | null;
+  approval_summary?: string | null;
+  approval_instructions?: string | null;
+}
+
+export interface ConnectorAttachmentUploadInput {
+  filename: string;
+  contentType: string;
+  contentDisposition?: 'attachment' | 'inline';
+  contentId?: string;
+}
+
+export interface ConnectorAttachmentUploadResult {
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  content_disposition: 'attachment' | 'inline';
+  content_id?: string;
+  size: number;
+  expires_at: string;
+}
+
+function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
+  return projectId
+    ? `/connectors/projects/${encodeURIComponent(projectId)}/${suffix}`
+    : `/connectors/${suffix}`;
+}
+
+export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
+  const result = unwrap(
+    await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
+      connectorGatewayPath(projectId, 'catalog'),
+    ),
+  );
+  return result.connectors ?? [];
+}
+
+export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
+  const tools: ConnectorTool[] = [];
+  for (const connector of await getConnectorCatalog(projectId)) {
+    for (const action of connector.actions) {
+      tools.push({
+        tool: `${connector.slug}.${action.path}`,
+        connector: connector.slug,
+        action: action.path,
+        risk: action.risk,
+        description: action.description || action.name,
+        inputSchema: action.inputSchema,
+      });
+    }
+  }
+  return tools;
+}
+
+export async function searchConnectorTools(
+  projectId: string | undefined,
+  query = '',
+  options: { limit?: number } = {},
+): Promise<ConnectorTool[]> {
+  const normalized = query.trim().toLowerCase();
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const exact: ConnectorTool[] = [];
+  const tokenMatches: ConnectorTool[] = [];
+  for (const tool of await listConnectorTools(projectId)) {
+    const haystack = `${tool.tool} ${tool.description}`.toLowerCase();
+    if (!normalized || haystack.includes(normalized)) exact.push(tool);
+    else if (tokens.every((token) => haystack.includes(token))) tokenMatches.push(tool);
+  }
+  return [...exact, ...tokenMatches].slice(0, options.limit ?? 20);
+}
+
+export async function describeConnectorTool(
+  projectId: string | undefined,
+  tool: string,
+): Promise<ConnectorTool | null> {
+  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
+}
+
+function parseConnectorTool(tool: string): { connector: string; action: string } {
+  const separator = tool.indexOf('.');
+  const connector = separator < 0 ? '' : tool.slice(0, separator).trim();
+  const action = separator < 0 ? '' : tool.slice(separator + 1).trim();
+  if (!connector || !action) {
+    throw new Error('tool must use the connector.action format');
+  }
+  return { connector, action };
+}
+
+export async function callConnector<T = unknown>(
+  projectId: string | undefined,
+  tool: string,
+  args: Record<string, unknown> = {},
+): Promise<ConnectorCallResult<T>> {
+  const { connector, action } = parseConnectorTool(tool);
+  return unwrap(
+    await backendApi.post<ConnectorCallResult<T>>(
+      connectorGatewayPath(projectId, 'call'),
+      { connector, action, args },
+    ),
+  );
+}
+
+function connectorResponseMessage(body: unknown, status: number): string {
+  if (body && typeof body === 'object') {
+    const value = body as Record<string, unknown>;
+    for (const key of ['reason', 'error', 'message', 'detail']) {
+      if (typeof value[key] === 'string' && value[key]) return value[key];
+    }
+  }
+  return `HTTP ${status}`;
+}
+
+export async function uploadConnectorAttachment(
+  projectId: string | undefined,
+  content: Uint8Array | ArrayBuffer | Blob,
+  input: ConnectorAttachmentUploadInput,
+): Promise<ConnectorAttachmentUploadResult> {
+  const filename = input.filename.trim();
+  const contentType = input.contentType.trim();
+  if (!filename) throw new Error('filename is required');
+  if (!contentType) throw new Error('contentType is required');
+
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'X-Kortix-Attachment-Filename': encodeURIComponent(filename),
+    'X-Kortix-Attachment-Disposition': input.contentDisposition ?? 'attachment',
+  };
+  if (input.contentId?.trim()) {
+    headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+  }
+
+  const backendUrl = platformConfig().backendUrl.replace(/\/+$/, '');
+  const endpoint = connectorGatewayPath(projectId, 'attachments');
+  const response = await authenticatedFetch(
+    `${backendUrl}${endpoint}`,
+    { method: 'POST', headers, body: content as BodyInit },
+    { timeoutMs: 60_000 },
+  );
+  const raw = await response.text();
+  let body: unknown = null;
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+  }
+  if (!response.ok) {
+    throw new ApiError(connectorResponseMessage(body, response.status), {
+      status: response.status,
+      code:
+        body && typeof body === 'object'
+          ? String((body as Record<string, unknown>).code ?? response.status)
+          : String(response.status),
+      details: body,
+      response,
+      endpoint,
+    });
+  }
+  return body as ConnectorAttachmentUploadResult;
 }
 
 export type ConnectorAuthorizationStrategy = 'project' | 'user';

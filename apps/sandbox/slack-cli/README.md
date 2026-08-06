@@ -8,8 +8,8 @@ results.
 > **Scope today: just `slack`.** The Connector — once the `connector` /
 > `connector-mcp` shims here — has been absorbed into the one `kortix` CLI as
 > `kortix connectors` (the agent-facing CLI) plus the optional
-> `kortix connectors mcp` compatibility server, both built on the
-> `@kortix/connector-sdk` framework. The old
+> `kortix connectors mcp` compatibility server. Both use `@kortix/sdk` through
+> the compiled `kortix` binary. The old
 > `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
 > channel state is in the sandbox env already, and secrets are `kortix secrets …`.
 > Slack stays here as a standalone vendor adapter.
@@ -42,19 +42,16 @@ collisions — pick a unique name.
 
 ```typescript
 #!/usr/bin/env bun
-import { parseArgs, out, handleError, CliError, validateRequired, kortixProjectId, getEnv } from "../lib"
-import { createConnectorClient } from "../../../../packages/connector-sdk/src/index"
+import { parseArgs, out, handleError, validateRequired, kortixConnectorCall } from "../lib"
 
 async function send(opts: { channel: string; text: string }) {
   // Vendor calls go through the Kortix Connector — the credential is resolved
   // SERVER-SIDE, so there is NO vendor token (no SLACK_BOT_TOKEN etc.) in the
   // sandbox. Authenticate to the gateway with the session token instead.
-  const client = createConnectorClient({
-    apiUrl: getEnv("KORTIX_API_URL")!,
-    token: getEnv("KORTIX_CLI_TOKEN")!,
-    projectId: kortixProjectId(),
+  const res = await kortixConnectorCall("slack.send_message", {
+    channel: opts.channel,
+    text: opts.text,
   })
-  const res = await client.call("slack", "send_message", { channel: opts.channel, text: opts.text })
   return res.data
 }
 

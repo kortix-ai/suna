@@ -29,7 +29,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  connectorSdkPath: 'kortix-connectors-sdk',
 };
 
 // The user Dockerfile shapes the production builder actually feeds in: a plain

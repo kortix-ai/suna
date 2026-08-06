@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createConnectorClient } from '../../../../packages/connector-sdk/src/index';
+import { createKortix } from '@kortix/sdk';
 import type {
   ExecutionRecord,
   GatewayAction,
@@ -279,15 +279,18 @@ afterEach(() => {
 
 describe('TS SDK face', () => {
   test('connectors, discover, describe, and call work against the gateway', async () => {
-    const sdk = createConnectorClient({ apiUrl, token: TOKEN });
-    expect((await sdk.connectors())[0]?.slug).toBe('echo');
-    expect((await sdk.discover('query'))[0]).toMatchObject({
+    const sdk = createKortix({
+      backendUrl: `${apiUrl}/v1`,
+      getToken: async () => TOKEN,
+    }).project(PROJECT).connectors;
+    expect((await sdk.catalog())[0]?.slug).toBe('echo');
+    expect((await sdk.search('query'))[0]).toMatchObject({
       tool: 'echo.get',
       connector: 'echo',
       action: 'get',
     });
     expect(await sdk.describe('echo.get')).toMatchObject({ tool: 'echo.get', risk: 'read' });
-    const result = await sdk.call<{ auth: string; url: string }>('echo', 'get', { q: 'sdk' });
+    const result = await sdk.call<{ auth: string; url: string }>('echo.get', { q: 'sdk' });
     expect(result.ok).toBe(true);
     expect(result.data?.auth).toBe(`Bearer ${SERVER_SECRET}`);
     expect(result.data?.url).toBe('https://example.test/anything?q=sdk');
@@ -299,14 +302,17 @@ describe('TS SDK face', () => {
   });
 
   test('supports a durable multi-step script workflow without provider secrets in code', async () => {
-    const sdk = createConnectorClient({ apiUrl, token: TOKEN, projectId: PROJECT });
+    const sdk = createKortix({
+      backendUrl: `${apiUrl}/v1`,
+      getToken: async () => TOKEN,
+    }).project(PROJECT).connectors;
 
-    const connectors = await sdk.connectors();
+    const connectors = await sdk.catalog();
     const echo = connectors.find((c) => c.slug === 'echo');
     expect(echo).toBeDefined();
     expect(echo?.actions.map((a) => a.path)).toContain('get');
 
-    const [match] = await sdk.discover('query value', { limit: 1 });
+    const [match] = await sdk.search('query value', { limit: 1 });
     expect(match).toMatchObject({ tool: 'echo.get', connector: 'echo', action: 'get' });
     if (!match) throw new Error('expected Connector discovery match');
 
@@ -316,7 +322,7 @@ describe('TS SDK face', () => {
       properties: { q: { type: 'string', 'x-in': 'query' } },
     });
 
-    const first = await sdk.call<{ auth: string; url: string }>(match.connector, match.action, {
+    const first = await sdk.call<{ auth: string; url: string }>(match.tool, {
       q: 'step-1',
     });
     expect(first.ok).toBe(true);
@@ -324,7 +330,7 @@ describe('TS SDK face', () => {
     if (!first.data) throw new Error('expected first Connector call data');
 
     const nextQuery = first.data.url.endsWith('step-1') ? 'step-2' : 'unexpected';
-    const second = await sdk.call<{ auth: string; url: string }>(match.connector, match.action, {
+    const second = await sdk.call<{ auth: string; url: string }>(match.tool, {
       q: nextQuery,
     });
     expect(second.ok).toBe(true);
@@ -413,9 +419,12 @@ describe('HTTP call validation', () => {
 
 describe('Project-explicit gateway face (the local-connector unlock)', () => {
   test('SDK with a projectId hits /projects/:id/{catalog,call}', async () => {
-    const sdk = createConnectorClient({ apiUrl, token: TOKEN, projectId: PROJECT });
-    expect((await sdk.connectors())[0]?.slug).toBe('echo');
-    const result = await sdk.call<{ url: string }>('echo', 'get', { q: 'proj-sdk' });
+    const sdk = createKortix({
+      backendUrl: `${apiUrl}/v1`,
+      getToken: async () => TOKEN,
+    }).project(PROJECT).connectors;
+    expect((await sdk.catalog())[0]?.slug).toBe('echo');
+    const result = await sdk.call<{ url: string }>('echo.get', { q: 'proj-sdk' });
     expect(result.ok).toBe(true);
     expect(result.data?.url).toBe('https://example.test/anything?q=proj-sdk');
   });
@@ -440,8 +449,11 @@ describe('Project-explicit gateway face (the local-connector unlock)', () => {
   });
 
   test('an unauthorized project is rejected (403 → SDK throws)', async () => {
-    const sdk = createConnectorClient({ apiUrl, token: TOKEN, projectId: 'someone-elses-project' });
-    await expect(sdk.connectors()).rejects.toThrow();
+    const sdk = createKortix({
+      backendUrl: `${apiUrl}/v1`,
+      getToken: async () => TOKEN,
+    }).project('someone-elses-project').connectors;
+    await expect(sdk.catalog()).rejects.toThrow();
   });
 
   test('both attachment routes reject agents without the email connector before staging bytes', async () => {

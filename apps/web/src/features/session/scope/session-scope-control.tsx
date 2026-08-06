@@ -463,7 +463,7 @@ export function SessionScopeControl({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[352px] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
+        className="w-[352px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 shadow-md"
       >
         <SessionScopeControlContent {...contentProps} />
       </PopoverContent>

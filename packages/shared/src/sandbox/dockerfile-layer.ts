@@ -199,7 +199,7 @@ export interface WarmRepoConfig {
 /**
  * Inputs for the artifact half of the layer — the contiguous tail that COPYs
  * Kortix's own staged build artifacts (agent + CLI binaries, entrypoint,
- * slack-cli, connector-sdk, scaffold.git) and wires the container's entrypoint.
+ * slack-cli, scaffold.git) and wires the container's entrypoint.
  *
  * Every artifact path is REQUIRED, deliberately: an agent-less image would
  * still build, still hash to a fresh snapshot identity, and only fail once a
@@ -232,12 +232,6 @@ export interface KortixArtifactLayerOpts {
    * `kortix` CLI as `kortix connectors` / `kortix connectors mcp`.)
    */
   slackCliPath: string;
-  /**
-   * Path the snapshot builder will reference for packages/connector-sdk.
-   * The agent CLI imports it via the same repo-relative path in dev and in
-   * real snapshots.
-   */
-  connectorSdkPath: string;
   /**
    * Path (in the build context) to the baked full gateway model catalog JSON.
    * COPY'd into the image so the no-restart warm seed — which has no sandbox
@@ -716,8 +710,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
- * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
- * connector-sdk, the optional LLM catalog, scaffold.git), the unpack/shim RUN
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli, the optional
+ * LLM catalog, scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -730,7 +724,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    connectorSdkPath,
     catalogPath,
   } = opts;
 
@@ -740,9 +733,8 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
     `COPY ${machineDocPath} /MACHINE.md`,
-    // Keep the repo-relative layout so CLIs can import shared packages.
+    // The channel shims delegate Connector calls to the compiled `kortix` CLI.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    `COPY ${connectorSdkPath}/ /opt/kortix/packages/connector-sdk/`,
     // Full gateway model catalog, baked at build so the token-less no-restart
     // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
     ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),

@@ -322,7 +322,7 @@ function MobileSurface() {
           <div
             key={src}
             className={cn(
-              'bg-background flex justify-center overflow-hidden rounded-2xl shadow-md',
+              'border-border bg-background flex justify-center overflow-hidden rounded-2xl border shadow-md',
               'aspect-[1080/2337] max-h-full min-w-0 flex-1',
               'sm:aspect-auto sm:h-full sm:max-h-[460px] sm:w-auto sm:flex-none',
               i === 1 ? 'sm:-translate-y-3' : 'sm:translate-y-3',
@@ -486,7 +486,7 @@ function WebSurface() {
 function CopyInstallCommand() {
   return (
     <Hint label="Copy the install command" side="left">
-      <span className="bg-background/80 absolute top-2 right-2 z-10 inline-flex rounded-md shadow-sm backdrop-blur-sm sm:top-3 sm:right-3">
+      <span className="border-border bg-background/80 absolute top-2 right-2 z-10 inline-flex rounded-md border shadow-sm backdrop-blur-sm sm:top-3 sm:right-3">
         <CopyButton code={KORTIX_CLI_INSTALL_COMMAND} />
       </span>
     </Hint>

@@ -268,7 +268,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
           />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={8} className="w-auto p-0">
+      <PopoverContent align="start" sideOffset={8} className="w-auto p-0 shadow-md">
         {/* Rail beside the calendar, not a strip above it. The presets used to
             be a `flex flex-wrap` row over a fixed-width calendar, so the four
             labels wrapped into a ragged second row and the popover read as two

@@ -1,7 +1,7 @@
 import { type Hash, createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { type FileHandle, lstat, open, readdir, readlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface RuntimeArtifact {
   label: string;
@@ -44,7 +44,10 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
 
 const CLI_RUNTIME_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-export function cliConnectorRuntimeArtifacts(cliRoot: string): RuntimeArtifact[] {
+export function cliConnectorRuntimeArtifacts(
+  cliRoot: string,
+  sdkRoot = resolve(cliRoot, '../../packages/sdk'),
+): RuntimeArtifact[] {
   return [
     ...CLI_CONNECTOR_RUNTIME_FILES.map((relativePath) => ({
       // Preserve the existing snapshot-fingerprint labels. The paths moved
@@ -54,6 +57,12 @@ export function cliConnectorRuntimeArtifacts(cliRoot: string): RuntimeArtifact[]
       excludeNames: CLI_RUNTIME_EXCLUDES,
     })),
     { label: 'kortix-cli-pkg', path: join(cliRoot, 'package.json') },
+    {
+      label: 'kortix-sdk-src',
+      path: join(sdkRoot, 'src'),
+      excludeNames: CLI_RUNTIME_EXCLUDES,
+    },
+    { label: 'kortix-sdk-pkg', path: join(sdkRoot, 'package.json') },
   ];
 }
 
@@ -63,8 +72,11 @@ export function cliConnectorRuntimeArtifacts(cliRoot: string): RuntimeArtifact[]
  * The CLI build writes this digest beside the compiled binary. The snapshot
  * builder recomputes it before upload and rejects a stale binary.
  */
-export function buildCliConnectorSourceDigest(cliRoot: string): Promise<string> {
-  return buildArtifactContentDigest(cliConnectorRuntimeArtifacts(cliRoot));
+export function buildCliConnectorSourceDigest(
+  cliRoot: string,
+  sdkRoot?: string,
+): Promise<string> {
+  return buildArtifactContentDigest(cliConnectorRuntimeArtifacts(cliRoot, sdkRoot));
 }
 
 /**

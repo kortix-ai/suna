@@ -67,7 +67,7 @@ export function WebPanelWrapper({
   return (
     <div className={cn('flex h-full flex-1 flex-col', className)}>
       <div className="bg-border dark:bg-background flex h-full w-full flex-col rounded-xl p-1">
-        <div className="flex w-full items-center justify-between gap-0.5 overflow-hidden">
+        <div className="shadow-custom flex w-full items-center justify-between gap-0.5 overflow-hidden">
           <span
             aria-current="page"
             className="text-foreground hit-area-3 relative flex shrink-0 items-stretch"

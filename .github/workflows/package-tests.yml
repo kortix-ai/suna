@@ -81,13 +81,14 @@ jobs:
       - name: Build + dry-pack publishable npm packages (release gate)
         run: |
           set -euo pipefail
-          # @kortix/llm-catalog, @kortix/sdk and @kortix/connector-sdk publish to npm
+          # @kortix/llm-catalog, @kortix/sdk, and the final deprecated
+          # @kortix/executor-sdk adapter publish to npm
           # on release (deploy-prod.yml). Build + stage + dry-pack them on every PR
           # so a broken dist/ or published manifest fails here, not at release time.
           # The staging script asserts every publishConfig entrypoint exists in the
           # emitted dist/ and that workspace deps pin cleanly.
           node scripts/stage-npm-publish.test.mjs
-          for dir in llm-catalog sdk connector-sdk; do
+          for dir in llm-catalog sdk executor-sdk; do
             echo "::group::@kortix/$dir build + stage + dry-pack"
             # @kortix/sdk's build:bundles also emits the tsup browser bundles
             # (dist/kortix.esm.min.js, dist/kortix.global.js) that

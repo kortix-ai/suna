@@ -1532,7 +1532,7 @@ const kortixVsPoetic: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'What Kortix does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Connector gateway, and the typed client for it is published as [`@kortix/connector-sdk`](https://www.npmjs.com/package/@kortix/connector-sdk).',
+      text: 'What Kortix does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Connector gateway, and the typed client is part of [`@kortix/sdk`](https://www.npmjs.com/package/@kortix/sdk).',
     },
     { type: 'h2', text: 'What "verifiable" means here, concretely' },
     {
@@ -1545,16 +1545,18 @@ const kortixVsPoetic: BlogPostEntry = {
     },
     {
       type: 'code',
-      code: `import { createConnectorClient } from '@kortix/connector-sdk';
+      code: `import { createKortix } from '@kortix/sdk';
 
-const connector = createConnectorClient({
-  apiUrl: process.env.KORTIX_API_URL!,
-  token: process.env.KORTIX_CLI_TOKEN!,
-  projectId: process.env.KORTIX_PROJECT_ID,
+const kortix = createKortix({
+  backendUrl: process.env.KORTIX_API_URL!,
+  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
 });
+const connectors = process.env.KORTIX_PROJECT_ID
+  ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
+  : kortix.connectors;
 
 // The catalog is the contract. Refuse to run if it drifted.
-const action = await connector.describe('stripe.close_dispute');
+const action = await connectors.describe('stripe.close_dispute');
 if (action?.risk !== 'write') {
   throw new Error(\`refusing to run: catalog says \${action?.risk ?? 'unknown'}\`);
 }`,
@@ -1565,13 +1567,13 @@ if (action?.risk !== 'write') {
     },
     {
       type: 'code',
-      code: `import { type ConnectorCallResult } from '@kortix/connector-sdk';
-// \`connector\` is the client created above.
+      code: `import { type ConnectorCallResult } from '@kortix/sdk';
+// \`connectors\` is the client created above.
 
 type Dispute = { id: string; amount_cents: number };
 
 // 1. Read. risk: 'read' — the gateway never gates this.
-const open = await connector.call<{ disputes: Dispute[] }>('stripe', 'list_disputes', {
+const open = await connectors.call<{ disputes: Dispute[] }>('stripe.list_disputes', {
   status: 'needs_response',
   limit: 50,
 });
@@ -1582,7 +1584,7 @@ for (const dispute of open.data?.disputes ?? []) {
   if (dispute.amount_cents > 500_00) continue;
 
   // 3. Act. A gated write returns one approval handoff immediately.
-  const result: ConnectorCallResult = await connector.call('stripe', 'close_dispute', {
+  const result: ConnectorCallResult = await connectors.call('stripe.close_dispute', {
     dispute: dispute.id,
   });
 
@@ -1596,11 +1598,11 @@ for (const dispute of open.data?.disputes ?? []) {
     },
     {
       type: 'callout',
-      text: 'Both snippets above type-check under `strict` against the published `@kortix/connector-sdk` source, and the package’s own unit suite covers route selection, the call envelope, error mapping and catalog flattening. The approval handoff, risk classification and audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
+      text: 'Both snippets above type-check under `strict` against the published `@kortix/sdk` source, and the package unit suite covers route selection, the call envelope, error mapping and catalog flattening. The approval handoff, risk classification and audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
     },
     {
       type: 'p',
-      text: 'The honest scope note: `@kortix/connector-sdk` is a typed client for the action boundary. It is not a workflow compiler and it does not make your workflow deterministic. It makes the *edges* of your workflow legible. The determinism you get is the determinism of the TypeScript you wrote around it. That is a weaker guarantee than Poetic’s and a more general one.',
+      text: 'The honest scope note: the Connector client in `@kortix/sdk` is a typed client for the action boundary. It is not a workflow compiler and it does not make your workflow deterministic. It makes the *edges* of your workflow legible. The determinism you get is the determinism of the TypeScript you wrote around it. That is a weaker guarantee than Poetic’s and a more general one.',
     },
     { type: 'h2', text: 'Now the part that is actually different: ownership' },
     {

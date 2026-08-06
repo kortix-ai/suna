@@ -217,7 +217,8 @@ async function makeRequest<T = any>(
       }
 
       try {
-        response = await fetch(url, {
+        const fetchImpl = platformConfig().fetch ?? fetch;
+        response = await fetchImpl(url, {
           ...fetchOptions,
           headers,
           signal: attemptController.signal,
@@ -257,7 +258,9 @@ async function makeRequest<T = any>(
 
       try {
         errorData = await response.json();
-        if (typeof errorData.message === 'string') {
+        if (typeof errorData.reason === 'string') {
+          errorMessage = errorData.reason;
+        } else if (typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } else if (errorData.error && typeof errorData.error === 'string') {
           errorMessage = errorData.error;

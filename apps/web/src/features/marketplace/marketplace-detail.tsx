@@ -438,7 +438,7 @@ function DetailPager({ nav }: { nav: DetailNav }) {
   return (
     <Portal>
       <div
-        className="bg-background/85 fixed bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full p-1 shadow-lg backdrop-blur-sm"
+        className="bg-background/85 fixed bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full border p-1 shadow-lg backdrop-blur-sm"
         style={{ zIndex: floatingZ(depth) }}
       >
         <button

@@ -9,6 +9,11 @@ set statement_timeout = '30s';
 
 -- mixed-version-safe: PR #6173 deployed canonical table and connection_id readers and writers before this contract migration; no running supported API build depends on these temporary views or profile_id mirror.
 
+-- Older local and self-hosted databases can still carry this pre-project-rename
+-- compatibility view. It depends directly on the profile_id column removed
+-- below, so remove it explicitly before the physical cutover.
+DROP VIEW IF EXISTS kortix.workspace_session_connector_bindings;
+
 DROP VIEW kortix.executor_connection_policies;
 DROP VIEW kortix.executor_oauth_sessions;
 DROP VIEW kortix.executor_oauth_applications;

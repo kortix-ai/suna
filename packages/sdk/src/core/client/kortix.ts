@@ -297,6 +297,28 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
+  function connectorDataPlane(projectId?: string) {
+    return {
+      /** Callable catalog for this project or token scope. */
+      catalog: () => P.getConnectorCatalog(projectId),
+      /** Flattened `<connector>.<action>` tool list. */
+      tools: () => P.listConnectorTools(projectId),
+      /** Search callable tools by id and description. */
+      search: (...a: DropFirst<Parameters<typeof P.searchConnectorTools>>) =>
+        P.searchConnectorTools(projectId, ...a),
+      /** Describe one `<connector>.<action>` tool. */
+      describe: (...a: DropFirst<Parameters<typeof P.describeConnectorTool>>) =>
+        P.describeConnectorTool(projectId, ...a),
+      /** Call one `<connector>.<action>` tool. */
+      call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
+        P.callConnector<T>(projectId, ...a),
+      /** Upload bytes for use by a later connector call. */
+      uploadAttachment: (
+        ...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>
+      ) => P.uploadConnectorAttachment(projectId, ...a),
+    };
+  }
+
   function project(projectId: string) {
     const connections = {
       list: () => P.listConnections(projectId),
@@ -407,6 +429,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       connectors: {
+        ...connectorDataPlane(projectId),
         list: () => P.listConnectors(projectId),
         config: (...a: DropFirst<Parameters<typeof P.getConnectorConfig>>) =>
           P.getConnectorConfig(projectId, ...a),
@@ -1103,6 +1126,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
     accountInvites,
     projects,
+    /** Connector calls scoped by an agent/session token when no project id is available. */
+    connectors: connectorDataPlane(),
     project,
     session,
     /** GitHub App installation + repository linking (account-scoped). */

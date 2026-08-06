@@ -191,7 +191,6 @@ export function DemoQualifierModal({
         <ModalContent
           showCloseButton={false}
           variant="transparent"
-          elevation="none"
           className="max-w-[min(980px,95vw)] gap-0 overflow-hidden rounded-2xl border-none bg-transparent p-0 shadow-none lg:h-auto"
         >
           <ModalTitle className="sr-only">{title}</ModalTitle>

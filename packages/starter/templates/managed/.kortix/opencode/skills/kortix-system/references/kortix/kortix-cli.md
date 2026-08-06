@@ -149,7 +149,7 @@ A connector defines actions against an external system. A connection stores one
 usable authorization. Calls run **server-side** through the connector gateway,
 so no third-party credential enters the sandbox. The same gateway is available
 through the `kortix-connectors` **MCP**, this **CLI**, and the
-`@kortix/connector-sdk` **TypeScript package**. JSON output.
+`@kortix/sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |

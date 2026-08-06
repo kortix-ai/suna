@@ -2,26 +2,21 @@
  * The Connector's data plane, shared by both faces of `kortix connectors`:
  *   - the CLI subcommands (`kortix connectors call …`)
  *   - the stdio MCP server (`kortix connectors mcp`)
- * plus the third face, the `@kortix/connector-sdk` TypeScript framework, which
- * this module is built on.
+ * plus the `@kortix/sdk` project client, which this module uses directly.
  *
- * Two clients live here:
- *   1. The Connector GATEWAY client (`@kortix/connector-sdk`) — runs connector
- *      tool calls. Acts AS the launching user via KORTIX_CLI_TOKEN; the
- *      gateway resolves the third-party credential server-side. No secret ever
- *      touches the sandbox.
- *   2. The project-scoped kortix API client — used for connector management
+ * Two project surfaces live here:
+ *   1. `@kortix/sdk`'s project Connector data plane — runs connector tool calls.
+ *      It acts as the launching user via KORTIX_CLI_TOKEN. The gateway resolves
+ *      third-party credentials server-side. No secret touches the sandbox.
+ *   2. The project-scoped API adapter — used for connector management
  *      (add/remove) and setup-link minting (connect / request_secret). Resolved
  *      through the same sandbox env-token host the rest of the CLI uses
  *      (`KORTIX_CLI_TOKEN` + `KORTIX_PROJECT_ID`).
  */
-import {
-  createConnectorClient,
-  type ConnectorCallResult,
-  type ConnectorClient,
-} from '@kortix/connector-sdk';
+import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
 import { loadAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { CliError } from './io.ts';
 
@@ -39,6 +34,8 @@ import { CliError } from './io.ts';
  * the cloud. Without a project we fall back to the legacy flat routes, which
  * need a scoped session token (the in-sandbox case).
  */
+export type ConnectorClient = Kortix['connectors'];
+
 export function connectorClient(projectOverride?: string): ConnectorClient {
   const auth = loadAuth();
   if (!auth?.token) {
@@ -48,12 +45,9 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
     );
   }
   // --project > KORTIX_PROJECT_ID > .kortix/link.json (resolveProjectId order).
-  const projectId = resolveProjectId(projectOverride) ?? undefined;
-  return createConnectorClient({
-    apiUrl: auth.api_base,
-    token: auth.token,
-    ...(projectId ? { projectId } : {}),
-  });
+  const projectId = resolveProjectId(projectOverride);
+  const kortix = kortixFromAuth(auth);
+  return projectId ? kortix.project(projectId).connectors : kortix.connectors;
 }
 
 /**
@@ -85,7 +79,7 @@ export async function callWithApprovalHandoff<T = unknown>(
   action: string,
   args: Record<string, unknown>,
 ): Promise<ConnectorCallResult<T>> {
-  return client.call<T>(connector, action, args);
+  return client.call<T>(`${connector}.${action}`, args);
 }
 
 export interface ConnectLinkResult {

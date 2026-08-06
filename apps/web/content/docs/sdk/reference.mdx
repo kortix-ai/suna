@@ -20,6 +20,7 @@ const kortix = createKortix({ backendUrl, getToken });
 kortix.accounts; // account / team operations
 kortix.accountInvites; // invite accept/decline by token alone
 kortix.projects; // top-level project operations
+kortix.connectors; // Connector calls scoped by an agent-minted token
 kortix.project(id); // id-bound project handle
 kortix.session(pid, sid); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
@@ -242,6 +243,10 @@ agent, a skill, a secret) instead of the whole project.
 
 | method | what |
 | --- | --- |
+| `catalog()` · `tools()` | callable Connector catalog · flattened `<connector>.<action>` tools |
+| `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
+| `call(tool, args?)` | call one `<connector>.<action>` tool through the server-side gateway |
+| `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
@@ -272,8 +277,8 @@ policies. `connections` stores its connected accounts. A session can select
 one with `connector_bindings: { alias: { connection_id } }`. Credentials
 stay encrypted and resolve per request.
 
-The deprecated `authorizations` and `profiles` facades remain compatibility
-aliases. New code uses `connections`.
+`connections` is the only active authorization facade. The retired
+`authorizations` and `profiles` names are not part of the current SDK surface.
 
 #### `p.policies` — project policies
 

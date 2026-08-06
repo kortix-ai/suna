@@ -63,7 +63,7 @@ const run = (dir, version) =>
   assert(out.publishConfig.exports === undefined, 'promoted publishConfig.exports stripped');
   assert(out.publishConfig.access === 'public', 'non-promoted publishConfig (access) kept');
   // A package whose publishConfig carries no CDN fields (llm-catalog,
-  // connector-sdk) must stage exactly as before — the CDN promotion is
+  // executor-sdk) must stage exactly as before — the CDN promotion is
   // if-present, never assumed.
   assert(out.browser === undefined, 'no top-level browser field when publishConfig has none');
   assert(out.unpkg === undefined, 'no top-level unpkg field when publishConfig has none');

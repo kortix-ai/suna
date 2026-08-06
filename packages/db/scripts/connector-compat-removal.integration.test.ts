@@ -4,6 +4,7 @@ import pg from 'pg';
 const databaseUrl = process.env.CONNECTOR_CUTOVER_DATABASE_URL;
 
 const LEGACY_RELATIONS = [
+  'workspace_session_connector_bindings',
   'executor_connectors',
   'executor_connector_actions',
   'executor_connector_grants',

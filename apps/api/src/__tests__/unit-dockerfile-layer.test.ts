@@ -34,7 +34,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  connectorSdkPath: 'kortix-connectors-sdk',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
@@ -129,7 +128,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
     expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
-    expect(merged).toContain('COPY kortix-connectors-sdk/ /opt/kortix/packages/connector-sdk/');
+    expect(merged).not.toContain('/opt/kortix/packages/');
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 

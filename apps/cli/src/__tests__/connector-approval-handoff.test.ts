@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ConnectorClient } from '@kortix/connector-sdk';
+import type { ConnectorClient } from '../connector-gateway/gateway';
 import { callWithApprovalHandoff } from '../connector-gateway/gateway';
 
 describe('connector approval handoff', () => {

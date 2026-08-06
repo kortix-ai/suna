@@ -1,13 +1,10 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-// The published Kortix Connector SDK — baked into the sandbox at the mirrored
-// path (/opt/kortix/packages/connector-sdk). Using it here both keeps the shim's
-// gateway calls clean AND dogfoods the SDK in a real in-sandbox consumer.
-import { ConnectorError, createConnectorClient } from '../../../../packages/connector-sdk/src/index';
 import {
   CliError,
   getEnv,
   handleError,
+  kortixConnectorCall,
   kortixGet,
   kortixPost,
   kortixProjectId,
@@ -109,18 +106,6 @@ function optionalInt(value: string | undefined): number | undefined {
   return value ? Number.parseInt(value, 10) : undefined;
 }
 
-// The Connector SDK client, built from this sandbox's env. Setting projectId
-// makes the SDK use the project-explicit gateway route
-// (/connectors/projects/:id/call), which accepts the in-sandbox session token.
-function connectorClient() {
-  const apiUrl = getEnv('KORTIX_API_URL');
-  const token = getEnv('KORTIX_CLI_TOKEN');
-  if (!apiUrl || !token) {
-    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN not set — cannot reach the Connector.');
-  }
-  return createConnectorClient({ apiUrl, token, projectId: kortixProjectId() });
-}
-
 // Route a Slack Web API call through the Kortix Connector (via the SDK): the bot
 // token is resolved + attached SERVER-SIDE (never in this sandbox), the call is
 // audited + policy-gated, and Slack's response comes back as `data`. The gateway
@@ -134,15 +119,18 @@ async function connectorCall(
 ): Promise<SlackWebApiResponse> {
   const action = METHOD_TO_ACTION[method];
   if (!action) throw new CliError(`No Connector action mapped for Slack method "${method}"`);
-  let lastErr: ConnectorError | null = null;
+  let lastErr: CliError | null = null;
   for (const connector of SLACK_CONNECTORS) {
     try {
-      const res = await connectorClient().call(connector, action, args);
+      const res = await kortixConnectorCall<{ data?: SlackWebApiResponse } & SlackWebApiResponse>(
+        `${connector}.${action}`,
+        args,
+      );
       return (res.data ?? res) as SlackWebApiResponse;
     } catch (err) {
-      if (!(err instanceof ConnectorError)) throw err;
+      if (!(err instanceof CliError)) throw err;
       lastErr = err;
-      const reason = connectorErrorReason(err);
+      const reason = err.message || null;
       // Try the legacy `slack` namespace only when the reserved channel connector
       // is absent/not yet materialized. Do not fall back on `needs_auth` or
       // upstream Slack errors — those are real results from the right connector.
@@ -158,22 +146,9 @@ async function connectorCall(
   try {
     throw lastErr ?? new CliError(`Slack connector action "${action}" was not found`);
   } catch (err) {
-    if (err instanceof ConnectorError) throw new CliError(err.message);
+    if (err instanceof CliError) throw err;
     throw err;
   }
-}
-
-function connectorErrorReason(err: ConnectorError): string | null {
-  const body = err.body;
-  if (body && typeof body === 'object') {
-    const reason = (body as { reason?: unknown }).reason;
-    if (typeof reason === 'string') return reason;
-    const error = (body as { error?: unknown }).error;
-    if (typeof error === 'string') return error;
-    const message = (body as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
-  return err.message || null;
 }
 
 async function apiPost(

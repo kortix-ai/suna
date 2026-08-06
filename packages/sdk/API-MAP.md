@@ -150,8 +150,10 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | project files (git-backed) | `GET /v1/projects/:id/files`, `POST /files/{content,search}`, `GET /files/archive` |
 
 ### 12. Connectors and connections  ✅ (project) · 🟡 (connector)
-- project connectors + sharing/policies → `projects-client/{connectors,policies}.ts` ✅
-- connector runtime (`/v1/connectors/projects/:id/connectors/*`, Slack/Pipedream/CUA) → 🟡 web-local (`lib/*`)
+- project Connector configuration, Connections, sharing, and policies →
+  `projects-client/{connectors,policies}.ts` ✅
+- Connector data plane → `project(id).connectors.{catalog,tools,search,describe,call,uploadAttachment}` ✅
+- agent-token fallback → `kortix.connectors.{catalog,tools,search,describe,call,uploadAttachment}` ✅
 
 ### 13. Triggers / scheduled tasks  🟡
 `projects-client/triggers.ts` ✅ (client) ; `useProjectTriggers` now in `@kortix/sdk/react` ✅ (list + create/update/remove/fire, invalidation-wired); the web app's own `hooks/scheduled-tasks` hook hasn't migrated onto it yet.

@@ -1,6 +1,6 @@
 ---
 name: kortix-connectors
-description: Use Kortix connectors to reach external systems from a session. Use the `kortix connectors` CLI for agent work, `@kortix/connector-sdk` for durable TypeScript workflows, and `kortix connectors mcp` when a stdio MCP server is required. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox.
+description: Use Kortix connectors to reach external systems from a session. Use the `kortix connectors` CLI for agent work, `@kortix/sdk` for durable TypeScript workflows, and `kortix connectors mcp` when a stdio MCP server is required. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox.
 ---
 
 <skill name="kortix-connectors">
@@ -18,8 +18,8 @@ Use the **`kortix connectors` CLI** for normal agent work:
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
-Durable TypeScript workflows use **`@kortix/connector-sdk`** and
-`createConnectorClient`. Every call runs through the connector gateway. The
+Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
+call runs through the connector gateway. The
 gateway resolves credentials, enforces access and policy, invokes the upstream
 system, and records an audit event. The sandbox carries `KORTIX_CLI_TOKEN`; it
 does not carry raw third-party credentials.
@@ -74,23 +74,25 @@ kortix connectors call internal_graph query.user \
 </cli-first-loop>
 
 <sdk-workflows>
-Use `@kortix/connector-sdk` for dependent calls, pagination, branching, retries,
-or reusable scripts. Read `references/connector-sdk.md` for the full pattern.
+Use `@kortix/sdk` for dependent calls, pagination, branching, retries, or
+reusable scripts. Read `references/sdk.md` for the full pattern.
 
 ```ts
-import { createConnectorClient } from '@kortix/connector-sdk';
+import { createKortix } from '@kortix/sdk';
 
-const connectors = createConnectorClient({
-  apiUrl: process.env.KORTIX_API_URL!,
-  token: process.env.KORTIX_CLI_TOKEN!,
-  projectId: process.env.KORTIX_PROJECT_ID,
+const kortix = createKortix({
+  backendUrl: process.env.KORTIX_API_URL!,
+  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
 });
+const connectors = process.env.KORTIX_PROJECT_ID
+  ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
+  : kortix.connectors;
 
-const matches = await connectors.discover('send an email', { limit: 5 });
+const matches = await connectors.search('send an email', { limit: 5 });
 const action = await connectors.describe(matches[0]!.tool);
 if (!action) throw new Error('Email action not found');
 
-const result = await connectors.call('email_email_inbox_bjgk', 'reply_message', {
+const result = await connectors.call('email_email_inbox_bjgk.reply_message', {
   inbox_id: 'email-inbox@agentmail.to',
   message_id: '<message-id>',
   text: 'Reply text',
@@ -151,7 +153,7 @@ kortix channels connect
 
 <rules>
 - Use `kortix connectors` for one-off agent actions.
-- Use `@kortix/connector-sdk` for durable or testable workflows.
+- Use `@kortix/sdk` for durable or testable workflows.
 - Do not use raw provider tokens from the sandbox.
 - Treat `denied`, `not_shared`, `needs_auth`, and `ok: false` as real outcomes.
 - Confirm irreversible work before a destructive connector call.

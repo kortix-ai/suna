@@ -35,7 +35,8 @@ import {
 } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
-import { ConnectorError, createConnectorClient } from '../../../packages/connector-sdk/src/index';
+import { createExecutorClient } from '../../../packages/executor-sdk/src/index';
+import { ApiError, createKortix } from '@kortix/sdk';
 
 const ROOT = resolve(import.meta.dir, '../../..');
 const CLI_ENTRY = resolve(ROOT, 'apps/cli/src/index.ts');
@@ -307,8 +308,11 @@ async function seedCallableAction(): Promise<void> {
 }
 
 async function driveConnectorSdk(): Promise<void> {
-  const client = createConnectorClient({ apiUrl: API, token: agentToken, projectId });
-  const catalog = await client.connectors();
+  const client = createKortix({
+    backendUrl: API,
+    getToken: async () => agentToken,
+  }).project(projectId).connectors;
+  const catalog = await client.catalog();
   check(
     'connector SDK live catalog uses the agent token',
     catalog.some((connector) => connector.slug === FIXTURE_SLUG),
@@ -318,22 +322,42 @@ async function driveConnectorSdk(): Promise<void> {
     'connector SDK live tools flatten the fixture action',
     tools.some((tool) => tool.tool === `${FIXTURE_SLUG}.get`),
   );
-  const called = await client.call<{ args?: { q?: string } }>(FIXTURE_SLUG, 'get', {
-    q: 'connector-sdk-agent-token',
+  const called = await client.call<{ args?: { q?: string } }>(`${FIXTURE_SLUG}.get`, {
+    q: 'sdk-agent-token',
   });
   check(
-    'connector SDK live call reaches the real upstream',
-    called.ok === true && called.data?.args?.q === 'connector-sdk-agent-token',
+    '@kortix/sdk live call reaches the real upstream',
+    called.ok === true && called.data?.args?.q === 'sdk-agent-token',
   );
   let badActionError: unknown;
   try {
-    await client.call(FIXTURE_SLUG, 'definitely_not_a_real_action');
+    await client.call(`${FIXTURE_SLUG}.definitely_not_a_real_action`);
   } catch (error) {
     badActionError = error;
   }
   check(
-    'connector SDK live bad action raises ConnectorError',
-    badActionError instanceof ConnectorError,
+    'connector SDK live bad action raises ApiError',
+    badActionError instanceof ApiError,
+  );
+}
+
+async function driveExecutorCompatibilityAdapter(): Promise<void> {
+  const client = createExecutorClient({
+    apiUrl: API,
+    token: agentToken,
+    projectId,
+  });
+  const catalog = await client.connectors();
+  check(
+    'deprecated Executor adapter live catalog uses the agent token',
+    catalog.some((connector) => connector.slug === FIXTURE_SLUG),
+  );
+  const called = await client.call<{ args?: { q?: string } }>(FIXTURE_SLUG, 'get', {
+    q: 'executor-adapter-agent-token',
+  });
+  check(
+    'deprecated Executor adapter remaps a live call through @kortix/sdk',
+    called.ok === true && called.data?.args?.q === 'executor-adapter-agent-token',
   );
 }
 
@@ -470,6 +494,7 @@ async function commandMatrix(): Promise<void> {
 
   await seedCallableAction();
   await driveConnectorSdk();
+  await driveExecutorCompatibilityAdapter();
   const inheritedCatalog = await expectCli(
     'unconfigured session scope inherits the active project connection',
     ['connectors', 'ls', '--session', sessionId],

@@ -22,7 +22,6 @@
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {
-    "@kortix/connector-sdk": "workspace:*",
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",

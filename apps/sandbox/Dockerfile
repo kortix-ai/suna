@@ -47,9 +47,8 @@ RUN case "${TARGETARCH:-}" in \
 
 # ─── Stage 2: build the kortix CLI binary ───────────────────────────────
 #
-# The CLI lives in apps/cli and imports four workspace packages
-# (@kortix/connector-sdk, @kortix/manifest-schema, @kortix/registry,
-# @kortix/starter) plus one npm dep (smol-toml).
+# The CLI lives in apps/cli and imports the unified @kortix/sdk plus its other
+# workspace packages and npm dependencies.
 # `bun build --compile` inlines all of them, so the runtime image carries a
 # single self-contained binary and never needs node_modules on PATH — the
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
@@ -61,10 +60,10 @@ ARG TARGETARCH
 
 WORKDIR /cli
 COPY apps/cli ./apps/cli
-COPY packages/connector-sdk ./packages/connector-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
@@ -232,10 +231,8 @@ COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
-# Keep the repo-relative layout under /opt/kortix so agent CLIs can import
-# shared workspace packages the same way they do in local tests.
+# Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY packages/connector-sdk/ /opt/kortix/packages/connector-sdk/
 RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \

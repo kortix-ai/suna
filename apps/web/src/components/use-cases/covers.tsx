@@ -81,7 +81,7 @@ function CoverBackdrop({ children }: { children: ReactNode }) {
 }
 
 const TILE =
-  'smooth-shadow-ring-md smooth-ring-black/5 relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-black/10 dark:smooth-ring-white/10 sm:size-14';
+  'relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-md shadow-black/10 ring-1 ring-black/5 dark:ring-white/10 sm:size-14';
 const ROW =
   'absolute inset-0 flex items-center justify-center gap-3 transition-transform duration-500 group-hover:scale-[1.03] sm:gap-4';
 const CONNECTOR =
@@ -165,7 +165,7 @@ function FeatureCover({ children, glow }: { children: ReactNode; glow: string })
     <CoverBackdrop>
       <Glow className={glow} />
       <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
-        <div className="smooth-shadow-ring-lg smooth-ring-black/5 bg-card flex size-16 items-center justify-center rounded-2xl shadow-black/10 sm:size-20 dark:smooth-ring-white/10">
+        <div className="bg-card flex size-16 items-center justify-center rounded-2xl shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20 dark:ring-white/10">
           {children}
         </div>
       </div>
@@ -180,10 +180,10 @@ function HeroCover({ children }: { children: ReactNode }) {
       <Glow className="bg-primary/10" />
       <div className="absolute inset-0 flex items-center justify-center transition-transform duration-500 group-hover:scale-[1.03]">
         <div className="relative">
-          <div className="smooth-shadow-ring-lg smooth-ring-black/5 grid size-16 place-items-center rounded-2xl bg-white shadow-black/10 sm:size-20">
+          <div className="grid size-16 place-items-center rounded-2xl bg-white shadow-lg ring-1 shadow-black/10 ring-black/5 sm:size-20">
             {children}
           </div>
-          <div className="smooth-shadow-md absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-lg outline-[3px] outline-white">
+          <div className="absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-lg shadow-md ring-[3px] ring-white">
             <img
               src="/usecases/logos/kortix.png"
               alt="Kortix"

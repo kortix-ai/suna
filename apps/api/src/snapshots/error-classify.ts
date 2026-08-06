@@ -57,7 +57,7 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
   // Our packaging is missing an artifact the layered Dockerfile COPYs in.
   {
     category: 'runtime',
-    test: /required artifact missing|required directory missing|kortix_snapshot_.*_path|kortix-agent|kortix-entrypoint|slack-cli|connector-sdk|run `bun run build`/i,
+    test: /required artifact missing|required directory missing|kortix_snapshot_.*_path|kortix-agent|kortix-entrypoint|slack-cli|run `bun run build`/i,
   },
   // The sandbox can't call back to the API (dead tunnel / loopback KORTIX_URL).
   {

@@ -13,7 +13,7 @@ Make every computer connected over the **Agent Computer Tunnel** reachable throu
 
 Concretely, after this epic:
 
-- A single **`computer`** connector shows up in `kortix connectors ls` / the `kortix-connectors` MCP `connectors` tool / `@kortix/connector-sdk` whenever the account has at least one connected machine.
+- A single **`computer`** connector shows up in `kortix connectors ls` / the `kortix-connectors` MCP `connectors` tool / `@kortix/sdk` whenever the account has at least one connected machine.
 - That one connector fronts **all** the account's machines. The agent reaches a machine with `connector call computer fs.read { computer: "laptop", path: "…" }` (and `discover` / `describe` work over its actions) — **the same four verbs it uses for Slack, Gmail, Stripe, everything.**
 - The Connector becomes the **central front door to every computer**: list (`list_computers`), discover, describe, call, share, policy — one surface, one thing to govern.
 - The tunnel's existing security core (per-capability permissions, scoped grants, the human approval flow, the audit log, the WS relay) stays **100% intact underneath** — the Connector is an additional front door, not a replacement.
@@ -77,7 +77,7 @@ agent (sandbox)                          API process
 ## 4. Decisions (locked)
 
 - **D1 — Cardinality: one `computer` connector, many machines.** A single connector per project fronts all the account's machines; the machine is an action argument (`computer`), with `list_computers` for discovery and default-to-sole-online for the common single-machine case. Rationale: machines are account-scoped while connectors are project-scoped, so one connector (exists iff the account has ≥1 machine) is far simpler than synthesizing/fanning N per-machine rows; you govern & share *one* thing ("central front door"); per-machine security is unchanged (the tunnel permission layer gates each machine individually). *(Chosen over per-machine connectors.)*
-- **D2 — In-sandbox: a `computer` skill that drives the Connector (CLI/SDK/MCP).** Keep an ergonomic `computer` skill, but it calls the Connector (`@kortix/connector-sdk` / `kortix connectors` / the MCP tools) instead of hitting `POST /rpc` directly — one auth path, one audit trail. Update `kortix-connectors` SKILL.md to list the `computer` provider. *(Exact Slack precedent.)*
+- **D2 — In-sandbox: a `computer` skill that drives the Connector (CLI/SDK/MCP).** Keep an ergonomic `computer` skill, but it calls the Connector (`@kortix/sdk` / `kortix connectors` / the MCP tools) instead of hitting `POST /rpc` directly — one auth path, one audit trail. Update `kortix-connectors` SKILL.md to list the `computer` provider. *(Exact Slack precedent.)*
 - **D3 — Desktop catalog: curated + passthrough.** Typed actions for `fs.*`, `shell.exec`, and high-value `desktop.cua.*` (click/type/press_key/screenshot/scroll/list_apps/launch_app/…), plus a generic `desktop.cua.call` passthrough for the ~45-method long tail. `describe` stays useful without hand-maintaining every schema.
 - **D4 — Naming & gating (UPDATED).** Provider/enum value = **`computer`**; connector slug = `computer`; management CLI stays `kortix tunnel`. **Synth is NOT gated by the `agent_tunnel` experimental flag** — the `computer` connector is a *regular* connector that materializes whenever the account has a connected machine, exactly like the Slack channel connector. A machine can only exist when the platform tunnel service is on (`config.TUNNEL_ENABLED` gates the tunnel routes), so machine-presence already implies platform support. The `agent_tunnel` flag now gates **only** the dedicated Customize → Computers management UI (device-auth / per-machine permissions), not the connector. *(Original decision gated synth on the per-project flag; reversed so connecting a machine "just works" as a connector.)*
 - **D5 — "Connected machine" means ever-heartbeat, not row-exists (fix).** `synthesizeComputerConnectors` gates on `tunnel_connections.last_heartbeat_at IS NOT NULL`, not merely a row existing for the account. A device-auth approval (or an abandoned/leftover pairing attempt) creates the row up front with `status: 'offline'` and no heartbeat; the CLI then dials in and sets the heartbeat within seconds in the real flow, so this costs nothing there. What it fixes: a pairing that was approved and never actually connected used to sit forever and silently materialize an "active" `computer` connector across **every project in the account** — indistinguishable from a real connection in the Connectors list. Once a machine has connected at least once its connector correctly stays materialized through later offline periods (closed laptop) — only a connection that never came online even once is excluded.
@@ -175,7 +175,7 @@ It does rate-limit → resolve capability → `checkPermission` → (deny) creat
 
 All **free** — `provider` is an opaque string downstream:
 - `kortix connectors ls` lists the `computer` connector; `kortix connectors call computer list_computers` then `... call computer fs.read '{"computer":"laptop","path":"…"}'` work locally and in-sandbox; `discover`/`show` work over its actions.
-- `@kortix/connector-sdk` sees it like any connector (this is also how we e2e-test, per the Slack precedent).
+- `@kortix/sdk` sees it like any connector (this is also how we e2e-test, per the Slack precedent).
 - `kortix-connectors` MCP server (`apps/cli/src/connectors/mcp.ts`) exposes it via the standard four tools.
 - `kortix tunnel ls|show|rpc|rm` is unchanged (management/diagnostics).
 
@@ -223,7 +223,7 @@ All **free** — `provider` is an opaque string downstream:
 
 - **Unit** (`bun test`, no network): catalog (selector present, risk, `tunnel` bindings, passthrough); `parseProviderFields` rejects explicit `computer` declaration; gateway `handleCall` for computer with a **mock `executeComputerCall`** (ok / permission_required→pending_approval / no_machine / offline); `synthesizeComputerConnectors` (flag gating, 0/1/N tunnels → 0/1/1 specs); selector resolution incl. cross-account rejection.
 - **Shared-core regression:** existing `/rpc` route tests stay green after the extraction (contract unchanged).
-- **e2e via the SDK** (Slack precedent): live local stack + a real connected machine — `connectors` shows `computer`; `call computer.list_computers` returns it; `call computer.fs.read` round-trips; a no-grant call → `pending_approval`; approve in Computers; retry succeeds; offline machine → clean error. Drive through `@kortix/connector-sdk`.
+- **e2e via the SDK** (Slack precedent): live local stack + a real connected machine — `connectors` shows `computer`; `call computer.list_computers` returns it; `call computer.fs.read` round-trips; a no-grant call → `pending_approval`; approve in Computers; retry succeeds; offline machine → clean error. Drive through `@kortix/sdk`.
 - **ke2e:** extend only if a route contract changes (it shouldn't — only enum values).
 
 ---

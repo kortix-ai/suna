@@ -96,7 +96,7 @@ export function ScrollCtaPill(): ReactNode {
       )}
       aria-hidden={!visible}
     >
-      <div className="bg-popover flex items-center gap-1 rounded-full p-1 shadow-sm">
+      <div className="bg-popover flex items-center gap-1 rounded-full border p-1 shadow-sm">
         <button
           type="button"
           onClick={handleCopy}

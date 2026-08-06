@@ -102,7 +102,7 @@ The problem is **not absence of testing — it is integrity of the testing that 
 | **apps/desktop** | **0** | — | — | **untested** (Tauri) |
 | **apps/sandbox** | **0** | — | no package.json | **untested** |
 | **packages/db** | **0** | — | — | **untested** |
-| **packages/connector-sdk** | **0** | — | — | **untested** |
+| **packages/sdk Connector client** | **0** | — | — | **untested** |
 
 ### 3.2 Fixtures / factories / mocks (genuine strengths)
 
@@ -123,7 +123,7 @@ Severity: **P0** = blocks an enterprise sale / silently hides failures · **P1**
 | F-3 | P0 | **~50 co-located unit tests are orphaned** — no `test` script, no runner config, no root/`turbo.json` pipeline. | web(19)/cli(6)/sandbox-agent-server(9)/mobile(9)/packages — only `apps/api` & `packages/registry` have a `test` script. | Real tests for auth, billing gates, HMAC proxy-auth, i18n, hydration safety are never executed anywhere. |
 | F-4 | P0 | **80% coverage gate is vacuous.** Vitest v8 only instruments `tests/unit` which tests *example* helpers; Bun (api/cli) is uninstrumented (JSC). | `tests/unit/vitest.config.ts`, `quality-gates.sh:41-52`; `tests/spec/end-to-end.md:452-470`. | Coverage % is a compliance theater number — it does not reflect product-code coverage. |
 | F-5 | P1 | **No lint/format gate anywhere.** No ESLint/Biome/Prettier/`.editorconfig` at root or in `tests/`; `make lint` = `pnpm -r --if-present lint \|\| true`. | root `ls`; `Makefile:40-41`. | Lint findings can never block a PR or release. Inconsistent style, undetectable dead code. |
-| F-6 | P1 | **`apps/desktop`, `apps/sandbox`, `packages/db`, `packages/connector-sdk` are entirely untested.** | per-package scan. | `packages/db` (Drizzle schema/migrations) untested is a notable data-integrity risk. |
+| F-6 | P1 | **`apps/desktop`, `apps/sandbox`, `packages/db`, and the SDK Connector client are entirely untested.** | per-package scan. | `packages/db` (Drizzle schema/migrations) untested is a notable data-integrity risk. |
 | F-7 | P1 | **`unit`/`integration`/`api`/`contract`/`mutation` layers are example-only scaffolds.** Stryker mutates only `_support`. | `tests/*/example-*`; `tests/mutation/stryker.conf.json`. | Mutation score and coverage % are vanity metrics; layers signal capability but cover ~0 product code. |
 | F-8 | P1 | **"e2e" api tests assert against a re-implemented mock app, not the real Hono app.** | `apps/api/src/__tests__/helpers.ts:29-107` reimplements health/version/404 inline; `e2e-health.test.ts` asserts on it. | False confidence — these tests pass even if production routing breaks. |
 | F-9 | P1 | **Contract testing covers only `/v1/health`.** | `tests/contract/health.consumer.pact.test.ts`. | No real provider/consumer contracts for billing, projects, IAM, etc. |
@@ -147,7 +147,7 @@ Severity: **P0** = blocks an enterprise sale / silently hides failures · **P1**
 
 | Layer | State | Gap |
 |---|---|---|
-| **Unit** | Real tests exist but ~50 orphaned (F-3) + example-only gate suite (F-4, F-7) | No enforced, product-code unit coverage. Untested: db, connector-sdk, desktop, sandbox. |
+| **Unit** | Real tests exist but ~50 orphaned (F-3) + example-only gate suite (F-4, F-7) | No enforced, product-code unit coverage. Untested: db, SDK Connector client, desktop, sandbox. |
 | **Integration** | 1 Testcontainers demonstrator | No real service-boundary tests (DB, Stripe, Supabase, daytona) under the integration label; api integration-* tests skipped by glob. |
 | **API / E2E (ke2e)** | Strong (283 flows) | Not gating in CI (F-10); coverage-baseline allowlists known-uncovered routes. |
 | **Browser E2E** | 9 real specs | Serial only (`workers:1`); golden paths gated behind env flags (may not run by default). |
@@ -222,7 +222,7 @@ Severity: **P0** = blocks an enterprise sale / silently hides failures · **P1**
 
 1. **Make existing gates real** (P0): unify a root test entrypoint, run the api Bun suite + orphaned tests in CI, replace the glob runner, switch coverage to Bun-native against product code, make `qa-pr` block on the ke2e flow suite.
 2. **Add the missing hygiene layer** (P1): ESLint/Biome flat config + Prettier + `.editorconfig` + blocking lint gate; husky/lint-staged; dependency caching.
-3. **Fill coverage gaps** (P1): real unit tests for db/connector-sdk/shared/manifest-schema; promote example layers to product-code integration/contract tests; SCIM/SSO and billing edge cases; authenticated-app a11y.
+3. **Fill coverage gaps** (P1): real unit tests for db/SDK Connector client/shared/manifest-schema; promote example layers to product-code integration/contract tests; SCIM/SSO and billing edge cases; authenticated-app a11y.
 4. **Harden** (P2): rollback-wrapped integration DB tests, consistent retry/flake policy, performance regression baseline, blocking SAST on PRs, README reconciliation.
 
 ---
@@ -240,7 +240,7 @@ See [`HANDOVER.md`](./HANDOVER.md) for full detail. Summary of what changed agai
 | F-3 ~50 orphaned tests | **Resolved** | Every package/app has a `test` script + root entrypoint + CI lane |
 | F-4 vacuous coverage gate | **Partially** | Bun-native `test:coverage` lane added; flipping the 80% gate onto it is next step (HANDOVER §9.1) |
 | F-5 no lint gate | **Partially** | `biome.json` + `.editorconfig` + focused-test guard added; full lint is an advisory ratchet |
-| F-6 untested packages | **Resolved** | db/shared/connector-sdk/manifest-schema/starter now covered (478 tests) |
+| F-6 untested packages | **Resolved** | db/shared/SDK Connector client/manifest-schema/starter now covered (478 tests) |
 | F-7 example-only scaffolds | **Open** | Promotion path documented (HANDOVER §9.2) |
 | F-8 mock-app "e2e" | **Documented** | Tech-debt; env-gated, tracked |
 | F-12 DB rollback | **Open** | Documented |

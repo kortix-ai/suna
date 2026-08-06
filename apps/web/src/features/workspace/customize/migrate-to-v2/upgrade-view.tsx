@@ -82,7 +82,7 @@ export function UpgradesViewContent({
             {upgrades.map((upgrade: ProjectUpgrade) => (
               <li
                 key={upgrade.id}
-                className="outline-kortix-base/30 bg-kortix-base/[0.06] hover:outline-kortix-base/45 hover:bg-kortix-base/[0.09] flex items-center gap-3 rounded-md px-4 py-3 outline outline-1 -outline-offset-1 transition-colors"
+                className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 hover:border-kortix-base/45 hover:bg-kortix-base/[0.09] flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors"
               >
                 <span className="bg-kortix-base/15 ring-kortix-base/25 flex size-9 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset">
                   <ArrowUpCircle className="text-kortix-base size-5" />

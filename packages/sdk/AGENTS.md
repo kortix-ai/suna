@@ -514,7 +514,8 @@ a skipped file is not a passing file.
 
 CI (`.github/workflows/package-tests.yml`) additionally runs
 `stage-npm-publish.test.mjs` and a build + stage + **dry-pack** of
-`@kortix/llm-catalog`, `@kortix/sdk`, and `@kortix/connector-sdk` on every PR.
+`@kortix/llm-catalog`, `@kortix/sdk`, and the final deprecated
+`@kortix/executor-sdk` adapter on every PR.
 That is the release gate. It catches a broken `publishConfig`; it does not catch
 a broken *install*.
 

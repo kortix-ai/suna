@@ -164,7 +164,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       >
         <SwitchPrimitive.Thumb asChild>
           <m.span
-            className="smooth-shadow-sm absolute top-0 left-0 block rounded-full bg-white"
+            className="absolute top-0 left-0 block rounded-full bg-white shadow-sm"
             initial={false}
             style={{ x: motionX }}
             animate={{

@@ -5,7 +5,7 @@
  *
  * Three faces over ONE core (see ../connector-gateway/gateway.ts):
  *   - this CLI        (`kortix connectors call …`, the agent's primary path)
- *   - the SDK         (`@kortix/connector-sdk`, durable TypeScript workflows)
+ *   - the SDK         (`@kortix/sdk`, durable TypeScript workflows)
  *   - the MCP server  (`kortix connectors mcp`, optional compatibility face)
  *
  * Thin client: it never holds a third-party credential. Every tool call goes to
@@ -16,7 +16,7 @@
  * MACHINE surface: emits JSON only (the agent parses stdout); index.ts skips the
  * host/update notices for machine-oriented connector subcommands.
  */
-import { ConnectorError } from '@kortix/connector-sdk';
+import { ApiError } from '@kortix/sdk';
 import {
   addConnector,
   callWithApprovalHandoff,
@@ -115,7 +115,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'connectors':
     case 'ls': {
       const connector = connectorClient(flags.project);
-      const connectors = await connector.connectors();
+      const connectors = await connector.catalog();
       out({
         connectors: connectors.map((c) => ({
           slug: c.slug,
@@ -131,7 +131,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'search': {
       const connector = connectorClient(flags.project);
       const q = args.join(' ') || flags.query || '';
-      const matches = await connector.discover(q, { limit: Number(flags.limit) || 20 });
+      const matches = await connector.search(q, { limit: Number(flags.limit) || 20 });
       out({ matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })) });
       break;
     }
@@ -246,7 +246,7 @@ export async function runConnector(argv: string[]): Promise<number> {
     await dispatch(command, args, flags);
     return 0;
   } catch (err) {
-    if (err instanceof ConnectorError) {
+    if (err instanceof ApiError) {
       out({ ok: false, error: err.message, code: 'CONNECTOR_ERROR' });
       return 1;
     }

@@ -22,7 +22,6 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path
  * STDOUT IS THE JSON-RPC CHANNEL — nothing else may be written there. index.ts
  * skips host/update notices for `connectors mcp`, so this stays clean.
  */
-import type { ConnectorClient } from '@kortix/connector-sdk';
 import {
   addConnector,
   callWithApprovalHandoff,
@@ -30,6 +29,7 @@ import {
   mintConnectLink,
   mintSecretLink,
   removeConnector,
+  type ConnectorClient,
 } from './gateway.ts';
 
 interface JsonRpcRequest {
@@ -421,7 +421,7 @@ function content(data: unknown) {
 async function runMetaTool(client: ConnectorClient, name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'connectors': {
-      const connectors = await client.connectors();
+      const connectors = await client.catalog();
       return {
         content: content({
           connectors: connectors.map((c) => ({
@@ -439,7 +439,7 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
     case 'discover': {
       const query = typeof args.query === 'string' ? args.query : '';
       const limit = typeof args.limit === 'number' ? args.limit : undefined;
-      const matches = await client.discover(query, limit !== undefined ? { limit } : {});
+      const matches = await client.search(query, limit !== undefined ? { limit } : {});
       return {
         content: content({
           matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })),

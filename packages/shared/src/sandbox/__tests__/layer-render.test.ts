@@ -49,7 +49,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  connectorSdkPath: 'kortix-connectors-sdk',
   opencodeConfigPath: 'kortix-opencode-config',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
   catalogPath: 'kortix-llm-catalog.json',

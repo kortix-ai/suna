@@ -20,7 +20,7 @@ provider creation.
 - A **connector call** invokes one connector tool.
 - The server component is the **connector gateway**.
 - The public command tree is `kortix connectors`.
-- The published runtime client is `@kortix/connector-sdk`.
+- The published runtime client is `@kortix/sdk`.
 - The MCP server is `kortix-connectors`.
 - The in-sandbox command token is `KORTIX_CLI_TOKEN`.
 

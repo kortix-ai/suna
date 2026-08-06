@@ -319,14 +319,13 @@ jobs:
           if-no-files-found: error
 
   # ── Publish the public SDKs to npm ──────────────────────────────────────────
-  # Three packages ship to npm on every version release, in lockstep with the
+  # Three packages ship to npm on this version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
-  #   @kortix/connector-sdk — the programmatic connector client (alongside the
-  #                           `kortix connectors` CLI + `kortix connectors mcp` server)
+  #   @kortix/executor-sdk  — one final deprecated adapter over @kortix/sdk
   #
   # Each package declares its published (dist-pointing) layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
@@ -344,7 +343,7 @@ jobs:
 
   # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
   # @kortix/llm-catalog@<version> dependency is already on the registry before the
-  # SDK (and, harmlessly, the connector SDK) publishes.
+  # SDK publishes.
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
@@ -381,22 +380,12 @@ jobs:
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-sdk:
-    name: Publish ${{ matrix.pkg }} to npm
+    name: Publish @kortix/sdk to npm
     needs: [version, publish-llm-catalog]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # @kortix/sdk needs publish-llm-catalog (above) done first so its pinned
-          # @kortix/llm-catalog@<version> dependency already resolves on npm.
-          - pkg: '@kortix/sdk'
-            dir: sdk
-          - pkg: '@kortix/connector-sdk'
-            dir: connector-sdk
     steps:
       - uses: actions/checkout@v7
 
@@ -417,13 +406,50 @@ jobs:
           npm_config_engine_strict: "false"
 
       - name: Build + publish (Trusted Publishing via OIDC; token fallback)
-        working-directory: packages/${{ matrix.dir }}
+        working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
+
+  publish-executor-sdk:
+    name: Publish and deprecate final @kortix/executor-sdk
+    needs: [version, publish-sdk]
+    if: ${{ needs.version.outputs.version == '0.12.5' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build, publish, and deprecate the compatibility adapter
+        working-directory: packages/executor-sdk
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          bash ../../scripts/publish-npm-package.sh
+          npm deprecate "@kortix/executor-sdk@${VERSION}" \
+            "Deprecated: use @kortix/sdk and kortix.project(projectId).connectors"
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
   build-desktop:

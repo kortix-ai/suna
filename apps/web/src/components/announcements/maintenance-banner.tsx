@@ -25,15 +25,15 @@ interface MaintenanceBannerProps {
 
 // Per-level styling — brand tokens only (kortix-*), mirroring the InfoBanner tone
 // scale so a system banner reads the same as every other alert in the app. The
-// card ring is tinted to the level so severity is legible before you read a word.
+// card border is tinted to the level so severity is legible before you read a word.
 const levelConfig: Record<
   Exclude<MaintenanceLevel, 'none' | 'blocking'>,
   {
     icon: typeof Info;
     /** Tinted icon-tile classes (bg + foreground). */
     tile: string;
-    /** Tone-tinted smooth shadow ring. */
-    ring: string;
+    /** Tone-tinted card border. */
+    border: string;
     dismissible: boolean;
     defaultTitle: string;
   }
@@ -41,21 +41,21 @@ const levelConfig: Record<
   info: {
     icon: Info,
     tile: 'bg-kortix-blue/10 text-kortix-blue',
-    ring: 'smooth-ring-kortix-blue/25',
+    border: 'border-kortix-blue/25',
     dismissible: true,
     defaultTitle: 'Notice',
   },
   warning: {
     icon: AlertTriangle,
     tile: 'bg-kortix-orange/10 text-kortix-orange',
-    ring: 'smooth-ring-kortix-orange/25',
+    border: 'border-kortix-orange/25',
     dismissible: true,
     defaultTitle: 'Scheduled maintenance',
   },
   critical: {
     icon: AlertCircle,
     tile: 'bg-kortix-red/10 text-kortix-red',
-    ring: 'smooth-ring-kortix-red/25',
+    border: 'border-kortix-red/25',
     dismissible: false,
     defaultTitle: 'Service disruption',
   },
@@ -175,8 +175,8 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
         >
           <div
             className={cn(
-              'bg-background relative flex items-start gap-3 rounded-[0.64rem] p-4 shadow-lg',
-              lc.ring,
+              'bg-background relative flex items-start gap-3 rounded-[0.64rem] border p-4 shadow-lg',
+              lc.border,
             )}
           >
             <span

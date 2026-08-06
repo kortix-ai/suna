@@ -3,7 +3,7 @@ import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ConnectorClient } from '@kortix/connector-sdk';
+import type { ConnectorClient } from '../connector-gateway/gateway';
 import { uploadAttachmentFiles } from '../connector-gateway/mcp';
 
 async function fixture() {

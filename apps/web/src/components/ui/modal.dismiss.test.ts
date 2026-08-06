@@ -71,24 +71,7 @@ afterAll(() => {
 /** The stub stands in for a real `Element` at runtime; TS still needs telling. */
 const asTarget = (el: StubElement): EventTarget => el as unknown as EventTarget;
 
-const { modalDismissesOnOutsideInteraction, resolveModalElevation } = await import('./modal');
-
-describe('resolveModalElevation', () => {
-  test('opaque modal variants elevate by default', () => {
-    expect(resolveModalElevation(undefined, 'default', 'bottom')).toBe('default');
-    expect(resolveModalElevation(undefined, 'base', 'left')).toBe('default');
-  });
-
-  test('transparent and fullscreen variants stay flat by default', () => {
-    expect(resolveModalElevation(undefined, 'transparent', 'bottom')).toBe('none');
-    expect(resolveModalElevation(undefined, 'base', 'fullscreen')).toBe('none');
-  });
-
-  test('an explicit elevation choice wins', () => {
-    expect(resolveModalElevation('default', 'transparent', 'fullscreen')).toBe('default');
-    expect(resolveModalElevation('none', 'default', 'bottom')).toBe('none');
-  });
-});
+const { modalDismissesOnOutsideInteraction } = await import('./modal');
 
 describe('modalDismissesOnOutsideInteraction', () => {
   test('a click on the backdrop dismisses', () => {

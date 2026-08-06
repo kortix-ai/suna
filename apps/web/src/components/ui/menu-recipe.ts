@@ -64,9 +64,9 @@ export function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string
  * They are the same object — a hairline-bordered card lifted off the canvas —
  * and they had four different descriptions of it:
  *
- *   dropdown  bg-background  radius calc(--radius+0.2rem)  shadow-md  p-1
+ *   dropdown  bg-background  radius calc(--radius+0.2rem)  shadow-lg  p-1
  *   context   bg-popover     radius --radius-md            shadow-md  p-1
- *   select    bg-background  radius calc(--radius+0.2rem)  shadow-md  p-1  + hover:text-foreground
+ *   select    bg-background  radius calc(--radius+0.2rem)  shadow-lg  p-1  + hover:text-foreground
  *   popover   bg-popover     radius --radius-lg            (none)     p-4
  *
  * `bg-popover` is the resolved answer. In light mode `--popover` and
@@ -77,8 +77,7 @@ export function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string
  * was the same colour as the page behind it.
  *
  * Popover also had no shadow at all, so it sat flat on the canvas while the
- * menus lifted. `shadow-md` includes the standard smooth hairline ring, so the
- * recipe must not add a decorative border.
+ * menus lifted. `shadow-lg` for all of them.
  *
  * Four things are deliberately absent, because each is dictated by what the
  * panel holds rather than by what it is:
@@ -100,7 +99,7 @@ export function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string
  * per-row hover the rows define themselves. Colour is a row concern.
  */
 export const FLOATING_PANEL =
-  'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 rounded-[calc(var(--radius)+0.1rem)] shadow-md ease-out';
+  'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border rounded-[calc(var(--radius)+0.1rem)] border shadow-md  ease-out';
 
 /** The floating surface holding a list of rows: dropdown, context menu, select. */
 export const MENU_PANEL = cn(FLOATING_PANEL, 'p-1');
