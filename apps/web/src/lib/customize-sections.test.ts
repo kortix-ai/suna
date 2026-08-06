@@ -21,13 +21,16 @@ describe('customize sections', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('dev');
   });
 
-  test('connectors, skills, and commands graduated out of the overlay', () => {
+  test('connectors and skills graduated out of the overlay', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('connectors');
     expect(CUSTOMIZE_SECTIONS).not.toContain('skills');
-    expect(CUSTOMIZE_SECTIONS).not.toContain('commands');
     expect(parseCustomizeSection('connectors')).toBeNull();
     expect(parseCustomizeSection('skills')).toBeNull();
-    expect(parseCustomizeSection('commands')).toBeNull();
+  });
+
+  test('commands remains in the overlay because its standalone page was removed', () => {
+    expect(CUSTOMIZE_SECTIONS).toContain('commands');
+    expect(parseCustomizeSection('commands')).toBe('commands');
   });
 
   test('parses every canonical section and rejects unknowns', () => {
@@ -50,18 +53,12 @@ describe('legacyCustomizeRedirect', () => {
   test('routes the graduated sections to their own pages', () => {
     expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
     expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-    });
   });
+
   test('commands stays in the overlay — its standalone page was removed', () => {
-    // Commands had a #6054 standalone page that was deleted, so the deep link
-    // must never bounce to /projects/<id>/commands (a dead route). It falls
-    // through to the overlay in both flag positions.
-    withCapabilityPages(true, () => {
     expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
-    });
-    withCapabilityPages(false, () => {
-      expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
   });
+
   test('leaves overlay sections alone', () => {
     expect(legacyCustomizeRedirect('p1', 'agents')).toBeNull();
     expect(legacyCustomizeRedirect('p1', null)).toBeNull();
@@ -100,12 +97,10 @@ describe('resolveCustomizeOverlayHref', () => {
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
       opensOverlay: false,
     });
-      // Commands is no longer a capability section (its standalone page was
-      // removed), so a /customize/commands deep link opens the overlay on the
-      // commands section — it must NOT navigate to a dead route.
+    // Commands is no longer a capability page. Its deep link opens the overlay.
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
       opensOverlay: true,
-        section: 'commands',
+      section: 'commands',
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/connectors')).toEqual({
       opensOverlay: false,

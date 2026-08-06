@@ -10,6 +10,7 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
@@ -376,6 +377,8 @@ function SectionContent({
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
+    case 'commands':
+      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'secrets':
