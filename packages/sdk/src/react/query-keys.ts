@@ -68,8 +68,43 @@ export const qk = {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,
 
+    /**
+     * The bare project row — `getProject`, `GET /projects/:id`, a
+     * `KortixProject`. NOT `detail(id)` below: `getProjectDetail` hits
+     * `GET /projects/:id/detail` and returns a completely different shape,
+     * `{ project, config, file_count, files, git_connection }`. An earlier
+     * draft of this migration folded the two onto one key because both
+     * requests are "about a project" — but they are different requests with
+     * different responses, so sharing a key means whichever one resolves
+     * last silently overwrites the other's shape: a `data.account_id` reader
+     * (this one) would intermittently receive the detail wrapper instead,
+     * where the same field lives at `data.project.account_id`. Keep them
+     * apart, the same way `sessions`/`session` and `policies`/
+     * `executorPolicies` below are kept apart for the identical reason.
+     */
+    summary: (id: string) => [...qk.project.scope(id), 'summary'] as const,
+
     detail: (id: string) => [...qk.project.scope(id), 'detail'] as const,
+    /**
+     * Prefix reserved for config-adjacent sub-resources that do NOT share
+     * `getProjectDetail`'s response shape (currently only `modelPicker`
+     * below). The project config DATA ITSELF — `ProjectConfigSummary`,
+     * i.e. `getProjectDetail(id).config` — is not keyed here: it rides the
+     * shared `detail(id)` entry via a `select` projection (see
+     * `use-project-config.ts`), because it IS that same response every
+     * other detail reader already caches. Keying it separately here would
+     * bring back the exact double-fetch this factory exists to remove —
+     * `useProjectConfig` used to do exactly that under a standalone
+     * `['project-config', id]` key.
+     */
     config: (id: string) => [...qk.project.scope(id), 'config'] as const,
+    /**
+     * Dead as of this migration: nothing calls `useQuery` on it. One
+     * `invalidateQueries` call fires after a routing-policy save, but no
+     * reader was ever found for it — kept as a real key (not deleted)
+     * because the invalidation site is real code that still runs today.
+     */
+    modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
@@ -127,17 +162,90 @@ export const qk = {
       [...qk.project.sessionsScope(id), sessionId] as const,
     messages: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'messages'] as const,
+    /**
+     * Orphaned pre-existing behavior, migrated verbatim rather than "fixed":
+     * three `apps/web` call sites invalidate this slot after a session
+     * restart / config reload, and one reads it with `getQueryData`, but no
+     * site anywhere `useQuery`s or `setQueryData`s it — so the read always
+     * resolves `undefined` and the three invalidations are no-ops today.
+     * Nests under `session(id, sessionId)` rather than folding onto it
+     * because `session(...)` became a REAL, live query in this same
+     * migration (`getProjectSession`); sharing that slot would make these
+     * dead invalidations start firing against real session data instead of
+     * continuing to hit nothing.
+     */
+    sessionSandbox: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'sandbox'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
+    /** One connector's config — `getConnectorConfig(id, slug)`. */
+    connectorConfig: (id: string, slug: string) =>
+      [...qk.project.connectors(id), slug] as const,
+
     access: (id: string) => [...qk.project.scope(id), 'access'] as const,
+    accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,
+    pendingInvites: (id: string) => [...qk.project.access(id), 'invites'] as const,
+    /** `listProjectGroupGrants` — `GET /group-grants`, `{ grants: ProjectGroupGrant[] }`. */
+    groupGrants: (id: string) => [...qk.project.access(id), 'group-grants'] as const,
+    /** `listProjectResourceGrants` — `GET /resource-grants`, a DIFFERENT
+     *  endpoint and shape from `groupGrants` above; do not fold together. */
+    resourceGrants: (id: string) => [...qk.project.access(id), 'grants'] as const,
+
     secrets: (id: string) => [...qk.project.scope(id), 'secrets'] as const,
+
+    /**
+     * `readProjectFile(id, path)` — a single-file source read, used by the
+     * Customize config-entity viewer. Unrelated to the much larger Git file
+     * browser under `features/project-files/` (its own local key factories,
+     * `commitKeys`/`branchKeys`/`changeRequestKeys`, rooted at the literal
+     * string `'project-files'` — never migrated onto `qk`, and never sharing
+     * this prefix).
+     */
     files: (id: string) => [...qk.project.scope(id), 'files'] as const,
+    fileSource: (id: string, path: string) => [...qk.project.files(id), path] as const,
+
     branches: (id: string) => [...qk.project.scope(id), 'branches'] as const,
+
+    /** IAM role policies — `listPolicies(accountId, { scopeId: id })`,
+     *  `{ policies: IamPolicy[] }`. NOT the same entity as
+     *  `executorPolicies` below — see that member's doc comment. */
     policies: (id: string) => [...qk.project.scope(id), 'policies'] as const,
+    /**
+     * Executor sandbox tool-execution allow/deny rules —
+     * `listProjectPolicies(id)`, `GET /executor/projects/:id/policies`,
+     * `ProjectPoliciesResponse`. A DIFFERENT endpoint and a DIFFERENT shape
+     * from `policies` above (account IAM role policies) — both used to read
+     * the identical literal `['project-policies', id]`, so whichever one's
+     * fetch resolved last silently overwrote the other's cache entry with an
+     * incompatible shape. Sibling of `policies`, not nested under it: they
+     * are unrelated domains that happen to share a name, not a parent/child
+     * pair, so invalidating one must never reach the other.
+     */
+    executorPolicies: (id: string) => [...qk.project.scope(id), 'executor-policies'] as const,
+
     sandboxes: (id: string) => [...qk.project.scope(id), 'sandboxes'] as const,
+    sandboxTemplates: (id: string) => [...qk.project.sandboxes(id), 'templates'] as const,
     snapshots: (id: string) => [...qk.project.scope(id), 'snapshots'] as const,
+
     /** Prefix for the gateway family — keys, budgets, series, logs, overview. */
     gateway: (id: string) => [...qk.project.scope(id), 'gateway'] as const,
+    gatewayOverview: (id: string, days: number) =>
+      [...qk.project.gateway(id), 'overview', days] as const,
+    gatewaySeries: (id: string, days: number) =>
+      [...qk.project.gateway(id), 'series', days] as const,
+    gatewayBreakdown: (id: string, days: number) =>
+      [...qk.project.gateway(id), 'breakdown', days] as const,
+    gatewaySessions: (id: string, days: number) =>
+      [...qk.project.gateway(id), 'sessions', days] as const,
+    gatewayErrors: (id: string, days: number) =>
+      [...qk.project.gateway(id), 'errors', days] as const,
+    /** `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered. */
+    gatewayLogs: (id: string, ok: boolean | null) =>
+      [...qk.project.gateway(id), 'logs', ok] as const,
+    gatewayLog: (id: string, logId: string | null) =>
+      [...qk.project.gateway(id), 'log', logId] as const,
+    gatewayBudgets: (id: string) => [...qk.project.gateway(id), 'budgets'] as const,
+    gatewayKeys: (id: string) => [...qk.project.gateway(id), 'keys'] as const,
   },
 } as const;
 

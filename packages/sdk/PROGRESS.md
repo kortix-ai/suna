@@ -12,6 +12,97 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `client-cache-unification` — Task 10: migrate the remaining 26 `project*` families
+
+Task 10 of `docs/superpowers/plans/2026-08-06-client-cache-unification.md`
+(`.superpowers/sdd/2026-08-06-client-cache-unification/task-10-brief.md`,
+`task-10-report.md`). The largest task in the plan: ~98 literal
+`queryKey: ['project...'` declarations across `apps/web/src`, plus their
+writes and invalidations, migrated onto `qk`.
+
+**`packages/sdk` changes** (this package's share of the task):
+
+- `query-keys.ts`: added `qk.project.summary(id)` (bare `getProject`,
+  deliberately NOT folded onto `detail(id)` — different endpoint, different
+  shape), `session`'s new `sessionSandbox(id, sessionId)` child (an orphaned
+  pre-existing invalidation slot, migrated verbatim, not fixed), `connectors`'
+  `connectorConfig(id, slug)`, `access`'s `accessRequests`/`pendingInvites`/
+  `groupGrants`/`resourceGrants` children, `files(id)` + `fileSource(id,
+  path)`, `executorPolicies(id)` (a SIBLING of `policies(id)`, not nested —
+  see finding below), `config`'s `modelPicker(id)`, `sandboxes`' `
+  sandboxTemplates(id)` child, and nine `gateway*` children
+  (`gatewayOverview`/`Series`/`Breakdown`/`Sessions`/`Errors`/`Logs`/`Log`/
+  `Budgets`/`Keys`). TDD: 6 new tests written first against the missing
+  members (RED — `TypeError: qk.project.executorPolicies is not a function`
+  etc.), then implemented (GREEN, 46 pass in `query-keys.test.ts`).
+- `query-contracts.ts`: added `FRESHNESS` entries for every new entity.
+- `use-project-config.ts`: **dedup, not just a rename.** It used to fetch
+  `getProjectDetail` under its own standalone `['project-config', id]` key —
+  flagged in the SDD ledger's Task 5 entry
+  (`.superpowers/sdd/2026-08-06-client-cache-unification/progress.md`,
+  "so it double-fetches against qk.project.detail once wired"). Now rides
+  the shared `qk.project.detail(id)` entry via a `select` projection, the
+  same entry `useProjectName`, `projectDetailQuery()`, and every Customize
+  capability page already share. This also let two `apps/web` call sites drop
+  a now-redundant explicit invalidation next to a broader `invalidateProject`
+  call that already covered it once `detail(id)` absorbed the config read.
+
+**Critical finding — a live collision, the exact class Tasks 8/9 hit:**
+`['project-policies', id]` was shared by TWO unrelated endpoints pre-migration:
+`listPolicies(accountId, { scopeId })` (account IAM role policies,
+`members-view.tsx`, 2 sites) and `listProjectPolicies(id)` (executor sandbox
+tool-execution allow/deny rules, `/executor/projects/:id/policies`,
+`policies-panel.tsx`, 1 site — rendered inside the SAME Customize surface via
+`connectors-view.tsx`). Whichever fetch resolved last silently overwrote the
+other's cache entry with an incompatible shape. Split into `qk.project.policies`
+(IAM) and `qk.project.executorPolicies` (sandbox rules) — siblings, not nested,
+so invalidating one never reaches the other. Same reasoning applied
+preemptively to `listProjectGroupGrants` vs `listProjectResourceGrants` (two
+different endpoints that were about to collide the same way once folded onto
+one family name) — split into `groupGrants`/`resourceGrants`.
+
+**`session-sandbox` (3 `apps/web` invalidation sites + 1 `getQueryData` read)
+is dead pre-existing code** — no site anywhere `useQuery`s or `setQueryData`s
+it, confirmed by grep and by git-log -S across the whole history of the read
+site. Migrated verbatim to `qk.project.sessionSandbox(id, sessionId)` rather
+than folded onto `qk.project.session(id, sessionId)`, because THIS task wires
+`session(id, sessionId)` to a REAL live query (`getProjectSession`, previously
+zero production callers per Task 9's report) — sharing the slot would make
+these dead invalidations start firing against real session data.
+
+**`apps/web`'s `use-change-requests.ts` deliberately NOT folded onto `qk`:**
+5 of its sites (`['project-files', 'change-requests'/'branches'/'commits'/
+'version-diff', id]`) are prefix invalidations into an already-correct,
+already-established local key ecosystem (`changeRequestKeys`/`branchKeys`/
+`commitKeys`, rooted at the literal `'project-files'`) that predates this
+plan and is orthogonal to it. The brief's table row for `project-files`
+assumed a bare 2-element key that does not exist at any of the 5 real sites;
+folding them onto `qk.project.files(id)` (a disjoint root) would have
+silently zeroed their invalidation reach. Wired onto the existing local
+factories instead (added a `project(id)` prefix member to `changeRequestKeys`
+and `commitKeys`, reused `branchKeys.list`), preserving identical reach.
+Full reasoning and the family→fetcher→shape table are in the SDD task-10
+report.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1628 pass`, `0 fail`, `6522 expect()` calls
+  across `125` files (up from Task 9's `1623`/`125` — the +5 delta is the new
+  `query-keys.test.ts` assertions net of one file unchanged).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `npx tsc --noEmit` — 21 error lines, byte-identical to the
+  documented baseline (zero new). `bun test` (full repo) — `4603 pass`,
+  `0 fail`, `17907 expect()` calls across `425` files. `eslint` on all 52
+  changed `apps/web` files — `0 errors`, `41` pre-existing `react-hooks/*`
+  warnings.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 2: session id vs scope literal collision, made structurally impossible
 
 Fix round 2 on Task 9, following round 1 immediately below. Round 1 gave

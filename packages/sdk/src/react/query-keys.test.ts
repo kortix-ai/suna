@@ -61,26 +61,95 @@ describe('qk.project', () => {
   test('every project-scoped key is prefixed by scope', () => {
     const scope = qk.project.scope(id);
     const scoped = [
+      qk.project.summary(id),
       qk.project.detail(id),
       qk.project.sessionsScope(id),
       qk.project.sessions(id),
       qk.project.sessions(id, 'project'),
       qk.project.session(id, 'sess_1'),
       qk.project.messages(id, 'sess_1'),
+      qk.project.sessionSandbox(id, 'sess_1'),
       qk.project.connectors(id),
+      qk.project.connectorConfig(id, 'slack'),
       qk.project.access(id),
+      qk.project.accessRequests(id),
+      qk.project.pendingInvites(id),
+      qk.project.groupGrants(id),
+      qk.project.resourceGrants(id),
       qk.project.secrets(id),
       qk.project.files(id),
+      qk.project.fileSource(id, 'AGENTS.md'),
       qk.project.branches(id),
       qk.project.policies(id),
+      qk.project.executorPolicies(id),
       qk.project.config(id),
+      qk.project.modelPicker(id),
       qk.project.sandboxes(id),
+      qk.project.sandboxTemplates(id),
       qk.project.snapshots(id),
       qk.project.gateway(id),
+      qk.project.gatewayOverview(id, 30),
+      qk.project.gatewaySeries(id, 30),
+      qk.project.gatewayBreakdown(id, 30),
+      qk.project.gatewaySessions(id, 30),
+      qk.project.gatewayErrors(id, 30),
+      qk.project.gatewayLogs(id, null),
+      qk.project.gatewayLog(id, 'log_1'),
+      qk.project.gatewayBudgets(id),
+      qk.project.gatewayKeys(id),
     ];
     for (const key of scoped) {
       expect(startsWith(key, scope)).toBe(true);
     }
+  });
+
+  // `getProject` (`/projects/:id`, a bare `KortixProject`) and `getProjectDetail`
+  // (`/projects/:id/detail`, `{ project, config, file_count, files,
+  // git_connection }`) are two DIFFERENT server requests with two DIFFERENT
+  // response shapes. Folding them onto one key means whichever fetch resolves
+  // last silently overwrites the other's shape in the cache — a reader doing
+  // `data.account_id` (the summary shape) breaks the moment a detail reader's
+  // fetch wins the race, or vice versa. `summary` and `detail` must never be
+  // the same key or a prefix of one another.
+  test('summary(id) and detail(id) are different keys, neither a prefix of the other', () => {
+    expect(qk.project.summary(id)).not.toEqual(qk.project.detail(id) as never);
+    expect(startsWith(qk.project.detail(id), qk.project.summary(id))).toBe(false);
+    expect(startsWith(qk.project.summary(id), qk.project.detail(id))).toBe(false);
+  });
+
+  // The exact bug this task found: `listPolicies(accountId, { scopeId })` (IAM
+  // role policies, `{ policies: IamPolicy[] }`) and `listProjectPolicies(id)`
+  // (executor sandbox tool-execution policies, `ProjectPoliciesResponse`) both
+  // read from the literal `['project-policies', id]` pre-migration. Two
+  // different endpoints, two different shapes, one shared key — whichever
+  // query resolved last clobbered the other's cache entry with an incompatible
+  // shape. They must never share a key again.
+  test('policies(id) (IAM) and executorPolicies(id) (sandbox tool rules) are different keys', () => {
+    expect(qk.project.policies(id)).not.toEqual(qk.project.executorPolicies(id) as never);
+  });
+
+  // `listProjectGroupGrants` (`/group-grants`, `{ grants: ProjectGroupGrant[] }`)
+  // and `listProjectResourceGrants` (`/resource-grants`,
+  // `ProjectResourceGrantsResponse`) are two different endpoints too — kept
+  // apart the same way.
+  test('groupGrants(id) and resourceGrants(id) are different keys', () => {
+    expect(qk.project.groupGrants(id)).not.toEqual(qk.project.resourceGrants(id) as never);
+  });
+
+  // `sessionSandbox` nests one segment under `session`, the same way `messages`
+  // does — sibling children distinguished by a fixed literal ('sandbox' vs
+  // 'messages'), not a caller-supplied value, so they can never collide.
+  test('sessionSandbox(id, sessionId) and messages(id, sessionId) are different keys for the same session', () => {
+    expect(qk.project.sessionSandbox(id, 'sess_1')).not.toEqual(
+      qk.project.messages(id, 'sess_1') as never,
+    );
+  });
+
+  // `gatewayLog` ('log', one entry) and `gatewayLogs` ('logs', a filtered list)
+  // sit at the same depth under `gateway(id)` but diverge at the literal
+  // 'log'/'logs' segment itself, so no logId/ok value can ever equalize them.
+  test('gatewayLog(id, logId) and gatewayLogs(id, ok) are different keys', () => {
+    expect(qk.project.gatewayLog(id, 'l1')).not.toEqual(qk.project.gatewayLogs(id, null) as never);
   });
 
   // scope() is a prefix, never a query key. If it equals a real key, then
