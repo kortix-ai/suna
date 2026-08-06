@@ -176,6 +176,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
 
+        {/* Desktop shell: this modal is `inset-0`, so its first row starts at
+            the window's top-left — under the macOS traffic lights, and under
+            the Win/Linux control cluster. The rail's "Back to workspace"
+            button landed straight on the lights.
+
+            A `.kx-titlebar-spacer` (display:none on the web, band-height and
+            draggable on desktop) drops the WHOLE modal below the band, which
+            covers the narrow-window variant too — the old guard was a
+            left-only `.kx-customize-header` indent that only ever fixed the
+            wide layout, and whose class stopped being rendered when this
+            became a two-column grid. */}
+        <div className="kx-titlebar-spacer shrink-0" />
+
         <div
           className={cn(
             'min-h-0 flex-1',
