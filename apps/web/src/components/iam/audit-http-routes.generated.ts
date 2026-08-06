@@ -200,6 +200,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|executor|projects|:projectId|connectors|:slug|name",
   "GET|v1|executor|projects|:projectId|connectors|:slug|policies",
   "PUT|v1|executor|projects|:projectId|connectors|:slug|policies",
+  "PUT|v1|executor|projects|:projectId|connectors|:slug|secret-binding",
   "PUT|v1|executor|projects|:projectId|connectors|:slug|sensitive",
   "POST|v1|executor|projects|:projectId|connectors|auth-discovery",
   "POST|v1|executor|projects|:projectId|connectors|sync",

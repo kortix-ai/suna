@@ -61,6 +61,10 @@ describe('audit HTTP route registry', () => {
     expect(
       describeAuditAction(`PUT /v1/projects/${UID}/secrets/ANTHROPIC_API_KEY/strategy`).title,
     ).toBe('Updated secret delivery strategy');
+    expect(
+      describeAuditAction(`PUT /v1/executor/projects/${UID}/connectors/github/secret-binding`)
+        .title,
+    ).toBe('Updated connector secret binding');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {

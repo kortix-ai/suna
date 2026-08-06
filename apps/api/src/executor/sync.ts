@@ -79,7 +79,12 @@ function connectorManifestTimeoutMs(): number {
 }
 
 const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
-  status: 'none', recommended: null, candidates: [], warnings: [], totalRequests: 0, title: null,
+  status: 'none',
+  recommended: null,
+  candidates: [],
+  warnings: [],
+  totalRequests: 0,
+  title: null,
 };
 
 export async function discoverDraftConnectorAuth(
@@ -111,7 +116,10 @@ async function discoverConnectorAuthFromSource(
     try {
       return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
     } catch (e) {
-      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+      if (
+        isRepoFileNotFoundError(e) ||
+        String((e as Error).message).startsWith('connector spec not found in repository:')
+      ) {
         return EMPTY_AUTH_DISCOVERY;
       }
       throw e;
@@ -127,39 +135,52 @@ async function discoverConnectorAuthFromSource(
         resolveWorkspace: resolvePostmanWorkspace,
       });
     } catch (e) {
-      if (isRepoFileNotFoundError(e) || String((e as Error).message).startsWith('connector spec not found in repository:')) {
+      if (
+        isRepoFileNotFoundError(e) ||
+        String((e as Error).message).startsWith('connector spec not found in repository:')
+      ) {
         return EMPTY_AUTH_DISCOVERY;
       }
       throw e;
     }
-    return mergeAuthDiscoveries(documents.map((document) =>
-      document.kind === 'openapi'
-        ? discoverOpenApiAuth(document.doc, document.source)
-        : discoverPostmanAuth(document.doc, document.source),
-    ));
+    return mergeAuthDiscoveries(
+      documents.map((document) =>
+        document.kind === 'openapi'
+          ? discoverOpenApiAuth(document.doc, document.source)
+          : discoverPostmanAuth(document.doc, document.source),
+      ),
+    );
   }
-  const endpoint = provider === 'mcp'
-    ? draft.url
-    : provider === 'graphql'
-      ? draft.endpoint
-      : provider === 'http'
-        ? draft.baseUrl
-        : null;
+  const endpoint =
+    provider === 'mcp'
+      ? draft.url
+      : provider === 'graphql'
+        ? draft.endpoint
+        : provider === 'http'
+          ? draft.baseUrl
+          : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
   assertAllowedSourceAddress(endpoint);
-  const response = await safeEgressFetch(endpoint, provider === 'mcp' || provider === 'graphql'
-    ? {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: provider === 'mcp' ? 'application/json, text/event-stream' : 'application/json',
-        },
-        body: provider === 'mcp'
-          ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
-          : JSON.stringify({ query: 'query{__typename}' }),
-      }
-    : { method: 'HEAD', headers: { Accept: 'application/json, */*' } });
-  return discoverHttpAuthChallenge(response.headers.get('www-authenticate'), `${provider} endpoint`);
+  const response = await safeEgressFetch(
+    endpoint,
+    provider === 'mcp' || provider === 'graphql'
+      ? {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: provider === 'mcp' ? 'application/json, text/event-stream' : 'application/json',
+          },
+          body:
+            provider === 'mcp'
+              ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+              : JSON.stringify({ query: 'query{__typename}' }),
+        }
+      : { method: 'HEAD', headers: { Accept: 'application/json, */*' } },
+  );
+  return discoverHttpAuthChallenge(
+    response.headers.get('www-authenticate'),
+    `${provider} endpoint`,
+  );
 }
 
 /**
@@ -375,7 +396,10 @@ export async function syncProjectConnectors(
             });
           }
         } catch (error) {
-          errors.push({ slug: sourceSpec.slug, error: `auth discovery: ${(error as Error).message}` });
+          errors.push({
+            slug: sourceSpec.slug,
+            error: `auth discovery: ${(error as Error).message}`,
+          });
         }
       }
       const ex = existingBySlug.get(spec.slug);
@@ -539,7 +563,8 @@ async function upsertConnector(
 ): Promise<void> {
   const manifestHash = manifestHashForConnector(spec);
   const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
-  // Credentials live in executor_credentials now; authSecret is legacy (kept nullable).
+  // New connector definitions never carry a secret reference. An existing
+  // authSecret is an explicit control-plane binding and must survive sync.
   const authSecret = spec.auth.secret ?? null;
   const credentialMode = spec.credentialMode;
 
@@ -549,7 +574,6 @@ async function upsertConnector(
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
-    authSecret,
     credentialMode,
     authorizationStrategy: spec.authorizationStrategy,
     manifestHash,
@@ -587,6 +611,7 @@ async function upsertConnector(
         projectId,
         slug: spec.slug,
         ...common,
+        authSecret,
         config: connectorConfig(spec, catalog?.server ?? null, catalog?.iconUrl),
       })
       .returning({ connectorId: executorConnectors.connectorId });
@@ -765,7 +790,7 @@ async function resolveGithubDefaultBranch(owner: string, repo: string): Promise<
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Kortix-Postman-Importer' },
   });
   if (!response.ok) throw new Error(`failed to inspect GitHub repository: HTTP ${response.status}`);
-  const body = await response.json() as { default_branch?: unknown };
+  const body = (await response.json()) as { default_branch?: unknown };
   if (typeof body.default_branch !== 'string' || !body.default_branch) {
     throw new Error('GitHub repository response has no default_branch');
   }
@@ -773,7 +798,10 @@ async function resolveGithubDefaultBranch(owner: string, repo: string): Promise<
 }
 
 function sourceSlug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 async function postmanApiJson(path: string, apiKey: string): Promise<any> {
@@ -786,33 +814,47 @@ async function postmanApiJson(path: string, apiKey: string): Promise<any> {
   return response.json();
 }
 
-async function resolvePostmanWorkspace(url: string, apiKey: string): Promise<PostmanSourceDocument[]> {
+async function resolvePostmanWorkspace(
+  url: string,
+  apiKey: string,
+): Promise<PostmanSourceDocument[]> {
   const parsed = new URL(url);
   const parts = parsed.pathname.split('/').filter(Boolean);
   const requestedSlug = parts[1] ?? parts[0] ?? '';
   const listed = await postmanApiJson('/workspaces?type=public', apiKey);
   const workspaces = Array.isArray(listed?.workspaces) ? listed.workspaces : [];
-  const workspace = workspaces.find((entry: any) =>
-    entry && (entry.id === requestedSlug || sourceSlug(String(entry.name ?? '')) === requestedSlug),
+  const workspace = workspaces.find(
+    (entry: any) =>
+      entry &&
+      (entry.id === requestedSlug || sourceSlug(String(entry.name ?? '')) === requestedSlug),
   );
   if (!workspace?.id) {
-    throw new Error(`POSTMAN_API_KEY cannot access public workspace "${requestedSlug}"; export a collection or use its synchronized Git repository`);
+    throw new Error(
+      `POSTMAN_API_KEY cannot access public workspace "${requestedSlug}"; export a collection or use its synchronized Git repository`,
+    );
   }
-  const detail = await postmanApiJson(`/workspaces/${encodeURIComponent(String(workspace.id))}`, apiKey);
-  const collections = Array.isArray(detail?.workspace?.collections) ? detail.workspace.collections : [];
-  const documents = await Promise.all(collections.map(async (entry: any) => {
-    const uid = String(entry?.uid ?? entry?.id ?? '');
-    if (!uid) throw new Error('Postman workspace contains a collection without an id');
-    const response = await postmanApiJson(`/collections/${encodeURIComponent(uid)}`, apiKey);
-    const doc = response?.collection;
-    if (!doc) throw new Error(`Postman API returned no collection for ${uid}`);
-    return {
-      namespace: sourceSlug(String(entry?.name ?? uid)).replace(/-/g, '_') || 'collection',
-      kind: 'postman' as const,
-      source: `postman:${uid}`,
-      doc,
-    };
-  }));
+  const detail = await postmanApiJson(
+    `/workspaces/${encodeURIComponent(String(workspace.id))}`,
+    apiKey,
+  );
+  const collections = Array.isArray(detail?.workspace?.collections)
+    ? detail.workspace.collections
+    : [];
+  const documents = await Promise.all(
+    collections.map(async (entry: any) => {
+      const uid = String(entry?.uid ?? entry?.id ?? '');
+      if (!uid) throw new Error('Postman workspace contains a collection without an id');
+      const response = await postmanApiJson(`/collections/${encodeURIComponent(uid)}`, apiKey);
+      const doc = response?.collection;
+      if (!doc) throw new Error(`Postman API returned no collection for ${uid}`);
+      return {
+        namespace: sourceSlug(String(entry?.name ?? uid)).replace(/-/g, '_') || 'collection',
+        kind: 'postman' as const,
+        source: `postman:${uid}`,
+        doc,
+      };
+    }),
+  );
   return documents.sort((a, b) => a.namespace.localeCompare(b.namespace));
 }
 
@@ -822,9 +864,10 @@ export function normalizePostmanDocuments(documents: PostmanSourceDocument[]): N
   const actions: NormalizedAction[] = [];
   const seen = new Map<string, number>();
   for (const document of documents) {
-    const normalized = document.kind === 'openapi'
-      ? normalizeOpenApi(document.doc)
-      : normalizePostmanCollection(document.doc).actions;
+    const normalized =
+      document.kind === 'openapi'
+        ? normalizeOpenApi(document.doc)
+        : normalizePostmanCollection(document.doc).actions;
     for (const action of normalized) {
       const basePath = multi ? `${document.namespace}.${action.path}` : action.path;
       const count = seen.get(basePath) ?? 0;
@@ -890,9 +933,7 @@ async function reconcileProjectPolicies(
   await db.delete(executorProjectPolicies).where(eq(executorProjectPolicies.projectId, projectId));
   const rows = toProjectPolicyRows(parsed.policies);
   if (rows.length > 0) {
-    await db
-      .insert(executorProjectPolicies)
-      .values(
+    await db.insert(executorProjectPolicies).values(
       rows.map((p) => ({
         projectId,
         match: p.match,

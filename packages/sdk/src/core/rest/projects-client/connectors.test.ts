@@ -38,6 +38,7 @@ import {
   setConnectorAuthorizationStrategy,
   setConnectorCredential,
   setConnectorCredentialMode,
+  setConnectorSecretBinding,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
@@ -237,6 +238,26 @@ test('listConnectors GETs the project connectors list', async () => {
 test('listConnectors throws on a failed response', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listConnectors('P1')).rejects.toBeTruthy();
+});
+
+test('setConnectorSecretBinding sends one explicit project secret identifier', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+
+  await setConnectorSecretBinding('P1', 'signed-api', 'SIGNING_KEY');
+
+  expect(last()).toEqual({
+    url: 'http://test.local/executor/projects/P1/connectors/signed-api/secret-binding',
+    method: 'PUT',
+    body: { secret_identifier: 'SIGNING_KEY' },
+  });
+});
+
+test('setConnectorSecretBinding clears a binding with null', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+
+  await setConnectorSecretBinding('P1', 'signed-api', null);
+
+  expect(last()?.body).toEqual({ secret_identifier: null });
 });
 
 test('listConnectors is a silent background read — a 403 never hits the global error sink', async () => {

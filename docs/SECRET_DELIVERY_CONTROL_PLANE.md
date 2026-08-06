@@ -165,15 +165,39 @@ The CLI exposes this path through:
 kortix secrets delivery API_KEY broker \
   --consumer http-broker \
   --allow-host api.example.com \
-  --method POST \
-  --path /v1/ \
-  --header Authorization \
+  --allow-method POST \
+  --allow-path '/v1/*' \
+  --inject-header Authorization \
   --template 'Bearer {{secret}}'
 
 kortix secrets call API_KEY https://api.example.com/v1/resource \
   --method POST \
-  --body '{"input":"value"}'
+  --data '{"input":"value"}'
 ```
+
+## Connector credentials
+
+A connector can use one project secret as its server-side credential. The
+secret must use `broker` strategy with the `connector` consumer. The connector
+must use project-owned authorization and must not already have a stored
+credential.
+
+Configure the policy, then bind the connector:
+
+```bash
+kortix secrets delivery API_KEY broker --consumer connector
+kortix connectors secret crm API_KEY
+```
+
+Use `kortix connectors secret crm --clear` before selecting a different secret
+or storing a connector credential. Synchronizing the connector catalog keeps
+the binding. Deleting the secret or changing its delivery policy returns `409`
+until every connector binding is removed.
+
+The web secret editor exposes the same binding as a connector checklist. It
+never reads or copies the secret value. Connector calls resolve the current
+value inside Kortix and send it only through the connector's declared
+authentication scheme.
 
 ## Product surfaces
 
@@ -193,7 +217,8 @@ The UI shows transparent network delivery as unavailable. It does not imply
 that an opaque handle provides network-boundary substitution.
 
 The CLI supports the same available consumers through `kortix secrets
-delivery`. `kortix secrets ls --json` returns the stored delivery metadata.
+delivery`. `kortix connectors secret` manages connector bindings. `kortix
+secrets ls --json` returns the stored delivery metadata.
 
 The SDK exposes:
 
@@ -263,6 +288,9 @@ without returning the new value to a client.
 - Transparent `egress` returns `409`.
 - A stale, expired, or revoked session handle returns `409`.
 - A host, method, or path mismatch returns `403`.
+- A connector binding blocks secret deletion and incompatible strategy changes
+  with `409`.
+- A connector cannot combine a bound project secret with a stored credential.
 - Invalid upstream DNS or a private target returns a broker error without a
   request.
 - Personal overrides use the shared row's delivery policy.

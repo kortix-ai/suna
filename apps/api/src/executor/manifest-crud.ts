@@ -136,10 +136,7 @@ export function mergeConnectorDraftEntry(
   if (draft.headers === undefined && previous.headers !== undefined) {
     entry.headers = previous.headers;
   }
-  if (
-    draft.authorization_strategy === undefined &&
-    previous.authorization_strategy !== undefined
-  ) {
+  if (draft.authorization_strategy === undefined && previous.authorization_strategy !== undefined) {
     entry.authorization_strategy = previous.authorization_strategy;
   }
   if (previous.enabled !== undefined) entry.enabled = previous.enabled;
@@ -302,6 +299,7 @@ export async function setConnectorCredentialShared(
     .select({
       connectorId: executorConnectors.connectorId,
       authorizationStrategy: executorConnectors.authorizationStrategy,
+      authSecret: executorConnectors.authSecret,
     })
     .from(executorConnectors)
     .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
@@ -311,6 +309,13 @@ export async function setConnectorCredentialShared(
     return {
       ok: false,
       error: 'Shared credentials require a project authorization strategy',
+      status: 409,
+    };
+  }
+  if (connector.authSecret) {
+    return {
+      ok: false,
+      error: 'Clear the project secret binding before storing a connector credential',
       status: 409,
     };
   }

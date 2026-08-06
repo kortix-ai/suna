@@ -13,6 +13,7 @@ import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -75,6 +76,8 @@ import {
   deleteProjectSecret,
   getProjectDetail,
   listProjectSecrets,
+  listConnectors,
+  setConnectorSecretBinding,
   setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
@@ -88,6 +91,8 @@ import {
 import {
   buildBrokerPolicy,
   canSaveSecretDelivery,
+  connectorBindingChanges,
+  connectorBindingOptions,
   secretDeliveryOptions,
   secretDeliveryPresentation,
 } from './secret-delivery';
@@ -136,6 +141,11 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const secretsQuery = useQuery({
     queryKey,
     queryFn: () => listProjectSecrets(projectId),
+    staleTime: 10_000,
+  });
+  const connectorsQuery = useQuery({
+    queryKey: ['project-connectors', projectId],
+    queryFn: () => listConnectors(projectId),
     staleTime: 10_000,
   });
 
@@ -311,6 +321,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 onOpenChange={setDialogOpen}
                 projectId={projectId}
                 row={dialogRow}
+                connectors={connectorsQuery.data?.connectors ?? []}
+                connectorsLoading={connectorsQuery.isLoading}
                 onSaved={refreshSecretsAndProviders}
               />
             </>
@@ -544,14 +556,19 @@ function SecretDialog({
   onOpenChange,
   projectId,
   row,
+  connectors,
+  connectorsLoading,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   row: SecretRow | null;
+  connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
+  connectorsLoading: boolean;
   onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   const isEdit = row !== null;
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
@@ -560,12 +577,16 @@ function SecretDialog({
   const [brokerConsumer, setBrokerConsumer] = useState<
     'llm_gateway' | 'connector' | 'executor' | 'http_broker'
   >(
-    row?.consumer === 'llm_gateway' ||
-      row?.consumer === 'connector' ||
-      row?.consumer === 'executor'
+    row?.consumer === 'llm_gateway' || row?.consumer === 'connector' || row?.consumer === 'executor'
       ? row.consumer
       : 'http_broker',
   );
+  const [selectedConnectorSlugs, setSelectedConnectorSlugs] = useState<string[] | null>(null);
+  const effectiveSelectedConnectorSlugs =
+    selectedConnectorSlugs ??
+    connectors
+      .filter((connector) => connector.secretIdentifier === row?.identifier)
+      .map((connector) => connector.slug);
   const currentPolicy = row?.egressPolicy;
   const currentInjection = currentPolicy?.inject;
   const [brokerHosts, setBrokerHosts] = useState(
@@ -601,6 +622,15 @@ function SecretDialog({
     mutationFn: async () => {
       const finalKey = (row?.key ?? key).trim().toUpperCase();
       const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
+      const nextConnectorSlugs =
+        strategy === 'broker' && brokerConsumer === 'connector'
+          ? effectiveSelectedConnectorSlugs
+          : [];
+      const bindingChanges = connectorBindingChanges(
+        connectors,
+        finalIdentifier,
+        nextConnectorSlugs,
+      );
       if (!SECRET_NAME_REGEX.test(finalKey)) {
         throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
       }
@@ -619,6 +649,19 @@ function SecretDialog({
       if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
         throw new Error('Complete the broker destination and credential placement.');
       }
+      if (
+        strategy === 'broker' &&
+        brokerConsumer === 'connector' &&
+        nextConnectorSlugs.length === 0
+      ) {
+        throw new Error('Select at least one connector.');
+      }
+
+      if (!(strategy === 'broker' && brokerConsumer === 'connector')) {
+        await Promise.all(
+          bindingChanges.unbind.map((slug) => setConnectorSecretBinding(projectId, slug, null)),
+        );
+      }
 
       const nextConsumer: SecretConsumer | null =
         strategy === 'runtime'
@@ -630,7 +673,7 @@ function SecretDialog({
               : brokerConsumer;
       const hasValueChange = Boolean(value.trim()) || !row?.configured;
       if (hasValueChange) {
-        await upsertProjectSecret(projectId, {
+        const result = await upsertProjectSecret(projectId, {
           name: finalKey,
           identifier: finalIdentifier,
           ...(value.trim() ? { value } : {}),
@@ -640,19 +683,40 @@ function SecretDialog({
             ? { egress_policy: brokerPolicy }
             : {}),
         });
-        return null;
+        if (strategy === 'broker' && brokerConsumer === 'connector') {
+          await Promise.all([
+            ...bindingChanges.unbind.map((slug) =>
+              setConnectorSecretBinding(projectId, slug, null),
+            ),
+            ...bindingChanges.bind.map((slug) =>
+              setConnectorSecretBinding(projectId, slug, finalIdentifier),
+            ),
+          ]);
+        }
+        return result;
       }
       if (
         strategy !== (row?.strategy ?? 'runtime') ||
         nextConsumer !== (row?.consumer ?? 'sandbox') ||
         strategy === 'broker'
       ) {
-        return setProjectSecretStrategy(projectId, finalIdentifier, strategy, {
+        const result = await setProjectSecretStrategy(projectId, finalIdentifier, strategy, {
           consumer: nextConsumer,
           ...(strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
             ? { egress_policy: brokerPolicy }
             : {}),
         });
+        if (strategy === 'broker' && brokerConsumer === 'connector') {
+          await Promise.all([
+            ...bindingChanges.unbind.map((slug) =>
+              setConnectorSecretBinding(projectId, slug, null),
+            ),
+            ...bindingChanges.bind.map((slug) =>
+              setConnectorSecretBinding(projectId, slug, finalIdentifier),
+            ),
+          ]);
+        }
+        return result;
       }
       return null;
     },
@@ -661,6 +725,7 @@ function SecretDialog({
         `Saved ${(row?.identifier ?? identifier).trim() || (row?.key ?? key).trim().toUpperCase()}`,
       );
       onSaved();
+      queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
       onOpenChange(false);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to save secret'),
@@ -682,6 +747,8 @@ function SecretDialog({
     strategy,
     strategy === 'broker' ? brokerConsumer : undefined,
   );
+  const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
+  const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
   const deliveryOptions = secretDeliveryOptions(strategy, row?.deliveryStatus ?? 'available');
   const canSave = canSaveSecretDelivery({
     isEdit,
@@ -700,6 +767,7 @@ function SecretDialog({
             ? 'network'
             : brokerConsumer,
     brokerPolicyValid: brokerPolicy !== null,
+    selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
   });
 
   return (
@@ -874,6 +942,66 @@ function SecretDialog({
                     </SelectContent>
                   </Select>
                 </Field>
+
+                {brokerConsumer === 'connector' && (
+                  <Field>
+                    <FieldLabel>Connectors</FieldLabel>
+                    {connectorsLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-12 rounded-md" />
+                        <Skeleton className="h-12 rounded-md" />
+                      </div>
+                    ) : connectorOptions.length === 0 ? (
+                      <InfoBanner tone="neutral" title="No connectors available">
+                        Add a connector that requires project-owned authentication first.
+                      </InfoBanner>
+                    ) : (
+                      <div className="bg-popover overflow-hidden rounded-md border">
+                        {connectorOptions.map((option, index) => (
+                          <label
+                            key={option.slug}
+                            className={cn(
+                              'flex min-h-12 items-center gap-3 px-3 py-2',
+                              index > 0 && 'border-t',
+                              option.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                            )}
+                          >
+                            <Checkbox
+                              checked={effectiveSelectedConnectorSlugs.includes(option.slug)}
+                              disabled={option.disabled || save.isPending}
+                              onCheckedChange={(checked) => {
+                                setSelectedConnectorSlugs((current) =>
+                                  checked
+                                    ? [
+                                        ...new Set([
+                                          ...(current ?? effectiveSelectedConnectorSlugs),
+                                          option.slug,
+                                        ]),
+                                      ]
+                                    : (current ?? effectiveSelectedConnectorSlugs).filter(
+                                        (slug) => slug !== option.slug,
+                                      ),
+                                );
+                              }}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {option.name}
+                              </span>
+                              <span className="text-muted-foreground block text-xs text-pretty">
+                                {option.description}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <FieldDescription>
+                      Selected connectors resolve this secret on the server. The sandbox receives no
+                      value.
+                    </FieldDescription>
+                  </Field>
+                )}
 
                 {brokerConsumer === 'http_broker' && (
                   <>

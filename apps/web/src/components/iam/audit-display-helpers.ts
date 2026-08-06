@@ -125,6 +125,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/executor/call': 'Ran connector action',
   'POST /v1/executor/projects/:projectId/call': 'Ran project connector action',
   'GET /v1/executor/projects/:projectId/catalog': 'Viewed connector catalog',
+  'PUT /v1/executor/projects/:projectId/connectors/:slug/secret-binding':
+    'Updated connector secret binding',
   'POST /v1/router/web-search': 'Searched the web',
   'POST /v1/router/image-search': 'Searched images',
   'POST /v1/router/chat/completions': 'Generated chat completion',

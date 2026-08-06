@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import { executorConnectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
 
@@ -25,6 +25,7 @@ const updates: Array<Record<string, unknown>> = [];
 const handleUpdates: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 const propagations: Array<{ projectId: string; options: unknown }> = [];
+const boundConnectorSlugs: string[] = [];
 
 function secretRow(overrides: Record<string, unknown> = {}) {
   const now = new Date('2026-08-03T10:00:00.000Z');
@@ -80,6 +81,9 @@ function queryResult(fields: Record<string, unknown> | undefined) {
 const databaseMock = {
   select: (fields?: Record<string, unknown>) => ({
     from: (table: unknown) => {
+      if (table === executorConnectors) {
+        return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
+      }
       if (table !== projectSecrets) throw new Error('unexpected table');
       return { where: () => queryResult(fields) };
     },
@@ -201,6 +205,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     handleUpdates.length = 0;
     audits.length = 0;
     propagations.length = 0;
+    boundConnectorSlugs.length = 0;
   });
 
   test('changes runtime to denied and records metadata-only audit data', async () => {
@@ -360,6 +365,28 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
       consumer: 'connector',
       egressPolicy: null,
     });
+  });
+
+  test('rejects leaving connector delivery while a connector is bound', async () => {
+    row = secretRow({ strategy: 'broker', consumer: 'connector' });
+    boundConnectorSlugs.push('binding-postman-echo');
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'denied' }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Remove connector bindings before changing this secret delivery policy',
+      code: 'secret_connector_binding_exists',
+      connectors: ['binding-postman-echo'],
+    });
+    expect(updates).toHaveLength(0);
   });
 
   test('configures an automation consumer without a network policy', async () => {
@@ -528,6 +555,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     handleUpdates.length = 0;
     audits.length = 0;
     propagations.length = 0;
+    boundConnectorSlugs.length = 0;
   });
 
   test('records a metadata-only create event and marks the value rotated', async () => {
@@ -807,6 +835,30 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
     );
 
     expect(response.status).toBe(400);
+    expect(row).not.toBeNull();
+    expect(audits).toHaveLength(0);
+  });
+
+  test('rejects deletion while a connector is bound', async () => {
+    row = secretRow({
+      identifier: 'POSTMAN_ECHO_TOKEN',
+      name: 'POSTMAN_ECHO_TOKEN',
+      strategy: 'broker',
+      consumer: 'connector',
+    });
+    boundConnectorSlugs.push('binding-postman-echo');
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/POSTMAN_ECHO_TOKEN`,
+      { method: 'DELETE' },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Remove connector bindings before deleting this secret',
+      code: 'secret_connector_binding_exists',
+      connectors: ['binding-postman-echo'],
+    });
     expect(row).not.toBeNull();
     expect(audits).toHaveLength(0);
   });

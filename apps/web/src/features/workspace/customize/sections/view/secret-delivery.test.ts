@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildBrokerPolicy,
   canSaveSecretDelivery,
+  connectorBindingChanges,
+  connectorBindingOptions,
   secretDeliveryOptions,
   secretDeliveryPresentation,
 } from './secret-delivery';
@@ -170,6 +172,94 @@ describe('canSaveSecretDelivery', () => {
         brokerPolicyValid: false,
       }),
     ).toBe(true);
+  });
+
+  test('requires at least one connector for connector delivery', () => {
+    expect(
+      canSaveSecretDelivery({
+        isEdit: true,
+        key: 'API_KEY',
+        value: '',
+        requiresValue: false,
+        requiresRotation: false,
+        currentStrategy: 'runtime',
+        nextStrategy: 'broker',
+        nextConsumer: 'connector',
+        brokerPolicyValid: false,
+        selectedConnectorCount: 0,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('connector secret bindings', () => {
+  const connectors = [
+    {
+      slug: 'available',
+      name: 'Available API',
+      provider: 'openapi' as const,
+      status: 'needs_auth' as const,
+      credentialMode: 'shared' as const,
+      authorizationStrategy: 'project' as const,
+      requestAuthType: 'bearer' as const,
+      sensitive: false,
+      actions: [],
+      authSecret: 'credential',
+      secretIdentifier: null,
+      credentialSource: 'none' as const,
+      secretSet: false,
+    },
+    {
+      slug: 'stored',
+      name: 'Stored API',
+      provider: 'openapi' as const,
+      status: 'active' as const,
+      credentialMode: 'shared' as const,
+      authorizationStrategy: 'project' as const,
+      requestAuthType: 'bearer' as const,
+      sensitive: false,
+      actions: [],
+      authSecret: 'credential',
+      secretIdentifier: null,
+      credentialSource: 'stored' as const,
+      secretSet: true,
+    },
+    {
+      slug: 'bound',
+      name: 'Bound API',
+      provider: 'http' as const,
+      status: 'active' as const,
+      credentialMode: 'shared' as const,
+      authorizationStrategy: 'project' as const,
+      requestAuthType: 'api_key' as const,
+      sensitive: false,
+      actions: [],
+      authSecret: 'credential',
+      secretIdentifier: 'API_KEY',
+      credentialSource: 'project_secret' as const,
+      secretSet: true,
+    },
+  ];
+
+  test('marks stored credentials unavailable and preserves the current binding', () => {
+    expect(
+      connectorBindingOptions(connectors, 'API_KEY').map(({ slug, disabled, selected }) => ({
+        slug,
+        disabled,
+        selected,
+      })),
+    ).toEqual([
+      { slug: 'available', disabled: false, selected: false },
+      { slug: 'stored', disabled: true, selected: false },
+      { slug: 'bound', disabled: false, selected: true },
+    ]);
+  });
+
+  test('computes only the changed connector bindings', () => {
+    expect(connectorBindingChanges(connectors, 'API_KEY', ['available'])).toEqual({
+      bind: ['available'],
+      unbind: ['bound'],
+    });
   });
 });
 

@@ -2,7 +2,7 @@
  * Connectors (executor) — catalog, project connector admin, policies,
  * credentials, call gateway. Connectors are project-wide visible (no
  * per-connector sharing/agent-scope — retired 2026-07-06, see
- * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-14).
+ * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-19).
  */
 import { flow } from '../core/flow';
 
@@ -40,6 +40,47 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .get('/v1/executor/projects/:projectId/connectors', { params: { projectId: p.id } });
+      r.status(403);
+    });
+  },
+);
+
+flow(
+  'CONN-19',
+  {
+    domain: 'connectors',
+    routes: ['PUT /v1/executor/projects/:projectId/connectors/:slug/secret-binding'],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step('malformed identifier is rejected before connector lookup', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/executor/projects/:projectId/connectors/:slug/secret-binding',
+          { secret_identifier: 'contains whitespace' },
+          { params: { projectId: p.id, slug: 'missing' } },
+        );
+      r.status(400);
+    });
+    await ctx.step('unknown connector is not found', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/executor/projects/:projectId/connectors/:slug/secret-binding',
+          { secret_identifier: 'API_KEY' },
+          { params: { projectId: p.id, slug: 'missing' } },
+        );
+      r.status(404);
+    });
+    await ctx.step('NONMEMBER is rejected', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/executor/projects/:projectId/connectors/:slug/secret-binding',
+          { secret_identifier: null },
+          { params: { projectId: p.id, slug: 'missing' } },
+        );
       r.status(403);
     });
   },
@@ -615,17 +656,15 @@ flow(
       // Connectors default to the 'project' authorization strategy (#74a804d14);
       // any other owner_type on this route now 409s with
       // CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH.
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/connector-profiles',
-          {
-            connector_alias: slug,
-            owner_type: 'project',
-            label: 'KE2E connection',
-          },
-          { params: { projectId: p.id } },
-        );
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connector-profiles',
+        {
+          connector_alias: slug,
+          owner_type: 'project',
+          label: 'KE2E connection',
+        },
+        { params: { projectId: p.id } },
+      );
       r.status(201)
         .body()
         .has('$.connector_alias', slug)
@@ -656,7 +695,12 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           '/v1/executor/projects/:projectId/connectors',
-          { slug: userSlug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
+          {
+            slug: userSlug,
+            provider: 'mcp',
+            url: 'https://ke2e.kortix.test/mcp',
+            auth: { type: 'none' },
+          },
           { params: { projectId: p.id } },
         );
       seeded.status(200).body().has('$.ok', true);
@@ -810,11 +854,13 @@ flow(
       { params: { projectId: p.id } },
     );
     connector.status(200);
-    const defaultProfile = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
-      {},
-      { params: { projectId: p.id, slug } },
-    );
+    const defaultProfile = await ctx.client
+      .as(ctx.P.OWNER)
+      .post(
+        '/v1/projects/:projectId/connectors/:slug/oauth2/profile',
+        {},
+        { params: { projectId: p.id, slug } },
+      );
     defaultProfile.status(200).body().exists('$.profile_id');
     // 'project' owner_type: connectors default to the project authorization
     // strategy, and any other owner_type now 409s on this route (#74a804d14).
@@ -843,10 +889,11 @@ flow(
         { params: { projectId: p.id, profileId } },
       );
       saved.status(200).body().has('$.ok', true);
-      const read = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application',
-        { params: { projectId: p.id, profileId } },
-      );
+      const read = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/application', {
+          params: { projectId: p.id, profileId },
+        });
       read
         .status(200)
         .body()
@@ -855,35 +902,38 @@ flow(
     });
 
     await ctx.step('start Authorization Code with PKCE and read ready status', async () => {
-      const started = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
-      started
-        .status(200)
-        .body()
-        .exists('$.authorization_url')
-        .exists('$.expires_at');
-      const status = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status',
-        { params: { projectId: p.id, profileId } },
-      );
+      const started = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/authorize',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
+      started.status(200).body().exists('$.authorization_url').exists('$.expires_at');
+      const status = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connector-profiles/:profileId/oauth2/status', {
+          params: { projectId: p.id, profileId },
+        });
       status.status(200).body().has('$.status', 'ready');
     });
 
     await ctx.step('reject SSRF discovery and unavailable device endpoints', async () => {
-      const discovery = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
-        { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
-        { params: { projectId: p.id, profileId } },
-      );
+      const discovery = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/discover',
+          { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
+          { params: { projectId: p.id, profileId } },
+        );
       discovery.status(400);
-      const device = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
-        {},
-        { params: { projectId: p.id, profileId } },
-      );
+      const device = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device',
+          {},
+          { params: { projectId: p.id, profileId } },
+        );
       device.status(400);
       const poll = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId',
@@ -921,11 +971,9 @@ flow(
   },
   async (ctx) => {
     await ctx.step('GET with a bogus token → 404 (invalid/unknown link)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/setup-links/connector/:token', {
-          params: { token: 'bogus-connector-setup-link' },
-        });
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/setup-links/connector/:token', {
+        params: { token: 'bogus-connector-setup-link' },
+      });
       r.status(404).body().exists('$.error');
     });
     await ctx.step('POST .../start with a bogus token → 404 (invalid/unknown link)', async () => {

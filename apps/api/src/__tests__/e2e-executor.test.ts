@@ -48,6 +48,7 @@ interface World {
   connectorDrafts: Record<string, unknown>[];
   connectorCreateError: { error: string; status: number } | null;
   credentialInputs: unknown[];
+  secretBindingInputs: Array<{ slug: string; secretIdentifier: string | null }>;
   authorizationStrategyInputs: Array<{ slug: string; strategy: 'project' | 'user' }>;
   credentialError: Error | null;
 }
@@ -92,6 +93,7 @@ function freshWorld(): World {
     connectorDrafts: [],
     connectorCreateError: null,
     credentialInputs: [],
+    secretBindingInputs: [],
     authorizationStrategyInputs: [],
     credentialError: null,
   };
@@ -208,6 +210,17 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-reader') ?? c.req.header('x-test-admin');
     return u ? { accountId: ACCOUNT, userId: u } : null;
   },
+  resolveSecretReader: async (c) => {
+    const u = c.req.header('x-test-secret-reader');
+    return u ? { accountId: ACCOUNT, userId: u } : null;
+  },
+  resolveSecretBindingAdmin: async (c) => {
+    const connectorAdmin = c.req.header('x-test-admin');
+    const secretAdmin = c.req.header('x-test-secret-admin');
+    return connectorAdmin && secretAdmin
+      ? { accountId: ACCOUNT, userId: connectorAdmin }
+      : null;
+  },
   listConnectors: async (): Promise<AdminConnectorView[]> =>
     [...world.connectors.values()].map((conn) => ({
       slug: conn.slug,
@@ -220,6 +233,8 @@ const deps: ExecutorRouterDeps = {
       sensitive: false,
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
+      secretIdentifier: conn.hasAuth ? 'STRIPE_API_KEY' : null,
+      credentialSource: conn.hasAuth ? 'project_secret' : 'none',
       // Always the shared credential — `per_user` was removed 2026-07-05.
       secretSet: conn.hasAuth ? world.credentials.has(credKey(conn.connectorId, null)) : true,
     })),
@@ -241,6 +256,10 @@ const deps: ExecutorRouterDeps = {
   },
   setConnectorCredential: async (_projectId, _slug, input) => {
     world.credentialInputs.push(input);
+    return { ok: true };
+  },
+  setConnectorSecretBinding: async (_projectId, slug, secretIdentifier) => {
+    world.secretBindingInputs.push({ slug, secretIdentifier });
     return { ok: true };
   },
   setAuthorizationStrategy: async (_projectId, _accountId, slug, strategy) => {
@@ -407,16 +426,27 @@ describe('admin routes', () => {
     });
   });
 
-  test('list shows credential mode + secretSet', async () => {
+  test('list hides secret identifiers without project.secret.read', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (
-      await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })
+      await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-reader': ALICE } })
     ).json();
     expect(json.connectors[0]).toMatchObject({
       slug: 'stripe',
       credentialMode: 'shared',
       secretSet: true,
+      credentialSource: 'project_secret',
+      secretIdentifier: null,
     });
+  });
+
+  test('list returns secret identifiers with project.secret.read', async () => {
+    const json = await (
+      await req(`/projects/${PROJECT}/connectors`, {
+        headers: { 'x-test-reader': ALICE, 'x-test-secret-reader': ALICE },
+      })
+    ).json();
+    expect(json.connectors[0].secretIdentifier).toBe('STRIPE_API_KEY');
   });
 
   test('sync returns count', async () => {
@@ -449,6 +479,60 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     expect(world.credentialInputs).toEqual([{ oauth2 }]);
+  });
+
+  test('binds and clears one project secret without accepting a secret value', async () => {
+    const bind = await req(`/projects/${PROJECT}/connectors/stripe/secret-binding`, {
+      method: 'PUT',
+      headers: {
+        'x-test-admin': ALICE,
+        'x-test-secret-admin': ALICE,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ secret_identifier: 'STRIPE_API_KEY' }),
+    });
+    const clear = await req(`/projects/${PROJECT}/connectors/stripe/secret-binding`, {
+      method: 'PUT',
+      headers: {
+        'x-test-admin': ALICE,
+        'x-test-secret-admin': ALICE,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ secret_identifier: null }),
+    });
+
+    expect(bind.status).toBe(200);
+    expect(clear.status).toBe(200);
+    expect(world.secretBindingInputs).toEqual([
+      { slug: 'stripe', secretIdentifier: 'STRIPE_API_KEY' },
+      { slug: 'stripe', secretIdentifier: null },
+    ]);
+  });
+
+  test('rejects connector writers without project.secret.write', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/secret-binding`, {
+      method: 'PUT',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ secret_identifier: 'STRIPE_API_KEY' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(world.secretBindingInputs).toHaveLength(0);
+  });
+
+  test('rejects malformed connector secret bindings before the dependency runs', async () => {
+    const response = await req(`/projects/${PROJECT}/connectors/stripe/secret-binding`, {
+      method: 'PUT',
+      headers: {
+        'x-test-admin': ALICE,
+        'x-test-secret-admin': ALICE,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ secret_identifier: 'not allowed whitespace' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(world.secretBindingInputs).toHaveLength(0);
   });
 
   test('previews source authentication metadata', async () => {

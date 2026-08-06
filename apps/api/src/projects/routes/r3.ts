@@ -19,6 +19,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { SecretConsumerSchema, UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
 import {
+  executorConnectors,
   projectSecrets,
   projectSessionSecretHandles,
   projects,
@@ -29,6 +30,19 @@ import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+
+async function connectorSecretBindings(projectId: string, identifier: string): Promise<string[]> {
+  const rows = await db
+    .select({ slug: executorConnectors.slug })
+    .from(executorConnectors)
+    .where(
+      and(
+        eq(executorConnectors.projectId, projectId),
+        eq(executorConnectors.authSecret, identifier),
+      ),
+    );
+  return rows.map((row) => row.slug).sort();
+}
 
 projectsApp.openapi(
   createRoute({
@@ -904,6 +918,19 @@ projectsApp.openapi(
         409,
       );
     }
+    if (!(parsed.data.strategy === 'broker' && nextConsumer === 'connector')) {
+      const connectors = await connectorSecretBindings(projectId, identifier);
+      if (connectors.length > 0) {
+        return c.json(
+          {
+            error: 'Remove connector bindings before changing this secret delivery policy',
+            code: 'secret_connector_binding_exists',
+            connectors,
+          },
+          409,
+        );
+      }
+    }
 
     const nextHandlePrefix =
       nextConsumer === 'http_broker' ? (parsed.data.handle_prefix ?? null) : null;
@@ -1400,7 +1427,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -1440,6 +1467,17 @@ projectsApp.openapi(
     .limit(1);
 
   if (existing) {
+    const connectors = await connectorSecretBindings(projectId, identifier);
+    if (connectors.length > 0) {
+      return c.json(
+        {
+          error: 'Remove connector bindings before deleting this secret',
+          code: 'secret_connector_binding_exists',
+          connectors,
+        },
+        409,
+      );
+    }
     const actorType =
       c.get('authType') === 'service_account'
         ? 'service_account'

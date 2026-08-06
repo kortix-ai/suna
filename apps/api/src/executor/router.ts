@@ -27,9 +27,7 @@ import type { AgentGrant } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
-import {
-  isAllowedSourceValidationError,
-} from '../marketplace/catalog';
+import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {
@@ -90,6 +88,8 @@ const AdminConnectorSchema = CatalogConnectorSchema.extend({
   ]),
   sensitive: z.boolean(),
   authSecret: z.string().nullable(),
+  secretIdentifier: z.string().nullable(),
+  credentialSource: z.enum(['none', 'stored', 'project_secret', 'platform']),
   secretSet: z.boolean(),
 }).openapi('ExecutorAdminConnector');
 const AdminConnectorsResponseSchema = z
@@ -163,6 +163,10 @@ export interface CatalogConnector {
 
 export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
+  /** Project secret identifier used as the connector credential source. */
+  secretIdentifier: string | null;
+  /** Credential location. No credential value is returned. */
+  credentialSource: 'none' | 'stored' | 'project_secret' | 'platform';
   /** Credential storage mode. Always `shared` — `per_user` (each member's
    *  own) was removed 2026-07-05. */
   credentialMode: 'shared';
@@ -234,6 +238,11 @@ export interface ExecutorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
+  /** Read-tier authorization for exact project secret identifiers. */
+  resolveSecretReader?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
@@ -254,6 +263,17 @@ export interface ExecutorRouterDeps {
     slug: string,
     input: UpdateConnectorAuthorizationCredentialInput,
   ): Promise<CrudOutcome>;
+  /** Bind or unbind a brokered project secret as the connector credential. */
+  setConnectorSecretBinding?(
+    projectId: string,
+    slug: string,
+    secretIdentifier: string | null,
+  ): Promise<CrudOutcome>;
+  /** Secret binding requires both connector-write and secret-write. */
+  resolveSecretBindingAdmin?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   /** `userId` is accepted for back-compat but unused — a connector has exactly
    *  one (shared) credential since `per_user` was removed 2026-07-05. */
   deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
@@ -388,6 +408,12 @@ export interface ExecutorRouterDeps {
 // Path-param schema shared by all admin routes.
 const ProjectParam = z.object({ projectId: z.string() });
 const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
+const ConnectorSecretBindingInputSchema = z.object({
+  secret_identifier: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/)
+    .nullable(),
+});
 
 /**
  * Stable error code the SDK's `makeRequest` classifies as an EXPECTED
@@ -498,10 +524,7 @@ async function readAttachmentBytes(c: Context): Promise<Uint8Array> {
  * response when the error matches, otherwise `null` so the caller re-throws /
  * falls through to the generic handler for a genuine server failure.
  */
-function allowedSourceValidationResponse(
-  c: Context,
-  err: unknown,
-): Response | null {
+function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
   if (!isAllowedSourceValidationError(err)) return null;
   return c.json(
     {
@@ -572,9 +595,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
     }
     const args =
-      body?.args && typeof body.args === 'object'
-        ? (body.args as Record<string, unknown>)
-        : {};
+      body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
     // Compatibility hint from older clients. The gateway may reuse the named
     // pending row, but it returns immediately and never polls that execution.
     const approvalExecutionId =
@@ -943,7 +964,15 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ? await deps.resolveReader(c, projectId)
         : await deps.resolveAdmin(c, projectId);
       if (!reader) return c.json({ error: 'forbidden' }, 403);
-      return c.json({ connectors: await deps.listConnectors(projectId) });
+      const canReadSecretIdentifiers = deps.resolveSecretReader
+        ? Boolean(await deps.resolveSecretReader(c, projectId))
+        : false;
+      const connectors = await deps.listConnectors(projectId);
+      return c.json({
+        connectors: canReadSecretIdentifiers
+          ? connectors
+          : connectors.map((connector) => ({ ...connector, secretIdentifier: null })),
+      });
     },
   );
 
@@ -1141,6 +1170,56 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       return result.ok
         ? c.json({ ok: true })
         : c.json({ error: result.error }, result.status as 400 | 404 | 409);
+    },
+  );
+
+  // ── Admin: bind a brokered project secret to a connector ────────────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/secret-binding',
+      tags: ['executor'],
+      summary: "Bind a brokered project secret as a connector's credential",
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: {
+          content: { 'application/json': { schema: ConnectorSecretBindingInputSchema } },
+        },
+      },
+      responses: {
+        200: json(OkSchema, 'Binding updated'),
+        ...errors(400, 403, 404, 409, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = deps.resolveSecretBindingAdmin
+        ? await deps.resolveSecretBindingAdmin(c, projectId)
+        : null;
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorSecretBinding) {
+        return featureNotSupportedResponse(c, 'connector_secret_binding');
+      }
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      const parsed = ConnectorSecretBindingInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json({ error: 'secret_identifier is invalid' }, 400);
+      }
+      const result = await deps.setConnectorSecretBinding(
+        projectId,
+        slug,
+        parsed.data.secret_identifier,
+      );
+      return result.ok
+        ? c.json({ ok: true })
+        : c.json({ error: result.error }, result.status as 404 | 409);
     },
   );
 

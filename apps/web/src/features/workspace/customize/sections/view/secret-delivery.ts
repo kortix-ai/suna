@@ -1,9 +1,60 @@
 import type {
+  AdminConnector,
   SecretConsumer,
   SecretDeliveryStatus,
   SecretDeliveryStrategy,
   SecretEgressPolicy,
 } from '@kortix/sdk';
+
+export type ConnectorBindingOption = {
+  slug: string;
+  name: string;
+  selected: boolean;
+  disabled: boolean;
+  description: string;
+};
+
+export function connectorBindingOptions(
+  connectors: readonly AdminConnector[],
+  secretIdentifier: string,
+): ConnectorBindingOption[] {
+  return connectors.map((connector) => {
+    const selected = connector.secretIdentifier === secretIdentifier;
+    let description = 'Uses this secret outside the sandbox.';
+    let disabled = false;
+    if (!connector.authSecret || connector.provider === 'channel') {
+      disabled = true;
+      description = 'This connector manages authentication through its platform connection.';
+    } else if (connector.authorizationStrategy !== 'project') {
+      disabled = true;
+      description = 'Change authorization ownership to Project before binding a project secret.';
+    } else if (connector.credentialSource === 'stored') {
+      disabled = true;
+      description = 'Disconnect the stored connector credential before using a project secret.';
+    } else if (connector.secretIdentifier && !selected) {
+      disabled = true;
+      description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;
+    }
+    return { slug: connector.slug, name: connector.name, selected, disabled, description };
+  });
+}
+
+export function connectorBindingChanges(
+  connectors: readonly AdminConnector[],
+  secretIdentifier: string,
+  selectedSlugs: readonly string[],
+): { bind: string[]; unbind: string[] } {
+  const selected = new Set(selectedSlugs);
+  const currentlyBound = new Set(
+    connectors
+      .filter((connector) => connector.secretIdentifier === secretIdentifier)
+      .map((connector) => connector.slug),
+  );
+  return {
+    bind: [...selected].filter((slug) => !currentlyBound.has(slug)),
+    unbind: [...currentlyBound].filter((slug) => !selected.has(slug)),
+  };
+}
 
 export type SecretDeliveryPresentation = {
   label: string;
@@ -156,6 +207,7 @@ export function canSaveSecretDelivery(input: {
   nextStrategy: SecretDeliveryStrategy;
   nextConsumer: SecretConsumer | null;
   brokerPolicyValid: boolean;
+  selectedConnectorCount?: number;
 }): boolean {
   const hasValue = Boolean(input.value.trim());
   if (!input.isEdit && !input.key.trim()) return false;
@@ -165,6 +217,13 @@ export function canSaveSecretDelivery(input: {
     input.nextStrategy === 'broker' &&
     input.nextConsumer === 'http_broker' &&
     !input.brokerPolicyValid
+  ) {
+    return false;
+  }
+  if (
+    input.nextStrategy === 'broker' &&
+    input.nextConsumer === 'connector' &&
+    (input.selectedConnectorCount ?? 0) === 0
   ) {
     return false;
   }

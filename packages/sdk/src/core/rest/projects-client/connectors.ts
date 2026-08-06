@@ -46,6 +46,10 @@ export interface AdminConnector {
   sensitive: boolean;
   actions: ConnectorAction[];
   authSecret: string | null;
+  /** Project secret identifier bound as this connector's credential source. */
+  secretIdentifier?: string | null;
+  /** Where the connector currently obtains its server-side credential. */
+  credentialSource?: 'none' | 'stored' | 'project_secret' | 'platform';
   secretSet: boolean;
 }
 
@@ -923,6 +927,19 @@ export async function setConnectorCredential(
     await backendApi.put<{ ok: boolean }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
+    ),
+  );
+}
+
+export async function setConnectorSecretBinding(
+  projectId: string,
+  slug: string,
+  secretIdentifier: string | null,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
+      { secret_identifier: secretIdentifier },
     ),
   );
 }

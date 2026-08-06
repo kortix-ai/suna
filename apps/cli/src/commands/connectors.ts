@@ -12,6 +12,8 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
+import { setConnectorSecretBinding } from '@kortix/sdk';
+import { withKortixScope } from '../api/sdk.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/executor) ───────────────────────────────────
@@ -71,6 +73,9 @@ Subcommands:
   sync                              Reconcile the catalog from the shipped kortix.yaml.
   credential <slug> [value]         Set a connector's credential (prompts if
                                     no value; reads stdin with \`-\`).
+  secret <slug> <identifier>        Use a project secret as this connector's
+                                    server-side credential. Add --clear to
+                                    remove the binding.
   connect <slug>                    Start a Pipedream 1-click connect.
   link <slug> [--expires <min>]     Mint a DURABLE shareable Quick Connect link
                                     to hand a human (web: popup, Slack: link).
@@ -116,9 +121,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let asStdin = false;
   let json = false;
   let applyRemote = false;
+  let clearSecretBinding = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    clearSecretBinding = takeFlagBool(rest, ['--clear']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
@@ -277,6 +284,19 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential`, { value });
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
+        return 0;
+      }
+      case 'secret': {
+        const input = connectorSecretBindingInput(positional, clearSecretBinding);
+        if ('error' in input) return missing(input.error);
+        await withKortixScope(ctx.auth, () =>
+          setConnectorSecretBinding(ctx.projectId, input.slug, input.secretIdentifier),
+        );
+        process.stdout.write(
+          input.secretIdentifier
+            ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
+            : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
+        );
         return 0;
       }
       case 'connect': {
@@ -541,6 +561,19 @@ function policySetLocal(mode: string | undefined): number {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 1;
   }
+}
+
+export function connectorSecretBindingInput(
+  positional: string[],
+  clear: boolean,
+): { slug: string; secretIdentifier: string | null } | { error: string } {
+  const slug = positional[0];
+  if (!slug) return { error: 'a connector slug' };
+  const secretIdentifier = positional[1];
+  if (clear && secretIdentifier) return { error: 'Do not pass a secret identifier with --clear.' };
+  if (clear) return { slug, secretIdentifier: null };
+  if (!secretIdentifier) return { error: 'a secret identifier' };
+  return { slug, secretIdentifier };
 }
 
 function statusCell(s: AdminConnector['status']): string {

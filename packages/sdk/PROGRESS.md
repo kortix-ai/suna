@@ -12,6 +12,48 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `connector-secret-binding` completion
+
+No **Now** task claimed. This is an additive connector credential-source fix.
+
+Scope:
+
+- Add an SDK contract to bind a project secret to one project-owned connector.
+- Preserve all published names and existing connector credential methods.
+- Reject missing, incompatible, and ambiguous secret bindings at the API boundary.
+- Expose the binding in the secret editor without sending the value to the sandbox.
+
+The listed `tdd` skill was unavailable in this session. This work used the same
+RED, GREEN, and REFACTOR sequence directly.
+
+Added `setConnectorSecretBinding()` and additive connector binding metadata.
+The contract binds one broker-delivered connector secret without returning its
+value to the host or sandbox. Existing stored-credential methods remain intact.
+
+RED:
+
+- Contract tests failed before the client exposed the binding operation.
+- Public-surface tests reported the two intended additive exports.
+
+GREEN:
+
+- Focused SDK tests: `33 pass`, `0 fail`, and `121 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1546 pass`, `0 fail`, and `6323 expect()`
+  calls across `121` files after rebasing onto `origin/main`.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and built successfully.
+
+The public surface changed additively. The runtime and type snapshots add
+`setConnectorSecretBinding` at the root and deprecated projects-client
+surfaces. No export was removed or renamed. The package version was not edited.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-05 — session `provision-idempotency` completion
 
 No **Now** task claimed. The SDK half of a server-side defect fix is one
