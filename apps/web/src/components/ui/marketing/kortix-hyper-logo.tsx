@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, type MotionProps } from 'motion/react';
+import { m, type MotionProps } from 'motion/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -115,7 +115,7 @@ export function KortixHyperLogo({
   const solidOpacity = progress <= 0.6 ? 0 : (progress - 0.6) / 0.4;
 
   return (
-    <motion.svg
+    <m.svg
       ref={svgRef}
       width={size}
       height={size}
@@ -157,6 +157,6 @@ export function KortixHyperLogo({
           );
         })}
       </g>
-    </motion.svg>
+    </m.svg>
   );
 }

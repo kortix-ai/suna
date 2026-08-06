@@ -334,12 +334,14 @@ jobs:
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
             "kortix/kortix-api:${IMAGE_TAG}" \
-            --version "$VERSION"
+            --version "$VERSION" \
+            --database-migrated
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
             "kortix/kortix-gateway:${IMAGE_TAG}" \
             --service gateway \
-            --version "$VERSION"
+            --version "$VERSION" \
+            --database-migrated
 
       - name: Verify ECS capacity and task images
         run: |

@@ -841,7 +841,7 @@ function CustomConnectorForm({
               <BottomSheetTextInput value={endpoint} onChangeText={setEndpoint} placeholder="https://api/graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
             <FormField label="SDL spec" optional isDark={isDark}>
-              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/schema.graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/connectors/schema.graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
           </>
         )}
@@ -861,7 +861,7 @@ function CustomConnectorForm({
               <BottomSheetTextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://api.internal" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
             <FormField label="Routes spec" optional isDark={isDark}>
-              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/routes.toml" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/connectors/routes.toml" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
           </>
         )}

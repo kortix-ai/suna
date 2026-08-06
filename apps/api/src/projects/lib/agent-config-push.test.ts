@@ -21,7 +21,11 @@ let posted: Array<{ opencodeEnv?: Record<string, string | null>; refreshModels?:
 // One fake row that satisfies every select on this path — the sandbox lookup and
 // the session/project lookups `resolveSandboxEnvSnapshot` walks on its way to an
 // env snapshot. Cheaper than teaching the fake db which table it was asked for.
-const SANDBOX_ROW = { externalId: 'ext-1', config: { serviceKey: 'svc-key' } };
+const SANDBOX_ROW = {
+  sessionId: 'sess-1',
+  externalId: 'ext-1',
+  config: { serviceKey: 'svc-key' },
+};
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -32,6 +36,7 @@ const SESSION_ROW = {
   accountId: 'acct-1',
 };
 let activeSandbox: { externalId: string; config: Record<string, unknown> } | null = SANDBOX_ROW;
+let daemonProof = true;
 
 // Spread: the module also exports `agentConfigEtag`, which sandbox-env-sync now
 // imports. A partial mock silently drops it and the module fails to load.
@@ -48,9 +53,14 @@ mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: async () => (activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : []),
-        }),
+        where: () => {
+          const rows = activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : [];
+          return {
+            limit: async () => rows,
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
+          };
+        },
       }),
     }),
   },
@@ -86,10 +96,18 @@ const ORIGINAL_FETCH = globalThis.fetch;
     opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
     refreshModels: body.refreshModels as boolean | undefined,
   });
-  return Response.json({ ok: true });
+  return Response.json({
+    ok: true,
+    revision: body.revision,
+    exported: Object.keys((body.env as Record<string, unknown> | undefined) ?? {}).length,
+    managed: 1,
+    withheld: 0,
+    agent_env_written: daemonProof,
+  });
 };
 
-const { pushSessionAgentConfigToSandbox } = await import('./sandbox-env-sync');
+const { propagateProjectSecretsToActiveSandboxes, pushSessionAgentConfigToSandbox } =
+  await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -109,6 +127,51 @@ beforeEach(() => {
   compileCalls = [];
   posted = [];
   activeSandbox = SANDBOX_ROW;
+  daemonProof = true;
+});
+
+describe('propagateProjectSecretsToActiveSandboxes', () => {
+  test('reports a sandbox only after the daemon confirms revision, file write, and export count', async () => {
+    const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
+
+    expect(result).toMatchObject({
+      ok: true,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 1,
+      failed: 0,
+      exported: 1,
+      results: [{
+        session_id: 'sess-1',
+        sandbox_id: 'ext-1',
+        status: 'synced',
+        scope: 'inherit',
+        revision: expect.any(String),
+        exported: 1,
+        managed: 1,
+        withheld: 0,
+        agent_env_written: true,
+      }],
+    });
+  });
+
+  test('reports failure when the daemon does not confirm agent-env.sh write', async () => {
+    daemonProof = false;
+
+    const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
+
+    expect(result).toMatchObject({
+      ok: false,
+      synced: 0,
+      failed: 1,
+      exported: 0,
+      results: [{
+        session_id: 'sess-1',
+        status: 'failed',
+        reason: 'env sync did not confirm agent-env.sh write',
+      }],
+    });
+  });
 });
 
 describe('pushSessionAgentConfigToSandbox', () => {
@@ -167,4 +230,3 @@ describe('pushSessionAgentConfigToSandbox', () => {
     expect(posted).toEqual([]);
   });
 });
-

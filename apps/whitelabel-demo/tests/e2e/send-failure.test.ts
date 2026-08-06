@@ -74,8 +74,8 @@ describe('the overrides dialog makes new refusals reachable (F3)', () => {
       'SECRET_IDENTIFIER_NOT_FOUND',
       'SECRET_IDENTIFIER_KEY_COLLISION',
       'INVALID_SESSION_SECRETS',
-      'CONNECTOR_PROFILE_NOT_FOUND',
-      'CONNECTOR_PROFILE_INACTIVE',
+      'CONNECTOR_CONNECTION_NOT_FOUND',
+      'CONNECTOR_CONNECTION_INACTIVE',
       'origin_override_forbidden',
     ]) {
       const failure = sessionCreateFailure(apiError(code));

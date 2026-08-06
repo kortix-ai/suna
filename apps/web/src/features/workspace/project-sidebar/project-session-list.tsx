@@ -4,12 +4,18 @@ import { useTranslations } from 'next-intl';
 
 import {
   directSubsessions,
-  matchesSessionFilter,
+  isMetaCoordinatorSession,
+  matchesSourceFilters,
+  matchesStatusFilters,
+  SESSION_DISPLAY_STATUS_LABELS,
+  sessionDisplayStatus,
   sessionSource,
-  type SessionFilterValue,
+  spawnedBySessionId,
+  type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,39 +25,50 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  groupSessionsByCoordinator,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
-  sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
+import {
+  DEFAULT_SESSION_GROUP_MODE,
+  groupSessions,
+  type SessionSection,
+} from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
+import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
-  type ProjectSessionStatus,
 } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
+  CaretRightIcon,
+  DotsThreeIcon,
   EnvelopeIcon as Mail,
-  DotsThreeIcon as MoreHorizontal,
+  FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
+  ArrowElbowDownRightIcon as SpawnedBy,
   SquareIcon as Square,
   TrashIcon,
   WebhooksLogoIcon as Webhook,
@@ -60,22 +77,43 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState, type ComponentType } from 'react';
+import { useState, type ComponentType, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
-  filter?: SessionFilterValue;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
   'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
 
+/** The one `⋯` box. All three menus in this file — the `Sessions` header, every
+ *  section header, and every session row — render `Button variant="ghost"
+ *  size="icon-xs"` with THIS class, so the glyph sits on a single vertical
+ *  axis at every level of the tree.
+ *
+ *  The geometry, given every row is `px-2` inside the same column: the trigger
+ *  is flush to the right edge of that padded box, so its 24px square spans
+ *  `[W-32, W-8]` and the 16px glyph inside spans `[W-28, W-12]` — identical for
+ *  all three, at any sidebar width.
+ *
+ *  Do NOT rebuild this from `SidebarMenuButton`. That primitive's base carries
+ *  `p-2 w-full h-8 gap-2 overflow-hidden`; `size-6` only beats `w-full`/`h-8`
+ *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
+ *  overflowing an 8px content box, centered by coincidence rather than by
+ *  layout, with a different hover fill than the other two. */
+const SESSION_MENU_TRIGGER_CLASS =
+  'text-muted-foreground hover:text-sidebar-foreground shrink-0 focus:ring-0 focus-visible:ring-0';
+
+/** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
+ *  centered in an identical 32px line at all three levels. */
+const SESSION_ROW_HEIGHT_CLASS = 'h-8';
+
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
   ComponentType<{ className?: string }>
 > = {
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
@@ -100,9 +138,10 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const { holdPeek } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -134,6 +173,27 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const reviewEnabled = useReviewCenterEnabled(projectId);
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
+  // Grouping, ordering, and the two multi-select facets all live in the
+  // persisted session-filter store (keyed by project) — see SessionFilterMenu,
+  // which writes to the same store from the nested `⋯` menu.
+  const groupMode = useSessionFilterStore(
+    (s) => s.groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE,
+  );
+  const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
+  const statusFilters = useSessionFilterStore(
+    (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const sourceFilters = useSessionFilterStore(
+    (s) => s.sourceFiltersByProject[projectId] ?? EMPTY_LIST,
+  );
+  const hiddenSections = useSessionFilterStore(
+    (s) => s.hiddenSectionsByProject[projectId] ?? EMPTY_LIST,
+  );
+  const collapsedSections = useSessionFilterStore(
+    (s) => s.collapsedSectionsByProject[projectId] ?? EMPTY_LIST,
+  );
+  const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
@@ -158,10 +218,17 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
-  const sessions = sortSessionsByLastActivity(data ?? []);
-  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
-  // this list only applies the chosen filter.
-  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
+  // Unsorted on purpose: nothing here reads the order. The two consumers are
+  // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
+  // sorting twice per render bought nothing.
+  const sessions = data ?? [];
+  // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
+  // both on the Sessions header and on every section header below); this list
+  // only applies the two ANDed multi-select facets from the store.
+  const visibleSessions = sessions.filter(
+    (session) =>
+      matchesStatusFilters(session, statusFilters) && matchesSourceFilters(session, sourceFilters),
+  );
 
   const viewState = resolveSessionListViewState({
     isLoading,
@@ -170,110 +237,185 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     visibleCount: visibleSessions.length,
   });
 
-  if (viewState === 'loading') {
-    return <ProjectSessionListSkeleton />;
-  }
+  // Everything below the header — skeleton, error, empty, or the grouped list.
+  // Kept as one function so the header stays mounted across all four states
+  // instead of being re-declared at every early return.
+  function renderBody() {
+    if (viewState === 'loading') {
+      return <ProjectSessionListSkeleton />;
+    }
 
-  if (viewState === 'error') {
-    const message = error instanceof Error ? error.message : undefined;
-    return (
-      <div className="space-y-1.5 px-2 py-2">
-        <p className="text-destructive/80 text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
-          )}
-        </p>
-        {message && (
-          <p className="text-muted-foreground/70 truncate text-xs" title={message}>
-            {message}
+    if (viewState === 'error') {
+      const message = error instanceof Error ? error.message : undefined;
+      return (
+        <div className="space-y-1.5 px-2 py-2">
+          <p className="text-destructive/80 text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
+            )}
           </p>
-        )}
-        <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
+          {message && (
+            <p className="text-muted-foreground/70 truncate text-xs" title={message}>
+              {message}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      );
+    }
 
-  if (viewState === 'empty') {
-    return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
-      </div>
-    );
-  }
+    if (viewState === 'empty') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
+        </div>
+      );
+    }
 
-  if (viewState === 'no-matches') {
+    if (viewState === 'no-matches') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0',
+          )}
+        </div>
+      );
+    }
+
+    // Below the early returns: grouping is only ever read by the content state,
+    // and computing it above meant every loading/error/empty render paid for a
+    // result it threw away.
+    const grouped = groupSessions(visibleSessions, {
+      mode: groupMode,
+      order: orderMode,
+      reviewCountBySession: reviewSummary.needsYouBySession,
+      hiddenSections,
+    });
+
+    // `resolveSessionListViewState` only sees counts before filtering by
+    // `hiddenSections` — it has no way to know every section got hidden. Catch
+    // that case here instead of letting `FadedScrollArea` render nothing with
+    // no explanation.
+    if (grouped.sections.length === 0) {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+      );
+    }
+
+    // One session row plus its opencode sub-sessions. `nested` marks a row drawn
+    // under its coordinator: the indent already carries the spawn link, so the
+    // row drops its own spawned-by icon.
+    const renderSessionNode = (session: ProjectSession, nested: boolean) => {
+      const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+      const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+      const isSwitchTarget = switchingToSessionId === session.session_id;
+      const children = directSubsessions(session);
+      return (
+        <div key={session.session_id} className="space-y-px">
+          <ProjectSessionRow
+            nested={nested}
+            session={session}
+            href={href}
+            isActive={!!isActive && !activeOpenCodeSessionId}
+            isSwitching={isSwitchTarget}
+            onNavigate={(event) => {
+              if (switchingToSessionId && session.session_id === activeSessionId) {
+                event.preventDefault();
+                cancelSessionSwitch();
+                router.replace(href, { scroll: false });
+                return;
+              }
+              if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+                beginSessionSwitch(session.session_id);
+              }
+            }}
+            displayTitle={getSessionDisplayTitle(session)}
+            childCount={children.length}
+            reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+            onDelete={(id, label) => setSessionToDelete({ id, label })}
+            onShare={(s) => setSessionToShare(s)}
+            onRename={(id, name) => setSessionToRename({ id, name })}
+            onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
+            isRestarting={
+              restartMutation.isPending &&
+              restartMutation.variables?.sessionId === session.session_id
+            }
+            onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
+            isStopping={
+              stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+            }
+          />
+          {children.length > 0 && isActive && (
+            <div className="border-border ml-3.5 border-l-2 pl-2">
+              {children.map((child) => {
+                const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                return (
+                  <ProjectSubsessionRow
+                    key={child.id}
+                    title={child.title || 'Sub-session'}
+                    href={childHref}
+                    isActive={activeChild}
+                    updatedAt={child.updated_at}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     return (
-      <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
-      </div>
+      <FadedScrollArea className="h-full min-h-0 space-y-1">
+        {grouped.sections.map((section) => (
+          <SessionListSection
+            key={section.id}
+            section={section}
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewSummary.needsYouBySession}
+            showHeader={grouped.showHeaders}
+            open={!collapsedSections.includes(section.id)}
+            onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
+          >
+            {/* Two independent groupings compose here: `groupSessions` splits the
+                list into sections, then within each section
+                `groupSessionsByCoordinator` nests spawned sessions under the
+                coordinator that started them. */}
+            {groupSessionsByCoordinator(section.sessions).map((group) => (
+              <div key={group.session.session_id} className="space-y-px">
+                {renderSessionNode(group.session, false)}
+                {group.children.length > 0 && (
+                  <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                    {group.children.map((child) => renderSessionNode(child, true))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </SessionListSection>
+        ))}
+      </FadedScrollArea>
     );
   }
 
   return (
-    <>
-      <FadedScrollArea className="h-full min-h-0 space-y-px">
-        {visibleSessions.map((session) => {
-          const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-          const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          const isSwitchTarget = switchingToSessionId === session.session_id;
-          const children = directSubsessions(session);
-          return (
-            <div key={session.session_id} className="space-y-px">
-              <ProjectSessionRow
-                session={session}
-                href={href}
-                isActive={!!isActive && !activeOpenCodeSessionId}
-                isSwitching={isSwitchTarget}
-                onNavigate={(event) => {
-                  if (switchingToSessionId && session.session_id === activeSessionId) {
-                    event.preventDefault();
-                    cancelSessionSwitch();
-                    router.replace(href, { scroll: false });
-                    return;
-                  }
-                  if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
-                    beginSessionSwitch(session.session_id);
-                  }
-                }}
-                displayTitle={getSessionDisplayTitle(session)}
-                childCount={children.length}
-                reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
-                onDelete={(id, label) => setSessionToDelete({ id, label })}
-                onShare={(s) => setSessionToShare(s)}
-                onRename={(id, name) => setSessionToRename({ id, name })}
-                onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
-                isRestarting={
-                  restartMutation.isPending &&
-                  restartMutation.variables?.sessionId === session.session_id
-                }
-                onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
-                isStopping={
-                  stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-                }
-              />
-              {children.length > 0 && isActive && (
-                <div className="border-border ml-3.5 border-l-2 pl-2">
-                  {children.map((child) => {
-                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                    const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-                    return (
-                      <ProjectSubsessionRow
-                        key={child.id}
-                        title={child.title || 'Sub-session'}
-                        href={childHref}
-                        isActive={activeChild}
-                        updatedAt={child.updated_at}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </FadedScrollArea>
+    <div className="flex h-full min-h-0 flex-col space-y-2">
+      <SessionListHeader
+        projectId={projectId}
+        sessions={sessions}
+        reviewCountBySession={reviewSummary.needsYouBySession}
+        onMenuOpenChange={holdPeek}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
 
       <ShareSessionModal
         projectId={projectId}
@@ -298,7 +440,188 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
-    </>
+    </div>
+  );
+}
+
+/** The `Sessions` row above the list. Lives here — not in `project-sidebar.tsx`
+ *  — because everything it needs (the session list, the review summary, the
+ *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
+ *  a second `['project-sessions', projectId]` query and two files owning the
+ *  same horizontal padding. The label opens the full sessions page; the `⋯`
+ *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
+ *  and appears whenever there is at least one session. */
+function SessionListHeader({
+  projectId,
+  sessions,
+  reviewCountBySession,
+  onMenuOpenChange,
+}: {
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+  onMenuOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex w-full shrink-0 flex-row items-center gap-1 px-2',
+        SESSION_ROW_HEIGHT_CLASS,
+      )}
+    >
+      <Link
+        href={`/projects/${projectId}/sessions`}
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
+      >
+        <span className="truncate">Sessions</span>
+      </Link>
+      {sessions.length > 0 && (
+        <DropdownMenu onOpenChange={onMenuOpenChange}>
+          <SessionFilterMenu
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+            align="start"
+          />
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              aria-label="Session view options"
+              className={SESSION_MENU_TRIGGER_CLASS}
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+}
+
+interface SessionListSectionProps {
+  section: SessionSection;
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+  showHeader: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}
+
+/** Non-sticky by design: FadedScrollArea masks its own edges, and a sticky
+ *  header fights that mask.
+ *
+ *  When `showHeader` is false (at most one section is populated — see
+ *  `groupSessions`'s `showHeaders`), there is nothing to collapse or open a
+ *  menu on, so this renders the plain, always-expanded container it always
+ *  has. Otherwise the whole section is a `Disclosure`: `open` reflects the
+ *  store's collapsed-section list (collapsed = NOT open), so the header
+ *  toggle and the section's `Collapse all` menu action agree. */
+function SessionListSection({
+  section,
+  projectId,
+  sessions,
+  reviewCountBySession,
+  showHeader,
+  open,
+  onOpenChange,
+  children,
+}: SessionListSectionProps) {
+  if (!showHeader) {
+    return <div className="space-y-px">{children}</div>;
+  }
+
+  return (
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="group/section space-y-px"
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+    >
+      <DisclosureTrigger>
+        <div
+          className={cn(
+            'group/section-header text-muted-foreground flex items-center gap-1 px-2 text-sm font-medium',
+            SESSION_ROW_HEIGHT_CLASS,
+          )}
+        >
+          <span className="truncate">{section.label}</span>
+          <CaretRightIcon
+            aria-hidden
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+          />
+          <SessionSectionMenu
+            projectId={projectId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+          />
+        </div>
+      </DisclosureTrigger>
+      <DisclosureContent contentClassName="space-y-px">{children}</DisclosureContent>
+    </Disclosure>
+  );
+}
+
+/** The section header's own `⋯` — mounts the SAME `SessionFilterMenu` as the
+ *  Sessions header (project-sidebar.tsx), no section-scoped filter state.
+ *  Hover-revealed via `group/section-header` on the header row only (not the
+ *  whole `group/section` disclosure), so hovering a row inside the section
+ *  doesn't also fade in the header's `⋯`; stays visible while its own menu is
+ *  open via `data-[state=open]`, which Radix stamps on this trigger directly
+ *  (not the group). Both the click AND keydown (Enter/Space) handlers stop
+ *  propagation so opening the menu — by pointer or keyboard — never also
+ *  toggles the disclosure, which Radix's `pointerdown` open would otherwise
+ *  race against the header's `onKeyDown`-driven `toggle()` — same pattern as
+ *  the row-level `⋯` in `ProjectSessionRow`. The hit area extends past the
+ *  visible button with `before:absolute before:-inset-1` instead of growing
+ *  the button, so the `h-6` header never changes height. */
+function SessionSectionMenu({
+  projectId,
+  sessions,
+  reviewCountBySession,
+}: {
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          type="button"
+          aria-label="Section options"
+          className={cn(
+            SESSION_MENU_TRIGGER_CLASS,
+            'relative ml-auto opacity-0 transition-opacity duration-150',
+            'before:absolute before:-inset-1',
+            'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.stopPropagation();
+            }
+          }}
+        >
+          <DotsThreeIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <SessionFilterMenu
+        projectId={projectId}
+        sessions={sessions}
+        reviewCountBySession={reviewCountBySession}
+        align="start"
+      />
+    </DropdownMenu>
   );
 }
 
@@ -319,6 +642,9 @@ interface ProjectSessionRowProps {
   childCount?: number;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
+  /** Rendered indented under its coordinator — the indent already conveys the
+   *  spawn link, so the right-side spawned-by icon is omitted. */
+  nested?: boolean;
 }
 
 function ProjectSessionRow({
@@ -337,6 +663,7 @@ function ProjectSessionRow({
   isStopping,
   childCount = 0,
   reviewCount = 0,
+  nested = false,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -360,6 +687,8 @@ function ProjectSessionRow({
 
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+  const isMeta = isMetaCoordinatorSession(session);
+  const spawnedBy = spawnedBySessionId(session);
 
   return (
     <div className="group/session-list block">
@@ -381,7 +710,15 @@ function ProjectSessionRow({
           aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          <SessionStatusDot session={session} reviewCount={reviewCount} />
+
+          {isMeta && (
+            <Hint side="top" label="Meta coordinator">
+              <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+                <MetaFolder className="size-3.5" weight="fill" />
+              </span>
+            </Hint>
+          )}
 
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
@@ -393,6 +730,13 @@ function ProjectSessionRow({
         </Link>
 
         <div className="flex shrink-0 items-center gap-0">
+          {spawnedBy && !nested && (
+            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
           {SourceIcon && (
             <span className="flex size-4 shrink-0 items-center justify-center">
               <Hint
@@ -413,7 +757,12 @@ function ProjectSessionRow({
               <span
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
-                  'pr-1.5 transition-opacity duration-150',
+                  // pr-1 (4px), not pr-1.5: the timestamp and the `⋯` swap in
+                  // this same slot on hover, so the text's right edge must land
+                  // on the GLYPH's right edge, not the button's. The 16px glyph
+                  // is inset 4px inside its 24px box — match that, or the two
+                  // states sit 2px apart and the swap visibly shifts.
+                  'pr-1 transition-opacity duration-150',
                   'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
                 )}
                 title={`Last activity: ${activity.exact}`}
@@ -427,13 +776,14 @@ function ProjectSessionRow({
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-xs"
                   type="button"
                   aria-label={tHardcodedUi.raw(
                     'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
                   )}
                   className={cn(
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    SESSION_MENU_TRIGGER_CLASS,
+                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
                     activity
                       ? cn(
                           'pointer-events-none opacity-0',
@@ -447,10 +797,10 @@ function ProjectSessionRow({
                     e.stopPropagation();
                   }}
                 >
-                  <MoreHorizontal className="size-3.5" />
+                  <DotsThreeIcon className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuContent align="start" side="right" className="w-44">
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
@@ -536,68 +886,78 @@ function ProjectSubsessionRow({
   );
 }
 
+/** Per-display-status paint. Green appears in exactly two rows — the two that
+ *  mean live or actionable. `done` is muted on purpose: it is the change that
+ *  drains the green out of a long list and makes the rest mean something.
+ *
+ *  `glyph` is what separates the two muted states. Both used to be rings that
+ *  differed only by a dash pattern, and at 16px that is not a difference a user
+ *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
+ *  The check stays muted — a check is not a licence to go green. */
+const STATUS_DOT_STYLE: Record<
+  SessionDisplayStatus,
+  { color: string; glyph: 'ring' | 'check'; fill: boolean }
+> = {
+  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  // `starting` renders <Loading /> instead and never reads glyph/fill.
+  starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
+  running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
+  stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+  failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
+};
+
 function SessionStatusDot({
-  status,
+  session,
   reviewCount = 0,
 }: {
-  status: ProjectSessionStatus;
+  session: ProjectSession;
   reviewCount?: number;
 }) {
-  const isProvisioning = status === 'queued' || status === 'branching' || status === 'provisioning';
-  // A session with items awaiting the human reads as "finished — your turn": a
-  // solid accent ring + filled center in Kortix green, overriding the run-status
-  // dot because "awaiting you" is the more actionable signal. This is the same
-  // needs_you state the footer "Review" pill counts, so the dots always sum to it.
-  const reviewPending = reviewCount > 0;
+  const display = sessionDisplayStatus(session, reviewCount);
+  const style = STATUS_DOT_STYLE[display];
+  const label =
+    display === 'needs-you'
+      ? `${reviewCount} awaiting your review`
+      : SESSION_DISPLAY_STATUS_LABELS[display];
 
   return (
-    <Hint
-      side="right"
-      label={
-        reviewPending ? (
-          <span className="text-xs">{reviewCount} awaiting your review</span>
-        ) : (
-          <span className="text-xs capitalize">{status}</span>
-        )
-      }
-    >
+    <Hint side="right" label={<span className="text-xs">{label}</span>}>
       <div className="flex size-4 shrink-0 items-center justify-center">
-        <svg
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          strokeLinejoin="round"
-          style={{
-            color: reviewPending
-              ? 'var(--kortix-green)'
-              : isProvisioning
-                ? 'var(--kortix-yellow)'
-                : status === 'running'
-                  ? 'var(--kortix-green)'
-                  : status === 'stopped'
-                    ? 'var(--muted-foreground)'
-                    : status === 'completed'
-                      ? 'var(--kortix-green)'
-                      : 'var(--kortix-red)',
-          }}
-          className={cn(
-            'relative flex shrink-0 items-center justify-center',
-            !reviewPending && isProvisioning && 'animate-spin',
-          )}
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6.3"
-            stroke="currentColor"
-            fill="none"
-            strokeWidth="1.5"
-            strokeDasharray={reviewPending ? undefined : '3 3.4'}
-          ></circle>
-          {(reviewPending || isProvisioning || status === 'failed') && (
-            <circle cx="8" cy="8" r={reviewPending ? 3.2 : 4} fill="currentColor" />
-          )}
-        </svg>
+        {display === 'starting' ? (
+          // Loading is the only spinner in this codebase. The previous
+          // implementation spun an SVG with animate-spin, which the rule bans.
+          <Loading className="text-kortix-yellow size-3.5" />
+        ) : (
+          <svg
+            height="16"
+            width="16"
+            viewBox="0 0 16 16"
+            strokeLinejoin="round"
+            style={{ color: style.color }}
+            className="flex shrink-0 items-center justify-center"
+            aria-hidden
+          >
+            {style.glyph === 'check' ? (
+              // Same 16px box, same 1.5 stroke, same currentColor as the rings,
+              // so the dot column stays optically aligned row to row.
+              <path
+                d="M4 8.4 L6.8 11.2 L12 5.2"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            ) : (
+              <>
+                <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+                {style.fill && (
+                  <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
+                )}
+              </>
+            )}
+          </svg>
+        )}
       </div>
     </Hint>
   );

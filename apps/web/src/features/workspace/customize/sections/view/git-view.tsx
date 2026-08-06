@@ -19,7 +19,7 @@ import {
   GithubLogoIcon as Github,
   GitForkIcon as GitFork,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useState } from 'react';
 
 import CustomizeSectionWrapper from '../component/section-wrapper';
@@ -66,7 +66,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
         >
           <span className="relative inline-flex size-3.5 items-center justify-center">
             <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
+              <m.span
                 key={copied ? 'check' : 'copy'}
                 initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                 animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -79,7 +79,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
                 ) : (
                   <Copy className="size-3.5" />
                 )}
-              </motion.span>
+              </m.span>
             </AnimatePresence>
           </span>
         </Button>

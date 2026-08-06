@@ -7,7 +7,7 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Icon } from '@/features/icon/icon';
+import { Kortix } from '@/features/icon/icons/kortix';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { ProjectFilesProvider } from '@/features/project-files';
@@ -21,10 +21,10 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
-import { getProject, type ProjectCommit } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, type ProjectCommit } from '@kortix/sdk';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -106,7 +106,7 @@ function CheckpointRow({
           <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
             {byAgent ? (
               <span className="bg-foreground flex size-5 shrink-0 items-center justify-center rounded-sm border">
-                <Icon.Kortix className="text-background size-3" />
+                <Kortix className="text-background size-3" />
               </span>
             ) : (
               <UserAvatar

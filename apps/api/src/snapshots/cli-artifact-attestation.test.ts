@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  CLI_EXECUTOR_RUNTIME_FILES,
-  buildCliExecutorSourceDigest,
+  CLI_CONNECTOR_RUNTIME_FILES,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
@@ -16,19 +16,24 @@ async function createCliFixture(): Promise<{
   binaryPath: string;
   attestationPath: string;
 }> {
-  const cliRoot = await mkdtemp(join(tmpdir(), 'kortix-cli-artifact-'));
-  roots.push(cliRoot);
-  for (const relativePath of CLI_EXECUTOR_RUNTIME_FILES) {
+  const root = await mkdtemp(join(tmpdir(), 'kortix-cli-artifact-'));
+  roots.push(root);
+  const cliRoot = join(root, 'apps', 'cli');
+  const sdkRoot = join(root, 'packages', 'sdk');
+  for (const relativePath of CLI_CONNECTOR_RUNTIME_FILES) {
     const filePath =
-      relativePath === 'src/executor'
+      relativePath === 'src/connector-gateway'
         ? join(cliRoot, relativePath, 'gateway.ts')
         : join(cliRoot, relativePath);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, `${relativePath}:v1\n`);
   }
   await writeFile(join(cliRoot, 'package.json'), '{"name":"fixture"}\n');
+  await mkdir(join(sdkRoot, 'src'), { recursive: true });
+  await writeFile(join(sdkRoot, 'src', 'index.ts'), 'export const sdk = "v1";\n');
+  await writeFile(join(sdkRoot, 'package.json'), '{"name":"@kortix/sdk"}\n');
   const binaryPath = join(cliRoot, 'dist', 'kortix');
-  const attestationPath = join(cliRoot, 'dist', 'kortix-executor-runtime.attestation.json');
+  const attestationPath = join(cliRoot, 'dist', 'kortix-connectors-runtime.attestation.json');
   await mkdir(dirname(attestationPath), { recursive: true });
   await writeFile(binaryPath, 'binary:v1\n');
   return { cliRoot, binaryPath, attestationPath };
@@ -37,7 +42,7 @@ async function createCliFixture(): Promise<{
 async function writeAttestation(
   fixture: Awaited<ReturnType<typeof createCliFixture>>,
 ): Promise<string> {
-  const digest = await buildCliExecutorSourceDigest(fixture.cliRoot);
+  const digest = await buildCliConnectorSourceDigest(fixture.cliRoot);
   await writeFile(
     fixture.attestationPath,
     `${JSON.stringify({
@@ -55,17 +60,20 @@ afterEach(async () => {
 });
 
 describe('sandbox CLI artifact attestation', () => {
-  test('accepts the digest produced from the current Executor source', async () => {
+  test('accepts the digest produced from the current Connector source', async () => {
     const fixture = await createCliFixture();
     const digest = await writeAttestation(fixture);
 
     await expect(assertCliArtifactAttested(fixture)).resolves.toBe(digest);
   });
 
-  test('rejects a compiled artifact after Executor source changes', async () => {
+  test('rejects a compiled artifact after Connector source changes', async () => {
     const fixture = await createCliFixture();
     await writeAttestation(fixture);
-    await writeFile(join(fixture.cliRoot, 'src/commands/executor.ts'), 'executor:v2\n');
+    await writeFile(
+      join(fixture.cliRoot, 'src/commands/connector-gateway.ts'),
+      'connector-gateway:v2\n',
+    );
 
     await expect(assertCliArtifactAttested(fixture)).rejects.toThrow(
       'Compiled sandbox CLI is stale',

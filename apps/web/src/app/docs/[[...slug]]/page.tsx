@@ -3,10 +3,11 @@ import { socialMetadata } from '@/lib/seo/metadata';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
 import { cn } from '@/lib/utils';
-// Server components must import icons from '@/lib/icons/ssr'. The `Icon`
-// namespace in '@/features/icon/icon' lives behind a 'use client' boundary, so
-// the RSC graph only ever sees an opaque client reference — dotting into it
-// (`Icon.Github`) yields `undefined` and crashes the render.
+// Server components import icons from '@/lib/icons/ssr': phosphor's
+// context-free SSR entry defaults to weight "regular" and silently ignores
+// DEFAULT_ICON_WEIGHT (see ssr.tsx's docblock). The client-only brand marks
+// under '@/features/icon/icons/*' stay inside 'use client' surfaces like
+// docs-page-actions.tsx, which picks its own GitHub mark for its actions.
 import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight } from '@/lib/icons/ssr';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
 import { findNeighbour } from 'fumadocs-core/page-tree';

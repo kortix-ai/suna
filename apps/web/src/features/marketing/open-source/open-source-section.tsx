@@ -1,7 +1,7 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { openSource } from './content';
@@ -82,7 +82,7 @@ export function OpenSourceSection(): ReactNode {
             rel="noreferrer"
             className="text-muted-foreground hover:text-foreground duration-fast inline-flex items-center gap-2 font-mono text-[10px] tracking-widest uppercase transition-colors"
           >
-            <Icon.Github className="size-3.5" />
+            <Github className="size-3.5" />
             {openSource.repoLabel}
           </a>
         </div>

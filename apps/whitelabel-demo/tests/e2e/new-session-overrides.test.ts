@@ -8,7 +8,7 @@ import {
   uniqueEmail,
 } from './harness';
 import {
-  type MockConnectionProfile,
+  type MockConnection,
   type MockUpstream,
   createMockUpstream,
 } from './mock-upstream';
@@ -19,10 +19,10 @@ import {
 } from '../../src/lib/session-overrides';
 import type { ConnectorBindingChoice } from '../../src/server/bindable-connections';
 
-const profile = (
-  over: Partial<MockConnectionProfile>,
-): MockConnectionProfile => ({
-  profile_id: 'p1',
+const connection = (
+  over: Partial<MockConnection>,
+): MockConnection => ({
+  connection_id: 'p1',
   connector_alias: 'slack',
   owner_type: 'project',
   owner_id: null,
@@ -48,15 +48,15 @@ describe('starting a session with overrides', () => {
       name: 'Overrides',
     });
     projectId = project.project_id;
-    mock.seedConnectionProfiles(projectId, [
-      profile({
-        profile_id: 'slack_team',
+    mock.seedConnections(projectId, [
+      connection({
+        connection_id: 'slack_team',
         connector_alias: 'slack',
         is_default: true,
       }),
       // Connected, but to a person's own account — unbindable from a wrapper.
-      profile({
-        profile_id: 'gmail_mine',
+      connection({
+        connection_id: 'gmail_mine',
         connector_alias: 'gmail',
         owner_type: 'member',
         owner_id: 'u1',
@@ -121,7 +121,7 @@ describe('starting a session with overrides', () => {
 
     const body = await lastSessionCreate();
     expect(body.connector_bindings).toEqual({
-      slack: { authorization_id: 'slack_team' },
+      slack: { connection_id: 'slack_team' },
     });
     expect(body.inherit_unbound).toBe(true);
   });
@@ -150,7 +150,7 @@ describe('starting a session with overrides', () => {
 
   test('the picker offers the project connection and only the project connection', async () => {
     const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
-    expect(slack.connections.map((c) => c.authorizationId)).toEqual([
+    expect(slack.connections.map((c) => c.connectionId)).toEqual([
       'slack_team',
     ]);
   });

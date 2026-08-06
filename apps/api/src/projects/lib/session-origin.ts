@@ -35,7 +35,7 @@ export type SessionOverrideField =
  *     system regardless of which token drove it.
  *  2. An IN-SESSION token — one operating from inside a running session, i.e.
  *     bound to a session or carrying an agent grant (`inSession`) — is always
- *     `user`. This is the SECURITY-CRITICAL exclusion: the executor PAT
+ *     `user`. This is the SECURITY-CRITICAL exclusion: the connector PAT
  *     injected into every sandbox (KORTIX_CLI_TOKEN, minted with
  *     sessionId=sandboxId; its agent grant is NULL for a v1/default agent or an
  *     ungoverned project) must never resolve `backend`.
@@ -57,7 +57,7 @@ export function resolveSessionOrigin(input: {
   apiKeyType?: string | null;
   /** The token operates from inside a running session (session-bound OR
    *  agent-scoped). Such a token is never a customer backend — see the
-   *  executor-PAT exclusion above. */
+   *  connector-PAT exclusion above. */
   inSession?: boolean | null;
   source?: string | null;
 }): SessionOrigin {

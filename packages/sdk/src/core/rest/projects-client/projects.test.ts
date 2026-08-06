@@ -432,6 +432,45 @@ test('icon_glyph is sent on provision', async () => {
   expect(sentBody).toMatchObject({ icon_glyph: { name: 'Star', color: 'red' } });
 });
 
+test('idempotency_key is sent on provision', async () => {
+  // POST /projects/provision mints a brand-new managed repo per call. The key
+  // is how a caller makes a retry (second tab, reload, lost response) return
+  // the project the first call already created instead of a duplicate — so it
+  // has to survive `provisionProject`'s body construction, not just typecheck.
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await provisionProject({
+    account_id: 'acc-1',
+    name: 'My First Project',
+    idempotency_key: 'onboarding-8f1c0f6e-1a2b-4c3d-9e8f-000000000001',
+  });
+
+  expect(sentBody).toMatchObject({
+    idempotency_key: 'onboarding-8f1c0f6e-1a2b-4c3d-9e8f-000000000001',
+  });
+});
+
+test('ProvisionProjectInput accepts an optional idempotency_key', () => {
+  const withKey: ProvisionProjectInput = {
+    account_id: 'acc-1',
+    name: 'My First Project',
+    idempotency_key: 'onboarding-8f1c0f6e-1a2b-4c3d-9e8f-000000000001',
+  };
+  const without: ProvisionProjectInput = { name: 'My First Project' };
+
+  expect(withKey.idempotency_key).toBe('onboarding-8f1c0f6e-1a2b-4c3d-9e8f-000000000001');
+  expect('idempotency_key' in without).toBe(false);
+});
+
 test('updateProject distinguishes omitted icon_glyph from null', () => {
   // Same three-way contract `icon` already documents: omit to leave alone,
   // null to remove, an object to replace. `updateProject`'s real body type is

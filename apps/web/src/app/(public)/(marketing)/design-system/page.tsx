@@ -1981,6 +1981,15 @@ export default function BrandPage() {
                           <Badge variant="default" size="sm">
                             Small
                           </Badge>
+                          <Badge variant="default" size="xs">
+                            XSmall
+                          </Badge>
+                          <Badge variant="secondary" size="tabular">
+                            9
+                          </Badge>
+                          <Badge variant="secondary" size="tabular">
+                            12
+                          </Badge>
                           <Badge variant="success" size="sm">
                             Active
                           </Badge>

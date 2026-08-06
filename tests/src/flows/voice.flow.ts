@@ -8,8 +8,8 @@
  *
  *  - The Kortix agent's side is the `kortix_voice` CONNECTOR (spawn_room /
  *    read_transcript / send_prompt / end_call, plus the declared-but-
- *    unimplemented join_gmeet / join_zoom) — executor/channels.ts. It runs
- *    through the executor gateway like every other connector, so it has no
+ *    unimplemented join_gmeet / join_zoom) — connector/channels.ts. It runs
+ *    through the connector gateway like every other connector, so it has no
  *    route of its own to cover. It used to be an MCP at
  *    `POST /projects/:id/mcp/voice`; that route is GONE.
  *  - The LiveKit worker's side is the voice MCP,

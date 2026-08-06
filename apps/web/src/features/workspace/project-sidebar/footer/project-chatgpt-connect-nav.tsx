@@ -8,7 +8,7 @@ import {
 } from '@/components/projects/chatgpt-subscription-connect';
 import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
+import { OpenAI } from '@/features/icon/icons/open-ai';
 import { useIsMobile } from '@/hooks/utils';
 
 function useChatGptConnectDialog(projectId: string) {
@@ -36,9 +36,9 @@ export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string 
         <SidebarMenuButton
           onClick={openDialog}
 
-     className="text-sm! font-medium [&_svg]:size-4! flex items-center justify-start group/customize-button"
+          className="group/customize-button flex items-center justify-start text-sm! font-medium [&_svg]:size-4!"
         >
-          <Icon.OpenAI className="text-foreground" />
+          <OpenAI className="text-foreground" />
           Connect GPT subscription
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -57,7 +57,7 @@ export function ProjectChatGptConnectRailItem({ projectId }: { projectId: string
     <>
       <Hint label="Connect GPT subscription">
         <SidebarMenuButton type="button" aria-label="Connect GPT subscription" onClick={openDialog}>
-          <Icon.OpenAI className="text-foreground size-4.5!" />
+          <OpenAI className="text-foreground size-4.5!" />
         </SidebarMenuButton>
       </Hint>
       <ChatGptSubscriptionConnectDialog projectId={projectId} open={open} onOpenChange={setOpen} />

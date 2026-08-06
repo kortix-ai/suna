@@ -13,7 +13,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
-import { revokeSessionExecutorTokens } from '../../repositories/account-tokens';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -124,11 +124,11 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
   if (!row.externalId) return false;
   await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
   // The box is GONE at the provider — unlike an idle stop, nothing can wake it,
-  // so its executor token is now a bearer credential with no owner. Nothing
+  // so its connector token is now a bearer credential with no owner. Nothing
   // else ever expires these (no expiresAt, exempt from PAT idle-revoke).
-  await revokeSessionExecutorTokens(row.sessionId, row.accountId).catch((err) =>
+  await revokeSessionConnectorTokens(row.sessionId, row.accountId).catch((err) =>
     console.error(
-      `[reaper] FAILED to revoke executor tokens for removed sandbox ${externalId} (session ${row.sessionId}):`,
+      `[reaper] FAILED to revoke connector tokens for removed sandbox ${externalId} (session ${row.sessionId}):`,
       err,
     ),
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { useRouter } from 'next/navigation';
 
 /** The two calls this file makes on the router, and nothing else. */
@@ -52,7 +52,7 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
       onClick={onClose}
       className="fixed top-4 right-4 z-10 rounded-full active:scale-[0.96]"
     >
-      <Icon.Close className="size-4" />
+      <Close className="size-4" />
     </Button>
   );
 }

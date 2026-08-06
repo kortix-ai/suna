@@ -108,7 +108,7 @@ describe('create modal: the project icon', () => {
     // `icon` or `icon_glyph` — comes straight from which side of the union
     // `icon` holds, so this client is structurally incapable of sending both.
     expect(code).toContain(
-      "const iconPayload = !icon ? {} : 'emoji' in icon ? { icon: icon.emoji } : { icon_glyph: icon.glyph };",
+      "const iconPayload = !icon\n    ? {}\n    : 'emoji' in icon\n      ? { icon: icon.emoji }\n      : { icon_glyph: icon.glyph };",
     );
   });
 

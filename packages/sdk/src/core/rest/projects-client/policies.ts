@@ -1,10 +1,10 @@
-// Executor policies — kortix.yaml-backed project-wide tool policies.
+// Connector policies — kortix.yaml-backed project-wide tool policies.
 
 import { backendApi } from '../../http/api-client';
 import type { ConnectorSyncResult } from './connectors';
 import { unwrap } from './shared';
 
-// ─── Executor policies (kortix.yaml-backed) ────────────────────────────────
+// ─── Connector policies (kortix.yaml-backed) ────────────────────────────────
 
 export type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type PolicyDefaultMode = 'risk' | 'allow_all';
@@ -41,7 +41,7 @@ export interface ProjectPoliciesResponse {
 
 export async function listProjectPolicies(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectPoliciesResponse>(`/executor/projects/${projectId}/policies`),
+    await backendApi.get<ProjectPoliciesResponse>(`/connectors/projects/${projectId}/policies`),
   );
 }
 
@@ -52,7 +52,7 @@ export async function setProjectPolicies(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/policies`,
+      `/connectors/projects/${projectId}/policies`,
       { policies, defaultMode },
     ),
   );

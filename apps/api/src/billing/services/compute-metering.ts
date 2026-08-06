@@ -19,7 +19,7 @@
 // bills any session whose last_billed_at is > 1 hour ago, so a missed close
 // hook can never silently accrue 24h+ of uncharged compute.
 
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { creditAccounts, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -30,6 +30,8 @@ import {
   getOpenComputeSession,
   getLatestComputeSession,
   updateComputeSession,
+  claimComputeWindow,
+  releaseComputeWindow,
   findStaleActiveSessions,
   type SandboxSpec,
 } from '../repositories/compute-sessions';
@@ -40,7 +42,10 @@ import {
   lastAliveAtOf,
 } from './compute-liveness';
 import { deductCredits } from './credits';
-import { isPerSeatAccount } from './tiers';
+import { accountMetersCompute } from './tiers';
+
+/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
+const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
@@ -84,10 +89,14 @@ export function calculateComputeCost(
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
   // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has billing_model='per_seat' (stale data).
+  // if a credit_accounts row has a metered billing_model (stale data).
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  if (!isPerSeatAccount(account?.billingModel)) return null;
+  // `accountMetersCompute`, NOT `isPerSeatAccount`. Per-seat used to be the only
+  // metered model, so the gate was written as an identity check; read literally
+  // it grants every other model free compute. The v3 `credit` plans are metered
+  // too — that omission would have been an unbilled hole through the new tiers.
+  if (!accountMetersCompute(account?.billingModel)) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -148,46 +157,68 @@ async function settleComputeWindow(
   };
   const windowCost = calculateComputeCost(spec, durationSeconds, row.provider as ProviderName);
   if (windowCost <= 0) {
-    await updateComputeSession(row.id, { lastBilledAt: billableEnd.toISOString() });
+    // Still CAS'd: an unconditional write here would clobber a cursor another
+    // settler had legitimately advanced.
+    await claimComputeWindow({
+      id: row.id,
+      expectedLastBilledAt: row.lastBilledAt,
+      nextLastBilledAt: billableEnd.toISOString(),
+      addCostUsd: 0,
+    });
+    return 0;
+  }
+
+  // CLAIM BEFORE DEBITING. The order is the whole fix.
+  //
+  // This used to debit first and move the cursor afterwards, with the update
+  // keyed on `id` alone. Two settlers that had loaded the same row therefore
+  // both billed the same seconds — the customer paid twice for one hour, and
+  // the duplicate ledger rows were byte-identical and landed in the same
+  // second. Claiming first means the loser of the race bills nothing at all.
+  const claimed = await claimComputeWindow({
+    id: row.id,
+    expectedLastBilledAt: row.lastBilledAt,
+    nextLastBilledAt: billableEnd.toISOString(),
+    addCostUsd: windowCost,
+  });
+  if (!claimed) {
+    // Someone else settled this window. Not an error, and not worth a warning
+    // on a path that runs every few minutes for every live box.
     return 0;
   }
 
   // Debit the wallet. deductCredits already triggers auto-topup as a
   // fire-and-forget after a deduction (services/credits.ts:79).
-  // If the balance is insufficient the deduct throws; we still update the
-  // accrued cost on the session row so the next attempt can settle.
-  let debited = false;
   try {
     await deductCredits(
       row.accountId,
       windowCost,
       `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
       'compute_debit',
+      // Derived from WHAT is billed — this session and this window end — so a
+      // retry after a lost response produces the same key and replays instead
+      // of charging again. The CAS claim above already stops two settlers from
+      // both billing; this covers the single settler that never learned its own
+      // debit succeeded.
+      `compute:${row.id}:${billableEnd.toISOString()}`,
     );
-    debited = true;
   } catch (err) {
-    // Out of credits + no auto-topup. Record the accrual; the session will be
-    // forced to stop by the limits layer (separate concern).
+    // Out of credits + no auto-topup. Hand the window back so the next tick can
+    // retry the same seconds once the wallet can pay — the accrual must never
+    // outrun the ledger.
+    const released = await releaseComputeWindow({
+      id: row.id,
+      claimedLastBilledAt: billableEnd.toISOString(),
+      revertToLastBilledAt: row.lastBilledAt,
+      subCostUsd: windowCost,
+    });
     console.warn(
-      `[compute-metering] failed to debit ${row.accountId} for session ${row.id}:`,
+      `[compute-metering] failed to debit ${row.accountId} for session ${row.id}` +
+        `${released ? '' : ' (window NOT released — another settler moved the cursor; seconds forfeited)'}:`,
       err instanceof Error ? err.message : String(err),
     );
-  }
-
-  if (!debited) {
-    // Do NOT advance `last_billed_at` past a window we failed to collect. It
-    // used to advance regardless, which silently forfeited the revenue (the
-    // seconds could never be re-attempted) AND left `cost_usd` claiming an
-    // accrual the ledger has no entry for — the exact mirror image of the
-    // over-billing bug, and just as invisible. Leaving the cursor put makes the
-    // next tick retry the same window once the wallet can pay for it.
     return 0;
   }
-
-  await updateComputeSession(row.id, {
-    costUsd: String(Number(row.costUsd) + windowCost),
-    lastBilledAt: billableEnd.toISOString(),
-  });
 
   return windowCost;
 }
@@ -338,7 +369,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `isPerSeatAccount` gate (no-op for `legacy` accounts — never reimplemented
+ * `accountMetersCompute` gate (no-op for `legacy` accounts — never reimplemented
  * here) and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
@@ -357,7 +388,7 @@ export interface ReconcileMissingComputeResult {
  * unordered `LIMIT` fills with legacy rows on every pass and the per-seat rows
  * this sweep exists for are never reached — a no-op that costs a round-trip per
  * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `isPerSeatAccount` gate below.
+ * which is the same fail-closed outcome as the `accountMetersCompute` gate below.
  */
 export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -373,7 +404,9 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        eq(creditAccounts.billingModel, 'per_seat'),
+        // Mirrors accountMetersCompute() — every metered billing model, not just
+        // per-seat. A model missing here silently stops being charged.
+        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
       ),
     )
     .leftJoin(

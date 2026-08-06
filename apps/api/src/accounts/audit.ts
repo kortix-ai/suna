@@ -104,7 +104,7 @@ const DEFAULT_LIMIT = 50;
 export { buildFilters, type AuditFilterInput } from './audit-filters';
 
 // GET /v1/accounts/:accountId/audit
-//   ?action=executor.       — prefix match on action
+//   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
 //   ?actor_type=agent       — human, agent, service_account, or system
 //   ?project_id=<uuid>      — one project

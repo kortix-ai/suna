@@ -5,6 +5,7 @@ import {
   formatTokenCount,
   gatewayModelId,
   pickInitialTab,
+  providerDisconnectPlan,
 } from './utils';
 
 describe('pickInitialTab', () => {
@@ -23,6 +24,31 @@ describe('pickInitialTab', () => {
   test('folds unavailable Connected and Models tabs back to Add provider', () => {
     expect(pickInitialTab('connected', false)).toBe('catalog');
     expect(pickInitialTab('models', false)).toBe('catalog');
+  });
+});
+
+describe('providerDisconnectPlan', () => {
+  test('uses the OAuth removal route for ChatGPT and deletes only its legacy row directly', () => {
+    expect(
+      providerDisconnectPlan({
+        id: 'codex',
+        envVars: ['CODEX_AUTH_JSON', 'OPENCODE_AUTH_JSON'],
+      }),
+    ).toEqual({ oauthProvider: 'openai', secretNames: ['OPENCODE_AUTH_JSON'] });
+  });
+
+  test('removes an OpenAI API key and the subscription credentials', () => {
+    expect(providerDisconnectPlan({ id: 'openai', envVars: ['OPENAI_API_KEY'] })).toEqual({
+      oauthProvider: 'openai',
+      secretNames: ['OPENAI_API_KEY', 'OPENCODE_AUTH_JSON'],
+    });
+  });
+
+  test('uses secret removal only for a regular provider', () => {
+    expect(providerDisconnectPlan({ id: 'anthropic', envVars: ['ANTHROPIC_API_KEY'] })).toEqual({
+      oauthProvider: null,
+      secretNames: ['ANTHROPIC_API_KEY'],
+    });
   });
 });
 

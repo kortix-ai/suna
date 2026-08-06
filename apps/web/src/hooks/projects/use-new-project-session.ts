@@ -8,7 +8,7 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
-  getConnectorAuthorizationRequiredProfiles,
+  getRequiredConnectorConnections,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
@@ -24,15 +24,15 @@ import {
   createProjectSession,
   getProjectSessionScope,
   type PendingSessionPrompt,
-  type SessionConnectorBindings,
+  type SessionConnectorBindingsInput,
   setProjectSessionScope,
 } from '@kortix/sdk';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
- * The ONE "new empty session" path, shared by every entry point (project shell
- * button, ⌘T/⌘J shortcuts, project sidebar, command palette, home composer).
+ * The shared project-session entry path. Calls without options only open the
+ * composer. Calls with options create a session for an explicit task.
  *
  * Every entry point mints the session id client-side and persists it only after
  * an explicit user action. The route bundle and `/start` are prefetched before
@@ -60,7 +60,7 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  * Options for a new-session start.
  * `agent_name` chooses the session's boot agent. Later prompts can name another
  * agent; the API re-scopes its grants before forwarding the prompt.
- * `connector_bindings` binds specific connection profiles; `inherit_unbound`
+ * `connector_bindings` binds specific connections; `inherit_unbound`
  * keeps the project-default fallback for every OTHER connector so binding one
  * doesn't null the rest. `require_connectors` names connectors that must resolve
  * to the acting user's OWN connection — a missing one opens the connect gate.
@@ -73,7 +73,7 @@ export type NewProjectSessionOpts = {
     sandbox_slug?: string;
     agent_name?: string;
     pending_prompt?: PendingSessionPrompt;
-    connector_bindings?: SessionConnectorBindings;
+    connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
     require_connectors?: string[];
   };
@@ -115,6 +115,11 @@ export function useNewProjectSession(projectId: string | undefined) {
     (opts?: NewProjectSessionOpts) => {
       if (!projectId) {
         opts?.onError?.();
+        return;
+      }
+
+      if (!opts) {
+        router.push(`/projects/${projectId}`);
         return;
       }
 
@@ -176,11 +181,11 @@ export function useNewProjectSession(projectId: string | undefined) {
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
           } else if (action === 'connect') {
-            const connectorProfiles = getConnectorAuthorizationRequiredProfiles(err);
-            if (projectId && connectorProfiles) {
+            const connectorConnections = getRequiredConnectorConnections(err);
+            if (projectId && connectorConnections) {
               openConnectorGate({
                 projectId,
-                connectorProfiles,
+                connectorConnections,
                 retry: () => startRef.current(opts),
               });
             } else {

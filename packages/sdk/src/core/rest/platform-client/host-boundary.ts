@@ -206,14 +206,14 @@ export function getConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<ConnectorSetupLinkInfo> {
-  return requestJson(`/setup-links/connector/${encodeURIComponent(token)}`, options);
+  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
 }
 
 export function startConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<{ connect_url: string }> {
-  return requestJson(`/setup-links/connector/${encodeURIComponent(token)}/start`, options, {
+  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/start`, options, {
     method: 'POST',
     body: {},
   });

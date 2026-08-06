@@ -9,20 +9,20 @@ import { serverErrorBody } from './api-error-body';
  *
  * Two codes carry it and they are NOT interchangeable:
  *
- * - `CONNECTOR_AUTHORIZATION_REQUIRED` (409) — the connector exists on the
+ * - `CONNECTOR_CONNECTION_REQUIRED` (409) — the connector exists on the
  *   project and nothing is connected to it that this caller may use. The body
- *   carries `connector_profiles`, each with an `authorization_strategy`, and
+ *   carries `connector_connections`, each with an `authorization_strategy`, and
  *   that strategy is the whole answer to "who can fix this":
  *     • `project` — one shared connection serves the project. Anyone who can
  *       mint a setup link can connect it once, for everyone.
  *     • `user` — the connection must belong to the ACCOUNT THE SESSION RUNS AS.
  *       A wrapper runs every end-user's session under one operator credential,
  *       so no end-user can ever satisfy this themselves.
- * - `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` (409) — the alias is not a
+ * - `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` (409) — the alias is not a
  *   connector on this project at all. Nobody can connect their way out of that;
  *   it takes a manifest change.
  *
- * `CONNECTOR_CONNECTION_REQUIRED` — which this app used to classify, and which
+ * `CONNECTOR_AUTHORIZATION_REQUIRED` — which this app used to classify, and which
  * the public guide documented — has never existed in the API. It matched
  * nothing, so the connect prompt behind it was unreachable and every one of
  * these refusals fell through to a generic "could not start a session" toast.
@@ -52,7 +52,7 @@ export interface RequiredConnector {
 }
 
 export interface ConnectorRequirement {
-  code: 'CONNECTOR_AUTHORIZATION_REQUIRED' | 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE';
+  code: 'CONNECTOR_CONNECTION_REQUIRED' | 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE';
   /** Empty only when the server named no connector — the UI still explains. */
   connectors: RequiredConnector[];
   /** The server's own sentence. Never shown alone: it names no remedy. */
@@ -76,8 +76,8 @@ function remedyOf(strategy: ConnectorAuthorizationStrategy | null): ConnectorRem
 /**
  * The alias, when the refusal only carries prose.
  *
- * `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` sends
- * `Required connector profile "gmail" is unavailable` with no structured alias
+ * `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` sends
+ * `Required connector "gmail" is unavailable` with no structured alias
  * field, and naming the connector is the difference between a call to action
  * and "something is missing". A structured field is preferred whenever the API
  * grows one; the quoted-token read is the fallback, and failing it leaves the
@@ -97,22 +97,22 @@ export function connectorRequirement(err: unknown): ConnectorRequirement | null 
   // `ApiError.message`, which is derived from whichever of the two was present.
   const message = text(raw.message) ?? text(body.error) ?? '';
 
-  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED') {
+  if (code === 'CONNECTOR_CONNECTION_REQUIRED') {
     // Snake case is the wire shape; the camel alias is accepted so a client
     // that has already normalised the body classifies identically.
-    const listed = [raw.connector_profiles, raw.connectorProfiles].find(Array.isArray) as
+    const listed = [raw.connector_connections, raw.connectorConnections].find(Array.isArray) as
       | unknown[]
       | undefined;
     const connectors: RequiredConnector[] = [];
     for (const entry of listed ?? []) {
       if (!entry || typeof entry !== 'object') continue;
-      const profile = entry as Record<string, unknown>;
-      const alias = text(profile.slug) ?? text(profile.alias);
+      const connection = entry as Record<string, unknown>;
+      const alias = text(connection.slug) ?? text(connection.alias);
       if (!alias) continue;
-      const strategy = strategyOf(profile.authorization_strategy ?? profile.authorizationStrategy);
+      const strategy = strategyOf(connection.authorization_strategy ?? connection.authorizationStrategy);
       connectors.push({
         alias,
-        name: text(profile.name) ?? alias,
+        name: text(connection.name) ?? alias,
         strategy,
         remedy: remedyOf(strategy),
       });
@@ -120,9 +120,9 @@ export function connectorRequirement(err: unknown): ConnectorRequirement | null 
     return { code, connectors, message };
   }
 
-  if (code === 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE') {
+  if (code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE') {
     // `connectors` first: it is the machine-readable list, and the guide tells
-    // integrators to read it rather than parse the sentence. The prose reads
+    // connectors to read it rather than parse the sentence. The prose reads
     // stay behind it for a server that predates the field — and because the
     // create path and the prompt path reach this code from different throw
     // sites, only one of which used to carry the array.

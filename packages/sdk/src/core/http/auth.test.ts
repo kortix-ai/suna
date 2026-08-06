@@ -124,6 +124,26 @@ test('buildAuthHeaders injects the Bearer token without clobbering an existing A
 	expect(preset.get('Authorization')).toBe('Bearer mine');
 });
 
+test('buildAuthHeaders identifies the configured client surface', () => {
+	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'cli');
+	expect(headers.get('x-kortix-client')).toBe('cli');
+});
+
+test('buildAuthHeaders preserves an explicit client surface header', () => {
+	const headers = buildAuthHeaders(
+		'http://x.test/',
+		{ headers: { 'X-Kortix-Client': 'mobile' } },
+		'tok',
+		'cli',
+	);
+	expect(headers.get('x-kortix-client')).toBe('mobile');
+});
+
+test('buildAuthHeaders omits an unknown configured client surface', () => {
+	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'forged-source');
+	expect(headers.has('x-kortix-client')).toBe(false);
+});
+
 test('the synthetic 401 is a JSON fetch-semantics Response (no network call implied)', async () => {
 	const res = syntheticUnauthenticatedResponse();
 	expect(res.status).toBe(401);

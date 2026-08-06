@@ -1,10 +1,20 @@
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
 /**
- * Pure helpers extracted from `project-session-list.tsx` so the sidebar's
- * sort/poll/label/time-formatting decisions and its loading/error/empty/
- * content state selection are unit-testable without mounting react-query or
- * the row components.
+ * Pure helpers extracted from `project-session-list.tsx` so every decision the
+ * sidebar session list makes is unit-testable without mounting react-query or
+ * the row components. Five decisions live here:
+ *
+ * - when to keep polling (`shouldPollProjectSessions`);
+ * - what "last activity" means and how to sort by it
+ *   (`sessionLastActivityAt`, `sortSessionsByLastActivity`);
+ * - what a row is titled, and how its timestamp is abbreviated
+ *   (`getSessionDisplayTitle`, `shortRelative`);
+ * - which of loading/error/empty/no-matches/content renders
+ *   (`resolveSessionListViewState`).
+ *
+ * Display status itself is NOT decided here — `sessionDisplayStatus` in
+ * `components/projects/session-label` owns that mapping, and this file reads it.
  */
 
 export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [
@@ -111,4 +121,39 @@ export function resolveSessionListViewState(params: {
   if (params.totalCount === 0) return 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
+}
+
+/** A coordinator (or standalone) session plus the sessions it spawned. */
+export interface SessionGroup {
+  session: ProjectSession;
+  children: ProjectSession[];
+}
+
+/**
+ * Fold a flat, already-sorted session list into coordinator groups: a session
+ * spawned by another session in the list (metadata.spawned_by_session) nests
+ * under it — the sidebar renders the coordinator as a folder and its children
+ * as files. A child whose coordinator is absent (deleted, other project, or a
+ * stale stamp) stays top-level rather than disappearing.
+ */
+export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
+  const present = new Set(sessions.map((s) => s.session_id));
+  const parentOf = (session: ProjectSession): string | null => {
+    const meta = (session.metadata ?? {}) as Record<string, unknown>;
+    const parent = typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
+    return parent && present.has(parent) && parent !== session.session_id ? parent : null;
+  };
+  const groups = new Map<string, SessionGroup>();
+  const order: SessionGroup[] = [];
+  for (const session of sessions) {
+    if (parentOf(session)) continue;
+    const group = { session, children: [] as ProjectSession[] };
+    groups.set(session.session_id, group);
+    order.push(group);
+  }
+  for (const session of sessions) {
+    const parent = parentOf(session);
+    if (parent) groups.get(parent)?.children.push(session);
+  }
+  return order;
 }

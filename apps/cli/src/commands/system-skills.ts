@@ -81,7 +81,7 @@ export const SYSTEM_SKILLS_COMMAND = 'system-skills';
 const helpFor = (cmd: string) => help`Usage: kortix ${cmd} <subcommand> [options]
 
 Learn how to drive Kortix. The Kortix system skills are the platform's own
-documentation — sessions, sandboxes, the executor/approval loop, memory,
+documentation — sessions, sandboxes, the connector/approval loop, memory,
 channels — served live by the host you are signed into, so they always match
 the version you are talking to. This is all any harness needs: the binary,
 a token, and these skills.

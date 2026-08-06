@@ -343,7 +343,7 @@ interface ShipConnector {
 /**
  * After a successful push, reconcile the connector catalog from the just-shipped
  * manifest and walk the user through connecting anything that still needs auth —
- * Pipedream apps via a 1-click authorize link + finalize, and
+ * Pipedream apps via an auto-finalizing one-click connection URL, and
  * HTTP/OpenAPI/GraphQL/MCP connectors via their credential secret. Mirrors
  * `ensureProjectEnv` so a single `kortix ship` leaves the project ready to run.
  * Skipped with --no-connect; non-interactive / --yes only nags with the slugs
@@ -355,7 +355,7 @@ async function ensureConnectorsConnected(
   flags: ShipFlags,
 ): Promise<void> {
   if (flags.noConnect) return;
-  const ex = `/executor/projects/${projectId}`;
+  const ex = `/connectors/projects/${projectId}`;
 
   let connectors: ShipConnector[];
   try {
@@ -390,9 +390,10 @@ async function ensureConnectorsConnected(
     `\n  ${C.bold}connectors${C.reset}  ${C.dim}${pending.length} need setup — connect ${pending.length === 1 ? 'it' : 'them'} now (blank = skip):${C.reset}\n`,
   );
   let connected = 0;
+  let connectionLinks = 0;
   for (const c of pending) {
     if (c.provider === 'pipedream') {
-      if (await connectPipedreamApp(client, ex, c)) connected += 1;
+      if (await connectPipedreamApp(client, projectId, c)) connectionLinks += 1;
     } else if (c.authSecret) {
       if (await setConnectorCredential(client, ex, c)) connected += 1;
     } else {
@@ -402,6 +403,11 @@ async function ensureConnectorsConnected(
   if (connected > 0) {
     process.stdout.write(
       `  ${C.dim}${connected} connector${connected === 1 ? '' : 's'} connected.${C.reset}\n`,
+    );
+  }
+  if (connectionLinks > 0) {
+    process.stdout.write(
+      `  ${C.dim}${connectionLinks} auto-finalizing connection URL${connectionLinks === 1 ? '' : 's'} created.${C.reset}\n`,
     );
   }
 }
@@ -416,49 +422,30 @@ export async function reconcileShippedManifest(
   projectId: string,
 ): Promise<void> {
   try {
-    await client.post(`/executor/projects/${projectId}/connectors/sync`);
+    await client.post(`/connectors/projects/${projectId}/connectors/sync`);
   } catch {
     // A reconcile failure does not invalidate the completed git push.
     // The rotating server discovery sweep retries the project.
   }
 }
 
-/** Pipedream 1-click: mint a connect link, let the user authorize, then finalize. */
+/** Mint one auto-finalizing Pipedream connection URL for the user. */
 async function connectPipedreamApp(
   client: ApiClient,
-  ex: string,
+  projectId: string,
   c: ShipConnector,
 ): Promise<boolean> {
   try {
-    const resp = await client.post<{ token: string; app: string; connectUrl?: string }>(
-      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect`,
+    const resp = await client.post<{ url: string; expires_at: string }>(
+      `/projects/${projectId}/connect-requests`,
+      { slug: c.slug },
     );
     process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);
-    if (resp.connectUrl) {
-      process.stdout.write(`    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.connectUrl}${C.reset}\n`);
-    } else {
-      process.stdout.write(
-        `    ${C.dim}Complete the connect in the dashboard with token ${C.faded}${resp.token}${C.reset}\n`,
-      );
-    }
-    const ack = (await prompt(`    ${C.dim}Press Enter once authorized (blank to skip)${C.reset}`)).trim();
-    if (ack.toLowerCase() === 's' || ack.toLowerCase() === 'skip' || ack === '-') {
-      process.stdout.write(
-        `    ${C.dim}skipped — finalize later with kortix connectors finalize ${c.slug}${C.reset}\n`,
-      );
-      return false;
-    }
-    const fin = await client.post<{ connected: boolean; accountId?: string }>(
-      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect/finalize`,
-    );
-    if (fin.connected) {
-      process.stdout.write(`    ${status.ok(`${C.bold}${c.slug}${C.reset} connected`)}\n`);
-      return true;
-    }
     process.stdout.write(
-      `    ${status.warn(`${c.slug} not connected yet`)} ${C.dim}— finish authorizing, then run kortix connectors finalize ${c.slug}.${C.reset}\n`,
+      `    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.url}${C.reset}\n` +
+        `    ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n`,
     );
-    return false;
+    return true;
   } catch (err) {
     const msg = err instanceof ApiError ? err.message : (err as Error).message;
     process.stderr.write(`    ${status.err(`connect ${c.slug} failed: ${msg}`)}\n`);

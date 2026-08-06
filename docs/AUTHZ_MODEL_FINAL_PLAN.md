@@ -24,14 +24,14 @@ Verified against the code on `feat/iam-rbac-v1` (merged with `main`). Do **not**
 | Capability | State | Evidence |
 |---|---|---|
 | Allow-only, deny-by-default engine (`authorizeV2`) | ✅ | `apps/api/src/iam/engine-v2.ts` |
-| Agent-scoped **session token** (agentGrant + serviceAccountId), not user-only | ✅ | `platform/services/session-sandbox.ts` mintExecutorToken; validated `middleware/auth.ts` |
+| Agent-scoped **session token** (agentGrant + serviceAccountId), not user-only | ✅ | `platform/services/session-sandbox.ts` mintConnectorToken; validated `middleware/auth.ts` |
 | **kortix.yaml `agents:`** = source of truth for agent scope (env/connectors/kortix_cli) | ✅ | `projects/agents.ts` |
 | Git auth **never injected** into the sandbox (build-time only) | ✅ | `session-sandbox.ts` resolveGitAuthToken |
 | Custom roles + policies, group→role, per-resource grants, revoke immediacy | ✅ | `iam/engine-v2.ts`, `iam/resource-grants.ts`, `iam/cache-invalidation.ts` |
 | Standing-identity **service accounts** (agents authorize as their SA once activated) | ✅ (opt-in) | `iam/engine-v2.ts` resolveActorV2; `repositories/service-accounts.ts` |
 | Triggers **run as the agent** (human "Runs as" removed) | ✅ | `projects/lib/triggers.ts` resolveTriggerActor |
 | **Immediate offboarding** — member removal revokes PATs + live session tokens | ✅ | `repositories/account-tokens.ts` revokeAllAccountTokensForUser |
-| APPROVE/ASK/BLOCK **policy resolution** (risk + policies → mode) | ✅ | `executor/*` resolveEffectiveAction |
+| APPROVE/ASK/BLOCK **policy resolution** (risk + policies → mode) | ✅ | `connector/*` resolveEffectiveAction |
 | **Per-session cost** (LLM + compute) | ✅ | `gateway_request_logs.finalCost`, `sandbox_compute_sessions.costUsd` |
 | Snapshot **bake/sync** (baked binaries vs cloned repo/secrets; content-addressed rebuild) | ✅ | `snapshots/builder`, `shared.ts` version pins |
 | **SSO + Azure AD SCIM** directory-sync, tested + runbook | ✅ | `iam/sso-sync.ts`, `scim/*`, `docs/ENTRA_SSO_SCIM_SETUP.md` |
@@ -58,7 +58,7 @@ human that started the task? What about a trigger/webhook? Who sees these?"
 
 **Current state.** Policy **resolution** works: an action resolves to `allow | ask | block` from
 its risk + connector/project policies, and the gateway returns `pending_approval` for an ASK.
-But the **loop is open**: `executor_executions` has `approvedBy`/`resolvedAt` columns that are
+But the **loop is open**: `connector_calls` has `approvedBy`/`resolvedAt` columns that are
 never written; there is **no approval inbox, no approve/deny endpoint, no "who can approve" rule**,
 and an unattended run that hits ASK just returns `202 pending_approval` to a webhook with nowhere
 to resolve it. The genuinely hard part is **resuming a parked synchronous tool call** after
@@ -101,12 +101,12 @@ usage and discriminated LLM/compute ledger entries.
 
 **Plan:**
 - **2a — shipped.** `GET /v1/projects/:id/sessions/:sessionId/audit` returns the
-  chronological executor action timeline.
+  chronological connector action timeline.
 - **2b — shipped.** `GET /v1/usage/session-costs` returns a paginated list.
   `GET /v1/usage/session-costs/:sessionId` returns one detailed ledger. The
   SDK exposes `billing.sessionCosts` and `session(projectId, sessionId).cost()`.
 - **2c — Audit webhook/export (S, later).** Extend the existing account audit-webhook to include
-  executor executions + session-scoped export for SIEM.
+  connector executions + session-scoped export for SIEM.
 
 **Risk:** read-only + additive. **Decision needed:** none. **This is the recommended first PR.**
 
@@ -115,7 +115,7 @@ usage and discriminated LLM/compute ledger entries.
 ## 3. Resource OWNERSHIP + private triggers/webhooks  *(product decision)*
 
 **Ask:** "Introduce PRIVATE triggers/webhooks. Every resource should be scoped to ownership.
-Remove the concept of everyone brings their own to profile."
+Remove the concept of everyone bringing their own connection."
 
 **Current state.** Triggers/webhooks are **project-wide visible** to anyone with `project.read`;
 `project_trigger_runtime.ownerUserId` was only ever credential-resolution metadata (now removed)
@@ -128,9 +128,9 @@ model (share-scope + grants); triggers/skills/commands do not.
   column to the trigger runtime and gate `loadTriggersForResponse` + the fire endpoints on it.
   Default: creator-owned + optionally shared, mirroring secrets/connectors — "private by default,
   share explicitly."
-- **3b — Remove per-user connector profiles (M, BREAKING).** **DONE 2026-07-05** — see
+- **3b — Remove per-user connectors (M, BREAKING).** **DONE 2026-07-05** — see
   docs/specs/2026-07-05-agent-first-config-unification.md §2.5. "Everyone brings their own
-  profile" (`executor_connectors.credentialMode='per_user'` + `resolveCredentialValue` by
+  connection" (`connectors.credentialMode='per_user'` + `resolveCredentialValue` by
   userId) was removed: connectors are now **shared only**. Migration
   `packages/db/migrations/20260705191549103_remove_per_user_credential_mode.sql` flipped every
   `per_user` connector to `shared` and deleted its per-member credential rows (no silent
@@ -176,18 +176,18 @@ give access to the appropriate allowed Kortix scopes."
 
 **Current state.** The session token is already agent-scoped (§0). Remaining sprawl is mostly
 **legacy aliases** injected for back-compat: `KORTIX_TOKEN` (alias of `KORTIX_SANDBOX_TOKEN`),
-`KORTIX_EXECUTOR_TOKEN` (alias of `KORTIX_CLI_TOKEN`), `KORTIX_YOLO_*` (was redundant with
+`KORTIX_CLI_TOKEN`, `KORTIX_YOLO_*` (was redundant with
 `KORTIX_LLM_*` — **done**, see 5a). The deeper "one token, resolve all downstream creds
 (connectors/secrets/git) server-side at call time, inject nothing" is architectural.
 
 **Plan:**
-- **5a — Drop legacy aliases (S, coordinated).** ~~Remove `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN`/
+- **5a — Drop legacy aliases (S, coordinated).** ~~Remove `KORTIX_TOKEN`/
   `KORTIX_YOLO_*` after the sandbox image cycles (daemons currently read them)~~ — **done for
   `KORTIX_YOLO_*`**: injection, the env allowlist, and the config default all removed in this pass.
-  `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` remain, still gated on the sandbox-image-cycle coordination
+  `KORTIX_TOKEN` remains, still gated on the sandbox-image-cycle coordination
   documented as "Phase 2" in `docs/specs/2026-06-28-token-session-agent-identity.md`.
 - **5b — Server-side credential resolution (L).** Stop injecting project runtime secrets at boot;
-  have the executor resolve connectors/secrets/git per-call against the session token's scope, so
+  have the connector resolve connectors/secrets/git per-call against the session token's scope, so
   the sandbox holds exactly one opaque, agent-scoped token and no raw credentials. Big, but it's
   the real "clean token model."
 

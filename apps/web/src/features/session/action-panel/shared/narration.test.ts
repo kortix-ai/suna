@@ -288,9 +288,9 @@ describe('narrateStep - create family counts every media type in a mixed group',
 describe('narrateStep - apps distinguishes discovery from connection', () => {
   it('never says "Connected to" for read-only discovery/description tools', () => {
     for (const t of [
-      'kortix_executor_discover',
-      'kortix_executor_describe',
-      'kortix_executor_connectors',
+      'kortix_connector_discover',
+      'kortix_connector_describe',
+      'kortix_connectors',
       'connector_get',
       'connector_list',
     ]) {
@@ -303,7 +303,7 @@ describe('narrateStep - apps distinguishes discovery from connection', () => {
   });
 
   it('distinguishes running a connected tool from connecting to it', () => {
-    expect(narrateStep('apps', [part('kortix_executor_call')])).not.toContain('Connected to');
+    expect(narrateStep('apps', [part('kortix_connector_call')])).not.toContain('Connected to');
   });
 });
 

@@ -531,7 +531,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       connectors_required: {
         type: 'array',
         items: NON_EMPTY_STRING,
-        description: 'Connector profile slugs that must resolve before the session starts.',
+        description: 'Connector slugs that must resolve before the session starts.',
       },
       connectors_personal: {
         type: 'array',

@@ -1,10 +1,13 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
 } from './llm-gateway/routing/policy-config';
+
+hydrateEnvironmentSecret();
 
 /**
  * Running sandbox version.
@@ -249,11 +252,11 @@ const envSchema = z.object({
   // earlier 120m, so the pause/resume win is subsumed there.
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
-  // added for a future per-agent executor-token auth model that isn't built yet,
+  // added for a future per-agent connector-token auth model that isn't built yet,
   // and meanwhile it blocks legitimate in-session agent switching and
   // false-positives on new sessions (the picker can send the first agent in the
   // list before the session's real default resolves). TODO(marko): re-enable once
-  // the executor token is re-minted per requested agent before tool execution.
+  // the connector token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
 
   // Optional strict lock for operators that require one immutable secret grant
@@ -557,7 +560,7 @@ const envSchema = z.object({
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL: optUrl('http://localhost:3000'),
 
-  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
+  // ── Pipedream Connect (optional — powers the Connector's 1-click connectors) ─
   PIPEDREAM_CLIENT_ID: optStr,
   PIPEDREAM_CLIENT_SECRET: optStr,
   PIPEDREAM_PROJECT_ID: optStr,
@@ -922,7 +925,7 @@ export const config = {
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
 
-  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  // ─── Pipedream Connect (Connector 1-click connectors) ──────────────────────
   PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
   PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,

@@ -10,7 +10,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deleteProjectSecret } from '@kortix/sdk';
+import { deleteProjectProviderOAuth, deleteProjectSecret } from '@kortix/sdk';
 import {
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -19,8 +19,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
-import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
-import { providerCredentialSummary } from './utils';
+import { providerCredentialSummary, providerDisconnectPlan } from './utils';
 
 export function ConnectedTab({
   projectId,
@@ -41,17 +40,13 @@ export function ConnectedTab({
 
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
-      const names =
-        provider.id === 'openai' || provider.id === 'codex'
-          ? [
-              ...provider.envVars,
-              CODEX_AUTH_JSON_SECRET_NAME,
-              LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
-            ]
-          : provider.envVars;
-      await Promise.all(
-        names.map((envVar) => deleteProjectSecret(projectId, envVar).catch(() => undefined)),
-      );
+      const plan = providerDisconnectPlan(provider);
+      await Promise.all([
+        ...(plan.oauthProvider
+          ? [deleteProjectProviderOAuth(projectId, plan.oauthProvider)]
+          : []),
+        ...plan.secretNames.map((name) => deleteProjectSecret(projectId, name)),
+      ]);
       return provider;
     },
     onSuccess: (provider) => {

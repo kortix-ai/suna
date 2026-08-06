@@ -18,9 +18,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
-  // Channel sessions can opt into the Executor MCP face after a deploy. This
+  // Channel sessions can opt into the Connector MCP face after a deploy. This
   // must restart OpenCode because MCP servers are registered only at spawn.
-  'KORTIX_EXECUTOR_MCP_ENABLED',
+  'KORTIX_CONNECTORS_MCP_ENABLED',
   // The server-compiled agent config (agents, prompts, permissions, model) —
   // apps/api's compile-agent-config.ts output.
   //
@@ -102,9 +102,9 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   }
-  const token = process.env.KORTIX_EXECUTOR_TOKEN || process.env.KORTIX_CLI_TOKEN
+  const token = process.env.KORTIX_CLI_TOKEN
   if (!token) {
-    throw new Error('KORTIX_EXECUTOR_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+    throw new Error('KORTIX_CLI_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
   }
   return setOpencodeRuntimeEnv({
     KORTIX_LLM_API_KEY: token,
@@ -114,7 +114,12 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
   })
 }
 
-export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: ProjectEnvStore): Hono {
+export function createEnvRouter(
+  cfg: Config,
+  opencode: Opencode,
+  projectEnv: ProjectEnvStore,
+  opts: { agentEnvFile?: string } = {},
+): Hono {
   const router = new Hono()
   let syncInFlight: Promise<Response> | null = null
 
@@ -172,8 +177,12 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
             revision: result.revision,
             names: result.names.length,
           })
-          writeAgentEnvFile(projectEnv)
         }
+        // Always rewrite the shell artifact, including an identical revision.
+        // A warm-fork race can leave agent-env.sh stale while the in-memory
+        // store already has the requested revision. A sync replay must repair it.
+        const agentEnvWritten = writeAgentEnvFile(projectEnv, { sh: opts.agentEnvFile })
+        if (!agentEnvWritten) throw new Error('failed to write live agent env file')
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
           // reloadConfig, not restart: opencode re-reads its config file in
           // place via /global/dispose in ~51ms, against ~8s for a respawn
@@ -192,7 +201,19 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           // Keyed on the value DELTA, not the allowlist — `result.names` is the
           // full set, so using it would respawn on every push for any project
           // that merely has one of these secrets.
-          const mustRespawn = requiresRespawn([...opencodeEnvNames, ...result.changedNames])
+          //
+          // Project secrets (the `result.changedNames` half) shape the opencode
+          // child's PROCESS env at spawn via `mergeProjectEnv` (opencode.ts) —
+          // they are NOT in the config file a dispose re-reads. So any non-empty
+          // `changedNames` means opencode's process env is stale and a dispose
+          // would report success while the PID kept the old (e.g. 0/47) set. The
+          // only correct reload for a project-secret delta is a full respawn.
+          // The ~8s cost is the price of correctness; the dispose fast path is
+          // preserved for pure model/auth/deny changes that touch no project
+          // secret. Revocation is preserved too: `knownNames` is tracked in the
+          // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
+          const projectSecretsMoved = result.changedNames.length > 0
+          const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
           const how = await opencode.reloadConfig({ mustRespawn })
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
@@ -203,11 +224,26 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           })
         }
 
+        const applied = projectEnv.snapshot()
+        const exported = Object.keys(applied.env).length
+        logger.info('[env] project env applied', {
+          revision: applied.revision,
+          managed: applied.knownNames.length,
+          current: applied.names.length,
+          exported,
+          withheld: Math.max(0, applied.knownNames.length - exported),
+          agentEnvWritten,
+        })
+
         return c.json({
           ok: true,
           changed: result.changed,
           revision: result.revision,
           names: result.names,
+          exported,
+          managed: applied.knownNames.length,
+          withheld: Math.max(0, applied.knownNames.length - exported),
+          agent_env_written: agentEnvWritten,
           opencode_env_changed: opencodeEnvChanged,
           opencode_env_names: opencodeEnvNames,
           opencode: opencode.getState(),

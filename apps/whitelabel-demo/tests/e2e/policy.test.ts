@@ -97,21 +97,21 @@ describe('wrapper-mode policy matrix', () => {
   });
 
   test('project.connectors.list forwards an owned project', async () => {
-    const { kortix } = await freshUser('executor-owned');
-    const project = await kortix.projects.provision({ name: 'Executor Owned' });
+    const { kortix } = await freshUser('connector-owned');
+    const project = await kortix.projects.provision({ name: 'Connector Owned' });
 
     mock.reset();
     await kortix.project(project.project_id).connectors.list();
 
     expect(mock.requests).toHaveLength(1);
     expect(mock.requests[0]!.path).toBe(
-      `/v1/executor/projects/${project.project_id}/connectors`,
+      `/v1/connectors/projects/${project.project_id}/connectors`,
     );
   });
 
   test('project.connectors.list rejects an unowned project', async () => {
-    const { kortix } = await freshUser('executor-unowned');
-    const other = mock.seedProject({ name: 'Executor Not Yours' });
+    const { kortix } = await freshUser('connector-unowned');
+    const other = mock.seedProject({ name: 'Connector Not Yours' });
 
     await expect(
       kortix.project(other.project_id).connectors.list(),

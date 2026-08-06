@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
@@ -12,12 +12,12 @@ import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
+import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { parseCustomizeSection } from '@/lib/customize-sections';
-import { desktopShellPlatform } from '@/lib/desktop';
+import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
@@ -103,10 +103,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   }, [projectDetailError, projectId, router, user?.id]);
 
   useEffect(() => {
-    // Files graduated out of Customize into its own page — send legacy
-    // ?customize=files links there instead of opening the overlay.
-    if (searchParams.get('customize') === 'files') {
-      router.replace(`/projects/${projectId}/files`);
+    // Files, Connectors, Skills, and Commands graduated out of Customize into
+    // their own pages — send legacy ?customize=<section> links there instead
+    // of opening the overlay.
+    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('customize'));
+    if (redirect) {
+      router.replace(redirect);
       return;
     }
     const section = parseCustomizeSection(searchParams.get('customize'));
@@ -141,9 +143,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     }
   }, []);
 
-  // Optimistic new-session: mint the id client-side and navigate immediately so
-  // the instant shell paints before the create POST returns (see
-  // useNewProjectSession). Shared with the sidebar / ⌘T-⌘J / command palette.
+  // New-session navigation opens the project composer. The first send creates
+  // the durable session.
   const newSession = useNewProjectSession(projectId);
   const handleNewSession = useCallback(() => {
     newSession();
@@ -206,12 +207,11 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
   const { state, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
   const isExpanded = state === 'expanded';
   // The sidebar hides fully when collapsed (offcanvas everywhere, no icon
-  // rail), so a hidden sidebar means no seam border. The reopen control lives
-  // in the title-bar band next to the OS window controls on the desktop
-  // shell, and in a top-left cluster aligned with the session site header on
-  // the web. Client-only tree (ProjectShell gates on auth), so reading the UA
-  // at first render is safe.
-  const [desktopShell] = useState(() => desktopShellPlatform());
+  // rail), so a hidden sidebar means no seam border and no way back from the
+  // panel itself. On the desktop shell the reopen control lives HERE, in the
+  // OS title-bar band; on the web each view draws its own. Shared gate so the
+  // two can never both render — see sidebar-opener.ts.
+  const desktopShell = useDesktopShell();
   return (
     <div
       className={cn(
@@ -236,42 +236,27 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             onPointerEnter={peekEnter}
             onPointerLeave={peekLeave}
             variant="ghost"
-            className={cn(
-              // top-[12px] + 28px box centers the button on the traffic
-              // lights' midline (y=26 — the app draws its own lights there;
-              // see DesktopChrome → MacTrafficLights). px values on purpose:
-              // the lights are positioned in window px, while rem sizes
-              // drift with the root font size.
-              'text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]',
-              // macOS: sit just past the traffic lights (they end at x≈62),
-              // mirroring their own 10px inset. Win/Linux: controls live
-              // top-right, so hug the left edge instead.
-              desktopShell === 'macos' ? 'left-[4.5rem]' : 'left-2',
-            )}
+            // The ONE sidebar opener on the desktop shell — every view-level
+            // copy is suppressed by useShowPageSidebarOpener() so this cannot
+            // become the second control in the same corner.
+            //
+            // Placed by the band variables, not by a literal: on macOS the
+            // traffic lights are positioned by the Electron main process, so
+            // the two numbers live in different processes and used to drift
+            // (this box centered at y=26, the lights at y=30). The variables
+            // are generated from one table — see globals.css and
+            // apps/desktop-electron/src/window-chrome.js. They also carry the
+            // Win/Linux values, so there is no platform branch here.
+            className="text-muted-foreground hover:text-foreground fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>
         </Hint>
       )}
-      {/* {!desktopShell && !isExpanded && (
-        // Same row as the session site header's leading cluster (p-2 +
-        // size-8 buttons), so the toggle reads as part of it. Hovering it
-        // also summons the flyout, mirroring the edge strip.
-        <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
-          <Button
-            type="button"
-            aria-label={peek ? 'Pin sidebar' : 'Open sidebar'}
-            onClick={toggleSidebar}
-            onPointerEnter={peekEnter}
-            onPointerLeave={peekLeave}
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
-          >
-            <PanelLeft className="cn-rtl-flip size-4" />
-          </Button>
-        </Hint>
-      )} */}
+      {/* On the web there is deliberately no shell-level opener: each view
+          draws its own, in its own layout, gated by
+          useShowPageSidebarOpener(). Only the desktop shell needs a
+          shell-level one, because only there is the corner owned by the OS. */}
       {children}
     </div>
   );

@@ -1,220 +1,319 @@
 # Secret delivery control plane
 
-**Status:** Approved design, implementation in progress  
-**Scope:** Project secrets, sessions, LLM gateway, Executor, Git, HTTP egress, audit
+**Status:** Implemented for runtime, managed consumers, and policy-bound HTTPS calls
+**Not implemented:** Transparent network-boundary substitution
 
-## Purpose
+## Problem and contract
 
-Kortix must control where each secret can be used. Storing a value safely is
-not sufficient. The delivery path must also prevent an agent from reading or
-redirecting the value.
+Encryption at rest does not protect a secret after Kortix places its plaintext
+value in a sandbox. Agent code can read, print, copy, or forward every runtime
+environment variable.
 
-The target contract is:
+Kortix therefore separates four decisions:
 
-> A secret reaches only its approved consumer through its approved delivery
-> path. Every decision and use produces a central audit event without the
-> secret value.
+1. **Identifier:** The stable handle used by grants and session allowlists.
+2. **Key:** The environment variable or provider key, such as
+   `ANTHROPIC_API_KEY`. Several identifiers can use the same key.
+3. **Consumer:** The only Kortix subsystem allowed to use the decrypted value.
+4. **Strategy:** The delivery method, or a decision to deliver nothing.
 
-The product uses one term: **Secret**. Environment variables are one possible
-runtime delivery mechanism. They are not the storage model.
+The system contract is:
 
-## Security model
+> A secret reaches only its approved consumer through its approved strategy.
+> Each managed use writes a metadata-only audit event.
 
-Three independent decisions control access.
+The product term is **Secret**. An environment variable is one delivery form.
 
-1. **Authorization** selects which secret identifiers the principal may use.
-   Kortix intersects the project policy, agent grant, and session allowlist.
-2. **Consumer** identifies the service that needs the secret. Initial consumers
-   are sandbox runtime, LLM gateway, Executor, Git proxy, and HTTP broker.
-3. **Delivery** defines how the consumer receives or uses the value.
+## Strategies and consumers
 
-Connector and LLM are consumers. They are not delivery strategies.
+| Strategy | Consumer | Sandbox receives | Current behavior |
+| --- | --- | --- | --- |
+| `runtime` | `sandbox` | Plaintext value | Available for code that must read the value locally |
+| `broker` | `llm_gateway` | Nothing | Kortix authenticates provider requests server-side |
+| `broker` | `connector` | Nothing | Kortix resolves automation and channel credentials server-side |
+| `broker` | `http_broker` | Opaque session handle | Kortix makes one policy-bound HTTPS request |
+| `broker` | `git_proxy` | Nothing | Git uses its separate encrypted credential path |
+| `egress` | `network` | Opaque placeholder | Unavailable and rejected with `409` |
+| `denied` | none | Nothing | Stored but disabled |
 
-| Strategy | Sandbox receives | Use |
-| --- | --- | --- |
-| `runtime` | Plaintext value | A local process must read the value |
-| `broker` | No plaintext | A Kortix service calls the upstream service |
-| `egress` | Opaque placeholder | A network boundary replaces the placeholder |
-| `denied` | Nothing | The value is stored but disabled |
+`runtime` is the only strategy that sends plaintext to a sandbox. No managed
+strategy silently falls back to `runtime`.
 
-The strictness order is `runtime < egress < broker < denied`. During request
-resolution, a lower layer can tighten a decision. It cannot weaken a stricter
-decision. An authorized person can change the stored strategy. Restoring
-`runtime` after a stricter strategy requires a new secret value first.
+Generic `git_proxy` policy updates remain unavailable. Git authorization uses a
+separate typed API and credential store. It applies the same server-only and
+audit requirements.
 
-## System boundaries
+Transparent `egress` remains unavailable because the enabled sandbox providers
+do not yet expose one verified, provider-independent substitution contract.
+Kortix rejects it instead of presenting a false security boundary.
+
+## Access flow
 
 ```text
-Web / CLI / API
-        |
-        v
-Secret policy service
-  - authorize principal
-  - select consumer
-  - resolve delivery
-  - decrypt only when allowed
-  - record decision
-        |
-        +--> sandbox runtime: explicit plaintext delivery
-        +--> LLM gateway: server-side provider request
-        +--> Executor: server-side connector request
-        +--> Git proxy: server-side Git authorization
-        +--> HTTP broker: allowlisted upstream request
-        +--> egress adapter: boundary placeholder replacement
+project secret
+    |
+    v
+principal authorization
+    |
+    v
+agent grant AND session allowlist
+    |
+    v
+stored strategy AND configured consumer
+    |
+    +-- runtime/sandbox ------> plaintext environment variable
+    |
+    +-- broker/managed -------> server decrypts, uses, audits, discards
+    |
+    +-- broker/http_broker ---> session handle + outbound policy
+    |
+    +-- denied/unsupported ---> no value and a failed or denied result
 ```
 
-Only the secret policy service may decrypt a project secret for use. Storage,
-routes, and UI code can read metadata without decrypting the value. CI will
-enforce this boundary with an import rule after existing consumers migrate.
+For session-bound access, an empty session allowlist grants zero project
+secrets. The API intersects the immutable agent grant with the current session
+allowlist before it materializes runtime values or HTTP broker handles.
+Reserved `KORTIX_*` names cannot come from project secret rows.
 
-## Required behavior
+The secret consumer resolver performs these steps:
 
-### Authorization
+1. Load shared values and the active personal override, when one exists.
+2. Match the configured strategy and consumer.
+3. Decrypt only the selected value.
+4. Write `secret.consumer.used`, `denied`, `missing`, or `invalid`.
+5. Return the value only to the named server subsystem.
 
-- A session receives no secret that is outside its immutable allowlist.
-- An agent receives no secret that is outside its agent grant.
-- An empty session allowlist means zero project secrets.
-- Missing policy data fails closed for `broker`, `egress`, and `denied`.
-- Platform-reserved `KORTIX_*` names never come from project secret rows.
+The sandbox uses its session-scoped `KORTIX_TOKEN` to call Kortix. Provider,
+connector, Git, and automation credentials do not need to enter the sandbox.
 
-### Delivery
+## Creation defaults and migration
 
-- `runtime` is the only strategy that can place plaintext in a sandbox.
-- `broker` remains unavailable until its named server path exists.
-- `egress` remains unavailable until its provider adapter passes live tests.
-- `denied` blocks every consumer.
-- No strategy silently falls back to `runtime`.
-- A change from `runtime` requires rotation because an existing sandbox may
-  retain the old value.
+New generic secrets default to `runtime` with the `sandbox` consumer. This is an
+explicit compatibility choice for arbitrary local tools.
 
-### Network delivery
+When a caller supplies only `runtime` or `denied`, the API infers `sandbox` or
+no consumer. Broker creation always requires an explicit server consumer.
 
-The first egress implementation targets HTTPS header credentials. Each policy
-must contain at least one approved host. Optional method and path restrictions
-further narrow use. Redirects require a new policy match. Private, loopback,
-link-local, metadata, and DNS-rebinding targets are blocked.
+Known LLM credential keys default to `broker` with the `llm_gateway` consumer
+when the client omits both fields. The provider settings UI also sends this
+policy explicitly. A caller can still request `runtime` and `sandbox` when a
+local process genuinely needs that provider key.
 
-Daytona now supports opaque placeholders, HTTPS-header substitution, host
-allowlists, response scrubbing, and secret updates. It does not substitute in
-HTTP, request bodies, query parameters, or transformed values. Kortix must
-therefore keep a provider-independent broker for unsupported credentials.
+Migration `20260805205105000_isolate_existing_llm_credentials.sql` moves the
+catalog's existing LLM credentials to `broker` and `llm_gateway`. It clears
+obsolete network policies and handles. It also marks the value as requiring
+rotation because an earlier sandbox can retain plaintext.
 
-E2B exposes outbound network controls. Its documented public API does not yet
-prove equivalent secret substitution. E2B egress delivery remains disabled
-until a live capability test passes.
+A switch away from `runtime` updates active sandboxes immediately where the
+provider supports environment synchronization. Rotation is still required to
+invalidate copies that may already exist outside Kortix control.
 
-Provider-native delivery does not replace Kortix audit. Kortix must record the
-policy decision and upstream result for each managed use.
+## Multiple credentials and provider fallback
 
-## Agent-visible identity
+The database key is `(project_id, identifier)`, not `(project_id, key)`. Two
+identifiers can therefore store different values for one provider key:
 
-The sandbox exposes one Kortix bearer: `KORTIX_TOKEN`. The token identifies the
-project session and carries the current agent grant. LLM, Executor, Git, and
-broker routes use the same bearer.
+```text
+identifier: ANTHROPIC_API_KEY          key: ANTHROPIC_API_KEY
+identifier: anthropic-backup           key: ANTHROPIC_API_KEY
+```
 
-Machine identity must stay outside the guest. A root agent can read any token
-stored by a daemon inside the same guest. Provider control-plane credentials
-therefore belong in a host-side proxy, mTLS channel, or provider API.
+The LLM gateway tries credentials in this order:
 
-## API and UI contract
+1. The canonical identifier that equals the key.
+2. Other identifiers by most recent update time, then identifier.
+3. The managed Kortix provider, when configured.
 
-Every secret view exposes metadata, never the value:
+An active personal override replaces its matching shared identifier. It does
+not remove other identifiers from the fallback list.
 
-- `identifier`
-- `name`
-- `strategy`
-- `consumer`
-- `status`
-- `egress_policy` when applicable
-- `last_rotated_at`
-- `last_used_at`
-- `requires_rotation`
+The gateway advances to another credential for the same provider after a
+thrown `401`, a terminal authentication `400`, or a terminal authentication
+error in a stream. A single invalid credential preserves the upstream terminal
+error. Existing provider and model fallback rules still handle their defined
+`402`, `403`, and `429` cases.
 
-UI labels use direct language:
+## HTTPS broker
 
-| Strategy | Label | Warning |
-| --- | --- | --- |
-| `broker` | Used through Kortix | The value stays on Kortix services |
-| `egress` | Sent only to approved hosts | HTTPS header use only |
-| `runtime` | Readable in sandbox | Agent code can read and copy the value |
-| `denied` | Stored but disabled | No consumer can use the value |
+The HTTP broker is for credentials that Kortix can inject into one controlled
+HTTPS request. Its policy contains:
 
-After phase 6, new generic secrets default to `denied`. Known managed consumers
-default to `broker`. Existing secrets remain `runtime` until an explicit
-migration.
+- one or more exact approved hosts;
+- optional HTTP method and path restrictions;
+- one injection slot: header, query parameter, or JSON body field;
+- an optional handle prefix.
 
-## Central audit contract
+Each session receives a revisioned opaque handle. A strategy change revokes its
+active handles. The broker checks the current agent grant, session allowlist,
+stored policy, and handle snapshot before decrypting the value.
 
-The central `audit_events` log records administration, policy decisions, and
-managed use. Every event includes:
+An agent grant of `env: all` is a ceiling. It does not materialize HTTP broker
+handles by itself. The session must also contain an explicit allowlist with the
+secret identifier. The broker route intersects both policies again on every
+call. This rule limits a leaked session token to the broker secrets selected for
+that session.
 
-- `account_id`, `project_id`, and `session_id` when available
-- actor type, actor identifier, and source
-- action, resource type, and secret identifier
-- requested consumer and resolved strategy
-- outcome and denial reason
-- request, trace, and correlation identifiers
-- upstream host, HTTP method, status, and duration when applicable
+The broker enforces HTTPS. It blocks private, loopback, link-local, metadata,
+and rebinding targets. It reevaluates redirects. It bounds request and response
+sizes. It strips sensitive response headers and never records request bodies,
+response bodies, query values, injected headers, handles, or secret values.
 
-Audit data never contains plaintext values, encrypted envelopes, provider
-tokens, placeholders, authorization headers, request bodies, or response
-bodies.
+The CLI exposes this path through:
 
-Required actions include `secret.created`, `secret.updated`, `secret.deleted`,
-`secret.strategy.changed`, `secret.access.allowed`, `secret.access.denied`, and
-`secret.used`.
+```bash
+kortix secrets delivery API_KEY broker \
+  --consumer http-broker \
+  --allow-host api.example.com \
+  --allow-method POST \
+  --allow-path '/v1/*' \
+  --inject-header Authorization \
+  --template 'Bearer {{secret}}'
 
-A secret configuration mutation and its semantic audit event commit in one
-database transaction. Webhook dispatch starts only after that transaction
-commits. An audit insert failure rolls back the mutation.
+kortix secrets call API_KEY https://api.example.com/v1/resource \
+  --method POST \
+  --data '{"input":"value"}'
+```
 
-## Current implementation
+## Connector credentials
 
-The first implementation slice provides strategy metadata through the API and
-SDK. It supports `runtime` and `denied`. It rejects `broker` and `egress` with a
-typed `409` until their adapters exist. Only authorized human and service
-account principals can change a strategy. Restoring `runtime` requires a value
-rotation. Secret create, update, delete, and strategy changes produce atomic,
-metadata-only semantic audit events.
+A connector can use one project secret as its server-side credential. The
+secret must use `broker` strategy with the `connector` consumer. The connector
+must use project-owned authorization and must not already have a stored
+credential.
 
-This slice does not include broker adapters, egress adapters, the strategy
-editor UI, per-use audit events, or the default migration. The delivery phases
-below define that remaining work.
+Configure the policy, then bind the connector:
 
-## Delivery phases
+```bash
+kortix secrets delivery API_KEY broker --consumer connector
+kortix connectors secret crm API_KEY
+```
 
-1. **Close current gaps.** Fail closed for incomplete strategies. Centralize
-   server reads. Enforce `denied` for every consumer. Audit secret changes.
-2. **Expose the policy contract.** Add strategy and consumer metadata to the
-   API, SDK, CLI, and UI. Keep unavailable strategies disabled.
-3. **Broker managed consumers.** Route LLM, connector, and Git credentials
-   through their existing server services.
-4. **Add the generic HTTP broker.** Enforce host, method, path, redirect, SSRF,
-   rate, and response-scrubbing rules.
-5. **Add transparent egress.** Implement provider adapters and require live
-   capability tests. Never downgrade on unsupported providers.
-6. **Migrate defaults.** Classify existing secrets, rotate exposed values, and
-   change new-secret defaults after broker coverage is complete.
+Use `kortix connectors secret crm --clear` before selecting a different secret
+or storing a connector credential. Synchronizing the connector catalog keeps
+the binding. Deleting the secret or changing its delivery policy returns `409`
+until every connector binding is removed.
 
-Each phase must keep `main` deployable. Each new capability needs unit tests,
-live API tests, sandbox exfiltration tests, audit assertions, and negative tests.
+The web secret editor exposes the same binding as a connector checklist. It
+never reads or copies the secret value. Connector calls resolve the current
+value inside Kortix and send it only through the connector's declared
+authentication scheme.
 
-## Acceptance tests
+## Product surfaces
 
-- `runtime`: a selected secret is readable in a sandbox.
-- `denied`: the name and value are absent from the sandbox and every broker.
-- `broker`: the managed call succeeds and the sandbox cannot read the value.
-- `egress`: an allowed HTTPS header call succeeds with a placeholder.
-- `egress`: wrong host, method, path, redirect, body, query, and transformed
-  placeholder do not reveal or transmit the value.
-- Rotation changes managed use without returning the new value.
-- Each attempt creates one queryable audit event with no sensitive fields.
-- Daytona, E2B, Platinum, and local adapters fail closed when unsupported.
+The API, SDK, CLI, and web UI expose `strategy`, `consumer`,
+`delivery_status`, and `requires_rotation`. Values remain write-only.
 
-## References
+The web editor provides these choices:
 
-- [Daytona secrets](https://www.daytona.io/docs/en/secrets/)
-- [Daytona network limits](https://www.daytona.io/docs/en/network-limits/)
-- [E2B sandbox creation API](https://e2b.dev/docs/api-reference/sandboxes/create-sandbox)
+- **Readable in sandbox** for `runtime` and `sandbox`;
+- **LLM gateway** for provider requests;
+- **Connector** for connector authorization;
+- **Automation** for Connector actions and channels;
+- **HTTPS broker** for a policy-bound request;
+- **Stored but disabled** for `denied`.
+
+The UI shows transparent network delivery as unavailable. It does not imply
+that an opaque handle provides network-boundary substitution.
+
+The CLI supports the same available consumers through `kortix secrets
+delivery`. `kortix connectors secret` manages connector bindings. `kortix
+secrets ls --json` returns the stored delivery metadata.
+
+The SDK exposes:
+
+```ts
+await project.secrets.upsert({
+  identifier: "anthropic-primary",
+  name: "ANTHROPIC_API_KEY",
+  value,
+  strategy: "broker",
+  consumer: "llm_gateway",
+});
+
+await project.secrets.setStrategy("WEBHOOK_TOKEN", "broker", {
+  consumer: "http_broker",
+  egress_policy: {
+    backend: "kortix_fetch",
+    rules: [{ host: "api.example.com", methods: ["POST"], path: "/v1/" }],
+    inject: { kind: "header", name: "Authorization", template: "Bearer {{secret}}" },
+  },
+});
+```
+
+Session-scoped agents call the HTTP broker route directly with their
+`KORTIX_TOKEN`. Human project tokens can configure policy but cannot execute a
+session-bound broker request.
+
+## Audit and revocation
+
+Configuration changes write these semantic actions in the same database
+transaction as the mutation:
+
+- `secret.created`
+- `secret.updated`
+- `secret.deleted`
+- `secret.strategy.changed`
+
+Managed access writes:
+
+- `secret.consumer.used`
+- `secret.consumer.denied`
+- `secret.consumer.missing`
+- `secret.consumer.invalid`
+- `secret.consumer.refreshed`
+- `secret.consumer.refresh_failed`
+- `secret.handle.issued`
+- `secret.broker.requested`
+- `secret.broker.completed`
+- `secret.broker.failed`
+
+Events include account, project, session, actor, source, secret identifier,
+consumer, strategy, outcome, and safe upstream metadata when available. They
+exclude plaintext values, encrypted envelopes, provider tokens, opaque handles,
+authorization headers, query values, request bodies, and response bodies.
+
+Deleting a secret removes its usable value. Changing its strategy revokes
+active HTTP broker handles. Rotating a value changes subsequent server-side use
+without returning the new value to a client.
+
+## Failure and edge-case behavior
+
+- Missing policy data fails closed for managed delivery.
+- A consumer mismatch returns no value and writes a denial audit event.
+- `denied` blocks runtime and every managed consumer.
+- A reused identifier with a different key returns `409`.
+- A broker policy without a host or injection slot returns `400`.
+- A generic unsupported broker backend returns `409`.
+- Transparent `egress` returns `409`.
+- A stale, expired, or revoked session handle returns `409`.
+- A host, method, or path mismatch returns `403`.
+- A connector binding blocks secret deletion and incompatible strategy changes
+  with `409`.
+- A connector cannot combine a bound project secret with a stored credential.
+- Invalid upstream DNS or a private target returns a broker error without a
+  request.
+- Personal overrides use the shared row's delivery policy.
+- Multiple values for one key keep identifier-based authorization and audit
+  attribution.
+
+## Verification requirements
+
+Every change to this control plane must prove these paths:
+
+1. `runtime` appears in the selected sandbox environment.
+2. Managed and denied values do not appear in the sandbox environment.
+3. Every server consumer resolves only its configured secrets.
+4. The HTTP broker accepts a matching policy and rejects mismatches.
+5. Multiple provider credentials use deterministic fallback.
+6. Rotation changes future use without exposing the value.
+7. Audit rows contain reconstruction metadata and no secret material.
+8. API, SDK, CLI, and web behavior agree on the stored policy.
+
+Transparent network substitution needs a separate provider-adapter design,
+live exfiltration tests, and fail-closed capability detection before Kortix can
+enable `egress`.
+
+## Related specifications
+
 - [`2026-07-26-agent-scoped-secret-injection.md`](./specs/2026-07-26-agent-scoped-secret-injection.md)
 - [`2026-07-26-secret-delivery-policy.md`](./specs/2026-07-26-secret-delivery-policy.md)

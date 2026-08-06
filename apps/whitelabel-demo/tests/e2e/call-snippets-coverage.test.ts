@@ -233,7 +233,7 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Shown, with the control that performs it ───────────────────────────────
   'kortix.projects.provision()': 'project.provision',
   'kortix.projects.list()': 'project.provision',
-  'kortix.project().connectors.authorizations.list()': 'connections.list',
+  'kortix.project().connectors.connections.list()': 'connections.list',
   'kortix.project().sessions.create()': 'session.create',
   'kortix.session().changeModel()': 'session.model',
   'kortix.session().scope()': 'session.rescope',

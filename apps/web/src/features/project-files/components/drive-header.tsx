@@ -110,7 +110,7 @@ export function DriveHeader({
           <FileDiff className="size-4 shrink-0" />
           <span className="hidden sm:inline">Proposed changes</span>
           {reviewCount > 0 && (
-            <Badge variant="success" size="xs" className="ml-0.5 tabular-nums">
+            <Badge variant="success" size="tabular" className="ml-0.5">
               {reviewCount}
             </Badge>
           )}

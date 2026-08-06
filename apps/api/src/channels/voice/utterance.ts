@@ -23,7 +23,7 @@
  * Nothing here touches the DB or the network, which is what makes the exact
  * wording testable — see unit-voice-recording.test.ts. The `instruction` text
  * of each kind is carried over verbatim from the call sites it replaces
- * (turn.ts, answer-watch.ts, executor/db-deps.ts); changing it changes what a
+ * (turn.ts, answer-watch.ts, connector/db-deps.ts); changing it changes what a
  * live call actually says, so treat these strings as behaviour, not comments.
  *
  * WHY THESE INSTRUCTIONS ARE PHRASED THE WAY THEY ARE. Voice is the only channel

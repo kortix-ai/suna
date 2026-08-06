@@ -22,7 +22,7 @@ import {
   TerminalWindowIcon as Terminal,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
@@ -1239,7 +1239,7 @@ function SessionChatInputImpl({
                     </div>
                   ) : (
                     <AnimatePresence mode="wait" initial={false}>
-                      <motion.div
+                      <m.div
                         key={`${placeholderIndex}:${placeholderVariants[placeholderIndex]}`}
                         className="absolute inset-0"
                         initial={{ opacity: 0, y: 8 }}
@@ -1255,7 +1255,7 @@ function SessionChatInputImpl({
                         }}
                       >
                         {placeholderVariants[placeholderIndex]}
-                      </motion.div>
+                      </m.div>
                     </AnimatePresence>
                   )}
                 </div>

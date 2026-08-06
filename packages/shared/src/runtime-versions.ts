@@ -18,6 +18,7 @@ export type RuntimeVersions = {
   opencodeSdk: string;
   agentBrowser: string;
   playwright: string;
+  anydoc: string;
 };
 
 export const RUNTIME_VERSIONS = runtimeVersions as RuntimeVersions;
@@ -58,3 +59,4 @@ export const OPENCODE_SDK_VERSION = RUNTIME_VERSIONS.opencodeSdk;
 export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;
 export const PLAYWRIGHT_VERSION = RUNTIME_VERSIONS.playwright;
+export const ANYDOC_VERSION = RUNTIME_VERSIONS.anydoc;

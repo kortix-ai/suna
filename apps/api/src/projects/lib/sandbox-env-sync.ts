@@ -45,13 +45,37 @@ export interface SandboxEnvSnapshot {
   env: Record<string, string>;
   names: string[];
   revision: string;
+  scope: 'inherit' | 'restricted' | 'none';
+}
+
+export interface ProjectSecretPropagationTarget {
+  session_id: string;
+  sandbox_id: string | null;
+  status: 'synced' | 'failed';
+  scope: SandboxEnvSnapshot['scope'] | null;
+  revision: string | null;
+  exported: number;
+  managed: number | null;
+  withheld: number | null;
+  agent_env_written: boolean;
+  reason?: string;
+}
+
+export interface ProjectSecretPropagationResult {
+  ok: boolean;
+  active_sandboxes: number;
+  targeted: number;
+  synced: number;
+  failed: number;
+  exported: number;
+  results: ProjectSecretPropagationTarget[];
 }
 
 async function resolveOwnerRawEnv(
   projectId: string,
   sessionId: string | null,
   requestedAgent?: string | null,
-): Promise<Record<string, string> | null> {
+): Promise<{ env: Record<string, string>; scope: SandboxEnvSnapshot['scope'] } | null> {
   if (!sessionId) return null;
   const [row] = await db
     .select({
@@ -103,7 +127,7 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
-  return (
+  const env = (
     await listProjectSecretsSnapshotForUser(
       projectId,
       row.createdBy,
@@ -113,6 +137,15 @@ async function resolveOwnerRawEnv(
       sessionId,
     )
   ).env;
+  return {
+    env,
+    scope:
+      row.secretsAllowlist == null
+        ? 'inherit'
+        : row.secretsAllowlist.length === 0
+          ? 'none'
+          : 'restricted',
+  };
 }
 
 export async function resolveSandboxEnvSnapshot(
@@ -120,10 +153,10 @@ export async function resolveSandboxEnvSnapshot(
   sessionId: string | null,
   requestedAgent?: string | null,
 ): Promise<SandboxEnvSnapshot | null> {
-  const raw = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
-  if (!raw) return null;
-  const { env, names } = sanitizeSandboxEnv(raw);
-  return { env, names, revision: projectSecretsRevision(env) };
+  const resolved = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
+  if (!resolved) return null;
+  const { env, names } = sanitizeSandboxEnv(resolved.env);
+  return { env, names, revision: projectSecretsRevision(env), scope: resolved.scope };
 }
 
 function isSecureOrPrivateTarget(rawUrl: string): boolean {
@@ -160,7 +193,15 @@ async function postEnvToDaemon(args: {
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
-}): Promise<{ opencodeState: string | null }> {
+  requireAgentEnvProof?: boolean;
+}): Promise<{
+  opencodeState: string | null;
+  revision: string;
+  exported: number;
+  managed: number | null;
+  withheld: number | null;
+  agentEnvWritten: boolean;
+}> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
@@ -174,7 +215,9 @@ async function postEnvToDaemon(args: {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      ...args.snapshot,
+      env: args.snapshot.env,
+      names: args.snapshot.names,
+      revision: args.snapshot.revision,
       refreshModels: args.refreshModels ?? false,
       ...(args.opencodeEnv ? { opencodeEnv: args.opencodeEnv } : {}),
       ...(typeof args.llmGatewayEnabled === 'boolean'
@@ -195,8 +238,36 @@ async function postEnvToDaemon(args: {
   // The daemon echoes opencode's post-sync state. After a model-affecting change
   // it restarts opencode and reports `starting` here — the signal we use to wait
   // for readiness before the prompt is forwarded.
-  const body = (await res.json().catch(() => null)) as { opencode?: unknown } | null;
-  return { opencodeState: typeof body?.opencode === 'string' ? body.opencode : null };
+  const body = (await res.json().catch(() => null)) as {
+    ok?: unknown;
+    revision?: unknown;
+    exported?: unknown;
+    managed?: unknown;
+    withheld?: unknown;
+    agent_env_written?: unknown;
+    opencode?: unknown;
+  } | null;
+  const expectedExported = Object.keys(args.snapshot.env).length;
+  if (args.requireAgentEnvProof) {
+    if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');
+    if (body.revision !== args.snapshot.revision) {
+      throw new Error(`env sync revision mismatch: expected ${args.snapshot.revision}, received ${String(body.revision)}`);
+    }
+    if (body.agent_env_written !== true) {
+      throw new Error('env sync did not confirm agent-env.sh write');
+    }
+    if (body.exported !== expectedExported) {
+      throw new Error(`env sync export mismatch: expected ${expectedExported}, received ${String(body.exported)}`);
+    }
+  }
+  return {
+    opencodeState: typeof body?.opencode === 'string' ? body.opencode : null,
+    revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
+    exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
+    managed: typeof body?.managed === 'number' ? body.managed : null,
+    withheld: typeof body?.withheld === 'number' ? body.withheld : null,
+    agentEnvWritten: body?.agent_env_written === true,
+  };
 }
 
 export async function syncSandboxEnvForPrompt(args: {
@@ -257,7 +328,16 @@ export async function syncSandboxEnvForPrompt(args: {
 export async function propagateProjectSecretsToActiveSandboxes(
   projectId: string,
   opts?: { refreshModels?: boolean },
-): Promise<void> {
+): Promise<ProjectSecretPropagationResult> {
+  const report: ProjectSecretPropagationResult = {
+    ok: true,
+    active_sandboxes: 0,
+    targeted: 0,
+    synced: 0,
+    failed: 0,
+    exported: 0,
+    results: [],
+  };
   try {
     const rows = await db
       .select({
@@ -268,34 +348,129 @@ export async function propagateProjectSecretsToActiveSandboxes(
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
 
+    report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
+    for (const row of rows) {
+      if (row.externalId) continue;
+      report.results.push({
+        session_id: row.sessionId,
+        sandbox_id: null,
+        status: 'failed',
+        scope: null,
+        revision: null,
+        exported: 0,
+        managed: null,
+        withheld: null,
+        agent_env_written: false,
+        reason: 'active sandbox has no external id',
+      });
+    }
+    report.targeted = targets.length;
     if (targets.length === 0) {
       console.info('[env-sync] propagate: no active sandboxes found', { projectId, totalRows: rows.length });
-      return;
+      report.failed = report.results.length;
+      report.ok = report.failed === 0;
+      return report;
     }
     console.info('[env-sync] propagate: pushing to sandboxes', { projectId, targetCount: targets.length });
 
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const config = (row.config || {}) as Record<string, unknown>;
       const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
-      if (!serviceKey) return;
+      if (!serviceKey) {
+        report.results.push({
+          session_id: row.sessionId,
+          sandbox_id: row.externalId,
+          status: 'failed',
+          scope: null,
+          revision: null,
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason: 'active sandbox has no service key',
+        });
+        return;
+      }
+      let snapshot: SandboxEnvSnapshot | null = null;
       try {
-        const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
-        if (!snapshot) return;
+        snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
+        if (!snapshot) throw new Error('session env snapshot is unavailable');
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-        await postEnvToDaemon({ previewUrl: url, providerHeaders: headers, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        const proof = await postEnvToDaemon({
+          previewUrl: url,
+          providerHeaders: headers,
+          serviceKey,
+          snapshot,
+          refreshModels: opts?.refreshModels,
+          requireAgentEnvProof: true,
+        });
+        report.results.push({
+          session_id: row.sessionId,
+          sandbox_id: row.externalId,
+          status: 'synced',
+          scope: snapshot.scope,
+          revision: proof.revision,
+          exported: proof.exported,
+          managed: proof.managed,
+          withheld: proof.withheld,
+          agent_env_written: proof.agentEnvWritten,
+        });
       } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        report.results.push({
+          session_id: row.sessionId,
+          sandbox_id: row.externalId,
+          status: 'failed',
+          scope: snapshot?.scope ?? null,
+          revision: snapshot?.revision ?? null,
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason,
+        });
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
-          err instanceof Error ? err.message : err,
+          reason,
         );
       }
     });
+    report.synced = report.results.filter((result) => result.status === 'synced').length;
+    report.failed = report.results.filter((result) => result.status === 'failed').length;
+    report.exported = report.results.reduce((sum, result) => sum + result.exported, 0);
+    report.results.sort((a, b) => a.session_id.localeCompare(b.session_id));
+    report.ok = report.failed === 0;
+    console.info('[env-sync] propagate: complete', {
+      projectId,
+      activeSandboxes: report.active_sandboxes,
+      targeted: report.targeted,
+      synced: report.synced,
+      failed: report.failed,
+      exported: report.exported,
+    });
+    return report;
   } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
     console.warn(
       `[env-sync] hot fan-out failed for project ${projectId}:`,
-      err instanceof Error ? err.message : err,
+      reason,
     );
+    report.ok = false;
+    report.failed += 1;
+    report.results.push({
+      session_id: '',
+      sandbox_id: null,
+      status: 'failed',
+      scope: null,
+      revision: null,
+      exported: 0,
+      managed: null,
+      withheld: null,
+      agent_env_written: false,
+      reason,
+    });
+    return report;
   }
 }
 
@@ -391,6 +566,7 @@ function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
     env: {},
     names: [],
     revision: `${reason}-${Date.now()}`,
+    scope: 'inherit',
   };
 }
 
@@ -551,6 +727,104 @@ export async function pushSessionModelToSandbox(input: {
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[env-sync] model push failed for session ${input.sessionId}:`, reason);
+    return { applied: false, reason };
+  }
+}
+
+/**
+ * Re-resolve this session's secrets snapshot and deliver it to the RUNNING
+ * sandbox, restarting opencode so its process env picks up the new set.
+ *
+ * `PUT /sessions/{id}/scope` re-scopes a live session's secrets allowlist. The
+ * row was persisted, but for a long time nothing pushed the new snapshot to the
+ * box: the route returned "Applies from the next prompt." and delegated the
+ * actual delivery to `syncSandboxEnvForPrompt`. That delegation was unreliable:
+ *
+ *   - the per-prompt hot sync has two silent early-returns (`!serviceKey`,
+ *     `!snapshot`/`!row.createdBy`) that skip the POST with no log;
+ *   - it only fires when the prompt routes through `POST :8000
+ *     /session/{id}/{prompt_async|message}` — a prompt sent any other way
+ *     (straight to :4096, the lifecycle queue) slips past it;
+ *   - even when it DID fire, the daemon's env route took the ~51ms dispose
+ *     fast path for a pure secret change, and a dispose re-reads the opencode
+ *     CONFIG file only — it does not re-run `mergeProjectEnv`, so opencode's
+ *     process env stayed on the OLD (0/47) snapshot while `agent-env.sh` got
+ *     the new one (so freshly-started shells saw 47/47). The box reported a
+ *     stale OpenCode PID until something else forced a respawn.
+ *
+ * Pushing here — the same pattern the `/model` PUT already uses — fixes both
+ * halves: the snapshot is re-derived from the freshly-committed allowlist and
+ * POSTed to the daemon, and `refreshModels: true` restarts opencode so
+ * `spawnChild` re-runs `mergeProjectEnv` + `withoutDeniedProviderEnv`. The
+ * LLM-gateway provider strip is re-stamped alongside (it lives in the same
+ * `opencodeEnv`/`llmGatewayDenyEnv` channel), so the 42/47-vs-47/47 split
+ * between the opencode process and tool shells is preserved, and revocation
+ * keeps working (`knownNames` is still tracked in the daemon store, so a
+ * dropped secret is actively cleared on the respawn).
+ *
+ * Best-effort by design, mirroring `pushSessionModelToSandbox`: the row is
+ * already committed, so a sandbox that is down or unreachable simply picks the
+ * new scope up on its next boot. The caller reports `applied_live` so a UI can
+ * tell "in effect now" from "stored, applies at next boot" — the same
+ * distinction the model route makes.
+ */
+export async function pushSessionScopeToSandbox(input: {
+  projectId: string;
+  sessionId: string;
+}): Promise<{ applied: boolean; reason?: string }> {
+  try {
+    const [row] = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        provider: sessionSandboxes.provider,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, input.sessionId),
+          eq(sessionSandboxes.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+
+    const config = (row.config || {}) as Record<string, unknown>;
+    const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+    if (!serviceKey) return { applied: false, reason: 'sandbox has no service key' };
+
+    // Re-derive from the row the route JUST committed — `resolveOwnerRawEnv`
+    // reads `secretsAllowlist` fresh, so this reflects the new scope, not the
+    // boot snapshot the daemon is still running.
+    const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
+    if (!snapshot) return { applied: false, reason: 'no env snapshot' };
+
+    const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(input.projectId);
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: SANDBOX_SERVICE_PORT,
+      transport: 'http',
+    });
+    await postEnvToDaemon({
+      previewUrl: url,
+      providerHeaders: headers,
+      serviceKey,
+      snapshot,
+      // Restarts opencode so spawnChild re-runs mergeProjectEnv + the gateway
+      // strip. A dispose cannot refresh the child's process env (project
+      // secrets shape it at spawn, not via the config file), so the respawn is
+      // the load-bearing part — see the daemon-side gate in routes/env.ts.
+      refreshModels: true,
+      llmGatewayEnabled,
+      llmGatewayBaseUrl: llmGatewayEnabled
+        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
+        : undefined,
+      llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
+    });
+    await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
+    return { applied: true };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[env-sync] scope push failed for session ${input.sessionId}:`, reason);
     return { applied: false, reason };
   }
 }

@@ -5,7 +5,7 @@ import { makeHandleSummary } from './lib/summary.js';
 export const options = {
   scenarios: {
     soak: {
-      executor: 'ramping-vus',
+      connector: 'ramping-vus',
       startVUs: 0,
       stages: [
         { duration: '2m', target: 30 },

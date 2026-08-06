@@ -88,7 +88,7 @@ export function Row({
   );
 }
 
-/** Real brand logo (favicon) on a neutral tile — used for Integrations + Models. */
+/** Real brand logo (favicon) on a neutral tile — used for Connectors + Models. */
 export function BrandLogo({
   domain,
   alt,

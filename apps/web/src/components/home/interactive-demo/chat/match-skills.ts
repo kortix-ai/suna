@@ -85,7 +85,7 @@ export function matchSkillsFromPrompt(text: string, explicit?: string[]): string
   const scored = scoreByOverlap(trimmed);
   if (scored.length > 0) return scored;
 
-  return ['kortix-executor'];
+  return ['kortix-connectors'];
 }
 
 export function skillDescription(name: string): string | undefined {

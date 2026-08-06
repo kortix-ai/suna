@@ -14,6 +14,10 @@
  */
 
 import { and, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { OPENCODE_VERSION } from '@kortix/shared';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
@@ -43,6 +47,7 @@ import {
   type SandboxTemplateProviderCoverage,
 } from './provider-coverage';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
+import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
@@ -400,7 +405,7 @@ type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
  *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
  *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so
  *     the ONLY thing that changed is the agent binary. A bumped opencode /
- *     entrypoint / CLI / slack-cli / executor-sdk / manifest-schema / browser /
+ *     entrypoint / CLI / slack-cli / SDK / manifest-schema / browser /
  *     layer version — or the user image or spec — moves swapKey → full rebuild.
  *     (No isShared shortcut: the shared default's runtime LAYER is not constant,
  *     so it must pass the same swapKey gate as everything else.)
@@ -1285,6 +1290,72 @@ async function ensurePlatformDefaultImage(
   });
 }
 
+const metaImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+let metaRuntimeFingerprint: Promise<string> | null = null;
+
+function currentMetaRuntimeFingerprint(): Promise<string> {
+  if (metaRuntimeFingerprint) return metaRuntimeFingerprint;
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+  metaRuntimeFingerprint = buildRuntimeArtifactFingerprint({
+    sandboxVersion: `meta-v3:opencode:${OPENCODE_VERSION}`,
+    opencodeVersion: OPENCODE_VERSION,
+    artifacts: [
+      { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
+      { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
+      { label: 'cli', path: resolve(root, 'apps/cli/src') },
+      { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
+      { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
+      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
+      { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
+      { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
+      { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
+      { label: 'registry', path: resolve(root, 'packages/registry/src') },
+      { label: 'shared', path: resolve(root, 'packages/shared/src') },
+      { label: 'starter', path: resolve(root, 'packages/starter/src') },
+      // The managed skills baked into the image live under templates/, not
+      // src/ — without this a SKILL.md edit never re-fingerprints the image.
+      { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
+    ],
+  });
+  return metaRuntimeFingerprint;
+}
+
+export async function ensureMetaSandboxImage(opts: {
+  source?: SnapshotBuildSource;
+  provider: string;
+}): Promise<EnsureSandboxImageResult> {
+  const provider = getSandboxProvider(opts.provider);
+  if (!provider.isConfigured()) {
+    throw new SnapshotBuildError(`Sandbox provider ${opts.provider} is not configured`);
+  }
+  const fingerprint = await currentMetaRuntimeFingerprint();
+  const contentHash = createHash('sha256').update(`meta-runtime-v1\0${fingerprint}`).digest('hex');
+  const snapshotName = `kortix-meta-${contentHash.slice(0, 16)}`;
+  const buildKey = `${opts.provider}:${snapshotName}`;
+  const existing = metaImageBuilds.get(buildKey);
+  if (existing) return existing;
+
+  const build = (async () => {
+    let state = await provider.getSnapshotState(snapshotName);
+    if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
+    if (state === 'active') {
+      return { snapshotName, slug: 'meta', contentHash, built: false, isDefault: false };
+    }
+    if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
+    await provider.buildSnapshot({
+      snapshotName,
+      userDockerfile: '# platform meta runtime',
+      spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
+      slug: 'meta',
+      isShared: true,
+      runtimeProfile: 'meta',
+    });
+    return { snapshotName, slug: 'meta', contentHash, built: true, isDefault: false };
+  })().finally(() => metaImageBuilds.delete(buildKey));
+  metaImageBuilds.set(buildKey, build);
+  return build;
+}
+
 let startupPreBuildKicked = false;
 
 /**
@@ -1305,6 +1376,18 @@ export function kickStartupPreBuild(): void {
       .catch((err) =>
         console.warn(
           `[snapshots] startup pre-build of platform default failed (${providerId}):`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
+      .then((r) =>
+        console.log(
+          `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
+        ),
+      )
+      .catch((err) =>
+        console.warn(
+          `[snapshots] startup pre-build of platform meta failed (${providerId}):`,
           err instanceof Error ? err.message : err,
         ),
       );

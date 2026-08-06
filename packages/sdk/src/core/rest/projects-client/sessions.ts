@@ -74,20 +74,10 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  authorization_id: string;
+  connection_id: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
-export type SessionConnectorBindingInput =
-  | {
-      authorization_id: string;
-      /** @deprecated Use `authorization_id`. Equal dual IDs remain accepted. */
-      profile_id?: string;
-    }
-  | {
-      authorization_id?: never;
-      /** @deprecated Use `authorization_id`. */
-      profile_id: string;
-    };
+export type SessionConnectorBindingInput = SessionConnectorBinding;
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
 export interface PendingSessionPrompt {
@@ -131,9 +121,9 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
-   * Connector profiles that must resolve a strategy-compatible authorization
+   * Connectors that must resolve a strategy-compatible authorization
    * before provisioning. Missing authorizations return
-   * `CONNECTOR_AUTHORIZATION_REQUIRED`.
+   * `CONNECTOR_CONNECTION_REQUIRED`.
    */
   require_connectors?: string[];
   /**
@@ -353,7 +343,7 @@ export async function getProjectSession(
   );
 }
 
-/** One governed action an agent took in a session (from the executor audit). */
+/** One governed action an agent took in a session (from the connector audit). */
 export interface SessionAuditAction {
   execution_id: string;
   action: string;
@@ -398,7 +388,7 @@ export interface SessionAudit {
   actions: SessionAuditAction[];
 }
 
-/** Per-session audit trail: every executor-gated action the agent took, with its
+/** Per-session audit trail: every connector-gated action the agent took, with its
  *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
  *  see the session (its launcher + project managers). */
 export async function getSessionAudit(
@@ -691,9 +681,9 @@ export interface SessionScopeInput {
    *
    * Unlike `connector_bindings`, an alias here needs nothing connected to it:
    * that is the point. A binding says "use THIS connection" and must carry an
-   * authorization id, so it cannot express "this session needs Gmail and has
+   * connection id, so it cannot express "this session needs Gmail and has
    * none". Naming an alias here makes the next turn stop with
-   * `CONNECTOR_AUTHORIZATION_REQUIRED` and a connect prompt instead of letting
+   * `CONNECTOR_CONNECTION_REQUIRED` and a connect prompt instead of letting
    * the agent discover the gap mid-answer.
    */
   require_connectors?: string[] | null;

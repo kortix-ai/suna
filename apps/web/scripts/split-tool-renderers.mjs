@@ -122,7 +122,7 @@ for (let i = 0; i < lines.length; i++) {
 const sharedEnd = toolStarts[0]?.line ?? 1462;
 const sharedContent = lines.slice(sharedStart, sharedEnd).join('\n');
 
-// Tail: ToolError through end (but extract parseErrorContent from question/executor section)
+// Tail: ToolError through end (but extract parseErrorContent from question/connector section)
 let tailStart = -1;
 for (let i = 0; i < lines.length; i++) {
   if (lines[i].startsWith('export function ToolError')) {
@@ -132,7 +132,7 @@ for (let i = 0; i < lines.length; i++) {
 }
 const tailContent = lines.slice(tailStart).join('\n');
 
-// Executor helpers + parseErrorContent (between QuestionTool registrations and ToolError)
+// Connector helpers + parseErrorContent (between QuestionTool registrations and ToolError)
 let midStart = -1;
 let midEnd = tailStart;
 for (let i = 0; i < lines.length; i++) {

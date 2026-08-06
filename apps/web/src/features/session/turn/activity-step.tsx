@@ -37,7 +37,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   task: UsersThreeIcon,
 };
 
-function iconFor(part: Part) {
+/** Exported so a group row can lead with the same glyph its members carry. */
+export function iconFor(part: Part) {
   if (!isToolPart(part)) return StackIcon;
   return ICONS[normalizeActivityToolName(part.tool)] ?? StackIcon;
 }

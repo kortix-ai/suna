@@ -3,19 +3,39 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SessionFilterValue } from '@/components/projects/session-label';
+import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
+import {
+  DEFAULT_SESSION_GROUP_MODE,
+  type SessionGroupMode,
+  type SessionOrderMode,
+} from '@/features/workspace/project-sidebar/session-grouping';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
- * Per-project session-list filter (All / My Chats / Slack / Email / …).
+ * Per-project session-list VIEW state — grouping, ordering, the two filter
+ * facets, and section visibility/collapse.
  *
- * Held in a module-level, persisted store so the chosen filter survives the
+ * Held in a module-level, persisted store so the chosen view survives the
  * project shell remounting on navigation — opening a session, ⌘J, switching
- * sessions. Local component state used to reset back to "all" on every such
- * remount.
+ * sessions. Local component state used to reset back to defaults on every
+ * such remount.
  */
 
-const STORAGE_KEY = 'kortix.project-session-filter';
+const STORAGE_KEY = 'kortix.project-session-view';
+
+/**
+ * The fallback every list-valued selector must use — never a bare `[]`.
+ *
+ * zustand v5 reads through `useSyncExternalStore`, which compares snapshots
+ * with `Object.is`. A selector written `s.statusFiltersByProject[id] ?? []`
+ * allocates a NEW array on every read, so the snapshot never equals the
+ * previous one and React re-renders forever ("Maximum update depth exceeded").
+ * One frozen module-level reference makes the comparison stable.
+ *
+ * `readonly never[]` is assignable to any `readonly T[]`, so a single constant
+ * serves every list in this store.
+ */
+export const EMPTY_LIST: readonly never[] = Object.freeze([]);
 
 /** Soft cap so the per-project map can't grow unbounded; keeps the last N. */
 const MAX_TRACKED_PROJECTS = 24;
@@ -26,27 +46,115 @@ function pruneProjects<V>(map: Record<string, V>): Record<string, V> {
   return Object.fromEntries(keys.slice(-MAX_TRACKED_PROJECTS).map((k) => [k, map[k]]));
 }
 
+function toggleValue<V>(list: readonly V[], value: V): V[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
 interface State {
-  filterByProject: Record<string, SessionFilterValue>;
+  groupByProject: Record<string, SessionGroupMode>;
+  orderByProject: Record<string, SessionOrderMode>;
+  statusFiltersByProject: Record<string, SessionStatusFilter[]>;
+  sourceFiltersByProject: Record<string, SessionSourceFilter[]>;
+  hiddenSectionsByProject: Record<string, string[]>;
+  collapsedSectionsByProject: Record<string, string[]>;
 }
 
 interface Actions {
-  setFilter: (projectId: string, filter: SessionFilterValue) => void;
+  setGroupMode: (projectId: string, mode: SessionGroupMode) => void;
+  setOrderMode: (projectId: string, order: SessionOrderMode) => void;
+  toggleStatusFilter: (projectId: string, value: SessionStatusFilter) => void;
+  toggleSourceFilter: (projectId: string, value: SessionSourceFilter) => void;
+  resetFilters: (projectId: string) => void;
+  toggleSectionHidden: (projectId: string, sectionId: string) => void;
+  toggleSectionCollapsed: (projectId: string, sectionId: string) => void;
+  collapseAllSections: (projectId: string, sectionIds: readonly string[]) => void;
 }
 
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => ({
-      filterByProject: {},
-      setFilter: (projectId, filter) => {
-        if ((get().filterByProject[projectId] ?? 'all') === filter) return;
-        set({ filterByProject: { ...get().filterByProject, [projectId]: filter } });
+      groupByProject: {},
+      setGroupMode: (projectId, mode) => {
+        if ((get().groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE) === mode) return;
+        set({ groupByProject: { ...get().groupByProject, [projectId]: mode } });
+      },
+
+      orderByProject: {},
+      setOrderMode: (projectId, order) => {
+        if ((get().orderByProject[projectId] ?? 'activity') === order) return;
+        set({ orderByProject: { ...get().orderByProject, [projectId]: order } });
+      },
+
+      statusFiltersByProject: {},
+      toggleStatusFilter: (projectId, value) => {
+        const current = get().statusFiltersByProject[projectId] ?? [];
+        set({
+          statusFiltersByProject: {
+            ...get().statusFiltersByProject,
+            [projectId]: toggleValue(current, value),
+          },
+        });
+      },
+
+      sourceFiltersByProject: {},
+      toggleSourceFilter: (projectId, value) => {
+        const current = get().sourceFiltersByProject[projectId] ?? [];
+        set({
+          sourceFiltersByProject: {
+            ...get().sourceFiltersByProject,
+            [projectId]: toggleValue(current, value),
+          },
+        });
+      },
+
+      resetFilters: (projectId) => {
+        set({
+          statusFiltersByProject: { ...get().statusFiltersByProject, [projectId]: [] },
+          sourceFiltersByProject: { ...get().sourceFiltersByProject, [projectId]: [] },
+        });
+      },
+
+      hiddenSectionsByProject: {},
+      toggleSectionHidden: (projectId, sectionId) => {
+        const current = get().hiddenSectionsByProject[projectId] ?? [];
+        set({
+          hiddenSectionsByProject: {
+            ...get().hiddenSectionsByProject,
+            [projectId]: toggleValue(current, sectionId),
+          },
+        });
+      },
+
+      collapsedSectionsByProject: {},
+      toggleSectionCollapsed: (projectId, sectionId) => {
+        const current = get().collapsedSectionsByProject[projectId] ?? [];
+        set({
+          collapsedSectionsByProject: {
+            ...get().collapsedSectionsByProject,
+            [projectId]: toggleValue(current, sectionId),
+          },
+        });
+      },
+      collapseAllSections: (projectId, sectionIds) => {
+        set({
+          collapsedSectionsByProject: {
+            ...get().collapsedSectionsByProject,
+            [projectId]: [...sectionIds],
+          },
+        });
       },
     }),
     {
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
-      partialize: (state) => ({ filterByProject: pruneProjects(state.filterByProject) }),
+      partialize: (state) => ({
+        groupByProject: pruneProjects(state.groupByProject),
+        orderByProject: pruneProjects(state.orderByProject),
+        statusFiltersByProject: pruneProjects(state.statusFiltersByProject),
+        sourceFiltersByProject: pruneProjects(state.sourceFiltersByProject),
+        hiddenSectionsByProject: pruneProjects(state.hiddenSectionsByProject),
+        collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
+      }),
     },
   ),
 );

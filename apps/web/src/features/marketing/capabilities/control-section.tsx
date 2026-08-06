@@ -26,7 +26,7 @@ import { Passage } from './passage';
  *
  * DO NOT ADD THE ALLOW / ASK / BLOCK WALKTHROUGH HERE. It was proposed for this
  * section on 2026-07-31 and rejected: the per-action policy material and the
- * connector-permissions capture belong on `/integrations`, high up, where a
+ * connector-permissions capture belong on `/connectors`, high up, where a
  * reader is already thinking about connecting a tool. This section stays prose,
  * and stays quiet.
  */

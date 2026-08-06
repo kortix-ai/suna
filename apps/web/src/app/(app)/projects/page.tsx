@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { UpgradeButton } from '@/features/billing/upgrade-button';
-import { Icon } from '@/features/icon/icon';
+import { Plus } from '@/features/icon/icons/plus';
 import { AppHeader } from '@/features/layout/app-header';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -22,14 +22,13 @@ import { ProjectCreateModal } from '@/features/projects/modal/project-create-mod
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
-import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import { syncSubscription } from '@kortix/sdk';
-import { fireConfetti } from '@/lib/confetti';
+import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import {
   ensureFirstProject,
   isAutoProjectSuppressed,
   isManagedGitUnavailableError,
+  isProvisionInFlightError,
   navigationMayCreateProject,
   shouldAutoCreateFirstProject,
   suppressAutoProjectAfterDelete,
@@ -53,6 +52,15 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const PROJECT_SKELETON_KEYS = Array.from({ length: 6 }, (_, index) => `project-skeleton-${index}`);
+
+/**
+ * Backoff for a concurrent-provision retry, in ms — one entry per retry, so
+ * three attempts in total. Same shape and same numbers as `/projects/start`'s
+ * `RETRY_DELAY_MS`: both doors run the SAME logical auto-create against the
+ * same persisted `idempotency_key`, so a user who trips the 409 must not get a
+ * different outcome depending on which one they landed on.
+ */
+const AUTO_CREATE_RETRY_DELAY_MS = [400, 1200];
 
 /**
  * The one loading state for this page. Auth gate, first-project bootstrap, and
@@ -220,6 +228,14 @@ export default function ProjectsPage() {
   });
   const autoCreateAttempted = useRef<Set<string>>(new Set());
   const [autoCreating, setAutoCreating] = useState(false);
+  const autoCreateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (autoCreateTimer.current) clearTimeout(autoCreateTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const accountId = activeAccountId;
@@ -247,34 +263,57 @@ export default function ProjectsPage() {
 
     autoCreateAttempted.current.add(accountId);
     setAutoCreating(true);
-    ensureFirstProject(accountId, {
-      preferredProjectId: readLastProjectId(user?.id),
-      // Same CWE-352 gate as the landing door: a cross-site link must not be
-      // able to mint a managed git repo just because the visitor is signed in.
-      allowCreate: navigationMayCreateProject(),
-    })
-      .then((project) => {
-        if (!project) {
-          setAutoCreating(false);
-          return;
-        }
-        writeLastProjectId(user?.id, project.project_id);
-        queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
-        router.replace(`/projects/${project.project_id}`);
+
+    // `attempt` is a self-scheduling loop rather than a plain call because a
+    // concurrent, healthy provision (409 `provision_in_flight`) needs to be
+    // WAITED OUT here, not reported. This effect cannot simply re-run — its
+    // deps do not change when an attempt fails — so without the loop the user
+    // would be left staring at an empty list while the other tab's create
+    // completes. `/projects/start` already retries in place; this is the same
+    // recovery on the other door.
+    const attempt = (n: number) => {
+      ensureFirstProject(accountId, {
+        preferredProjectId: readLastProjectId(user?.id),
+        // Same CWE-352 gate as the landing door: a cross-site link must not be
+        // able to mint a managed git repo just because the visitor is signed in.
+        allowCreate: navigationMayCreateProject(),
       })
-      .catch((err) => {
-        autoCreateAttempted.current.delete(accountId);
-        setAutoCreating(false);
-        // Managed git not configured (self-host with no MANAGED_GIT_*) is an
-        // operator state, not a user error: fall back to the manual create flow
-        // so the BYO-repo path stays reachable instead of dead-ending.
-        if (isManagedGitUnavailableError(err)) {
-          setCreateAccountId(accountId);
-          setModalOpen(true);
-          return;
-        }
-        console.error('[onboarding] auto-create first project failed', err);
-      });
+        .then((project) => {
+          if (!project) {
+            setAutoCreating(false);
+            return;
+          }
+          writeLastProjectId(user?.id, project.project_id);
+          queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
+          router.replace(`/projects/${project.project_id}`);
+        })
+        .catch((err) => {
+          const delay = AUTO_CREATE_RETRY_DELAY_MS[n - 1];
+          if (isProvisionInFlightError(err) && delay !== undefined) {
+            // Retry with the SAME persisted idempotency key — the server-side
+            // dedupe collapses this to the one project the other call is
+            // creating. Not logged: nothing has gone wrong yet.
+            autoCreateTimer.current = setTimeout(() => attempt(n + 1), delay);
+            return;
+          }
+          autoCreateAttempted.current.delete(accountId);
+          setAutoCreating(false);
+          // Managed git not configured (self-host with no MANAGED_GIT_*) is an
+          // operator state, not a user error: fall back to the manual create flow
+          // so the BYO-repo path stays reachable instead of dead-ending.
+          if (isManagedGitUnavailableError(err)) {
+            setCreateAccountId(accountId);
+            setModalOpen(true);
+            return;
+          }
+          // Reached on a genuine failure AND on a retry budget exhausted by a
+          // provision that never became visible — a stuck onboarding must leave
+          // a trace, or it produces a support ticket with nothing to read.
+          console.error('[onboarding] auto-create first project failed', err);
+        });
+    };
+
+    attempt(1);
   }, [
     activeAccountId,
     canCreateProjects,
@@ -465,7 +504,7 @@ export default function ProjectsPage() {
                       onClick={() => openCreateModal(activeAccountId)}
                       disabled={!canCreateProjects}
                     >
-                      <Icon.Plus />
+                      <Plus />
                       {tI18nHardcoded.raw(
                         'autoAppAppProjectsPageJsxTextCreateYourFirstProject061cafdb',
                       )}

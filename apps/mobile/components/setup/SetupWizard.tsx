@@ -5,7 +5,7 @@
  *   Step 1: Connect an LLM provider (required for agent to work)
  *   Step 2: Default model selection (choose which model to use)
  *   Step 3: Tool API keys (optional — web search, scraping, etc.)
- *   Step 4: Pipedream integrations (optional — 3,000+ app integrations)
+ *   Step 4: Pipedream connections (optional — 3,000+ app connections)
  *   Step 5: Get started — confirmation before onboarding chat
  *
  * After completion, writes INSTANCE_SETUP_COMPLETE=true to sandbox env.
@@ -1121,7 +1121,7 @@ function PipedreamStep({ onComplete, completing, isDark, themeColors }: StepProp
           <Link size={20} color={isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)'} />
         </View>
         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: colors.fg, textAlign: 'center' }}>
-          Third-party integrations
+          Third-party connections
         </Text>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted, textAlign: 'center', lineHeight: 18, paddingHorizontal: 8 }}>
           Connect to 3,000+ apps via Pipedream Connect. Optional — you can add this later in Settings.

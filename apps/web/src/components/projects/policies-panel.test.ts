@@ -79,6 +79,54 @@ describe('PoliciesPanel source guard — no unguarded query.data.policies.map', 
   });
 });
 
+// The panel is rendered inside the Global rules sheet and the customize
+// Connectors section, so it has to speak the design-system dialect: hand-composed
+// `bg-popover rounded-md border` panels, `kortix-*` accents, named toast helpers.
+// Each assertion below pins a primitive that the panel was previously built from
+// and that a copy-paste from an older screen would quietly reintroduce.
+describe('PoliciesPanel source guard — design-system primitives', () => {
+  const imports = panelSource
+    .split('\n')
+    .filter((line) => line.startsWith('import ') || line.startsWith('  '))
+    .join('\n');
+
+  test('no banned wrappers: SectionCard, List/ListRow, Dialog', () => {
+    expect(imports).not.toContain("from '@/components/ui/section-card'");
+    expect(imports).not.toContain("from '@/components/ui/list'");
+    expect(imports).not.toContain("from '@/components/ui/dialog'");
+  });
+
+  test('toasts come from the named helpers, not @/lib/toast', () => {
+    expect(imports).not.toContain("from '@/lib/toast'");
+    expect(panelSource).toContain("from '@/components/ui/toast'");
+    expect(panelSource).toContain('successToast(');
+    expect(panelSource).toContain('errorToast(');
+  });
+
+  test('semantic colour is kortix-*, never a raw Tailwind palette or a dark: hack', () => {
+    expect(panelSource).toContain('text-kortix-orange');
+    expect(panelSource).toContain('text-kortix-red');
+    expect(panelSource).not.toContain('amber-');
+    expect(panelSource).not.toContain('dark:text-');
+  });
+
+  test('panels are rounded-md — never the rounded-2xl the old cards used', () => {
+    expect(panelSource).not.toContain('rounded-2xl');
+    expect(panelSource).not.toContain('rounded-xl');
+  });
+
+  // The trigger used to render label + description ("Ask first · Pause for human
+  // approval"), which forced `min-w-[16rem] shrink-0` and squeezed the tool
+  // pattern input beside it. `SelectItem description` renders in the menu only.
+  test('the action select keeps its descriptions out of the closed trigger', () => {
+    // Comments are stripped first — the prose above ACTION_META names the old
+    // `min-w-[16rem]` on purpose, and must not satisfy the guard.
+    const code = panelSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(code).toContain('description={ACTION_META[a].description}');
+    expect(code).not.toContain('min-w-[16rem]');
+  });
+});
+
 /**
  * Argument conditions must survive a panel round-trip.
  *

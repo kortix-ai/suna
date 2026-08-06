@@ -20,7 +20,7 @@ export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 // Providers a kortix.yaml may declare. `channel` is included because the
 // platform itself writes a `connectors:` entry with `provider: channel` into the
-// manifest when a Slack/email channel is connected (see executor/channel-manifest.ts), so
+// manifest when a Slack/email channel is connected (see connector/channel-manifest.ts), so
 // the gate must accept what the backend produces. MUST stay in sync with the
 // runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
@@ -37,7 +37,7 @@ export const CONNECTOR_AUTH_TYPES = [
   'mtls',
   'none',
 ] as const;
-/** The exclusive owner model for authorizations under one connector profile. */
+/** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
 export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'voice'] as const;
@@ -126,7 +126,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.secret.read',
   'project.secret.write',
   'project.connector.read',
-  'project.connector.profiles.manage',
+  'project.connector.connections.manage',
   'project.connector.write',
   'project.review.read',
   'project.review.submit',

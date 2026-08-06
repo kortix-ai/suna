@@ -1,15 +1,53 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 import { FILES_HEADER_DESKTOP_CLASS, driveHeaderClass } from './drive-header';
 
-const globalsCss = readFileSync(
-  join(import.meta.dir, '..', '..', '..', 'app', 'globals.css'),
-  'utf8',
-);
+const repoRoot = join(import.meta.dir, '..', '..', '..', '..', '..', '..');
+const globalsCss = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
-const SHELL_SIDEBAR_TOGGLE_RIGHT_EDGE_PX = 100;
+/**
+ * The band offsets are variables now, generated from ONE table in the Electron
+ * shell (window-chrome.js) that also positions the macOS traffic lights — see
+ * project-layout/desktop-titlebar.test.ts. These rules used to assert literal
+ * px against a hand-copied `100`, which is precisely how the numbers drifted:
+ * the shell toggle moved and this file kept passing.
+ */
+const { macBandMetrics } = createRequire(import.meta.url)(
+  join(repoRoot, 'apps/desktop-electron/src/window-chrome.js'),
+) as { macBandMetrics: () => { controlLeft: number; contentLeft: number } };
+
+const band = macBandMetrics();
+/** Right edge of the shell's floating "Open sidebar" toggle (28px box). */
+const SHELL_SIDEBAR_TOGGLE_RIGHT_EDGE_PX = band.controlLeft + 28;
+
+/**
+ * Resolve `var(--name)` in px, from the platform block that actually applies.
+ *
+ * Scope matters: `--kx-titlebar-content-left` is 44px on the Win/Linux
+ * baseline and 108px on the macOS override, so reading "the first match in the
+ * file" answers for the wrong platform.
+ */
+function bandVarPx(name: string, scope: 'macos' | 'other'): number {
+  const selector =
+    scope === 'macos'
+      ? /html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/
+      : /html\[data-desktop='true'\]\s*\{([^}]*)\}/;
+  const block = globalsCss.match(selector);
+  if (!block) throw new Error(`no ${scope} custom-property block in globals.css`);
+  // Authored as `calc(<window px> / var(--kx-desktop-zoom))` so the shell's
+  // zoom cancels out — the numerator is the window-pixel value the OS-drawn
+  // window controls also live in, which is what these rules are clearing.
+  const scaled = block[1].match(
+    new RegExp(`${name}:\\s*calc\\(\\s*(\\d+(?:\\.\\d+)?)px\\s*/\\s*var\\(--kx-desktop-zoom\\)`),
+  );
+  if (scaled) return Number(scaled[1]);
+  const match = block[1].match(new RegExp(`${name}:\\s*(\\d+(?:\\.\\d+)?)px`));
+  if (!match) throw new Error(`${name} is not declared as a px value for ${scope}`);
+  return Number(match[1]);
+}
 
 describe('driveHeaderClass', () => {
   test('indents the standalone page header past the collapsed-sidebar toggle', () => {
@@ -43,19 +81,33 @@ describe('desktop title-bar clearance rules', () => {
 
   test('macOS clears the traffic lights and the shell toggle while collapsed', () => {
     const rule = new RegExp(
-      `html\\[data-desktop-platform='macos'\\] \\.${FILES_HEADER_DESKTOP_CLASS}\\[data-sidebar-collapsed\\] \\{\\s*padding-left: (\\d+)px;`,
+      `html\\[data-desktop-platform='macos'\\] \\.${FILES_HEADER_DESKTOP_CLASS}\\[data-sidebar-collapsed\\] \\{\\s*padding-left: var\\((--[\\w-]+)\\);`,
     ).exec(globalsCss);
 
     expect(rule).not.toBeNull();
-    expect(Number(rule?.[1])).toBeGreaterThan(SHELL_SIDEBAR_TOGGLE_RIGHT_EDGE_PX);
+    // The claim is numeric, not textual: whatever the variable resolves to has
+    // to actually sit past the shell toggle's right edge.
+    expect(bandVarPx(rule![1], 'macos')).toBeGreaterThan(SHELL_SIDEBAR_TOGGLE_RIGHT_EDGE_PX);
+    expect(bandVarPx(rule![1], 'macos')).toBe(band.contentLeft);
   });
 
   test('Win/Linux clears the top-right window controls instead', () => {
     const rule = new RegExp(
-      `html\\[data-desktop='true'\\]:not\\(\\[data-desktop-platform='macos'\\]\\) \\.${FILES_HEADER_DESKTOP_CLASS} \\{\\s*padding-right: (\\d+)px;`,
+      `html\\[data-desktop='true'\\]:not\\(\\[data-desktop-platform='macos'\\]\\) \\.${FILES_HEADER_DESKTOP_CLASS} \\{\\s*padding-right: var\\((--[\\w-]+)\\);`,
     ).exec(globalsCss);
 
     expect(rule).not.toBeNull();
-    expect(Number(rule?.[1])).toBeGreaterThan(0);
+    expect(bandVarPx(rule![1], 'other')).toBeGreaterThan(0);
+  });
+
+  // macOS draws its controls on the LEFT, so the same variable must resolve to
+  // zero there — otherwise every row wearing it reserves a phantom right
+  // gutter on the platform that does not need one.
+  test('the right-edge reservation is platform-scoped, not global', () => {
+    const macBlock = globalsCss.match(
+      /html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/,
+    );
+    expect(macBlock).not.toBeNull();
+    expect(macBlock![1]).toMatch(/--kx-titlebar-controls-width:\s*0px/);
   });
 });
