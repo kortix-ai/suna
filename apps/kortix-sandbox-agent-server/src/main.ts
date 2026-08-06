@@ -37,10 +37,10 @@ import {
   setLlmProxyToken,
   llmProxyReady,
   llmProxyBaseUrl,
-  startExecutorProxy,
-  setExecutorProxyToken,
-  executorProxyReady,
-  executorProxyBaseUrl,
+  startConnectorProxy,
+  setConnectorProxyToken,
+  connectorProxyReady,
+  connectorProxyBaseUrl,
 } from './llm-proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
@@ -537,9 +537,9 @@ async function runWarmSeedMode(
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
   // snapshots only — cold + Daytona never run it).
-  // Start the localhost LLM credential proxy, and optionally the Executor proxy
-  // used by the compatibility MCP face. The agent-facing Executor path is the
-  // `kortix executor` CLI, which reads live env on each shell command and does
+  // Start the localhost LLM credential proxy, and optionally the Connector proxy
+  // used by the compatibility MCP face. The agent-facing Connector path is the
+  // `kortix connectors` CLI, which reads live env on each shell command and does
   // not need an OpenCode restart. Best-effort: a bind failure leaves the
   // *_PROXY_URL unset and adoption falls back to the restart path where needed.
   const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
@@ -553,14 +553,14 @@ async function runWarmSeedMode(
       bootMark('seed-llm-proxy-started')
       logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
     }
-    const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
-    const exUrl = startExecutorProxy(exPort)
+    const exPort = Number(process.env.KORTIX_CONNECTORS_PROXY_PORT) || 4320
+    const exUrl = startConnectorProxy(exPort)
     if (exUrl) {
-      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
+      // Seen by buildOpencodeConfigContent only when KORTIX_CONNECTORS_MCP_ENABLED=1.
       // The proxy is harmless when unused; the CLI remains the primary path.
-      process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
-      bootMark('seed-executor-proxy-started')
-      logger.info('[seed] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
+      process.env.KORTIX_CONNECTORS_PROXY_URL = exUrl
+      bootMark('seed-connector-proxy-started')
+      logger.info('[seed] connector hot-swap proxy up for optional connector MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -670,9 +670,9 @@ async function runWarmSeedMode(
       }
 
       // The seed opencode process is started before adoption, when it has no
-      // session-scoped Executor/CLI/LLM env and may have started before the
+      // session-scoped Connector/CLI/LLM env and may have started before the
       // project config dir exists. Restart it after adopting the fork env + repo so
-      // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
+      // OPENCODE_CONFIG_CONTENT includes the Connector MCP and project config.
       const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
@@ -707,7 +707,7 @@ async function runWarmSeedMode(
       }
       // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
       // session-independent opencode config routed through the localhost LLM +
-      // executor proxies, so inject the per-session tokens LIVE and reuse the
+      // connector proxies, so inject the per-session tokens LIVE and reuse the
       // already-warm opencode — skipping the ~8s restart. Engages only when
       // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
       // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
@@ -723,20 +723,20 @@ async function runWarmSeedMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
-        // Optional Executor MCP compatibility: if the seed enabled that face,
+        // Optional Connector MCP compatibility: if the seed enabled that face,
         // the running MCP points at this proxy. The CLI path does not need this;
         // it reads the live session env through BASH_ENV on every command.
-        if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
-          setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
+        if (process.env.KORTIX_CONNECTORS_PROXY_URL && connectorProxyBaseUrl() != null) {
+          setConnectorProxyToken(process.env.KORTIX_CLI_TOKEN, process.env.KORTIX_API_URL)
         }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('adopt-opencode-hotswapped')
-          // Observability only: this confirms the optional executor proxy has a
+          // Observability only: this confirms the optional connector proxy has a
           // live token. It does not assert that OpenCode registered MCP tools.
-          if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
+          if (connectorProxyReady()) bootMark('adopt-connector-proxy-ready')
           logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
-            executorReady: executorProxyReady(),
+            connectorReady: connectorProxyReady(),
             gatewayCatalogChanged,
           })
         }
@@ -1267,10 +1267,14 @@ function slackRelayContext(): SandboxRelayContext | null {
 // session metadata: a Slack session is tagged `metadata.slack` at creation, and
 // the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
 // (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
-// metadata, so it has no such env — `slackRelayContext()` returns null and we
-// return WITHOUT touching opencode's question. That's the whole fix: the
-// dashboard answers `question.asked` interactively over opencode's own SSE, and
-// auto-answering it here was the "every question is auto-answered even outside
+// metadata, so it has no such env and `slackRelayContext()` returns null.
+//
+// That distinction now gates RESOLVING the question, not reporting it. Every
+// session reports it, so the control plane can persist it and the ask survives
+// the box being parked. Only a channel session auto-answers opencode's blocking
+// call, because only there does the reply arrive out of band. The dashboard
+// answers `question.asked` interactively over opencode's own SSE, and
+// auto-answering it here is the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
 async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
   // EVERY session, not just Slack ones.
@@ -1311,9 +1315,33 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // Resume opencode's (blocking) question tool with a sentinel so the turn ends;
-  // the user's reply / button click lands as a new turn. ALWAYS reply — a Slack
-  // question must never hang (that was "stuck until I kill it manually").
+  // PERSISTING the question is for every session. RESOLVING it here is not.
+  //
+  // In a channel session the reply genuinely arrives out of band — the user
+  // types in the Slack thread and it reaches the agent as a new turn — so the
+  // blocking call must be released or the turn hangs ("stuck until I kill it
+  // manually").
+  //
+  // A dashboard session is the opposite: the UI answers `question.asked`
+  // interactively over opencode's own SSE, so the call SHOULD keep blocking
+  // while the box is alive. Auto-answering it here is the "every question is
+  // auto-answered even outside Slack" bug described above — which the relay
+  // ungate silently brought back, because the sentinel then fired for every
+  // session. Seen live on dev 2026-08-05: a web session's agent was told
+  // "Posted to the Slack thread" (it was not) and replied "I'll use `slack
+  // send` for questions in this environment going forward instead of the
+  // `question` tool" — the tool park-and-restore exists to make reliable.
+  //
+  // If the box is parked while the question is still open, the control plane
+  // has it (persisted above) and POST /sessions/:id/question delivers the answer
+  // as a follow-up turn. Nothing is lost by leaving this one blocked.
+  if (!slackRelayContext()) {
+    logger.info('[opencode-events] question persisted; left open for the UI', {
+      requestId: req.id,
+    })
+    return
+  }
+
   const sentinel =
     '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
     'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +

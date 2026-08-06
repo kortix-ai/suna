@@ -259,6 +259,30 @@ export interface ProvisionProjectInput {
   /** Optional glyph icon for the new project. Invalid values are dropped
    *  rather than failing the create. Wins over `icon` if both are given. */
   icon_glyph?: ProjectGlyph;
+  /**
+   * Caller-supplied dedupe token. Provision mints a brand-new managed repo on
+   * every call, so a retry after a lost response — a reload, a second tab, an
+   * aborted request — otherwise creates a real duplicate project with its own
+   * repo. Send the SAME key for every attempt at one logical create and the
+   * server returns the project the first attempt made (201, same
+   * `project_id`) instead of creating another.
+   *
+   * Scope is the account: the same key under a different account creates
+   * normally. The key identifies the ATTEMPT, not the payload — it is not a
+   * request fingerprint, so reusing one with a different `name` or
+   * `starter_template` returns the FIRST project and ignores the new values.
+   * Mint a fresh key per distinct create; creating a second project with the
+   * same NAME and no key still works.
+   *
+   * Retry on `409` with `code: 'provision_in_flight'`. It means an earlier call
+   * with this key is still running (or lost a write race) and its project is
+   * not safe to hand back yet. Keep the SAME key when you retry.
+   *
+   * Format: 1–200 characters of `A–Z a–z 0–9 . _ : -`. A UUID per create
+   * attempt is the intended shape. Omit it and the route behaves exactly as
+   * before.
+   */
+  idempotency_key?: string;
 }
 
 export interface RepoCollaboratorInvite {

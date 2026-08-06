@@ -47,7 +47,7 @@ read and written with the `memory` tool. The protocol:
   relevant. Nothing is auto-injected — if you don't look, you work
   blind to what the project already knows.
 - **Record durable knowledge as you go** with the `memory` tool
-  (`create` / `str_replace` / `insert`) — conventions, integrations,
+  (`create` / `str_replace` / `insert`) — conventions, connections,
   decisions, gotchas. Assume interruption: your context can reset, and
   only what's written to `.kortix/memory/` survives.
 - Use the `memory` tool (not generic `read`/`edit`/`write`) for
@@ -66,10 +66,10 @@ When you need an API key, or an app connected, mint a short-lived **setup link**
 and surface the URL in the same turn. Do it automatically the moment you add or
 need a tool — never tell the user to "go to Customize → Connectors", and never
 ask them to paste a raw key into chat. Use the `request_secret` / `connect`
-tools on the `kortix-executor` MCP (or `kortix secrets request` /
-`kortix connectors link`). The user gets a fill-in modal (web) or a tappable
+tools on the `kortix-connectors` MCP (or `kortix secrets request` /
+`kortix connectors connect`). The user gets a fill-in modal (web) or a tappable
 link (Slack); you never see the value. Then end your turn; when they say "done",
-verify (`kortix secrets ls` / `kortix executor connectors`) and continue. See the
+verify (`kortix secrets ls` / `kortix connectors ls`) and continue. See the
 `kortix-system` skill's **credentials-and-setup-links** reference.
 
 **Linking to a project, session, or dashboard? Use `$KORTIX_FRONTEND_URL`.**

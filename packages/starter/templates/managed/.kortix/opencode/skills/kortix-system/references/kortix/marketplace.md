@@ -131,7 +131,7 @@ presentations, website building, and browser automation.
 
 `managedBy: "kortix"` is reserved for first-party runtime skills that Kortix
 owns as platform infrastructure, such as `kortix-system`, `kortix-memory`,
-`kortix-executor`, `kortix-slack`, and `kortix-computer`.
+`kortix-connectors`, `kortix-slack`, and `kortix-computer`.
 
 Starter skills are different. They are default suggestions installed into new
 projects, but users can remove, edit, or replace them like ordinary project

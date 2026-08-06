@@ -13,7 +13,7 @@ import { C, help, pad, status } from '../style.ts';
 // Two different logs live behind one noun, and conflating them would be the
 // obvious mistake:
 //   - `ls`/`export` read the ACCOUNT trail: every authenticated request, plus
-//     semantic session/executor/approval events. Enterprise-gated.
+//     semantic session/connectors/approval events. Enterprise-gated.
 //   - `session` reads ONE session's agent-action log, which is a different
 //     route with a different gate — a non-Enterprise account still sees its
 //     pending approvals there, never a 402.
@@ -50,7 +50,7 @@ interface AuditPage {
 const HELP = help`Usage: kortix audit <subcommand> [options]
 
 Read the account audit trail — who did what, when, and whether it was allowed.
-Every authenticated API request is recorded, plus semantic session, executor,
+Every authenticated API request is recorded, plus semantic session, connector,
 and approval events. The account trail requires the Enterprise plan.
 
 Subcommands:

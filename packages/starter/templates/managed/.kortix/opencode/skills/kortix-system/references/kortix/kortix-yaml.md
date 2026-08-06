@@ -124,7 +124,7 @@ must name a declared, enabled agent.
 | ------------ | ----------------------------------------------------------------------------------------------- |
 | `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
 | `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
-| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).   |
+| `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
@@ -143,7 +143,7 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `project.read|write|delete`, `project.cr.open|merge`,
 `project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`,
-`project.connector.read|write|profiles.manage`
+`project.connector.read|write|connections.manage`
 (channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
 
 **Resolution at session start:** every agent must be declared under

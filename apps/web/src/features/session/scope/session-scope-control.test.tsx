@@ -5,7 +5,7 @@ import {
   SessionScopeControl,
   SessionScopeControlContent,
   setAllSessionSecrets,
-  setSessionConnectorAuthorization,
+  setSessionConnectorConnection,
   setSessionConnectorEnabled,
   toggleSessionSecret,
 } from './session-scope-control';
@@ -19,16 +19,16 @@ const catalog: SessionScopeSelectionCatalog = {
       { identifier: 'CRM_TOKEN', name: 'CRM token' },
     ],
   },
-  connector_profiles: {
+  connector_connections: {
     status: 'ready',
     items: [
       {
         slug: 'calendar',
         name: 'Calendar',
         authorization_strategy: 'user',
-        authorizations: [
+        connections: [
           {
-            authorization_id: 'authorization-calendar',
+            connection_id: 'connection-calendar',
             label: 'My calendar',
             is_default: true,
           },
@@ -38,9 +38,9 @@ const catalog: SessionScopeSelectionCatalog = {
         slug: 'crm',
         name: 'CRM',
         authorization_strategy: 'project',
-        authorizations: [
+        connections: [
           {
-            authorization_id: 'authorization-crm',
+            connection_id: 'connection-crm',
             label: 'Project CRM',
             is_default: true,
           },
@@ -84,8 +84,8 @@ describe('SessionScopeControlContent', () => {
     const html = renderControl({
       secrets: ['CALENDAR_TOKEN'],
       connector_bindings: {
-        calendar: { authorization_id: 'authorization-calendar' },
-        crm: { authorization_id: 'authorization-crm' },
+        calendar: { connection_id: 'connection-calendar' },
+        crm: { connection_id: 'connection-crm' },
       },
     });
 
@@ -123,7 +123,7 @@ describe('SessionScopeControlContent', () => {
         draft={{}}
         catalog={{
           secrets: { status: 'unavailable' },
-          connector_profiles: { status: 'unavailable' },
+          connector_connections: { status: 'unavailable' },
         }}
         onChange={() => {}}
         onSave={() => {}}
@@ -167,46 +167,46 @@ describe('session scope control changes', () => {
     expect(setAllSessionSecrets({ secrets: null }, false)).toEqual({ secrets: [] });
   });
 
-  test('replaces one connector authorization without changing other bindings', () => {
+  test('replaces one connection without changing other bindings', () => {
     const draft: SessionScopeDraft = {
       connector_bindings: {
-        calendar: { authorization_id: 'authorization-calendar' },
-        crm: { authorization_id: 'authorization-crm' },
+        calendar: { connection_id: 'connection-calendar' },
+        crm: { connection_id: 'connection-crm' },
       },
     };
 
-    expect(setSessionConnectorAuthorization(draft, 'calendar', 'authorization-calendar-2')).toEqual(
+    expect(setSessionConnectorConnection(draft, 'calendar', 'connection-calendar-2')).toEqual(
       {
         connector_bindings: {
-          calendar: { authorization_id: 'authorization-calendar-2' },
-          crm: { authorization_id: 'authorization-crm' },
+          calendar: { connection_id: 'connection-calendar-2' },
+          crm: { connection_id: 'connection-crm' },
         },
       },
     );
-    expect(setSessionConnectorAuthorization(draft, 'calendar', null)).toEqual({
+    expect(setSessionConnectorConnection(draft, 'calendar', null)).toEqual({
       connector_bindings: {
-        crm: { authorization_id: 'authorization-crm' },
+        crm: { connection_id: 'connection-crm' },
       },
     });
   });
 
   test('enables a connector with its default authorization and removes it when disabled', () => {
     const connector =
-      catalog.connector_profiles.status === 'ready'
-        ? catalog.connector_profiles.items[0]
+      catalog.connector_connections.status === 'ready'
+        ? catalog.connector_connections.items[0]
         : undefined;
 
     expect(connector).toBeDefined();
     expect(setSessionConnectorEnabled({ connector_bindings: {} }, connector!, true)).toEqual({
       connector_bindings: {
-        calendar: { authorization_id: 'authorization-calendar' },
+        calendar: { connection_id: 'connection-calendar' },
       },
     });
     expect(
       setSessionConnectorEnabled(
         {
           connector_bindings: {
-            calendar: { authorization_id: 'authorization-calendar' },
+            calendar: { connection_id: 'connection-calendar' },
           },
         },
         connector!,
@@ -219,11 +219,11 @@ describe('session scope control changes', () => {
     // This used to be un-selectable, which meant you could only require a
     // connector that already worked — backwards, since needing one you have not
     // connected yet is the case worth expressing. It cannot become a binding
-    // (there is no authorization id to bind), so it is recorded as a requirement
+    // (there is no connection id to bind), so it is recorded as a requirement
     // and the next turn stops at a connect prompt.
     const connector =
-      catalog.connector_profiles.status === 'ready'
-        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
+      catalog.connector_connections.status === 'ready'
+        ? { ...catalog.connector_connections.items[0], connections: [] }
         : undefined;
     expect(connector).toBeDefined();
     const draft: SessionScopeDraft = { connector_bindings: {} };
@@ -236,8 +236,8 @@ describe('session scope control changes', () => {
 
   test('unchecking it drops the requirement rather than leaving it behind', () => {
     const connector =
-      catalog.connector_profiles.status === 'ready'
-        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
+      catalog.connector_connections.status === 'ready'
+        ? { ...catalog.connector_connections.items[0], connections: [] }
         : undefined;
     const draft: SessionScopeDraft = {
       connector_bindings: {},
@@ -249,8 +249,8 @@ describe('session scope control changes', () => {
 
   test('requiring the same connector twice does not duplicate it', () => {
     const connector =
-      catalog.connector_profiles.status === 'ready'
-        ? { ...catalog.connector_profiles.items[0], authorizations: [] }
+      catalog.connector_connections.status === 'ready'
+        ? { ...catalog.connector_connections.items[0], connections: [] }
         : undefined;
     const draft: SessionScopeDraft = {
       connector_bindings: {},
@@ -264,10 +264,10 @@ describe('session scope control changes', () => {
     // Both would mean the server holds the same requirement twice, and it would
     // outlive the binding if the binding were later removed.
     const connector =
-      catalog.connector_profiles.status === 'ready'
-        ? catalog.connector_profiles.items[0]
+      catalog.connector_connections.status === 'ready'
+        ? catalog.connector_connections.items[0]
         : undefined;
-    expect(connector?.authorizations.length).toBeGreaterThan(0);
+    expect(connector?.connections.length).toBeGreaterThan(0);
     const draft: SessionScopeDraft = {
       connector_bindings: {},
       require_connectors: [connector!.slug],

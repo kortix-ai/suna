@@ -12,7 +12,7 @@ Daytona). What does going non-declarative actually cost us?
 
 **Today (declarative).** We never ship a finished image. At snapshot-build time we
 *assemble a build context at runtime* — gzip the freshly-built `kortix-agent` +
-`kortix` CLI, copy `slack-cli`, `executor-sdk`, the starter `.kortix/opencode`
+`kortix` CLI, copy `slack-cli`, `connector-sdk`, the starter `.kortix/opencode`
 config, the generated `llm-catalog.json`, and a generated `scaffold.git` — compose
 the layered Dockerfile (`dockerfile-layer.ts`), and hand it to the provider via
 `Image.fromDockerfile(ctx.composedPath)`. Daytona builds + caches it, content-

@@ -18,9 +18,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
-  // Channel sessions can opt into the Executor MCP face after a deploy. This
+  // Channel sessions can opt into the Connector MCP face after a deploy. This
   // must restart OpenCode because MCP servers are registered only at spawn.
-  'KORTIX_EXECUTOR_MCP_ENABLED',
+  'KORTIX_CONNECTORS_MCP_ENABLED',
   // The server-compiled agent config (agents, prompts, permissions, model) —
   // apps/api's compile-agent-config.ts output.
   //
@@ -102,9 +102,9 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   }
-  const token = process.env.KORTIX_EXECUTOR_TOKEN || process.env.KORTIX_CLI_TOKEN
+  const token = process.env.KORTIX_CLI_TOKEN
   if (!token) {
-    throw new Error('KORTIX_EXECUTOR_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+    throw new Error('KORTIX_CLI_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
   }
   return setOpencodeRuntimeEnv({
     KORTIX_LLM_API_KEY: token,

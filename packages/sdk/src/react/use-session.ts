@@ -261,34 +261,37 @@ function errorBodyMessage(error: unknown): string | null {
 }
 
 /**
- * The connector profiles a `CONNECTOR_AUTHORIZATION_REQUIRED` refusal names, or
+ * The connectors a `CONNECTOR_CONNECTION_REQUIRED` refusal names, or
  * null when this is not that refusal.
  *
  * Keyed on the CODE, never on the message: the prose is for humans and changes.
- * A refusal that names no profile still returns null — a connector prompt that
+ * A refusal that names no connection still returns null — a connector prompt that
  * cannot say which connector is worse than the generic error it replaced.
  */
-function connectorRefusalProfiles(error: unknown): KortixSendErrorConnector[] | null {
+function connectorRefusalConnections(error: unknown): KortixSendErrorConnector[] | null {
   const body = errorBody(error);
-  if (body?.code !== 'CONNECTOR_AUTHORIZATION_REQUIRED') return null;
-  const listed = [body.connector_profiles, body.connectorProfiles].find(Array.isArray) as
+  if (body?.code !== 'CONNECTOR_CONNECTION_REQUIRED') return null;
+  const listed = [body.connector_connections, body.connectorConnections].find(Array.isArray) as
     | unknown[]
     | undefined;
-  const profiles: KortixSendErrorConnector[] = [];
+  const connections: KortixSendErrorConnector[] = [];
   for (const entry of listed ?? []) {
     if (!entry || typeof entry !== 'object') continue;
-    const profile = entry as Record<string, unknown>;
-    const strategy = profile.authorization_strategy ?? profile.authorizationStrategy;
-    if (typeof profile.id !== 'string' || typeof profile.slug !== 'string') continue;
+    const connection = entry as Record<string, unknown>;
+    const strategy = connection.authorization_strategy ?? connection.authorizationStrategy;
+    if (typeof connection.id !== 'string' || typeof connection.slug !== 'string') continue;
     if (strategy !== 'project' && strategy !== 'user') continue;
-    profiles.push({
-      id: profile.id,
-      slug: profile.slug,
-      name: typeof profile.name === 'string' && profile.name ? profile.name : profile.slug,
+    connections.push({
+      id: connection.id,
+      slug: connection.slug,
+      name:
+        typeof connection.name === 'string' && connection.name
+          ? connection.name
+          : connection.slug,
       authorization_strategy: strategy,
     });
   }
-  return profiles.length > 0 ? profiles : null;
+  return connections.length > 0 ? connections : null;
 }
 
 /** Classify a thrown/rejected error from a send or a permission/question reply
@@ -310,13 +313,13 @@ export function classifySendError(error: unknown): KortixSendError {
     if (parsed instanceof BillingError) {
       return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
     }
-    const connectors = connectorRefusalProfiles(error);
+    const connectors = connectorRefusalConnections(error);
     if (connectors) {
       return {
         kind: 'connector',
         message:
           errorBodyMessage(error) ??
-          'Connect the required connector profiles before continuing this session.',
+          'Connect the required connectors before continuing this session.',
         connectors,
         cause: error,
       };

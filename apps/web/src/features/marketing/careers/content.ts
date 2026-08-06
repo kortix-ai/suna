@@ -76,7 +76,7 @@ export const openings = [
     name: 'FDE / Services',
     summary: 'Build customers their first agents, and own the services side end to end.',
     bullets: [
-      'Onboard customers, teach them, build their first agents, connect their integrations.',
+      'Onboard customers, teach them, build their first agents, and create their connections.',
       'Own services end to end, and build the engineering team behind it.',
       'Ran a software, automation or delivery agency at owner level.',
       'Sold and delivered custom software. Can state deal sizes, close rate and delivery margin.',

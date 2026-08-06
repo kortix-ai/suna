@@ -4,7 +4,7 @@ import {
   discoverOpenApiAuth,
   discoverPostmanAuth,
   mergeAuthDiscoveries,
-} from '../executor/auth-discovery';
+} from '../connectors/auth-discovery';
 
 describe('HTTP authentication challenge discovery', () => {
   test('normalizes bearer and basic challenges without retaining error details', () => {

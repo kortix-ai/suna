@@ -140,7 +140,7 @@ export function StepConnectors(): ReactNode {
       className="grid h-full w-full grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"
     >
       <div className="min-h-0">
-        <WebPanelWrapper activeTab="integrations">
+        <WebPanelWrapper activeTab="connectors">
           <ConnectorsView state={movie.state} />
         </WebPanelWrapper>
       </div>

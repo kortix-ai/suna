@@ -171,7 +171,7 @@ export type ProjectAgentEntry = sdk.ProjectConfigSummary['agents'][number];
 
 export { getProjectDetail, getProjectLlmCatalog } from '@kortix/sdk/projects-client';
 
-// ── Executor connectors (web parity: connectors-view) ────────────────────────
+// ── Connectors (web parity: connectors-view) ──────────────────────────────────
 
 export type {
   ConnectorAction,
@@ -206,13 +206,13 @@ export interface PipedreamAppsPage {
  * Kept MOBILE-NATIVE: the SDK's `@kortix/sdk/projects-client` has no
  * `disconnectConnector` — its `connectors.ts` only exposes `setConnectorCredential`
  * (PUT) with no DELETE counterpart. Same endpoint mobile always used
- * (`DELETE /executor/projects/:id/connectors/:slug/credential`), implemented
+ * (`DELETE /connectors/projects/:id/connectors/:slug/credential`), implemented
  * directly against the SDK's `backendApi` so it still shares auth/config.
  */
 export async function disconnectConnector(projectId: string, slug: string) {
   return unwrapLocal(
     await backendApi.delete<{ ok: boolean }>(
-      `/executor/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/credential`,
+      `/connectors/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/credential`,
     ),
   );
 }
@@ -232,7 +232,7 @@ export async function pipedreamConnect(
 ) {
   return unwrapLocal(
     await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
-      `/executor/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/connect`,
+      `/connectors/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/connect`,
       {
         ...(redirects?.successRedirectUri ? { success_redirect_uri: redirects.successRedirectUri } : {}),
         ...(redirects?.errorRedirectUri ? { error_redirect_uri: redirects.errorRedirectUri } : {}),
@@ -309,7 +309,7 @@ export function removeGroupMember(accountId: string, groupId: string, userId: st
   );
 }
 
-// ── Executor policies (tool-approval rules) ──────────────────────────────────
+// ── Connector policies (tool-approval rules) ──────────────────────────────────
 
 export type { PolicyAction, PolicyDefaultMode, ProjectPolicy, ProjectPoliciesResponse } from '@kortix/sdk/projects-client';
 

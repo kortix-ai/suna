@@ -213,8 +213,8 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_TOKEN: string;
   MANAGED_GIT_GITHUB_OWNER: string;
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
-  INTEGRATION_AUTH_PROVIDER: string;
-  KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
+  CONNECTOR_AUTH_PROVIDER: string;
+  KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: string;
   PIPEDREAM_CLIENT_ID: string;
   PIPEDREAM_CLIENT_SECRET: string;
   PIPEDREAM_PROJECT_ID: string;
@@ -381,7 +381,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
 
   // The complete guided `init` flow, in this exact order and no other
   // questions (everything else is dashboard/env-only — see
-  // configureIntegrations()'s own doc comment): 1) reachability — the first
+  // configureConnections()'s own doc comment): 1) reachability — the first
   // real decision, since it decides whether agent sessions can call back to
   // this API at all; 2) admin email; 3) deployment shape (Enterprise
   // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
@@ -396,8 +396,8 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     await promptAdminEmail(env, flags);
     await promptFeatureFlags(env, flags);
   }
-  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env, flags);
+  if (shouldPrompt(flags) && connectionReviewNeeded(env)) {
+    await configureConnections(env, flags);
   }
   if (shouldPrompt(flags) && existing === null) {
     await promptUpdatePolicyCompact(env, flags);
@@ -438,7 +438,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
@@ -452,8 +452,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   const env = loadEnvWithDefaults(flags)!;
-  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env, flags);
+  if (shouldPrompt(flags) && connectionReviewNeeded(env)) {
+    await configureConnections(env, flags);
   }
 
   // `init` and `start` can run on separate invocations (init non-interactively,
@@ -535,7 +535,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   renderAfterStartNote();
   return 0;
 }
@@ -1618,7 +1618,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   // Same ordering as `init`: reachability first (the decision that determines
   // whether agent sandboxes can work at all), then admin email, then feature
-  // flags, then integrations (Daytona) — see selfHostInit() for the full
+  // flags, then connections (Daytona) — see selfHostInit() for the full
   // rationale. Admin email is asked here on EVERY `configure` (not only on a
   // fresh init the way selfHostInit gates it): an operator who skipped it at
   // init and later runs `configure` to fix that would otherwise find that
@@ -1631,17 +1631,17 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   await promptReachability(env, flags);
   await promptAdminEmail(env, flags);
   await promptFeatureFlags(env, flags);
-  await configureIntegrations(env, flags);
+  await configureConnections(env, flags);
   await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
-  process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
+  process.stdout.write(`${status.ok('Updated self-host connection config')}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   return 0;
 }
 
@@ -1725,7 +1725,7 @@ const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b', 'local-docker'] 
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
- * The CLI's guided-integrations step: the two things that genuinely cannot
+ * The CLI's guided-connections step: the two things that genuinely cannot
  * be set any other way — the agent sandbox runtime (an env-only credential
  * the API reads at boot, no in-app settings surface exists for it) and
  * Pipedream's OPERATOR-level OAuth app credentials (also env-only — the
@@ -1736,7 +1736,7 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
  * model picker). "The full flow needs to be perfect, all the other bullshit
  * needs to be removed" — this function IS that trim.
  */
-async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
   const currentProvider = sandboxProviders(env)[0];
   const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
@@ -1789,7 +1789,7 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
       pipedreamConfigured(env) ? 'configure' : 'skip',
     );
     if (pdMode === 'configure') {
-      env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
+      env.CONNECTOR_AUTH_PROVIDER = 'pipedream';
       env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
       env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
       env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
@@ -1798,11 +1798,11 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     }
   }
 
-  env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
+  env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED = 'true';
 }
 
 // Managed git (GitHub) is deliberately NOT configured from this guided flow
-// anymore — see configureIntegrations() above. It's configured in-app instead
+// anymore — see configureConnections() above. It is configured in-app instead
 // (Settings → Git, DB-backed) after `start`. The old configureManagedGit()/
 // runConnectGithubInteractive()/describeGithubMode()/inferGithubMode() guided
 // wizard was removed along with it; `connect-github` (the standalone
@@ -1847,7 +1847,7 @@ const SANDBOX_PROVIDER_KEY: Record<string, string> = {
 
 /** A configured sandbox provider is one named in ALLOWED_SANDBOX_PROVIDERS
  *  whose required key is actually set — whichever of daytona/e2b/platinum was
- *  chosen at `init`/`configure` (see configureIntegrations()) — or
+ *  chosen at `init`/`configure` (see configureConnections()) — or
  *  'local-docker', which needs no key at all. */
 export function sandboxProviderConfigured(env: Record<string, string>): boolean {
   return sandboxProviders(env).some(
@@ -1917,7 +1917,7 @@ export interface MissingSecretItem {
  * the LLM key are BOTH configured after `start`, in the web dashboard —
  * managed git at Settings → Git (DB-backed, not env/CLI-owned) and the LLM key
  * as BYOK via the model picker — so neither blocks `init`/`start` here
- * anymore; see gitProviderConfigured()/renderIntegrationSummary() for the
+ * anymore; see gitProviderConfigured()/renderConnectionSummary() for the
  * (non-blocking) status display. Reconciled against sandboxProviderConfigured
  * so a Daytona key configured via any accepted shape reports as satisfied.
  * Pure function of `env` — no filesystem/process access — so it's safe to
@@ -1954,7 +1954,7 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 
 /**
  * Make sure required secrets get a chance to be set — never a hard gate.
- * Interactive TTY: drive the guided integrations flow until satisfied or the
+ * Interactive TTY: drive the guided connections flow until satisfied or the
  * operator declines to continue. Non-interactive (`--yes` / no TTY / CI) or
  * an interactive operator who declined: print a loud warning with an
  * itemized list and the exact `env set` fix command for each, then PROCEED
@@ -1976,7 +1976,7 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
     process.stdout.write(`\n  ${C.dim}Let's set them now.${C.reset}\n`);
 
     while (missing.length > 0) {
-      await configureIntegrations(env, flags);
+      await configureConnections(env, flags);
       missing = missingRequiredSecrets(env);
       if (missing.length === 0) break;
       process.stdout.write(`\n  ${C.yellow}Still missing:${C.reset}\n`);
@@ -1997,14 +1997,14 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
   return 0;
 }
 
-function integrationReviewNeeded(env: SelfHostEnv): boolean {
-  // The sandbox runtime (Daytona) is the only CLI-required integration left —
+function connectionReviewNeeded(env: SelfHostEnv): boolean {
+  // The sandbox runtime (Daytona) is the only CLI-required connection left —
   // the API won't boot agent sessions without it, and there is no in-app
   // settings surface for it (unlike managed git/LLM, both configured in the
   // dashboard after `start`). A missing key always warrants the wizard, even
   // after a prior review.
   if (!sandboxProviderConfigured(env)) return true;
-  if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
+  if (env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED === 'true') return false;
   return true;
 }
 
@@ -2012,9 +2012,9 @@ function shouldPrompt(flags: GlobalFlags): boolean {
   return !flags.yes && process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-function renderIntegrationSummary(env: SelfHostEnv): void {
+function renderConnectionSummary(env: SelfHostEnv): void {
   // The ONLY row gated as configured/missing here is the sandbox runtime — the
-  // one integration the CLI still requires (see missingRequiredSecrets()).
+  // one connection the CLI still requires (see missingRequiredSecrets()).
   // Everything else (managed git, LLM key, connectors, SMTP) is dashboard
   // territory — see renderAfterStartNote() below, not a CLI configured/missing
   // gate that would incorrectly suggest a CLI fix is needed.
@@ -2027,7 +2027,7 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
     },
   ];
 
-  process.stdout.write(`  ${C.dim}Integrations${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Connections${C.reset}\n`);
   for (const row of rows) {
     const marker = row.configured ? `${C.green}configured${C.reset}` : `${C.yellow}missing${C.reset}`;
     process.stdout.write(`  ${C.dim}- ${C.reset}${row.name}: ${marker}`);
@@ -2295,8 +2295,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // self-host (so they can configure the managed GitHub App etc. in-app).
     // Set at init via --admin-email or the guided prompt; the API reads it.
     KORTIX_PLATFORM_ADMIN_EMAILS: flags.adminEmail ?? '',
-    INTEGRATION_AUTH_PROVIDER: 'pipedream',
-    KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
+    CONNECTOR_AUTH_PROVIDER: 'pipedream',
+    KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',
     PIPEDREAM_CLIENT_SECRET: '',
     PIPEDREAM_PROJECT_ID: '',
@@ -2363,7 +2363,7 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   // Frontend "Connect your tools" / connector-catalogue UI mirrors whether
   // Pipedream is FULLY configured — same three fields
-  // apps/api/src/executor/pipedream.ts's own pipedreamConfigured() requires.
+  // apps/api/src/connectors/pipedream.ts's own pipedreamConfigured() requires.
   // Recomputed on every write (not just when the now-removed guided-init
   // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
   // et al. via `env set` directly keeps this in sync too.

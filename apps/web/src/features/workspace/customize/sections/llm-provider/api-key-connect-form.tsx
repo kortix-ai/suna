@@ -8,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { upsertProjectSecret } from '@kortix/sdk';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CaretLeftIcon as ChevronLeft,
   ArrowSquareOutIcon as ExternalLink,
@@ -55,6 +55,8 @@ export function ApiKeyConnectForm({
         await upsertProjectSecret(projectId, {
           name: envVar,
           value: values[envVar] ?? '',
+          strategy: 'broker',
+          consumer: 'llm_gateway',
         });
       }
     },

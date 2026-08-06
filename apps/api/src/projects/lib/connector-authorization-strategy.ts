@@ -1,6 +1,6 @@
 export type ConnectorAuthorizationStrategy = 'project' | 'user';
 
-export type ConnectorAuthorizationOwnerType =
+export type ConnectionOwnerType =
   | 'project'
   | 'agent'
   | 'member'
@@ -9,7 +9,7 @@ export type ConnectorAuthorizationOwnerType =
 
 export function connectorAuthorizationMatchesStrategy(input: {
   strategy: ConnectorAuthorizationStrategy;
-  ownerType: ConnectorAuthorizationOwnerType;
+  ownerType: ConnectionOwnerType;
   ownerId: string | null;
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
@@ -28,7 +28,7 @@ export function connectorAuthorizationMatchesStrategy(input: {
 export function isTrustedManagedChannelAuthorization(input: {
   providerType: string;
   platform: string | null;
-  ownerType: ConnectorAuthorizationOwnerType;
+  ownerType: ConnectionOwnerType;
   ownerId: string | null;
   metadata: Record<string, unknown>;
 }): boolean {
@@ -37,7 +37,7 @@ export function isTrustedManagedChannelAuthorization(input: {
     input.providerType === 'channel' &&
     input.platform === 'email' &&
     input.ownerType === 'external' &&
-    input.metadata.channel_profile === true &&
+    input.metadata.channel_connection === true &&
     typeof inboxId === 'string' &&
     inboxId.length > 0 &&
     input.ownerId === `agentmail:${inboxId}`

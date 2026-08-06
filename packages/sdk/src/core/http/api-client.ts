@@ -1,6 +1,7 @@
-import { platformConfig } from './config';
+import { normalizeClientSource } from '../../platform/auth-core';
 import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
+import { platformConfig } from './config';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -44,7 +45,7 @@ export interface ApiResponse<T = any> {
  * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
  * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
  * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
- * `apps/api/src/executor/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ * `apps/api/src/connectors/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
  */
 export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
 
@@ -64,6 +65,25 @@ export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
  * (PR #5240) and the billing-gate 402 / no-compaction-model classification.
  */
 export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
+
+/**
+ * Stable error code the platform API returns (HTTP 409) when ANOTHER call
+ * carrying the same `idempotency_key` is still mid-provision — see
+ * `apps/api/src/projects/lib/provision-idempotency.ts`'s `in_flight` case and
+ * the two `POST /projects/provision` handlers in
+ * `apps/api/src/projects/routes/r1.ts`. This is a RETRYABLE, EXPECTED state:
+ * the concurrent attempt simply hasn't committed yet, and the caller retries
+ * with the same key until it does. First-run onboarding hits it whenever a
+ * second tab (or the other entry door) races the same auto-create, so it must
+ * be SILENT to `onError` — otherwise the web host's global handler shows a red
+ * toast reading "Another provision with this idempotency_key is in flight",
+ * leaking an internal field name for a state that resolves on its own. The
+ * `ApiError` is still returned so callers can branch on `.code` (see
+ * `apps/web/src/lib/onboarding/ensure-first-project.ts`'s
+ * `isProvisionInFlightError`). A genuine 409 (no typed code) still reports.
+ * Mirrors `MODEL_NOT_SERVABLE_CODE`.
+ */
+export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -150,6 +170,14 @@ async function makeRequest<T = any>(
 
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
+
+    const clientSource = normalizeClientSource(platformConfig().clientSource);
+    const hasClientSource = Object.keys(headers).some(
+      (name) => name.toLowerCase() === 'x-kortix-client',
+    );
+    if (clientSource && !hasClientSource) {
+      headers['X-Kortix-Client'] = clientSource;
+    }
 
     if (adminBypassEnabled) {
       headers['x-kortix-admin-bypass'] = '1';
@@ -283,7 +311,7 @@ async function makeRequest<T = any>(
 
       // Expected "feature not enabled on this deployment" state — the backend
       // returns a TYPED 501 with `code: 'feature_not_supported'` (see the
-      // executor router's `featureNotSupportedResponse`) when an OPTIONAL
+      // connector router's `featureNotSupportedResponse`) when an OPTIONAL
       // capability isn't wired on this deployment (e.g. connector
       // auth-discovery, Pipedream). The dashboard already surfaces these as a
       // graceful "unavailable" UI state (e.g. the connector-auth-discovery
@@ -317,7 +345,14 @@ async function makeRequest<T = any>(
       const isModelNotServable =
         response.status === 409 && errorData?.code === MODEL_NOT_SERVABLE_CODE;
 
-      if (showErrors && !isFeatureNotSupported && !isModelNotServable) {
+      // Expected "a concurrent attempt with this key is still running" state —
+      // same shape as `isModelNotServable`, see `PROVISION_IN_FLIGHT_CODE`. The
+      // caller retries with the same key; the user must not see a toast (let
+      // alone one naming `idempotency_key`) for a race that resolves itself.
+      const isProvisionInFlight =
+        response.status === 409 && errorData?.code === PROVISION_IN_FLIGHT_CODE;
+
+      if (showErrors && !isFeatureNotSupported && !isModelNotServable && !isProvisionInFlight) {
         platformConfig().onError?.(error, errorContext);
       }
 

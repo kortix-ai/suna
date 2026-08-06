@@ -101,6 +101,10 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_UPDATE_TIME).toBe('02:00');
     expect(env.KORTIX_UPDATE_TZ).toBe('America/New_York');
     expect(env.KORTIX_ALLOW_DOWNTIME).toBe('0');
+    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('pipedream');
+    expect(env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED).toBe('false');
+    expect(env.INTEGRATION_AUTH_PROVIDER).toBeUndefined();
+    expect(env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED).toBeUndefined();
 
     // Laptop mode (no domain): single replica, no LB needed.
     expect(env.KORTIX_APP_REPLICAS).toBe('1');

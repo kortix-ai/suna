@@ -955,10 +955,10 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('enables Executor MCP in a running session and restarts opencode once', async () => {
+  it('enables Connector MCP in a running session and restarts opencode once', async () => {
     let restartCalls = 0
-    const previous = process.env.KORTIX_EXECUTOR_MCP_ENABLED
-    delete process.env.KORTIX_EXECUTOR_MCP_ENABLED
+    const previous = process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
     const app = buildOpencodeApp(
       baseConfig(),
@@ -980,7 +980,7 @@ describe('daemon proxy auth gate', () => {
           env: {},
           names: [],
           refreshModels: true,
-          opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+          opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
         }),
       })
 
@@ -990,9 +990,9 @@ describe('daemon proxy auth gate', () => {
       expect(await enabled.json()).toMatchObject({
         ok: true,
         opencode_env_changed: true,
-        opencode_env_names: ['KORTIX_EXECUTOR_MCP_ENABLED'],
+        opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'],
       })
-      expect(process.env.KORTIX_EXECUTOR_MCP_ENABLED as string | undefined).toBe('1')
+      expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
       expect(restartCalls).toBe(1)
 
       const replay = await request()
@@ -1004,8 +1004,8 @@ describe('daemon proxy auth gate', () => {
       })
       expect(restartCalls).toBe(1)
     } finally {
-      if (previous === undefined) delete process.env.KORTIX_EXECUTOR_MCP_ENABLED
-      else process.env.KORTIX_EXECUTOR_MCP_ENABLED = previous
+      if (previous === undefined) delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+      else process.env.KORTIX_CONNECTORS_MCP_ENABLED = previous
     }
   })
 
@@ -1014,12 +1014,12 @@ describe('daemon proxy auth gate', () => {
       key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
       deny: process.env.KORTIX_OPENCODE_DENY_ENV,
-      exec: process.env.KORTIX_EXECUTOR_TOKEN,
+      exec: process.env.KORTIX_CLI_TOKEN,
     }
     delete process.env.KORTIX_LLM_API_KEY
     delete process.env.KORTIX_LLM_BASE_URL
     delete process.env.KORTIX_OPENCODE_DENY_ENV
-    process.env.KORTIX_EXECUTOR_TOKEN = 'kortix_pat_exec'
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_exec'
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
     const app = buildOpencodeApp(
@@ -1070,7 +1070,7 @@ describe('daemon proxy auth gate', () => {
         KORTIX_LLM_API_KEY: saved.key,
         KORTIX_LLM_BASE_URL: saved.base,
         KORTIX_OPENCODE_DENY_ENV: saved.deny,
-        KORTIX_EXECUTOR_TOKEN: saved.exec,
+        KORTIX_CLI_TOKEN: saved.exec,
       })) {
         if (v === undefined) delete process.env[k]
         else process.env[k] = v

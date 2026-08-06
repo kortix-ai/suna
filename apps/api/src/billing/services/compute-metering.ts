@@ -19,7 +19,7 @@
 // bills any session whose last_billed_at is > 1 hour ago, so a missed close
 // hook can never silently accrue 24h+ of uncharged compute.
 
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { creditAccounts, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -42,7 +42,10 @@ import {
   lastAliveAtOf,
 } from './compute-liveness';
 import { deductCredits } from './credits';
-import { isPerSeatAccount } from './tiers';
+import { accountMetersCompute } from './tiers';
+
+/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
+const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
@@ -86,10 +89,14 @@ export function calculateComputeCost(
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
   // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has billing_model='per_seat' (stale data).
+  // if a credit_accounts row has a metered billing_model (stale data).
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  if (!isPerSeatAccount(account?.billingModel)) return null;
+  // `accountMetersCompute`, NOT `isPerSeatAccount`. Per-seat used to be the only
+  // metered model, so the gate was written as an identity check; read literally
+  // it grants every other model free compute. The v3 `credit` plans are metered
+  // too — that omission would have been an unbilled hole through the new tiers.
+  if (!accountMetersCompute(account?.billingModel)) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -362,7 +369,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `isPerSeatAccount` gate (no-op for `legacy` accounts — never reimplemented
+ * `accountMetersCompute` gate (no-op for `legacy` accounts — never reimplemented
  * here) and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
@@ -381,7 +388,7 @@ export interface ReconcileMissingComputeResult {
  * unordered `LIMIT` fills with legacy rows on every pass and the per-seat rows
  * this sweep exists for are never reached — a no-op that costs a round-trip per
  * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `isPerSeatAccount` gate below.
+ * which is the same fail-closed outcome as the `accountMetersCompute` gate below.
  */
 export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -397,7 +404,9 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        eq(creditAccounts.billingModel, 'per_seat'),
+        // Mirrors accountMetersCompute() — every metered billing model, not just
+        // per-seat. A model missing here silently stops being charged.
+        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
       ),
     )
     .leftJoin(

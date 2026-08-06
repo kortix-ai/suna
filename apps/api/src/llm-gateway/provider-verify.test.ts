@@ -4,7 +4,7 @@
  * attempt completion against the resolved upstream and classifies the
  * outcome so the UI can render "Verified" vs "Key rejected" vs "Couldn't
  * verify" instead of a blind green checkmark. Pure-logic unit tests via
- * injected deps (mirrors unit-executor-gateway.test.ts's GatewayDeps style)
+ * injected deps (mirrors unit-connector-gateway.test.ts's GatewayDeps style)
  * — no DB, no network.
  */
 import { describe, expect, test } from 'bun:test';

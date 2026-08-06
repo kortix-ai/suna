@@ -109,8 +109,8 @@ user, the run has to **push** a message out, almost always through Slack
 slack send --channel "#growth" --text "Daily digest: 47 new signups overnight, 3 from target accounts."
 ```
 
-You can also notify through any connected channel via the Executor (email,
-etc.) — discover the tool (`kortix executor discover "send email"`) and call
+You can also notify through any connected channel via a connector (email,
+etc.) — discover the action (`kortix connectors discover "send email"`) and call
 it.
 
 **When to notify:** the run found something genuinely **new or actionable**

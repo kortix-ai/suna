@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realExecutorSync from '../executor/sync';
+import * as realConnectorSync from '../connectors/sync';
 
 const PROJECT_ID = '4967754f-867c-45b1-b647-da56f99a55d9';
 const USER_ID = '49851790-41b5-4c3e-a39e-a022d0976255';
@@ -49,8 +49,8 @@ mock.module('../channels/install-store', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../executor/sync', () => ({
-  ...realExecutorSync,
+mock.module('../connectors/sync', () => ({
+  ...realConnectorSync,
   reconcileChannelConnectors: async () => undefined,
 }));
 

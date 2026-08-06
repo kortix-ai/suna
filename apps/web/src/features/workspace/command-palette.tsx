@@ -33,7 +33,7 @@ import {
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { parseCustomizeSection } from '@/lib/customize-sections';
+import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -1218,11 +1218,12 @@ export function CommandPalette() {
         case 'navigate': {
           const href = item.href || '';
 
-          const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
-          if (custMatch) {
-            useCustomizeStore
-              .getState()
-              .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);
+          // See resolveCustomizeOverlayHref's doc comment for why a stale
+          // `/customize/<graduated-or-unknown-section>` href must fall through
+          // to router.push below instead of opening the overlay.
+          const overlayMatch = resolveCustomizeOverlayHref(href);
+          if (overlayMatch.opensOverlay) {
+            useCustomizeStore.getState().openCustomize(overlayMatch.section);
             close();
             break;
           }

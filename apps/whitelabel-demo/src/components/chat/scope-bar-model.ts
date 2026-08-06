@@ -268,8 +268,8 @@ export interface ScopeBarConnector {
   alias: string;
   /** What THIS session is bound to. null = the project default. */
   bound: string | null;
-  boundAuthorizationId: string | null;
-  /** Authorizations available for a replacement binding. */
+  boundConnectionId: string | null;
+  /** Connections available for a replacement binding. */
   choices: BindableConnection[];
   unavailable: ConnectorBindingUnavailable | null;
   /** The remedy when nothing is bindable. Always a teammate — never "connect it yourself". */
@@ -291,28 +291,28 @@ export interface ScopeBarConnectors {
  */
 export function scopeBarConnectors(input: {
   choices: ConnectorBindingChoice[] | undefined;
-  /** Alias -> authorization identifier from GET session scope. */
-  boundAuthorizations: Record<string, string>;
+  /** Alias -> connection identifier from GET session scope. */
+  boundConnections: Record<string, string>;
 }): ScopeBarConnectors {
   const choices = input.choices ?? [];
   const aliases = [
     ...new Set([
       ...choices.map((choice) => choice.alias),
-      ...Object.keys(input.boundAuthorizations),
+      ...Object.keys(input.boundConnections),
     ]),
   ].sort((a, b) => a.localeCompare(b));
 
   const rows: ScopeBarConnector[] = aliases.map((alias) => {
     const choice =
       choices.find((candidate) => candidate.alias === alias) ?? null;
-    const authorizationId = input.boundAuthorizations[alias] ?? null;
-    const authorization = choice?.connections.find(
-      (candidate) => candidate.authorizationId === authorizationId,
+    const connectionId = input.boundConnections[alias] ?? null;
+    const connection = choice?.connections.find(
+      (candidate) => candidate.connectionId === connectionId,
     );
     return {
       alias,
-      bound: authorizationId ? (authorization?.label ?? authorizationId) : null,
-      boundAuthorizationId: authorizationId,
+      bound: connectionId ? (connection?.label ?? connectionId) : null,
+      boundConnectionId: connectionId,
       choices: choice?.connections ?? [],
       unavailable: choice?.unavailable ?? null,
       // Only ask for a notice when the server actually reported a reason.

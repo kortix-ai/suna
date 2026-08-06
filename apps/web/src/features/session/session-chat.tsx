@@ -1674,7 +1674,7 @@ export function SessionChat({
   // default off): the picker still defaults to the session's agent (seeded via
   // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
   // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
-  // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
+  // connector-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
   const localAgentSet = local.agent.set;
@@ -3686,7 +3686,7 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Optimistic turn — the user's message plus the waiting row,

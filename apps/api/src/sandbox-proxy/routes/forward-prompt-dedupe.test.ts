@@ -50,7 +50,7 @@ mock.module('../../shared/preview-ownership', () => ({
 // different concern, so keep it satisfied — unstubbed it reaches a real DB.
 mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
-  missingPromptConnectorAuthorizations: async () => ({ ok: true }),
+  missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},

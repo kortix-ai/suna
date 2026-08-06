@@ -93,7 +93,7 @@
  *    Webhook prompts render `{{ body.path }}` (`triggers.ts:160`), and a keyed
  *    session needs its own `session_key` template (`triggers.ts:636`).
  *  - POLICY. Actions are `always_run | require_approval | block`
- *    (`apps/api/src/executor/policy.ts:20`). `default_mode` falls back to
+ *    (`apps/api/src/connectors/policy.ts:20`). `default_mode` falls back to
  *    `allow_all` when a project declares no `policy:` block
  *    (`apps/api/src/projects/policies.ts:73`) — approval gates are OFF by
  *    default. Say "set it", never "it is on".
@@ -229,7 +229,7 @@ export const automations: Passage = {
 
    DO NOT ADD THE ALLOW / ASK / BLOCK WALKTHROUGH HERE. It was proposed for this
    passage on 2026-07-31 and rejected: the per-action policy material and the
-   connector-permissions capture belong on `/integrations`, high up, where a
+   connector-permissions capture belong on `/connectors`, high up, where a
    reader is already thinking about connecting a tool. This passage stays prose,
    and stays quiet. */
 export const control: Passage = {

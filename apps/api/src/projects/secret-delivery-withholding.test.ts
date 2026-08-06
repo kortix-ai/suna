@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ResolvedProjectSecret, withholdUndeliverable } from './secrets';
+import {
+  materializeSecretDelivery,
+  type ResolvedProjectSecret,
+  withholdUndeliverable,
+} from './secrets';
 
 const row = (
   identifier: string,
   key: string,
   extra: Partial<ResolvedProjectSecret> = {},
 ): ResolvedProjectSecret => ({
+  secretId: `secret-${identifier}`,
   identifier,
   key,
   value: `value-of-${identifier}`,
@@ -22,10 +27,16 @@ describe('withholdUndeliverable', () => {
     // The back-compat guarantee. Every existing row has strategy `runtime` (the
     // column default) or, for a row read before the column existed, undefined —
     // and neither may remove anything.
-    const rows = [row('gmail', 'GMAIL_TOKEN'), row('stripe', 'STRIPE_KEY', { strategy: 'runtime' })];
+    const rows = [
+      row('gmail', 'GMAIL_TOKEN'),
+      row('stripe', 'STRIPE_KEY', { strategy: 'runtime' }),
+    ];
     const env = envFor(rows);
     withholdUndeliverable(rows, env, 'sess-1');
-    expect(env).toEqual({ GMAIL_TOKEN: 'value-of-gmail', STRIPE_KEY: 'value-of-stripe' });
+    expect(env).toEqual({
+      GMAIL_TOKEN: 'value-of-gmail',
+      STRIPE_KEY: 'value-of-stripe',
+    });
   });
 
   test('DENIED is withheld — the whole point', () => {
@@ -115,7 +126,9 @@ describe('only GRANTED rows may vote on a shared key (Strix HIGH)', () => {
     // The caller now passes only the granted rows. This test models what the
     // caller is required to hand over.
     const denied = row('gmaps-primary', 'GMAPS_KEY', { strategy: 'denied' });
-    const ungrantedSibling = row('gmaps-backup', 'GMAPS_KEY', { strategy: 'runtime' });
+    const ungrantedSibling = row('gmaps-backup', 'GMAPS_KEY', {
+      strategy: 'runtime',
+    });
     const env = { GMAPS_KEY: denied.value };
 
     // Only `denied` was granted, so only it is passed in.
@@ -127,5 +140,154 @@ describe('only GRANTED rows may vote on a shared key (Strix HIGH)', () => {
     const envIfBuggy = { GMAPS_KEY: denied.value };
     withholdUndeliverable([denied, ungrantedSibling], envIfBuggy, 'sess-1');
     expect(envIfBuggy.GMAPS_KEY).toBe(denied.value);
+  });
+});
+
+describe('materializeSecretDelivery', () => {
+  test('replaces a managed broker value with a session handle', async () => {
+    const brokered = row('provider', 'PROVIDER_KEY', {
+      strategy: 'broker',
+      egressPolicy: {
+        backend: 'kortix_fetch',
+        inject: { kind: 'header', name: 'authorization' },
+        rules: [
+          {
+            host: 'api.example.com',
+            inject: { kind: 'header', name: 'authorization' },
+          },
+        ],
+      },
+    });
+    const env = envFor([brokered]);
+    const minted: string[] = [];
+
+    await materializeSecretDelivery([brokered], env, {
+      sessionId: 'session-1',
+      grantEnv: ['provider'],
+      mintHandleFor: async (selected) => {
+        minted.push(selected.secretId);
+        return 'kortix-handle';
+      },
+    });
+
+    expect(env).toEqual({ PROVIDER_KEY: 'kortix-handle' });
+    expect(JSON.stringify(env)).not.toContain('value-of-provider');
+    expect(minted).toEqual(['secret-provider']);
+  });
+
+  test.each([undefined, 'all'] as const)(
+    'withholds a broker value from an unscoped %s grant',
+    async (grantEnv) => {
+      const brokered = row('provider', 'PROVIDER_KEY', {
+        strategy: 'broker',
+        egressPolicy: {
+          backend: 'kortix_fetch',
+          inject: { kind: 'header', name: 'authorization' },
+          rules: [{ host: 'api.example.com' }],
+        },
+      });
+      const env = envFor([brokered]);
+      let mintCount = 0;
+
+      await materializeSecretDelivery([brokered], env, {
+        sessionId: 'session-1',
+        grantEnv,
+        mintHandleFor: async () => {
+          mintCount += 1;
+          return 'must-not-mint';
+        },
+      });
+
+      expect(env).toEqual({});
+      expect(mintCount).toBe(0);
+    },
+  );
+
+  test('withholds broker delivery when no managed policy exists', async () => {
+    const brokered = row('provider', 'PROVIDER_KEY', {
+      strategy: 'broker',
+    });
+    const env = envFor([brokered]);
+
+    await materializeSecretDelivery([brokered], env, {
+      sessionId: 'session-1',
+      grantEnv: ['provider'],
+      mintHandleFor: async () => 'must-not-mint',
+    });
+
+    expect(env).toEqual({});
+  });
+
+  test('withholds an LLM gateway secret without minting a sandbox handle', async () => {
+    const gateway = row('provider', 'PROVIDER_KEY', {
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+    });
+    const env = envFor([gateway]);
+    let mintCount = 0;
+
+    await materializeSecretDelivery([gateway], env, {
+      sessionId: 'session-1',
+      grantEnv: ['provider'],
+      mintHandleFor: async () => {
+        mintCount += 1;
+        return 'must-not-mint';
+      },
+    });
+
+    expect(env).toEqual({});
+    expect(mintCount).toBe(0);
+  });
+
+  test('fails closed when a runtime strategy targets a server consumer', async () => {
+    const gateway = row('provider', 'PROVIDER_KEY', {
+      strategy: 'runtime',
+      consumer: 'llm_gateway',
+    });
+    const env = envFor([gateway]);
+
+    await materializeSecretDelivery([gateway], env, {
+      sessionId: 'session-1',
+      grantEnv: ['provider'],
+      mintHandleFor: async () => 'must-not-mint',
+    });
+
+    expect(env).toEqual({});
+  });
+
+  test.each([
+    ['runtime', 'value-of-provider'],
+    ['egress', undefined],
+    ['denied', undefined],
+  ] as const)('materializes %s without a broker mint', async (strategy, expected) => {
+    const selected = row('provider', 'PROVIDER_KEY', { strategy });
+    const env = envFor([selected]);
+    let mintCount = 0;
+
+    await materializeSecretDelivery([selected], env, {
+      sessionId: 'session-1',
+      grantEnv: ['provider'],
+      mintHandleFor: async () => {
+        mintCount += 1;
+        return 'must-not-mint';
+      },
+    });
+
+    if (expected === undefined) expect(env.PROVIDER_KEY).toBeUndefined();
+    else expect(env.PROVIDER_KEY).toBe(expected);
+    expect(mintCount).toBe(0);
+  });
+
+  test('does not add a selected key that the grant resolver excluded', async () => {
+    const selected = row('provider', 'PROVIDER_KEY', { strategy: 'runtime' });
+    const env: Record<string, string> = {};
+
+    await materializeSecretDelivery([selected], env, {
+      sessionId: 'session-1',
+      grantEnv: ['different-provider'],
+      mintHandleFor: async () => 'must-not-mint',
+    });
+
+    expect(env).toEqual({});
   });
 });

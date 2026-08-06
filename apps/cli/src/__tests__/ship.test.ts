@@ -216,7 +216,7 @@ test('ship reconciles the remote manifest independently of connector prompts', a
 
   expect(calls).toEqual([
     {
-      path: '/executor/projects/proj_1/connectors/sync',
+      path: '/connectors/projects/proj_1/connectors/sync',
       body: undefined,
     },
   ]);

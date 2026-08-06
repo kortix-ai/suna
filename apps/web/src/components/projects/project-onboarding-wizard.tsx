@@ -62,10 +62,10 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import {
-  proposeConnectorProfileSlug,
+  proposeConnectorConnectionSlug,
   type EasyConnectApp,
-} from '@/features/workspace/customize/sections/connector-profile-form';
-import { ConnectorProfileModal } from '@/features/workspace/customize/sections/connector-profile-modal';
+} from '@/features/workspace/customize/sections/connector-connection-form';
+import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
@@ -241,7 +241,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                 {stepId === 'slack' && <SlackStep projectId={projectId} />}
                 {stepId === 'model' && <ModelStep />}
                 {stepId === 'done' && (
-                  <DoneStep profileCount={connectorSlugs.length} onStart={complete} />
+                  <DoneStep connectionCount={connectorSlugs.length} onStart={complete} />
                 )}
               </m.div>
             </AnimatePresence>
@@ -442,7 +442,7 @@ function ToolsStep({
     .filter((a) => !SLACK_SLUGS.has(a.slug));
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
-  const profileCount = existingSlugs.length;
+  const connectionCount = existingSlugs.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -525,8 +525,8 @@ function ToolsStep({
           )}
 
           <p className="text-muted-foreground text-xs">
-            {profileCount > 0
-              ? `${profileCount} ${profileCount === 1 ? 'profile' : 'profiles'} added — add as many as you like, then continue.`
+            {connectionCount > 0
+              ? `${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'} added — add as many as you like, then continue.`
               : 'Connect a few now, or skip and add them anytime.'}
           </p>
         </TabsContent>
@@ -548,27 +548,27 @@ function ToolsStep({
           </div>
         </TabsContent>
       </Tabs>
-      <ConnectorProfileModal
+      <ConnectorConnectionModal
         open={selectedApp !== null}
-        idPrefix="onboarding-tool-profile"
+        idPrefix="onboarding-tool-connection"
         title={`Add ${selectedApp?.name ?? 'app'}`}
-        description="Create a connector profile before authorization. You can add more than one profile for the same app."
+        description="Create a connection. You can add more than one connection for the same app."
         initialName={selectedApp?.name ?? ''}
         initialSlug={
-          selectedApp ? proposeConnectorProfileSlug(selectedApp.slug, existingSlugs) : ''
+          selectedApp ? proposeConnectorConnectionSlug(selectedApp.slug, existingSlugs) : ''
         }
         existingSlugs={existingSlugs}
         pending={connect.isPending}
         onOpenChange={(open) => !open && setSelectedApp(null)}
-        onSubmit={(profile) => {
+        onSubmit={(connection) => {
           if (!selectedApp) return;
           connect.mutate(
             {
               appSlug: selectedApp.slug,
               appName: selectedApp.name,
-              profileName: profile.name,
-              profileSlug: profile.slug,
-              authorizationStrategy: profile.authorizationStrategy,
+              connectorName: connection.name,
+              connectorSlug: connection.slug,
+              authorizationStrategy: connection.authorizationStrategy,
             },
             { onSuccess: () => setSelectedApp(null) },
           );
@@ -594,7 +594,7 @@ function ToolTile({
       type="button"
       onClick={onConnect}
       disabled={busy}
-      aria-label={`Add ${app.name} profile`}
+      aria-label={`Add ${app.name} connection`}
       className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] flex items-center gap-3 rounded-md border p-3 text-left transition-colors disabled:opacity-60"
     >
       {app.imgSrc ? (
@@ -820,7 +820,7 @@ function ModelStep() {
 
 // ─── Step 5: Done ──────────────────────────────────────────────────────────────
 
-function DoneStep({ profileCount, onStart }: { profileCount: number; onStart: () => void }) {
+function DoneStep({ connectionCount, onStart }: { connectionCount: number; onStart: () => void }) {
   return (
     <div className="flex flex-col items-start gap-6">
       <div className="bg-kortix-green/10 flex size-14 items-center justify-center rounded-2xl">
@@ -832,8 +832,8 @@ function DoneStep({ profileCount, onStart }: { profileCount: number; onStart: ()
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
           Your command center is ready
-          {profileCount > 0
-            ? ` with ${profileCount} ${profileCount === 1 ? 'tool profile' : 'tool profiles'} configured`
+          {connectionCount > 0
+            ? ` with ${connectionCount} ${connectionCount === 1 ? 'tool connection' : 'tool connections'} configured`
             : ''}
           . Describe a task in the composer and your agent gets to work — it can research, write,
           and act across everything you&apos;ve connected.

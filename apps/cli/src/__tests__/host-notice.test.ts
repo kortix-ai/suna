@@ -7,7 +7,6 @@ import { renderHostNotice } from '../host-notice.ts';
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',

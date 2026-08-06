@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseDocument } from 'yaml';
+import { parseDocument, stringify as stringifyYaml } from 'yaml';
 import {
   type ManifestFormat,
   manifestCandidatePaths,
@@ -345,6 +345,25 @@ function findYamlArrayIndex(doc: YamlDocument, path: string[], field: string, va
 function appendArrayBlockYaml(section: string, fields: Record<string, unknown>, cwd?: string): void {
   const doc = readYamlDocument(cwd);
   const path = section.split('.');
+  const existing = doc.getIn(path, true) as
+    | { items?: Array<{ range?: [number, number, number] }>; range?: [number, number, number] }
+    | undefined;
+  if (existing?.range && Array.isArray(existing.items) && existing.items.length > 0) {
+    const text = readManifestText(cwd);
+    const firstStart = existing.items[0]?.range?.[0];
+    if (firstStart !== undefined) {
+      const lineStart = text.lastIndexOf('\n', firstStart - 1) + 1;
+      const marker = text.slice(lineStart, firstStart);
+      const dash = marker.lastIndexOf('-');
+      if (dash >= 0) {
+        const indent = marker.slice(0, dash);
+        const rendered = renderYamlSequenceItem(fields, indent);
+        const insertAt = existing.range[2];
+        writeManifestText(`${text.slice(0, insertAt)}${rendered}${text.slice(insertAt)}`, cwd);
+        return;
+      }
+    }
+  }
   ensureYamlSeqPath(doc, path);
   const entry: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fields)) {
@@ -360,8 +379,28 @@ function removeArrayBlockYaml(section: string, field: string, value: string, cwd
   const path = section.split('.');
   const idx = findYamlArrayIndex(doc, path, field, value);
   if (idx < 0) return false;
-  doc.deleteIn([...path, idx]);
-  writeYamlDocument(doc, cwd);
+  const seq = doc.getIn(path, true) as { items?: Array<{ range?: [number, number, number] }> };
+  const range = seq.items?.[idx]?.range;
+  if (!range) {
+    doc.deleteIn([...path, idx]);
+    writeYamlDocument(doc, cwd);
+    return true;
+  }
+  const text = readManifestText(cwd);
+  let start = text.lastIndexOf('\n', range[0] - 1) + 1;
+  // A comment immediately above a sequence item belongs to that item. Remove
+  // it with the item, but do not consume a blank separator or prior content.
+  for (;;) {
+    if (start === 0) break;
+    const previousEnd = start - 1;
+    const previousStart = text.lastIndexOf('\n', previousEnd - 1) + 1;
+    const previousLine = text.slice(previousStart, previousEnd);
+    if (!previousLine.trimStart().startsWith('#')) break;
+    start = previousStart;
+  }
+  let end = range[2];
+  if (end < text.length && text[end] === '\n') end += 1;
+  writeManifestText(`${text.slice(0, start)}${text.slice(end)}`, cwd);
   return true;
 }
 
@@ -377,9 +416,23 @@ function setScalarInArrayBlockYaml(
   const path = section.split('.');
   const idx = findYamlArrayIndex(doc, path, field, idValue);
   if (idx < 0) return false;
-  doc.setIn([...path, idx, key], value);
-  writeYamlDocument(doc, cwd);
+  const valueNode = doc.getIn([...path, idx, key], true) as
+    | { range?: [number, number, number] }
+    | undefined;
+  if (valueNode?.range) {
+    const text = readManifestText(cwd);
+    const [start, end] = valueNode.range;
+    writeManifestText(`${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`, cwd);
+  } else {
+    doc.setIn([...path, idx, key], value);
+    writeYamlDocument(doc, cwd);
+  }
   return true;
+}
+
+function renderYamlScalar(value: string | number | boolean): string {
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return stringifyYaml(value).trimEnd();
 }
 
 function setTableScalarYaml(
@@ -390,7 +443,61 @@ function setTableScalarYaml(
 ): void {
   const doc = readYamlDocument(cwd);
   const path = table.split('.');
+  const text = readManifestText(cwd);
+  const currentValue = doc.getIn([...path, key], true) as
+    | { range?: [number, number, number] }
+    | undefined;
+  if (currentValue?.range) {
+    const [start, end] = currentValue.range;
+    writeManifestText(`${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`, cwd);
+    return;
+  }
+  const currentMap = doc.getIn(path, true) as
+    | {
+        items?: Array<{
+          key?: { range?: [number, number, number] };
+          value?: { range?: [number, number, number] };
+        }>;
+        range?: [number, number, number];
+      }
+    | undefined;
+  if (currentMap?.range && Array.isArray(currentMap.items) && currentMap.items.length > 0) {
+    const firstKeyStart = currentMap.items[0]?.key?.range?.[0];
+    if (firstKeyStart !== undefined) {
+      const lineStart = text.lastIndexOf('\n', firstKeyStart - 1) + 1;
+      const indent = text.slice(lineStart, firstKeyStart);
+      const insertAt = currentMap.range[2];
+      writeManifestText(
+        `${text.slice(0, insertAt)}${indent}${key}: ${renderYamlScalar(value)}\n${text.slice(insertAt)}`,
+        cwd,
+      );
+      return;
+    }
+  }
+  if (!doc.hasIn(path)) {
+    const rendered = renderYamlMapPath(path, key, value);
+    const separator = text.length === 0 || text.endsWith('\n') ? '' : '\n';
+    writeManifestText(`${text}${separator}${rendered}`, cwd);
+    return;
+  }
   ensureYamlMapPath(doc, path);
   doc.setIn([...path, key], value);
   writeYamlDocument(doc, cwd);
+}
+
+function renderYamlSequenceItem(fields: Record<string, unknown>, indent: string): string {
+  const lines = stringifyYaml(fields).trimEnd().split('\n');
+  return lines
+    .map((line, index) => `${indent}${index === 0 ? '- ' : '  '}${line}\n`)
+    .join('');
+}
+
+function renderYamlMapPath(
+  path: string[],
+  key: string,
+  value: string | number | boolean,
+): string {
+  const lines = path.map((segment, index) => `${'  '.repeat(index)}${segment}:`);
+  lines.push(`${'  '.repeat(path.length)}${key}: ${renderYamlScalar(value)}`);
+  return `${lines.join('\n')}\n`;
 }

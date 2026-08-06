@@ -1,12 +1,12 @@
 import type {
-  ConnectionProfileCredentialInput,
+  ConnectionCredentialInput,
   ConnectorDraftInput,
   OAuth2ApplicationInput,
   OAuth2ClientCredentials,
   OAuth2TokenEndpointAuthMethod,
 } from '@kortix/sdk';
 
-import { connectorSyncErrorForSlug, createOnlyConnectorDraft } from './connector-profile-form';
+import { connectorSyncErrorForSlug, createOnlyConnectorDraft } from './connector-connection-form';
 
 export interface OAuth2CredentialForm {
   tokenUrl: string;
@@ -41,7 +41,7 @@ export function oauth2CredentialFormValid(form: OAuth2CredentialForm): boolean {
 
 export function buildOAuth2CredentialInput(
   form: OAuth2CredentialForm,
-): ConnectionProfileCredentialInput {
+): ConnectionCredentialInput {
   const oauth2: OAuth2ClientCredentials = {
     type: 'oauth2_client_credentials',
     token_url: form.tokenUrl.trim(),
@@ -171,7 +171,7 @@ export async function createConnectorWithOptionalOAuth2(
     setConnectorCredential: (
       projectId: string,
       slug: string,
-      credential: ConnectionProfileCredentialInput,
+      credential: ConnectionCredentialInput,
     ) => Promise<unknown>;
   },
 ): Promise<{ syncError: string | null; credentialStored: boolean }> {

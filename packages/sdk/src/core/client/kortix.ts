@@ -298,7 +298,27 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
-    const connectorAuthorizations = {
+    const connections = {
+      list: () => P.listConnections(projectId),
+      listAll: () => P.listAllConnections(projectId),
+      reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnection>>) =>
+        P.reconcileConnection(projectId, ...a),
+      reconcileMember: (...a: DropFirst<Parameters<typeof P.reconcileMemberConnection>>) =>
+        P.reconcileMemberConnection(projectId, ...a),
+      updateCredential: (...a: DropFirst<Parameters<typeof P.updateConnectionCredential>>) =>
+        P.updateConnectionCredential(projectId, ...a),
+      revoke: (...a: DropFirst<Parameters<typeof P.revokeConnection>>) =>
+        P.revokeConnection(projectId, ...a),
+      activate: (...a: DropFirst<Parameters<typeof P.activateConnection>>) =>
+        P.activateConnection(projectId, ...a),
+      setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
+        P.setDefaultConnection(projectId, ...a),
+      pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
+        P.pipedreamConnectConnection(projectId, ...a),
+      pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
+        P.pipedreamFinalizeConnection(projectId, ...a),
+    };
+    const legacyConnectorAuthorizations = {
       list: () => P.listConnectorAuthorizations(projectId),
       listAll: () => P.listAllConnectorAuthorizations(projectId),
       reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectorAuthorization>>) =>
@@ -361,6 +381,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.upsertProjectSecret(projectId, input),
         setStrategy: (...a: DropFirst<Parameters<typeof P.setProjectSecretStrategy>>) =>
           P.setProjectSecretStrategy(projectId, ...a),
+        broker: (...a: DropFirst<Parameters<typeof P.brokerProjectSecretRequest>>) =>
+          P.brokerProjectSecretRequest(projectId, ...a),
         remove: (name: string) => P.deleteProjectSecret(projectId, name),
         setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
           P.setPersonalProjectSecret(projectId, ...a),
@@ -372,6 +394,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.startProjectProviderOAuth(projectId, ...a),
         pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
           P.pollProjectProviderOAuth(projectId, ...a),
+        removeProviderOAuth: (provider: string) =>
+          P.deleteProjectProviderOAuth(projectId, provider),
       },
 
       access: {
@@ -430,9 +454,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorCredential(projectId, ...a),
         setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
           P.setConnectorSensitive(projectId, ...a),
-        authorizations: connectorAuthorizations,
-        /** @deprecated Use `authorizations`. */
-        profiles: connectorAuthorizations,
+        connections,
+        /** @deprecated Use `connections`. */
+        authorizations: legacyConnectorAuthorizations,
+        /** @deprecated Use `connections`. */
+        profiles: legacyConnectorAuthorizations,
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
             P.getConnectorPolicies(projectId, ...a),
@@ -448,12 +474,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
             P.pipedreamFinalize(projectId, ...a),
         },
-        /** Direct integrations.sh catalogue and normalized domain surfaces. */
+        /** Direct connector catalogue and normalized domain surfaces. */
         discover: {
-          list: (...a: DropFirst<Parameters<typeof P.listDiscoverIntegrations>>) =>
-            P.listDiscoverIntegrations(projectId, ...a),
-          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>) =>
-            P.getDiscoverIntegration(projectId, ...a),
+          list: (...a: DropFirst<Parameters<typeof P.listDiscoverConnectors>>) =>
+            P.listDiscoverConnectors(projectId, ...a),
+          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverConnector>>) =>
+            P.getDiscoverConnector(projectId, ...a),
         },
       },
 
@@ -542,7 +568,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.bulkActReviewItems(projectId, input),
       },
 
-      /** The manager inbox of executor-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
+      /** The manager inbox of connector-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
       approvals: {
         list: (options?: Parameters<typeof P.listPendingApprovals>[1]) =>
           P.listPendingApprovals(projectId, options),
@@ -582,7 +608,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.runGatewayPlayground(projectId, prompt, models, system),
       },
 
-      /** Slack + email + Meet channel integrations. */
+      /** Slack + email + Meet channel connections. */
       channels: {
         slack: {
           installation: () => P.getSlackInstallation(projectId),
@@ -896,7 +922,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
-      /** Per-session audit trail of executor-gated agent actions. */
+      /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: { showErrors?: boolean }) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
@@ -964,7 +990,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _persistedPromptDefaults = null;
         return result;
       },
-      /** Read the authoritative secret allowlist and connector authorizations. */
+      /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>

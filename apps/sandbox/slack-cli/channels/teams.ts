@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { ExecutorError, createExecutorClient } from '../../../../packages/executor-sdk/src/index';
+import { ConnectorError, createConnectorClient } from '../../../../packages/connector-sdk/src/index';
 import {
   CliError,
   getEnv,
@@ -25,7 +25,7 @@ function resolveDownloadOutput(outPath: string): string {
 
 async function downloadFile(url: string, outPath: string) {
   const apiUrl = getEnv('KORTIX_API_URL');
-  const tok = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
+  const tok = getEnv('KORTIX_CLI_TOKEN');
   const projectId = kortixProjectId();
   if (!apiUrl || !tok || !projectId) {
     throw new CliError(
@@ -84,21 +84,21 @@ async function sendFile(filePath: string, description?: string) {
   return { ok: true, delivered: 'consent_card', uploadId: r?.uploadId };
 }
 
-function executorClient() {
+function connectorClient() {
   const apiUrl = getEnv('KORTIX_API_URL');
-  const token = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
+  const token = getEnv('KORTIX_CLI_TOKEN');
   if (!apiUrl || !token) {
-    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN not set — cannot reach the Executor.');
+    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN not set — cannot reach the Connector.');
   }
-  return createExecutorClient({ apiUrl, token, projectId: kortixProjectId() });
+  return createConnectorClient({ apiUrl, token, projectId: kortixProjectId() });
 }
 
-async function executorCall(action: string, args: Record<string, unknown>): Promise<unknown> {
+async function connectorCall(action: string, args: Record<string, unknown>): Promise<unknown> {
   try {
-    const res = await executorClient().call(TEAMS_CONNECTOR, action, args);
+    const res = await connectorClient().call(TEAMS_CONNECTOR, action, args);
     return res.data ?? res;
   } catch (err) {
-    if (err instanceof ExecutorError) throw new CliError(err.message);
+    if (err instanceof ConnectorError) throw new CliError(err.message);
     throw err;
   }
 }
@@ -186,32 +186,32 @@ async function main(): Promise<void> {
       break;
     case 'team':
       if (!flags.team) throw new CliError('--team <team-id> required');
-      out(await executorCall('get_team', { 'team-id': flags.team }));
+      out(await connectorCall('get_team', { 'team-id': flags.team }));
       break;
     case 'channels':
       if (!flags.team) throw new CliError('--team <team-id> required');
-      out(await executorCall('list_channels', { 'team-id': flags.team }));
+      out(await connectorCall('list_channels', { 'team-id': flags.team }));
       break;
     case 'channel':
       if (!flags.team || !flags.channel) throw new CliError('--team and --channel required');
       out(
-        await executorCall('get_channel', { 'team-id': flags.team, 'channel-id': flags.channel }),
+        await connectorCall('get_channel', { 'team-id': flags.team, 'channel-id': flags.channel }),
       );
       break;
     case 'members':
       if (!flags.team) throw new CliError('--team <team-id> required');
-      out(await executorCall('list_members', { 'team-id': flags.team }));
+      out(await connectorCall('list_members', { 'team-id': flags.team }));
       break;
     case 'user':
       if (!flags.id) throw new CliError('--id <user-id> required');
-      out(await executorCall('get_user', { 'user-id': flags.id }));
+      out(await connectorCall('get_user', { 'user-id': flags.id }));
       break;
     default:
       console.log(`
 teams — Microsoft Teams adapter
 
 Auth: none in-sandbox — turn replies are rendered by the Kortix server; vendor
-reads run through the Kortix Executor (Graph token resolved server-side).
+reads run through the Kortix Connector (Graph token resolved server-side).
 
 Turn commands (use these when answering a Teams message):
   step  "<checkpoint>"   [--detail "<subtitle>"] [--output "<prev result>"] [--source URL|TITLE]
@@ -221,7 +221,7 @@ Files:
   send     --file <path> [--text "<description>"]   # offer a file (consent card; user accepts to receive)
   download --url <url> --out <path>                 # download a file shared in the conversation
 
-Read commands (Microsoft Graph, via the Executor):
+Read commands (Microsoft Graph, via the Connector):
   team      --team <team-id>
   channels  --team <team-id>
   channel   --team <team-id> --channel <channel-id>

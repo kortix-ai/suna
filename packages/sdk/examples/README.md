@@ -36,7 +36,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 | 06 | [`06-files-and-secrets.ts`](06-files-and-secrets.ts) | Session-scoped workspace files + project secrets. | `KORTIX_SESSION_ID=… bun run examples/06-files-and-secrets.ts` |
 | 07 | [`07-vanilla.ts`](07-vanilla.ts) | The whole flow in one framework-free file: list → send → stream. | `bun run examples/07-vanilla.ts "hi"` |
 | 08 | [`08-cdn.html`](08-cdn.html) | The SDK in a browser with **no build step** (ESM via CDN). | open in a browser |
-| 09 | [`09-kaab-backend-wrapper.ts`](09-kaab-backend-wrapper.ts) | **Kortix as a Backend, end to end**: mint a connector → per-user profile → backend-origin session (`secrets` + `connector_bindings`) → **stream**. One-shot CLI **and** a multi-tenant SSE service. | `bun run examples/09-kaab-backend-wrapper.ts "Summarize my signups"` |
+| 09 | [`09-kaab-backend-wrapper.ts`](09-kaab-backend-wrapper.ts) | **Kortix as a Backend, end to end**: mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → **stream**. One-shot CLI **and** a multi-tenant SSE service. | `bun run examples/09-kaab-backend-wrapper.ts "Summarize my signups"` |
 
 ## Kortix as a Backend
 

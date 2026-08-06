@@ -139,32 +139,31 @@ into every session sandbox at boot.
 
 > **Asking a human for a secret.** You usually don't *have* the value, so don't
 > use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
-> tool on the `kortix-executor` MCP), surface the returned URL, end your turn, and
+> tool on the `kortix-connectors` MCP), surface the returned URL, end your turn, and
 > when they say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
-### Executor — call connectors as tools
+### Connectors — call external tools
 
-The Executor is the one interface to every configured integration (Pipedream /
-MCP / OpenAPI / GraphQL / HTTP). Calls run **server-side** through the gateway —
-no third-party secret ever touches the sandbox. It has three faces over one
-core: the `kortix-executor` **MCP** (primary; auto-loaded), this **CLI**, and the
-`@kortix/executor-sdk` **TypeScript framework**. JSON output.
+A connector defines actions against an external system. A connection stores one
+usable authorization. Calls run **server-side** through the connector gateway,
+so no third-party credential enters the sandbox. The same gateway is available
+through the `kortix-connectors` **MCP**, this **CLI**, and the
+`@kortix/connector-sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
-| `kortix executor connectors` | List connectors + tools this session can use. |
-| `kortix executor discover "<intent>"` | Search tools by natural language (`--limit`). |
-| `kortix executor describe <connector>.<action>` | Show one tool's input schema + risk. |
-| `kortix executor call <connector> <action> '<json>'` | Run a tool (gateway resolves the credential, enforces policy, audits). |
-| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.yaml` on main + syncs. |
-| `kortix executor rm <slug>` | Remove a connector. |
-| `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
-| `kortix executor mcp` | Run the Executor as a stdio MCP server (opencode auto-loads this). |
+| `kortix connectors ls [--session <id>]` | List project or session-visible connectors and actions. |
+| `kortix connectors discover "<intent>"` | Search actions by natural language (`--limit`). |
+| `kortix connectors show <connector>.<action>` | Show one action's input schema and risk. |
+| `kortix connectors call <connector> <action> '<json>'` | Invoke an action. The gateway resolves the connection, enforces policy, and audits. |
+| `kortix connectors add <slug> --provider pipedream --app <app> --apply` | Add a connector now, commit it to `kortix.yaml` on main, and sync it. |
+| `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
+| `kortix connectors connect <slug>` | Mint a Pipedream connection URL for the human. |
+| `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
 
-> Inside a session, **prefer the `kortix-executor` MCP tools** (`connectors` /
-> `discover` / `describe` / `call`) — they're always loaded. The CLI is the same
-> core for shell/scripting use.
+> Inside a session, the `kortix-connectors` MCP tools can expose the same
+> list/discover/show/call loop. Use the CLI when those tools are absent.
 
 ### Env — dotenv ↔ secrets
 
@@ -277,7 +276,7 @@ Kortix-native PR layer for session work landing on `main`. A change
 request proposes merging one branch (`head_ref`) into another
 (`base_ref`) inside a project. The CR layer is **Kortix-native** —
 it works on top of any git host (GitHub, GitLab, plain
-git) without per-host integration. A CR is the **only sanctioned
+git) without a per-host adapter. A CR is the **only sanctioned
 way** for an agent to land session-branch work on `main`; see
 `change-requests.md` (alongside this file) for the full mandate and
 lifecycle.
@@ -410,8 +409,8 @@ KORTIX_SESSION_ID=<uuid>
 KORTIX_BRANCH_NAME=<session-branch>
 ```
 
-The CLI reads `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`)
-automatically and uses `KORTIX_API_URL` as the host base. No config file,
+The CLI reads `KORTIX_CLI_TOKEN` automatically and uses `KORTIX_API_URL` as the
+host base. No config file,
 no `kortix login` needed — `kortix …` just works.
 
 > **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
@@ -506,7 +505,6 @@ conflict story, and data model.
 | Variable | Purpose |
 | --- | --- |
 | `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
-| `KORTIX_EXECUTOR_TOKEN` | Same PAT under another name; the CLI falls back to it. |
 | `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
 | `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |

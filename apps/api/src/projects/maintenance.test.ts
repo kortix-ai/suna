@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSandboxReaper from './sandbox-reaper';
-import * as realAttachments from '../executor/attachments';
+import * as realAttachments from '../connectors/attachments';
 
 // maintenance.ts pulls in the real config module (which validates the real,
 // dotenvx-encrypted process.env and calls process.exit on a bare `bun test`
@@ -11,9 +11,9 @@ import * as realAttachments from '../executor/attachments';
 // to let the module load in isolation.
 mock.module('../config', () => ({ config: {} }));
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
-mock.module('../executor/attachments', () => ({
+mock.module('../connectors/attachments', () => ({
   ...realAttachments,
-  cleanupExpiredExecutorAttachments: async () => ({ deleted: 0, errors: 0 }),
+  cleanupExpiredConnectorAttachments: async () => ({ deleted: 0, errors: 0 }),
 }));
 // sweepExpiredSessionBranches() (unlike the other maintenance subtasks) isn't
 // wrapped in its own .catch() and makes a real chained db.select(...) call —

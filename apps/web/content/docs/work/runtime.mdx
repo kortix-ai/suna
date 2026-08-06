@@ -77,7 +77,7 @@ Kortix injects these variables at boot, alongside your project's [secrets](/docs
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
 | `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
 | `KORTIX_LLM_API_KEY`, `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key and base URL. Injected only on plans that use Kortix's managed model access. |
-| `KORTIX_SANDBOX_TOKEN`, `KORTIX_TOKEN`, `KORTIX_CLI_TOKEN`, `KORTIX_EXECUTOR_TOKEN` | The token family. See below. |
+| `KORTIX_SANDBOX_TOKEN`, `KORTIX_TOKEN`, `KORTIX_CLI_TOKEN` | The token family. See below. |
 
 Kortix does not inject `KORTIX_WORKSPACE`. The image bakes in `/workspace` and no per-session step sets it. Kortix does not inject a git token either — the daemon fetches a short-lived clone credential when it needs one; see [Pushing from a session](#pushing-from-a-session) below. Kortix rejects a user secret named with the `KORTIX_*` prefix, because it reserves that prefix for platform variables.
 
@@ -98,9 +98,8 @@ Four tokens can appear in a sandbox. They carry two different identities.
 | `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
 | `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
 | `KORTIX_CLI_TOKEN` | A project-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
-| `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT as `KORTIX_CLI_TOKEN`. | Backs the `kortix-executor` MCP gateway. |
 
-`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` or `KORTIX_EXECUTOR_TOKEN` for any call that should act as the launching user.
+`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` for any call that should act as the launching user.
 
 ## Pushing from a session
 

@@ -1465,6 +1465,137 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(traces[0].errorCode).toBe("upstream_error");
   });
 
+  test("streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      return sseResponse(authorization === "Bearer dead-key" ? authErrorSse : goodSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sseText(await new Response(res.body).text())).toEqual({
+      content: "real answer",
+      finishReason: "stop",
+    });
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a 400 invalid-key body fails over to the next credential", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "invalid x-api-key", type: "authentication_error" } }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential stays terminal without an alternate credential", async () => {
+    const only: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "only",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [only] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(401);
+    expect(calls).toBe(1);
+  });
+
   // The ai-sdk transport (transports/ai-sdk/sse.ts) pre-classifies its own
   // upstream errors and embeds the real HTTP-equivalent status as a NUMERIC
   // `code` on the frame — e.g. a genuine 429 the provider itself returned

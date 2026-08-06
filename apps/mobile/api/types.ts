@@ -465,7 +465,7 @@ export interface ScheduleTriggerConfig {
 }
 
 export interface EventTriggerConfig {
-  profile_id?: string;
+  connection_id?: string;
   agent_prompt: string;
   trigger_slug: string;
   composio_trigger_id?: string;
@@ -557,7 +557,7 @@ export interface ComposioAppTriggersResponse {
 
 export interface CreateComposioEventTriggerRequest {
   agent_id: string;
-  profile_id: string;
+  connection_id: string;
   slug: string;
   trigger_config: Record<string, any>;
   route: 'agent';

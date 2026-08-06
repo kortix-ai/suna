@@ -577,7 +577,7 @@ hard-lock an agent regardless of who runs it.
 | Personal access token | `kortix_pat_` | CLI / scripts as *you* | Your roles; optionally **project-scoped** (hard-fenced to that project); exempt from the MFA gate |
 | Service account | `kortix_sa_` | Headless automation with its **own** identity | *Only* its bound policies — no roles means every call is denied (fail-closed) |
 | SCIM token | `kortix_scim_` | Your IdP's provisioning credential | The SCIM API only, one account |
-| Session executor token | (internal) | Minted per sandbox for the agent | launching-user/standing role ∩ agent grant ∩ project |
+| Session connector token | (internal) | Minted per sandbox for the agent | launching-user/standing role ∩ agent grant ∩ project |
 
 - **PATs:** user menu → Settings → **API keys** (name, optional project scope, optional
   expiry; secret shown once). Admins set an account-wide **PAT policy** —

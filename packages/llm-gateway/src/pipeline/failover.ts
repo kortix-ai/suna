@@ -5,7 +5,12 @@ import type {
   ModelGenerationDefaults,
   UpstreamDescriptor,
 } from '../domain';
-import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
+import {
+  CircuitOpenError,
+  ClientAbortError,
+  UpstreamHttpError,
+  looksLikeTerminalAuthFailure,
+} from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
@@ -135,6 +140,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const { descriptor, routeModel } = candidate;
     const hasFallback = i < candidates.length - 1;
     const hasModelFallback = candidates.slice(i + 1).some((next) => next.routeModel !== routeModel);
+    const hasCredentialFallback = candidates.slice(i + 1).some(
+      (next) =>
+        next.routeModel === routeModel &&
+        next.descriptor.provider === descriptor.provider &&
+        descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== descriptor.credentialRef,
+    );
     tried.push(descriptor.provider);
     if (modelsTried.at(-1) !== routeModel) modelsTried.push(routeModel);
     attempts += 1;
@@ -233,13 +246,24 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         };
       }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
+        const upstreamError = parseUpstreamBody(err.body);
+        const credentialFailure =
+          hasCredentialFallback &&
+          (err.status === 401 ||
+            (err.status === 400 &&
+              looksLikeTerminalAuthFailure(
+                `${upstreamError.message} ${upstreamError.code ?? ''}`,
+              )));
         // A rate-limit / quota / billing error (429/402/403) on a candidate that
         // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
         // managed model queued next — falls over instead of failing the turn.
         // (429 was already retried on this candidate by callUpstream, so reaching
         // here means it's persistent, not a transient blip.) Other 4xx — bad
-        // request, auth, model-not-found — are the caller's to fix: return as-is.
+        // here means it is persistent. Authentication failures advance only
+        // when the same route has another configured credential. Other 4xx
+        // responses return unchanged.
         if (
+          credentialFailure ||
           (LIMIT_STATUSES.has(err.status) && hasFallback) ||
           (fallbackOn === 'any-error' && hasModelFallback)
         ) {
@@ -248,7 +272,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
             fromModel: routeModel,
             status: err.status,
             reason:
-              fallbackOn === 'any-error' && hasModelFallback ? 'model_policy' : 'provider_limit',
+              credentialFailure
+                ? 'credential'
+                : fallbackOn === 'any-error' && hasModelFallback
+                  ? 'model_policy'
+                  : 'provider_limit',
           });
           continue;
         }
@@ -256,7 +284,6 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           provider: descriptor.provider,
           status: err.status,
         });
-        const upstreamError = parseUpstreamBody(err.body);
         emit({
           ...trace,
           resolvedModel: descriptor.resolvedModel,

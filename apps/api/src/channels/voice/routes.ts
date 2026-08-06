@@ -20,8 +20,8 @@
  * `voiceMcpRoutes.use('/:projectId/mcp/voice', supabaseAuth)`) for the
  * agent's own voice_spawn/voice_read/send_prompt/run_command/voice_end
  * tools; that moved to the `kortix_voice` channel connector
- * (executor/channels.ts, executor/db-deps.ts's executeVoiceCall) so it runs
- * through the executor gateway like every other connector call — policies,
+ * (connector/channels.ts, connector/db-deps.ts's executeVoiceCall) so it runs
+ * through the connector gateway like every other connector call — policies,
  * approvals, and the audit trail included, none of which a direct MCP route
  * ever had. This file and mcp.ts are now exclusively the worker's way in. If
  * a second, differently-authed MCP ever needs to live here again, give it

@@ -17,9 +17,9 @@ export const uncoveredAllow: AllowEntry[] = [
   // sessions/:*/mcp/voice, which VOICE-2 covers at its auth boundary.
   {
     method: "PUT",
-    path: "/v1/executor/projects/:*/connectors/:*/sensitive",
+    path: "/v1/connectors/projects/:*/connectors/:*/sensitive",
     reason:
-      "executor-scoped runtime endpoint — called by the in-sandbox executor with its own token, not by end-user clients; the user-facing equivalent is flow-covered",
+      "connector-scoped runtime endpoint — called by the in-sandbox connector with its own token, not by end-user clients; the user-facing equivalent is flow-covered",
   },
   {
     method: "DELETE",

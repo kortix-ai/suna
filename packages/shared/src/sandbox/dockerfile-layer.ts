@@ -199,7 +199,7 @@ export interface WarmRepoConfig {
 /**
  * Inputs for the artifact half of the layer — the contiguous tail that COPYs
  * Kortix's own staged build artifacts (agent + CLI binaries, entrypoint,
- * slack-cli, executor-sdk, scaffold.git) and wires the container's entrypoint.
+ * slack-cli, connector-sdk, scaffold.git) and wires the container's entrypoint.
  *
  * Every artifact path is REQUIRED, deliberately: an agent-less image would
  * still build, still hash to a fresh snapshot identity, and only fail once a
@@ -228,16 +228,16 @@ export interface KortixArtifactLayerOpts {
    * /opt/kortix/apps/sandbox/slack-cli
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
-   * agent to invoke from inside the sandbox. (The Executor moved into the
-   * `kortix` CLI as `kortix executor` / `kortix executor mcp`.)
+   * agent to invoke from inside the sandbox. (The Connector moved into the
+   * `kortix` CLI as `kortix connectors` / `kortix connectors mcp`.)
    */
   slackCliPath: string;
   /**
-   * Path the snapshot builder will reference for packages/executor-sdk.
+   * Path the snapshot builder will reference for packages/connector-sdk.
    * The agent CLI imports it via the same repo-relative path in dev and in
    * real snapshots.
    */
-  executorSdkPath: string;
+  connectorSdkPath: string;
   /**
    * Path (in the build context) to the baked full gateway model catalog JSON.
    * COPY'd into the image so the no-restart warm seed — which has no sandbox
@@ -622,7 +622,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
       'RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
-    // Bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
+    // Bun runtime for the agent CLIs (slack, …) + `kortix connectors mcp`.
     // Download one versioned release artifact and verify its checksum before
     // extracting it. The public installer script is not part of the trust path.
     'RUN case "$(uname -m)" in \\',
@@ -717,7 +717,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
  * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
- * executor-sdk, the optional LLM catalog, scaffold.git), the unpack/shim RUN
+ * connector-sdk, the optional LLM catalog, scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -730,7 +730,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    executorSdkPath,
+    connectorSdkPath,
     catalogPath,
   } = opts;
 
@@ -742,7 +742,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${machineDocPath} /MACHINE.md`,
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    `COPY ${connectorSdkPath}/ /opt/kortix/packages/connector-sdk/`,
     // Full gateway model catalog, baked at build so the token-less no-restart
     // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
     ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),

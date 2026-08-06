@@ -5,7 +5,6 @@ const DEFAULT_AGENT_ENV_SH = '/dev/shm/kortix/agent-env.sh';
 
 const SANDBOX_ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',

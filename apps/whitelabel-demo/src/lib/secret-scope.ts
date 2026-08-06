@@ -40,7 +40,7 @@ const CHANNEL_INSTALL_KEYS = [
 ];
 
 /**
- * Same, except the install appends `_<PROFILE>` when the inbox is not the
+ * Same, except the install appends `_<CONNECTION>` when the inbox is not the
  * default one — so these match with an optional underscore-separated suffix.
  */
 const CHANNEL_INSTALL_KEY_PREFIXES = [

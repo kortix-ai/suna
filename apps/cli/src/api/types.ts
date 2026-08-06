@@ -57,6 +57,23 @@ export interface ProjectSecret {
   configured: boolean;
   /** Which value is effective for the requesting user. */
   effective_source: 'mine' | 'shared' | 'none';
+  /** How the secret can leave Kortix storage. */
+  strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
+  /** Service that consumes the secret. */
+  consumer?:
+    | 'sandbox'
+    | 'llm_gateway'
+    | 'connector'
+    /** @deprecated Older servers can still return this value. */
+    | 'executor'
+    | 'git_proxy'
+    | 'http_broker'
+    | 'network'
+    | null;
+  /** Whether the selected delivery path is usable. */
+  delivery_status?: 'available' | 'unavailable' | 'disabled';
+  /** True when an earlier sandbox may retain the previous value. */
+  requires_rotation?: boolean;
 }
 
 export interface ProjectSecretsResponse {

@@ -283,7 +283,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',

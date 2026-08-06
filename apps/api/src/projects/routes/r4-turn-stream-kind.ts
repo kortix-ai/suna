@@ -7,7 +7,7 @@
 // from volume/timing alone.
 //
 // Kept in its own module (rather than inline in r4.ts) so it can be unit
-// tested without pulling in r4.ts's full import graph (executor, channels,
+// tested without pulling in r4.ts's full import graph (connector, channels,
 // billing, llm-gateway, ...), which requires a live DATABASE_URL/dotenvx
 // environment just to load.
 export function turnStreamKindField(kind: unknown): string {

@@ -107,7 +107,7 @@ kortix_cli = "all"
   // Regression: a session that boots with the non-binding `default` sentinel in a
   // GOVERNED project must NOT be default-denied. No agent is ever named `default`
   // — the runtime resolves it to the configured `default_agent` (a GP agent), so
-  // default-denying it stripped every connector and made `kortix executor
+  // default-denying it stripped every connector and made `kortix connectors
   // connectors` return [] (and hid synthetic channel/computer connectors). The
   // sentinel is non-binding → null (no restriction, still capped at the user).
   test('`default` sentinel under governance → null (non-binding), not default-deny', () => {

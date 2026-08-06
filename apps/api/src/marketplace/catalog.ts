@@ -803,7 +803,7 @@ function isAllowedSourceRef(ref: RegistryRef): boolean {
  * Stable error code for the expected "user supplied a source address we refuse
  * to fetch / read" validation state (non-https URL, private host, local-folder
  * path). Surfaced on the typed {@link AllowedSourceValidationError} so the
- * executor route handlers can catch it and return a structured 400 instead of
+ * connector route handlers can catch it and return a structured 400 instead of
  * letting the throw propagate to `app.onError` → `captureException` → Sentry
  * (Better Stack pattern `f5c0ce61…`). Mirrors the `feature_not_supported`
  * (#5240) + `RepoFileNotFoundError` (#5652) typed-error pattern: an EXPECTED
@@ -1726,7 +1726,7 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill", "registry:project"]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
-  // Kortix-managed system skills (kortix-system/executor/memory/slack/computer/
+  // Kortix-managed system skills (kortix-system/connectors/memory/slack/computer/
   // meet) are the platform floor — they ship in every project and are served
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).

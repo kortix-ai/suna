@@ -33,6 +33,15 @@ export const PLUMBING_TOOLS: ReadonlySet<string> = new Set([
   'dcp_compress',
   'dcp_distill',
   'dcp_prune',
+  // The context engine registers these three under their bare names
+  // (`tool/tools/dcp-*-tool.tsx` call `ToolRegistry.register('prune'|'distill'|
+  // 'compress', …)`), so the `dcp_` spellings above never matched a real part
+  // and context compaction was counted as tier-1 work. `narration.ts` already
+  // hides the bare names, so without these entries a burst counts a `prune` in
+  // its collapsed title and then renders no row for it when expanded.
+  'prune',
+  'distill',
+  'compress',
   'context_info',
 ]);
 
@@ -65,6 +74,12 @@ const VERBS: Record<string, VerbSpec> = {
   dcp_compress: { verb: 'Compacted', running: 'Compacting' },
   dcp_distill: { verb: 'Distilled', running: 'Distilling' },
   dcp_prune: { verb: 'Pruned', running: 'Pruning' },
+  // The names the context engine actually registers — see PLUMBING_TOOLS. An
+  // unknown tool short-circuits to a generic primary label before the plumbing
+  // set is ever consulted, so a spec here is what makes the tier stick.
+  compress: { verb: 'Compacted', running: 'Compacting' },
+  distill: { verb: 'Distilled', running: 'Distilling' },
+  prune: { verb: 'Pruned', running: 'Pruning' },
   context_info: { verb: 'Checked context', running: 'Checking context' },
 };
 

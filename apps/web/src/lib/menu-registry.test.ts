@@ -92,3 +92,59 @@ describe('project sessions command palette item', () => {
     expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
   });
 });
+
+describe('graduated capability entries are not shadowed by Customize', () => {
+  // filteredNavItems (command-palette.tsx) preserves registry declaration
+  // order rather than ranking by relevance, and 'proj-customize' is declared
+  // before 'proj-skills'/'proj-commands'/'proj-connectors'. Before this fix,
+  // Customize's keywords included the words "skills" and "commands", so it
+  // matched — and listed ahead of — those two real entries. Observed live:
+  // query "Skills" -> ["Customize", "Skills", ...].
+  const customizeItem = paletteItems.find((item) => item.id === 'proj-customize');
+  const skillsItem = paletteItems.find((item) => item.id === 'proj-skills');
+  const commandsItem = paletteItems.find((item) => item.id === 'proj-commands');
+  const connectorsItem = paletteItems.find((item) => item.id === 'proj-connectors');
+  const policiesItem = paletteItems.find((item) => item.id === 'proj-connectors-policies');
+
+  test('typing "Skills" surfaces the real Skills entry; Customize no longer matches', () => {
+    expect(skillsItem).toBeDefined();
+    expect(matchesPaletteQuery(skillsItem!, 'Skills')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Skills')).toBe(false);
+  });
+
+  test('typing "Commands" surfaces the real Commands entry; Customize no longer matches', () => {
+    expect(commandsItem).toBeDefined();
+    expect(matchesPaletteQuery(commandsItem!, 'Commands')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Commands')).toBe(false);
+  });
+
+  test('typing "Connectors" still surfaces the Connectors entry', () => {
+    expect(connectorsItem).toBeDefined();
+    expect(matchesPaletteQuery(connectorsItem!, 'Connectors')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Connectors')).toBe(false);
+  });
+
+  test('Customize keeps "agents" — Agents genuinely stayed in the overlay', () => {
+    expect(customizeItem).toBeDefined();
+    expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(true);
+  });
+
+  test('the Connectors/Skills/Commands entries point at the flag-aware deep link', () => {
+    // These were literal `/projects/{projectId}/<section>` hrefs until #6054
+    // went behind NEXT_PUBLIC_CAPABILITY_PAGES. A registry href is a static
+    // string and cannot read the flag, so it now targets the /customize/<section>
+    // deep link, which resolves to the standalone page when the flag is ON and
+    // opens the overlay when it is OFF. One href, correct in both positions.
+    expect(skillsItem!.href).toBe('/projects/{projectId}/customize/skills');
+    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
+    expect(connectorsItem!.href).toBe('/projects/{projectId}/customize/connectors');
+  });
+
+  test('proj-connectors-policies still does not promise a destination it cannot reach', () => {
+    // The label must not claim a Policies tab. The href follows the same
+    // flag-aware deep link as the other capability entries.
+    expect(policiesItem).toBeDefined();
+    expect(policiesItem!.href).toBe('/projects/{projectId}/customize/connectors');
+    expect(policiesItem!.label).not.toContain('Policies tab');
+  });
+});

@@ -649,6 +649,10 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  if (rest.length > 0) {
+    process.stderr.write(`${status.err(`Unexpected argument: ${rest[0]}`)}\n${STATUS_HELP}\n`);
+    return 2;
+  }
   const opts: CtxOpts = { projectArg, hostArg };
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -728,6 +732,8 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   return 0;
 }
 
+const SESSION_ACTIVITY_PHASE_TIMEOUT_MS = 2_500;
+
 /** Read one running session's latest message and summarize what it's doing. */
 async function fetchSessionActivity(
   s: ProjectSession,
@@ -736,17 +742,23 @@ async function fetchSessionActivity(
 ): Promise<SessionActivity | null> {
   try {
     const handle = kortixFromAuth(auth).session(projectId, s.session_id);
-    const ready = await withKortixScope(auth, () => handle.ensureReady());
+    const ready = await withKortixScope(auth, () =>
+      handle.ensureReady({ readyTimeoutMs: SESSION_ACTIVITY_PHASE_TIMEOUT_MS }),
+    );
     // Fetch a small recent window (not just the last message): an assistant turn
     // can start — or dispatch a subagent batch that leaves a user-role message
     // newest — after the user's prompt, and classifying off ONLY the last message
     // then mislabels a busy session as "queued".
+    const messageRequest = {
+      sessionID: ready.opencodeSessionId,
+      limit: 6,
+      // The generated OpenCode client accepts RequestInit fields. The narrowed
+      // SDK facade type currently lists only endpoint fields.
+      signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
+    } as Parameters<typeof handle.runtime.session.messages>[0] & { signal: AbortSignal };
     const msgs = await withKortixScope(auth, async () =>
       unwrapRuntime(
-        await handle.runtime.session.messages({
-          sessionID: ready.opencodeSessionId,
-          limit: 6,
-        }),
+        await handle.runtime.session.messages(messageRequest),
       ),
     );
     if (msgs.length === 0) return { working: false, summary: 'no messages yet' };

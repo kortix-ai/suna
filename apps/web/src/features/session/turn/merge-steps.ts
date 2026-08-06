@@ -1,22 +1,33 @@
 /**
  * Burst parts → the rows a reader actually sees.
  *
- * Two rules, both about reducing the row count rather than the information:
+ * Three rules, all about reducing the row count rather than the information:
  *
  *   1. Plumbing never appears. Memory reads/writes and context compaction are
  *      machinery the reader did not ask for and cannot act on.
  *   2. A run of consecutive thinking collapses into ONE row. The model emits
  *      reasoning in fragments; rendering a row per fragment turns a single
  *      train of thought into a wall of near-identical lines.
+ *   3. A run of consecutive same-family tool calls collapses into ONE group
+ *      row that opens to its members. The collapsed burst title already reads
+ *      "Read 2 files, ran 2 commands"; expanding it to seven flat siblings
+ *      un-groups exactly what the title just grouped.
+ *
+ * Rule 3 reuses `groupSteps` — the same model the Easy action panel renders
+ * from — rather than restating the family table here. There is one grouping
+ * implementation; two that must agree forever is the trap this avoids.
  *
  * No React import — every rule here is unit-tested.
  */
 
-import { isReasoningPart, type Part } from '@/ui';
+import { isReasoningPart, isToolPart, type Part, type ToolPart } from '@/ui';
+import { groupSteps, type Step } from '../action-panel/shared/group-steps';
 import type { StepTier } from './step-label';
 
 export type BurstStep =
-  { kind: 'thought'; key: string; texts: string[] } | { kind: 'part'; key: string; part: Part };
+  | { kind: 'thought'; key: string; texts: string[] }
+  | { kind: 'part'; key: string; part: Part }
+  | { kind: 'group'; key: string; step: Step };
 
 /**
  * `tierOf` is injected rather than imported so the merge rules can be tested
@@ -28,33 +39,68 @@ export function mergeBurstSteps(
 ): BurstStep[] {
   const steps: BurstStep[] = [];
   let pending: { key: string; texts: string[] } | null = null;
+  let tools: ToolPart[] = [];
 
-  const flush = () => {
+  const flushThought = () => {
     if (pending && pending.texts.length > 0) {
       steps.push({ kind: 'thought', key: pending.key, texts: pending.texts });
     }
     pending = null;
   };
 
+  /**
+   * The buffered run → its group rows, in order.
+   *
+   * A group of one is NOT wrapped. An expandable row holding a single call
+   * hides that call behind a click and says nothing the call did not already
+   * say — strictly worse than the flat row it replaced.
+   */
+  const flushTools = () => {
+    if (tools.length === 0) return;
+    for (const step of groupSteps(tools)) {
+      steps.push(
+        step.parts.length === 1
+          ? { kind: 'part', key: step.parts[0].id, part: step.parts[0] }
+          : { kind: 'group', key: `group-${step.parts[0].id}`, step },
+      );
+    }
+    tools = [];
+  };
+
   for (const part of parts) {
     // Machinery is dropped outright, and — importantly — without breaking the
-    // thinking run around it. A memory write between two thoughts should not
-    // split them into two rows.
+    // run around it, thinking or tool. A memory write between two thoughts
+    // should not split them into two rows, and one between two shells should
+    // not split "Ran 2 commands" into two singles.
     if (tierOf(part) === 'plumbing') continue;
 
     if (isReasoningPart(part)) {
+      // Read the text before flushing: an empty fragment renders nothing, so
+      // it must not break the tool run it happens to sit inside either.
       const text = (part as { text?: string }).text?.trim();
       if (!text) continue;
+      flushTools();
       if (!pending) pending = { key: `thought-${part.id}`, texts: [] };
       pending.texts.push(text);
       continue;
     }
 
-    flush();
+    flushThought();
+
+    if (isToolPart(part)) {
+      tools.push(part);
+      continue;
+    }
+
+    // Neither tool nor reasoning. `groupSteps` has no family for it and
+    // `ActivityStep` renders it as a bare label row — but it is still a part,
+    // and this module never silently drops one.
+    flushTools();
     steps.push({ kind: 'part', key: part.id, part });
   }
 
-  flush();
+  flushThought();
+  flushTools();
   return steps;
 }
 

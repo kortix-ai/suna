@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 
-const EXECUTOR_POLICY_MIGRATION = {
+const CONNECTOR_POLICY_MIGRATION = {
+  // Historical migration identity. The cutover migration runs later and must
+  // never rewrite this filename or its ledger row.
   name: '20260729215216867_executor_policy_arg_conditions',
   filename: '20260729215216867_executor_policy_arg_conditions.sql',
   sha256: 'd2e803a5957df0740fb348f93bab2b5f06609ed2f1c1b9cf8592c634d68066e4',
@@ -25,7 +27,7 @@ const SANDBOX_DEADLINE_RENAMES = [
 ] as const;
 
 const REPAIR_NAMES = [
-  EXECUTOR_POLICY_MIGRATION.name,
+  CONNECTOR_POLICY_MIGRATION.name,
   ...SANDBOX_DEADLINE_RENAMES.flatMap(({ legacyName, currentName }) => [legacyName, currentName]),
 ];
 
@@ -35,7 +37,7 @@ export interface MigrationLedgerRow {
 }
 
 export interface MigrationLedgerRepairPlan {
-  executorMigrationIsMissing: boolean;
+  connectorMigrationIsMissing: boolean;
   legacyRunOn: Date;
   renames: Array<{ legacyName: string; currentName: string }>;
 }
@@ -73,14 +75,14 @@ export function planMigrationLedgerRepair(
     .reduce((earliest, runOn) => (runOn < earliest ? runOn : earliest));
 
   return {
-    executorMigrationIsMissing: !byName.has(EXECUTOR_POLICY_MIGRATION.name),
+    connectorMigrationIsMissing: !byName.has(CONNECTOR_POLICY_MIGRATION.name),
     legacyRunOn,
     renames,
   };
 }
 
 function verifyRepairArtifacts(migrationsDir: string): void {
-  const artifacts = [EXECUTOR_POLICY_MIGRATION, ...SANDBOX_DEADLINE_RENAMES];
+  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...SANDBOX_DEADLINE_RENAMES];
   for (const artifact of artifacts) {
     const path = join(migrationsDir, artifact.filename);
     const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -129,9 +131,9 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       await client.query('commit');
       return false;
     }
-    if (plan.executorMigrationIsMissing) {
+    if (plan.connectorMigrationIsMissing) {
       throw new Error(
-        `Migration ledger repair requires ${EXECUTOR_POLICY_MIGRATION.name} to be applied first.`,
+        `Migration ledger repair requires ${CONNECTOR_POLICY_MIGRATION.name} to be applied first.`,
       );
     }
 
@@ -156,11 +158,11 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       `update kortix_migrations.pgmigrations
           set run_on = $2::timestamptz - interval '1 millisecond'
         where name = $1`,
-      [EXECUTOR_POLICY_MIGRATION.name, plan.legacyRunOn.toISOString()],
+      [CONNECTOR_POLICY_MIGRATION.name, plan.legacyRunOn.toISOString()],
     );
     if (orderResult.rowCount !== 1) {
       throw new Error(
-        `Migration ledger repair could not reorder ${EXECUTOR_POLICY_MIGRATION.name}.`,
+        `Migration ledger repair could not reorder ${CONNECTOR_POLICY_MIGRATION.name}.`,
       );
     }
 
@@ -177,17 +179,17 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
 export async function repairMigrationLedger(options: {
   databaseUrl: string;
   migrationsDir: string;
-  applyExecutorMigration: () => Promise<void>;
+  applyConnectorMigration: () => Promise<void>;
 }): Promise<boolean> {
   const initialPlan = await inspectRepairPlan(options.databaseUrl);
   if (!initialPlan) return false;
 
   verifyRepairArtifacts(options.migrationsDir);
-  if (initialPlan.executorMigrationIsMissing) {
-    await options.applyExecutorMigration();
+  if (initialPlan.connectorMigrationIsMissing) {
+    await options.applyConnectorMigration();
   }
 
   return reconcileRepairPlan(options.databaseUrl);
 }
 
-export const migrationLedgerRepairExecutorName = EXECUTOR_POLICY_MIGRATION.name;
+export const migrationLedgerRepairConnectorName = CONNECTOR_POLICY_MIGRATION.name;

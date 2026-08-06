@@ -65,8 +65,8 @@ export const productMenu: NavMenu = {
       title: 'Capabilities',
       links: [
         {
-          name: 'Integrations',
-          href: '/integrations',
+          name: 'Connectors',
+          href: '/connectors',
           description: '3,000+ apps through one scoped token',
         },
         {

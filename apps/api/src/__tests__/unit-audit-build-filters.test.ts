@@ -98,7 +98,7 @@ describe('audit buildFilters', () => {
       projectId: '00000000-0000-4000-a000-000000000201',
       sessionId: 'session-1',
       actorType: 'agent',
-      source: 'executor',
+      source: 'connector',
       outcome: 'failure',
       requestId: 'request-1',
       correlationId: 'execution-1',

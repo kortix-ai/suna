@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  executorConnectionProfiles,
+  connectorConnections,
   projectSessionConnectorBindings,
   projectSessionPublicShares,
   sessionSandboxes,
@@ -265,21 +265,21 @@ export async function resolvePublicShare(token: string) {
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
   }
-  // Fail closed for links created before personal-profile sharing was
+  // Fail closed for links created before personal-connection sharing was
   // prohibited. A public preview/file link delegates access to the same fixed
   // session runtime token, so it must never indirectly delegate a member's
   // private connector credentials.
   const [personalBinding] = await db
-    .select({ profileId: projectSessionConnectorBindings.profileId })
+    .select({ connectionId: projectSessionConnectorBindings.connectionId })
     .from(projectSessionConnectorBindings)
     .innerJoin(
-      executorConnectionProfiles,
-      eq(executorConnectionProfiles.profileId, projectSessionConnectorBindings.profileId),
+      connectorConnections,
+      eq(connectorConnections.connectionId, projectSessionConnectorBindings.connectionId),
     )
     .where(
       and(
         eq(projectSessionConnectorBindings.sessionId, row.sessionId),
-        eq(executorConnectionProfiles.ownerType, 'member'),
+        eq(connectorConnections.ownerType, 'member'),
       ),
     )
     .limit(1);
@@ -287,7 +287,7 @@ export async function resolvePublicShare(token: string) {
     return {
       ok: false as const,
       status: 403,
-      error: 'Sessions using a personal connector profile cannot be shared publicly',
+      error: 'Sessions using a personal connection cannot be shared publicly',
     };
   }
   if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };

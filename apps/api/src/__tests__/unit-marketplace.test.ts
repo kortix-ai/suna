@@ -131,7 +131,7 @@ describe('marketplace catalog', () => {
     const managedCandidates = [
       'kortix-cli',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',

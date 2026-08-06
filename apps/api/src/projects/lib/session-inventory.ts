@@ -2,7 +2,7 @@ import {
   isSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;

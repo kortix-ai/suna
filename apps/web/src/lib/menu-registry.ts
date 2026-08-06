@@ -378,7 +378,14 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords: 'customize configure project agents skills commands',
+    // 'skills' and 'commands' were deliberately dropped: those two graduated
+    // out of the overlay into their own palette entries (proj-skills,
+    // proj-commands). Keeping the words here made this bare Customize entry
+    // match those queries too and — since filteredNavItems preserves registry
+    // declaration order rather than ranking by relevance — it listed ahead of
+    // the real Skills/Commands entries. 'agents' stays: Agents genuinely lives
+    // in Customize.
+    keywords: 'customize configure project agents',
   },
   {
     id: 'proj-files',
@@ -404,7 +411,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-skills',
-    label: 'Customize · Skills',
+    label: 'Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -415,7 +422,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-commands',
-    label: 'Customize · Commands',
+    label: 'Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -437,7 +444,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-connectors',
-    label: 'Customize · Connectors',
+    label: 'Connectors',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -445,19 +452,24 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
     keywords:
-      'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+      'connectors connections pipedream mcp openapi postman collections apps connector project customize',
   },
   {
     id: 'proj-connectors-policies',
-    label: 'Customize · Connectors · Policies',
+    // Was "Customize · Connectors · Policies" — no longer accurate: this no
+    // longer lives under Customize, and the href below cannot deep-link into
+    // a Policies tab (the connectors page doesn't host one yet), so the label
+    // must not promise a destination it does not reach.
+    label: 'Connectors · Policies',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/connectors?tab=policies',
+    // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
+    href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
     keywords:
-      'policies approval block require_approval rules tools executor guardrails project customize',
+      'policies approval block require_approval rules tools connector guardrails project customize',
   },
   {
     id: 'proj-git',
@@ -574,7 +586,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/channels',
     requiresProject: true,
     keywords:
-      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
+      'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
   },
   {
     id: 'proj-settings',

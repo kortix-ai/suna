@@ -61,6 +61,10 @@ describe('audit HTTP route registry', () => {
     expect(
       describeAuditAction(`PUT /v1/projects/${UID}/secrets/ANTHROPIC_API_KEY/strategy`).title,
     ).toBe('Updated secret delivery strategy');
+    expect(
+      describeAuditAction(`PUT /v1/connectors/projects/${UID}/connectors/github/secret-binding`)
+        .title,
+    ).toBe('Updated connector secret binding');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {
@@ -339,12 +343,12 @@ describe('humanizeAuditAction — fallbacks', () => {
       title: 'Started session',
       kind: 'create',
     });
-    expect(humanizeAuditAction('executor.gmail.send_email')).toEqual({
-      title: 'Ran connector action',
+    expect(humanizeAuditAction('connector.gmail.send_email')).toEqual({
+      title: 'Ran connector call',
       detail: 'gmail.send_email',
       kind: 'update',
     });
-    expect(humanizeAuditAction('executor.approval.denied')).toEqual({
+    expect(humanizeAuditAction('connector.approval.denied')).toEqual({
       title: 'Denied connector action',
       kind: 'revoke',
     });

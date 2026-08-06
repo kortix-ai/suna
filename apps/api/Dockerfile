@@ -43,7 +43,7 @@ ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
-COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/connector-sdk ./packages/connector-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
@@ -171,12 +171,12 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
-COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-executor-runtime.attestation.json ./apps/cli/dist/kortix-executor-runtime.attestation.json
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
-COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/connector-sdk ./packages/connector-sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces

@@ -124,13 +124,13 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 
 /**
  * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
- * the per-session executor/CLI account token carrying it. Best-effort: a manifest
+ * the per-session connector/CLI account token carrying it. Best-effort: a manifest
  * hiccup yields a null grant (full access, capped at the user by the route's own
  * role check) and a mint failure yields null — neither bricks a session. The
  * grant is read from the default branch, so any `[[agents]]` change activates
  * only via a merged CR.
  */
-async function mintExecutorToken(opts: {
+async function mintConnectorToken(opts: {
   accountId: string;
   userId: string;
   projectId: string;
@@ -176,13 +176,13 @@ async function mintExecutorToken(opts: {
       // session_id == sandbox_id by construction — lets the LLM gateway attribute
       // usage_events to this session (the reaper's reliable activity signal).
       sessionId: opts.sandboxId,
-      name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
+      name: `Connector Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
       serviceAccountId,
     });
     return tok.secretKey;
   } catch (err) {
-    console.warn(`[session-sandbox] failed to mint executor token for ${opts.projectId}:`, err);
+    console.warn(`[session-sandbox] failed to mint connector token for ${opts.projectId}:`, err);
     return null;
   }
 }
@@ -394,7 +394,7 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sandboxKey, connectorToken, gatewayEntitled] = await Promise.all([
     createOrClaimSandboxRow(),
     createApiKey({
       sandboxId,
@@ -403,8 +403,8 @@ export async function provisionSessionSandbox(opts: {
       type: 'sandbox',
     }),
     // Resolve the per-agent grant from kortix.yaml's `agents:` overlay and mint
-    // the executor/CLI account token carrying it (best-effort — see helper).
-    mintExecutorToken({
+    // the connector/CLI account token carrying it (best-effort — see helper).
+    mintConnectorToken({
       accountId,
       userId,
       projectId,
@@ -443,7 +443,7 @@ export async function provisionSessionSandbox(opts: {
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen
-  // catalog). It authenticates the gateway with the per-session executor PAT,
+  // catalog). It authenticates the gateway with the per-session connector PAT,
   // which the gateway resolves via validateAccountToken and meters.
   //
   // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
@@ -458,7 +458,7 @@ export async function provisionSessionSandbox(opts: {
   // so legacy paying customers are no longer wrongly stripped to the Zen-only
   // catalog. Per-request affordability stays in the gateway's own billing gate.
   const gatewayLlmKey: string | null =
-    llmGatewayEnabled && gatewayEntitled ? executorToken : null;
+    llmGatewayEnabled && gatewayEntitled ? connectorToken : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -476,19 +476,16 @@ export async function provisionSessionSandbox(opts: {
       //    user identity, so project-scoped routes reject it. Injected under the
       //    self-documenting `KORTIX_SANDBOX_TOKEN`; `KORTIX_TOKEN` is kept as a
       //    back-compat alias for daemons baked before the rename.
-      // 2) The SESSION credential (`kortix_pat_…`, `executorToken`): acts AS the
-      //    launching user, scoped by the agent grant. It backs the Executor
+      // 2) The SESSION credential (`kortix_pat_…`, `connectorToken`): acts AS the
+      //    launching user, scoped by the agent grant. It backs the Connector
       //    gateway AND the in-sandbox `kortix` CLI. Injected under
-      //    `KORTIX_CLI_TOKEN` (+ `KORTIX_EXECUTOR_TOKEN` alias for the executor).
+      //    `KORTIX_CLI_TOKEN`.
       // The agent never needs the sandbox credential — see apps/cli config.ts
       // (activeHost() resolves only the session token).
-      // Phase 2 (after baked images cycle): drop the `KORTIX_TOKEN` /
-      // `KORTIX_EXECUTOR_TOKEN` aliases and let `KORTIX_TOKEN` MEAN the session
-      // token, so the agent world has exactly one obvious var.
       KORTIX_SANDBOX_TOKEN: sandboxKey.secretKey,
       KORTIX_TOKEN: sandboxKey.secretKey,
-      ...(executorToken
-        ? { KORTIX_CLI_TOKEN: executorToken, KORTIX_EXECUTOR_TOKEN: executorToken }
+      ...(connectorToken
+        ? { KORTIX_CLI_TOKEN: connectorToken }
         : {}),
       ...(gatewayLlmKey
         ? {

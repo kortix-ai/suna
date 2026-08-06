@@ -12,7 +12,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -35,6 +34,11 @@ let secretItems: Array<{
   name: string;
   configured?: boolean;
   effective_source?: 'mine' | 'shared' | 'none';
+  strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
+  consumer?:
+    'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+  delivery_status?: 'available' | 'unavailable' | 'disabled';
+  requires_rotation?: boolean;
 }>;
 let manifestRequired: string[];
 let manifestOptional: string[];
@@ -45,6 +49,11 @@ function secret(
   state: {
     configured?: boolean;
     effective_source?: 'mine' | 'shared' | 'none';
+    strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
+    consumer?:
+      'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
+    delivery_status?: 'available' | 'unavailable' | 'disabled';
+    requires_rotation?: boolean;
   } = {},
 ) {
   const configured = state.configured ?? true;
@@ -59,6 +68,10 @@ function secret(
     updated_at: '2026-01-01T00:00:00.000Z',
     configured,
     effective_source: effectiveSource,
+    strategy: state.strategy ?? 'runtime',
+    consumer: state.consumer ?? 'sandbox',
+    delivery_status: state.delivery_status ?? 'available',
+    requires_rotation: state.requires_rotation ?? false,
   };
 }
 
@@ -130,11 +143,34 @@ function mockApi() {
         manifest_path: 'kortix.yaml',
       });
     }
+    if (url.includes('/projects/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
+      return json({
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+        body_base64: Buffer.from('{"created":true}').toString('base64'),
+      });
+    }
     if (url.includes('/projects/proj_1/secrets') && method === 'POST') {
       const input = typeof body === 'object' && body !== null ? body : {};
       const name = String(input.name).toUpperCase();
       const identifier = String(input.identifier ?? name);
       return json(secret(identifier, name));
+    }
+    if (
+      url.includes('/projects/proj_1/secrets/') &&
+      url.endsWith('/strategy') &&
+      method === 'PUT'
+    ) {
+      const input = typeof body === 'object' && body !== null ? body : {};
+      const identifier = decodeURIComponent(url.split('/secrets/')[1].split('/strategy')[0]);
+      return json(
+        secret(identifier, identifier, {
+          strategy: input.strategy as 'runtime' | 'egress' | 'broker' | 'denied',
+          consumer: input.strategy === 'runtime' ? 'sandbox' : null,
+          delivery_status: input.strategy === 'denied' ? 'disabled' : 'available',
+          requires_rotation: input.strategy !== 'runtime',
+        }),
+      );
     }
     if (url.includes('/projects/proj_1/secrets/') && method === 'DELETE') {
       return json({ status: 'deleted' });
@@ -289,6 +325,10 @@ describe('kortix secrets ls — identifier-first', () => {
       configured: true,
       available: true,
       effective_source: 'shared',
+      strategy: 'runtime',
+      consumer: 'sandbox',
+      delivery_status: 'available',
+      requires_rotation: false,
       key: 'GOOGLE_MAPS_API_KEY',
       has_value: true,
       source: 'undeclared',
@@ -302,10 +342,35 @@ describe('kortix secrets ls — identifier-first', () => {
       configured: false,
       available: false,
       effective_source: 'none',
+      strategy: 'runtime',
+      consumer: 'sandbox',
+      delivery_status: 'available',
+      requires_rotation: false,
       key: 'STRIPE_API_KEY',
       has_value: false,
       source: 'required',
     });
+  });
+
+  test('shows where each secret is delivered', async () => {
+    secretItems = [
+      { identifier: 'LOCAL_KEY', name: 'LOCAL_KEY', strategy: 'runtime' },
+      {
+        identifier: 'DISABLED_KEY',
+        name: 'DISABLED_KEY',
+        strategy: 'denied',
+        consumer: null,
+        delivery_status: 'disabled',
+        requires_rotation: true,
+      },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('DELIVERY');
+    expect(out).toContain('sandbox');
+    expect(out).toContain('disabled');
+    expect(out).toContain('rotate');
   });
 
   test('does not report a value-less API row as set merely because the row exists', async () => {
@@ -347,6 +412,240 @@ describe('kortix secrets ls — identifier-first', () => {
       effective_source: 'mine',
       has_value: true,
     });
+  });
+});
+
+describe('kortix secrets delivery', () => {
+  test('changes a secret to denied delivery', async () => {
+    const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'denied']);
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.url).toContain('/secrets/ANTHROPIC_API_KEY/strategy');
+    expect(put?.body).toEqual({ strategy: 'denied' });
+    expect(stripAnsi(stdout)).toContain('Stored but disabled');
+  });
+
+  test('rejects an unknown strategy before any network call', async () => {
+    const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'plaintext']);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('runtime, broker, egress, or denied');
+  });
+
+  test('configures an HTTPS broker policy from explicit allow and injection flags', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--allow-host',
+      'api.anthropic.com',
+      '--allow-host',
+      '*.anthropic.com',
+      '--allow-method',
+      'POST',
+      '--allow-path',
+      '/v1/*',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      '{{secret}}',
+      '--handle-prefix',
+      'sk-ant-api03-',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      egress_policy: {
+        backend: 'kortix_fetch',
+        rules: [
+          { host: 'api.anthropic.com', methods: ['POST'], path: '/v1/*' },
+          { host: '*.anthropic.com', methods: ['POST'], path: '/v1/*' },
+        ],
+        inject: { kind: 'header', name: 'x-api-key', template: '{{secret}}' },
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+      handle_prefix: 'sk-ant-api03-',
+    });
+  });
+
+  test('configures an LLM gateway consumer without HTTP policy flags', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--consumer',
+      'llm-gateway',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({ strategy: 'broker', consumer: 'llm_gateway' });
+  });
+
+  test('configures a connector consumer without HTTP policy flags', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'CONNECTOR_API_KEY',
+      'broker',
+      '--consumer',
+      'connector',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({ strategy: 'broker', consumer: 'connector' });
+  });
+
+  test('maps the legacy automation alias to the connector consumer', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'WEBHOOK_SIGNING_KEY',
+      'broker',
+      '--consumer',
+      'automation',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({ strategy: 'broker', consumer: 'connector' });
+  });
+
+  test('rejects HTTP policy flags for the LLM gateway consumer', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--consumer',
+      'llm-gateway',
+      '--allow-host',
+      'api.anthropic.com',
+    ]);
+
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('cannot be used');
+  });
+
+  test('requires an explicit host and one injection slot for broker delivery', async () => {
+    const noHost = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--inject-header',
+      'x-api-key',
+    ]);
+    expect(noHost).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--allow-host');
+    expect(requests).toHaveLength(0);
+
+    captureOutput();
+    const conflicting = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--inject-query',
+      'key',
+    ]);
+    expect(conflicting).toBe(2);
+    expect(stripAnsi(stderr)).toContain('one injection');
+    expect(requests).toHaveLength(0);
+  });
+
+  test('rejects broker-only flags for runtime delivery', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'runtime',
+      '--allow-host',
+      'api.anthropic.com',
+    ]);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('only valid for broker');
+  });
+});
+
+describe('kortix secrets call', () => {
+  test('sends a broker request through the SDK and prints the decoded response', async () => {
+    const code = await runSecrets([
+      'call',
+      'ANTHROPIC_API_KEY',
+      'https://api.anthropic.com/v1/messages',
+      '--method',
+      'POST',
+      '--header',
+      'content-type: application/json',
+      '--data',
+      '{"model":"test"}',
+    ]);
+
+    expect(code).toBe(0);
+    const request = requests.find((item) => item.url.endsWith('/broker'));
+    expect(request?.body).toEqual({
+      url: 'https://api.anthropic.com/v1/messages',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body_base64: Buffer.from('{"model":"test"}').toString('base64'),
+    });
+    expect(stripAnsi(stdout)).toContain('Upstream status: 201');
+    expect(stripAnsi(stdout)).toContain('{"created":true}');
+  });
+
+  test('reads a request body from a file', async () => {
+    const bodyFile = join(tmp, 'request.json');
+    writeFileSync(bodyFile, '{"from":"file"}', 'utf8');
+
+    const code = await runSecrets([
+      'call',
+      'SERVICE_KEY',
+      'https://api.example.com/v1/items',
+      '--method',
+      'POST',
+      '--data-file',
+      bodyFile,
+      '--json',
+    ]);
+
+    expect(code).toBe(0);
+    const request = requests.find((item) => item.url.endsWith('/broker'));
+    expect(objectBody(request!)).toMatchObject({
+      body_base64: Buffer.from('{"from":"file"}').toString('base64'),
+    });
+    expect(JSON.parse(stdout)).toMatchObject({ status: 201 });
+  });
+
+  test('rejects invalid or ambiguous request options before a network call', async () => {
+    const badMethod = await runSecrets([
+      'call',
+      'SERVICE_KEY',
+      'https://api.example.com/v1/items',
+      '--method',
+      'TRACE',
+    ]);
+    expect(badMethod).toBe(2);
+    expect(requests).toHaveLength(0);
+
+    captureOutput();
+    const duplicateBody = await runSecrets([
+      'call',
+      'SERVICE_KEY',
+      'https://api.example.com/v1/items',
+      '--data',
+      '{}',
+      '--data-file',
+      join(tmp, 'unused.json'),
+    ]);
+    expect(duplicateBody).toBe(2);
+    expect(stripAnsi(stderr)).toContain('one request body');
+    expect(requests).toHaveLength(0);
   });
 });
 

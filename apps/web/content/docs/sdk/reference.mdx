@@ -55,7 +55,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
 `accounts.audit` is the enterprise reconstruction log. It combines authenticated
-API requests with semantic session, executor, approval, and computer events.
+API requests with semantic session, connector, approval, and computer events.
 
 | method | what |
 | --- | --- |
@@ -66,7 +66,7 @@ API requests with semantic session, executor, approval, and computer events.
 Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
 `request_id`, `trace_id`, and `correlation_id` when the action supplies them.
 The API does not store request bodies, prompts, secrets, credentials, or raw
-connector arguments in the centralized event. Executor events can include a
+connector arguments in the centralized event. Connector events can include a
 bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
@@ -84,7 +84,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 | `list()` · `listForAccount(accountId)` | your projects · projects in an account |
 | `get(id)` · `detail(id)` | summary · full detail |
 | `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id? }` |
+| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
 | `update(id, input)` · `archive(id)` | update settings · archive |
 | `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
 | `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
@@ -92,6 +92,19 @@ Reached by invite token alone — the invitee may not be a member yet.
 
 `provision` creates a new project; it does not start an existing project's
 sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
+
+Send `idempotency_key` when a retry is possible — a reload, a second tab, a
+timeout you retried. `provision` mints a brand-new managed repo per call, so
+without a key those all create real duplicate projects. Reuse one key for every
+attempt at a single logical create and the repeats return the project the first
+attempt made (201, same `project_id`, `push_token: null`). The key identifies the
+attempt, not the payload — reusing one with a different `name` returns the first
+project and ignores the new value, so mint a fresh key per distinct create.
+Creating a second project with the same **name** and no key still works.
+
+A repeat that arrives while the first call is still provisioning gets `409` with
+`code: 'provision_in_flight'` rather than a `project_id` that call may still roll
+back. Retry with the same key.
 
 `project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
 private, unavailable, and soft-deleted sessions, with ownership and
@@ -174,7 +187,7 @@ await p.llmCatalog();
 
 #### `p.tokens` — project-scoped API keys
 
-Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
+Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |
@@ -195,10 +208,16 @@ project access.
 
 | method | what |
 | --- | --- |
-| `list()` · `upsert({ name, value })` | all project secrets · create or update one |
-| `remove(name)` | delete a secret |
+| `list()` · `upsert(input)` | list metadata · create or update a write-only value and delivery policy |
+| `setStrategy(identifier, strategy, options?)` | change the consumer and delivery policy |
+| `broker(identifier, request)` | execute a session-authorized, policy-bound HTTPS request |
+| `remove(identifier)` | delete a secret |
 | `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
 | `setGitCredential(input)` | set a git auth credential |
+
+`runtime` with consumer `sandbox` is the only policy that exposes plaintext to
+the session. Managed consumers use `broker`. The HTTPS broker method requires a
+session-scoped token and an active session handle.
 
 #### `p.access` — members, invites, requests
 
@@ -228,14 +247,14 @@ agent, a skill, a secret) instead of the whole project.
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` authorization ownership |
+| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` connection ownership |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
-| `authorizations.list()` · `authorizations.reconcile(input)` | list · create/update connected accounts |
-| `authorizations.updateCredential(authorizationId, input)` | rotate an authorization credential |
-| `authorizations.revoke(authorizationId)` · `authorizations.activate(authorizationId)` | deny · restore an authorization live |
+| `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
+| `connections.updateCredential(connectionId, input)` | rotate a connection credential |
+| `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-integration catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |
@@ -248,13 +267,13 @@ returns OAuth apps only. Connect API-key apps directly instead.
 | --- | --- |
 | `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
 
-A connector profile defines the tool, provider app, authorization strategy, and
-policies. `authorizations` stores its connected accounts. A session can select
-one with `connector_bindings: { alias: { authorization_id } }`. Credentials
+A connector defines the tool, provider app, authorization strategy, and
+policies. `connections` stores its connected accounts. A session can select
+one with `connector_bindings: { alias: { connection_id } }`. Credentials
 stay encrypted and resolve per request.
 
-The deprecated `profiles` facade aliases `authorizations`. New code uses
-authorization terminology.
+The deprecated `authorizations` and `profiles` facades remain compatibility
+aliases. New code uses `connections`.
 
 #### `p.policies` — project policies
 
@@ -337,14 +356,14 @@ A change request (CR) is how a session's work merges into the default branch.
 The session handle is the heart of the runtime — see
 [Sessions](/docs/sdk/sessions).
 
-`create(input)` accepts `connector_bindings` keyed by connector-profile slug.
-Each value names an `authorization_id`. It also accepts `secrets` for
+`create(input)` accepts `connector_bindings` keyed by connector-connection slug.
+Each value names a `connection_id`. It also accepts `secrets` for
 backend-origin secret narrowing and `require_connectors` for mandatory
-connector profiles.
+connectors.
 
-#### `p.approvals` — the executor approval inbox
+#### `p.approvals` — the connector approval inbox
 
-Pending executor-gated actions awaiting a decision — backs the
+Pending connector-gated actions awaiting a decision — backs the
 permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
 
 | method | what |
@@ -373,7 +392,7 @@ fallback chain, each model attempted at most once; `fallbackOn` is
 
 #### `p.channels` — Slack / email / voice
 
-Integration surfaces that let an agent act as a Slack app, an email address,
+Connector surfaces that let an agent act as a Slack app, an email address,
 or join a realtime voice call.
 
 | method | what |

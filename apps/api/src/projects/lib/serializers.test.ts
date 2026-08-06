@@ -13,6 +13,7 @@ function projectRow(metadata: Record<string, unknown> | null) {
     repoUrl: 'https://github.com/acme/demo.git',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
+    idempotencyKey: null,
     status: 'active' as const,
     secretDefaultStrategy: 'runtime' as const,
     metadata,

@@ -325,8 +325,8 @@ jobs:
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
-  #   @kortix/executor-sdk  — the programmatic face of the Executor (alongside the
-  #                           `kortix executor` CLI + `kortix executor mcp` server)
+  #   @kortix/connector-sdk — the programmatic connector client (alongside the
+  #                           `kortix connectors` CLI + `kortix connectors mcp` server)
   #
   # Each package declares its published (dist-pointing) layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
@@ -344,7 +344,7 @@ jobs:
 
   # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
   # @kortix/llm-catalog@<version> dependency is already on the registry before the
-  # SDK (and, harmlessly, the Executor SDK) publishes.
+  # SDK (and, harmlessly, the connector SDK) publishes.
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
@@ -395,8 +395,8 @@ jobs:
           # @kortix/llm-catalog@<version> dependency already resolves on npm.
           - pkg: '@kortix/sdk'
             dir: sdk
-          - pkg: '@kortix/executor-sdk'
-            dir: executor-sdk
+          - pkg: '@kortix/connector-sdk'
+            dir: connector-sdk
     steps:
       - uses: actions/checkout@v7
 

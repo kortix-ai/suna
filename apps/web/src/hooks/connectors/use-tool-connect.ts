@@ -6,34 +6,34 @@ import {
   type ConnectorAuthorizationStrategy,
   createConnector,
   pipedreamConnect,
-  pipedreamConnectConnectorAuthorization,
+  pipedreamConnectConnection,
   pipedreamFinalize,
-  pipedreamFinalizeConnectorAuthorization,
-  reconcileMemberConnectorAuthorization,
+  pipedreamFinalizeConnection,
+  reconcileMemberConnection,
 } from '@kortix/sdk';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
-  buildEasyConnectProfileDraft,
+  buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
-} from '@/features/workspace/customize/sections/connector-profile-form';
+} from '@/features/workspace/customize/sections/connector-connection-form';
 
 const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
 
 export interface ToolConnectInput {
   appSlug: string;
   appName: string;
-  profileName: string;
-  profileSlug: string;
+  connectorName: string;
+  connectorSlug: string;
   authorizationStrategy: ConnectorAuthorizationStrategy;
 }
 
 export function buildToolConnectorDraft(input: ToolConnectInput) {
-  return buildEasyConnectProfileDraft(
+  return buildEasyConnectConnectorDraft(
     { slug: input.appSlug, name: input.appName },
     {
-      name: input.profileName,
-      slug: input.profileSlug,
+      name: input.connectorName,
+      slug: input.connectorSlug,
       authorizationStrategy: input.authorizationStrategy,
     },
   );
@@ -44,20 +44,20 @@ export async function requestToolAuthorization(
   input: ToolConnectInput,
   deps: {
     connectProject: typeof pipedreamConnect;
-    reconcileMember: typeof reconcileMemberConnectorAuthorization;
-    connectMember: typeof pipedreamConnectConnectorAuthorization;
+    reconcileMember: typeof reconcileMemberConnection;
+    connectMember: typeof pipedreamConnectConnection;
   },
-): Promise<{ token?: string; app?: string; authorizationId: string | null }> {
+): Promise<{ token?: string; app?: string; connectionId: string | null }> {
   if (input.authorizationStrategy === 'user') {
-    const authorization = await deps.reconcileMember(projectId, {
-      connector_alias: input.profileSlug,
-      label: input.profileName.trim(),
+    const connection = await deps.reconcileMember(projectId, {
+      connector_alias: input.connectorSlug,
+      label: input.connectorName.trim(),
     });
-    const connect = await deps.connectMember(projectId, authorization.profile_id);
-    return { ...connect, authorizationId: authorization.profile_id };
+    const connect = await deps.connectMember(projectId, connection.connection_id);
+    return { ...connect, connectionId: connection.connection_id };
   }
-  const connect = await deps.connectProject(projectId, input.profileSlug);
-  return { ...connect, authorizationId: null };
+  const connect = await deps.connectProject(projectId, input.connectorSlug);
+  return { ...connect, connectionId: null };
 }
 
 function withPipedreamOverlayEscape(): () => void {
@@ -104,16 +104,16 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
       }
 
       try {
-        const { token, app, authorizationId } = await requestToolAuthorization(projectId, input, {
+        const { token, app, connectionId } = await requestToolAuthorization(projectId, input, {
           connectProject: pipedreamConnect,
-          reconcileMember: reconcileMemberConnectorAuthorization,
-          connectMember: pipedreamConnectConnectorAuthorization,
+          reconcileMember: reconcileMemberConnection,
+          connectMember: pipedreamConnectConnection,
         });
         if (!token || !app) throw new Error('This app is not available to connect right now');
 
         const { createFrontendClient } = await import('@pipedream/sdk/browser');
         const pd = createFrontendClient({
-          externalUserId: `${projectId}:${draft.slug}${authorizationId ? `:${authorizationId}` : ''}`,
+          externalUserId: `${projectId}:${draft.slug}${connectionId ? `:${connectionId}` : ''}`,
           tokenCallback: async () => ({
             token,
             connectLinkUrl: '',
@@ -146,8 +146,8 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
             connectError: null,
           };
         }
-        if (authorizationId) {
-          await pipedreamFinalizeConnectorAuthorization(projectId, authorizationId);
+        if (connectionId) {
+          await pipedreamFinalizeConnection(projectId, connectionId);
         } else {
           await pipedreamFinalize(projectId, draft.slug);
         }
@@ -170,12 +170,12 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
       onConnected();
       if (res.syncError) {
         warningToast(
-          `Added the profile to the manifest, but synchronization failed: ${res.syncError}. Use Sync to retry.`,
+          `Added the connector to the manifest, but synchronization failed: ${res.syncError}. Use Sync to retry.`,
         );
         return;
       }
       if (res.connectError) {
-        warningToast(`Added the profile, but authorization failed: ${res.connectError}`);
+        warningToast(`Added the connector, but authorization failed: ${res.connectError}`);
         return;
       }
       if (res.connected) successToast('Connected');
