@@ -173,6 +173,92 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
   'No model available for compaction. Please configure a model in settings.',
 ] as const;
 
+// Expected "model not available for this account" UI validation state. The API
+// returns a TYPED 409 with `code: 'model_not_servable'`
+// (`apps/api/src/projects/routes/r4.ts:3045` and `channel-bindings.ts:288`, both
+// via `isModelServableForAccount`) when a user picks a model their account
+// can't use — a free-tier managed model, or a BYOK model whose provider isn't
+// connected. The SAME wording is also returned as a 400 with
+// `code: 'INVALID_SESSION_MODEL'` (`apps/api/src/projects/routes/r7.ts:2811`
+// and `apps/api/src/projects/lib/sessions.ts:741`) for an explicit session
+// model. Both are EXPECTED, user-facing validation states — the SDK's
+// `useModelDefaults` `setMutation` `onError` already branches on the typed
+// 409 code and surfaces a user-facing toast via `platformConfig().onToast`,
+// and `makeRequest` already classifies the typed 409 as SILENT to `onError`
+// (Sentry) — see `MODEL_NOT_SERVABLE_CODE` in
+// `packages/sdk/src/core/http/api-client.ts` (PR #6082).
+//
+// BUT every call site fire-and-forgets the returned promise —
+// `void setAccountDefault(...)` / `void setAgentDefault(...)` /
+// `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
+// `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
+// (`setAccountDefault`/…) promise rejects → `void` discards the rejected
+// promise with no `.catch()` → UNHANDLED rejection → Sentry's
+// `onunhandledrejection` global handler auto-captures it. The `setMutation`
+// `onError` SWALLOWS the rejection inside react-query (the toast fires), but
+// react-query v5's `onError` does NOT prevent `mutateAsync`'s returned
+// promise from rejecting, so the `void`-discarded promise still surfaces as
+// an uncaught global rejection. The SDK `makeRequest` gate silences the
+// `onError` (Sentry) callback, but the unhandled rejection happens at the
+// `.then()`/`void` level — AFTER `makeRequest` returned — so the gate never
+// sees it. This left the 7 occurrences STILL reaching Sentry as UNCAUGHT
+// `onunhandledrejection` (`handled:false`) post-#6082.
+//
+// Better Stack pattern
+// 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
+// (Kortix Frontend prod, application_id 2346967): `ApiError`, message
+// `Model "openai/gpt-5.4-mini" is not available for this account`, 7
+// occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL
+// post-v0.12.4, release `160f0b286f0ad5c53debc343d5e055241694e24d`),
+// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…`
+// (co-worker session page), browser Android Chrome mobile, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`).
+//
+// This is the leak-path backstop for the #6082 SDK gate, sibling to
+// `isExpectedBillingGateMessage` / `isExpectedCompactionNoModelMessage`
+// (also `ApiError`/Error throws that leak via `void` fire-and-forget →
+// `onunhandledrejection`). The model name varies (e.g.
+// `openai/gpt-5.4-mini`, `nvidia/minimaxai/minimax-m3`), so — unlike the
+// billing-gate / compaction exact-string matchers — this is a REGEX anchored
+// on the EXACT API wording `Model "…" is not available for this account`
+// (the `Model "` prefix and `is not available for this account` suffix are
+// the API's own canonical strings across all four emitting routes), with the
+// canonical `ApiError: ` / `Unhandled promise rejection: ` wrappers stripped
+// so all capture paths (window.onerror, onunhandledrejection, Sentry
+// exception) classify consistently. Deliberately message-only with NO
+// first-party frame negative guard — mirroring the billing-gate / compaction
+// matchers — because (a) the message is the API's own canonical wording
+// (never a coincidental app-logic phrase), (b) the SDK gate already handles
+// the `onError` path, and (c) the unhandled-rejection stack DOES carry
+// resolved first-party `apps/web/src/…` call-site frames (the `void`
+// call sites in `session-chat.tsx`/`agents-view.tsx`/`gateway-view.tsx`), so a
+// first-party negative guard would FAIL to suppress the actual prod noise.
+// A genuine first-party `throw new Error('Model "…" is not available for this
+// account')` regression is vanishingly unlikely (the wording is the API's,
+// not app logic) AND is already covered by the SDK's `onError` Sentry
+// capture for non-409 cases. NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list as a bare regex — that gate has no frame context and
+// the message is specific enough that the `beforeSend` hook
+// (`shouldIgnoreSentryBrowserNoise`) is the safe gate; the anchored regex
+// below covers frameless `onunhandledrejection` captures too.
+const MODEL_NOT_SERVABLE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The bare API message (the SDK `ApiError.message`), with any non-empty
+  // model id between the quotes.
+  /^Model "[^"]+" is not available for this account$/,
+  // `ApiError: `-prefixed wrapper (e.g. a console/error-boundary re-throw, or
+  // Sentry's exception `value` formatting).
+  /^ApiError: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper preserving the message (Sentry
+  // `onunhandledrejection` auto-capture, `handled:false`).
+  /^Unhandled promise rejection: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper around an `ApiError:`-prefixed re-throw
+  // (the full wrapper stack).
+  /^Unhandled promise rejection: ApiError: Model "[^"]+" is not available for this account$/,
+];
+
 // Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
 // cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
 // the webpack runtime chunk is served from a different deployment, so
@@ -1430,6 +1516,35 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
       || normalized === `Unhandled promise rejection: ${expected}`
       || normalized === `Unhandled promise rejection: Error: ${expected}`,
   );
+}
+
+/**
+ * Whether a message is the EXPECTED "model not available for this account"
+ * UI validation state — the typed 409 `code: 'model_not_servable'` the API
+ * returns (`apps/api/src/projects/routes/r4.ts` + `channel-bindings.ts` via
+ * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
+ * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
+ * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a
+ * user-facing toast, and `makeRequest` already classifies the typed 409 as
+ * SILENT to `onError` (Sentry) — see `MODEL_NOT_SERVABLE_CODE` (PR #6082) —
+ * but every call site fire-and-forgets the returned promise
+ * (`void setAccountDefault(...)` / `void setAgentDefault(...)` /
+ * `void setProjectDefault(...)`), so the rejected `mutateAsync` becomes an
+ * UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+ * which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+ * This is the leak-path backstop. The model name varies, so the match is a
+ * REGEX anchored on the EXACT API wording `Model "…" is not available for
+ * this account`, with the canonical `ApiError: ` / `Unhandled promise
+ * rejection: ` wrappers, so a longer real error that merely mentions the
+ * phrase is never matched. Sibling to `isExpectedBillingGateMessage` /
+ * `isExpectedCompactionNoModelMessage` (also `ApiError`/Error throws that
+ * leak via `void` fire-and-forget); deliberately message-only with NO
+ * first-party frame negative guard — see `MODEL_NOT_SERVABLE_NOISE_PATTERNS`
+ * for the full rationale. See Better Stack pattern `9784f440…`.
+ */
+export function isModelNotServableNoise(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return MODEL_NOT_SERVABLE_NOISE_PATTERNS.some((re) => re.test(normalized));
 }
 
 /**
@@ -2925,6 +3040,21 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) — but every call
+  // site fire-and-forgets the returned promise (`void setXxxDefault(...)`), so
+  // the rejected `mutateAsync` becomes an UNHANDLED rejection →
+  // `onunhandledrejection`, which the #6082 SDK gate never sees (it's past the
+  // `makeRequest` return). Drop it here so the expected validation state never
+  // pages Better Stack. See `isModelNotServableNoise` and Better Stack pattern
+  // `9784f440…`.
+  if (isModelNotServableNoise(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
@@ -3190,6 +3320,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // so the expected config state never pages Better Stack. See
   // `isExpectedCompactionNoModelMessage`.
   if (isExpectedCompactionNoModelMessage(message)) {
+    return true;
+  }
+
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` (and a 400
+  // `INVALID_SESSION_MODEL` sibling with the SAME message) when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) (PR #6082), but
+  // every call site fire-and-forgets the returned promise
+  // (`void setXxxDefault(...)`), so the rejected `mutateAsync` becomes an
+  // UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+  // which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+  // It can also leak through `<ClientErrorBoundary>` / route / system-fault
+  // boundaries. Drop it here so the expected validation state never pages
+  // Better Stack. The match is a REGEX (model name varies) anchored on the
+  // exact API wording, with canonical wrappers; a longer real error that
+  // merely mentions the phrase keeps reporting. See `isModelNotServableNoise`
+  // and Better Stack pattern `9784f440…`.
+  if (isModelNotServableNoise(message)) {
     return true;
   }
 

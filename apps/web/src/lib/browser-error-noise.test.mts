@@ -21,6 +21,7 @@ import {
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
+  isModelNotServableNoise,
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
@@ -615,6 +616,177 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
   ]) {
     assert.equal(
       isExpectedCompactionNoModelMessage(value),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error
+// 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
+// (Kortix Frontend prod): `ApiError`, message
+// `Model "openai/gpt-5.4-mini" is not available for this account`, 7
+// occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL post-v0.12.4),
+// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…` (co-
+// worker session page), browser Android Chrome mobile, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`). PR #6082 added an SDK classification gate in
+// `packages/sdk/src/core/http/api-client.ts` `makeRequest` that silences the
+// typed 409 `code === 'model_not_servable'` from `onError` (Sentry), and added
+// an `onError` handler to `useModelDefaults`'s `setMutation` that surfaces a
+// user-facing toast. BUT the 7 occurrences STILL reached Sentry as UNCAUGHT
+// `onunhandledrejection` because every call site fire-and-forgets the
+// returned promise — `void setAccountDefault(...)` / `void setAgentDefault
+// (...)` / `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
+// `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
+// promise rejects → `void` discards the rejected promise with no `.catch()` →
+// unhandled rejection → Sentry's `onunhandledrejection`. The `setMutation`
+// `onError` swallows the rejection inside react-query (the toast fires), but
+// react-query v5's `onError` does NOT prevent `mutateAsync`'s returned promise
+// from rejecting, so the `void`-discarded promise still surfaces as an
+// uncaught global rejection. The SDK `makeRequest` gate silences `onError`
+// (the Sentry callback), but the unhandled rejection happens at the `.then()`
+// / `void` level — AFTER `makeRequest` returned — so the gate never sees it.
+// This matcher is the leak-path backstop, sibling to the billing-gate /
+// compaction-no-model matchers (also `ApiError`/Error throws that leak via
+// `void` fire-and-forget → `onunhandledrejection`). The model name varies, so
+// the match is a REGEX anchored on the EXACT API wording
+// `Model "…" is not available for this account` (the same template across all
+// four emitting routes — `r4.ts:3045`, `channel-bindings.ts:288`, `r7.ts:2811`,
+// `sessions.ts:741`), with the canonical `ApiError: ` / `Unhandled promise
+// rejection: ` wrappers, so a longer real error that merely mentions the
+// phrase is never matched.
+const MODEL_NOT_SERVABLE_EVENTS = [
+  // The bare API message — the SDK `ApiError.message` — for the assigned
+  // prod pattern (`openai/gpt-5.4-mini`).
+  'Model "openai/gpt-5.4-mini" is not available for this account',
+  // A different model id (BYOK `provider/model` shape) — the prior prod
+  // recurrence (`nvidia/minimaxai/minimax-m3`, pattern `ed07f6c5…`). The
+  // matcher must anchor on the wording, not a specific model.
+  'Model "nvidia/minimaxai/minimax-m3" is not available for this account',
+  // An `ApiError:`-prefixed wrapper (e.g. Sentry's exception `value`
+  // formatting, or a console/error-boundary re-throw).
+  'ApiError: Model "openai/gpt-5.4-mini" is not available for this account',
+  // An unhandled-rejection wrapper preserving the message (Sentry
+  // `onunhandledrejection` auto-capture, `handled:false` — the prod shape).
+  'Unhandled promise rejection: Model "openai/gpt-5.4-mini" is not available for this account',
+  // An unhandled-rejection wrapper around an `ApiError:`-prefixed re-throw
+  // (the full wrapper stack).
+  'Unhandled promise rejection: ApiError: Model "openai/gpt-5.4-mini" is not available for this account',
+]
+
+test('classifies the model-not-servable validation state as expected', () => {
+  for (const message of MODEL_NOT_SERVABLE_EVENTS) {
+    assert.equal(
+      isModelNotServableNoise(message),
+      true,
+      `expected "${message}" to be classified as model-not-servable noise`,
+    )
+  }
+})
+
+test('suppresses a model-not-servable Sentry event regardless of capture path', () => {
+  for (const value of MODEL_NOT_SERVABLE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              // The unhandled-rejection stack DOES carry resolved first-party
+              // `apps/web/src/…` call-site frames (the `void setXxxDefault(...)`
+              // call sites in session-chat.tsx / agents-view.tsx / gateway-view.tsx).
+              // The matcher is deliberately message-only (NO first-party
+              // negative guard) — mirroring the billing-gate / compaction-no-model
+              // matchers — so a first-party call-site frame does NOT veto
+              // suppression (that's the whole point: the prod noise carries
+              // first-party frames and must still be dropped).
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/sdk.js' },
+                  { filename: 'apps/web/src/features/session/session-chat.tsx' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a model-not-servable unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Model "openai/gpt-5.4-mini" is not available for this account',
+    }),
+    true,
+  )
+  // The runtime gate also receives the raw `reason` (the `ApiError` instance),
+  // whose `message` is the bare API string — the `extractMessage` path must
+  // classify it too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      reason: { message: 'Model "openai/gpt-5.4-mini" is not available for this account' },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a longer real error containing the model-not-servable wording', () => {
+  for (const value of [
+    'Failed to set default: Model "openai/gpt-5.4-mini" is not available for this account',
+    'Model "openai/gpt-5.4-mini" is not available for this account while saving',
+    'ApiError: Model "openai/gpt-5.4-mini" is not available for this account and more',
+    'Unhandled promise rejection: Something else: Model "x" is not available for this account',
+  ]) {
+    assert.equal(
+      isModelNotServableNoise(value),
+      false,
+      `expected longer message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected longer Sentry event "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected longer runtime error "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real model-defaults mutation failure (network / 5xx)', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'TypeError: Cannot read properties of undefined (reading modelID)',
+    'Failed to fetch',
+  ]) {
+    assert.equal(
+      isModelNotServableNoise(value),
       false,
       `expected real error "${value}" to keep reporting`,
     )
