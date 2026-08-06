@@ -139,6 +139,7 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 // stay blocked by default.
 const DESKTOP_ALLOWED_ROUTES = [
   '/projects',
+  '/new',
   '/accounts',
   '/invites',
   '/admin',
