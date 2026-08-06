@@ -178,12 +178,12 @@ elevation owners.
 | Design-system migration     | 9 shadow tests pass; ESLint 0 errors and 1 pre-existing React Compiler warning; policy scan is green.        |
 | Headless local visual QA    | 8 pass. Reviewed light/dark baselines at 948×688 desktop and 346×1351 narrow.                                |
 | Landing visual regression   | 2 pre-existing baseline failures. Full baseline is 1344×9927; current fixed viewport produces 1280×8635.     |
-| Final web suite             | 4581 pass, 2 fail. Both unchanged customize-overlay failures reproduce on `main`.                            |
+| Final web suite             | 4630 pass, 0 fail after rebasing onto `origin/main` at `66a5f8c488`.                                         |
 | Popover geometry contract   | 66 pass, 0 fail after removing the obsolete `+2px` border allowance.                                        |
 | Changed-file ESLint         | 0 errors and 21 pre-existing React Compiler warnings across 39 changed TypeScript files.                    |
-| TypeScript                  | The 3 documented Bun test files fail. Unchanged `customize-sections.test.ts` also has 2 baseline errors.     |
+| TypeScript                  | Only the 3 documented Bun `test.each` files fail. No branch-owned TypeScript error remains.                  |
 | React Doctor                | 74/100. It reports 3 pre-existing warnings in adjacent unchanged code.                                      |
-| Production build            | Pass. Next.js compiled in 17.6 seconds and generated 195 static pages.                                      |
+| Production build            | Pass after rebase. Next.js compiled in 9.6 seconds and generated 195 static pages.                          |
 | PR and merge                | Open until all local gates pass.                                                                             |
 | Deploy Dev and dev QA       | Open until the merged SHA is deployed.                                                                       |
 
