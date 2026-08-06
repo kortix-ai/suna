@@ -148,6 +148,56 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+### Long-running goals and generated tasks
+
+Goal declarations remain reviewable in `kortix.yaml`. Runtime task claims and
+metric observations are platform state.
+
+```yaml
+goals:
+  - slug: search-rank
+    title: Reach first position for the target query
+    done_when: Search Console reports position 1 for seven consecutive days.
+    status: active
+    push: "0 0 */2 * * *"
+    timezone: UTC
+    metrics:
+      - name: search_position
+        direction: decrease
+        target: 1
+```
+
+Use the project handle to drive the same control plane as the Kortix CLI:
+
+```ts
+const project = kortix.project(projectId);
+const { goals } = await project.goals.list();
+const { task } = await project.tasks.create({
+  goal_slug: goals[0].slug,
+  title: "Measure the current position",
+  status: "todo",
+  origin: "meta",
+  origin_fingerprint: "search-rank:measure-position:v1",
+});
+await project.tasks.claim(task.task_id, {
+  session_id: workerSessionId,
+  lease_seconds: 900,
+});
+await project.goals.observations.record(goals[0].slug, {
+  metric: "search_position",
+  value: 4,
+  source: "search-console://report/2026-08-06",
+  session_id: workerSessionId,
+});
+await project.tasks.complete(task.task_id, {
+  session_id: workerSessionId,
+  evidence: [{ ref: "search-console://report/2026-08-06" }],
+});
+```
+
+A settled or idle worker session is not task completion. The worker must make an
+explicit terminal task transition with verifier evidence.
+
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults. A per-call choice
@@ -188,7 +238,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.goals` · `.tasks` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 

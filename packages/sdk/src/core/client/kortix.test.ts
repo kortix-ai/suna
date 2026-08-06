@@ -14,16 +14,19 @@ beforeEach(() => {
       method: opts.method ?? 'GET',
       body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
     });
-    return new Response(JSON.stringify({
-      ok: true,
-      secrets: [],
-      candidates: [],
-      sessions: [],
-      connector_bindings: {},
-    }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        secrets: [],
+        candidates: [],
+        sessions: [],
+        connector_bindings: {},
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   }) as unknown as typeof fetch;
 });
 
@@ -79,6 +82,23 @@ test('top-level connectors supports a project-scoped agent token without a proje
     action: 'send_message',
     args: { channel: 'C1' },
   });
+});
+
+test('project(id) exposes goal and task control-plane clients', async () => {
+  const project = kortix.project('PID123');
+
+  await project.goals.list();
+  expect(last().url).toBe('http://test.local/projects/PID123/goals');
+
+  await project.goals.observations.record('ship-kernel', {
+    metric: 'rank',
+    value: 1,
+    source: 'search console',
+  });
+  expect(last().url).toBe('http://test.local/projects/PID123/goals/ship-kernel/observations');
+
+  await project.tasks.claim('TASK1', { session_id: 'SESSION1' });
+  expect(last().url).toBe('http://test.local/projects/PID123/tasks/TASK1/claim');
 });
 
 test('project(id).secrets.broker binds the project and encoded identifier', async () => {

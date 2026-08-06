@@ -12,23 +12,44 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
-### 2026-08-06 — session `agi-kernel-goals-tasks` claim
+### 2026-08-06 — session `agi-kernel-goals-tasks` completion
 
-No **Now** task claimed. This is the additive SDK contract for the autonomous-agent vertical slice in `docs/specs/2026-08-06-autonomous-agent-harness.md`.
+Added the framework-free, project-scoped goal and generated-task control plane.
+The canonical surface is `kortix.project(projectId).goals` and
+`kortix.project(projectId).tasks`. Goal declarations remain Git-authored.
+Task claims, task transitions, and metric observations remain API-owned.
 
-Claimed scope:
+No existing public export was removed or renamed. The package version field
+remains unchanged.
 
-- Add framework-free goal and generated-task REST clients.
-- Export the clients through the canonical root and `createKortix().project(projectId)` facade.
-- Keep goal declarations git-authored and task/observation coordination API-owned.
-- Add public contract tests, type-surface snapshots, packed-install proof, and user documentation.
-- Do not change the package version field or rename an existing export.
+RED:
 
-The required `tdd` skill is unavailable in this session. This work will use the same RED, GREEN, and REFACTOR sequence directly.
+- `goals.test.ts` and `tasks.test.ts` failed with `Cannot find module './goals'`
+  and `Cannot find module './tasks'` before the clients existed: `0 pass`,
+  `2 fail`.
 
-**Status:** IN PROGRESS.
+GREEN:
 
-**SDK package shippable to production: NOT YET.**
+- Focused REST, facade, runtime-surface, and type-surface suite: `89 pass`,
+  `0 fail`, and `312 expect()` calls across `5` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`, including the examples
+  typecheck.
+- `pnpm --filter @kortix/sdk test`: `1597 pass`, `0 fail`, and `6560 expect()`
+  calls across `127` files.
+- Both public-surface snapshots were regenerated deliberately and reviewed.
+  The diff contains only the additive goal/task functions and types.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; clean packed
+  tarballs imported and constructed `@kortix/sdk` and
+  `@kortix/executor-sdk` in Node ESM.
+- A real SDK client in `apps/cli` called the live local API with a real JWT.
+  It read `latency-proof`, one persisted observation, three tasks, and one
+  evidence-bearing terminal result.
+- `packages/sdk/README.md` and the web SDK reference document the public
+  project handle.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ---
 
