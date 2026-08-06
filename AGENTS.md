@@ -1,5 +1,12 @@
 # Kortix project
 
+## Linear tracking
+
+Capability-page work uses Team `Jay`, project `customize`, and the milestone that
+matches the active phase. Search before creating issues. Move the active issue to
+`In Progress` before editing. Mark it `Done` only after the change is merged,
+deployed to dev, and verified there.
+
 ## What "ownership" means
 
 The words "can you own this?", "are you on it?", and "can you take care of this?"
