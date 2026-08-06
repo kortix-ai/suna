@@ -16,6 +16,17 @@
  * that is the rule this file exists to enforce, and it is not optional just
  * because the argument is easy to forget.
  *
+ * The SECOND version of `sessions(id, scope)` fixed that, then introduced a
+ * narrower version of the same class of bug: `sessions(id, scope)` and
+ * `session(id, sessionId)` were both `sessionsScope(id)` plus exactly one
+ * segment, so a session id equal to a scope literal (`'visible'`,
+ * `'project'`) would collide byte-for-byte with a scoped list. Nothing in
+ * THIS file prevented that — the only thing standing in the way was a UUID
+ * regex enforced server-side, in `apps/api`, a different package, with no
+ * link back here. `sessions` now inserts a literal `'list'` segment so it is
+ * structurally longer than `session(...)` for every possible session id —
+ * the collision is unrepresentable, not merely unlikely.
+ *
  * Two rules make this work:
  *
  *  1. `scope(id)` is a PREFIX, never a query key. Everything belonging to one
@@ -85,9 +96,25 @@ export const qk = {
      * the sidebar could render the unfiltered manager inventory, or the
      * inventory page could render the sidebar's filtered list. Use
      * `sessionsScope(id)`, not this, for invalidation.
+     *
+     * The literal `'list'` segment exists so this can NEVER collide with
+     * `session(id, sessionId)` below. Without it, both were
+     * `sessionsScope(id)` plus exactly one segment — a session whose id
+     * happened to equal the string `'visible'` or `'project'` would produce
+     * the identical array a scoped list produces, and the two would silently
+     * overwrite each other. Session ids are `crypto.randomUUID()`
+     * client-side and rejected server-side otherwise
+     * (`apps/api/src/projects/lib/sessions.ts`), so that made the collision
+     * unreachable, not impossible — safety by an invariant enforced in a
+     * DIFFERENT package, with no link back to this file. `'list'` makes
+     * `sessions(...)` structurally longer than `session(...)` for every
+     * possible session id, which is the same standard this file already
+     * applies to the `'kx'` root (see the top doc comment): make the
+     * collision unrepresentable, don't rely on another package's validation
+     * staying strict.
      */
     sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
-      [...qk.project.sessionsScope(id), scope] as const,
+      [...qk.project.sessionsScope(id), 'list', scope] as const,
 
     /**
      * One session, by id. Nests directly under the scope-LESS

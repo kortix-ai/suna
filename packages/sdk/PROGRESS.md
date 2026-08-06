@@ -12,6 +12,66 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 2: session id vs scope literal collision, made structurally impossible
+
+Fix round 2 on Task 9, following round 1 immediately below. Round 1 gave
+`sessions(id, scope)` and `sessionsScope(id)` their own shapes but left
+`sessions(id, scope) = [...sessionsScope(id), scope]` and
+`session(id, sessionId) = [...sessionsScope(id), sessionId]` as the SAME
+shape — `sessionsScope(id)` plus exactly one segment, distinguished only by
+the segment's value. A session id equal to the string `'visible'` or
+`'project'` would collide byte-for-byte with a scoped list. Session ids are
+`crypto.randomUUID()` client-side and rejected server-side otherwise
+(`apps/api/src/projects/lib/sessions.ts`, UUID v4 regex), so this was
+unreachable in practice — but that protection lives in a different package
+with no link back to this file: safety by external invariant, not by
+construction. This file's own top comment already rejects that standard for
+the `'kx'`-vs-`'kortix'` root choice; the same standard now applies here.
+
+**Fix**, `src/react/query-keys.ts`: `sessions(id, scope)` gained a literal
+`'list'` segment — `[...sessionsScope(id), 'list', scope]` — making it
+structurally longer than `session(id, sessionId)` for every possible session
+id. The collision is now unrepresentable, not merely improbable. `session()`
+and `messages()` are unchanged. `sessionsScope(id)` (the invalidation
+prefix) is unchanged and still strictly prefixes the new `sessions(...)`
+shape (verified by test, not assumed).
+
+**Tests**, `src/react/query-keys.test.ts` (TDD: 3 new assertions written
+against the round-1 factory first, confirmed RED — the exact adversarial
+pair `sessions(id, 'project')` / `session(id, 'project')` compared equal,
+and the length assertion failed with both at length 5 — then GREEN after
+adding the `'list'` segment): `sessions(id)` vs `session(id, 'visible')`
+differ; `sessions(id, 'project')` vs `session(id, 'project')` differ (the
+exact adversarial pair named in the finding); and a general length
+assertion — `sessions(id, scope).length > session(id, anySessionId).length`
+for `anySessionId` in `['visible', 'project', 's1', crypto.randomUUID()]` —
+proving no session id value, not just the two obvious literals, can ever
+equalize the two shapes.
+
+GREEN (all three SDK gates):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1623 pass`, `0 fail`, `6484 expect()` calls
+  across `125` files (up from round 1's `1620`/`125` — 3 new assertions, no
+  new test file). The coordinator flagged a known isolation flake,
+  `session-costs.test.ts:389`, that fails only under the full run — it did
+  NOT appear this run; 0 fail, no exceptions.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `version` field: confirmed untouched (`git diff --stat packages/sdk/package.json` empty).
+
+Downstream `apps/web`: confirmed NO web file needed editing — every call
+site goes through the factory, and the extra `'list'` segment is internal to
+`sessions()`'s output. `npx tsc --noEmit | grep -v test.each` byte-identical
+to the round-1 baseline (`diff` confirmed, 21 error lines, all
+pre-existing); `bun test src/features/workspace src/features/review-center
+src/app`: `1063 pass`, `0 fail`, unchanged from round 1.
+
+**Status:** COMPLETE (Task 9 fix round 2 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 1: scope missing from `qk.project.sessions`
 
 Fix for a defect a review caught in Task 9 (`docs/superpowers/plans/2026-08-06-client-cache-unification.md`,

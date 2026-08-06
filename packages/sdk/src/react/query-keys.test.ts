@@ -123,6 +123,50 @@ describe('qk.project', () => {
       expect(prefix).not.toEqual(qk.project.sessions(id) as never);
       expect(prefix).not.toEqual(qk.project.sessions(id, 'project') as never);
     });
+
+    // Before this file existed, `apps/web` hand-typed 176 key literals and got
+    // exactly this kind of collision wrong twice. `sessions()` and `session()`
+    // used to be `sessionsScope(id)` plus exactly ONE segment each — the same
+    // shape, distinguished only by whether that segment happened to be a scope
+    // literal or a session id. A session whose id happened to BE the string
+    // `'visible'` or `'project'` would collide byte-for-byte with a scoped
+    // list, and the two would silently overwrite each other in the cache.
+    // Session ids are `crypto.randomUUID()` client-side, and
+    // `apps/api/src/projects/lib/sessions.ts` rejects any client-supplied id
+    // failing a UUID v4 regex server-side — so this is unreachable TODAY. But
+    // that protection lives in a different package, enforced by a regex with
+    // no link back to this file, so it is safety by external invariant, not
+    // by construction — exactly the standard this file's own top comment
+    // rejects for the `'kx'` vs `'kortix'` root choice. The `'list'` segment
+    // below makes the collision structurally impossible instead: it gives the
+    // scoped list an extra segment, so NO value of a session id can ever
+    // produce the same array `sessions(id, scope)` produces, regardless of
+    // what any other package validates.
+    describe('a session id can never collide with a scoped list key, by construction', () => {
+      test('sessions(id) and session(id, "visible") are different keys — a session literally named "visible" does not collide with the default-scope list', () => {
+        expect(qk.project.sessions(id)).not.toEqual(qk.project.session(id, 'visible') as never);
+      });
+
+      test('sessions(id, "project") and session(id, "project") are different keys — the exact adversarial pair', () => {
+        expect(qk.project.sessions(id, 'project')).not.toEqual(
+          qk.project.session(id, 'project') as never,
+        );
+      });
+
+      test('sessions(id, scope) and session(id, anySessionId) always differ in LENGTH, so no session id value can equalize them', () => {
+        expect(qk.project.sessions(id).length).not.toBe(qk.project.session(id, 'visible').length);
+        expect(qk.project.sessions(id, 'project').length).not.toBe(
+          qk.project.session(id, 'project').length,
+        );
+        // Not just these two probes — assert the general shape: every scoped
+        // list is longer than every per-session key, for ANY session id.
+        for (const sessionId of ['visible', 'project', 's1', crypto.randomUUID()]) {
+          expect(qk.project.sessions(id).length).toBeGreaterThan(
+            qk.project.session(id, sessionId).length,
+          );
+        }
+      });
+    });
   });
 
   // A session is addressed by id, not by which list scope happened to
