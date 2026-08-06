@@ -289,10 +289,9 @@ export async function buildSessionSandboxEnvVars(input: {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the session's OWNER (createdBy, read below) so their own
-  // CODEX_AUTH_JSON override (if any) wins — consistently, whether this run is
-  // provisioned by the owner (create) or by a manager/admin (restart/open); see
-  // secretsPrincipalUserId below. Every OTHER secret is project-wide (secret
+  // Resolved AS the session's OWNER (createdBy, read below). This keeps personal
+  // override selection consistent for server consumers without delivering the
+  // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
@@ -436,11 +435,8 @@ export async function buildSessionSandboxEnvVars(input: {
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
-    // Provider API keys reach the sandbox (the agent's own code may use them),
-    // but opencode must NOT — a provider key in opencode's env makes it connect
-    // a NATIVE provider and bypass the gateway. The daemon withholds exactly
-    // these names from the opencode process (Codex/OpenCode auth is excluded —
-    // that one is an intentional native provider).
+    // Runtime-delivered provider keys may reach the sandbox for user code.
+    // OpenCode must not receive them because it would bypass the gateway.
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: input.platformMetaAgent ? '0' : '1',
     ...(input.platformMetaAgent ? { KORTIX_META_AGENT: '1' } : {}),

@@ -540,6 +540,12 @@ mock.module('../shared/account-limits', () => ({
   clearAccountLimitCache: () => undefined,
 }));
 
+const realDefaultModelResolution = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModelResolution,
+  isModelServableForAccount: async () => true,
+}));
+
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: {
@@ -704,11 +710,7 @@ mock.module('../shared/db', () => ({
           return [sessionRow];
         },
         onConflictDoNothing: async () => [],
-        onConflictDoUpdate: ({
-          set,
-        }: {
-          set: Partial<typeof projectSecrets.$inferInsert>;
-        }) => {
+        onConflictDoUpdate: ({ set }: { set: Partial<typeof projectSecrets.$inferInsert> }) => {
           const conflictResult = {
             returning: async () => {
               if (table === projectGitConnections) {
@@ -790,6 +792,7 @@ mock.module('../shared/db', () => ({
                 createdBy: values.createdBy ?? null,
                 description: values.description ?? null,
                 strategy: values.strategy ?? 'runtime',
+                consumer: values.consumer ?? 'sandbox',
                 egressPolicy: values.egressPolicy ?? null,
                 handlePrefix: values.handlePrefix ?? null,
                 rotatedAt: values.rotatedAt ?? null,
@@ -1456,6 +1459,7 @@ describe('project session API contract', () => {
       ownerUserId: null,
       description: null,
       strategy: 'runtime' as const,
+      consumer: 'sandbox' as const,
       egressPolicy: null,
       handlePrefix: null,
       rotatedAt: null,
@@ -1494,7 +1498,7 @@ describe('project session API contract', () => {
       const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value }),
+        body: JSON.stringify({ name, value, strategy: 'runtime', consumer: 'sandbox' }),
       });
       expect(w.status).toBe(200);
     }
@@ -1577,7 +1581,8 @@ describe('project session API contract', () => {
         scope: 'runtime',
         ownerUserId: null,
         description: null,
-        strategy: 'runtime' as const,
+        strategy: 'broker' as const,
+        consumer: 'git_proxy' as const,
         egressPolicy: null,
         handlePrefix: null,
         rotatedAt: null,
@@ -1874,8 +1879,7 @@ describe('project session API contract', () => {
         },
         failure: {
           category: 'provider-capacity',
-          message:
-            'The sandbox provider is at capacity right now. Stop another session and retry.',
+          message: 'The sandbox provider is at capacity right now. Stop another session and retry.',
           retryable: true,
         },
       });
@@ -1916,10 +1920,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const response = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -2957,35 +2960,31 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  // ---------------------------------------------------------------------------
-  // End-to-end: stored project secrets must land in the sandbox env at session
-  // create. This is the contract the entire Secrets Manager UX relies on —
-  // anything stored via POST /secrets is expected to be a plain env var at
-  // sandbox boot, alongside the platform-managed KORTIX_* envelope.
-  // ---------------------------------------------------------------------------
-  test('e2e: stored project secrets are injected as plaintext env vars at session create', async () => {
+  test('e2e: only explicit sandbox secrets are injected as plaintext env vars', async () => {
     const app = createApp();
 
-    // 1. User stores two secrets via the Secrets Manager.
-    for (const [name, value] of [
-      ['OPENAI_API_KEY', 'sk-test-openai'],
-      ['STRIPE_SECRET', 'sk_test_stripe_live'],
+    for (const input of [
+      { name: 'OPENAI_API_KEY', value: 'sk-test-openai' },
+      {
+        name: 'LOCAL_BUILD_SECRET',
+        value: 'local-build-value',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+      },
     ] as const) {
       const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value }),
+        body: JSON.stringify(input),
       });
       expect(writeRes.status).toBe(200);
     }
     expect(secretRows).toHaveLength(2);
-    // Stored values are encrypted at rest — plaintext never appears in valueEnc.
     for (const row of secretRows) {
       expect(row.valueEnc).not.toContain('sk-test-openai');
-      expect(row.valueEnc).not.toContain('sk_test_stripe_live');
+      expect(row.valueEnc).not.toContain('local-build-value');
     }
 
-    // 2. User creates a session — sandbox provisioning is fire-and-forget.
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2993,19 +2992,14 @@ describe('project session API contract', () => {
     });
     expect(createRes.status).toBe(201);
 
-    // 3. Flush the fire-and-forget IIFE that calls provisionSessionSandbox.
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput).not.toBeNull();
 
-    // 4. User secrets are present, decrypted, in extraEnvVars.
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
-    expect(env.STRIPE_SECRET).toBe('sk_test_stripe_live');
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
-    // 5. Platform KORTIX_* envelope is still present alongside user secrets.
-    // Git provider credentials are deliberately absent; provisionSessionSandbox
-    // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     const expectedRepoUrl =
@@ -3030,10 +3024,6 @@ describe('project session API contract', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
-    // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
-    // This protects the env-var precedence: user secrets are merged before
-    // KORTIX_* in the helper, so an accepted KORTIX_TOKEN would silently
-    // poison the sandbox auth.
     const shadowRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3068,6 +3058,7 @@ describe('project session API contract', () => {
     expect(body.status).toBe('provisioning');
     expect(body.opencode_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
+    await flushUntil(() => branchCreateCalls === 1);
     expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
     expect(sessionRow?.opencodeSessionId).toBeNull();

@@ -97,6 +97,11 @@ export interface ApprovalAction {
   risk: ReviewRisk;
   icon: ApprovalActionIcon;
   argsPreview: { key: string; value: string }[];
+  /** Exact action path and redacted record used by the shared one-call approval UI. */
+  actionPath?: string;
+  rawArgsPreview?: Record<string, unknown>;
+  reviewComplete?: boolean;
+  executorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied'; // prototype-local decision state
 }
@@ -155,7 +160,7 @@ export function segmentForStatus(status: ReviewStatus): ReviewSegment {
   return 'done';
 }
 
-/** A low/none-risk approval action is eligible for "Approve all safe". */
+/** Prototype/native approval actions can use the safe-risk helper. Executor approvals cannot. */
 export function isSafeRisk(risk: ReviewRisk): boolean {
   return risk === 'none' || risk === 'low';
 }

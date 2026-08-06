@@ -363,10 +363,17 @@ mock.module('../projects/secrets', () => {
     listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
+    listProjectSecretNamesForConsumer: async () => [],
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    materializeSecretDelivery: async () => undefined,
+    projectSecretIsConfiguredForConsumer: async () => false,
     projectSecretsRevision: (env: Record<string, string>) =>
       `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
+    getProjectSecretValueForConsumer: async () => null,
+    resolveProjectSecretForConsumer: async () => null,
+    resolveProjectSecretsForConsumer: async () => ({}),
+    withholdUndeliverable: () => undefined,
   };
 });
 

@@ -69,6 +69,21 @@ describe('makeRequest admin-bypass header', () => {
       stub.restore();
     }
   });
+
+  test('attaches the configured client surface to backend requests', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'test-token',
+      clientSource: 'cli',
+    });
+    const stub = stubFetch();
+    try {
+      await backendApi.get('/projects/abc/detail');
+      expect(stub.getHeaders()?.['X-Kortix-Client']).toBe('cli');
+    } finally {
+      stub.restore();
+    }
+  });
 });
 
 // Regression for prod TypeError "t.message.includes is not a function": a

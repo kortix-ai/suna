@@ -250,6 +250,13 @@
     {
       "idx": 35,
       "version": "7",
+      "when": 1785961753530,
+      "tag": "20260805202913_secret_consumer_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
       "when": 1785963447201,
       "tag": "20260805205727_provision_idempotency_key",
       "breakpoints": true

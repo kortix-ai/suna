@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ApiReviewItem } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import {
   PRIMARY_ACTION,
   agentInitials,
@@ -115,7 +115,17 @@ describe('mapApiReviewItem', () => {
         title: 'Approve: gmail.messages.send',
         risk: 'high',
         // connector_id is an opaque UUID — the connector NAME comes from the path.
-        detail: { execution_id: 'ex-1', action_path: 'gmail.messages.send', connector_id: 'uuid-x' },
+        detail: {
+          execution_id: 'ex-1',
+          action_path: 'gmail.messages.send',
+          connector_id: 'uuid-x',
+          args_preview: {
+            to: ['approver@example.com'],
+            subject: 'Review this exact email',
+            body: 'Complete email content',
+          },
+          args_preview_complete: true,
+        },
       },
       'P',
     );
@@ -129,6 +139,12 @@ describe('mapApiReviewItem', () => {
       action: 'messages.send',
       connector: 'gmail',
       risk: 'high',
+      rawArgsPreview: {
+        to: ['approver@example.com'],
+        subject: 'Review this exact email',
+        body: 'Complete email content',
+      },
+      reviewComplete: true,
     });
   });
 

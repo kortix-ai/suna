@@ -115,6 +115,35 @@ describe('parseEgressPolicy', () => {
     expect(parseEgressPolicy({ ...ok(), inject: { kind: 'header' } }).ok).toBe(false);
   });
 
+  test('validates templates, JSON paths, and per-rule injection overrides', () => {
+    expect(
+      parseEgressPolicy({ ...ok(), inject: { kind: 'header', name: 'x', template: 'Bearer token' } })
+        .ok,
+    ).toBe(false);
+    expect(
+      parseEgressPolicy({ ...ok(), inject: { kind: 'json_body_field', path: '__proto__.key' } }).ok,
+    ).toBe(false);
+    const parsed = parseEgressPolicy({
+      ...ok(),
+      rules: [
+        {
+          host: 'api.anthropic.com',
+          inject: { kind: 'header', name: 'X-Api-Key', template: '{{secret}}' },
+        },
+      ],
+    });
+    expect(parsed.ok && parsed.policy.rules[0].inject).toEqual({
+      kind: 'header',
+      name: 'x-api-key',
+      template: '{{secret}}',
+    });
+  });
+
+  test('rejects observe mode because no-match delivery is fail-closed', () => {
+    expect(parseEgressPolicy(ok({ on_no_match: 'observe' })).ok).toBe(false);
+    expect(parseEgressPolicy(ok({ on_no_match: 'deny' })).ok).toBe(true);
+  });
+
   test('rejects an unknown broker backend', () => {
     expect(parseEgressPolicy(ok({ backend: 'somewhere_else' })).ok).toBe(false);
     expect(parseEgressPolicy(ok({ backend: 'llm_gateway' })).ok).toBe(true);

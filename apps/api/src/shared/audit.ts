@@ -6,6 +6,7 @@ import { dispatchAuditEvent, type AuditWebhookPayload } from './audit-webhooks';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
 
 export type AuditActorType = 'human' | 'agent' | 'service_account' | 'system';
 export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending';
@@ -110,6 +111,8 @@ function inferActorType(c: Context, actorUserId: string | null): AuditActorType 
 export function inferAuditSource(c: Context, actorType: AuditActorType | null): string {
   if (actorType === 'service_account') return 'automation';
   if (actorType === 'agent') return 'agent';
+  const clientSource = c.req.header('x-kortix-client')?.trim().toLowerCase();
+  if (clientSource && CLIENT_SOURCES.has(clientSource)) return clientSource;
   if ((c as any).get('authType') === 'supabase') return 'web';
   return 'api';
 }

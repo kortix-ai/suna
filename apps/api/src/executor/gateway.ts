@@ -42,6 +42,8 @@ import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
   connectorId: string;
+  /** Legacy manifest secret name. The server resolves it through the connector boundary. */
+  authSecret?: string | null;
   /** Non-secret concrete identity selected for this session. */
   profileId?: string | null;
   profileIsDefault?: boolean;

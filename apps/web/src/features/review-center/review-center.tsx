@@ -44,7 +44,6 @@ import {
   TrayIcon as InboxSolid,
   StackIcon as Layers,
   MagnifyingGlassIcon as Search,
-  ShieldCheckIcon as ShieldCheckSolid,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
@@ -53,6 +52,7 @@ import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
 import {
   bulkSkipMessage,
+  execExecutionId,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
@@ -60,13 +60,11 @@ import {
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_BAR, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
 import {
-  approveAllSafe,
   bulkSetStatus,
   countsBySegment,
   decideApprovalAction,
   filterItems,
   groupBySession,
-  safePendingCount,
   sessionOptions,
   setStatus,
 } from './review-reducer';
@@ -149,6 +147,7 @@ function ItemRow({
   onToggleSelect,
   onQuickApprove,
   onQuickDeny,
+  bulkSelectable = true,
 }: {
   item: ReviewItem;
   idx: number;
@@ -159,8 +158,7 @@ function ItemRow({
   fresh: boolean;
   /** prefers-reduced-motion: collapse enter/stagger to instant. */
   reduce: boolean;
-  /** A single-action approval with a real client-side resolve path (an
-   *  executor approval) — show Approve/Deny right on the row, no modal hop. */
+  /** Whether this row exposes inline decisions. Executor approvals are false. */
   quickDecidable: boolean;
   /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
   pendingDecision?: 'approve' | 'deny' | null;
@@ -172,6 +170,7 @@ function ItemRow({
   onToggleSelect: () => void;
   onQuickApprove?: () => void;
   onQuickDeny?: () => void;
+  bulkSelectable?: boolean;
 }) {
   const kind = KIND_META[item.kind];
   const Source = SOURCE_META[item.source];
@@ -205,7 +204,7 @@ function ItemRow({
         fresh && 'bg-kortix-blue/[0.05]',
       )}
     >
-      {segment === 'needs_you' && (
+      {segment === 'needs_you' && bulkSelectable && (
         <Checkbox
           checked={selected}
           onCheckedChange={onToggleSelect}
@@ -391,7 +390,6 @@ export function ReviewCenter({
     () => filterItems(items, segment, kindFilter, query, sessionFilter),
     [items, segment, kindFilter, query, sessionFilter],
   );
-  const visibleSafePending = useMemo(() => safePendingCount(visible), [visible]);
   const kindCounts = useMemo(() => {
     // Respect the active session filter so the kind-tab badges never contradict
     // the visible list when scoped to one session.
@@ -531,7 +529,6 @@ export function ReviewCenter({
     },
     decideAction: (itemId, actionId, decision) =>
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
-    approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
     openSession: onOpenSession,
     recoverChange: onRecoverChange,
     recoveringCrId,
@@ -540,8 +537,8 @@ export function ReviewCenter({
     pendingDecision,
   };
 
-  /** Row-level Approve/Deny for a single-action executor approval — resolves
-   *  it directly via `actions.resolve`, no modal hop. */
+  /** Legacy quick-decision handler. The eligibility helper currently returns
+   *  false because Executor approvals require the parameter-review modal. */
   const quickDecide = (item: ReviewItem, decision: 'approve' | 'deny') => {
     actions.resolve(
       item.id,
@@ -589,8 +586,7 @@ export function ReviewCenter({
 
   /** Connected mode: decide up-front what the verdict will really act on so
    *  the optimistic removal + toast never claim more than the server was
-   *  asked (exec approvals are never denied by a dismiss; risky approvals
-   *  survive an approve sweep; CRs each need their own review). */
+   *  asked. Bulk verdicts skip executor approvals and Change Requests. */
   const connectedBulkOutcome = (ids: string[], verdict: 'approve' | 'dismiss') => {
     const riskById = new Map(items.map((i) => [i.id, i.risk]));
     return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
@@ -643,7 +639,7 @@ export function ReviewCenter({
     for (const id of ids) {
       const it = items.find((x) => x.id === id);
       if (!it) continue;
-      next = it.kind === 'approval' ? approveAllSafe(next, id) : setStatus(next, id, 'approved');
+      next = setStatus(next, id, 'approved');
     }
     apply(
       next,
@@ -654,22 +650,15 @@ export function ReviewCenter({
     setSelectedIds(new Set());
   };
 
-  const toggleSelect = (id: string) =>
+  const toggleSelect = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id);
+    if (item?.kind === 'approval' || (connected && execExecutionId(id))) return;
     setSelectedIds((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
       else n.add(id);
       return n;
     });
-
-  const onApproveAllSafeGlobal = () => {
-    const ids = visible.filter((i) => i.kind === 'approval').map((i) => i.id);
-    let next = items;
-    for (const id of ids) next = approveAllSafe(next, id);
-    commit(
-      next,
-      `Approved ${visibleSafePending} safe ${visibleSafePending === 1 ? 'action' : 'actions'}`,
-    );
   };
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
@@ -920,39 +909,6 @@ export function ReviewCenter({
               </div>
             )}
 
-            {/* Bulk bar (safe approvals across the current view). Prototype-only:
-                connected mode already surfaces "approve all safe" per-item via
-                each approval's own inline Approve/Deny + the floating
-                multi-select bar below, so this global banner would be a
-                second, redundant safe-approve entry point there. */}
-            <AnimatePresence initial={false}>
-              {!connected &&
-                segment === 'needs_you' &&
-                visibleSafePending > 0 &&
-                selectionCount === 0 && (
-                  <m.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2, ease: EASE }}
-                    className="overflow-hidden"
-                  >
-                    <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
-                      <ShieldCheckSolid
-                        weight="fill"
-                        className="text-kortix-green size-5 shrink-0"
-                      />
-                      <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
-                        {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'}{' '}
-                        can be approved together. Risky ones stay for you to decide.
-                      </span>
-                      <Button size="sm" onClick={onApproveAllSafeGlobal}>
-                        Approve all safe
-                      </Button>
-                    </div>
-                  </m.div>
-                )}
-            </AnimatePresence>
           </div>
 
           {/* List */}
@@ -1052,6 +1008,10 @@ export function ReviewCenter({
                           reduce={reduce}
                           quickDecidable={connected && isQuickDecidableApproval(item)}
                           pendingDecision={pendingId === item.id ? pendingDecision : null}
+                          bulkSelectable={
+                            item.kind !== 'approval' &&
+                            (!connected || execExecutionId(item.id) === null)
+                          }
                           onOpen={() => setSelectedId(item.id)}
                           onToggleSelect={() => toggleSelect(item.id)}
                           onQuickApprove={() => quickDecide(item, 'approve')}
@@ -1086,6 +1046,9 @@ export function ReviewCenter({
                   reduce={reduce}
                   quickDecidable={connected && isQuickDecidableApproval(item)}
                   pendingDecision={pendingId === item.id ? pendingDecision : null}
+                  bulkSelectable={
+                    item.kind !== 'approval' && (!connected || execExecutionId(item.id) === null)
+                  }
                   sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
                   onOpen={() => setSelectedId(item.id)}
                   onToggleSelect={() => toggleSelect(item.id)}

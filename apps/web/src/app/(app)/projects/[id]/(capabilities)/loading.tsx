@@ -16,9 +16,8 @@ import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/c
  *     awaits cookies(), which makes every route under it dynamic, and for a
  *     dynamic route Next prefetches only as far as the nearest loading
  *     boundary. Without this file, the sidebar's `<Link prefetch>` on
- *     ProjectConnectorsNavItem / ProjectSkillsNavItem / ProjectCommandsNavItem
- *     has nothing to store — every click would pay the full cold-navigation
- *     cost Files was fixed to avoid.
+ *     ProjectSettingsNavItem has nothing to store — every click would pay the
+ *     full cold-navigation cost Files was fixed to avoid.
  */
 export default function CapabilitiesLoading() {
   return <CapabilitiesSkeleton />;

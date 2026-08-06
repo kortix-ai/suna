@@ -1,6 +1,9 @@
 import { chatChannelBindings, chatInstalls, projectSecrets } from '@kortix/db';
-import { and, eq, inArray, isNull, like } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { and, eq, isNull, like } from 'drizzle-orm';
+import {
+  encryptProjectSecret,
+  getProjectSecretValueForConsumer,
+} from '../projects/secrets';
 import { db } from '../shared/db';
 
 export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
@@ -343,7 +346,7 @@ function agentMailProfileSlugFromInboxSecret(name: string): string | null {
 
 export async function listAgentMailInstalls(projectId: string): Promise<AgentMailInstallSummary[]> {
   const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .select({ name: projectSecrets.name })
     .from(projectSecrets)
     .where(
       and(
@@ -359,7 +362,7 @@ export async function listAgentMailInstalls(projectId: string): Promise<AgentMai
     if (!profileSlug) continue;
     try {
       // Skip malformed or stale secret envelopes without poisoning the whole list.
-      decryptProjectSecret(projectId, row.valueEnc);
+      if (!(await readSecret(projectId, row.name))) continue;
       const install = await loadAgentMailInstall(projectId, profileSlug);
       if (install) installs.push(install);
     } catch {}
@@ -429,7 +432,7 @@ export async function loadAgentMailApiKeyForInbox(
   inboxId: string,
 ): Promise<string | null> {
   const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .select({ name: projectSecrets.name })
     .from(projectSecrets)
     .where(
       and(
@@ -440,12 +443,7 @@ export async function loadAgentMailApiKeyForInbox(
     );
 
   for (const row of rows) {
-    let value: string | null = null;
-    try {
-      value = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-      continue;
-    }
+    const value = await readSecret(projectId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
     return readSecret(projectId, `${AGENTMAIL_API_KEY}${suffix}`);
@@ -464,7 +462,7 @@ export async function loadAgentMailWebhookSecretForInbox(
   inboxId: string,
 ): Promise<string | null> {
   const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .select({ name: projectSecrets.name })
     .from(projectSecrets)
     .where(
       and(
@@ -475,12 +473,7 @@ export async function loadAgentMailWebhookSecretForInbox(
     );
 
   for (const row of rows) {
-    let value: string | null = null;
-    try {
-      value = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-      continue;
-    }
+    const value = await readSecret(projectId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
     return readSecret(projectId, `${AGENTMAIL_WEBHOOK_SECRET}${suffix}`);
@@ -493,7 +486,7 @@ export async function loadAgentMailSenderPolicyForInbox(
   inboxId: string,
 ): Promise<AgentMailSenderPolicy> {
   const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .select({ name: projectSecrets.name })
     .from(projectSecrets)
     .where(
       and(
@@ -504,12 +497,7 @@ export async function loadAgentMailSenderPolicyForInbox(
     );
 
   for (const row of rows) {
-    let value: string | null = null;
-    try {
-      value = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-      continue;
-    }
+    const value = await readSecret(projectId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
     return parseSenderPolicy(await readSecret(projectId, `${AGENTMAIL_SENDER_POLICY}${suffix}`));
@@ -764,6 +752,9 @@ async function upsertSecret(projectId: string, name: string, value: string): Pro
       name,
       valueEnc,
       scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      rotatedAt: new Date(),
     });
   } catch (err) {
     if (!isUniqueConflict(err)) throw err;
@@ -779,7 +770,17 @@ async function updateSharedSecret(
 ): Promise<boolean> {
   const rows = await db
     .update(projectSecrets)
-    .set({ valueEnc, scope: 'connector', updatedAt: new Date() })
+    .set({
+      valueEnc,
+      scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      egressPolicy: null,
+      handlePrefix: null,
+      active: true,
+      rotatedAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(projectSecrets.projectId, projectId),
@@ -804,43 +805,18 @@ function isUniqueConflict(err: unknown): boolean {
 }
 
 async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
-  const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
-    .from(projectSecrets)
-    .where(
-      and(
-        eq(projectSecrets.projectId, projectId),
-        isNull(projectSecrets.ownerUserId),
-        inArray(projectSecrets.name, TEAMS_KEYS as unknown as string[]),
-      ),
-    );
   const out: Record<string, string> = {};
-  for (const row of rows) {
-    if (!row.valueEnc) continue;
-    try {
-      out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-    }
+  for (const name of TEAMS_KEYS) {
+    const value = await readSecret(projectId, name);
+    if (value !== null) out[name] = value;
   }
   return out;
 }
 
 async function readSecret(projectId: string, name: string): Promise<string | null> {
-  const [row] = await db
-    .select({ valueEnc: projectSecrets.valueEnc })
-    .from(projectSecrets)
-    .where(
-      and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, name),
-        isNull(projectSecrets.ownerUserId),
-      ),
-    )
-    .limit(1);
-  if (!row?.valueEnc) return null;
-  try {
-    return decryptProjectSecret(projectId, row.valueEnc);
-  } catch {
-    return null;
-  }
+  return getProjectSecretValueForConsumer({
+    projectId,
+    name,
+    consumer: 'connector',
+  });
 }

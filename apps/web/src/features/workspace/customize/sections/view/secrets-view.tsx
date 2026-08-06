@@ -9,7 +9,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -38,6 +39,13 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -47,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -59,9 +68,14 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSecret,
   type ProjectSecretsResponse,
+  type SecretConsumer,
+  type SecretDeliveryStatus,
+  type SecretDeliveryStrategy,
+  type SecretEgressPolicy,
   deleteProjectSecret,
   getProjectDetail,
   listProjectSecrets,
+  setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
@@ -71,6 +85,12 @@ import {
   MagnifyingGlassIcon as Search,
   TrashIcon,
 } from '@phosphor-icons/react';
+import {
+  buildBrokerPolicy,
+  canSaveSecretDelivery,
+  secretDeliveryOptions,
+  secretDeliveryPresentation,
+} from './secret-delivery';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -93,6 +113,11 @@ interface SecretRow {
   purpose: string | null;
   canRotate: boolean;
   updatedAt: string | null;
+  strategy: SecretDeliveryStrategy;
+  consumer: SecretConsumer | null;
+  deliveryStatus: SecretDeliveryStatus;
+  egressPolicy: SecretEgressPolicy | null;
+  requiresRotation: boolean;
 }
 
 export function SecretsView({ projectId }: { projectId: string }) {
@@ -163,10 +188,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
   return (
     <>
       <CustomizeSectionWrapper
-        title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
-        description={tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
-        )}
+        title="Secrets"
+        description="Store encrypted values and control where each value can be used."
         action={
           !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
             <div className="flex items-center gap-1.5">
@@ -260,7 +283,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead>Identifier</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Access</TableHead>
                       <TableHead className="w-[52px]">
                         <span className="sr-only">Actions</span>
                       </TableHead>
@@ -282,6 +306,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               )}
 
               <SecretDialog
+                key={dialogOpen ? (dialogRow?.identifier ?? 'new') : 'closed'}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
                 projectId={projectId}
@@ -365,6 +390,11 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     purpose: item.purpose ?? null,
     canRotate: Boolean(item.can_rotate),
     updatedAt: item.updated_at ?? null,
+    strategy: item.strategy ?? 'runtime',
+    consumer: item.consumer ?? (item.strategy === 'denied' ? null : 'sandbox'),
+    deliveryStatus: item.delivery_status ?? (item.strategy === 'denied' ? 'disabled' : 'available'),
+    egressPolicy: item.egress_policy ?? null,
+    requiresRotation: Boolean(item.requires_rotation),
   });
 
   const rows: SecretRow[] = [];
@@ -388,6 +418,11 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
       purpose: null,
       canRotate: false,
       updatedAt: null,
+      strategy: 'runtime',
+      consumer: 'sandbox',
+      deliveryStatus: 'available',
+      egressPolicy: null,
+      requiresRotation: false,
     });
   }
 
@@ -421,6 +456,7 @@ function SecretTableRow({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
+  const delivery = secretDeliveryPresentation(row.strategy, row.consumer);
 
   return (
     <TableRow
@@ -453,6 +489,16 @@ function SecretTableRow({
       </TableCell>
       <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
         {statusLabel(row)}
+      </TableCell>
+      <TableCell className="max-w-[220px] whitespace-normal">
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={delivery.tone} size="xs">
+            {delivery.label}
+          </Badge>
+          {row.requiresRotation && (
+            <span className="text-kortix-orange text-[11px] font-medium">Rotation required</span>
+          )}
+        </div>
       </TableCell>
       <TableCell>
         {!canManageShared ? null : (
@@ -507,21 +553,52 @@ function SecretDialog({
   onSaved: () => void;
 }) {
   const isEdit = row !== null;
-  const [identifier, setIdentifier] = useState('');
-  const [key, setKey] = useState('');
+  const [identifier, setIdentifier] = useState(row?.identifier ?? '');
+  const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
+  const [strategy, setStrategy] = useState<SecretDeliveryStrategy>(row?.strategy ?? 'runtime');
+  const [brokerConsumer, setBrokerConsumer] = useState<
+    'llm_gateway' | 'connector' | 'executor' | 'http_broker'
+  >(
+    row?.consumer === 'llm_gateway' ||
+      row?.consumer === 'connector' ||
+      row?.consumer === 'executor'
+      ? row.consumer
+      : 'http_broker',
+  );
+  const currentPolicy = row?.egressPolicy;
+  const currentInjection = currentPolicy?.inject;
+  const [brokerHosts, setBrokerHosts] = useState(
+    currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
+  );
+  const [brokerMethods, setBrokerMethods] = useState(
+    currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
+  );
+  const [brokerPath, setBrokerPath] = useState(currentPolicy?.rules[0]?.path ?? '/');
+  const [injectionKind, setInjectionKind] = useState<'header' | 'query' | 'json_body_field'>(
+    currentInjection?.kind ?? 'header',
+  );
+  const [injectionTarget, setInjectionTarget] = useState(
+    currentInjection?.kind === 'json_body_field'
+      ? currentInjection.path
+      : (currentInjection?.name ?? 'authorization'),
+  );
+  const [injectionTemplate, setInjectionTemplate] = useState(
+    currentInjection?.kind === 'header' ? (currentInjection.template ?? '') : '',
+  );
 
   const requiresValue = !row?.configured;
-
-  useEffect(() => {
-    if (!open) return;
-    setIdentifier(row?.identifier ?? '');
-    setKey(row?.key ?? '');
-    setValue('');
-  }, [open, row]);
+  const brokerPolicy = buildBrokerPolicy({
+    hosts: brokerHosts,
+    methods: brokerMethods,
+    path: brokerPath,
+    injectionKind,
+    injectionTarget,
+    template: injectionTemplate,
+  });
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const finalKey = (row?.key ?? key).trim().toUpperCase();
       const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
       if (!SECRET_NAME_REGEX.test(finalKey)) {
@@ -536,11 +613,48 @@ function SecretDialog({
       if (finalKey.startsWith('KORTIX_')) {
         throw new Error('KORTIX_* keys are reserved for platform variables');
       }
-      return upsertProjectSecret(projectId, {
-        name: finalKey,
-        identifier: finalIdentifier,
-        ...(value.trim() ? { value } : {}),
-      });
+      if (strategy === 'runtime' && row?.requiresRotation && !value.trim()) {
+        throw new Error('Enter a new value before making this secret readable in the sandbox.');
+      }
+      if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
+        throw new Error('Complete the broker destination and credential placement.');
+      }
+
+      const nextConsumer: SecretConsumer | null =
+        strategy === 'runtime'
+          ? 'sandbox'
+          : strategy === 'denied'
+            ? null
+            : strategy === 'egress'
+              ? 'network'
+              : brokerConsumer;
+      const hasValueChange = Boolean(value.trim()) || !row?.configured;
+      if (hasValueChange) {
+        await upsertProjectSecret(projectId, {
+          name: finalKey,
+          identifier: finalIdentifier,
+          ...(value.trim() ? { value } : {}),
+          strategy,
+          consumer: nextConsumer,
+          ...(strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+            ? { egress_policy: brokerPolicy }
+            : {}),
+        });
+        return null;
+      }
+      if (
+        strategy !== (row?.strategy ?? 'runtime') ||
+        nextConsumer !== (row?.consumer ?? 'sandbox') ||
+        strategy === 'broker'
+      ) {
+        return setProjectSecretStrategy(projectId, finalIdentifier, strategy, {
+          consumer: nextConsumer,
+          ...(strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+            ? { egress_policy: brokerPolicy }
+            : {}),
+        });
+      }
+      return null;
     },
     onSuccess: () => {
       successToast(
@@ -564,6 +678,29 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
+  const selectedDelivery = secretDeliveryPresentation(
+    strategy,
+    strategy === 'broker' ? brokerConsumer : undefined,
+  );
+  const deliveryOptions = secretDeliveryOptions(strategy, row?.deliveryStatus ?? 'available');
+  const canSave = canSaveSecretDelivery({
+    isEdit,
+    key,
+    value,
+    requiresValue,
+    requiresRotation: Boolean(row?.requiresRotation),
+    currentStrategy: row?.strategy ?? 'runtime',
+    nextStrategy: strategy,
+    nextConsumer:
+      strategy === 'runtime'
+        ? 'sandbox'
+        : strategy === 'denied'
+          ? null
+          : strategy === 'egress'
+            ? 'network'
+            : brokerConsumer,
+    brokerPolicyValid: brokerPolicy !== null,
+  });
 
   return (
     <Modal
@@ -573,13 +710,12 @@ function SecretDialog({
         onOpenChange(next);
       }}
     >
-      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-lg">
+      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
         <ModalHeader>
           <ModalTitle>{title}</ModalTitle>
           <ModalDescription>
-            {isEdit
-              ? 'Injected as an environment variable into every session the granted agents run.'
-              : 'A profile-like secret: an identifier agents grant, a key injected as an env var, and a value.'}
+            The identifier selects this credential profile. The delivery policy controls where its
+            value can be used.
           </ModalDescription>
         </ModalHeader>
         <form onSubmit={handleSubmit} autoComplete="off">
@@ -649,6 +785,226 @@ function SecretDialog({
                 Leave the value blank to leave it unchanged.
               </p>
             )}
+
+            <Field>
+              <FieldLabel htmlFor="secret-dialog-delivery">Delivery</FieldLabel>
+              <Select
+                value={strategy}
+                onValueChange={(next) => setStrategy(next as SecretDeliveryStrategy)}
+                disabled={save.isPending}
+              >
+                <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {deliveryOptions.map((option) => (
+                    <SelectItem
+                      key={option.strategy}
+                      value={option.strategy}
+                      disabled={option.disabled}
+                      description={
+                        option.disabled
+                          ? `${option.description} Not available in this deployment.`
+                          : option.description
+                      }
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>{selectedDelivery.description}</FieldDescription>
+            </Field>
+
+            {strategy === 'runtime' && (
+              <InfoBanner tone="warning" title="Readable inside the sandbox">
+                Agent code and commands can read this value. Use this option only when the secret
+                must be available to a local process.
+              </InfoBanner>
+            )}
+
+            {strategy === 'broker' && (
+              <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Kortix service</p>
+                  <p className="text-muted-foreground text-xs">
+                    The selected service uses the value outside the sandbox.
+                  </p>
+                </div>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-broker-consumer">Used by</FieldLabel>
+                  <Select
+                    value={brokerConsumer}
+                    onValueChange={(next) =>
+                      setBrokerConsumer(
+                        next as 'llm_gateway' | 'connector' | 'executor' | 'http_broker',
+                      )
+                    }
+                    disabled={save.isPending}
+                  >
+                    <SelectTrigger id="secret-dialog-broker-consumer" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        value="llm_gateway"
+                        description="Kortix sends model requests. The sandbox receives no key."
+                      >
+                        LLM gateway
+                      </SelectItem>
+                      <SelectItem
+                        value="http_broker"
+                        description="Kortix adds the value to one approved HTTPS destination."
+                      >
+                        HTTPS broker
+                      </SelectItem>
+                      <SelectItem
+                        value="connector"
+                        description="An authorized connector uses the value. The sandbox receives no key."
+                      >
+                        Connector
+                      </SelectItem>
+                      <SelectItem
+                        value="executor"
+                        description="Server-side triggers and actions use the value. The sandbox receives no key."
+                      >
+                        Automation
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                {brokerConsumer === 'http_broker' && (
+                  <>
+                    <InfoBanner tone="neutral" title="Opaque sandbox handle">
+                      The sandbox receives a session handle. Kortix adds the real value only to a
+                      matching HTTPS request.
+                    </InfoBanner>
+
+                    <Field>
+                      <FieldLabel htmlFor="secret-dialog-broker-hosts">Allowed hosts</FieldLabel>
+                      <Textarea
+                        id="secret-dialog-broker-hosts"
+                        value={brokerHosts}
+                        onChange={(event) => setBrokerHosts(event.target.value)}
+                        placeholder={'api.example.com\n*.service.example.com'}
+                        minHeight={56}
+                        maxHeight={112}
+                        variant="outline"
+                        className="font-mono text-xs"
+                        disabled={save.isPending}
+                      />
+                      <FieldDescription>
+                        One exact host or leading wildcard per line. Kortix denies every other host.
+                      </FieldDescription>
+                    </Field>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="secret-dialog-broker-methods">Methods</FieldLabel>
+                        <Input
+                          id="secret-dialog-broker-methods"
+                          value={brokerMethods}
+                          onChange={(event) => setBrokerMethods(event.target.value.toUpperCase())}
+                          placeholder="POST"
+                          className="font-mono text-xs"
+                          disabled={save.isPending}
+                        />
+                        <FieldDescription>
+                          Comma-separated. Blank allows any method.
+                        </FieldDescription>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="secret-dialog-broker-path">Path</FieldLabel>
+                        <Input
+                          id="secret-dialog-broker-path"
+                          value={brokerPath}
+                          onChange={(event) => setBrokerPath(event.target.value)}
+                          placeholder="/v1/*"
+                          className="font-mono text-xs"
+                          disabled={save.isPending}
+                        />
+                        <FieldDescription>Exact path or one trailing /* wildcard.</FieldDescription>
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel htmlFor="secret-dialog-injection-kind">
+                          Credential location
+                        </FieldLabel>
+                        <Select
+                          value={injectionKind}
+                          onValueChange={(next) =>
+                            setInjectionKind(next as 'header' | 'query' | 'json_body_field')
+                          }
+                          disabled={save.isPending}
+                        >
+                          <SelectTrigger id="secret-dialog-injection-kind" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="header">Header</SelectItem>
+                            <SelectItem value="query">Query parameter</SelectItem>
+                            <SelectItem value="json_body_field">JSON body field</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="secret-dialog-injection-target">
+                          {injectionKind === 'header'
+                            ? 'Header name'
+                            : injectionKind === 'query'
+                              ? 'Parameter name'
+                              : 'JSON field path'}
+                        </FieldLabel>
+                        <Input
+                          id="secret-dialog-injection-target"
+                          value={injectionTarget}
+                          onChange={(event) => setInjectionTarget(event.target.value)}
+                          placeholder={
+                            injectionKind === 'header'
+                              ? 'authorization'
+                              : injectionKind === 'query'
+                                ? 'api_key'
+                                : 'auth.api_key'
+                          }
+                          className="font-mono text-xs"
+                          disabled={save.isPending}
+                        />
+                      </Field>
+                    </div>
+
+                    {injectionKind === 'header' && (
+                      <Field>
+                        <FieldLabel htmlFor="secret-dialog-injection-template">
+                          Header value template
+                        </FieldLabel>
+                        <Input
+                          id="secret-dialog-injection-template"
+                          value={injectionTemplate}
+                          onChange={(event) => setInjectionTemplate(event.target.value)}
+                          placeholder="Bearer {{secret}}"
+                          className="font-mono text-xs"
+                          disabled={save.isPending}
+                        />
+                        <FieldDescription>
+                          Optional. Include {'{{secret}}'} where Kortix inserts the value.
+                        </FieldDescription>
+                      </Field>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {row?.requiresRotation && (
+              <InfoBanner tone="warning" title="Replace the previous value">
+                An earlier sandbox may retain the previous value. Rotate it at the provider, then
+                save the replacement here.
+              </InfoBanner>
+            )}
           </ModalBody>
 
           <ModalFooter className="sm:justify-between">
@@ -666,9 +1022,7 @@ function SecretDialog({
               type="submit"
               size="sm"
               className="w-full sm:w-auto"
-              disabled={
-                (!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending
-              }
+              disabled={save.isPending || !canSave}
             >
               {save.isPending && <Loading className="size-4 shrink-0" />}
               Save

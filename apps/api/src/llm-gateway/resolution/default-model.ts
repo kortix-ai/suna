@@ -1,6 +1,6 @@
 import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
 import { connectedByokPickerModels } from '../models/picker-catalog';
-import { listProjectSecretsSnapshot } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
 import {
   type AccountModelDefaults,
@@ -100,11 +100,18 @@ export function invalidateAccountModelDefaults(accountId: string): void {
  * connected. Returns null (→ the caller's unmodified platform default) when
  * the project has no BYOK key connected at all, or has no project context.
  */
-async function connectedByokFallback(projectId: string | undefined): Promise<string | null> {
+async function connectedByokFallback(
+  projectId: string | undefined,
+  principalUserId?: string,
+): Promise<string | null> {
   if (!projectId) return null;
   try {
-    const snapshot = await listProjectSecretsSnapshot(projectId);
-    const connected = new Set(snapshot.names.map((n) => n.toUpperCase()));
+    const names = await listProjectSecretNamesForConsumer({
+      projectId,
+      principalUserId,
+      consumer: 'llm_gateway',
+    });
+    const connected = new Set(names);
     return connectedByokPickerModels(connected)[0]?.id ?? null;
   } catch {
     return null; // never let a secrets-read hiccup break default resolution
@@ -145,7 +152,7 @@ export async function resolveDefaultModelForPrincipal(
         freeModelsOnly: principal.freeModelsOnly ?? false,
         model: chosen as string,
       }),
-    () => connectedByokFallback(principal.projectId),
+    () => connectedByokFallback(principal.projectId, principal.userId),
   );
   return kept ?? undefined;
 }
@@ -251,7 +258,7 @@ export async function resolveEffectiveModel(params: {
         freeModelsOnly: params.freeModelsOnly,
         model: chain.model as string,
       }),
-    () => connectedByokFallback(params.projectId),
+    () => connectedByokFallback(params.projectId, params.userId),
   );
   if (!kept) return { model: null, source: 'platform' };
   // kept === chain.model means the originally-configured default WAS servable

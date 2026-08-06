@@ -6,7 +6,12 @@ import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
-import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
+import {
+  decryptProjectSecret,
+  encryptProjectSecret,
+  getProjectSecretValueForConsumer,
+} from '../secrets';
+import { recordAuditEvent } from '../../shared/audit';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -525,9 +530,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   if (remote.authMethod === 'project_credential') {
     const credential = await getProjectGitCredential(project.projectId, remote.provider);
     if (credential) {
+      const token = decryptProjectSecret(project.projectId, credential.valueEnc);
+      await recordAuditEvent({
+        accountId: project.accountId,
+        projectId: project.projectId,
+        action: 'secret.consumer.used',
+        resourceType: 'project_git_credential',
+        resourceId: credential.credentialId,
+        source: 'git_proxy',
+        metadata: { provider: remote.provider, consumer: 'git_proxy' },
+      });
       return {
         auth: {
-          token: decryptProjectSecret(project.projectId, credential.valueEnc),
+          token,
           source: 'project_credential',
         },
         authSource: 'project_credential',
@@ -535,7 +550,12 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
-  const legacyToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
+  const legacyToken = await getProjectSecretValueForConsumer({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    name: PROJECT_GIT_AUTH_SECRET_NAME,
+    consumer: 'git_proxy',
+  });
   if (legacyToken) {
     return {
       auth: {

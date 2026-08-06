@@ -81,13 +81,13 @@ describe('formatItemAge', () => {
 });
 
 describe('isQuickDecidableApproval', () => {
-  test('a single-action executor approval is quick-decidable', () => {
+  test('a single-action executor approval requires the parameter-review modal', () => {
     expect(
       isQuickDecidableApproval({ kind: 'approval', id: 'exec:e1', detail: { actions: [{}] } }),
-    ).toBe(true);
+    ).toBe(false);
   });
-  test('an approval with no detail (defensive) is quick-decidable', () => {
-    expect(isQuickDecidableApproval({ kind: 'approval', id: 'exec:e1' })).toBe(true);
+  test('an approval with no detail is not quick-decidable', () => {
+    expect(isQuickDecidableApproval({ kind: 'approval', id: 'exec:e1' })).toBe(false);
   });
   test('a multi-action approval needs the modal', () => {
     expect(
@@ -130,21 +130,22 @@ describe('resolveBulkOutcome', () => {
     expect(out.skippedRisky).toEqual([]);
   });
 
-  test('approve sweeps only safe exec approvals; risky ones are skipped', () => {
+  test('approve sweeps never answer executor approvals without individual parameter review', () => {
     const out = resolveBulkOutcome(
       ['exec:safe', 'exec:risky', 'rv-1'],
       'approve',
       risk({ 'exec:safe': 'low', 'exec:risky': 'high' }),
     );
-    expect(out.act).toEqual(['exec:safe', 'rv-1']);
-    expect(out.skippedRisky).toEqual(['exec:risky']);
-    expect(out.skippedApprovals).toEqual([]);
+    expect(out.act).toEqual(['rv-1']);
+    expect(out.skippedRisky).toEqual([]);
+    expect(out.skippedApprovals).toEqual(['exec:safe', 'exec:risky']);
   });
 
-  test('an exec approval with unknown risk is treated as risky on approve', () => {
+  test('an exec approval with unknown risk still requires individual review', () => {
     const out = resolveBulkOutcome(['exec:mystery'], 'approve', risk({}));
     expect(out.act).toEqual([]);
-    expect(out.skippedRisky).toEqual(['exec:mystery']);
+    expect(out.skippedRisky).toEqual([]);
+    expect(out.skippedApprovals).toEqual(['exec:mystery']);
   });
 
   test('Change Requests are skipped under any verdict', () => {

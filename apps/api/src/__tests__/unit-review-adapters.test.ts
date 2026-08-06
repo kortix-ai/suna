@@ -75,7 +75,10 @@ describe('executorExecutionToReviewItem', () => {
     expect(item.kind).toBe('approval');
     expect(item.status).toBe('needs_you');
     expect(item.title).toBe('Approve: gmail.messages.send');
-    expect(item.detail).toMatchObject({ execution_id: 'ex-1', action_path: 'gmail.messages.send' });
+    expect(item.detail).toMatchObject({
+      execution_id: 'ex-1',
+      action_path: 'gmail.messages.send',
+    });
   });
 
   test('maps executor risk → review risk (read/write/destructive → low/medium/high)', () => {
@@ -83,6 +86,47 @@ describe('executorExecutionToReviewItem', () => {
     expect(executorExecutionToReviewItem({ ...baseExec, risk: 'write' }).risk).toBe('medium');
     expect(executorExecutionToReviewItem({ ...baseExec, risk: 'destructive' }).risk).toBe('high');
     expect(executorExecutionToReviewItem({ ...baseExec, risk: null }).risk).toBe('medium');
+  });
+
+  test('carries the complete redacted parameter preview into Review Center', () => {
+    const argsPreview = {
+      to: ['reviewer@example.com'],
+      subject: 'Approval contract',
+      body: 'The approver must see this body before deciding.',
+      access_token: '[redacted]',
+    };
+    const item = executorExecutionToReviewItem(
+      {
+        ...baseExec,
+        resultSummary: {
+          args_preview: argsPreview,
+          args_preview_complete: true,
+        },
+      },
+      { includeArgsPreview: true },
+    );
+
+    expect(item.detail).toMatchObject({
+      args_preview: argsPreview,
+      args_preview_complete: true,
+      args_preview_authorized: true,
+    });
+  });
+
+  test('withholds sensitive parameters when the caller lacks approval authority', () => {
+    const item = executorExecutionToReviewItem({
+      ...baseExec,
+      resultSummary: {
+        args_preview: { to: ['private@example.com'], body: 'private body' },
+        args_preview_complete: true,
+      },
+    });
+
+    expect(item.detail).not.toHaveProperty('args_preview');
+    expect(item.detail).toMatchObject({
+      args_preview_complete: false,
+      args_preview_authorized: false,
+    });
   });
 });
 
@@ -94,7 +138,11 @@ describe('changeRequestToReviewItem', () => {
     expect(item.status).toBe('needs_you');
     expect(item.title).toBe('Refresh the pricing page');
     expect(item.summary).toBe('#7 · session/pricing → main');
-    expect(item.detail).toMatchObject({ cr_id: 'cr-1', number: 7, base_ref: 'main' });
+    expect(item.detail).toMatchObject({
+      cr_id: 'cr-1',
+      number: 7,
+      base_ref: 'main',
+    });
     expect(item.acted_at).toBeNull();
     expect(item.created_at).toBe('2026-06-30T10:00:00.000Z');
   });
@@ -112,7 +160,11 @@ describe('changeRequestToReviewItem', () => {
   });
 
   test('a closed CR maps to rejected', () => {
-    const item = changeRequestToReviewItem({ ...baseCr, status: 'closed', closedBy: 'user-3' });
+    const item = changeRequestToReviewItem({
+      ...baseCr,
+      status: 'closed',
+      closedBy: 'user-3',
+    });
     expect(item.status).toBe('rejected');
     expect(item.acted_by).toBe('user-3');
   });
@@ -122,8 +174,16 @@ describe('changeRequestToReviewItem', () => {
       ...baseCr,
       metadata: {
         requested_changes: [
-          { text: 'Fix the first one', by: 'user-9', at: '2026-06-30T11:00:00.000Z' },
-          { text: 'Capitalize each word', by: 'user-9', at: '2026-06-30T12:00:00.000Z' },
+          {
+            text: 'Fix the first one',
+            by: 'user-9',
+            at: '2026-06-30T11:00:00.000Z',
+          },
+          {
+            text: 'Capitalize each word',
+            by: 'user-9',
+            at: '2026-06-30T12:00:00.000Z',
+          },
         ],
       },
     });

@@ -1,6 +1,6 @@
 {
   "id": "de5bcfa2-3f63-46fa-a68f-66f313266790",
-  "prevId": "ecc6445c-ff87-4ad9-8eee-09693ed61ddb",
+  "prevId": "9c81cd82-4b10-4b23-8f4b-f47eec427e0a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9855,6 +9855,14 @@
           "notNull": true,
           "default": "'runtime'"
         },
+        "consumer": {
+          "name": "consumer",
+          "type": "project_secret_consumer",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'sandbox'"
+        },
         "egress_policy": {
           "name": "egress_policy",
           "type": "jsonb",
@@ -16825,6 +16833,19 @@
         "editor",
         "member",
         "viewer"
+      ]
+    },
+    "kortix.project_secret_consumer": {
+      "name": "project_secret_consumer",
+      "schema": "kortix",
+      "values": [
+        "sandbox",
+        "llm_gateway",
+        "connector",
+        "executor",
+        "git_proxy",
+        "http_broker",
+        "network"
       ]
     },
     "kortix.project_secret_handle_status": {

@@ -53,6 +53,7 @@ import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
 import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector-authorization-strategy';
+import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
@@ -366,6 +367,7 @@ function toGatewayConnector(
   const { auth, hasAuth } = authOf(row);
   return {
     connectorId: row.connectorId,
+    authSecret: row.authSecret,
     profileId: profile?.profileId ?? null,
     profileIsDefault: profile?.isDefault ?? false,
     profileMetadata: profile?.metadata ?? {},
@@ -474,9 +476,20 @@ export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
         if (credential !== null) return credential;
         if (!connector.profileIsDefault) return null;
       }
-      return connector.profileIsDefault || !connector.profileId
-        ? resolveCredentialValue(connector.connectorId, userId)
-        : null;
+      const storedCredential =
+        connector.profileIsDefault || !connector.profileId
+          ? await resolveCredentialValue(connector.connectorId, userId)
+          : null;
+      if (storedCredential !== null) return storedCredential;
+      if (!connector.authSecret) return null;
+      return getProjectSecretValueForConsumer({
+        projectId: principal.projectId,
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+        actorUserId: principal.userId,
+        name: connector.authSecret,
+        consumer: 'connector',
+      });
     },
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding

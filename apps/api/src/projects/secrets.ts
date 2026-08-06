@@ -1,19 +1,17 @@
-import {
-  createHash,
-  createCipheriv,
-  createDecipheriv,
-  hkdfSync,
-  randomBytes,
-} from 'node:crypto';
+import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
 import { config } from '../config';
+import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
 import {
   type SecretEgressPolicy,
+  type SecretConsumer,
   type SecretStrategy,
   emitsValue,
+  mintHandle,
+  newLookupId,
   resolveSecretDelivery,
 } from '../secrets/strategy';
 
@@ -72,17 +70,19 @@ export function encryptProjectSecret(projectId: string, value: string): string {
   const cipher = createCipheriv('aes-256-gcm', projectSecretKey(projectId), iv, {
     authTagLength: GCM_AUTH_TAG_LENGTH,
   });
-  const ciphertext = Buffer.concat([
-    cipher.update(value, 'utf8'),
-    cipher.final(),
-  ]);
+  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${ENVELOPE_VERSION}:${b64url(iv)}:${b64url(tag)}:${b64url(ciphertext)}`;
 }
 
 export function decryptProjectSecret(projectId: string, valueEnc: string): string {
   const [version, ivB64, tagB64, ciphertextB64] = valueEnc.split(':');
-  if (version !== ENVELOPE_VERSION || !ivB64 || !tagB64 || !ciphertextB64) {
+  if (
+    version !== ENVELOPE_VERSION ||
+    !ivB64 ||
+    !tagB64 ||
+    ciphertextB64 === undefined
+  ) {
     throw new Error('Unsupported project secret envelope');
   }
   const tag = fromB64url(tagB64);
@@ -93,10 +93,9 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
     authTagLength: GCM_AUTH_TAG_LENGTH,
   });
   decipher.setAuthTag(tag);
-  return Buffer.concat([
-    decipher.update(fromB64url(ciphertextB64)),
-    decipher.final(),
-  ]).toString('utf8');
+  return Buffer.concat([decipher.update(fromB64url(ciphertextB64)), decipher.final()]).toString(
+    'utf8',
+  );
 }
 
 /**
@@ -186,6 +185,8 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
  * per-user provider login — see project_secrets.ownerUserId doc comment).
  */
 export interface ResolvedProjectSecret {
+  /** Shared policy row id. Handles always reference this row. */
+  secretId: string;
   identifier: string;
   key: string;
   value: string;
@@ -193,6 +194,8 @@ export interface ResolvedProjectSecret {
    *  existed; `resolveSecretDelivery` reads absence as "no opinion", NOT as
    *  `runtime`, so an older row cannot silently downgrade a narrowed one. */
   strategy?: SecretStrategy;
+  /** The only service allowed to receive plaintext. */
+  consumer?: SecretConsumer | null;
   egressPolicy?: SecretEgressPolicy | null;
   handlePrefix?: string | null;
 }
@@ -210,6 +213,7 @@ export async function listResolvedProjectSecrets(
 ): Promise<ResolvedProjectSecret[]> {
   const rows = await db
     .select({
+      secretId: projectSecrets.secretId,
       identifier: projectSecrets.identifier,
       name: projectSecrets.name,
       valueEnc: projectSecrets.valueEnc,
@@ -217,15 +221,20 @@ export async function listResolvedProjectSecrets(
       ownerUserId: projectSecrets.ownerUserId,
       active: projectSecrets.active,
       strategy: projectSecrets.strategy,
+      consumer: projectSecrets.consumer,
       egressPolicy: projectSecrets.egressPolicy,
       handlePrefix: projectSecrets.handlePrefix,
     })
     .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.scope, 'runtime'),
-      userId ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)) : isNull(projectSecrets.ownerUserId),
-    ));
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.scope, 'runtime'),
+        userId
+          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
+          : isNull(projectSecrets.ownerUserId),
+      ),
+    );
 
   type Row = (typeof rows)[number];
   const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
@@ -241,13 +250,16 @@ export async function listResolvedProjectSecrets(
   for (const [identifier, slot] of byIdentifier) {
     const chosen = slot.personal && slot.personal.active ? slot.personal : slot.shared;
     if (!chosen) continue;
+    const policyRow = slot.shared ?? chosen;
     out.push({
+      secretId: policyRow.secretId,
       identifier,
       key: chosen.name,
       value: decryptProjectSecret(projectId, chosen.valueEnc),
-      strategy: chosen.strategy ?? undefined,
-      egressPolicy: chosen.egressPolicy ?? null,
-      handlePrefix: chosen.handlePrefix ?? null,
+      strategy: policyRow.strategy ?? undefined,
+      consumer: policyRow.consumer ?? undefined,
+      egressPolicy: policyRow.egressPolicy ?? null,
+      handlePrefix: policyRow.handlePrefix ?? null,
     });
   }
   return out;
@@ -288,10 +300,14 @@ export class AmbiguousSecretGrantError extends Error {
  *     KEY is an AmbiguousSecretGrantError — a deliberate list naming both is a
  *     misconfiguration, not something to silently resolve.
  */
-export function resolveGrantedSecretEnv(
+function resolveGrantedSecretSelection(
   rows: ResolvedProjectSecret[],
   grant: string[] | 'all' | undefined,
-): { env: Record<string, string>; identifiers: string[] } {
+): {
+  env: Record<string, string>;
+  identifiers: string[];
+  selected: ResolvedProjectSecret[];
+} {
   const allowAll = grant === undefined || grant === 'all';
   const allowSet = allowAll ? null : new Set(grant.map((g) => g.toUpperCase()));
   const allowed = allowAll ? rows : rows.filter((r) => allowSet!.has(r.identifier.toUpperCase()));
@@ -304,22 +320,30 @@ export function resolveGrantedSecretEnv(
   }
 
   const env: Record<string, string> = {};
+  const selected: ResolvedProjectSecret[] = [];
   for (const [key, candidates] of byKey) {
     if (candidates.length === 1) {
       env[key] = candidates[0]!.value;
+      selected.push(candidates[0]!);
       continue;
     }
     if (!allowAll) {
-      throw new AmbiguousSecretGrantError(
-        key,
-        candidates.map((c) => c.identifier).sort(),
-      );
+      throw new AmbiguousSecretGrantError(key, candidates.map((c) => c.identifier).sort());
     }
     const winner = [...candidates].sort((a, b) => a.identifier.localeCompare(b.identifier))[0]!;
     env[key] = winner.value;
+    selected.push(winner);
   }
 
-  return { env, identifiers: allowed.map((r) => r.identifier) };
+  return { env, identifiers: allowed.map((r) => r.identifier), selected };
+}
+
+export function resolveGrantedSecretEnv(
+  rows: ResolvedProjectSecret[],
+  grant: string[] | 'all' | undefined,
+): { env: Record<string, string>; identifiers: string[] } {
+  const { env, identifiers } = resolveGrantedSecretSelection(rows, grant);
+  return { env, identifiers };
 }
 
 // Single source of truth in @kortix/api-contract (route-contract validation);
@@ -346,7 +370,10 @@ export function parseSessionSecretsAllowlist(
   }
   for (const entry of raw) {
     if (typeof entry !== 'string' || !isValidIdentifier(entry)) {
-      return { ok: false, error: `invalid secret identifier: ${String(entry)}` };
+      return {
+        ok: false,
+        error: `invalid secret identifier: ${String(entry)}`,
+      };
     }
   }
   return { ok: true, value: raw as string[] };
@@ -518,6 +545,160 @@ export function withholdUndeliverable(
   }
 }
 
+export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>;
+
+/**
+ * Replace selected plaintext values with delivery-safe material.
+ *
+ * `rows` contains one deterministic winner per env key. The function mutates
+ * the caller-owned map. It never adds a key that the grant resolver excluded.
+ */
+export async function materializeSecretDelivery(
+  rows: ResolvedProjectSecret[],
+  env: Record<string, string>,
+  input: {
+    sessionId: string | null;
+    grantEnv: string[] | 'all' | undefined;
+    mintHandleFor: SecretHandleMinter;
+  },
+): Promise<void> {
+  for (const row of rows) {
+    if (!(row.key in env)) continue;
+    const delivery = resolveSecretDelivery({
+      identifier: row.identifier,
+      strategy: row.strategy,
+      sessionId: input.sessionId,
+      agentGrantEnv: input.grantEnv ?? null,
+      sessionAllowlist: null,
+    });
+    const consumer =
+      row.consumer ??
+      (delivery.strategy === 'runtime'
+        ? 'sandbox'
+        : row.egressPolicy?.backend === 'kortix_fetch'
+          ? 'http_broker'
+          : (row.egressPolicy?.backend ?? null));
+    if (delivery.emit === 'plaintext' && consumer === 'sandbox') continue;
+    if (
+      delivery.emit === 'handle' &&
+      delivery.strategy === 'broker' &&
+      consumer === 'http_broker' &&
+      row.egressPolicy?.backend === 'kortix_fetch'
+    ) {
+      env[row.key] = await input.mintHandleFor(row);
+      continue;
+    }
+    delete env[row.key];
+  }
+}
+
+async function mintSessionSecretHandle(
+  projectId: string,
+  sessionId: string,
+  row: ResolvedProjectSecret,
+): Promise<string> {
+  const egressPolicy = row.egressPolicy;
+  if (!egressPolicy) throw new Error('Managed secret delivery requires a policy');
+
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`${sessionId}:${row.secretId}`}, 0))`,
+    );
+    const [session] = await tx
+      .select({ accountId: projectSessions.accountId })
+      .from(projectSessions)
+      .where(
+        and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
+      )
+      .limit(1);
+    if (!session) throw new Error('Cannot mint a secret handle without its project session');
+
+    const [latest] = await tx
+      .select()
+      .from(projectSessionSecretHandles)
+      .where(
+        and(
+          eq(projectSessionSecretHandles.sessionId, sessionId),
+          eq(projectSessionSecretHandles.secretId, row.secretId),
+        ),
+      )
+      .orderBy(desc(projectSessionSecretHandles.revision))
+      .limit(1);
+
+    const policyMatches =
+      latest && JSON.stringify(latest.policySnapshot) === JSON.stringify(egressPolicy);
+    const notExpired = !latest?.expiresAt || latest.expiresAt.getTime() > Date.now();
+    if (latest?.status === 'active' && policyMatches && notExpired) {
+      const handle = mintHandle({
+        lookupId: latest.lookupId,
+        prefix: row.handlePrefix,
+        rootSecret: config.API_KEY_SECRET,
+      });
+      const hash = createHash('sha256').update(handle).digest('hex');
+      if (hash !== latest.handleHash) {
+        await tx
+          .update(projectSessionSecretHandles)
+          .set({ status: 'revoked', revokedAt: new Date() })
+          .where(eq(projectSessionSecretHandles.handleId, latest.handleId));
+        throw new Error('Stored secret handle integrity check failed');
+      }
+      return {
+        handle,
+        issued: false,
+        accountId: session.accountId,
+        revision: latest.revision,
+      };
+    }
+
+    if (latest?.status === 'active') {
+      await tx
+        .update(projectSessionSecretHandles)
+        .set({ status: 'superseded' })
+        .where(eq(projectSessionSecretHandles.handleId, latest.handleId));
+    }
+    const revision = (latest?.revision ?? 0) + 1;
+    const lookupId = newLookupId(randomBytes(20));
+    const handle = mintHandle({
+      lookupId,
+      prefix: row.handlePrefix,
+      rootSecret: config.API_KEY_SECRET,
+    });
+    await tx.insert(projectSessionSecretHandles).values({
+      projectId,
+      sessionId,
+      secretId: row.secretId,
+      identifier: row.identifier,
+      envName: row.key,
+      lookupId,
+      handleHash: createHash('sha256').update(handle).digest('hex'),
+      revision,
+      policySnapshot: egressPolicy,
+      status: 'active',
+    });
+    return { handle, issued: true, accountId: session.accountId, revision };
+  });
+
+  if (result.issued) {
+    await recordAuditEvent({
+      accountId: result.accountId,
+      projectId,
+      sessionId,
+      actorType: 'system',
+      source: 'system',
+      action: 'secret.handle.issued',
+      resourceType: 'project_secret',
+      resourceId: row.secretId,
+      metadata: {
+        identifier: row.identifier,
+        consumer: 'http_broker',
+        strategy: 'broker',
+        revision: result.revision,
+      },
+    });
+  }
+  return result.handle;
+}
+
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,
   userId: string | null,
@@ -525,20 +706,15 @@ export async function listProjectSecretsSnapshotForUser(
   sessionId?: string | null,
 ): Promise<{ env: Record<string, string>; names: string[]; revision: string }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env, identifiers } = resolveGrantedSecretEnv(rows, grantEnv);
-
-  // Only the GRANTED rows may vote on a shared KEY. Passing the full resolved
-  // set let an UNGRANTED sibling keep a key alive for a denied one: identifiers
-  // A ('denied') and B ('runtime') share KEY X, B is outside the agent grant so
-  // it contributed nothing to `env`, yet it still marked X deliverable — and X
-  // held A's plaintext. A row that could not put a value in the map must not be
-  // able to keep one there.
-  const granted = new Set(identifiers.map((id) => id.toUpperCase()));
-  withholdUndeliverable(
-    rows.filter((row) => granted.has(row.identifier.toUpperCase())),
-    env,
-    sessionId ?? null,
-  );
+  const { env, selected } = resolveGrantedSecretSelection(rows, grantEnv);
+  await materializeSecretDelivery(selected, env, {
+    sessionId: sessionId ?? null,
+    grantEnv,
+    mintHandleFor: async (row) => {
+      if (!sessionId) throw new Error('Secret handle delivery requires a session');
+      return mintSessionSecretHandle(projectId, sessionId, row);
+    },
+  });
 
   const names = Object.keys(env).sort();
   return { env, names, revision: projectSecretsRevision(env) };
@@ -550,18 +726,318 @@ export async function getProjectSecretValue(
 ): Promise<string | null> {
   const normalizedName = name.trim().toUpperCase();
   const rows = await db
-    .select({ identifier: projectSecrets.identifier, valueEnc: projectSecrets.valueEnc, updatedAt: projectSecrets.updatedAt })
+    .select({
+      identifier: projectSecrets.identifier,
+      valueEnc: projectSecrets.valueEnc,
+      updatedAt: projectSecrets.updatedAt,
+    })
     .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, normalizedName),
-      isNull(projectSecrets.ownerUserId),
-    ));
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, normalizedName),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
   if (rows.length === 0) return null;
   // Deterministic pick when multiple identifiers share this key: the canonical
   // (identifier === key) row wins, else the most-recently-updated one.
   const canonical = rows.find((r) => r.identifier === normalizedName);
-  const row = canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
+  const row =
+    canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
   return decryptProjectSecret(projectId, row.valueEnc);
 }
 
+export interface ProjectSecretConsumerRead {
+  projectId: string;
+  accountId?: string;
+  sessionId?: string | null;
+  actorUserId?: string | null;
+  /** Select this user's active personal override before the shared value. */
+  principalUserId?: string | null;
+  name: string;
+  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+}
+
+export interface ProjectSecretConsumerValue {
+  accountId: string;
+  secretId: string;
+  identifier: string;
+  ownerUserId: string | null;
+  updatedAt: Date;
+  value: string;
+}
+
+export async function projectSecretIsConfiguredForConsumer(input: {
+  projectId: string;
+  name: string;
+  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+}): Promise<boolean> {
+  const normalizedName = input.name.trim().toUpperCase();
+  const rows = await db
+    .select({
+      scope: projectSecrets.scope,
+      strategy: projectSecrets.strategy,
+      consumer: projectSecrets.consumer,
+      active: projectSecrets.active,
+    })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, input.projectId),
+        eq(projectSecrets.name, normalizedName),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
+  return rows.some(
+    (row) =>
+      row.active &&
+      (input.consumer === 'connector'
+        ? row.scope === 'connector' ||
+          (row.strategy === 'broker' && row.consumer === 'connector')
+        : row.strategy === 'broker' && row.consumer === input.consumer),
+  );
+}
+
+export async function listProjectSecretNamesForConsumer(input: {
+  projectId: string;
+  principalUserId?: string | null;
+  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+}): Promise<string[]> {
+  const rows = await db
+    .select({
+      identifier: projectSecrets.identifier,
+      name: projectSecrets.name,
+      scope: projectSecrets.scope,
+      strategy: projectSecrets.strategy,
+      consumer: projectSecrets.consumer,
+      ownerUserId: projectSecrets.ownerUserId,
+      active: projectSecrets.active,
+    })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, input.projectId),
+        input.principalUserId
+          ? or(
+              isNull(projectSecrets.ownerUserId),
+              eq(projectSecrets.ownerUserId, input.principalUserId),
+            )
+          : isNull(projectSecrets.ownerUserId),
+      ),
+    );
+
+  type Row = (typeof rows)[number];
+  const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
+  for (const row of rows) {
+    const slot = byIdentifier.get(row.identifier) ?? {};
+    if (row.ownerUserId === null) slot.shared = row;
+    else if (row.ownerUserId === input.principalUserId) slot.personal = row;
+    byIdentifier.set(row.identifier, slot);
+  }
+
+  const names = new Set<string>();
+  for (const slot of byIdentifier.values()) {
+    const selected = slot.personal?.active ? slot.personal : slot.shared;
+    if (!selected?.active || selected.name.toUpperCase().startsWith('KORTIX_')) continue;
+    const policy = slot.shared ?? selected;
+    const configured =
+      input.consumer === 'connector'
+        ? (policy.strategy === 'broker' && policy.consumer === 'connector') ||
+          (policy.scope === 'connector' &&
+            (policy.consumer === 'connector' || policy.consumer === 'sandbox'))
+        : policy.strategy === 'broker' && policy.consumer === input.consumer;
+    if (configured) names.add(selected.name.toUpperCase());
+  }
+  return [...names].sort();
+}
+
+/** Resolve up to maxValues in deterministic fallback order. */
+async function resolveProjectSecretValuesForConsumer(
+  input: ProjectSecretConsumerRead,
+  maxValues: number,
+): Promise<ProjectSecretConsumerValue[]> {
+  const accountId =
+    input.accountId ??
+    (
+      await db
+        .select({ accountId: projects.accountId })
+        .from(projects)
+        .where(eq(projects.projectId, input.projectId))
+        .limit(1)
+    )[0]?.accountId;
+  if (!accountId) return [];
+  const normalizedName = input.name.trim().toUpperCase();
+  const rows = await db
+    .select({
+      secretId: projectSecrets.secretId,
+      identifier: projectSecrets.identifier,
+      ownerUserId: projectSecrets.ownerUserId,
+      valueEnc: projectSecrets.valueEnc,
+      scope: projectSecrets.scope,
+      active: projectSecrets.active,
+      strategy: projectSecrets.strategy,
+      consumer: projectSecrets.consumer,
+      updatedAt: projectSecrets.updatedAt,
+    })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, input.projectId),
+        eq(projectSecrets.name, normalizedName),
+        input.principalUserId
+          ? or(
+              isNull(projectSecrets.ownerUserId),
+              eq(projectSecrets.ownerUserId, input.principalUserId),
+            )
+          : isNull(projectSecrets.ownerUserId),
+      ),
+    );
+  if (rows.length === 0) {
+    await recordAuditEvent({
+      accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      actorUserId: input.actorUserId,
+      actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
+      source: input.consumer,
+      outcome: 'denied',
+      action: 'secret.consumer.missing',
+      resourceType: 'project_secret',
+      metadata: { name: normalizedName, consumer: input.consumer },
+    });
+    return [];
+  }
+
+  type Row = (typeof rows)[number];
+  const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
+  for (const row of rows) {
+    const slot = byIdentifier.get(row.identifier) ?? {};
+    if (row.ownerUserId === null) slot.shared = row;
+    else if (row.ownerUserId === input.principalUserId) slot.personal = row;
+    byIdentifier.set(row.identifier, slot);
+  }
+
+  const selectedRows = [...byIdentifier.entries()]
+    .map(([identifier, slot]) => ({
+      identifier,
+      row: slot.personal?.active ? slot.personal : (slot.shared ?? slot.personal),
+      policyRow: slot.shared ?? slot.personal,
+    }))
+    .filter(
+      (entry): entry is { identifier: string; row: Row; policyRow: Row } =>
+        Boolean(entry.row && entry.policyRow),
+    )
+    .sort((a, b) => {
+      if (a.identifier === normalizedName) return -1;
+      if (b.identifier === normalizedName) return 1;
+      const updatedDifference = b.row.updatedAt.getTime() - a.row.updatedAt.getTime();
+      return updatedDifference || a.identifier.localeCompare(b.identifier);
+    });
+
+  const resolved: ProjectSecretConsumerValue[] = [];
+  for (const { row, policyRow } of selectedRows) {
+    const allowed =
+      row.active &&
+      (input.consumer === 'connector'
+        ? (policyRow.strategy === 'broker' && policyRow.consumer === 'connector') ||
+          (policyRow.scope === 'connector' &&
+            (policyRow.consumer === 'connector' || policyRow.consumer === 'sandbox'))
+        : policyRow.strategy === 'broker' && policyRow.consumer === input.consumer);
+    if (!allowed) {
+      await recordAuditEvent({
+        accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        actorUserId: input.actorUserId,
+        actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
+        source: input.consumer,
+        outcome: 'denied',
+        action: 'secret.consumer.denied',
+        resourceType: 'project_secret',
+        resourceId: row.secretId,
+        metadata: {
+          identifier: row.identifier,
+          name: normalizedName,
+          requested_consumer: input.consumer,
+          configured_consumer: policyRow.consumer,
+          strategy: policyRow.strategy,
+          value_source: row.ownerUserId ? 'personal' : 'shared',
+        },
+      });
+      continue;
+    }
+
+    let value: string;
+    try {
+      value = decryptProjectSecret(input.projectId, row.valueEnc);
+    } catch {
+      await recordAuditEvent({
+        accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        actorUserId: input.actorUserId,
+        actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
+        source: input.consumer,
+        outcome: 'failure',
+        action: 'secret.consumer.invalid',
+        resourceType: 'project_secret',
+        resourceId: row.secretId,
+        metadata: {
+          identifier: row.identifier,
+          name: normalizedName,
+          consumer: input.consumer,
+          value_source: row.ownerUserId ? 'personal' : 'shared',
+        },
+      });
+      continue;
+    }
+    await recordAuditEvent({
+      accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      actorUserId: input.actorUserId,
+      actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
+      source: input.consumer,
+      action: 'secret.consumer.used',
+      resourceType: 'project_secret',
+      resourceId: row.secretId,
+      metadata: {
+        identifier: row.identifier,
+        name: normalizedName,
+        consumer: input.consumer,
+        value_source: row.ownerUserId ? 'personal' : 'shared',
+      },
+    });
+    resolved.push({
+      accountId,
+      secretId: row.secretId,
+      identifier: row.identifier,
+      ownerUserId: row.ownerUserId,
+      updatedAt: row.updatedAt,
+      value,
+    });
+    if (resolved.length >= maxValues) break;
+  }
+  return resolved;
+}
+
+/** Resolve every authorized value for one key through its server consumer. */
+export async function resolveProjectSecretsForConsumer(
+  input: ProjectSecretConsumerRead,
+): Promise<ProjectSecretConsumerValue[]> {
+  return resolveProjectSecretValuesForConsumer(input, Number.POSITIVE_INFINITY);
+}
+
+/** Resolve the first authorized value in deterministic fallback order. */
+export async function resolveProjectSecretForConsumer(
+  input: ProjectSecretConsumerRead,
+): Promise<ProjectSecretConsumerValue | null> {
+  return (await resolveProjectSecretValuesForConsumer(input, 1))[0] ?? null;
+}
+
+export async function getProjectSecretValueForConsumer(
+  input: ProjectSecretConsumerRead,
+): Promise<string | null> {
+  return (await resolveProjectSecretForConsumer(input))?.value ?? null;
+}

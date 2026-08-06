@@ -1,6 +1,7 @@
-import { platformConfig } from './config';
+import { normalizeClientSource } from '../../platform/auth-core';
 import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
+import { platformConfig } from './config';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -169,6 +170,14 @@ async function makeRequest<T = any>(
 
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
+
+    const clientSource = normalizeClientSource(platformConfig().clientSource);
+    const hasClientSource = Object.keys(headers).some(
+      (name) => name.toLowerCase() === 'x-kortix-client',
+    );
+    if (clientSource && !hasClientSource) {
+      headers['X-Kortix-Client'] = clientSource;
+    }
 
     if (adminBypassEnabled) {
       headers['x-kortix-admin-bypass'] = '1';

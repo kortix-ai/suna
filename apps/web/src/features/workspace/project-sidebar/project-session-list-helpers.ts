@@ -1,10 +1,20 @@
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 
 /**
- * Pure helpers extracted from `project-session-list.tsx` so the sidebar's
- * sort/poll/label/time-formatting decisions and its loading/error/empty/
- * content state selection are unit-testable without mounting react-query or
- * the row components.
+ * Pure helpers extracted from `project-session-list.tsx` so every decision the
+ * sidebar session list makes is unit-testable without mounting react-query or
+ * the row components. Five decisions live here:
+ *
+ * - when to keep polling (`shouldPollProjectSessions`);
+ * - what "last activity" means and how to sort by it
+ *   (`sessionLastActivityAt`, `sortSessionsByLastActivity`);
+ * - what a row is titled, and how its timestamp is abbreviated
+ *   (`getSessionDisplayTitle`, `shortRelative`);
+ * - which of loading/error/empty/no-matches/content renders
+ *   (`resolveSessionListViewState`).
+ *
+ * Display status itself is NOT decided here — `sessionDisplayStatus` in
+ * `components/projects/session-label` owns that mapping, and this file reads it.
  */
 
 export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [

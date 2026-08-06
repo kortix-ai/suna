@@ -106,6 +106,7 @@ describe('authoritative session scope', () => {
   const current = {
     secrets_allowlist: ['PRIMARY_TOKEN'],
     connector_bindings: { gmail: { authorization_id: 'auth-primary' } },
+    required_connectors: null,
     dropped_secrets: [],
     added_secrets: [],
     dropped_bindings: [],

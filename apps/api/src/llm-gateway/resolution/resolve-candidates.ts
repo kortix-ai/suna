@@ -6,7 +6,10 @@ import {
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getProjectSecretValue } from '../../projects/secrets';
+import {
+  getProjectSecretValueForConsumer,
+  resolveProjectSecretsForConsumer,
+} from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
@@ -90,7 +93,10 @@ export async function resolveCandidates(
     }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
     try {
-      credential = await resolveCodexCredential(principal.projectId, principal.userId);
+      credential = await resolveCodexCredential(principal.projectId, principal.userId, undefined, {
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+      });
     } catch (err) {
       if (err instanceof CodexRefreshError) {
         // Distinguishes "connected once, but the ChatGPT session expired or was
@@ -125,8 +131,24 @@ export async function resolveCandidates(
   if (byok && principal.projectId) {
     // Provider keys are always project-wide (shared) — there is no
     // per-user/private key concept. See getProjectSecretValue.
-    const key = await getProjectSecretValue(principal.projectId, byok.envVar);
-    if (key) {
+    const readGatewaySecret = (name: string) =>
+      getProjectSecretValueForConsumer({
+        projectId: principal.projectId!,
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+        actorUserId: principal.userId,
+        name,
+        consumer: 'llm_gateway',
+      });
+    const keys = await resolveProjectSecretsForConsumer({
+      projectId: principal.projectId,
+      accountId: principal.accountId,
+      sessionId: principal.sessionId,
+      actorUserId: principal.userId,
+      name: byok.envVar,
+      consumer: 'llm_gateway',
+    });
+    if (keys.length > 0) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
         : 'self-hosted';
@@ -145,9 +167,7 @@ export async function resolveCandidates(
       // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
       // provider (descriptor.region); resolve it once for both baseUrl + region.
       const bedrockRegion =
-        byok.kind === 'bedrock'
-          ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
-          : undefined;
+        byok.kind === 'bedrock' ? await readGatewaySecret(BEDROCK_REGION_ENV_VAR) : undefined;
       const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
       // Bedrock invoke id: normalize a wrong-geography cross-region
       // inference-profile prefix (e.g. a `jp.` pick that got stored as an
@@ -158,13 +178,14 @@ export async function resolveCandidates(
         byok.kind === 'bedrock'
           ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion)
           : resolvedModelId;
-      const byokDescriptor: UpstreamDescriptor = {
+      const byokDescriptors: UpstreamDescriptor[] = keys.map(({ identifier, value }) => ({
         provider,
         kind: byok.kind,
         npm: byok.npm,
         baseUrl,
         ...(bedrockRegion ? { region: bedrockRegion } : {}),
-        apiKey: key,
+        apiKey: value,
+        credentialRef: identifier,
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
@@ -182,11 +203,13 @@ export async function resolveCandidates(
         ),
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,
-      };
+      }));
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it
       // (billed as Kortix credits) so the turn doesn't die.
-      return isFreeTier ? [byokDescriptor] : [byokDescriptor, ...byokFallbackCandidates()];
+      return isFreeTier
+        ? byokDescriptors
+        : [...byokDescriptors, ...byokFallbackCandidates()];
     }
     // No shared key configured for this project — provider keys are always
     // project-wide, so there's no other place to look.
