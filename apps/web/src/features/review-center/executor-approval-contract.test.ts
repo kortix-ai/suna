@@ -1,0 +1,28 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const read = (path: string) => readFileSync(resolve(import.meta.dir, path), 'utf8');
+
+describe('executor approval review contract', () => {
+  test('the session header links to parameter review and cannot resolve directly', () => {
+    const source = read('../session/header/session-pending-approvals-indicator.tsx');
+
+    expect(source).toContain('Review parameters');
+    expect(source).toContain('approval_url');
+    expect(source).not.toContain('useResolveApproval');
+    expect(source).not.toContain("decision: 'approve'");
+    expect(source).not.toContain("decision: 'deny'");
+  });
+
+  test('Review Center uses the shared full-parameter component', () => {
+    const modal = read('./review-detail-modal.tsx');
+    const center = read('./review-center.tsx');
+
+    expect(modal).toContain('<ApprovalRequest');
+    expect(modal).toContain('argsPreview: adaptedAction.rawArgsPreview');
+    expect(modal).not.toContain('Always allow this');
+    expect(center).not.toContain('Approve all safe');
+    expect(center).toContain("item.kind !== 'approval'");
+  });
+});

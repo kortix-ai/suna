@@ -20,6 +20,13 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
+
+export function normalizeClientSource(value?: string): string | null {
+	const normalized = value?.trim().toLowerCase();
+	return normalized && CLIENT_SOURCES.has(normalized) ? normalized : null;
+}
+
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -99,6 +106,7 @@ export function buildAuthHeaders(
 	input: RequestInfo | URL,
 	init?: RequestInit,
 	token?: string | null,
+	clientSource?: string,
 ): Headers {
 	const headers = new Headers(input instanceof Request ? input.headers : undefined);
 	if (init?.headers) {
@@ -108,6 +116,10 @@ export function buildAuthHeaders(
 	}
 	if (token && !headers.has('Authorization')) {
 		headers.set('Authorization', `Bearer ${token}`);
+	}
+	const normalizedClientSource = normalizeClientSource(clientSource);
+	if (normalizedClientSource && !headers.has('X-Kortix-Client')) {
+		headers.set('X-Kortix-Client', normalizedClientSource);
 	}
 	return headers;
 }

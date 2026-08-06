@@ -41,7 +41,21 @@ const EXEC_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * A pending-approval executor tool call, presented as an `approval` review item.
  * (Only `pending_approval` executions are adapted; the rest are terminal audit.)
  */
-export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewItemDTO {
+export function executorExecutionToReviewItem(
+  ex: ExecutorExecutionRow,
+  options: { includeArgsPreview?: boolean } = {},
+): ReviewItemDTO {
+  const includeArgsPreview = options.includeArgsPreview === true;
+  const summary =
+    ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
+      ? ex.resultSummary
+      : {};
+  const argsPreview =
+    summary.args_preview &&
+    typeof summary.args_preview === 'object' &&
+    !Array.isArray(summary.args_preview)
+      ? summary.args_preview
+      : null;
   return {
     review_item_id: `${EXEC_ID_PREFIX}${ex.executionId}`,
     account_id: ex.accountId,
@@ -58,6 +72,10 @@ export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewI
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
       request_digest: ex.requestDigest,
+      risk: ex.risk,
+      ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
+      args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
+      args_preview_authorized: includeArgsPreview,
     },
     agent: '',
     created_by: ex.actingUserId ?? '',
