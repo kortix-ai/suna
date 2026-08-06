@@ -1,8 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -47,11 +45,26 @@ const SOURCE_LABELS: Record<RepositorySource, string> = {
  * repository — inputs `POST /projects/provision` does not accept. Those two
  * sources go through `POST /projects/create-repo` and the BYO-repo flow the
  * old create modal drives (`project-create-modal.tsx` `handleLinkGitHub` /
- * `githubCreateMutation`), which is out of scope for this task. Rather than
- * ship a half-built installation/repo picker that 400s against `/provision`,
- * this renders an honest note pointing at the real connect route
- * (`project-create-modal.tsx:561`, `router.push('/github/setup?account_id=…')`).
- * The full GitHub-source form on `/new` is its own follow-up.
+ * `githubCreateMutation`), which is out of scope for this task.
+ *
+ * The copy below says only what `/github/setup` actually does: it verifies
+ * and links a GitHub App installation (`saveGitHubInstallation`,
+ * `linkGitHubInstallation`, `listLinkableGitHubInstallations` —
+ * `app/(auth)/github/setup/page.tsx`). It does **not** create or import a
+ * repository, so the note must not claim it does. It also makes no "come
+ * back and finish" promise: the old modal's round trip
+ * (`rememberGitHubSetupReturn` before navigating, `consumeGitHubSetupReturn`
+ * on return — `project-create-modal.tsx:126-131,:561`) has no equivalent
+ * here, a plain `<Link>` loses the in-progress form state on navigation, and
+ * its fallback destination `/projects?new=1` is a route a later task in this
+ * plan deletes. The full GitHub-source form on `/new` is its own follow-up.
+ *
+ * Rendered as plain text inside the existing field group, not a second
+ * bordered surface: `InfoBanner`'s neutral tone is itself a bordered
+ * `bg-popover` box, and this note already sits inside the page's own
+ * `bg-popover rounded-md border` card (`new-workspace-page.tsx`) and inside
+ * this disclosure's `CollapsibleContent` — a nested card reads as an insert,
+ * not a sentence in the same field group as the description above it.
  */
 function GitHubSourceNote({ accountId }: { accountId: string | null }) {
   const href = accountId
@@ -59,18 +72,14 @@ function GitHubSourceNote({ accountId }: { accountId: string | null }) {
     : '/github/setup';
 
   return (
-    <InfoBanner
-      tone="neutral"
-      title="Connect GitHub to use this source"
-      action={
-        <Button asChild variant="transparent" size="sm">
-          <Link href={href}>Connect GitHub</Link>
-        </Button>
-      }
-    >
-      Creating and importing GitHub repositories happens on the GitHub connect page, not here.
-      Connect an account there, then come back to finish this workspace.
-    </InfoBanner>
+    <p className="text-muted-foreground text-xs">
+      Only Kortix-managed repositories can be created here for now. Choose Kortix managed to
+      continue, or{' '}
+      <Link href={href} className="text-foreground underline underline-offset-2">
+        connect a GitHub account
+      </Link>{' '}
+      to prepare for repository-backed workspaces.
+    </p>
   );
 }
 
@@ -106,9 +115,8 @@ export function AdvancedFields({
             </SelectContent>
           </Select>
           <p className="text-muted-foreground text-xs">{SOURCE_DESCRIPTIONS[state.source]}</p>
+          {state.source !== 'managed' ? <GitHubSourceNote accountId={state.accountId} /> : null}
         </div>
-
-        {state.source !== 'managed' ? <GitHubSourceNote accountId={state.accountId} /> : null}
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="workspace-branch">Default branch</Label>

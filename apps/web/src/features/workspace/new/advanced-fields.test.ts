@@ -76,9 +76,40 @@ describe('AdvancedFields: honest failure for GitHub sources', () => {
   test('renders an inline note instead of a GitHub form when the source is not managed', () => {
     // The note is gated on the non-managed branch specifically - a bare
     // mention of 'github-create' elsewhere (e.g. the Select options) would not
-    // satisfy this on its own, so this pairs with the InfoBanner check below.
+    // satisfy this on its own, so this pairs with the GitHubSourceNote check
+    // below.
     expect(code).toContain("state.source !== 'managed'");
-    expect(code).toContain('<InfoBanner');
+    expect(code).toContain('<GitHubSourceNote');
+  });
+
+  test('is plain text in the field group, not a second bordered card nested in the page card', () => {
+    // Fix round 1: InfoBanner's neutral tone is itself a bordered `bg-popover`
+    // box, and this note already sits inside the page's own bordered card and
+    // inside this disclosure - a nested InfoBanner reads as a card-in-a-card.
+    // Every other InfoBanner call site in the codebase renders it as a
+    // sibling OUTSIDE a bg-popover-bordered container; there is no
+    // counter-example, so this component must never reintroduce one.
+    expect(code).not.toContain('<InfoBanner');
+    expect(code).not.toContain("from '@/components/ui/info-banner'");
+    // Paired presence check: the note still renders as a real element, styled
+    // like the source description directly above it, not silently dropped.
+    expect(code).toContain('function GitHubSourceNote');
+    expect(code).toContain('text-muted-foreground text-xs');
+  });
+
+  test('never claims /github/setup creates or imports a repository, or promises a return trip', () => {
+    // Fix round 1: /github/setup only verifies and links a GitHub App
+    // installation - it has no repo creation or import path, and this
+    // component's plain <Link> has no equivalent to the old modal's
+    // rememberGitHubSetupReturn/consumeGitHubSetupReturn round trip, so it
+    // must not promise the user will come back here.
+    expect(code).not.toContain('happens on the GitHub connect page');
+    expect(code).not.toContain('come back');
+    expect(code).not.toContain('finish this workspace');
+    // Paired presence check: the accurate replacement copy is the one that
+    // actually renders.
+    expect(code).toContain('Only Kortix-managed repositories can be created here for now');
+    expect(code).toContain('connect a GitHub account');
   });
 
   test('links to the real GitHub connect route, not an invented one', () => {
