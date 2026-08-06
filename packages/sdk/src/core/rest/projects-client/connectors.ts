@@ -139,19 +139,7 @@ interface ConnectionFields {
 
 export interface Connection extends ConnectionFields {
   connection_id: string;
-  /** @deprecated Use `connection_id`. Present on SDK-normalized responses. */
-  profile_id?: string;
 }
-
-/** @deprecated Use `Connection`. */
-export interface ConnectorAuthorization extends ConnectionFields {
-  profile_id: string;
-  /** @deprecated Compatibility mirror. Use `Connection.connection_id`. */
-  connection_id?: string;
-}
-
-/** @deprecated Use `Connection`. */
-export type ConnectionProfile = ConnectorAuthorization;
 
 export interface ReconcileConnectionInput {
   connector_alias: string;
@@ -165,12 +153,6 @@ export interface ReconcileConnectionInput {
   metadata?: Record<string, unknown>;
 }
 
-/** @deprecated Use `ReconcileConnectionInput`. */
-export type ReconcileConnectorAuthorizationInput = ReconcileConnectionInput;
-
-/** @deprecated Use `ReconcileConnectionInput`. */
-export type ReconcileConnectionProfileInput = ReconcileConnectionInput;
-
 /** Create or update the calling user's member-owned connection. Ownership is
  * derived exclusively from the bearer token; callers cannot supply an owner. */
 export interface ReconcileMemberConnectionInput {
@@ -179,22 +161,10 @@ export interface ReconcileMemberConnectionInput {
   metadata?: Record<string, unknown>;
 }
 
-/** @deprecated Use `ReconcileMemberConnectionInput`. */
-export type ReconcileMemberConnectorAuthorizationInput = ReconcileMemberConnectionInput;
-
-/** @deprecated Use `ReconcileMemberConnectionInput`. */
-export type ReconcileMemberConnectionProfileInput = ReconcileMemberConnectionInput;
-
 export interface ConnectionConnectInput {
   success_redirect_uri?: string;
   error_redirect_uri?: string;
 }
-
-/** @deprecated Use `ConnectionConnectInput`. */
-export type ConnectorAuthorizationConnectInput = ConnectionConnectInput;
-
-/** @deprecated Use `ConnectionConnectInput`. */
-export type ConnectionProfileConnectInput = ConnectionConnectInput;
 
 export interface OAuth2ClientCredentials {
   type: 'oauth2_client_credentials';
@@ -279,41 +249,11 @@ export type ConnectionCredentialInput =
   | { value: string; kind?: 'secret' | 'connection' }
   | { oauth2: OAuth2ClientCredentials };
 
-/** @deprecated Use `ConnectionCredentialInput`. */
-export type ConnectorAuthorizationCredentialInput = ConnectionCredentialInput;
-
-/** @deprecated Use `ConnectionCredentialInput`. */
-export type ConnectionProfileCredentialInput = ConnectionCredentialInput;
-
-function normalizeConnection(value: Connection): Connection {
-  return { ...value, profile_id: value.profile_id ?? value.connection_id };
-}
-
-function toConnectorAuthorization(value: Connection): ConnectorAuthorization {
-  return {
-    ...value,
-    profile_id: value.profile_id ?? value.connection_id,
-    connection_id: value.connection_id,
-  };
-}
-
 export async function listConnections(projectId: string) {
-  const result = unwrap(
-    await backendApi.get<{ connections?: Connection[]; profiles?: Connection[] }>(
-      `/projects/${projectId}/connections`,
-    ),
+  return unwrap(
+    await backendApi.get<{ connections: Connection[] }>(`/projects/${projectId}/connections`),
   );
-  return { connections: (result.connections ?? result.profiles ?? []).map(normalizeConnection) };
 }
-
-/** @deprecated Use `listConnections`. */
-export async function listConnectorAuthorizations(projectId: string) {
-  const { connections } = await listConnections(projectId);
-  return { profiles: connections.map(toConnectorAuthorization) };
-}
-
-/** @deprecated Use `listConnections`. */
-export const listConnectionProfiles = listConnectorAuthorizations;
 
 /**
  * One row of the owner/admin roster. Deliberately NARROWER than
@@ -327,22 +267,7 @@ export interface ConnectionRoster {
   owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
   status: 'active' | 'revoked' | 'error';
-  /** @deprecated Use `connection_id`. Present on SDK-normalized responses. */
-  profile_id?: string;
 }
-
-/** @deprecated Use `ConnectionRoster`. */
-export interface ConnectorAuthorizationRosterEntry {
-  profile_id: string;
-  connector_alias: string;
-  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
-  owner_id: string | null;
-  status: 'active' | 'revoked' | 'error';
-  connection_id?: string;
-}
-
-/** @deprecated Use `ConnectionRoster`. */
-export type ConnectionRosterEntry = ConnectorAuthorizationRosterEntry;
 
 /**
  * Owner/admin read-only roster: WHO has connected each connector in the project
@@ -351,73 +276,28 @@ export type ConnectionRosterEntry = ConnectorAuthorizationRosterEntry;
  * a peer's private label or metadata (see `ConnectionRoster`).
  */
 export async function listAllConnections(projectId: string) {
-  const result = unwrap(
-    await backendApi.get<{ connections?: ConnectionRoster[]; profiles?: ConnectionRoster[] }>(
+  return unwrap(
+    await backendApi.get<{ connections: ConnectionRoster[] }>(
       `/projects/${projectId}/connections/all`,
     ),
   );
-  return {
-    connections: (result.connections ?? result.profiles ?? []).map((value) => ({
-      ...value,
-      profile_id: value.profile_id ?? value.connection_id,
-    })),
-  };
 }
-
-/** @deprecated Use `listAllConnections`. */
-export async function listAllConnectorAuthorizations(projectId: string) {
-  const { connections } = await listAllConnections(projectId);
-  return {
-    profiles: connections.map((value) => ({
-      ...value,
-      profile_id: value.profile_id ?? value.connection_id,
-      connection_id: value.connection_id,
-    })),
-  };
-}
-
-/** @deprecated Use `listAllConnections`. */
-export const listAllConnectionProfiles = listAllConnectorAuthorizations;
 
 export async function reconcileConnection(
   projectId: string,
   input: ReconcileConnectionInput,
 ) {
-  return normalizeConnection(
-    unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections`, input)),
-  );
+  return unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections`, input));
 }
-
-/** @deprecated Use `reconcileConnection`. */
-export async function reconcileConnectorAuthorization(
-  projectId: string,
-  input: ReconcileConnectorAuthorizationInput,
-) {
-  return toConnectorAuthorization(await reconcileConnection(projectId, input));
-}
-
-/** @deprecated Use `reconcileConnection`. */
-export const reconcileConnectionProfile = reconcileConnectorAuthorization;
 
 export async function reconcileMemberConnection(
   projectId: string,
   input: ReconcileMemberConnectionInput,
 ) {
-  return normalizeConnection(
-    unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections/me`, input)),
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/connections/me`, input),
   );
 }
-
-/** @deprecated Use `reconcileMemberConnection`. */
-export async function reconcileMemberConnectorAuthorization(
-  projectId: string,
-  input: ReconcileMemberConnectorAuthorizationInput,
-) {
-  return toConnectorAuthorization(await reconcileMemberConnection(projectId, input));
-}
-
-/** @deprecated Use `reconcileMemberConnection`. */
-export const reconcileMemberConnectionProfile = reconcileMemberConnectorAuthorization;
 
 export async function updateConnectionCredential(
   projectId: string,
@@ -431,12 +311,6 @@ export async function updateConnectionCredential(
     ),
   );
 }
-
-/** @deprecated Use `updateConnectionCredential`. */
-export const updateConnectorAuthorizationCredential = updateConnectionCredential;
-
-/** @deprecated Use `updateConnectionCredential`. */
-export const updateConnectionProfileCredential = updateConnectionCredential;
 
 function connectionOAuth2Path(
   projectId: string,
@@ -455,12 +329,6 @@ export async function ensureProjectConnectorConnection(projectId: string, slug: 
   );
 }
 
-/** @deprecated Use `ensureProjectConnectorConnection`. */
-export const ensureProjectConnectorAuthorization = ensureProjectConnectorConnection;
-
-/** @deprecated Use `ensureProjectConnectorConnection`. */
-export const ensureProjectConnectorProfile = ensureProjectConnectorConnection;
-
 export async function putConnectionOAuth2Application(
   projectId: string,
   connectionId: string,
@@ -474,12 +342,6 @@ export async function putConnectionOAuth2Application(
   );
 }
 
-/** @deprecated Use `putConnectionOAuth2Application`. */
-export const putConnectorAuthorizationOAuth2Application = putConnectionOAuth2Application;
-
-/** @deprecated Use `putConnectionOAuth2Application`. */
-export const putConnectionProfileOAuth2Application = putConnectionOAuth2Application;
-
 export async function getConnectionOAuth2Application(
   projectId: string,
   connectionId: string,
@@ -490,12 +352,6 @@ export async function getConnectionOAuth2Application(
     ),
   );
 }
-
-/** @deprecated Use `getConnectionOAuth2Application`. */
-export const getConnectorAuthorizationOAuth2Application = getConnectionOAuth2Application;
-
-/** @deprecated Use `getConnectionOAuth2Application`. */
-export const getConnectionProfileOAuth2Application = getConnectionOAuth2Application;
 
 export async function discoverConnectionOAuth2(
   projectId: string,
@@ -510,12 +366,6 @@ export async function discoverConnectionOAuth2(
   );
 }
 
-/** @deprecated Use `discoverConnectionOAuth2`. */
-export const discoverConnectorAuthorizationOAuth2 = discoverConnectionOAuth2;
-
-/** @deprecated Use `discoverConnectionOAuth2`. */
-export const discoverConnectionProfileOAuth2 = discoverConnectionOAuth2;
-
 export async function startConnectionOAuth2Authorization(
   projectId: string,
   connectionId: string,
@@ -529,14 +379,6 @@ export async function startConnectionOAuth2Authorization(
   );
 }
 
-/** @deprecated Use `startConnectionOAuth2Authorization`. */
-export const startConnectorAuthorizationOAuth2Authorization =
-  startConnectionOAuth2Authorization;
-
-/** @deprecated Use `startConnectionOAuth2Authorization`. */
-export const startConnectionProfileOAuth2Authorization =
-  startConnectionOAuth2Authorization;
-
 export async function startConnectionOAuth2DeviceAuthorization(
   projectId: string,
   connectionId: string,
@@ -549,14 +391,6 @@ export async function startConnectionOAuth2DeviceAuthorization(
     ),
   );
 }
-
-/** @deprecated Use `startConnectionOAuth2DeviceAuthorization`. */
-export const startConnectorAuthorizationOAuth2DeviceAuthorization =
-  startConnectionOAuth2DeviceAuthorization;
-
-/** @deprecated Use `startConnectionOAuth2DeviceAuthorization`. */
-export const startConnectionProfileOAuth2DeviceAuthorization =
-  startConnectionOAuth2DeviceAuthorization;
 
 export async function pollConnectionOAuth2DeviceAuthorization(
   projectId: string,
@@ -575,14 +409,6 @@ export async function pollConnectionOAuth2DeviceAuthorization(
   );
 }
 
-/** @deprecated Use `pollConnectionOAuth2DeviceAuthorization`. */
-export const pollConnectorAuthorizationOAuth2DeviceAuthorization =
-  pollConnectionOAuth2DeviceAuthorization;
-
-/** @deprecated Use `pollConnectionOAuth2DeviceAuthorization`. */
-export const pollConnectionProfileOAuth2DeviceAuthorization =
-  pollConnectionOAuth2DeviceAuthorization;
-
 export async function getConnectionOAuth2Status(
   projectId: string,
   connectionId: string,
@@ -594,12 +420,6 @@ export async function getConnectionOAuth2Status(
   );
 }
 
-/** @deprecated Use `getConnectionOAuth2Status`. */
-export const getConnectorAuthorizationOAuth2Status = getConnectionOAuth2Status;
-
-/** @deprecated Use `getConnectionOAuth2Status`. */
-export const getConnectionProfileOAuth2Status = getConnectionOAuth2Status;
-
 export async function revokeConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
@@ -609,12 +429,6 @@ export async function revokeConnection(projectId: string, connectionId: string) 
   );
 }
 
-/** @deprecated Use `revokeConnection`. */
-export const revokeConnectorAuthorization = revokeConnection;
-
-/** @deprecated Use `revokeConnection`. */
-export const revokeConnectionProfile = revokeConnection;
-
 export async function activateConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
@@ -623,12 +437,6 @@ export async function activateConnection(projectId: string, connectionId: string
     ),
   );
 }
-
-/** @deprecated Use `activateConnection`. */
-export const activateConnectorAuthorization = activateConnection;
-
-/** @deprecated Use `activateConnection`. */
-export const activateConnectionProfile = activateConnection;
 
 /**
  * Make this the DEFAULT connection for its owner scope — the one a session uses
@@ -645,12 +453,6 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
   );
 }
 
-/** @deprecated Use `setDefaultConnection`. */
-export const setDefaultConnectorAuthorization = setDefaultConnection;
-
-/** @deprecated Use `setDefaultConnection`. */
-export const setDefaultConnectionProfile = setDefaultConnection;
-
 export async function pipedreamConnectConnection(
   projectId: string,
   connectionId: string,
@@ -665,12 +467,6 @@ export async function pipedreamConnectConnection(
   );
 }
 
-/** @deprecated Use `pipedreamConnectConnection`. */
-export const pipedreamConnectConnectorAuthorization = pipedreamConnectConnection;
-
-/** @deprecated Use `pipedreamConnectConnection`. */
-export const pipedreamConnectConnectionProfile = pipedreamConnectConnection;
-
 export async function pipedreamFinalizeConnection(
   projectId: string,
   connectionId: string,
@@ -682,12 +478,6 @@ export async function pipedreamFinalizeConnection(
     ),
   );
 }
-
-/** @deprecated Use `pipedreamFinalizeConnection`. */
-export const pipedreamFinalizeConnectorAuthorization = pipedreamFinalizeConnection;
-
-/** @deprecated Use `pipedreamFinalizeConnection`. */
-export const pipedreamFinalizeConnectionProfile = pipedreamFinalizeConnection;
 
 export async function listConnectors(projectId: string) {
   return unwrap(

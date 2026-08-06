@@ -454,22 +454,16 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().method).toBe('POST');
 });
 
-test('project(id).connectors exposes canonical connections with published aliases', async () => {
+test('project(id).connectors exposes the connection lifecycle', async () => {
   await kortix.project('PID123').connectors.connections.list();
   expect(last().url).toContain('/projects/PID123/connections');
 
-  await kortix.project('PID123').connectors.authorizations.list();
-  expect(last().url).toContain('/projects/PID123/connections');
-
-  await kortix.project('PID123').connectors.authorizations.reconcile({
+  await kortix.project('PID123').connectors.connections.reconcile({
     connector_alias: 'gmail',
     owner_type: 'project',
     label: 'Project Gmail',
   });
   expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').connectors.profiles.list();
-  expect(last().url).toContain('/projects/PID123/connections');
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {

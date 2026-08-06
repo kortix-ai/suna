@@ -1,54 +1,33 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  activateConnectionProfile,
   activateConnection,
-  activateConnectorAuthorization,
   createConnector,
   deleteConnector,
-  discoverConnectionProfileOAuth2,
   discoverConnectionOAuth2,
   discoverConnectorAuth,
-  ensureProjectConnectorAuthorization,
   ensureProjectConnectorConnection,
-  ensureProjectConnectorProfile,
   getConnectStatus,
   getConnectionPolicies,
   getConnectionOAuth2Application,
-  getConnectionProfileOAuth2Application,
   getConnectionOAuth2Status,
-  getConnectionProfileOAuth2Status,
   getConnectorConfig,
   getConnectorPolicies,
   getDiscoverConnector,
-  listAllConnectionProfiles,
   listAllConnections,
-  listConnectionProfiles,
   listConnections,
-  listConnectorAuthorizations,
   listConnectors,
   listDiscoverConnectors,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamConnectConnection,
-  pipedreamConnectConnectionProfile,
-  pipedreamConnectConnectorAuthorization,
   pipedreamFinalize,
   pipedreamFinalizeConnection,
-  pipedreamFinalizeConnectionProfile,
-  pipedreamFinalizeConnectorAuthorization,
   pollConnectionOAuth2DeviceAuthorization,
-  pollConnectionProfileOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
-  putConnectionProfileOAuth2Application,
   reconcileConnection,
-  reconcileConnectionProfile,
-  reconcileConnectorAuthorization,
   reconcileMemberConnection,
-  reconcileMemberConnectionProfile,
   revokeConnection,
-  revokeConnectionProfile,
-  revokeConnectorAuthorization,
   setConnectionPolicies,
   setConnectorAuthorizationStrategy,
   setConnectorCredential,
@@ -57,29 +36,13 @@ import {
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
-  setDefaultConnectorAuthorization,
   setDefaultConnection,
-  setDefaultConnectionProfile,
   startConnectionOAuth2Authorization,
-  startConnectionProfileOAuth2Authorization,
   startConnectionOAuth2DeviceAuthorization,
-  startConnectionProfileOAuth2DeviceAuthorization,
   syncConnectors,
   updateConnectionCredential,
-  updateConnectionProfileCredential,
-  updateConnectorAuthorizationCredential,
 } from './connectors';
 
-const publishedConnectionProfileType: import('./connectors').ConnectionProfile = {
-  profile_id: 'profile-legacy',
-  connector_alias: 'gmail',
-  owner_type: 'project',
-  owner_id: null,
-  label: 'Legacy Gmail',
-  status: 'active',
-  is_default: true,
-  metadata: {},
-};
 const canonicalConnectionType: import('./connectors').Connection = {
   connection_id: 'connection-new',
   connector_alias: 'gmail',
@@ -90,7 +53,6 @@ const canonicalConnectionType: import('./connectors').Connection = {
   is_default: true,
   metadata: {},
 };
-void publishedConnectionProfileType;
 void canonicalConnectionType;
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -118,7 +80,7 @@ configureKortix({
 });
 const last = () => calls[calls.length - 1];
 
-test('published profile names remain deprecated aliases beside canonical connection names', async () => {
+test('connection APIs expose only connection identifiers', async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -137,31 +99,9 @@ test('published profile names remain deprecated aliases beside canonical connect
     },
   };
   expect((await listConnections('P1')).connections[0]?.connection_id).toBe('connection-1');
-  expect((await listConnectionProfiles('P1')).profiles[0]?.profile_id).toBe('connection-1');
-  expect(listAllConnectionProfiles).toBeDefined();
   expect(listAllConnections).toBeDefined();
-  expect(reconcileConnectionProfile).toBeDefined();
   expect(reconcileConnection).toBeDefined();
-  expect(reconcileMemberConnectionProfile).toBeDefined();
   expect(reconcileMemberConnection).toBeDefined();
-  expect(updateConnectionProfileCredential).toBe(updateConnectionCredential);
-  expect(ensureProjectConnectorProfile).toBe(ensureProjectConnectorConnection);
-  expect(putConnectionProfileOAuth2Application).toBe(putConnectionOAuth2Application);
-  expect(getConnectionProfileOAuth2Application).toBe(getConnectionOAuth2Application);
-  expect(discoverConnectionProfileOAuth2).toBe(discoverConnectionOAuth2);
-  expect(startConnectionProfileOAuth2Authorization).toBe(startConnectionOAuth2Authorization);
-  expect(startConnectionProfileOAuth2DeviceAuthorization).toBe(
-    startConnectionOAuth2DeviceAuthorization,
-  );
-  expect(pollConnectionProfileOAuth2DeviceAuthorization).toBe(
-    pollConnectionOAuth2DeviceAuthorization,
-  );
-  expect(getConnectionProfileOAuth2Status).toBe(getConnectionOAuth2Status);
-  expect(revokeConnectionProfile).toBe(revokeConnection);
-  expect(activateConnectionProfile).toBe(activateConnection);
-  expect(setDefaultConnectionProfile).toBe(setDefaultConnection);
-  expect(pipedreamConnectConnectionProfile).toBe(pipedreamConnectConnection);
-  expect(pipedreamFinalizeConnectionProfile).toBe(pipedreamFinalizeConnection);
 });
 
 test('native OAuth2 lifecycle methods use connection-scoped generic routes', async () => {
@@ -229,15 +169,15 @@ test('native OAuth2 lifecycle methods use connection-scoped generic routes', asy
   expect(last().url).toContain('/oauth2/status');
 });
 
-test('canonical authorization methods preserve the compatibility route contract', async () => {
-  nextResponse = { status: 200, body: { profiles: [] } };
-  await listConnectorAuthorizations('P1');
+test('connection methods use the canonical connection route contract', async () => {
+  nextResponse = { status: 200, body: { connections: [] } };
+  await listConnections('P1');
   expect(last().url).toContain('/projects/P1/connections');
 
   nextResponse = {
     status: 200,
     body: {
-      connection_id: 'authorization-1',
+      connection_id: 'connection-1',
       connector_alias: 'gmail',
       owner_type: 'project',
       owner_id: null,
@@ -247,7 +187,7 @@ test('canonical authorization methods preserve the compatibility route contract'
       metadata: {},
     },
   };
-  await reconcileConnectorAuthorization('P1', {
+  await reconcileConnection('P1', {
     connector_alias: 'gmail',
     owner_type: 'project',
     label: 'Project Gmail',
@@ -255,28 +195,28 @@ test('canonical authorization methods preserve the compatibility route contract'
   expect(last()).toMatchObject({ method: 'POST' });
 
   nextResponse = { status: 200, body: { ok: true } };
-  await updateConnectorAuthorizationCredential('P1', 'authorization-1', {
+  await updateConnectionCredential('P1', 'connection-1', {
     value: 'secret-value',
   });
-  expect(last().url).toContain('/connections/authorization-1/credential');
-  await revokeConnectorAuthorization('P1', 'authorization-1');
-  expect(last().url).toContain('/connections/authorization-1/revoke');
-  await activateConnectorAuthorization('P1', 'authorization-1');
-  expect(last().url).toContain('/connections/authorization-1/activate');
-  await setDefaultConnectorAuthorization('P1', 'authorization-1');
-  expect(last().url).toContain('/connections/authorization-1/default');
+  expect(last().url).toContain('/connections/connection-1/credential');
+  await revokeConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/revoke');
+  await activateConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/activate');
+  await setDefaultConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/default');
 
-  nextResponse = { status: 200, body: { connection_id: 'authorization-1' } };
-  await ensureProjectConnectorAuthorization('P1', 'gmail');
+  nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
+  await ensureProjectConnectorConnection('P1', 'gmail');
   expect(last().url).toContain('/connectors/gmail/oauth2/connection');
 
   nextResponse = { status: 200, body: { token: 'connect-token' } };
-  await pipedreamConnectConnectorAuthorization('P1', 'authorization-1');
-  expect(last().url).toContain('/connections/authorization-1/connect');
+  await pipedreamConnectConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/connect');
 
   nextResponse = { status: 200, body: { connected: true } };
-  await pipedreamFinalizeConnectorAuthorization('P1', 'authorization-1');
-  expect(last().url).toContain('/connections/authorization-1/connect/finalize');
+  await pipedreamFinalizeConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/connect/finalize');
 });
 
 test('deprecated authorization policy methods fail before widening policy scope', async () => {
@@ -637,7 +577,7 @@ test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', a
 });
 
 test('connection lifecycle uses the typed project connection routes', async () => {
-  nextResponse = { status: 200, body: { profiles: [] } };
+  nextResponse = { status: 200, body: { connections: [] } };
   await listConnections('P1');
   expect(last().url).toContain('/projects/P1/connections');
   expect(last().method).toBe('GET');

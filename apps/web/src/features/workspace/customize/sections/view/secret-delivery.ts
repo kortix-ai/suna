@@ -16,10 +16,9 @@ export type ConnectorBindingOption = {
 
 export type BrokerConsumer = 'llm_gateway' | 'connector' | 'http_broker';
 
-/** Normalize the deprecated persisted consumer without exposing it in the UI. */
 export function brokerConsumerForSecret(consumer?: SecretConsumer | null): BrokerConsumer {
   if (consumer === 'llm_gateway') return 'llm_gateway';
-  if (consumer === 'connector' || consumer === 'executor') return 'connector';
+  if (consumer === 'connector') return 'connector';
   return 'http_broker';
 }
 

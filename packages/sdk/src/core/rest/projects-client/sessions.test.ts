@@ -156,20 +156,6 @@ test('createProjectSession serializes canonical connection bindings', async () =
   });
 });
 
-test('createProjectSession normalizes published profile_id input compatibility', async () => {
-  nextResponse = { status: 200, body: { session_id: 'NEW-LEGACY-BINDING', name: null } };
-  await createProjectSession('P1', {
-    connector_bindings: {
-      gmail: { profile_id: 'AUTH-1' },
-    },
-  });
-  expect(last().body).toEqual({
-    connector_bindings: {
-      gmail: { connection_id: 'AUTH-1' },
-    },
-  });
-});
-
 test('createProjectSession does NOT mark the session fresh when an initial_prompt is set', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-2', name: null } };
   await createProjectSession('P1', { initial_prompt: 'hello' });
@@ -476,10 +462,7 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   const result = await getProjectSessionScope('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
-  expect(result.connector_bindings.gmail).toEqual({
-    connection_id: 'AUTH-1',
-    authorization_id: 'AUTH-1',
-  });
+  expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
 });
 
 test('setProjectSessionScope replaces connections with canonical input', async () => {
@@ -506,29 +489,7 @@ test('setProjectSessionScope replaces connections with canonical input', async (
     connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
   expect(result.connector_bindings).toEqual({
-    gmail: { connection_id: 'AUTH-2', authorization_id: 'AUTH-2' },
-  });
-});
-
-test('setProjectSessionScope normalizes published authorization_id input compatibility', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      secrets_allowlist: null,
-      required_connectors: null,
-      connector_bindings: {},
-      dropped_secrets: [],
-      added_secrets: [],
-      dropped_bindings: [],
-      retroactive: true,
-      detail: 'Applies from the next prompt.',
-    },
-  };
-  await setProjectSessionScope('P1', 'S1', {
-    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
-  });
-  expect(last().body).toEqual({
-    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
+    gmail: { connection_id: 'AUTH-2' },
   });
 });
 

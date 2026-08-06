@@ -74,48 +74,11 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  /** Canonical connection id. */
   connection_id: string;
-  /** @deprecated Use `connection_id`. Retained on SDK-normalized responses. */
-  authorization_id?: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
-export type SessionConnectorBindingInput =
-  | {
-      connection_id: string;
-      /** @deprecated Use `connection_id`. Equal dual IDs remain accepted. */
-      authorization_id?: string;
-      /** @deprecated Use `connection_id`. Equal dual IDs remain accepted. */
-      profile_id?: string;
-    }
-  | {
-      connection_id?: never;
-      /** @deprecated Use `connection_id`. */
-      authorization_id: string;
-      profile_id?: string;
-    }
-  | {
-      connection_id?: never;
-      authorization_id?: never;
-      /** @deprecated Use `connection_id`. */
-      profile_id: string;
-    };
+export type SessionConnectorBindingInput = SessionConnectorBinding;
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
-
-function normalizeConnectorBindings(
-  bindings: SessionConnectorBindingsInput | undefined,
-): Record<string, { connection_id: string }> | undefined {
-  if (!bindings) return undefined;
-  return Object.fromEntries(
-    Object.entries(bindings).map(([alias, binding]) => [
-      alias,
-      {
-        connection_id:
-          binding.connection_id ?? binding.authorization_id ?? binding.profile_id,
-      },
-    ]),
-  ) as Record<string, { connection_id: string }>;
-}
 
 export interface PendingSessionPrompt {
   text: string;
@@ -327,11 +290,8 @@ export async function revokeSessionPublicShare(
  * provisions/resumes idempotently and reports readiness.
  */
 export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
-  const body = input?.connector_bindings
-    ? { ...input, connector_bindings: normalizeConnectorBindings(input.connector_bindings) }
-    : (input ?? {});
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, body),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -751,34 +711,15 @@ export interface SessionScope {
 /** @deprecated Use `SessionScope`. */
 export type SessionScopeResult = SessionScope;
 
-function normalizeSessionScope(scope: SessionScope): SessionScope {
-  return {
-    ...scope,
-    connector_bindings: Object.fromEntries(
-      Object.entries(scope.connector_bindings).map(([alias, binding]) => {
-        const wire = binding as SessionConnectorBinding;
-        const connectionId = wire.connection_id ?? wire.authorization_id;
-        return [
-          alias,
-          {
-            connection_id: connectionId,
-            authorization_id: connectionId,
-          },
-        ];
-      }),
-    ),
-  };
-}
-
 export async function getProjectSessionScope(
   projectId: string,
   sessionId: string,
 ): Promise<SessionScope> {
-  return normalizeSessionScope(unwrap(
+  return unwrap(
     await backendApi.get<SessionScope>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
     ),
-  ));
+  );
 }
 
 /**
@@ -790,15 +731,12 @@ export async function setProjectSessionScope(
   sessionId: string,
   scope: SessionScopeInput,
 ): Promise<SessionScope> {
-  const body = scope.connector_bindings
-    ? { ...scope, connector_bindings: normalizeConnectorBindings(scope.connector_bindings) }
-    : scope;
-  return normalizeSessionScope(unwrap(
+  return unwrap(
     await backendApi.put<SessionScope>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
-      body,
+      scope,
     ),
-  ));
+  );
 }
 
 export interface SessionModelChangeResult {

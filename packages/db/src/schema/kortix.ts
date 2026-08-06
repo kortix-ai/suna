@@ -76,7 +76,6 @@ export const projectSecretConsumerEnum = kortixSchema.enum('project_secret_consu
   'sandbox',
   'llm_gateway',
   'connector',
-  'executor',
   'git_proxy',
   'http_broker',
   'network',
@@ -4265,8 +4264,6 @@ export const projectSessionConnectorBindings = kortixSchema.table(
     connectorAlias: varchar('connector_alias', { length: 128 }).notNull(),
     connectorId: uuid('connector_id').notNull(),
     connectionId: uuid('connection_id').notNull(),
-    /** Temporary mixed-version mirror. Removed after the canonical API rollout. */
-    legacyProfileId: uuid('profile_id').default(sql`null`).notNull(),
     source: projectSessionConnectorBindingSourceEnum('source').default('request').notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4303,18 +4300,7 @@ export const projectSessionConnectorBindings = kortixSchema.table(
       ],
       name: 'project_session_connector_bindings_connection_tenant_fk',
     }).onDelete('restrict'),
-    foreignKey({
-      columns: [table.accountId, table.projectId, table.connectorId, table.legacyProfileId],
-      foreignColumns: [
-        connectorConnections.accountId,
-        connectorConnections.projectId,
-        connectorConnections.connectorId,
-        connectorConnections.connectionId,
-      ],
-      name: 'project_session_connector_bindings_profile_tenant_fk',
-    }).onDelete('restrict'),
     index('idx_project_session_connector_bindings_connection').on(table.connectionId),
-    index('idx_project_session_connector_bindings_profile').on(table.legacyProfileId),
     index('idx_project_session_connector_bindings_project').on(table.projectId),
   ],
 );

@@ -17,10 +17,6 @@ describe('brokerConsumerForSecret', () => {
     expect(brokerConsumerForSecret('http_broker')).toBe('http_broker');
   });
 
-  test('maps the deprecated persisted consumer to connector', () => {
-    expect(brokerConsumerForSecret('executor')).toBe('connector');
-  });
-
   test('defaults unsupported consumers to the HTTPS broker', () => {
     expect(brokerConsumerForSecret(null)).toBe('http_broker');
     expect(brokerConsumerForSecret('sandbox')).toBe('http_broker');
