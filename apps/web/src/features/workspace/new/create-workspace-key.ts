@@ -35,13 +35,48 @@ function storage(): Storage | undefined {
   }
 }
 
+/**
+ * In-memory fallback for `attemptKeyFor`/`clearAttemptKey`, consulted only
+ * when `storage()` is unavailable (private browsing, blocked storage).
+ *
+ * Before Task 14 wired `retry` into a clickable control
+ * (`new-workspace-page.tsx`), the only way to re-run a create was
+ * resubmitting the whole form, so minting a fresh key on every
+ * storage-unavailable call was low-frequency — at most one extra key per
+ * manual resubmit. With a retry BUTTON, a user in a storage-blocked browser
+ * can click it repeatedly, and a fresh key per click mints a fresh upstream
+ * managed repo per click — the exact failure idempotency exists to prevent.
+ * This map keeps the minted key stable across calls with the SAME
+ * fingerprint for the lifetime of the page load even with nothing
+ * persistable. Cross-reload dedupe is still lost without storage, unchanged
+ * from before — only the "click retry twice in one session" case is fixed.
+ */
+const memoryFallback = new Map<string, StoredAttempt>();
+
+/**
+ * Test-only. `memoryFallback` is process/module-level state, so without this
+ * two test CASES sharing a fingerprint (a realistic thing to do — most tests
+ * in this file reuse `'acct-1:suna-web'`) would leak a minted key from one
+ * case into the next. Mirrors `resetAiIndexRateLimitsForTests`
+ * (`lib/seo/rate-limit.ts`), the same pattern for the same reason.
+ */
+export function resetAttemptKeyMemoryFallbackForTests(): void {
+  memoryFallback.clear();
+}
+
 function mint(): string {
   return crypto.randomUUID();
 }
 
 export function attemptKeyFor(fingerprint: string, now: number): string {
   const store = storage();
-  if (!store) return mint();
+  if (!store) {
+    const cached = memoryFallback.get(fingerprint);
+    if (cached?.key && now - cached.mintedAt < TTL_MS) return cached.key;
+    const key = mint();
+    memoryFallback.set(fingerprint, { key, mintedAt: now });
+    return key;
+  }
 
   const slot = PREFIX + fingerprint;
   try {
@@ -64,6 +99,12 @@ export function attemptKeyFor(fingerprint: string, now: number): string {
 }
 
 export function clearAttemptKey(fingerprint: string): void {
+  // Unconditional, not gated on whether storage is available right now: a
+  // key minted while storage was unavailable lives ONLY in `memoryFallback`,
+  // and a later call with storage restored would never look there, so a
+  // clear that skipped this would leave that key live forever (until TTL) —
+  // the next same-name create would silently return the OLD workspace.
+  memoryFallback.delete(fingerprint);
   try {
     storage()?.removeItem(PREFIX + fingerprint);
   } catch {

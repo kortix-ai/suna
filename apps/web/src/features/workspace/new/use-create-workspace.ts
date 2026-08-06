@@ -139,18 +139,49 @@ export function messageFor(error: unknown): string {
 /**
  * Whether a failed create should offer a retry.
  *
- * False ONLY for the managed-git-unavailable 503 — see `messageFor` above:
- * that failure is a server configuration state, not a transient one, and
- * retrying with the SAME `idempotency_key` (`runCreate`'s whole point) can
- * never succeed until an operator fixes it server-side. True for everything
- * else `runCreate` can reject with (403 wrong account, 400 bad name, 502 bad
- * gateway, a plain network `Error`) — those are exactly the cases where
- * pressing the button again can plausibly land differently. Reuses
- * `isManagedGitUnavailableError` rather than re-deriving the 503 check, so
- * this and `messageFor` can never disagree about which failure is which.
+ * Classified by whether ANYTHING could plausibly be different on the next
+ * attempt — NOT by "everything except 503". `retry` (below) resends
+ * `lastState` completely unedited, through the SAME `runCreate` path with
+ * the SAME persisted `idempotency_key`, so a failure whose cause cannot
+ * change between now and a later click must not offer one; doing so would
+ * spend the user's next click on a request guaranteed to fail identically.
+ * Fix round 1 finding: the first version of this function offered a retry
+ * for a 400 too, which fails this exact test — see the `status === 400`
+ * branch below.
+ *
+ * - `400` (bad name / invalid payload) — NOT retryable. `retry` resends the
+ *   exact payload that just failed validation; a deterministic validation
+ *   failure on an unchanged payload fails identically every time. Only
+ *   editing the name, through the primary submit button, can help.
+ * - `403` (wrong account / insufficient role) — retryable. Role and account
+ *   membership are external state that CAN genuinely change between the
+ *   failure and a later click, and `retry` re-closes over `creatableAccounts`
+ *   (`useCreateWorkspace`'s own `['accounts']` query), which is refetched —
+ *   so a role grant made in the meantime can turn this into a success.
+ * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
+ *   later attempt can land differently with no change on the client at all.
+ * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
+ *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
+ *   state; see `messageFor` above. Reuses that detector rather than
+ *   re-deriving the 503 check, so this and `messageFor` can never disagree
+ *   about which failure is which.
+ * - Anything else (a plain network `Error`, an unrecognized status) —
+ *   retryable. There is no signal here that rules out transience, so the
+ *   safer default is to offer the retry rather than silently block a case
+ *   that might actually succeed.
+ *
+ * Adding a new status code this route can return? Decide which bucket above
+ * it belongs to — "the payload/state is deterministic and unchanged" (block
+ * it) vs. "something could genuinely be different next time" (allow it) —
+ * and add its own named branch rather than folding it into the default.
  */
 export function isRetryableError(error: unknown): boolean {
-  return !isManagedGitUnavailableError(error);
+  const status = (error as { status?: number } | null | undefined)?.status;
+
+  if (status === 400) return false;
+  if (isManagedGitUnavailableError(error)) return false;
+
+  return true;
 }
 
 /**

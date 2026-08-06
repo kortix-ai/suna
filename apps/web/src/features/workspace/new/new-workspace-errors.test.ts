@@ -139,7 +139,30 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
     ).toBe(false);
   });
 
-  test('isRetryableError is true for an ordinary network error — only managed-git-unavailable suppresses retry', () => {
+  test('isRetryableError is true for an ordinary network error — an unrecognized failure defaults to retryable', () => {
     expect(isRetryableError(new Error('network error'))).toBe(true);
+  });
+});
+
+/**
+ * Fix round 1 finding: `isRetryableError`'s first version was a negation of
+ * ONE special case (`!isManagedGitUnavailableError(error)`), which meant a
+ * 400 evaluated `true` — offering a retry that resends `lastState`
+ * completely unedited into a deterministic validation failure. It would
+ * fail identically on every click; only editing the name (through the
+ * primary submit) can help. Nothing in the suite above exercised a 400
+ * through `isRetryableError` at all — that gap is why it slipped.
+ */
+describe('isRetryableError: classification by what can actually change, not "everything except 503"', () => {
+  test('a 400 is NOT retryable — retry() would resend the exact payload that just failed validation', () => {
+    expect(isRetryableError(new ApiError('Name must be 1-64 characters', { status: 400 }))).toBe(
+      false,
+    );
+  });
+
+  test('a 403 IS retryable — role/account membership is external state that can change before a later click', () => {
+    expect(isRetryableError(new ApiError('Owner or admin role required', { status: 403 }))).toBe(
+      true,
+    );
   });
 });
