@@ -1338,8 +1338,19 @@ html[data-desktop-platform='macos'] [role='tablist'] {
    case is handled in JS (tab-bar.tsx) — read sidebar.state +
    desktopPlatform(), apply pl-7 conditionally. CSS-only is hard to
    keep correct as the sidebar state changes. */
+/* Tab label size in the shell.
+   NOTE: this wins over `tabsTriggerTextVariants` in components/ui/tabs.tsx —
+   a descendant selector on <html> outranks the utility class — so it is the
+   ONLY place desktop tab text can be changed. Editing the cva variants alone
+   looks correct and does nothing here.
+
+   Deliberately NOT divided by --kx-desktop-zoom. The band offsets above cancel
+   the zoom because they align to OS-drawn chrome that never scales; text has
+   nothing to align to and must shrink with the rest of the page, or it drifts
+   out of step with every label beside it. So this is an apparent
+   13 × 0.94 ≈ 12.2px, up from 12 × 0.94 ≈ 11.3px. */
 html[data-desktop='true'] [role='tablist'] [role='tab'] {
-  font-size: 12px;
+  font-size: 13px;
 }
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] button,
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] a,
