@@ -396,6 +396,17 @@ export function WorkspaceSwitcher({
           >
             Create a workspace…
           </DropdownMenuItem>
+          {activeAccount && (
+            <DropdownMenuItem
+              className="cursor-pointer font-medium"
+              onSelect={() => {
+                close();
+                router.push(`/accounts/${activeAccount.account_id}`);
+              }}
+            >
+              Account settings
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

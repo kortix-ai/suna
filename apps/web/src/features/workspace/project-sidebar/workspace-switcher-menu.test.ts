@@ -29,6 +29,11 @@ describe('workspace switcher menu', () => {
     expect(source).toContain("'/new'");
   });
 
+  test('account settings links to the accounts page', () => {
+    expect(source).toContain('Account settings');
+    expect(source).toContain('/accounts/');
+  });
+
   test('a failed account keeps its group header, not a vanished group', () => {
     // An account whose workspace fetch errors must still render (header +
     // retry row), not silently look like it has zero workspaces —
