@@ -45,11 +45,10 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type SandboxTemplate,
-  getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
 } from '@kortix/sdk';
-import { contract, qk, type Command } from '@kortix/sdk/react';
+import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
@@ -275,12 +274,8 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion?: (text: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const name = detail.data?.project?.name ?? '';
+  // One source for the project name — see `useProjectName`'s doc comment.
+  const name = useProjectName(projectId) ?? '';
   const displayName = name.trim() || 'this project';
 
   return (

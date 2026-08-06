@@ -21,11 +21,11 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
-import { projectDetailQuery } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import type { ProjectCommit } from '@kortix/sdk';
+import { getProjectDetail, type ProjectCommit } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -276,8 +276,10 @@ export function ChangesView({ projectId }: { projectId: string }) {
   // the panel's switch today — see customize-checkpoints.test.ts — so this
   // has no live runtime effect yet, but keeps the key family consistent.)
   const projectQuery = useQuery({
-    ...projectDetailQuery(projectId),
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
     select: (detail) => detail.project.default_branch,
+    ...contract('config'),
   });
   const defaultBranch = projectQuery.data ?? '';
   // Apply/Dismiss/Reopen assert project.gitops.push server-side; a read-only role

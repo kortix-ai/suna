@@ -17,6 +17,8 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { CommandIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -27,10 +29,6 @@ import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterCommands } from './command-filter';
 
 /**
@@ -62,7 +60,11 @@ export function CommandsPage({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const detailQuery = useQuery(projectDetailQuery(projectId));
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
 
   const commands = useMemo(() => {
     const raw = detailQuery.data?.config.commands;

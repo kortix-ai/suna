@@ -53,7 +53,14 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import {
+  contract,
+  invalidateProject,
+  invalidateProjectIdentity,
+  qk,
+  refreshProjectProviderState,
+  writeProjectNameOptimistically,
+} from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -730,6 +737,13 @@ function GeneralProjectCard({
       updateProject(project.project_id, {
         name: nextName,
       }),
+    // Paint the new name in the same frame it's typed, and invalidate BOTH
+    // name caches on settle — not just the list. The sidebar (list) and the
+    // project home title (detail) used to disagree until the detail cache
+    // happened to be evicted, which is exactly this bug's root cause.
+    onMutate: (nextName) => {
+      writeProjectNameOptimistically(queryClient, project.project_id, nextName);
+    },
     onSuccess: (updated) => {
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
       // qk.projects.scope(): restores the reach the old bare
@@ -738,6 +752,7 @@ function GeneralProjectCard({
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
+    onSettled: () => invalidateProjectIdentity(queryClient, project.project_id),
   });
 
   const { mutate, isPending } = mutation;

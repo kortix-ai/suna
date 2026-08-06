@@ -26,3 +26,21 @@ export function useProjectName(projectId: string | undefined): string | undefine
   });
   return data?.project?.name;
 }
+
+/**
+ * The owning account id, read off the SAME `qk.project.detail(id)` entry
+ * `useProjectName` reads — every capability surface already mounts that
+ * observer, so this shares the cache instead of adding a fetch. Previously
+ * lived in `apps/web`'s `project-detail-query.ts` as a host-local hook; moved
+ * here because `qk.project.detail` + `contract('config')` is SDK-owned
+ * wiring, not something a host should hand-roll a second time.
+ */
+export function useProjectAccountId(projectId: string | undefined): string | undefined {
+  const { data } = useQuery({
+    queryKey: qk.project.detail(projectId ?? ''),
+    queryFn: () => getProjectDetail(projectId as string),
+    enabled: Boolean(projectId),
+    ...contract('config'),
+  });
+  return data?.project?.account_id;
+}

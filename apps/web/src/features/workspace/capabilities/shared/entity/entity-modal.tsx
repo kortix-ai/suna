@@ -15,11 +15,11 @@ import {
   editConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { listProjectFiles, readProjectFile } from '@kortix/sdk';
+import { useProjectAccountId } from '@kortix/sdk/react';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 

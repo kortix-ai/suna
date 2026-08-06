@@ -45,13 +45,8 @@ import { resolveSwitcherLabel } from '@/features/workspace/project-sidebar/proje
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
-import {
-  getProjectDetail,
-  listAccounts,
-  listProjectsForAccount,
-  type KortixProject,
-} from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { contract, qk, useProjectName } from '@kortix/sdk/react';
 import { formatRelative } from '@kortix/shared';
 import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
@@ -116,27 +111,16 @@ export function ProjectSwitcher({
     ...contract('inventory'),
   });
 
-  const activeProject = useMemo(
-    () =>
-      activeProjectId && projectsQuery.data
-        ? (projectsQuery.data.find((p) => p.project_id === activeProjectId) ?? null)
-        : null,
-    [projectsQuery.data, activeProjectId],
-  );
-
-  // The project list is the slow way to learn the open project's name — it
-  // waits on `accounts` first. This is the SAME cache entry the project shell
-  // already fetches on mount, so subscribing costs no extra request and names
-  // the project as early as anything on the page can.
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(activeProjectId ?? ''),
-    queryFn: () => getProjectDetail(activeProjectId as string),
-    enabled: !!activeProjectId,
-    ...contract('config'),
-  });
+  // One source for the project name. The two-source fallback that used to
+  // live here (list entry, falling back to the detail entry) read the LIST
+  // first, so a rename that invalidated only the list made this label
+  // disagree with the project home title for a full gcTime. Do not
+  // reintroduce a fallback to another source — see `useProjectName`'s doc
+  // comment.
+  const activeProjectName = useProjectName(activeProjectId ?? undefined) ?? null;
   const { label: switcherLabel, pending: labelPending } = resolveSwitcherLabel({
     activeProjectId,
-    activeProjectName: activeProject?.name ?? projectDetailQuery.data?.project?.name ?? null,
+    activeProjectName,
   });
 
   useEffect(() => {

@@ -3196,6 +3196,7 @@
     "usePermissionSelfHeal",
     "useProcessRefund",
     "useProfitability",
+    "useProjectAccountId",
     "useProjectActivity",
     "useProjectAgents",
     "useProjectConfig",

@@ -1,6 +1,7 @@
 'use client';
 
-import { type AdminConnector } from '@kortix/sdk';
+import { type AdminConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -35,7 +36,6 @@ import {
   ConnectorConnectedMark,
   ConnectorStatusBadge,
 } from './connector-identity';
-import { projectConnectorsQuery } from './project-connectors-query';
 import { providerLabel } from './provider-label';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -46,10 +46,6 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { connectedCatalogKeys, type CatalogEntry } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { CategorySelect, ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import { ALL_CATEGORIES, catalogCategoryKeys } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
@@ -197,8 +193,16 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [replaceParams],
   );
 
-  const connectorsQuery = useQuery(projectConnectorsQuery(projectId));
-  const projectQuery = useQuery(projectDetailQuery(projectId));
+  const connectorsQuery = useQuery({
+    queryKey: qk.project.connectors(projectId),
+    queryFn: () => listConnectors(projectId),
+    ...contract('config'),
+  });
+  const projectQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const existingSlugs = useMemo(() => connectors.map((c) => c.slug), [connectors]);

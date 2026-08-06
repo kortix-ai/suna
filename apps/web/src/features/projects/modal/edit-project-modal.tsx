@@ -19,7 +19,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { updateProject, type ProjectInput } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { invalidateProjectIdentity, qk, writeProjectNameOptimistically } from '@kortix/sdk/react';
 
 import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patch';
 import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
@@ -95,6 +95,16 @@ export const EditProjectModal = ({
       if (!projectId) throw new Error('No project selected');
       return updateProject(projectId, patch);
     },
+    // Paint the new name in the same frame the modal closes. The rename bug
+    // this modal used to cause was not a missing invalidation — it was that
+    // the sidebar and the project home title read two different caches, and
+    // only one of them (the list) ever got invalidated. Writing both here and
+    // invalidating both on settle keeps them from ever disagreeing again.
+    onMutate: (patch) => {
+      if (projectId && typeof patch.name === 'string') {
+        writeProjectNameOptimistically(queryClient, projectId, patch.name);
+      }
+    },
     // `patch` is the mutation's own variables, not the component's current
     // state: the message has to describe what was SENT, and by the time this
     // runs the draft could already have moved on.
@@ -115,6 +125,9 @@ export const EditProjectModal = ({
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to update project');
+    },
+    onSettled: () => {
+      if (projectId) invalidateProjectIdentity(queryClient, projectId);
     },
   });
 
