@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -38,6 +39,16 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
+
+export const projectTaskStatusEnum = kortixSchema.enum('project_task_status', [
+  'backlog',
+  'todo',
+  'doing',
+  'blocked',
+  'review',
+  'done',
+  'cancelled',
+]);
 
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
@@ -804,6 +815,124 @@ export const projectSessions = kortixSchema.table(
     // It is intentionally NOT declared here: re-adding it would make `db:generate`
     // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
     // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
+  ],
+);
+
+/**
+ * Durable generated task state. A task UUID is globally unique, while every
+ * lookup and relationship remains project-scoped. `parent_id` models structure
+ * only; dependency semantics live exclusively in `blocked_by`.
+ */
+export const projectTasks = kortixSchema.table(
+  'project_tasks',
+  {
+    taskId: uuid('task_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    parentId: uuid('parent_id'),
+    title: text('title').notNull(),
+    body: text('body').default('').notNull(),
+    status: projectTaskStatusEnum('status').default('backlog').notNull(),
+    /** Higher values sort before lower values. Zero is the neutral default. */
+    priority: integer('priority').default(0).notNull(),
+    assigneeAgent: text('assignee_agent'),
+    assigneeUserId: uuid('assignee_user_id'),
+    blockedBy: uuid('blocked_by').array().default(sql`array[]::uuid[]`).notNull(),
+    origin: text('origin').notNull(),
+    /** Transition output: verifier evidence, blocker detail, or other generated state. */
+    result: jsonb('result').default({}).$type<Record<string, unknown>>().notNull(),
+    originFingerprint: text('origin_fingerprint'),
+    claimSessionId: text('claim_session_id').references(() => projectSessions.sessionId),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('project_tasks_project_task_unique').on(table.projectId, table.taskId),
+    foreignKey({
+      name: 'project_tasks_project_parent_fkey',
+      columns: [table.projectId, table.parentId],
+      foreignColumns: [table.projectId, table.taskId],
+    }),
+    index('idx_project_tasks_project_goal_status').on(
+      table.projectId,
+      table.goalSlug,
+      table.status,
+      table.priority,
+    ),
+    index('idx_project_tasks_project_parent').on(table.projectId, table.parentId),
+    index('idx_project_tasks_claim_expiry')
+      .on(table.claimExpiresAt)
+      .where(sql`${table.claimSessionId} is not null`),
+    index('idx_project_tasks_blocked_by').using('gin', table.blockedBy),
+    uniqueIndex('idx_project_tasks_project_origin_fingerprint')
+      .on(table.projectId, table.originFingerprint)
+      .where(sql`${table.originFingerprint} is not null`),
+    check('project_tasks_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_tasks_title_nonempty', sql`btrim(${table.title}) <> ''`),
+    check('project_tasks_origin_nonempty', sql`btrim(${table.origin}) <> ''`),
+    check(
+      'project_tasks_origin_fingerprint_nonempty',
+      sql`${table.originFingerprint} is null or btrim(${table.originFingerprint}) <> ''`,
+    ),
+    check(
+      'project_tasks_one_assignee',
+      sql`num_nonnulls(${table.assigneeAgent}, ${table.assigneeUserId}) <= 1`,
+    ),
+    check(
+      'project_tasks_assignee_agent_nonempty',
+      sql`${table.assigneeAgent} is null or btrim(${table.assigneeAgent}) <> ''`,
+    ),
+    check(
+      'project_tasks_claim_complete',
+      sql`num_nonnulls(${table.claimSessionId}, ${table.claimedAt}, ${table.claimExpiresAt}) in (0, 3)`,
+    ),
+    check(
+      'project_tasks_claim_expiry_after_claim',
+      sql`${table.claimExpiresAt} is null or ${table.claimExpiresAt} > ${table.claimedAt}`,
+    ),
+    check('project_tasks_not_self_blocked', sql`not (${table.taskId} = any(${table.blockedBy}))`),
+  ],
+);
+
+/** Append-only observations used to evaluate one goal metric over time. */
+export const projectGoalObservations = kortixSchema.table(
+  'project_goal_observations',
+  {
+    observationId: uuid('observation_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    metric: text('metric').notNull(),
+    value: doublePrecision('value').notNull(),
+    source: text('source').notNull(),
+    sessionId: text('session_id'),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_goal_observations_session_fkey',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('set null'),
+    index('idx_project_goal_observations_range').on(
+      table.projectId,
+      table.goalSlug,
+      table.metric,
+      table.observedAt,
+    ),
+    check('project_goal_observations_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_goal_observations_metric_nonempty', sql`btrim(${table.metric}) <> ''`),
+    check('project_goal_observations_source_nonempty', sql`btrim(${table.source}) <> ''`),
+    check(
+      'project_goal_observations_value_finite',
+      sql`${table.value} not in ('NaN'::double precision, 'Infinity'::double precision, '-Infinity'::double precision)`,
+    ),
   ],
 );
 

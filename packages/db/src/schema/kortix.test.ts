@@ -5,6 +5,7 @@ import {
   sandboxStatusEnum,
   sandboxProviderEnum,
   projectStatusEnum,
+  projectTaskStatusEnum,
   projectSessionStatusEnum,
   sessionLifecycleCommandStatusEnum,
   projectRoleEnum,
@@ -22,6 +23,8 @@ import {
   projectMembers,
   projectSessions,
   projectSessionConnectorBindings,
+  projectTasks,
+  projectGoalObservations,
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
@@ -84,6 +87,18 @@ describe('kortix enums', () => {
 
   test('project_status enum is active or archived', () => {
     expect(projectStatusEnum.enumValues).toEqual(['active', 'archived']);
+  });
+
+  test('project_task_status enum covers the generated task lifecycle', () => {
+    expect(projectTaskStatusEnum.enumValues).toEqual([
+      'backlog',
+      'todo',
+      'doing',
+      'blocked',
+      'review',
+      'done',
+      'cancelled',
+    ]);
   });
 
   test('project_session_status enum covers the session lifecycle', () => {
@@ -367,6 +382,49 @@ describe('projects table', () => {
     const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
     expect(accountRepo).toBeDefined();
     expect(accountRepo?.config.unique).toBe(false);
+  });
+});
+
+describe('generated project state tables', () => {
+  test('tasks expose durable claim, assignment, dependency, and result fields', () => {
+    expect(columnNames(projectTasks)).toEqual([
+      'task_id',
+      'project_id',
+      'goal_slug',
+      'parent_id',
+      'title',
+      'body',
+      'status',
+      'priority',
+      'assignee_agent',
+      'assignee_user_id',
+      'blocked_by',
+      'origin',
+      'result',
+      'origin_fingerprint',
+      'claim_session_id',
+      'claimed_at',
+      'claim_expires_at',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_project_origin_fingerprint');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_blocked_by');
+  });
+
+  test('goal observations expose the indexed metric time range', () => {
+    expect(columnNames(projectGoalObservations)).toEqual([
+      'observation_id',
+      'project_id',
+      'goal_slug',
+      'metric',
+      'value',
+      'source',
+      'session_id',
+      'observed_at',
+      'created_at',
+    ]);
+    expect(indexNames(projectGoalObservations)).toContain('idx_project_goal_observations_range');
   });
 });
 
