@@ -24,6 +24,12 @@ import type { KortixAccount } from '@kortix/sdk';
  * `EntityAvatar` at `size="sm"` — the same size `workspace-switcher.tsx` uses
  * for its own account/workspace rows, so the two surfaces share one tile
  * scale, and it sits correctly beside this default `h-9` `SelectTrigger`.
+ *
+ * Takes `accounts` as-is and offers every one of them — it does NOT filter by
+ * role. The caller (`new-workspace-page.tsx`) is responsible for passing only
+ * accounts the user may actually create a workspace in
+ * (`filterCreatableAccounts`, `new-workspace-form.ts`); this component has no
+ * opinion on permissions and must not duplicate that filter.
  */
 export function AccountPicker({
   accounts,

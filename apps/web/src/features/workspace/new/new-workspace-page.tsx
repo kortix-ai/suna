@@ -13,6 +13,7 @@ import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
+  filterCreatableAccounts,
   isSubmittable,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
@@ -36,7 +37,11 @@ import { listAccounts } from '@kortix/sdk';
  * REAL account count instead of a placeholder. `['accounts']` is the exact
  * cache key `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
  * who reaches `/new` from either menu (the common path) hits a warm cache,
- * not a second request.
+ * not a second request. That list is filtered to `creatableAccounts` (owner
+ * or admin — `POST /provision` 403s on anything else, same predicate as
+ * `create-account-selection.ts`) before it reaches either the picker or the
+ * submit gate, so a user can never pick, or implicitly submit into, an
+ * account that would fail.
  *
  * Layout is fixed by the spec: one centered column, fields in a single
  * bordered card, primary button OUTSIDE the card at card width. The button
@@ -77,19 +82,27 @@ export function NewWorkspacePage() {
   });
   const accounts = accountsQuery.data ?? [];
 
+  // `filterCreatableAccounts` (`new-workspace-form.ts`) matches
+  // `create-account-selection.ts`'s predicate exactly, so the two never
+  // disagree about who can create a workspace while both exist. Called ONCE
+  // here; the result feeds both `AccountPicker` and `isSubmittable` below —
+  // never the raw list to one and this to the other, which would let "what
+  // the user can pick" and "what gates submit" disagree.
+  const creatableAccounts = filterCreatableAccounts(accounts);
+
   // `accountsQuery.isLoading` is checked here AS WELL AS inside
   // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
-  // purpose, not redundant: during the loading window `accounts.length` is
-  // `0` for every user, no matter how many accounts they really have.
+  // purpose, not redundant: during the loading window `creatableAccounts` is
+  // `[]` for every user, no matter how many accounts they really have.
   // `isSubmittable`'s floor already blocks a submit at that `0` — so a
   // multi-account user could not slip through even without this line. What
   // this line adds is making the REASON legible at the call site: without it,
-  // a reader sees the button disabled and has no way to tell "no accounts
-  // yet" apart from "accounts still loading". The bug this whole gate exists
-  // to prevent — a multi-account user submitting with no `account_id`, and
-  // the server silently defaulting the workspace into the wrong account — is
-  // exactly what a stale reading of `accounts.length` during that window
-  // would let through.
+  // a reader sees the button disabled and has no way to tell "no creatable
+  // accounts yet" apart from "accounts still loading". The bug this whole
+  // gate exists to prevent — a multi-account user submitting with no
+  // `account_id`, and the server silently defaulting the workspace into the
+  // wrong account — is exactly what a stale reading of that count during the
+  // loading window would let through.
   //
   // `state.source === 'managed'` is gated here, not in the shared
   // `isSubmittable`: `POST /provision` (the only wired submit path, landing in
@@ -98,7 +111,7 @@ export function NewWorkspacePage() {
   // explains this inline and links to the real GitHub connect flow instead of
   // shipping a form that would 400.
   const canSubmit =
-    isSubmittable(state, accounts.length) &&
+    isSubmittable(state, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
     state.source === 'managed' &&
     !submitting;
@@ -183,10 +196,23 @@ export function NewWorkspacePage() {
           ) : null}
 
           <AccountPicker
-            accounts={accounts}
+            accounts={creatableAccounts}
             value={state.accountId}
             onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
           />
+          {/* `isSubmittable`'s `accountCount < 1` floor already disables the
+              button here — this note is what stops that disabled button from
+              being unexplained. Gated on `!accountsQuery.isLoading` so it
+              cannot flash true during the load window, when
+              `creatableAccounts` is `[]` for every user regardless of their
+              real access. Plain muted text in the field group's own flow,
+              same treatment as `AdvancedFields`' GitHub-source note — no
+              `InfoBanner`, no second card. */}
+          {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              You need owner or admin access in an account to create a workspace.
+            </p>
+          ) : null}
 
           <AdvancedFields state={state} onChange={setState} />
         </div>

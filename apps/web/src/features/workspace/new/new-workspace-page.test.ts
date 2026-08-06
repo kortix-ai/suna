@@ -91,14 +91,27 @@ describe('/new page: uses the shared form model, not local rules', () => {
     expect(code).toContain("from '@/features/workspace/new/workspace-name'");
   });
 
-  test('gates canSubmit on the form model, the REAL account count, and the loading + in-flight state', () => {
+  test('gates canSubmit on the form model, the REAL CREATABLE account count, and the loading + in-flight state', () => {
     // Job 2's whole point: the Task-11 placeholder `isSubmittable(state, 1)`
     // is gone, replaced by the real query-derived count plus an explicit
     // loading gate — not just `isSubmittable`'s own internal floor.
-    expect(code).toContain('isSubmittable(state, accounts.length)');
+    expect(code).toContain('isSubmittable(state, creatableAccounts.length)');
     expect(code).not.toContain('isSubmittable(state, 1)');
+    // Fix round 1 regression pin: the RAW (unfiltered) account count must
+    // never drive the gate — an account the user cannot create in would then
+    // count toward "ready to submit", and the server 403s on it.
+    expect(code).not.toContain('isSubmittable(state, accounts.length)');
     expect(code).toContain('!accountsQuery.isLoading');
     expect(code).toContain('!submitting');
+  });
+
+  test('computes creatableAccounts via the shared filterCreatableAccounts helper, matching create-account-selection.ts', () => {
+    expect(code).toContain('const creatableAccounts = filterCreatableAccounts(accounts)');
+    expect(code).toContain("from '@/features/workspace/new/new-workspace-form'");
+    // Paired negative: the filter is not re-implemented inline on the page —
+    // there is exactly one place (`new-workspace-form.ts`) that decides who
+    // can create, so it can never drift from `create-account-selection.ts`.
+    expect(code).not.toContain("account.account_role === 'owner'");
   });
 
   test('only surfaces the name error after the field has been blurred once', () => {
@@ -170,7 +183,7 @@ describe('/new page: layout shape (design is a release gate here)', () => {
 });
 
 describe('/new page: AccountPicker wiring', () => {
-  test('renders AccountPicker inside the card, wired to the real accounts list and state.accountId', () => {
+  test('renders AccountPicker inside the card, wired to the CREATABLE accounts list and state.accountId', () => {
     const cardStart = code.indexOf('rounded-md border');
     const divStart = code.lastIndexOf('<div', cardStart);
     const card = elementText(code, 'div', divStart);
@@ -182,7 +195,11 @@ describe('/new page: AccountPicker wiring', () => {
     expect(pickers).toHaveLength(1);
     const picker = pickers[0]!;
 
-    expect(picker).toContain('accounts={accounts}');
+    // Fix round 1: the picker must receive the FILTERED list, not the raw
+    // one — offering an account the user cannot create in is a choice that
+    // can only 403.
+    expect(picker).toContain('accounts={creatableAccounts}');
+    expect(picker).not.toContain('accounts={accounts}');
     expect(picker).toContain('value={state.accountId}');
     expect(picker).toContain(
       "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
@@ -191,6 +208,41 @@ describe('/new page: AccountPicker wiring', () => {
 
   test('imports AccountPicker from its own module, not re-implemented inline', () => {
     expect(code).toContain("from '@/features/workspace/new/account-picker'");
+  });
+
+  test('the SAME creatableAccounts value feeds both the picker and the submit gate — no count mismatch', () => {
+    // "What the user can pick" and "what gates submit" must be the exact same
+    // list. Counting references to the shared variable, rather than checking
+    // each site in isolation, is what catches a future edit that reintroduces
+    // two different lists (e.g. a second, slightly different filter for one
+    // of the two call sites).
+    const creatableRefs = code.match(/creatableAccounts/g) ?? [];
+    // Declaration + AccountPicker's `accounts={creatableAccounts}` +
+    // isSubmittable's `creatableAccounts.length` + the zero-state note's
+    // `creatableAccounts.length === 0` guard = 4 occurrences.
+    expect(creatableRefs).toHaveLength(4);
+  });
+});
+
+describe('/new page: zero-creatable-accounts state', () => {
+  test('renders an explanatory note instead of a silently-disabled button when nothing is creatable', () => {
+    expect(code).toContain('creatableAccounts.length === 0');
+    expect(code).toContain('You need owner or admin access in an account to create a workspace.');
+    // Paired negative: it is plain text in the field group's own flow, not a
+    // second bordered surface — `advanced-fields.tsx`'s GitHub-source note
+    // already had to fix exactly this (InfoBanner nested inside this same
+    // card).
+    expect(code).not.toContain('<InfoBanner');
+    expect(code).not.toContain("from '@/components/ui/info-banner'");
+  });
+
+  test('the note is gated on accountsQuery.isLoading so it cannot flash true before accounts resolve', () => {
+    // During the load window `creatableAccounts` is `[]` for every user
+    // regardless of their real access — without this gate, EVERY user would
+    // see the "you need access" note for one frame on every visit.
+    const noteGuard = code.match(/\{[^{}]*creatableAccounts\.length === 0[^{}]*\? \(/)?.[0];
+    expect(noteGuard).toBeDefined();
+    expect(noteGuard).toContain('!accountsQuery.isLoading');
   });
 });
 

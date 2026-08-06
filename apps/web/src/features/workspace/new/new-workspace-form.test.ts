@@ -3,8 +3,16 @@ import { describe, expect, test } from 'bun:test';
 import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
+  filterCreatableAccounts,
   isSubmittable,
 } from './new-workspace-form';
+import type { KortixAccount } from '@kortix/sdk';
+
+const owner: KortixAccount = { account_id: 'a1', name: 'Owner Co', account_role: 'owner' };
+const admin: KortixAccount = { account_id: 'a2', name: 'Admin Co', account_role: 'admin' };
+const member: KortixAccount = { account_id: 'a3', name: 'Member Co', account_role: 'member' };
+// `account_role` is optional on `KortixAccount` — this account has none at all.
+const roleless: KortixAccount = { account_id: 'a4', name: 'No Role Co' };
 
 describe('INITIAL_FORM_STATE', () => {
   test('defaults to a Kortix-managed repo on main, with no icon', () => {
@@ -16,6 +24,31 @@ describe('INITIAL_FORM_STATE', () => {
       templateId: null,
       accountId: null,
     });
+  });
+});
+
+describe('filterCreatableAccounts', () => {
+  test('keeps owner and admin accounts', () => {
+    expect(filterCreatableAccounts([owner, admin])).toEqual([owner, admin]);
+  });
+
+  test('excludes a member-role account', () => {
+    // The regression this whole fix round exists for: POST /provision 403s
+    // "Owner or admin role required" for a member, so offering it in the
+    // picker is a choice that can only fail.
+    expect(filterCreatableAccounts([owner, member])).toEqual([owner]);
+  });
+
+  test('excludes an account with no account_role at all — fails closed', () => {
+    expect(filterCreatableAccounts([owner, roleless])).toEqual([owner]);
+  });
+
+  test('returns empty when nothing is creatable', () => {
+    expect(filterCreatableAccounts([member, roleless])).toEqual([]);
+  });
+
+  test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
+    expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
   });
 });
 

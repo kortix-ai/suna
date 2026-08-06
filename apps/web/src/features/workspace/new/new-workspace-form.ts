@@ -1,5 +1,6 @@
 import type { ProjectIconValue } from '@/features/projects/modal/project-icon-field';
 import { validateWorkspaceName } from '@/features/workspace/new/workspace-name';
+import type { KortixAccount } from '@kortix/sdk';
 
 export type RepositorySource = 'managed' | 'github-create' | 'github-import';
 
@@ -27,6 +28,32 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
   templateId: null,
   accountId: null,
 };
+
+/**
+ * Accounts the signed-in user may actually create a workspace in — owner or
+ * admin. `POST /provision` requires `ACCOUNT_ACTIONS.PROJECT_CREATE` and
+ * returns 403 "Owner or admin role required" for anyone else
+ * (`apps/api/src/projects/routes/r1.ts:462`), so offering any other account
+ * would be a choice that can only fail: the user fills in a name, presses
+ * Create, and gets a 403 with no warning.
+ *
+ * Same predicate as `create-account-selection.ts`'s `options` filter, so the
+ * two never disagree about who can create a workspace while both exist.
+ *
+ * `account_role` is optional on `KortixAccount` — an account with no role at
+ * all is excluded too (`undefined !== 'owner'`), the same fail-closed
+ * direction the modal's filter takes.
+ *
+ * Called exactly ONCE per render, in `new-workspace-page.tsx`, and the result
+ * feeds both `AccountPicker` and `isSubmittable` below — never the raw list
+ * to one and this to the other, which would let "what the user can pick" and
+ * "what gates submit" disagree.
+ */
+export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
+  return accounts.filter(
+    (account) => account.account_role === 'owner' || account.account_role === 'admin',
+  );
+}
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {
   if (!validateWorkspaceName(state.name).ok) return false;
