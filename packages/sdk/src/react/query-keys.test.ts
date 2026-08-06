@@ -16,6 +16,7 @@ describe('qk vs kortixKeys — disjoint key spaces', () => {
   const id = 'p1';
 
   const qkKeys: Record<string, readonly unknown[]> = {
+    'qk.projects.scope()': qk.projects.scope(),
     'qk.projects.list()': qk.projects.list(),
     "qk.projects.list('acct_1')": qk.projects.list('acct_1'),
     // Same id as `kortixKeys.project(id)` below — this is the exact pair that
@@ -104,5 +105,28 @@ describe('qk.project', () => {
   test('the projects list partitions by account', () => {
     expect(qk.projects.list('acct_1')).not.toEqual(qk.projects.list('acct_2') as never);
     expect(qk.projects.list()).toEqual(qk.projects.list(undefined));
+  });
+});
+
+describe('qk.projects.scope', () => {
+  // `scope()` is the invalidation prefix that reaches every account's list
+  // AND the accountless slot — the shared two-element ['kx','projects'].
+  // `list(accountId)` narrows the SAME entity (siblings by design: 'all' vs
+  // an id is not a parent/child relationship), so `scope()` is the only
+  // form that reaches both.
+  test('is a strict prefix of list() and list(accountId)', () => {
+    const scope = qk.projects.scope();
+    expect(startsWith(qk.projects.list(), scope)).toBe(true);
+    expect(startsWith(qk.projects.list('acct_1'), scope)).toBe(true);
+    expect(startsWith(qk.projects.list('acct_2'), scope)).toBe(true);
+  });
+
+  // scope() is a prefix, never a query key. If it equals a real list key,
+  // invalidating the subtree also refetches a query nobody declared.
+  test('is a strict prefix, never a key itself', () => {
+    const scope = qk.projects.scope();
+    expect(qk.projects.list().length).toBeGreaterThan(scope.length);
+    expect(qk.projects.list()).not.toEqual(scope as never);
+    expect(qk.projects.list('acct_1')).not.toEqual(scope as never);
   });
 });

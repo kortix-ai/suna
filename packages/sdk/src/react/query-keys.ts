@@ -33,8 +33,15 @@
  */
 export const qk = {
   projects: {
+    /** Invalidation prefix covering every account's list AND the accountless
+     *  slot. Never pass this as a `queryKey` — `list(accountId)` and
+     *  `list()` are SIBLINGS (`'<id>'` vs `'all'`), not a parent/child pair,
+     *  so `list()` alone does not prefix-match `list(accountId)`. Use this
+     *  when a mutation needs to reach every form at once. */
+    scope: () => ['kx', 'projects'] as const,
+
     /** Every project the account can see. `undefined` means the active account. */
-    list: (accountId?: string) => ['kx', 'projects', accountId ?? 'all'] as const,
+    list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
   },
 
   project: {

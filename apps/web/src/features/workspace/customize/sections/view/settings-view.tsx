@@ -85,7 +85,12 @@ export function SettingsView({ projectId }: { projectId: string }) {
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
       successToast('Project archived');
-      queryClient.invalidateQueries({ queryKey: qk.projects.list(project?.account_id) });
+      // qk.projects.scope(): for a single-account user the archived
+      // project's account IS the primary account qk.projects.list() (no
+      // args) resolves to, so a precise invalidation would leave the
+      // marketplace picker showing the archived project until gcTime
+      // evicts it. Archiving is rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
@@ -218,7 +223,11 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
+      // qk.projects.scope(): reaches every account's list (and the
+      // accountless slot the marketplace picker reads), restoring the reach
+      // the old bare projects-literal prefix match had. Repo-settings edits
+      // are rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
@@ -463,7 +472,11 @@ function SandboxProviderRow({
           onSettled: (state) => {
             queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
             void invalidateProject(queryClient, project.project_id);
-            queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
+            // qk.projects.scope(): restores the reach the old bare
+            // projects-literal prefix match had. A sandbox-provider switch
+            // is rare — over-invalidating a few extra account lists costs
+            // nothing measurable.
+            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
             const status = state?.latest?.status;
             if (status === 'activated') {
               successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
@@ -716,7 +729,10 @@ function GeneralProjectCard({
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: qk.projects.list(project.account_id) });
+      // qk.projects.scope(): restores the reach the old bare
+      // projects-literal prefix match had. A rename is rare —
+      // over-invalidating a few extra account lists costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
   });

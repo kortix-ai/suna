@@ -54,10 +54,11 @@ export function applySandboxProviderResult(
     c ? { ...c, project: cached } : c,
   );
   queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-  // cached.account_id is real (stripped straight off the API result above),
-  // so this can target the one list entry the provider switch actually
-  // changed instead of every account's.
-  queryClient.invalidateQueries({ queryKey: qk.projects.list(cached.account_id) });
+  // qk.projects.scope(), not the precise per-account form: restores the
+  // reach the old bare projects-literal prefix match had — every account's
+  // list, and the accountless slot the marketplace picker reads. A
+  // sandbox-provider switch is rare — over-invalidating costs nothing.
+  queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
   return 'project';
 }
 

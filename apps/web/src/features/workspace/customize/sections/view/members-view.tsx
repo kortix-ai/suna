@@ -634,7 +634,10 @@ function ProjectAccessCard({
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-    queryClient.invalidateQueries({ queryKey: qk.projects.list(accountId ?? undefined) });
+    // qk.projects.scope(): restores the reach the old bare projects-literal
+    // prefix match had. An access change is rare — over-invalidating a few
+    // extra account lists costs nothing measurable.
+    queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   };
 

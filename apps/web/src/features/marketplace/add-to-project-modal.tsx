@@ -156,7 +156,10 @@ export function AddToProjectModal({
           starter_template: 'general-knowledge-worker',
           source_item_id: isProject ? item.id : undefined,
         });
-        queryClient.invalidateQueries({ queryKey: qk.projects.list(account.account_id) });
+        // qk.projects.scope(): restores the reach the old bare
+        // projects-literal prefix match had — every account's list, and the
+        // accountless slot the marketplace picker itself reads.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
 
         const sessionId = isProject
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })

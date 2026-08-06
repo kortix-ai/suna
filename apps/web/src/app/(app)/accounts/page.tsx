@@ -144,8 +144,12 @@ export default function AccountsPage() {
           });
           void queryClient.invalidateQueries({ queryKey: ['accounts'] });
           setSelectedAccountId(account.account_id);
+          // qk.projects.scope(): reaches every account's list (and the
+          // accountless slot), the same reach the old bare projects-literal
+          // prefix match had. Account creation is rare — over-invalidating
+          // costs nothing measurable.
           void queryClient.invalidateQueries({
-            queryKey: qk.projects.list(account.account_id),
+            queryKey: qk.projects.scope(),
           });
           // The landing door, NOT the remembered project: that cookie names a
           // project in the account being left.

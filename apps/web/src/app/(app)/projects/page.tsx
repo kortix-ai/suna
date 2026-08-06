@@ -286,7 +286,12 @@ export default function ProjectsPage() {
             return;
           }
           writeLastProjectId(user?.id, project.project_id);
-          queryClient.invalidateQueries({ queryKey: qk.projects.list(accountId) });
+          // qk.projects.scope(), not the precise per-account form: a
+          // low-frequency mutation like this can afford to reach every
+          // account's list (and the accountless slot the marketplace picker
+          // reads), the same reach the old bare projects-literal prefix
+          // match had.
+          queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
           router.replace(`/projects/${project.project_id}`);
         })
         .catch((err) => {
@@ -342,11 +347,14 @@ export default function ProjectsPage() {
         suppressAutoProjectAfterDelete();
       }
       if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
-      // Scoped to the archived project's own account — the account this
-      // mutation actually changed. Every reader of that account's list
-      // (this page, the sidebar switcher, the command palette, …) is a
-      // qk.projects.list(accountId) observer, so this alone reaches them.
-      queryClient.invalidateQueries({ queryKey: qk.projects.list(archiveTarget?.account_id) });
+      // qk.projects.scope(), not the precise per-account form: for a
+      // single-account user the archived project's account IS the primary
+      // account the accountless qk.projects.list() slot resolves to, so a
+      // precise invalidation here would leave the marketplace picker's
+      // cached list showing the archived project until gcTime evicts it.
+      // Archiving is rare — over-invalidating a few extra account lists
+      // costs nothing measurable.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');
       setArchiveTarget(null);
