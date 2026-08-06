@@ -1,12 +1,12 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 /**
  * WorkspaceSwitcher — the standalone "which project" switcher.
  *
- * Scoped to the currently-selected account (account switching lives in the
- * Account·You menu, not here). Rendered in two places via `variant`:
+ * The ONLY complete workspace directory in the product: it lists every
+ * workspace in every account the user belongs to, grouped by account (account
+ * switching itself lives in the Account·You menu, not here). Rendered in two
+ * places via `variant`:
  *  - `header`  — a compact pill in the top-bar breadcrumb.
  *  - `sidebar` — the merged brand/switcher control at the top of the project
  *    sidebar: one shell, two segments. The Kortix mark navigates to the
@@ -20,7 +20,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { GitBranchIcon as FolderGit2, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -42,6 +42,10 @@ import { SidebarContext } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Kortix } from '@/features/icon/icons/kortix';
 import { resolveSwitcherLabel } from '@/features/workspace/project-sidebar/project-switcher-label';
+import {
+  filterWorkspaceGroups,
+  groupWorkspacesByAccount,
+} from '@/features/workspace/project-sidebar/workspace-grouping';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
@@ -51,7 +55,6 @@ import {
   listProjectsForAccount,
   type KortixProject,
 } from '@kortix/sdk';
-import { formatRelative } from '@kortix/shared';
 import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
 export type WorkspaceSwitcherVariant = 'header' | 'sidebar';
@@ -63,7 +66,6 @@ export function WorkspaceSwitcher({
   variant?: WorkspaceSwitcherVariant;
   className?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
@@ -96,8 +98,9 @@ export function WorkspaceSwitcher({
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
-  // Account switching lives in the Account·You menu; here we just read the
-  // selected account to scope the project list.
+  // Account switching lives in the Account·You menu; here the selected
+  // account only decides which group sorts first (via `groupWorkspacesByAccount`
+  // below) and gates the header-variant loading skeleton until it resolves.
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -108,19 +111,31 @@ export function WorkspaceSwitcher({
     accountsQuery.data?.[0] ??
     null;
 
-  const projectsQuery = useQuery({
-    queryKey: ['projects', activeAccount?.account_id],
-    queryFn: () => listProjectsForAccount(activeAccount?.account_id),
-    enabled: !!activeAccount,
-    staleTime: 30_000,
+  // Every account the user belongs to, and every workspace in each. This menu
+  // is the ONLY complete workspace directory now that the /projects index is
+  // gone, so it lists all accounts' workspaces, not just the selected
+  // account's. `GET /projects` with no `account_id` scopes server-side to a
+  // single default account (apps/api resolveProjectAccount ->
+  // resolveAccountId), so there is no single unscoped call that returns
+  // everything — one listProjectsForAccount call per account, fanned out with
+  // useQueries and flattened below.
+  const workspaceQueries = useQueries({
+    queries: (accountsQuery.data ?? []).map((account) => ({
+      queryKey: ['projects', account.account_id],
+      queryFn: () => listProjectsForAccount(account.account_id),
+      staleTime: 30_000,
+    })),
   });
+  // Loading until every account's workspaces are in, not just the first.
+  const workspacesLoading = workspaceQueries.some((q) => q.isLoading);
+  const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
 
   const activeProject = useMemo(
     () =>
-      activeProjectId && projectsQuery.data
-        ? (projectsQuery.data.find((p) => p.project_id === activeProjectId) ?? null)
+      activeProjectId
+        ? (allWorkspaces.find((p) => p.project_id === activeProjectId) ?? null)
         : null,
-    [projectsQuery.data, activeProjectId],
+    [allWorkspaces, activeProjectId],
   );
 
   // The project list is the slow way to learn the open project's name — it
@@ -143,22 +158,21 @@ export function WorkspaceSwitcher({
     if (target && target === activeProjectId) endSwitch();
   }, [activeProjectId, endSwitch]);
 
-  const allProjectsSorted = useMemo(() => {
-    const list = [...(projectsQuery.data ?? [])];
-    list.sort((a, b) => {
-      const at = a.last_opened_at ? new Date(a.last_opened_at).getTime() : 0;
-      const bt = b.last_opened_at ? new Date(b.last_opened_at).getTime() : 0;
-      return bt - at;
-    });
-    return list;
-  }, [projectsQuery.data]);
-
-  const showSearch = allProjectsSorted.length > 6;
-  const filteredProjects = useMemo(() => {
-    if (!query.trim()) return allProjectsSorted.slice(0, 8);
-    const q = query.trim().toLowerCase();
-    return allProjectsSorted.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
-  }, [allProjectsSorted, query]);
+  // Grouping and filtering both go through the shared helpers — never sorted
+  // or sliced here. `filterWorkspaceGroups` returns the original group/array
+  // references on the empty-query and account-name-match paths, so this
+  // component only ever reads them.
+  const groups = useMemo(
+    () =>
+      groupWorkspacesByAccount({
+        accounts: accountsQuery.data ?? [],
+        workspaces: allWorkspaces,
+        activeWorkspaceId: activeProjectId ?? null,
+      }),
+    [accountsQuery.data, allWorkspaces, activeProjectId],
+  );
+  const visibleGroups = useMemo(() => filterWorkspaceGroups(groups, query), [groups, query]);
+  const isEmpty = visibleGroups.length === 0;
 
   const close = () => setMenuOpen(false);
   const switchProject = (project: KortixProject) => {
@@ -261,66 +275,66 @@ export function WorkspaceSwitcher({
           variant === 'sidebar' ? 'w-64 shadow-md' : 'w-64',
         )}
       >
-        {showSearch && (
-          <div className="border-border/40 border-b px-2 py-2">
-            <div className="relative">
-              <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
-              <Input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject',
-                )}
-                className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-8 text-sm"
-              />
-            </div>
+        {/* Always mounted. The /projects index is gone, so this menu is the
+            whole directory — a conditional search box would make workspace
+            N+7 unreachable for anyone with more than a handful. */}
+        <div className="border-border/40 border-b px-2 py-2">
+          <div className="relative">
+            <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find workspace…"
+              className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-8 text-sm"
+            />
           </div>
-        )}
+        </div>
 
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Projects</DropdownMenuLabel>
-          <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {projectsQuery.isLoading ? (
-              <div className="space-y-1 py-1">
-                {Array.from({ length: 3 }, (_, i) => (
-                  <Skeleton key={i} className="h-7 rounded-md" />
-                ))}
-              </div>
-            ) : filteredProjects.length === 0 ? (
-              <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-                {query.trim() ? 'No projects match' : 'No projects yet'}
-              </div>
-            ) : (
-              filteredProjects.map((project) => {
-                const active = project.project_id === activeProjectId;
-                const loading = switching && project.project_id !== activeProjectId;
-                const relative = formatRelative(project.last_opened_at, { maxRelativeDays: 7 });
-                return (
-                  <DropdownMenuItem
-                    key={project.project_id}
-                    disabled={loading}
-                    onSelect={() => switchProject(project)}
-                    className={cn('cursor-pointer', active && 'bg-muted/80')}
-                  >
-                    <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
-                    <div className="grid min-w-0 flex-1 leading-tight">
-                      <span className="truncate text-sm font-medium">{project.name}</span>
-                    </div>
-                    {loading ? (
-                      <Loading className="text-muted-foreground size-3.5" />
-                    ) : active ? (
-                      <CheckCircleSolid
-                        weight="fill"
-                        className="text-kortix-green size-3.5 shrink-0"
-                      />
-                    ) : null}
-                  </DropdownMenuItem>
-                );
-              })
-            )}
-          </div>
-        </DropdownMenuGroup>
+        <div className="max-h-[320px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {workspacesLoading ? (
+            <div className="space-y-1 p-1">
+              {Array.from({ length: 3 }, (_, i) => (
+                <Skeleton key={i} className="h-7 rounded-md" />
+              ))}
+            </div>
+          ) : isEmpty ? (
+            <div className="text-muted-foreground/60 px-2 py-3 text-xs">
+              {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
+            </div>
+          ) : (
+            visibleGroups.map((group) => (
+              <DropdownMenuGroup key={group.accountId}>
+                <DropdownMenuLabel>{group.accountName}</DropdownMenuLabel>
+                {group.workspaces.map((workspace) => {
+                  const active = workspace.project_id === activeProjectId;
+                  const loading = switching && workspace.project_id !== activeProjectId;
+                  return (
+                    <DropdownMenuItem
+                      key={workspace.project_id}
+                      disabled={loading}
+                      onSelect={() => switchProject(workspace)}
+                      className={cn('cursor-pointer', active && 'bg-muted/80')}
+                    >
+                      <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {workspace.name}
+                      </span>
+                      {loading ? (
+                        <Loading className="text-muted-foreground size-3.5" />
+                      ) : active ? (
+                        <CheckCircleSolid
+                          weight="fill"
+                          className="text-kortix-green size-3.5 shrink-0"
+                        />
+                      ) : null}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+            ))
+          )}
+        </div>
 
         <DropdownMenuSeparator className="my-0" />
 
@@ -329,19 +343,10 @@ export function WorkspaceSwitcher({
             className="cursor-pointer font-medium"
             onSelect={() => {
               close();
-              router.push('/projects');
+              router.push('/new');
             }}
           >
-            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="cursor-pointer font-medium"
-            onSelect={() => {
-              close();
-              router.push('/projects?new=1');
-            }}
-          >
-            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}
+            Create a workspace…
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
