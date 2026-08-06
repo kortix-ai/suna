@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_VERSION,
   NODE_VERSION,
@@ -73,6 +74,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
+    expect(merged).toContain(`pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}"`);
+    expect(merged).toContain(`test "$(anydoc --version)" = "${ANYDOC_VERSION}"`);
     expect(merged).not.toContain('npm install -g opencode-ai');
     expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');

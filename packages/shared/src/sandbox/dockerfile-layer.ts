@@ -23,6 +23,7 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
@@ -637,6 +638,18 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && ln -sf bun /home/kortix/.bun/bin/bunx \\',
     '    && rm -rf /tmp/bun /tmp/bun.zip \\',
     `    && test "$(bun --version)" = "${BUN_VERSION}"`,
+    '',
+    // anydoc (Firecrawl) — the document→Markdown converter the
+    // convert-documents-to-markdown skill drives (Word/PowerPoint/Excel/ODF/
+    // RTF/EPUB/CSV/PDF → GFM). Baked so it works with zero runtime download —
+    // the upstream skill's `npx -y` would fetch from npm on the session hot
+    // path. Pure napi prebuilt binaries via platform optionalDependencies; no
+    // build scripts, so no --allow-build. Sits BELOW Chromium/opencode so a
+    // version bump re-uses their cached layers, and ABOVE the config-deps
+    // install (first non-deterministic layer downstream).
+    `RUN pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \\`,
+    '    && command -v anydoc \\',
+    `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import

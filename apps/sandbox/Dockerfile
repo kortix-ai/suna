@@ -205,6 +205,13 @@ RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.js
     && rm -rf /tmp/bun /tmp/bun.zip \
     && test "$(bun --version)" = "$BUN_VERSION"
 
+# anydoc (Firecrawl) — document→Markdown converter for the
+# convert-documents-to-markdown skill. Prebuilt napi binaries; no build scripts.
+RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').anydoc)")" \
+    && pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \
+    && command -v anydoc \
+    && test "$(anydoc --version)" = "$ANYDOC_VERSION"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \
     && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \

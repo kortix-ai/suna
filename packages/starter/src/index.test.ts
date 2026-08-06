@@ -225,6 +225,7 @@ describe('getStarterFiles', () => {
       // Design quality for every artifact below (CSS, PPT, matplotlib, PDF).
       'design-foundations',
       // Documents & decks.
+      'convert-documents-to-markdown',
       'docx',
       'pdf',
       'presentations',
