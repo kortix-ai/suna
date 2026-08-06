@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+import { ConnectorError, createConnectorClient } from '@kortix/connector-sdk';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   accountTokens,
@@ -305,6 +306,37 @@ async function seedCallableAction(): Promise<void> {
   });
 }
 
+async function driveConnectorSdk(): Promise<void> {
+  const client = createConnectorClient({ apiUrl: API, token: agentToken, projectId });
+  const catalog = await client.connectors();
+  check(
+    'connector SDK live catalog uses the agent token',
+    catalog.some((connector) => connector.slug === FIXTURE_SLUG),
+  );
+  const tools = await client.tools();
+  check(
+    'connector SDK live tools flatten the fixture action',
+    tools.some((tool) => tool.tool === `${FIXTURE_SLUG}.get`),
+  );
+  const called = await client.call<{ args?: { q?: string } }>(FIXTURE_SLUG, 'get', {
+    q: 'connector-sdk-agent-token',
+  });
+  check(
+    'connector SDK live call reaches the real upstream',
+    called.ok === true && called.data?.args?.q === 'connector-sdk-agent-token',
+  );
+  let badActionError: unknown;
+  try {
+    await client.call(FIXTURE_SLUG, 'definitely_not_a_real_action');
+  } catch (error) {
+    badActionError = error;
+  }
+  check(
+    'connector SDK live bad action raises ConnectorError',
+    badActionError instanceof ConnectorError,
+  );
+}
+
 async function driveMcp(): Promise<void> {
   const proc = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, 'connectors', 'mcp'],
@@ -437,6 +469,7 @@ async function commandMatrix(): Promise<void> {
   );
 
   await seedCallableAction();
+  await driveConnectorSdk();
   const inheritedCatalog = await expectCli(
     'unconfigured session scope inherits the active project connection',
     ['connectors', 'ls', '--session', sessionId],
