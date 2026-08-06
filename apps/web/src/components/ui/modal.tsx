@@ -121,15 +121,15 @@ ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const ModalVariants = cva(
   cn(
-    'fixed gap-0 border p-0 shadow-lg overflow-y-auto',
+    'fixed gap-0 overflow-y-auto p-0 smooth-shadow-lg',
     'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
   ),
   {
     variants: {
       variant: {
-        default: 'bg-sidebar border-muted/60',
-        base: 'bg-background border-muted/60',
+        default: 'bg-sidebar',
+        base: 'bg-background',
         transparent: 'bg-transparent border-none p-0',
       },
       side: {

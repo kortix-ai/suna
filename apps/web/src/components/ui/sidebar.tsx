@@ -336,17 +336,18 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className={cn(
-            'bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
+            'bg-sidebar flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm',
             // Gated on peekable (not peeking) so hidden ↔ flyout swaps no
             // styles at all — the panel slides in and out as a rigid card.
-            // border-border, not border-sidebar-border: the sidebar token is
-            // pure white in dark mode and reads as a glowing edge.
+            // The smooth neutral ring stays visible in both color schemes
+            // without becoming a bright edge in dark mode.
             //
             // No transition on the radius/shadow: peekable only flips at the
             // dock moment, so this was purely the dock morph's fourth
             // concurrent timeline. It now snaps with the geometry above, in
             // the same frame.
-            peekable && 'border-border overflow-hidden rounded-lg border shadow-xl',
+            peekable &&
+              'smooth-shadow-ring-xl smooth-ring-neutral-300/30 overflow-hidden rounded-lg',
           )}
         >
           {children}
@@ -435,7 +436,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
       data-slot="sidebar-inset"
       className={cn(
         'bg-sidebar relative flex w-full flex-1 flex-col overflow-hidden',
-        'md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2',
+        'md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2',
         className,
       )}
       {...props}

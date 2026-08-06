@@ -167,15 +167,16 @@ elevation owners.
 
 ## Verification evidence
 
-| Gate                     | Evidence                                                                |
-| ------------------------ | ----------------------------------------------------------------------- |
-| Baseline web suite       | 4572 pass, 2 fail. Both customize-overlay failures reproduce on `main`. |
-| Global adapter           | `cbbc240636`; 4 pass, 0 fail, 21 assertions.                            |
-| Edge-policy red state    | 36 violations found before migration.                                   |
-| Component migration      | Open; Tasks 4–7 remove the recorded violations.                         |
-| Headless local visual QA | Open until the migrated design-system route is available.               |
-| PR and merge             | Open until all local gates pass.                                        |
-| Deploy Dev and dev QA    | Open until the merged SHA is deployed.                                  |
+| Gate                         | Evidence                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Baseline web suite           | 4572 pass, 2 fail. Both customize-overlay failures reproduce on `main`.                                      |
+| Global adapter               | `cbbc240636`; 4 pass, 0 fail, 21 assertions.                                                                 |
+| Edge-policy red state        | 36 violations found before migration.                                                                        |
+| Shared primitive migration   | 225 pass, 0 fail; ESLint 0 errors and 3 pre-existing React Compiler warnings; edge violations reduced to 22. |
+| Product and public migration | Open; Tasks 5–7 remove the remaining 22 violations.                                                          |
+| Headless local visual QA     | Open until the migrated design-system route is available.                                                    |
+| PR and merge                 | Open until all local gates pass.                                                                             |
+| Deploy Dev and dev QA        | Open until the merged SHA is deployed.                                                                       |
 
 ## Linear
 
