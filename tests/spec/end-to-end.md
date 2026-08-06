@@ -754,3 +754,34 @@ metadata stays in the wrapper's data store. See
 `KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
 `KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
 `KAAB-7` backend idempotency context guard: same key + different `runtime_context` → **409 `IDEMPOTENCY_CONTEXT_CONFLICT`**; a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`**.
+
+---
+
+## 28. Durable goals and generated tasks
+
+Goal declarations and goal status come from the default-branch v2
+`kortix.yaml`. Metric observations and task state come from PostgreSQL. No API
+operation in these flows infers or edits goal status.
+
+`GOAL-1` goal reads, pushes, and observations:
+
+1. `GET /projects/:id/goals` → 200 `{goals,errors}`. A valid manifest returns its authored goals. A malformed goal stays out of `goals` and appears in `errors` with `slug`, `path`, and `error`.
+2. `GET /projects/:id/goals/:slug` → 200 `{goal}` for a declared goal; unknown slug → 404. ANON → 401 and NONMEMBER → 403/404 on both read routes.
+3. `POST /projects/:id/goals/:slug/push` on an active goal with `push` → 202 with `status: queued|fired|deduped`, nullable command/session IDs, and `deduped`. A paused, achieved, or abandoned goal → 409 `goal_inactive`. An active push-less goal or unavailable generated trigger → 409 `goal_push_unavailable`. Unknown goal → 404.
+4. `POST /projects/:id/goals/:slug/observations {metric,value,source,session_id?,observed_at?}` → 201 and persists the finite value. Omitted `observed_at` uses now. An undeclared metric → 400 `metric_not_declared`; a session from another project → 400 `session_not_in_project`; an unknown goal → 404.
+5. `GET /projects/:id/goals/:slug/observations?metric=…&from?&to?&limit?` → 200 ordered observations for the declared metric. Omitted `to` uses now. Omitted `from` uses 30 days before `to`. `limit` is 1–10,000. `from > to`, an invalid bound, or an undeclared metric → 400. Reading observations does not change the authored goal status.
+
+`TASK-1` task creation and reads:
+
+1. `POST /projects/:id/tasks {goal_slug,title,origin,…}` → 201 `{task,created:true}` for a declared goal. Omitted fields default to `parent_id:null`, `body:""`, `status:"backlog"`, `priority:0`, null assignees, and `blocked_by:[]`.
+2. Repeat the create with the same non-null `origin_fingerprint` → 200 with the same `task_id` and `created:false`. A different fingerprint creates a different task. Setting both assignee fields → 400. Creation status `blocked` or `done` → 400. Unknown goal → 404.
+3. `GET /projects/:id/tasks?goal_slug?&status?&limit?` → 200 `{tasks}` sorted by descending priority, then creation time and task ID. With no query, it returns at most 100 tasks across all goals and statuses. Repeated `status` filters are ORed. `limit` is 1–1,000; invalid status or limit → 400.
+4. `GET /projects/:id/tasks/:taskId` → 200 `{task}` for a task in this project; unknown or cross-project task ID → 404. ANON → 401 and NONMEMBER → 403/404 on all task routes.
+
+`TASK-2` task ownership, conflicts, blockers, and evidence:
+
+1. `POST /projects/:id/tasks/:taskId/claim {session_id,lease_seconds?}` → 200 and atomically sets `claim_session_id`, `claimed_at`, and `claim_expires_at`. Omitted `lease_seconds` defaults to 900; the valid range is 30–86,400.
+2. A second session claiming before expiry → 409 `task_claim_conflict`. It does not replace the live claim. The same task can be adopted after expiry. A session from another project → 400 `session_not_in_project`.
+3. `POST /projects/:id/tasks/:taskId/done {session_id,evidence:[{ref,summary?}]}` with the owning project session and non-empty cited evidence → 200. It sets `status:"done"`, stores `result.evidence`, and releases the claim. Missing or empty evidence → 400. A different session while the claim is live → 409 `task_transition_conflict` and preserves the current owner.
+4. `POST /projects/:id/tasks/:taskId/block {session_id,blocker}` with the owning project session and a non-empty blocker → 200. It sets `status:"blocked"`, stores `result.blocker`, and releases the claim. Empty blocker → 400. A different session while the claim is live → 409 `task_transition_conflict`.
+5. After each mutation, `GET /projects/:id/tasks/:taskId` confirms the persisted status, result, and claim fields. Completing or blocking a task does not change its goal's authored status.

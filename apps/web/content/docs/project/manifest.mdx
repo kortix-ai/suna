@@ -82,6 +82,20 @@ agents:
     kortix_cli: [project.cr.open]
     secrets: [GITHUB_AGENT_TOKEN]
 
+goals:
+  - slug: reduce-api-latency
+    title: Keep API latency below 200 ms
+    done_when: The API p95 stays below 200 ms for 30 consecutive days.
+    status: active
+    push: "0 0 9 * * *"
+    timezone: America/Los_Angeles
+    agent: kortix
+    metrics:
+      - name: api_p95_ms
+        direction: decrease
+        target: 200
+        unit: ms
+
 triggers:
   - slug: daily-digest
     type: cron
@@ -104,6 +118,7 @@ triggers:
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no | sandbox image(s) and hardware |
 | `opencode.config_dir` | no | default `.kortix/opencode` |
 | `triggers` | no | list of cron and webhook triggers |
+| `goals` | no | list of durable goals; v2 only |
 | `connectors` | no | list of connector definitions |
 | `policy.default_mode` | no | `allow_all` (default) or `risk`; project-wide connector approval mode |
 | `agents` | yes | name-to-block governance map; must not be empty |
@@ -230,6 +245,98 @@ triggers:
 | `session_id` | required for `pinned` | — | Exact session to re-prompt. |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret holding the HMAC signing key. Full field reference, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
+
+## `goals:`
+
+A goal is an authored, durable objective. Declare goals only in a v2
+`kortix.yaml`. The list is optional. Each goal slug must be unique.
+
+```yaml
+goals:
+  - slug: reduce-api-latency
+    title: Keep API latency below 200 ms
+    done_when: The API p95 stays below 200 ms for 30 consecutive days.
+    status: active
+    push: "0 0 9 * * *"
+    timezone: America/Los_Angeles
+    agent: kortix
+    metrics:
+      - name: api_p95_ms
+        direction: decrease
+        target: 200
+        unit: ms
+```
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `slug` | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`. Must be unique among goals. |
+| `title` | yes | — | Non-empty human label. |
+| `done_when` | yes | — | Non-empty completion criteria. Completion requires cited evidence and an explicit status edit. |
+| `status` | yes | — | `active`, `achieved`, `paused`, or `abandoned`. |
+| `push` | no | — | Non-empty cron expression. Only an active goal with `push` gets scheduled. |
+| `timezone` | no | `UTC` | IANA time-zone name used to evaluate `push`. |
+| `agent` | no | platform `meta` agent | Agent slug used by the generated push trigger. |
+| `metrics` | no | `[]` | Metric declarations used to classify observations. |
+
+Status is explicit authored state:
+
+- `active` means the goal can be pushed. An active goal without `push` has no scheduled run.
+- `achieved` means the completion criteria are satisfied by cited evidence.
+- `paused` stops scheduled and manual pushes without declaring success.
+- `abandoned` stops scheduled and manual pushes because the project no longer pursues the goal.
+
+Task completion and metric observations never change goal status. Change
+`status` in `kortix.yaml`, then land that change through the normal change
+request path. The API rejects a manual push for a non-active goal with `409 goal_inactive`. It rejects an active goal without `push` with `409 goal_push_unavailable`.
+
+### Push desugaring
+
+`push` is syntax sugar for the existing trigger subsystem. It does not create a
+second scheduler. Each active goal with `push` becomes exactly one generated
+cron trigger with these properties:
+
+- slug `kortix-goal-push-<goal-slug>` for slugs that fit the 128-character trigger limit
+- `agent` from the goal, or the platform-owned `meta` agent when omitted
+- `enabled: true`
+- the goal's `push` cron and `timezone`
+- `session_mode: reuse`
+- a generated prompt containing `title`, `done_when`, and every metric
+
+Long goal slugs use a deterministic, valid generated trigger slug of at most
+128 characters. Do not declare a trigger in the generated
+`kortix-goal-push-*` namespace. Validation rejects an explicit/generated slug
+collision. `achieved`, `paused`, `abandoned`, and push-less goals generate no
+trigger.
+
+### Metrics and observations
+
+Each metric has this schema:
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | Non-empty and unique within the goal. |
+| `direction` | yes | `increase` or `decrease`. |
+| `target` | no | Finite number. |
+| `unit` | no | Non-empty string, such as `ms`, `percent`, or `USD`. |
+
+Metrics declare what the project measures. Runtime observations form the time
+series. An observation contains the goal slug, metric name, finite numeric
+value, source, optional project session, and observation time. The API rejects
+an observation for a metric that the goal does not declare.
+
+### State ownership
+
+Git and PostgreSQL own different state:
+
+- Git owns goal declarations, goal status, `done_when`, push policy, agent pins,
+  metric declarations, project code, and durable project facts.
+- PostgreSQL owns generated tasks, task claims and leases, task results,
+  blockers, and metric observations.
+- A session sandbox owns no durable control-plane state. A sandbox loss cannot
+  remove a goal, observation, or task claim.
+
+Do not write task rows or observation history into `kortix.yaml`. Do not infer
+an authored goal status from task rows, observations, chat, or sandbox files.
 
 ## `connectors:`
 

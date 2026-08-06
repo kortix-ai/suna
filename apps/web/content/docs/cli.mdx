@@ -303,6 +303,60 @@ Per-agent model settings on the linked project.
 | `kortix agents model <agent> <provider/model>` | Pin an agent to a model. |
 | `kortix agents model <agent> --clear` | Clear the pin — the agent follows the default again. |
 
+### Goals
+
+Goals are authored in the v2 `kortix.yaml`. These commands read that authored
+state, request goal pushes, and write metric observations.
+
+| Command | Effect |
+| --- | --- |
+| `kortix goals ls [--json]` | List goals and manifest parse errors. `list` is an alias. |
+| `kortix goals show <slug> [--json]` | Show one goal. |
+| `kortix goals push <slug> [--json]` | Request an immediate run for an active goal that has `push`. |
+| `kortix goals observe <slug> --metric <name> --value <number> --source <text> [options]` | Record one finite metric value. |
+| `kortix goals observations <slug> --metric <name> [options]` | List observations for one declared metric. `observation` and `obs` are aliases. |
+
+`observe` accepts `--session <id>` and `--observed-at <ISO>`. The session must
+belong to this project. The timestamp must include `Z` or a numeric offset. It
+defaults to the current time. `--json` prints the SDK response.
+
+`observations` accepts `--from <ISO>`, `--to <ISO>`, `--limit <1..10000>`, and
+`--json`. Both timestamps must include a time-zone offset. `to` defaults to the
+current time. `from` defaults to 30 days before `to`.
+
+### Tasks
+
+Tasks are generated PostgreSQL state. They do not edit `kortix.yaml`.
+
+| Command | Effect |
+| --- | --- |
+| `kortix tasks ls [options]` | List tasks. `list` is an alias. |
+| `kortix tasks show <id> [--json]` | Show one task. |
+| `kortix tasks new --goal <slug> --title <text> [options]` | Create a task for a declared goal. `create` is an alias. |
+
+`tasks new --status` accepts `backlog`, `todo`, `doing`, `review`, or `cancelled`. It defaults to `backlog`. The meta agent creates ready work with `--status todo`.
+| `kortix tasks claim <id> --session <id> [--lease-seconds <30..86400>] [--json]` | Atomically claim a task. The lease defaults to 900 seconds. |
+| `kortix tasks done <id> --session <id> --evidence <ref> [--summary <text>] [--json]` | Complete a claimed task with one cited evidence reference. |
+| `kortix tasks block <id> --session <id> --reason <text> [--json]` | Block a claimed task and record the blocker. |
+
+`ls` accepts `--goal <slug>`, one `--status <status>`, and `--limit <1..1000>`.
+Status is `backlog`, `todo`, `doing`, `blocked`, `review`, `done`, or
+`cancelled`.
+
+`new` requires `--goal` and `--title`. It also accepts `--body <text>`,
+`--priority <integer>`, `--agent <name>`, `--blocked-by <id,id>`, `--origin <text>`,
+`--fingerprint <text>`, and `--json`. `origin` defaults to `cli`. A
+repeated non-null fingerprint for the same project reuses the existing task
+instead of creating a duplicate.
+
+The `claim`, `done`, and `block` session must belong to the project. A live
+claim by another session returns a conflict. `done` requires non-empty cited
+evidence. Both `done` and `block` release the claim when the transition
+succeeds.
+
+Every goals and tasks command accepts `--project <id>` and `--host <name>`.
+Without `--project`, the CLI resolves the linked or default project.
+
 ### Channels
 
 Manages the project's connection to a chat platform. Tokens are stored encrypted in the project's secrets and resolved server-side — they are never injected into the sandbox.
