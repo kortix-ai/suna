@@ -355,6 +355,53 @@ describe('kortix CLI black-box behavior', () => {
     }]);
   }, 15_000);
 
+  test('goal and task control-plane commands are discoverable and dispatched', async () => {
+    const landing = await runCli(['--help']);
+    expect(landing.code).toBe(0);
+    expect(landing.stdout).toContain('Autonomous work');
+    expect(landing.stdout).toContain('goals <subcommand>');
+    expect(landing.stdout).toContain('tasks <subcommand>');
+
+    const goalsHelp = await runCli(['goals', '--help']);
+    expect(goalsHelp.code).toBe(0);
+    expect(goalsHelp.stdout).toContain('observations <slug>');
+    expect(goalsHelp.stdout).toContain('--metric <name>');
+
+    const tasksHelp = await runCli(['tasks', '--help']);
+    expect(tasksHelp.code).toBe(0);
+    expect(tasksHelp.stdout).toContain('tasks <subcommand>');
+    expect(tasksHelp.stdout).toContain('done <id>');
+    expect(tasksHelp.stdout).toContain('--evidence <ref>');
+
+    const invalidObservationLimit = await runCli([
+      'goals',
+      'observations',
+      'reduce-latency',
+      '--metric',
+      'p95_ms',
+      '--limit',
+      '0',
+      '--project',
+      'project_1',
+    ]);
+    expect(invalidObservationLimit.code).toBe(2);
+    expect(invalidObservationLimit.stdout).toBe('');
+    expect(invalidObservationLimit.stderr).toContain('--limit must be between 1 and 10000');
+
+    const missingEvidence = await runCli([
+      'tasks',
+      'done',
+      'task_1',
+      '--session',
+      'session_1',
+      '--project',
+      'project_1',
+    ]);
+    expect(missingEvidence.code).toBe(2);
+    expect(missingEvidence.stdout).toBe('');
+    expect(missingEvidence.stderr).toContain('--evidence is required');
+  }, 20_000);
+
   test('top-level help exposes marketplace but hides add and registry commands', async () => {
     const result = await runCli(['--help']);
 
@@ -435,6 +482,7 @@ describe('kortix CLI black-box behavior', () => {
       'Session — within the project',
       'Author & ship',
       'Agents & connectors',
+      'Autonomous work',
       'Files, changes & triggers',
       'Access & permissions',
     ]) {

@@ -10,6 +10,7 @@ import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
+import { runGoals } from './commands/goals.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
@@ -30,6 +31,7 @@ import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runTasks } from './commands/tasks.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
@@ -221,6 +223,21 @@ const TIERS: readonly CommandTier[] = [
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
+          },
+        ],
+      },
+      {
+        title: 'Autonomous work',
+        commands: [
+          {
+            name: 'goals',
+            args: '<subcommand>',
+            blurb: 'Inspect, push, and observe autonomous goals',
+          },
+          {
+            name: 'tasks',
+            args: '<subcommand>',
+            blurb: 'Manage the durable autonomous task queue',
           },
         ],
       },
@@ -493,6 +510,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
+  if (argv[0] === 'goals') {
+    return runGoals(argv.slice(1));
+  }
+  if (argv[0] === 'tasks') {
+    return runTasks(argv.slice(1));
+  }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));
   }
@@ -573,6 +596,8 @@ const KNOWN_COMMANDS = [
   'files',
   'cr',
   'triggers',
+  'goals',
+  'tasks',
   'connectors',
   'secrets',
   'providers',
