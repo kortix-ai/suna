@@ -42,17 +42,18 @@ describe('project Customize sidebar entry (the routed one)', () => {
   });
 
   test('lands on Connectors by default', () => {
-    // First entry of TAB_PREFERENCE is the landing tab; skills/commands are
-    // only fallbacks for a caller denied connector read.
+    // First entry of TAB_PREFERENCE is the landing tab; skills is the only
+    // fallback for a caller denied connector read. (Commands had a fallback
+    // here too, but its standalone page was removed — it lives in the overlay.)
     expect(SOURCE).toMatch(/TAB_PREFERENCE[\s\S]*?key: 'connectors'/);
   });
 
-  test('reads the three capability leaves, not one', () => {
+  test('reads the two capability leaves, not one', () => {
     // Gating the whole entry on connector read alone would strand a caller who
-    // may open Skills or Commands but not Connectors.
+    // may open Skills but not Connectors. Commands is gated in the overlay, not
+    // here — its standalone page was removed.
     expect(SOURCE).toContain('PROJECT_CONNECTOR_READ');
     expect(SOURCE).toContain('PROJECT_SKILL_READ');
-    expect(SOURCE).toContain('PROJECT_COMMAND_READ');
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
@@ -91,11 +92,11 @@ describe('project Settings sidebar entry (the overlay one)', () => {
   });
 
   test('is ungated and takes its active state from the overlay flag', () => {
-    // useCapabilityTab reads connector/skill/command.read — the leaves the
-    // capability ROUTE needs. The overlay also holds Agents, LLM providers and
-    // Members, so gating it on those three would hide it from a caller who can
-    // still use most of what is inside. And an overlay has no pathname, so
-    // active state has to come from the store.
+    // useCapabilityTab reads connector/skill.read — the leaves the capability
+    // ROUTE needs. The overlay also holds Agents, LLM providers, Members, and
+    // Commands (whose standalone page was removed), so gating it on those two
+    // would hide it from a caller who can still use most of what is inside. And
+    // an overlay has no pathname, so active state has to come from the store.
     const navItem = fnSource('ProjectSettingsNavItem');
 
     expect(navItem).not.toContain('useCapabilityTab');

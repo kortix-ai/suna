@@ -21,7 +21,6 @@ import { fileURLToPath } from 'node:url';
 const PAGES = [
   { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
-  { name: 'commands', file: '../commands/commands-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
 
 const read = (relativePath: string) =>

@@ -88,13 +88,15 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
  * Graduated only while the capability pages are enabled (#6054).
  *
  * Files and Changes left the overlay in an earlier, unrelated change and always
- * redirect. These three are the ones the flag governs: with it OFF the deep
- * link must fall through and open the overlay, which is where they live again.
+ * redirect. These two are the ones the flag governs: with it OFF the deep link
+ * must fall through and open the overlay, which is where they live again.
+ * Commands had a standalone page under #6054 too, but that page was removed;
+ * it stays in the overlay permanently and is intentionally NOT listed here, so
+ * a `/customize/commands` deep link never bounces to a dead route.
  */
 const GRADUATED_BEHIND_FLAG: Record<string, (projectId: string) => string> = {
   connectors: (p) => `/projects/${p}/connectors`,
   skills: (p) => `/projects/${p}/skills`,
-  commands: (p) => `/projects/${p}/commands`,
 };
 
 export function legacyCustomizeRedirect(

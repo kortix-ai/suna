@@ -9,8 +9,9 @@
  *
  * So these pin both directions at every entry point:
  *   OFF — nothing points at the pages, deep links open the overlay, and the
- *         three sections are overlay sections again.
- *   ON  — #6054 exactly as merged.
+ *         remaining sections are overlay sections again.
+ *   ON  — #6054 exactly as merged (Connectors/Skills only; Commands' standalone
+ *         page was removed and lives only in the overlay).
  *
  * Plain loops rather than `test.each`: the repo's `@types/bun` does not type
  * `test.each`, and the three files using it are a known `tsc` wart. No need for
@@ -19,7 +20,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 const KEY = 'NEXT_PUBLIC_CAPABILITY_PAGES';
-const SECTIONS = ['connectors', 'skills', 'commands'] as const;
+// Sections that have a standalone capability page behind the flag. Commands
+// had one too but it was removed; its overlay-routing behavior is asserted
+// explicitly below (it stays in the Customize overlay in both flag positions).
+const SECTIONS = ['connectors', 'skills'] as const;
 const original = process.env[KEY];
 
 afterEach(() => {
@@ -92,6 +96,16 @@ describe('deep links into /customize/<section>', () => {
     }
   });
 
+  test('commands never redirects — its standalone page was removed', async () => {
+    // In both flag positions a /customize/commands deep link must stay on the
+    // overlay; redirecting to /projects/<id>/commands would hit a dead route.
+    for (const on of [true, false]) {
+      setFlag(on);
+      const { legacyCustomizeRedirect } = await mods();
+      expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
+    }
+  });
+
   test('Files and Changes always redirect, in both positions', async () => {
     // They left the overlay in an earlier, unrelated change. This flag governs
     // #6054 only — sweeping them in would revert someone else's work.
@@ -148,6 +162,17 @@ describe('command-palette href resolution', () => {
     for (const section of SECTIONS) {
       expect(resolveCustomizeOverlayHref(`/projects/p1/customize/${section}`)).toEqual({
         opensOverlay: false,
+      });
+    }
+  });
+
+  test('commands opens the overlay in both positions — no standalone page to forward to', async () => {
+    for (const on of [true, false]) {
+      setFlag(on);
+      const { resolveCustomizeOverlayHref } = await mods();
+      expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+        opensOverlay: true,
+        section: 'commands',
       });
     }
   });

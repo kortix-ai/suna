@@ -70,7 +70,17 @@ describe('legacyCustomizeRedirect', () => {
     withCapabilityPages(true, () => {
       expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
       expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-      expect(legacyCustomizeRedirect('p1', 'commands')).toBe('/projects/p1/commands');
+    });
+  });
+  test('commands stays in the overlay — its standalone page was removed', () => {
+    // Commands had a #6054 standalone page that was deleted, so the deep link
+    // must never bounce to /projects/<id>/commands (a dead route). It falls
+    // through to the overlay in both flag positions.
+    withCapabilityPages(true, () => {
+      expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
+    });
+    withCapabilityPages(false, () => {
+      expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
     });
   });
   test('leaves overlay sections alone', () => {
@@ -112,8 +122,12 @@ describe('resolveCustomizeOverlayHref', () => {
       expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
         opensOverlay: false,
       });
+      // Commands is no longer a capability section (its standalone page was
+      // removed), so a /customize/commands deep link opens the overlay on the
+      // commands section — it must NOT navigate to a dead route.
       expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
-        opensOverlay: false,
+        opensOverlay: true,
+        section: 'commands',
       });
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/nope')).toEqual({

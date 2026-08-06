@@ -6,13 +6,14 @@
  * hidden until it clears the bar — Marko: "rm it for now / put behind feature
  * flag or similar until not optimal".
  *
- * OFF (the default) restores the previous behaviour exactly: the three sections
- * live in the Customize overlay again, the standalone routes bounce there, and
- * nothing in the product links to them. ON gives you #6054 as merged.
+ * OFF (the default) restores the previous behaviour exactly: the remaining
+ * sections live in the Customize overlay again, the standalone routes bounce
+ * there, and nothing in the product links to them. ON gives you #6054 as
+ * merged (for Connectors/Skills only).
  *
- * Nothing was deleted or reverted — the pages and their tests stay in the tree,
- * and the new page components already render the same underlying views, so the
- * flag only decides which shell you get.
+ * Commands is gone: its standalone page was removed, so it lives only in the
+ * Customize overlay (`/customize/commands` via `proj-commands`). Connectors and
+ * Skills keep their standalone pages behind this flag.
  *
  * Enable with `NEXT_PUBLIC_CAPABILITY_PAGES=true`.
  *
@@ -24,7 +25,7 @@
 import { parseFlagOverride } from '@kortix/sdk';
 
 /**
- * Whether the standalone Connectors / Skills / Commands pages are live.
+ * Whether the standalone Connectors / Skills pages are live.
  *
  * Read through a function, not a module-level const: `NEXT_PUBLIC_*` is inlined
  * at build time, but a const captured at module eval would also freeze the
@@ -34,8 +35,10 @@ export function capabilityPagesEnabled(): boolean {
   return parseFlagOverride(process.env.NEXT_PUBLIC_CAPABILITY_PAGES) ?? false;
 }
 
-/** The three sections #6054 moved. Everything gated by this flag is one of these. */
-export const CAPABILITY_SECTIONS = ['connectors', 'skills', 'commands'] as const;
+/** The sections #6054 moved. Everything gated by this flag is one of these.
+ * Commands was removed (its standalone page deleted); it is not a capability
+ * section here and lives only in the Customize overlay. */
+export const CAPABILITY_SECTIONS = ['connectors', 'skills'] as const;
 
 export type CapabilitySection = (typeof CAPABILITY_SECTIONS)[number];
 
