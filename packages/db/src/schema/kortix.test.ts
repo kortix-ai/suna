@@ -21,6 +21,7 @@ import {
   projects,
   projectMembers,
   projectSessions,
+  projectSessionConnectorBindings,
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
@@ -145,16 +146,17 @@ describe('kortix enums', () => {
 
   test('connector authorization strategy is project or user', () => {
     expect(connectorAuthorizationStrategyEnum.enumName).toBe(
-      'executor_connector_authorization_strategy',
+      'connector_authorization_strategy',
     );
     expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
   });
 });
 
 describe('connectors', () => {
-  test('uses canonical exports over the transition database identifiers', () => {
-    expect(getTableConfig(connectors).name).toBe('executor_connectors');
-    expect(getTableConfig(connectorCalls).name).toBe('executor_executions');
+  test('uses canonical physical database identifiers', () => {
+    expect(getTableConfig(connectors).name).toBe('connectors');
+    expect(getTableConfig(connectorConnections).name).toBe('connector_connections');
+    expect(getTableConfig(connectorCalls).name).toBe('connector_calls');
   });
 
   test('store one authorization strategy on each connector', () => {
@@ -165,31 +167,39 @@ describe('connectors', () => {
     expect(primaryColumn(connectorCalls)).toBe('execution_id');
   });
 
-  test('keeps physical index identifiers stable until the database migration release', () => {
+  test('uses canonical physical index identifiers', () => {
     expect(indexNames(connectors)).toEqual([
-      'idx_executor_connectors_project',
-      'idx_executor_connectors_account',
-      'idx_executor_connectors_project_slug',
-      'idx_executor_connectors_tenant_identity',
-      'idx_executor_connectors_tenant_alias',
+      'idx_connectors_project',
+      'idx_connectors_account',
+      'idx_connectors_project_slug',
+      'idx_connectors_tenant_identity',
+      'idx_connectors_tenant_alias',
     ]);
     expect(indexNames(connectorConnections)).toEqual([
-      'idx_executor_connection_profiles_tenant_identity',
-      'idx_executor_connection_profiles_connector_identity',
-      'idx_executor_connection_profiles_default_project',
-      'idx_executor_connection_profiles_default_owner',
-      'idx_executor_connection_profiles_owner_label',
-      'idx_executor_connection_profiles_project_label',
-      'idx_executor_connection_profiles_project',
-      'idx_executor_connection_profiles_connector',
+      'idx_connector_connections_tenant_identity',
+      'idx_connector_connections_connector_identity',
+      'idx_connector_connections_default_project',
+      'idx_connector_connections_default_owner',
+      'idx_connector_connections_owner_label',
+      'idx_connector_connections_project_label',
+      'idx_connector_connections_project',
+      'idx_connector_connections_connector',
     ]);
     expect(indexNames(connectorCalls)).toEqual([
-      'idx_executor_executions_project',
-      'idx_executor_executions_project_session_created',
-      'idx_executor_executions_connector',
-      'idx_executor_executions_profile',
-      'idx_executor_executions_status',
+      'idx_connector_calls_project',
+      'idx_connector_calls_project_session_created',
+      'idx_connector_calls_connector',
+      'idx_connector_calls_connection',
+      'idx_connector_calls_status',
     ]);
+  });
+
+  test('uses connection_id for every active connection reference', () => {
+    expect(columnNames(connectorConnections)).toContain('connection_id');
+    expect(columnNames(connectorConnections)).not.toContain('profile_id');
+    expect(columnNames(connectorCalls)).toContain('connection_id');
+    expect(columnNames(connectorCalls)).not.toContain('profile_id');
+    expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
   });
 });
 
