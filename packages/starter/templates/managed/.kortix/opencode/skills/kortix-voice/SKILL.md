@@ -27,16 +27,16 @@ That is why **no voice action takes a call id**. There is no handle to save, not
 </one-call-per-session>
 
 <the-actions>
-The voice channel is an Executor connector, **`kortix_voice`**. Call it the way you call any connector:
+The voice channel is the **`kortix_voice`** connector. Call it like any connector:
 
 ```sh
-kortix executor call kortix_voice spawn_room '{}'
-kortix executor call kortix_voice read_transcript '{}'
-kortix executor call kortix_voice send_prompt '{"text":"The deploy finished — all green."}'
-kortix executor call kortix_voice end_call '{}'
+kortix connectors call kortix_voice spawn_room '{}'
+kortix connectors call kortix_voice read_transcript '{}'
+kortix connectors call kortix_voice send_prompt '{"text":"The deploy finished — all green."}'
+kortix connectors call kortix_voice end_call '{}'
 ```
 
-Or, through the executor `call` tool: `{ "connector": "kortix_voice", "action": "read_transcript", "args": {} }`.
+Or, through the connector `call` tool: `{ "connector": "kortix_voice", "action": "read_transcript", "args": {} }`.
 
 ```
 spawn_room      {voice?}                  → {call_id, join_url}    start the call; returns instantly
@@ -50,7 +50,7 @@ end_call        {}                        → {ended: true}          hang up and
 
 `join_gmeet` and `join_zoom` are listed on the connector but are **not implemented**; calling either returns an error telling you to use `spawn_room`. Do not build a workaround.
 
-If `kortix executor connectors` shows no `kortix_voice` at all, voice is not
+If `kortix connectors ls` shows no `kortix_voice` at all, voice is not
 enabled for this project. Say so plainly and hand back the fix — don't hunt for
 another way in:
 
@@ -67,7 +67,7 @@ dashboard action (or `PATCH /v1/projects/<id>/experimental`
 
 <starting-a-call-and-getting-the-human-in>
 ```sh
-kortix executor call kortix_voice spawn_room '{}'
+kortix connectors call kortix_voice spawn_room '{}'
 # → {"call_id":"…","join_url":"https://…/voice/vjl_…"}
 ```
 
@@ -90,11 +90,11 @@ There is no follow, tail, stream, or wait action, and no `sleep` loop that fixes
 **Call it bare.** `read_transcript '{}'` returns only what you have not already been shown — the read position is remembered for you, per call, on the server. You do not track a cursor, you do not pass one, and you never get the same turn twice.
 
 ```sh
-kortix executor call kortix_voice read_transcript '{}'
+kortix connectors call kortix_voice read_transcript '{}'
 # → {"mode":"unread","turns":[{"role":"user","speaker":"Marko","text":"can you check the build?"}],
 #    "cursor":41,"unread":0,"live":true}
 
-kortix executor call kortix_voice read_transcript '{}'
+kortix connectors call kortix_voice read_transcript '{}'
 # → {"mode":"unread","turns":[],"cursor":41,"unread":0,"live":true}   ← nothing new, instantly
 ```
 
@@ -118,10 +118,10 @@ Do not narrate this. Preparing quietly is the point; announcing it is noise.
 The bare call is right almost always. Reach for these only when it is not:
 
 ```sh
-kortix executor call kortix_voice read_transcript '{"mode":"last","limit":10}'   # newest 10, whatever you have read
-kortix executor call kortix_voice read_transcript '{"mode":"full"}'              # the entire call
-kortix executor call kortix_voice read_transcript '{"peek":true}'                # unread, without consuming it
-kortix executor call kortix_voice read_transcript '{"cursor":41}'                # everything after cursor 41
+kortix connectors call kortix_voice read_transcript '{"mode":"last","limit":10}'   # newest 10, whatever you have read
+kortix connectors call kortix_voice read_transcript '{"mode":"full"}'              # the entire call
+kortix connectors call kortix_voice read_transcript '{"peek":true}'                # unread, without consuming it
+kortix connectors call kortix_voice read_transcript '{"cursor":41}'                # everything after cursor 41
 ```
 
 - **`last`** — re-orienting. You lost the thread, or you are picking a call back up and want to know what was *just* said without replaying an hour of it. It ignores your read position and does not move it.
@@ -136,7 +136,7 @@ Only the bare call (`unread`) and `full` move your saved position, and they only
 
 <speaking>
 ```sh
-kortix executor call kortix_voice send_prompt '{"text":"The deploy finished — all green."}'
+kortix connectors call kortix_voice send_prompt '{"text":"The deploy finished — all green."}'
 ```
 
 The voice agent says it, in its own voice, in its own words, attributed to you.
@@ -150,7 +150,7 @@ You usually do **not** need `send_prompt` to answer the call. When someone on th
 
 <ending>
 ```sh
-kortix executor call kortix_voice end_call '{}'
+kortix connectors call kortix_voice end_call '{}'
 ```
 
 End the call when the user asks, or when it is clearly over. It also revokes the join link. A call left running costs money every minute it stays connected, so do not leave one open "just in case".

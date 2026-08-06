@@ -59,11 +59,9 @@ beforeEach(() => {
   );
   spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => accountDefaults);
   spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => null);
-  spyOn(secretsModule, 'listProjectSecretsSnapshot').mockImplementation(async () => ({
-    env: {},
-    names: connectedSecretNames,
-    revision: 'test',
-  }));
+  spyOn(secretsModule, 'listProjectSecretNamesForConsumer').mockImplementation(
+    async () => connectedSecretNames,
+  );
 });
 
 afterEach(() => {
@@ -122,7 +120,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     });
     expect(result).toEqual({ model: null, source: 'platform' });
     expect(resolveCandidatesModule.resolveCandidates).not.toHaveBeenCalled();
-    expect(secretsModule.listProjectSecretsSnapshot).not.toHaveBeenCalled();
+    expect(secretsModule.listProjectSecretNamesForConsumer).not.toHaveBeenCalled();
   });
 
   test('a servable configured project default is returned as-is (real source, no degrade)', async () => {

@@ -7,7 +7,6 @@ import {
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
-  buildSessionTitleRequestBody,
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
@@ -51,18 +50,6 @@ describe('sanitizeGeneratedTitle', () => {
     expect(sanitizeGeneratedTitle(null)).toBeNull();
     expect(sanitizeGeneratedTitle('New session - 2026-07-28')).toBeNull();
     expect(sanitizeGeneratedTitle('New agent')).toBeNull();
-  });
-});
-
-describe('buildSessionTitleRequestBody', () => {
-  it('reserves enough output tokens for reasoning-capable fallback models', () => {
-    const body = buildSessionTitleRequestBody(
-      'glm-5.2',
-      'Please set up the MS Graph OAuth2 connector',
-    );
-
-    expect(body.max_tokens).toBeGreaterThanOrEqual(256);
-    expect(body.stream).toBe(false);
   });
 });
 

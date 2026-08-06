@@ -1465,6 +1465,137 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(traces[0].errorCode).toBe("upstream_error");
   });
 
+  test("streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      return sseResponse(authorization === "Bearer dead-key" ? authErrorSse : goodSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sseText(await new Response(res.body).text())).toEqual({
+      content: "real answer",
+      finishReason: "stop",
+    });
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a 400 invalid-key body fails over to the next credential", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "invalid x-api-key", type: "authentication_error" } }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential stays terminal without an alternate credential", async () => {
+    const only: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "only",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [only] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(401);
+    expect(calls).toBe(1);
+  });
+
   // The ai-sdk transport (transports/ai-sdk/sse.ts) pre-classifies its own
   // upstream errors and embeds the real HTTP-equivalent status as a NUMERIC
   // `code` on the frame — e.g. a genuine 429 the provider itself returned
@@ -1507,6 +1638,49 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     });
 
     expect(res.status).toBe(502);
+  });
+
+  // Defect (2026-08-01, live-reported in Slack): an upstream 400 "context
+  // length exceeded from messages" surfaced to the user as a generic "Bad
+  // Gateway" instead of the real error + real status. Root cause was in
+  // transports/ai-sdk/sse.ts: when the AI SDK wrapped a non-2xx upstream
+  // response in an APICallError whose `.message` was the generic HTTP status
+  // text (the upstream's body failed the provider's error-schema parse), the
+  // streaming adapter emitted that generic message as the client-facing
+  // `message` and carried the real message only in `detail` — and a numeric
+  // status code reached statusForErrorFrame as a STRING or undefined, so it
+  // fell through to a blanket 502. Fixed in sse.ts (mines the real message +
+  // numeric status from responseBody/data); this test pins the END-TO-END
+  // client-facing contract the fix produces: a numeric 4xx code on the error
+  // frame surfaces as that status with the real message, NOT a 502 "Bad
+  // Gateway". This is the post-fix shape the ai-sdk transport now emits.
+  const contextLengthSse =
+    'data: {"error":{"message":"context length exceeded from messages","code":400}}\n\n' +
+    "data: [DONE]\n\n";
+
+  test("streaming: a numeric 4xx error-frame code surfaces as that status with the real message — not a blanket 502 Bad Gateway", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(contextLengthSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    // 400, the upstream's real status — NOT a generic 502 "Bad Gateway".
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("upstream_error");
+    // The REAL upstream message reaches the caller, not a generic "Bad Request".
+    expect(body.message).toBe("context length exceeded from messages");
+    expect(body.error.message).toBe("context length exceeded from messages");
+    expect(body.upstream_code).toBe(400);
+    expect(body.suggestion).toContain("switch to another model");
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].status).toBe(400);
+    expect(traces[0].errorCode).toBe("upstream_error");
+    expect(traces[0].errorMessage).toBe("context length exceeded from messages");
   });
 
   test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {

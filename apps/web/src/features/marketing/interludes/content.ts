@@ -44,7 +44,7 @@
  *    a grantable capability. APPROVAL GATES ARE OFF BY DEFAULT
  *    (`policy.default_mode` falls back to `allow_all`), so never write that the
  *    agent asks before acting as a default. The three answers are exactly
- *    allow / ask / block (`apps/api/src/executor/policy.ts`).
+ *    allow / ask / block (`apps/api/src/connectors/policy.ts`).
  *  - THE TREE below is the real shipped starter layout, read from
  *    `packages/starter/templates/base`. Do not add a directory it does not
  *    have, and do not show a `channels:` key in `kortix.yaml` — the v2 manifest

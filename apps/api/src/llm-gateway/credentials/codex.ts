@@ -1,7 +1,11 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
-import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets';
+import {
+  encryptProjectSecret,
+  resolveProjectSecretForConsumer,
+} from '../../projects/secrets';
+import { recordAuditEvent } from '../../shared/audit';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
@@ -22,26 +26,40 @@ const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
 interface SecretRow {
+  accountId: string;
   secretId: string;
   ownerUserId: string | null;
-  valueEnc: string;
+  value: string;
+  actorUserId: string;
+  sessionId: string | null;
 }
 
-async function loadCodexRow(projectId: string, userId: string): Promise<SecretRow | null> {
-  const rows = await db
-    .select({
-      secretId: projectSecrets.secretId,
-      ownerUserId: projectSecrets.ownerUserId,
-      valueEnc: projectSecrets.valueEnc,
-    })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
-    ));
-  if (!rows.length) return null;
-  return rows.find((r) => r.ownerUserId === userId) ?? rows.find((r) => r.ownerUserId === null) ?? null;
+interface CodexCredentialContext {
+  accountId?: string;
+  sessionId?: string | null;
+}
+
+async function loadCodexRow(
+  projectId: string,
+  userId: string,
+  context: CodexCredentialContext,
+): Promise<SecretRow | null> {
+  const resolved = await resolveProjectSecretForConsumer({
+    projectId,
+    accountId: context.accountId,
+    sessionId: context.sessionId,
+    actorUserId: userId,
+    principalUserId: userId,
+    name: CODEX_AUTH_JSON_SECRET_NAME,
+    consumer: 'llm_gateway',
+  });
+  return resolved
+    ? {
+        ...resolved,
+        actorUserId: userId,
+        sessionId: context.sessionId ?? null,
+      }
+    : null;
 }
 
 const inflightRefresh = new Map<string, Promise<StoredCodexAuth | null>>();
@@ -54,30 +72,73 @@ async function refreshAndPersist(
 ): Promise<StoredCodexAuth | null> {
   if (!current.refresh) return null;
 
-  let response: Response;
+  let upstreamStatus: number | undefined;
   try {
-    response = await fetchImpl(`${OPENAI_AUTH_BASE}/oauth/token`, {
+    const response = await fetchImpl(`${OPENAI_AUTH_BASE}/oauth/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: buildRefreshBody(current.refresh),
     });
+    upstreamStatus = response.status;
+    if (!response.ok) throw new CodexRefreshError('upstream rejected refresh', response.status);
+
+    const tokens = await response.json().catch(() => null);
+    if (!tokens) throw new CodexRefreshError('refresh response was not valid json', response.status);
+
+    const next = applyRefresh(tokens, current, Date.now());
+    if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
+
+    await db
+      .update(projectSecrets)
+      .set({
+        valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSecrets.secretId, row.secretId));
+
+    await recordAuditEvent({
+      accountId: row.accountId,
+      projectId,
+      sessionId: row.sessionId,
+      actorUserId: row.actorUserId,
+      actorType: row.sessionId ? 'agent' : 'human',
+      source: 'llm_gateway',
+      action: 'secret.consumer.refreshed',
+      resourceType: 'project_secret',
+      resourceId: row.secretId,
+      metadata: {
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
+        consumer: 'llm_gateway',
+        value_source: row.ownerUserId ? 'personal' : 'shared',
+        upstream_status: response.status,
+      },
+    });
+    return next;
   } catch (err) {
-    throw new CodexRefreshError(err instanceof Error ? err.message : 'network error');
+    const failure =
+      err instanceof CodexRefreshError
+        ? err
+        : new CodexRefreshError(err instanceof Error ? err.message : 'network error');
+    await recordAuditEvent({
+      accountId: row.accountId,
+      projectId,
+      sessionId: row.sessionId,
+      actorUserId: row.actorUserId,
+      actorType: row.sessionId ? 'agent' : 'human',
+      source: 'llm_gateway',
+      outcome: 'failure',
+      action: 'secret.consumer.refresh_failed',
+      resourceType: 'project_secret',
+      resourceId: row.secretId,
+      metadata: {
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
+        consumer: 'llm_gateway',
+        value_source: row.ownerUserId ? 'personal' : 'shared',
+        ...(upstreamStatus === undefined ? {} : { upstream_status: upstreamStatus }),
+      },
+    });
+    throw failure;
   }
-  if (!response.ok) throw new CodexRefreshError('upstream rejected refresh', response.status);
-
-  const tokens = await response.json().catch(() => null);
-  if (!tokens) throw new CodexRefreshError('refresh response was not valid json', response.status);
-
-  const next = applyRefresh(tokens, current, Date.now());
-  if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
-
-  await db
-    .update(projectSecrets)
-    .set({ valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })), updatedAt: new Date() })
-    .where(eq(projectSecrets.secretId, row.secretId));
-
-  return next;
 }
 
 function refreshSingleFlight(
@@ -97,11 +158,12 @@ export async function resolveCodexCredential(
   projectId: string,
   userId: string,
   fetchImpl: FetchImpl = (input, init) => fetch(input, init),
+  context: CodexCredentialContext = {},
 ): Promise<CodexCredential | null> {
-  const row = await loadCodexRow(projectId, userId);
+  const row = await loadCodexRow(projectId, userId, context);
   if (!row) return null;
 
-  let stored = parseCodexAuth(decryptProjectSecret(projectId, row.valueEnc));
+  let stored = parseCodexAuth(row.value);
   if (!stored?.access) return null;
 
   if (needsRefresh(stored, Date.now())) {

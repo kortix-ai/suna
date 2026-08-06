@@ -4,11 +4,15 @@
  * One burst — a maximal run of non-text parts.
  *
  * Renders as a chain of thought: a muted summary line that expands into a
- * connected vertical chain of steps. The trailing burst stays open for the
- * whole working turn (so SSE gaps between tool calls do not blink it shut);
- * earlier bursts auto-collapse once later text/standalone closes them. Manual
- * after the user's first click. Collapsed height is always one row. A settled
- * chain closes on a "Done" step so the rail terminates instead of trailing off.
+ * connected vertical chain of steps. The chain has two levels — a run of
+ * consecutive same-family calls is ONE step that opens to its members, so the
+ * expansion groups the work the same way the collapsed summary line does.
+ *
+ * The trailing burst stays open for the whole working turn (so SSE gaps between
+ * tool calls do not blink it shut); earlier bursts auto-collapse once later
+ * text/standalone closes them. Manual after the user's first click. Collapsed
+ * height is always one row. A settled chain closes on a "Done" step so the rail
+ * terminates instead of trailing off.
  */
 
 import {
@@ -23,10 +27,12 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { STATUS_TEXT } from '@/components/ui/status';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { partOutcome, ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
-import { ActivityStep } from './activity-step';
+import type { Step } from '../action-panel/shared/group-steps';
+import { ActivityStep, iconFor } from './activity-step';
 import { burstTitle } from './burst-title';
 import { flattenThought, mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
@@ -102,6 +108,122 @@ function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; run
 }
 
 /**
+ * A run of consecutive same-family calls: one summary row that opens to its
+ * members.
+ *
+ * This is the level the collapsed burst title has always described. The title
+ * says "Read 2 files, ran 2 commands" and, until this row existed, expanding it
+ * produced four flat siblings — the summary grouped and the expansion did not.
+ *
+ * The group binds to `ChainOfThoughtStep`'s OWN `Disclosure`, so it opens
+ * independently of every other step and the chain rail still spans it however
+ * tall it grows. Trigger and content must be one component rather than two
+ * sibling children of the step: `Disclosure` renders exactly
+ * `React.Children.toArray(children)[0]` and `[1]`, and the step's rail already
+ * claims slot 0 — passing them as siblings would silently drop the content.
+ *
+ * `pl-7` puts the members under the group's LABEL (size-4 icon + gap-3), clear
+ * of the rail at `left-2` — the indent is what says these rows belong to the
+ * row above rather than to the chain.
+ *
+ * The group row is the PARENT of the rows it opens, and says so without colour:
+ * `font-medium` against the regular-weight tool titles underneath it (see
+ * `InlineTriggerTitle` in tool/shared/infrastructure.tsx). Indent alone left the
+ * two levels reading as one list at a glance.
+ *
+ * `step.status` is consumed here, not discarded. `groupSteps` already picks the
+ * WORDS — a group holding a failure gets `narrateFailedStep`, never success
+ * wording — but the row used to render the same muted glyph either way, so the
+ * only failure signal inside an open burst was the sentence, and a reader had to
+ * click one level deeper to find out anything had gone wrong.
+ *
+ * Failure REPLACES the family glyph rather than sitting beside it, the same call
+ * `ToolOutcomeIcon` makes one level down: the row has one 16px gutter, and what
+ * the reader needs from it is the verdict — the family is still spelled out in
+ * the words immediately to its right ("Couldn't read your files"). Shape carries
+ * it as much as colour, so the mark survives a reader who cannot see the red.
+ *
+ * Running shimmers the label, which is how every tool row in this same chain
+ * already says "still going" — one running vocabulary per surface, not two.
+ */
+export function ActivityGroupStep({
+  step,
+  sessionId,
+  running,
+  disableNavigation,
+}: {
+  step: Step;
+  sessionId: string;
+  running: boolean;
+  disableNavigation?: boolean;
+}) {
+  const failed = step.status === 'error';
+  const Icon = iconFor(step.parts[0]);
+
+  return (
+    <>
+      {/* One child only — DisclosureTrigger clones each child into its own
+			    clickable node, so a sibling caret would stack as a separate row. */}
+      <DisclosureTrigger>
+        <div
+          data-status={step.status}
+          className={cn(
+            'text-foreground/80 hover:text-foreground',
+            'flex w-full cursor-pointer items-center gap-3',
+            'text-left text-sm leading-[1.5] transition-colors',
+          )}
+        >
+          {failed ? (
+            <>
+              {/* Closed: failure mark replaces the family glyph. Open: the
+							    member rows carry their own verdicts, so the trigger falls
+							    back to the family icon and drops the duplicate warning. */}
+              <WarningIcon
+                weight="fill"
+                aria-label="This step failed"
+                className={cn(
+                  'size-4 flex-none group-data-[state=open]/step:hidden',
+                  STATUS_TEXT.destructive,
+                )}
+              />
+              <Icon className="text-muted-foreground hidden size-4 flex-none group-data-[state=open]/step:block" />
+            </>
+          ) : (
+            <Icon className="text-muted-foreground size-4 flex-none" />
+          )}
+          {step.status === 'running' ? (
+            <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
+              {step.label}
+            </TextShimmer>
+          ) : (
+            <span className="min-w-0 truncate font-medium">{step.label}</span>
+          )}
+          <CaretRightIcon
+            className={cn(
+              'text-muted-foreground/40 size-3.5 flex-none',
+              'transition-transform group-data-[state=open]/step:rotate-90',
+            )}
+          />
+        </div>
+      </DisclosureTrigger>
+      <DisclosureContent>
+        <div className="mt-2 space-y-2 pl-7">
+          {step.parts.map((part) => (
+            <ActivityStep
+              key={part.id}
+              part={part}
+              sessionId={sessionId}
+              running={running}
+              disableNavigation={disableNavigation}
+            />
+          ))}
+        </div>
+      </DisclosureContent>
+    </>
+  );
+}
+
+/**
  * True when this burst should stay open as "in progress".
  *
  * - Turn idle → closed.
@@ -149,9 +271,18 @@ export function showsClosingStep(stepCount: number, running: boolean): boolean {
  * step was a dead host — so the chain closed by asserting success over a
  * failure the reader had to expand a card to find. Reasoning parts are not
  * counted: a thought has no verdict to report.
+ *
+ * Plumbing is not counted either, and that clause is load-bearing: `burstTitle`
+ * skips non-primary tiers and `mergeBurstSteps` drops plumbing outright, so a
+ * failed context-compaction call renders NO row. Counting it here made the
+ * collapsed title carry a warning glyph and the chain close on "1 step failed"
+ * for a failure the reader could not find anywhere in the expanded body. All
+ * three readers of a burst must agree on what is in it.
  */
 export function burstFailureCount(parts: ReadonlyArray<Part>): number {
-  return parts.filter((part) => isToolPart(part) && partOutcome(part) !== 'ok').length;
+  return parts.filter(
+    (part) => isToolPart(part) && stepLabel(part).tier !== 'plumbing' && partOutcome(part) !== 'ok',
+  ).length;
 }
 
 export function ActivityBurst({
@@ -213,8 +344,9 @@ export function ActivityBurst({
 					    step is reachable only by a reader who happens to expand a line
 					    that reads "Scraped 1 page". The glyph is the same one the failed
 					    row carries inside; it sits before the caret so the caret keeps
-					    its job as the affordance. */}
-          {failures > 0 && (
+					    its job as the affordance. Hidden while open — the chain body
+					    (failed rows + closing step) already carries the verdict. */}
+          {failures > 0 && !open && (
             <WarningIcon
               weight="fill"
               aria-label={failures === 1 ? '1 step failed' : `${failures} steps failed`}
@@ -244,15 +376,30 @@ export function ActivityBurst({
         <ToolActivateContext.Provider value={null}>
           <div className="mt-3">
             <ChainOfThought>
-              {steps.map((step) =>
-                step.kind === 'thought' ? (
-                  <ChainOfThoughtStep key={step.key}>
-                    <div className="flex min-w-0 gap-3">
-                      <ClockCounterClockwiseIcon className="text-muted-foreground mt-[3px] size-4 flex-none" />
-                      <ThoughtStepBody texts={step.texts} running={running} />
-                    </div>
-                  </ChainOfThoughtStep>
-                ) : (
+              {steps.map((step) => {
+                if (step.kind === 'thought') {
+                  return (
+                    <ChainOfThoughtStep key={step.key}>
+                      <div className="flex min-w-0 gap-3">
+                        <ClockCounterClockwiseIcon className="text-muted-foreground mt-[3px] size-4 flex-none" />
+                        <ThoughtStepBody texts={step.texts} running={running} />
+                      </div>
+                    </ChainOfThoughtStep>
+                  );
+                }
+                if (step.kind === 'group') {
+                  return (
+                    <ChainOfThoughtStep key={step.key}>
+                      <ActivityGroupStep
+                        step={step.step}
+                        sessionId={sessionId}
+                        running={running}
+                        disableNavigation={disableNavigation}
+                      />
+                    </ChainOfThoughtStep>
+                  );
+                }
+                return (
                   <ChainOfThoughtStep key={step.key}>
                     <ActivityStep
                       part={step.part}
@@ -261,8 +408,8 @@ export function ActivityBurst({
                       disableNavigation={disableNavigation}
                     />
                   </ChainOfThoughtStep>
-                ),
-              )}
+                );
+              })}
 
               {/* The closing step. It is a step, not a footer, so `ChainOfThought`
 							    hands it `isLast` and the rail above it finally has somewhere to

@@ -92,3 +92,58 @@ describe('project sessions command palette item', () => {
     expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
   });
 });
+
+describe('graduated capability entries are not shadowed by Customize', () => {
+  // filteredNavItems (command-palette.tsx) preserves registry declaration
+  // order rather than ranking by relevance, and 'proj-customize' is declared
+  // before 'proj-skills'/'proj-commands'/'proj-connectors'. Before this fix,
+  // Customize's keywords included the words "skills" and "commands", so it
+  // matched — and listed ahead of — those two real entries. Observed live:
+  // query "Skills" -> ["Customize", "Skills", ...].
+  const customizeItem = paletteItems.find((item) => item.id === 'proj-customize');
+  const skillsItem = paletteItems.find((item) => item.id === 'proj-skills');
+  const commandsItem = paletteItems.find((item) => item.id === 'proj-commands');
+  const connectorsItem = paletteItems.find((item) => item.id === 'proj-connectors');
+  const policiesItem = paletteItems.find((item) => item.id === 'proj-connectors-policies');
+
+  test('typing "Skills" surfaces the real Skills entry; Customize no longer matches', () => {
+    expect(skillsItem).toBeDefined();
+    expect(matchesPaletteQuery(skillsItem!, 'Skills')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Skills')).toBe(false);
+  });
+
+  test('typing "Commands" surfaces the real Commands entry; Customize no longer matches', () => {
+    expect(commandsItem).toBeDefined();
+    expect(matchesPaletteQuery(commandsItem!, 'Commands')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Commands')).toBe(false);
+  });
+
+  test('typing "Connectors" still surfaces the Connectors entry', () => {
+    expect(connectorsItem).toBeDefined();
+    expect(matchesPaletteQuery(connectorsItem!, 'Connectors')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'Connectors')).toBe(false);
+  });
+
+  test('typing "agents" surfaces the real Agents entry; Customize no longer matches', () => {
+    // Agents graduated to /projects/<id>/agent and carries its own palette
+    // entry, so Customize dropped the word — exactly like skills and
+    // connectors above. Leaving it would list Customize AHEAD of the page the
+    // user is typing the name of.
+    const agentsItem = paletteItems.find((item) => item.id === 'proj-agents');
+    expect(agentsItem).toBeDefined();
+    expect(matchesPaletteQuery(agentsItem!, 'agents')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(false);
+  });
+
+  test('Connectors and Skills navigate to standalone pages; Commands opens Customize', () => {
+    expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
+    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
+    expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
+  });
+
+  test('proj-connectors-policies no longer advertises a Customize destination it cannot reach', () => {
+    expect(policiesItem).toBeDefined();
+    expect(policiesItem!.href).toBe('/projects/{projectId}/connectors');
+    expect(policiesItem!.label).not.toContain('Customize');
+  });
+});

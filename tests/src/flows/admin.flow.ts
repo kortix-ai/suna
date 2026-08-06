@@ -372,3 +372,46 @@ flow(
     }
   },
 );
+
+flow(
+  "ADM-13",
+  {
+    domain: "admin",
+    serial: true,
+    routes: ["POST /v1/admin/api/accounts/:id/enterprise-entitlement"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/admin/api/accounts/:id/enterprise-entitlement",
+          { enabled: true },
+          { params: { id: NOPE } },
+        );
+      r.status(401);
+    });
+    await ctx.step("non-admin OWNER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/admin/api/accounts/:id/enterprise-entitlement",
+          { enabled: true },
+          { params: { id: NOPE } },
+        );
+      r.status(403);
+    });
+    if (ctx.env.capabilities.admin) {
+      await ctx.step("admin: non-boolean entitlement → 400", async () => {
+        const r = await ctx.client
+          .withBearer(ctx.env.adminToken!, "ADMIN_TOKEN")
+          .post(
+            "/v1/admin/api/accounts/:id/enterprise-entitlement",
+            { enabled: "yes" },
+            { params: { id: ctx.P.OWNER.accountId! } },
+          );
+        r.status(400);
+      });
+    }
+  },
+);

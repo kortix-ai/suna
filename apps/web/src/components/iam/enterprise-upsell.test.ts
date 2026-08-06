@@ -70,7 +70,7 @@ describe('account page rail groups the enterprise surfaces', () => {
     expect(pageSource).toMatch(/activeSection === 'identity' && canWriteAccount/);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     expect(settingsStart).toBeGreaterThan(-1);
-    const settingsEnd = pageSource.indexOf('</motion.div>', settingsStart);
+    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
     // The connection cards (and the tokens-tab cards) still live only on
     // their own sections — SsoCard/ScimCard never move into Settings.
@@ -81,12 +81,12 @@ describe('account page rail groups the enterprise surfaces', () => {
 
   test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
     const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
-    const identityEnd = pageSource.indexOf('</motion.div>', identityStart);
+    const identityEnd = pageSource.indexOf('</m.div>', identityStart);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
     expect(identityBody).not.toContain('EnterpriseDemoCard');
 
-    const settingsEnd = pageSource.indexOf('</motion.div>', settingsStart);
+    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
     expect(settingsBody).toContain('EnterpriseDemoCard');
     // Placed above Danger zone, not at the top — tucked away.

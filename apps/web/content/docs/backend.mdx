@@ -44,7 +44,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
     "opencode_model": "kortix/claude-opus-4.8",
     "runtime_context": { "ticket_id": "ticket-123" },
     "connector_bindings": {
-      "gmail": { "authorization_id": "<authorization-id>" }
+      "gmail": { "connection_id": "<connection-id>" }
     },
     "secrets": ["STRIPE_KEY"]
   }'
@@ -67,7 +67,7 @@ const session = await kortix.project(projectId).sessions.create({
   opencode_model: 'kortix/claude-opus-4.8',
   runtime_context: { ticket_id: 'ticket-123' },
   connector_bindings: {
-    gmail: { authorization_id: authorizationId },
+    gmail: { connection_id: connectionId },
   },
   secrets: ['STRIPE_KEY'],
 });
@@ -92,28 +92,28 @@ export SESSION_ID="<session-id>"
 | `agent_name`         | Selects a declared OpenCode agent.                                                                                                                      |
 | `opencode_model`     | Selects the initial OpenCode model. An unavailable model returns `400 INVALID_SESSION_MODEL`.                                                          |
 | `runtime_context`    | Stores non-secret scalar context. The API rejects credential-like keys, more than 64 entries, or more than 16 KiB.                                      |
-| `connector_bindings` | Maps a connector-profile slug to one strategy-compatible `authorization_id`. The credential stays outside the sandbox.                                  |
-| `inherit_unbound`    | Keeps strategy-based default resolution for connector profiles omitted from an explicit binding map. The default is `false`.                            |
+| `connector_bindings` | Maps a connector slug to one strategy-compatible `connection_id`. The credential stays outside the sandbox.                                  |
+| `inherit_unbound`    | Keeps strategy-based default resolution for connectors omitted from an explicit binding map. The default is `false`.                            |
 | `secrets`            | Narrows the selected agent's project-secret grant. An empty list delivers no project secrets. Only backend-origin callers can set it.                   |
-| `require_connectors` | Adds mandatory connector profiles for this create request. Missing authorizations return `409 CONNECTOR_AUTHORIZATION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
+| `require_connectors` | Adds mandatory connectors for this create request. Missing connections return `409 CONNECTOR_CONNECTION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
 
-## 3. Configure connector profiles and authorizations
+## 3. Configure connectors and connections
 
-A connector profile defines the tool surface. It contains a project-unique
+A connector defines the tool surface. It contains a project-unique
 slug, display name, provider app, authorization strategy, and policies.
 
-An authorization stores one connected account or credential for that connector
-profile. Every authorization inherits the connector profile's policies.
+A connection stores one connected account or credential for that connector.
+Every connection inherits the connector's policies.
 
 The authorization strategy has two values:
 
-- `project` accepts active project authorizations.
-- `user` accepts only an active authorization owned by the acting project
+- `project` accepts active project connections.
+- `user` accepts only an active connection owned by the acting project
   member.
 
 A service account has no member identity, so it cannot use a member's `user`
-authorization. Use `project` connector profiles for service-account sessions.
-A personal access token can use an eligible `user` authorization owned by the
+connection. Use `project` connectors for service-account sessions.
+A personal access token can use an eligible `user` connection owned by the
 token's member.
 
 ```yaml
@@ -133,11 +133,10 @@ agents:
     connectors_required: [gmail-read]
 ```
 
-The SDK exposes connector authorizations under
-`project.connectors.authorizations`:
+The SDK exposes connections under `project.connectors.connections`:
 
 ```ts
-const authorization = await kortix.project(projectId).connectors.authorizations.reconcile({
+const connection = await kortix.project(projectId).connectors.connections.reconcile({
   connector_alias: 'gmail-read',
   owner_type: 'project',
   label: 'Support inbox',
@@ -145,28 +144,28 @@ const authorization = await kortix.project(projectId).connectors.authorizations.
 
 await kortix
   .project(projectId)
-  .connectors.authorizations.updateCredential(authorization.profile_id, {
+  .connectors.connections.updateCredential(connection.connection_id, {
     value: credential,
     kind: 'secret',
   });
 
-await kortix.project(projectId).connectors.authorizations.activate(authorization.profile_id);
+await kortix.project(projectId).connectors.connections.activate(connection.connection_id);
 ```
 
-For a Pipedream OAuth authorization, call `pipedreamConnect()` and
+For a Pipedream OAuth connection, call `pipedreamConnect()` and
 `pipedreamFinalize()`. Do not place its provider token in
 `updateCredential()`.
 
 <Callout type="info">
-  The authorization object keeps `profile_id` as its compatibility identifier. New session binding
-  input uses `authorization_id`.
+  The connection object and new session binding input use `connection_id`.
+  `authorization_id` remains a deprecated SDK input alias.
 </Callout>
 
 ## 4. Read and replace session scope
 
 The session scope is authoritative server state. `secrets_allowlist` contains
 the session's stored narrowing. A `null` value means the agent grant applies.
-`connector_bindings` contains the materialized connector authorization
+`connector_bindings` contains the materialized connection
 selection.
 
 ```bash
@@ -185,7 +184,7 @@ Replace scope with `PUT` or `rescope()`:
 const nextScope = await kortix.session(projectId, sessionId).rescope({
   secrets: ['STRIPE_KEY'],
   connector_bindings: {
-    'gmail-read': { authorization_id: authorization.profile_id },
+    'gmail-read': { connection_id: connection.connection_id },
   },
 });
 ```
@@ -275,11 +274,11 @@ different secret allowlist, connector binding map, or runtime context returns
 - The API derives session origin from the credential. The request body cannot
   select it.
 - Connector credentials resolve server-side for each tool call.
-- A connector authorization must match its connector profile's strategy.
-- Connector profile policies apply to every authorization under that profile.
-- Project guardrails apply above connector-profile policies.
+- A connection must match its connector's authorization strategy.
+- Connector policies apply to every connection under that connector.
+- Project guardrails apply above connector-connection policies.
 - Secret scope can narrow an agent grant. It cannot widen one.
-- Session scope replacement cannot select an authorization owned by another
+- Session scope replacement cannot select a connection owned by another
   member.
 - Store application customer metadata outside Kortix.
 
@@ -291,13 +290,13 @@ different secret allowlist, connector binding map, or runtime context returns
 | `400`                        | `INVALID_SESSION_CONNECTOR_BINDINGS`             | The binding map is malformed.                                                      |
 | `400`                        | `INVALID_SESSION_RUNTIME_CONTEXT`                | Runtime context violates its shape, key, entry, or size limits.                    |
 | `403`                        | `origin_override_forbidden`                      | A non-backend caller supplied a secret allowlist.                                  |
-| `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector profile.                           |
-| `404` create / `403` rescope | `CONNECTOR_PROFILE_NOT_FOUND`                    | The authorization does not exist in this project or violates the profile strategy. |
+| `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector.                           |
+| `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection does not exist in this project or violates the connector's authorization strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
-| `409`                        | `CONNECTOR_AUTHORIZATION_REQUIRED`               | A mandatory connector profile has no valid active authorization. Every failing profile is listed in `connector_profiles`. |
-| `409`                        | `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`         | A required slug has no configured connector profile at all. Every failing alias is listed in `connectors`. |
+| `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no valid active connection. Every failing connector is listed in `connector_connections`. |
+| `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector at all. Every failing alias is listed in `connectors`. |
 | `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
-| `409` create / `403` rescope | `CONNECTOR_PROFILE_INACTIVE`                     | The selected authorization or connector profile is inactive.                       |
+| `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The selected connection or connector is inactive.                       |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a different request body.                    |
 | `402`                        | `subscription_required` / `insufficient_credits` | The account cannot start a billed session.                                         |

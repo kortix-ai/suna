@@ -239,6 +239,41 @@
       "when": 1785702120462,
       "tag": "20260802202200_executor_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785953661988,
+      "tag": "20260805181421_session_pending_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785961753530,
+      "tag": "20260805202913_secret_consumer_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785963447201,
+      "tag": "20260805205727_provision_idempotency_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786024867650,
+      "tag": "20260806140107_connector_physical_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786028633408,
+      "tag": "20260806150353_connector_compat_removal",
+      "breakpoints": true
     }
   ]
 }

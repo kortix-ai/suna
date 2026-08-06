@@ -8,7 +8,7 @@ import {
   type Project,
   accountMembers,
   accounts,
-  executorConnectors,
+  connectors,
   projectMembers,
   projectSessions,
   projects,
@@ -105,7 +105,7 @@ beforeAll(async () => {
     })
   ).secretKey;
 
-  await db.insert(executorConnectors).values([
+  await db.insert(connectors).values([
     {
       connectorId: PROJECT_CONNECTOR_ID,
       accountId: ACCOUNT_ID,
@@ -168,8 +168,8 @@ afterAll(async () => {
   if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
 });
 
-describe('createProjectSession required connector authorization gate', () => {
-  test('returns every missing authorization and creates no session row', async () => {
+describe('createProjectSession required connection gate', () => {
+  test('returns every missing connection and creates no session row', async () => {
     const result = await createProjectSession({
       project,
       userId: USER_ID,
@@ -186,9 +186,9 @@ describe('createProjectSession required connector authorization gate', () => {
       error: {
         status: 409,
         body: {
-          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-          message: 'Connect the required connector profiles before starting this session.',
-          connector_profiles: [
+          code: 'CONNECTOR_CONNECTION_REQUIRED',
+          message: 'Create the required connections before starting this session.',
+          connector_connections: [
             {
               id: PROJECT_CONNECTOR_ID,
               slug: 'project_records',
@@ -215,7 +215,7 @@ describe('createProjectSession required connector authorization gate', () => {
     expect(rows).toEqual([]);
   });
 
-  test('returns a configuration conflict when a required connector profile is unavailable', async () => {
+  test('returns a configuration conflict when a required connection is unavailable', async () => {
     const result = await createProjectSession({
       project,
       userId: USER_ID,
@@ -232,8 +232,8 @@ describe('createProjectSession required connector authorization gate', () => {
       error: {
         status: 409,
         body: {
-          error: 'Required connector profile "unavailable_records" is unavailable',
-          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          error: 'Required connection "unavailable_records" is unavailable',
+          code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
           connectors: ['unavailable_records'],
         },
       },
@@ -251,7 +251,7 @@ describe('createProjectSession required connector authorization gate', () => {
     expect(rows).toEqual([]);
   });
 
-  test('returns the unavailable profile conflict through the session HTTP route', async () => {
+  test('returns the unavailable connection conflict through the session HTTP route', async () => {
     const sessionId = crypto.randomUUID();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -267,8 +267,8 @@ describe('createProjectSession required connector authorization gate', () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
-      error: 'Required connector profile "unavailable_records" is unavailable',
-      code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+      error: 'Required connection "unavailable_records" is unavailable',
+      code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
       connectors: ['unavailable_records'],
     });
     const rows = await db
@@ -296,8 +296,8 @@ describe('createProjectSession required connector authorization gate', () => {
       error: {
         status: 409,
         body: {
-          error: 'Required connector profile "ghost_one", "ghost_two" is unavailable',
-          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          error: 'Required connections "ghost_one", "ghost_two" are unavailable',
+          code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
           connectors: ['ghost_one', 'ghost_two'],
         },
       },
@@ -306,8 +306,8 @@ describe('createProjectSession required connector authorization gate', () => {
 
   test('an unconfigured alias outranks a merely unauthorized one', async () => {
     // `mixed_failures` requires ghost_one (no connector at all) and
-    // project_records (a connector with no authorization). Reporting
-    // CONNECTOR_AUTHORIZATION_REQUIRED here would send the end-user into a
+    // project_records (a connector with no connection). Reporting
+    // CONNECTOR_CONNECTION_REQUIRED here would send the end-user into a
     // connect flow while the real blocker is a project the owner has to
     // configure — so the unavailable code has to win.
     const result = await createProjectSession({
@@ -323,8 +323,8 @@ describe('createProjectSession required connector authorization gate', () => {
       error: {
         status: 409,
         body: {
-          error: 'Required connector profile "ghost_one" is unavailable',
-          code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+          error: 'Required connection "ghost_one" is unavailable',
+          code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
           connectors: ['ghost_one'],
         },
       },
@@ -333,7 +333,7 @@ describe('createProjectSession required connector authorization gate', () => {
 
   test('the refusal status is distinguishable from an unassigned connector', async () => {
     // 403 CONNECTOR_NOT_ASSIGNED is a manifest fault that no amount of
-    // connecting fixes; 409 is the state conflict an authorization clears. A
+    // connecting fixes; 409 is the state conflict a connection clears. A
     // client that cannot tell them apart shows the wrong remedy.
     const result = await createProjectSession({
       project,

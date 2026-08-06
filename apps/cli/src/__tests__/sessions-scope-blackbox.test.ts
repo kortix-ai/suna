@@ -15,7 +15,7 @@ let requests: Array<{ method: string; path: string; body?: unknown }> = [];
 const currentScope = {
   secrets_allowlist: ["CURRENT_SECRET"],
   required_connectors: ["gmail"],
-  connector_bindings: { gmail: { authorization_id: "AUTH-CURRENT" } },
+  connector_bindings: { gmail: { connection_id: "AUTH-CURRENT" } },
   dropped_secrets: [],
   added_secrets: [],
   dropped_bindings: [],
@@ -56,7 +56,6 @@ async function runCli(args: string[]) {
   for (const key of [
     "KORTIX_API_URL",
     "KORTIX_CLI_TOKEN",
-    "KORTIX_EXECUTOR_TOKEN",
     "KORTIX_PROJECT_ID",
     "KORTIX_TOKEN",
     "BASH_ENV",
@@ -105,6 +104,12 @@ beforeEach(() => {
       requests.push(entry);
       if (
         request.method === "GET" &&
+        url.pathname === `/v1/projects/${PROJECT_ID}/sessions`
+      ) {
+        return Response.json([session()]);
+      }
+      if (
+        request.method === "GET" &&
         url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
       ) {
         return Response.json(session());
@@ -123,7 +128,7 @@ beforeEach(() => {
       ) {
         const body = entry.body as {
           secrets?: string[] | null;
-          connector_bindings?: Record<string, { authorization_id: string }>;
+          connector_bindings?: Record<string, { connection_id: string }>;
           require_connectors?: string[] | null;
         };
         const requiredConnectors = Object.hasOwn(body, "require_connectors")
@@ -204,6 +209,17 @@ describe("kortix sessions scope", () => {
     ]);
   });
 
+  test("expands the short id printed by sessions ls before the scope request", async () => {
+    const result = await runCli(["sessions", "scope", SESSION_ID.slice(0, 8), "--json"]);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(currentScope);
+    expect(requests).toEqual([
+      { method: "GET", path: `/v1/projects/${PROJECT_ID}/sessions` },
+      { method: "GET", path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope` },
+    ]);
+  });
+
   test("replaces each requested scope category through one atomic request", async () => {
     const result = await runCli([
       "sessions",
@@ -224,7 +240,7 @@ describe("kortix sessions scope", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({
       secrets_allowlist: ["MAIL_KEY", "BILLING_KEY"],
       required_connectors: ["slack"],
-      connector_bindings: { gmail: { authorization_id: "AUTH-NEW" } },
+      connector_bindings: { gmail: { connection_id: "AUTH-NEW" } },
       retroactive: false,
     });
     expect(requests.at(-1)).toEqual({
@@ -232,7 +248,7 @@ describe("kortix sessions scope", () => {
       path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope`,
       body: {
         secrets: ["MAIL_KEY", "BILLING_KEY"],
-        connector_bindings: { gmail: { authorization_id: "AUTH-NEW" } },
+        connector_bindings: { gmail: { connection_id: "AUTH-NEW" } },
         require_connectors: ["slack"],
       },
     });

@@ -26,7 +26,7 @@ const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNod
   chat: { label: 'Chat', icon: <PiChatCircleDotsFill weight="fill" className="size-4" /> },
   agents: { label: 'Agents', icon: <RiRobot3Fill weight="fill" className="size-4" /> },
   skills: { label: 'Skills', icon: <HiMiniSparkles weight="fill" className="size-4" /> },
-  integrations: { label: 'Integrations', icon: <Blocks className="size-4" /> },
+  connectors: { label: 'Connectors', icon: <Blocks className="size-4" /> },
   models: { label: 'Models', icon: <RiCpuLine className="size-4" /> },
   scheduling: { label: 'Scheduling', icon: null },
   channels: { label: 'Channels', icon: <MessageSquare className="size-4" /> },

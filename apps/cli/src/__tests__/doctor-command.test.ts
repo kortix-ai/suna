@@ -4,7 +4,7 @@ import { join } from 'node:path';
 const CLI_ENTRY = join(import.meta.dir, '..', 'index.ts');
 
 async function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(['bun', 'run', CLI_ENTRY, ...args], {
+  const proc = Bun.spawn([process.execPath, 'run', CLI_ENTRY, ...args], {
     env: {
       ...process.env,
       KORTIX_NO_UPDATE_CHECK: '1',

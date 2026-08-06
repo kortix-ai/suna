@@ -4,10 +4,10 @@
  */
 export {
   buildArtifactContentDigest,
-  buildCliExecutorSourceDigest,
+  buildCliConnectorSourceDigest,
   buildRuntimeArtifactFingerprint,
-  CLI_EXECUTOR_RUNTIME_FILES,
-  cliExecutorRuntimeArtifacts,
+  CLI_CONNECTOR_RUNTIME_FILES,
+  cliConnectorRuntimeArtifacts,
 } from '@kortix/shared/sandbox-runtime-artifact';
 export type {
   RuntimeArtifact,

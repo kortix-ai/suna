@@ -2,11 +2,13 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   deletePersonalProjectSecret,
+  deleteProjectProviderOAuth,
   deleteProjectSecret,
   listProjectSecrets,
   pollProjectProviderOAuth,
   setPersonalProjectSecret,
   setProjectSecretStrategy,
+  brokerProjectSecretRequest,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
   upsertProjectSecret,
@@ -75,6 +77,22 @@ test('upsertProjectSecret includes an explicit identifier when given', async () 
   expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
 });
 
+test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {
+  nextResponse = { status: 200, body: { name: 'OPENAI_API_KEY' } };
+  await upsertProjectSecret('P1', {
+    name: 'OPENAI_API_KEY',
+    value: 'key',
+    strategy: 'broker',
+    consumer: 'llm_gateway',
+  });
+  expect(last().body).toEqual({
+    name: 'OPENAI_API_KEY',
+    value: 'key',
+    strategy: 'broker',
+    consumer: 'llm_gateway',
+  });
+});
+
 test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route', async () => {
   nextResponse = {
     status: 200,
@@ -94,10 +112,67 @@ test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route
   expect(result.strategy).toBe('denied');
 });
 
+test('setProjectSecretStrategy sends broker policy options', async () => {
+  nextResponse = { status: 200, body: { identifier: 'API_KEY', strategy: 'broker' } };
+
+  await setProjectSecretStrategy('P1', 'API_KEY', 'broker', {
+    consumer: 'http_broker',
+    egress_policy: {
+      backend: 'kortix_fetch',
+      rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    },
+    handle_prefix: 'example_',
+  });
+
+  expect(last().body).toEqual({
+    strategy: 'broker',
+    consumer: 'http_broker',
+    egress_policy: {
+      backend: 'kortix_fetch',
+      rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    },
+    handle_prefix: 'example_',
+  });
+});
+
+test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 201, headers: { 'content-type': 'application/json' }, body_base64: 'e30=' },
+  };
+
+  const result = await brokerProjectSecretRequest('P1', 'primary/key', {
+    url: 'https://api.example.com/v1/messages',
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body_base64: 'e30=',
+  });
+
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: expect.stringContaining('/projects/P1/secrets/primary%2Fkey/broker'),
+    body: {
+      url: 'https://api.example.com/v1/messages',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body_base64: 'e30=',
+    },
+  });
+  expect(result.status).toBe(201);
+});
+
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {
   nextResponse = {
     status: 200,
-    body: { flow_id: 'f1', verification_url: 'https://x', user_code: '123', expires_at: 1, interval_ms: 500 },
+    body: {
+      flow_id: 'f1',
+      verification_url: 'https://x',
+      user_code: '123',
+      expires_at: 1,
+      interval_ms: 500,
+    },
   };
   const result = await startProjectProviderOAuth('P1', 'chatgpt', { sharing: { mode: 'project' } });
   expect(last().url).toContain('/projects/P1/oauth/chatgpt/start');
@@ -107,7 +182,10 @@ test('startProjectProviderOAuth posts to the provider start endpoint with the sh
 });
 
 test('startProjectProviderOAuth sends sharing: undefined when no input is given', async () => {
-  nextResponse = { status: 200, body: { flow_id: 'f1', verification_url: 'x', user_code: null, expires_at: 1, interval_ms: 1 } };
+  nextResponse = {
+    status: 200,
+    body: { flow_id: 'f1', verification_url: 'x', user_code: null, expires_at: 1, interval_ms: 1 },
+  };
   await startProjectProviderOAuth('P1', 'chatgpt');
   expect(last().body).toEqual({ sharing: undefined });
 });
@@ -140,8 +218,18 @@ test('deleteProjectSecret DELETEs the encoded secret name', async () => {
   expect(last().method).toBe('DELETE');
 });
 
+test('deleteProjectProviderOAuth DELETEs the encoded provider', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await deleteProjectProviderOAuth('P1', 'openai/codex');
+  expect(last().url).toContain('/projects/P1/oauth/openai%2Fcodex');
+  expect(last().method).toBe('DELETE');
+});
+
 test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
-  nextResponse = { status: 200, body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } } };
+  nextResponse = {
+    status: 200,
+    body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } },
+  };
   await setPersonalProjectSecret('P1', 'FOO', { value: 'mine-value', active: true });
   expect(last().url).toContain('/projects/P1/secrets/FOO/personal');
   expect(last().method).toBe('PUT');

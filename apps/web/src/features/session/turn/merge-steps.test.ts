@@ -1,7 +1,8 @@
-import type { Part } from '@/ui';
+import type { Part, ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
-import { flattenThought, mergeBurstSteps } from './merge-steps';
-import type { StepTier } from './step-label';
+import { burstTitle } from './burst-title';
+import { type BurstStep, flattenThought, mergeBurstSteps } from './merge-steps';
+import { stepLabel, type StepTier } from './step-label';
 
 function tool(id: string, name = 'read'): Part {
   return {
@@ -11,6 +12,15 @@ function tool(id: string, name = 'read'): Part {
     callID: `call_${id}`,
     state: { status: 'completed' },
   } as unknown as Part;
+}
+
+/** Every tool part a row accounts for, group members included. */
+function coveredParts(steps: BurstStep[]): ToolPart[] {
+  return steps.flatMap((step) => {
+    if (step.kind === 'group') return step.step.parts;
+    if (step.kind === 'part') return [step.part as ToolPart];
+    return [];
+  });
 }
 
 function reasoning(id: string, text: string): Part {
@@ -43,10 +53,10 @@ describe('mergeBurstSteps', () => {
   });
 
   test('plumbing is dropped entirely', () => {
-    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'memory'), tool('t2')], tierOf);
+    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'memory'), tool('t2', 'bash')], tierOf);
 
-    expect(steps).toHaveLength(2);
-    expect(steps.every((s) => s.kind === 'part')).toBe(true);
+    expect(steps.map((s) => s.kind)).toEqual(['part', 'part']);
+    expect(coveredParts(steps).map((p) => p.id)).toEqual(['t1', 't2']);
   });
 
   test('plumbing between two thoughts does NOT split the run', () => {
@@ -71,9 +81,131 @@ describe('mergeBurstSteps', () => {
   });
 
   test('keys are stable and unique', () => {
-    const steps = mergeBurstSteps([reasoning('r1', 'a'), tool('t1'), tool('t2')], tierOf);
+    const steps = mergeBurstSteps(
+      [reasoning('r1', 'a'), tool('t1'), tool('t2'), tool('t3', 'bash')],
+      tierOf,
+    );
     const keys = steps.map((s) => s.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('mergeBurstSteps — grouping', () => {
+  test('consecutive same-family calls become ONE group carrying every member', () => {
+    const steps = mergeBurstSteps([tool('t1'), tool('t2'), tool('t3')], tierOf);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe('group');
+    const group = steps[0] as Extract<BurstStep, { kind: 'group' }>;
+    expect(group.step.parts.map((p) => p.id)).toEqual(['t1', 't2', 't3']);
+  });
+
+  test('a single-member run stays a plain step, not a wrapper around one child', () => {
+    const steps = mergeBurstSteps([tool('t1')], tierOf);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe('part');
+  });
+
+  test('a different family breaks the run', () => {
+    const steps = mergeBurstSteps([tool('t1'), tool('t2', 'bash'), tool('t3')], tierOf);
+
+    expect(steps.map((s) => s.kind)).toEqual(['part', 'part', 'part']);
+    expect(coveredParts(steps).map((p) => p.id)).toEqual(['t1', 't2', 't3']);
+  });
+
+  test('show / show_user never fold into the group beside them', () => {
+    const steps = mergeBurstSteps(
+      [tool('t1', 'show'), tool('t2', 'show_user'), tool('t3', 'image_gen')],
+      tierOf,
+    );
+
+    // All three are family `create`; only the two display tools are exempt.
+    expect(steps.map((s) => s.kind)).toEqual(['part', 'part', 'part']);
+    expect(coveredParts(steps).map((p) => p.id)).toEqual(['t1', 't2', 't3']);
+  });
+
+  test('reasoning keeps its position and splits the runs around it', () => {
+    const steps = mergeBurstSteps(
+      [tool('t1'), tool('t2'), reasoning('r1', 'a thought'), tool('t3'), tool('t4')],
+      tierOf,
+    );
+
+    expect(steps.map((s) => s.kind)).toEqual(['group', 'thought', 'group']);
+    expect((steps[0] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
+      ['t1', 't2'],
+    );
+    expect((steps[2] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
+      ['t3', 't4'],
+    );
+  });
+
+  test('plumbing between two calls does NOT split the group', () => {
+    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'memory'), tool('t2')], tierOf);
+
+    expect(steps).toHaveLength(1);
+    expect((steps[0] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
+      ['t1', 't2'],
+    );
+  });
+
+  test('a blank thinking fragment renders nothing and so must not split a group', () => {
+    const steps = mergeBurstSteps([tool('t1'), reasoning('r1', '   '), tool('t2')], tierOf);
+
+    expect(steps).toHaveLength(1);
+    expect((steps[0] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
+      ['t1', 't2'],
+    );
+  });
+
+  test('a part that is neither tool nor reasoning still gets its own row', () => {
+    const odd = { id: 'x1', type: 'future-part' } as unknown as Part;
+    const steps = mergeBurstSteps([tool('t1'), odd, tool('t2')], tierOf);
+
+    expect(steps.map((s) => s.kind)).toEqual(['part', 'part', 'part']);
+    expect(steps[1].key).toBe('x1');
+  });
+
+  test('the groups agree with the collapsed title they expand from', () => {
+    // The real tier function, so this asserts the two production paths agree.
+    const realTier = (p: Part) => stepLabel(p).tier;
+    const parts = [
+      tool('e1', 'edit'),
+      tool('e2', 'edit'),
+      tool('e3', 'edit'),
+      tool('b1', 'bash'),
+      tool('b2', 'bash'),
+      tool('r1'),
+      tool('r2'),
+    ];
+
+    expect(burstTitle(parts, false)).toBe('Edited 3 files, ran 2 commands, read 2 files');
+
+    const steps = mergeBurstSteps(parts, realTier);
+    expect(steps.map((s) => s.kind)).toEqual(['group', 'group', 'group']);
+    expect(
+      steps.map((s) => (s as Extract<BurstStep, { kind: 'group' }>).step.parts.length),
+    ).toEqual([3, 2, 2]);
+  });
+
+  test('every counted part is reachable — nothing is lost to grouping', () => {
+    const realTier = (p: Part) => stepLabel(p).tier;
+    const parts = [
+      tool('r1'),
+      tool('r2'),
+      tool('b1', 'bash'),
+      tool('p1', 'prune'),
+      tool('w1', 'write'),
+      tool('s1', 'show'),
+      tool('g1', 'glob'),
+    ];
+
+    const counted = parts.filter((p) => realTier(p) === 'primary').map((p) => (p as ToolPart).id);
+    const rendered = coveredParts(mergeBurstSteps(parts, realTier)).map((p) => p.id);
+
+    // `prune` is context-engine machinery: not counted in the title, not rendered.
+    expect(counted).toEqual(['r1', 'r2', 'b1', 'w1', 's1', 'g1']);
+    expect(rendered).toEqual(counted);
   });
 });
 

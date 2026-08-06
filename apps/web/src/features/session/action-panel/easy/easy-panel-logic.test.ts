@@ -1,7 +1,11 @@
 import { describe, expect, it, test } from 'bun:test';
+import { PREVIEW_PROBE_TIMEOUT_MS } from '@kortix/sdk';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
+  PREVIEW_MAX_WAIT_MS,
+  PREVIEW_PROBE_INTERVAL_MS,
+  PREVIEW_UNREACHABLE_WINDOW_MS,
   aspectChangedWidth,
   deriveIsRunning,
   fitSplitPercent,
@@ -9,11 +13,17 @@ import {
   neighborOutputs,
   outputKey,
   pathOutput,
+  previewErrorReason,
+  previewLoadSuccessState,
+  previewLoadVerdict,
   quickBrowserOutput,
   resolveSideSize,
+  runtimeSandboxHealth,
   sandboxRecents,
+  shouldArmLoadTimeout,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  shouldKeepProbingPort,
   focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
@@ -256,6 +266,286 @@ describe('aspectChangedWidth (does a measurement ask the panel to move?)', () =>
     expect(
       aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: NaN, nextSize: 35 }),
     ).toBe(true);
+  });
+});
+
+describe("shouldArmLoadTimeout (AppPreview's port watch)", () => {
+  const base = { isLoading: true, noApp: false, hasPreview: true };
+
+  it('is not armed while previewUrl is null — the auth token fetch must not burn the budget', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: false })).toBe(false);
+  });
+
+  it('arms once previewUrl goes non-null', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: true })).toBe(true);
+  });
+
+  it('is not armed for the no-app landing, even with a stray previewUrl', () => {
+    expect(shouldArmLoadTimeout({ ...base, noApp: true })).toBe(false);
+  });
+
+  it('is not armed once loading has already finished', () => {
+    expect(shouldArmLoadTimeout({ ...base, isLoading: false })).toBe(false);
+  });
+});
+
+describe('previewLoadSuccessState (a late load clears the error overlay)', () => {
+  it('clears both isLoading and hasError, so a late success retracts a prior timeout verdict', () => {
+    expect(previewLoadSuccessState()).toEqual({ isLoading: false, hasError: false });
+  });
+});
+
+describe('runtimeSandboxHealth', () => {
+  const checked = { initialCheckDone: true };
+
+  // The single reason this is three-valued and not a boolean: the store's OWN
+  // starting state is `connecting`/`null`, so "not alive" is the state every
+  // session passes through on the way up. Reading that as "dead" would fail
+  // every preview at mount.
+  it('is unknown at rest, before any health check has resolved', () => {
+    expect(runtimeSandboxHealth({ status: 'connecting', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is unknown while the sandbox is up but the runtime has not reported health', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is alive only once the runtime reports healthy', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: true, ...checked })).toBe('alive');
+  });
+
+  // `connected` + `healthy: false` is OpenCode still booting behind a live
+  // sandbox — progress, not death.
+  it('is unknown while the runtime is booting behind a live sandbox', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: false, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is dead only on the store\'s own threshold-filtered "unreachable"', () => {
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: null, ...checked })).toBe('dead');
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: true, ...checked })).toBe('dead');
+  });
+
+  // The store is a process-wide singleton with no per-session key, so a preview
+  // opened right after a dead session inherits that session's verdict until the
+  // poll's first check lands. Without this gate the error card flashes at mount
+  // on a healthy sandbox.
+  it('withholds the dead verdict until a check has actually run for this mount', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'unreachable', healthy: null, initialCheckDone: false }),
+    ).toBe('unknown');
+  });
+
+  // `alive` needs no such gate — it is unreachable without a resolved check —
+  // and gating it would only delay the correct wording.
+  it('does not gate the alive verdict, which no unresolved check can produce', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'connected', healthy: true, initialCheckDone: false }),
+    ).toBe('alive');
+  });
+});
+
+describe('previewLoadVerdict (AppPreview declares failure from evidence, not silence)', () => {
+  const waiting = {
+    sandbox: 'unknown' as const,
+    probe: 'unknown' as const,
+    unreachableForMs: 0,
+    waitedMs: 0,
+  };
+
+  // ─── THE REPORTED BUG. A cold Next.js route compiles for 30-60s (CLAUDE.md).
+  // The old code called that dead at 5s. Nothing here may reproduce that. ──
+
+  it('keeps waiting on a port that answers, however long the app takes to render', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: 6_000 })).toBe('wait');
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: 60_000 })).toBe('wait');
+  });
+
+  it('keeps waiting through a cold start we know nothing about', () => {
+    expect(previewLoadVerdict({ ...waiting, waitedMs: 5_000 })).toBe('wait');
+    expect(previewLoadVerdict({ ...waiting, waitedMs: 30_000 })).toBe('wait');
+  });
+
+  it('keeps waiting while the sandbox is healthy and the port answers', () => {
+    expect(
+      previewLoadVerdict({ ...waiting, sandbox: 'alive', probe: 'reachable', waitedMs: 45_000 }),
+    ).toBe('wait');
+  });
+
+  // ─── A genuinely dead port must still resolve to the error card. ──
+
+  it('fails once the port has been continuously unreachable for the whole window', () => {
+    expect(
+      previewLoadVerdict({
+        ...waiting,
+        probe: 'unreachable',
+        unreachableForMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+        waitedMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+      }),
+    ).toBe('failed');
+  });
+
+  // The port-bind race: the agent runs `npm run dev` and the preview opens
+  // before the server has bound. A miss, or a few, is a starting server.
+  it('does not fail on a port that has only just started missing', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'unreachable', unreachableForMs: 0 })).toBe(
+      'wait',
+    );
+    expect(
+      previewLoadVerdict({
+        ...waiting,
+        probe: 'unreachable',
+        unreachableForMs: PREVIEW_UNREACHABLE_WINDOW_MS - 1,
+      }),
+    ).toBe('wait');
+  });
+
+  // A port that goes 502 → 200 → 502 is a server restarting, not a dead one.
+  // Continuity is what the caller resets, and this asserts the reset counts.
+  it('does not fail on an intermittent port once a probe has answered again', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', unreachableForMs: 0 })).toBe(
+      'wait',
+    );
+  });
+
+  // ─── A stopped workspace is known evidence, not a guess. ──
+
+  it('fails immediately on a sandbox the runtime poll has declared unreachable', () => {
+    expect(previewLoadVerdict({ ...waiting, sandbox: 'dead' })).toBe('failed');
+  });
+
+  it('never fails on a sandbox whose health is merely not known yet', () => {
+    expect(previewLoadVerdict({ ...waiting, sandbox: 'unknown', waitedMs: 1 })).toBe('wait');
+  });
+
+  // ─── The bound: never an infinite spinner. ──
+
+  it('fails at the bound even when every probe was inconclusive', () => {
+    expect(previewLoadVerdict({ ...waiting, waitedMs: PREVIEW_MAX_WAIT_MS })).toBe('failed');
+  });
+
+  it('fails at the bound even when the port answered but the frame never loaded', () => {
+    expect(
+      previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: PREVIEW_MAX_WAIT_MS }),
+    ).toBe('failed');
+  });
+});
+
+describe('previewErrorReason (the copy must not claim more than the verdict knows)', () => {
+  const STOPPED = 'This workspace has stopped, so the app isn’t reachable anymore.';
+
+  it('says the workspace stopped only on a settled dead verdict', () => {
+    expect(previewErrorReason({ sandbox: 'dead', port: 3000 })).toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'dead', port: 0 })).toBe(STOPPED);
+  });
+
+  // THE DEFECT. Both non-`dead` failure paths — the continuously-unreachable
+  // streak and the PREVIEW_MAX_WAIT_MS ceiling — fire while health is
+  // `unknown` (store still `connecting`, or `connected` with `healthy: null`).
+  // Reading the three-state value through `health === 'alive'` told those
+  // users their workspace had stopped when nothing established that.
+  it('never says the workspace stopped when health is merely unknown', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).not.toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).not.toBe(STOPPED);
+  });
+
+  it('names the port when there is one', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).toBe(
+      'The app on port 3000 may not be running yet.',
+    );
+    expect(previewErrorReason({ sandbox: 'alive', port: 8080 })).toBe(
+      'The app on port 8080 may not be running yet.',
+    );
+  });
+
+  it('falls back to the port-free sentence when no port could be parsed', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).toBe(
+      'The app may not be running yet.',
+    );
+  });
+});
+
+describe('shouldKeepProbingPort (a probe is a real request against the user app)', () => {
+  const probing = { probe: 'unknown' as const, unreachableForMs: 0, watchedMs: 0 };
+
+  it('stops the moment the port answers — nothing more for a probe to settle', () => {
+    expect(shouldKeepProbingPort({ ...probing, probe: 'reachable' })).toBe(false);
+  });
+
+  it('keeps probing while the answer is still inconclusive inside the window', () => {
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_PROBE_INTERVAL_MS })).toBe(true);
+  });
+
+  // A cold Next.js dev server answers a request by compiling. Polling one for
+  // the whole 90s bound would queue compiles behind the very page being waited
+  // on, so the watch stops once it has had its chance to see a dead port.
+  it('stops probing a slow-but-silent app once the window has passed with no misses', () => {
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS })).toBe(
+      false,
+    );
+  });
+
+  // A streak that started late (the first probes were inconclusive) still has
+  // to be probed to its conclusion, or a dead port found at second 9 would
+  // never accumulate the continuity a failure verdict needs.
+  it('always probes an in-progress miss streak to its conclusion, window or not', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unreachable',
+        unreachableForMs: 4_000,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS * 1.5,
+      }),
+    ).toBe(true);
+  });
+
+  // ─── The FIRST miss of a streak carries `unreachableForMs: 0` — the caller
+  // starts the streak and reads its elapsed time in the same tick. A rule that
+  // keyed on accumulated time therefore did not protect the one sample that
+  // BEGINS a streak, so a first miss landing at or after the window ended the
+  // loop after a single sample and the failure verdict was never reached. ──
+  it('probes on after the miss that STARTS a streak, which has zero elapsed time', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unreachable',
+        unreachableForMs: 0,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+      }),
+    ).toBe(true);
+  });
+
+  // The concrete scenario: an app that accepts the connection and then hangs —
+  // the ordinary signature of a dev server compiling its first route. Probe 1
+  // stalls to its own ceiling and the loop must not end on that one sample.
+  it('leaves room for more than one sample when every probe stalls to its ceiling', () => {
+    expect(PREVIEW_PROBE_TIMEOUT_MS + PREVIEW_PROBE_INTERVAL_MS).toBeLessThan(
+      PREVIEW_UNREACHABLE_WINDOW_MS,
+    );
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_PROBE_TIMEOUT_MS })).toBe(true);
+  });
+
+  it('never runs unbounded: a broken streak past the window stops the loop', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unknown',
+        unreachableForMs: 0,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS * 2,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('preview timing constants', () => {
+  it('bound the wait past the documented 30-60s cold-compile worst case', () => {
+    expect(PREVIEW_MAX_WAIT_MS).toBeGreaterThan(60_000);
+    expect(PREVIEW_UNREACHABLE_WINDOW_MS).toBeLessThan(PREVIEW_MAX_WAIT_MS);
+    // The probe cadence has to fit the continuity window several times over, or
+    // "continuously unreachable" would rest on a single sample.
+    expect(PREVIEW_UNREACHABLE_WINDOW_MS / PREVIEW_PROBE_INTERVAL_MS).toBeGreaterThanOrEqual(5);
   });
 });
 

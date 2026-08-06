@@ -339,7 +339,7 @@ export { stripTrailingSlashes } from './platform/strings';
  * `ToolView`'s new `outputParsed`/`outputText` fields and its embedded-
  * failure detection (a `state.status: "completed"` tool part whose JSON
  * output body carries `success: false` or a top-level `error` — the shape
- * router/executor tools like `web_search` commonly return on failure — now
+ * router/connector tools like `web_search` commonly return on failure — now
  * classifies as `status: 'error'` instead of rendering as a success with raw
  * JSON inside). Also available from `@kortix/sdk/turns`.
  */

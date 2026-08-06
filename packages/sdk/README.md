@@ -33,6 +33,31 @@ const kortix = createKortix({
 await kortix.projects.list();
 ```
 
+### Call external systems through Connectors
+
+Use one six-method data plane for every Connector provider. A user token binds
+the project explicitly. An agent-minted session token already carries its
+project scope, so it can use the top-level fallback.
+
+```ts
+const connectors = projectId
+  ? kortix.project(projectId).connectors
+  : kortix.connectors;
+
+await connectors.catalog();
+await connectors.tools();
+await connectors.search('send email');
+await connectors.describe('gmail.send_email');
+await connectors.call('gmail.send_email', { to, subject, body });
+await connectors.uploadAttachment(bytes, {
+  filename: 'invoice.pdf',
+  contentType: 'application/pdf',
+});
+```
+
+A Connector defines callable tools. A Connection stores one authorization for
+that Connector. Credentials remain server-side and never enter the sandbox.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —
@@ -86,7 +111,19 @@ const kortix = createKortix({
 // Projects
 const projects = await kortix.projects.list();
 const detail = await kortix.project(pid).detail();
-await kortix.project(pid).secrets.upsert({ name: "STRIPE_API_KEY", value });
+await kortix.project(pid).secrets.upsert({
+  name: "LOCAL_TOOL_TOKEN",
+  value,
+  strategy: "runtime",
+  consumer: "sandbox",
+});
+await kortix.project(pid).secrets.upsert({
+  identifier: "anthropic-primary",
+  name: "ANTHROPIC_API_KEY",
+  value: providerKey,
+  strategy: "broker",
+  consumer: "llm_gateway",
+});
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
@@ -150,7 +187,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
+| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
@@ -172,12 +210,12 @@ await kortix.project(projectId).sessions.create({
 ```
 
 Do not put credentials in this map. For a white-label/backend wrapper, create an
-operator-managed connection profile, store its credential through the dedicated
-credential endpoint, and pass only the non-secret profile id at session create:
+operator-managed connection, store its credential through the dedicated
+credential endpoint, and pass only the non-secret connection id at session create:
 
 ```ts
 const project = kortix.project(projectId);
-const profile = await project.connectors.profiles.reconcile({
+const connection = await project.connectors.connections.reconcile({
   connector_alias: "customer-data",
   owner_type: "external",
   owner_id: wrapperUserId,
@@ -191,39 +229,39 @@ const auth = await project.connectors.auth.discover({
   provider: "postman",
   spec: "https://github.com/HubSpot/HubSpot-public-api-spec-collection",
 });
-await project.connectors.profiles.updateCredential(profile.profile_id, {
+await project.connectors.connections.updateCredential(connection.connection_id, {
   value: shortLivedCapability,
   kind: "secret",
 });
 await project.sessions.create({
   runtime_context: { locale: "de" },
   connector_bindings: {
-    "customer-data": { profile_id: profile.profile_id },
+    "customer-data": { connection_id: connection.connection_id },
   },
 });
 ```
 
 For bring-your-own authorization, each logged-in member creates their own
-profile without supplying an owner id; Kortix derives ownership from the bearer
+connection without supplying an owner id; Kortix derives ownership from the bearer
 token:
 
 ```ts
-const profile = await project.connectors.profiles.reconcileMember({
+const connection = await project.connectors.connections.reconcileMember({
   connector_alias: "gmail",
   label: "My Gmail",
 });
-await project.connectors.profiles.pipedreamConnect(profile.profile_id);
+await project.connectors.connections.pipedreamConnect(connection.connection_id);
 // Complete OAuth, then:
-await project.connectors.profiles.pipedreamFinalize(profile.profile_id);
+await project.connectors.connections.pipedreamFinalize(connection.connection_id);
 await project.sessions.create({
-  connector_bindings: { gmail: { profile_id: profile.profile_id } },
+  connector_bindings: { gmail: { connection_id: connection.connection_id } },
 });
 ```
 
-Member profiles are owner-only even for project managers, and sessions using
+Member connections are owner-only even for project managers, and sessions using
 one must remain private. Project defaults remain shared; external/agent/subject
-profiles remain operator-managed. Every profile is project/connector scoped
-and resolved on every Executor request, so revocation takes effect without a
+connections remain operator-managed. Every connection is project/connector scoped
+and resolved on every Connector request, so revocation takes effect without a
 restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.
@@ -438,6 +476,7 @@ Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
+  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -447,6 +486,10 @@ interface KortixPlatformConfig {
   featureFlags?: KortixFeatureFlagOverrides; // per-flag overrides for non-Next.js hosts
 }
 ```
+
+Set `clientSource` when a non-web host needs its requests separated in the
+centralized audit log. The SDK sends the validated value as request metadata.
+Actor identity and permissions still come from the bearer token.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

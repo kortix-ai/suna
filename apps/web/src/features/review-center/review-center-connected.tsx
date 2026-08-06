@@ -7,9 +7,8 @@
  * items act through THEIR OWN source flow — a Change Request ships via merge,
  * is dismissed via close, and "request changes" persists the feedback + delivers
  * it to the change's agent (the review `/act` endpoint 409s on adapted ids by
- * design). Executor approvals (`exec:`) resolve directly via `resolveApproval` —
- * the same client call the in-session approval prompt uses
- * (session-approval-prompt.tsx) — so Approve/Deny work inline in the inbox too.
+ * design). Connector approvals (`call:`) open the shared full-parameter review
+ * component. That component resolves one exact call through `resolveApproval`.
  * The presentational inbox (review-center.tsx) is shared with the mock
  * prototype. See docs/REVIEW_CENTER_DESIGN.md.
  */
@@ -36,9 +35,8 @@ import {
   useReviewItems,
 } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
-import { crChangeRequestId, execExecutionId, itemDeepLink, planBulkAction } from './review-actions';
+import { crChangeRequestId, connectorCallId, itemDeepLink, planBulkAction } from './review-actions';
 import { ReviewCenter } from './review-center';
-import { isSafeRisk } from './types';
 
 export function ReviewCenterConnected({
   projectName,
@@ -111,11 +109,8 @@ export function ReviewCenterConnected({
   }
 
   function handleAct(id: string, verdict: ReviewVerdict, feedback?: string) {
-    // Executor approvals resolve directly — the same call + payload the
-    // in-session approval prompt uses (resolveApproval, 'once' scope: this
-    // acts on the one call the row represents, not "for the rest of the
-    // session" — that broader grant stays a session-view affordance).
-    const executionId = execExecutionId(id);
+    // The shared parameter-review component calls this for one exact action.
+    const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
         { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
@@ -199,30 +194,22 @@ export function ReviewCenterConnected({
 
   // Bulk (multi-select) verdicts: the presentational layer pre-filters the
   // selection through `resolveBulkOutcome` (same pure helper), so what
-  // arrives here is already actionable — native ids for any verdict, exec
-  // approvals only under an APPROVE that passed the safe-risk floor. The
+  // arrives here is already actionable. Only native ids can reach the bulk
+  // mutation. The
   // guards below are defense in depth, not the primary filter:
-  //  - an executor approval is a live question to the agent; a bulk
+  //  - an connector approval is a live question to the agent; a bulk
   //    "dismiss" must NEVER answer it with a deny, so exec ids resolve only
-  //    on an explicit approve (single-item Deny goes through handleAct).
-  //  - the safe-risk floor is re-checked before each resolve.
+  //    from a bulk action. Each exact call needs its own parameter review.
   //  - Change Requests have no bulk path (merging needs the diff in view).
   function handleBulkAct(ids: string[], verdict: ReviewVerdict) {
     const { native, resolvable, unsupported } = planBulkAction(ids);
     if (native.length > 0) {
       bulk.mutate({ ids: native, verdict }, { onError: (e) => errorToast(e.message) });
     }
-    if (resolvable.length > 0 && verdict === 'approve') {
-      const riskById = new Map(items.map((i) => [i.id, i.risk]));
-      for (const id of resolvable) {
-        if (!isSafeRisk(riskById.get(id) ?? 'high')) continue;
-        const executionId = execExecutionId(id);
-        if (executionId)
-          resolve.mutate(
-            { executionId, decision: 'approve' },
-            { onError: (e) => errorToast(e.message) },
-          );
-      }
+    if (resolvable.length > 0) {
+      infoToast(
+        `${resolvable.length} ${resolvable.length === 1 ? 'approval needs' : 'approvals need'} individual parameter review.`,
+      );
     }
     if (unsupported.length > 0) {
       infoToast(

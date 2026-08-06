@@ -9,6 +9,20 @@ export function providerCredentialSummary(provider: LlmProviderEntry): string {
   return provider.envVars.join(' · ');
 }
 
+export function providerDisconnectPlan(
+  provider: Pick<LlmProviderEntry, 'id' | 'envVars'>,
+): { oauthProvider: string | null; secretNames: string[] } {
+  const removesSubscription = provider.id === 'codex' || provider.id === 'openai';
+  const names = new Set(
+    provider.envVars.filter((name) => name !== CODEX_AUTH_JSON_SECRET_NAME),
+  );
+  if (removesSubscription) names.add(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME);
+  return {
+    oauthProvider: removesSubscription ? 'openai' : null,
+    secretNames: [...names],
+  };
+}
+
 type RuntimeProvidersSnapshot =
   | {
       connected?: string[];

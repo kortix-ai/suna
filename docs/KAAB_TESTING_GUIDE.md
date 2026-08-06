@@ -8,8 +8,8 @@ This guide verifies the current backend session contract.
 It covers:
 
 - backend session creation
-- connector-profile authorization strategy
-- required connector profiles
+- connector-connection authorization strategy
+- required connectors
 - authoritative session scope
 - unified session costs
 - idempotent retries
@@ -181,7 +181,7 @@ Expected:
 
 ## E. Verify connector authorization strategy
 
-Declare two connector profiles for one provider app:
+Declare two connectors for one provider app:
 
 ```yaml
 connectors:
@@ -213,32 +213,32 @@ agents:
 
 Merge the manifest change before continuing.
 
-### E1. Create a project authorization
+### E1. Create a project connection
 
-Create the authorization through the SDK:
+Create the connection through the SDK:
 
 ```ts
 const project = kortix.project(projectId);
 
-const authorization = await project.connectors.authorizations.reconcile({
+const connection = await project.connectors.connections.reconcile({
   connector_alias: "gmail-project",
   owner_type: "project",
   label: "Support inbox",
 });
 
-console.log(authorization.profile_id);
+console.log(connection.connection_id);
 ```
 
 Complete the connector's credential or OAuth flow. Then activate the
-authorization.
+connection.
 
 Store the printed compatibility identifier:
 
 ```bash
-export AUTHORIZATION_ID="<authorization-profile-id>"
+export CONNECTION_ID="<connection-id>"
 ```
 
-### E2. Bind the authorization
+### E2. Bind the connection
 
 ```bash
 curl -sS -w "$CURL_STATUS" -X POST \
@@ -249,7 +249,7 @@ curl -sS -w "$CURL_STATUS" -X POST \
     "agent_name": "support",
     "connector_bindings": {
       "gmail-project": {
-        "authorization_id": "'"$AUTHORIZATION_ID"'"
+        "connection_id": "'"$CONNECTION_ID"'"
       }
     }
   }' |
@@ -269,41 +269,41 @@ export CONNECTOR_SESSION_ID="$(
 
 ### E3. Reject a strategy mismatch
 
-Try to bind a member authorization under the `project` connector profile.
+Try to bind a member connection under the `project` connector.
 
 Expected:
 
 - HTTP `404`
-- `code` equals `CONNECTOR_PROFILE_NOT_FOUND`
+- `code` equals `CONNECTOR_CONNECTION_NOT_FOUND`
 
-The response does not reveal whether the rejected authorization exists.
+The response does not reveal whether the rejected connection exists.
 
-### E4. Verify the required-profile gate
+### E4. Verify the required-connection gate
 
-Revoke the `gmail-project` authorization. Then create a session for the
+Revoke the `gmail-project` connection. Then create a session for the
 `support` agent without an explicit binding.
 
 Expected:
 
 - HTTP `409`
-- `code` equals `CONNECTOR_AUTHORIZATION_REQUIRED`
-- `connector_profiles[0].slug` equals `gmail-project`
-- `connector_profiles[0].authorization_strategy` equals `project`
+- `code` equals `CONNECTOR_CONNECTION_REQUIRED`
+- `connector_connections[0].slug` equals `gmail-project`
+- `connector_connections[0].authorization_strategy` equals `project`
 - no sandbox starts
 
-Reactivate the authorization. Retry the create request.
+Reactivate the connection. Retry the create request.
 
 Expected: HTTP `201`.
 
-### E5. Verify the unavailable required-profile gate
+### E5. Verify the unavailable required-connection gate
 
 Set `connectors_required` to a slug that does not identify a configured
-connector profile. Then create a session for that agent.
+connector. Then create a session for that agent.
 
 Expected:
 
 - HTTP `409`
-- `code` equals `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE`
+- `code` equals `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`
 - no session row or sandbox starts
 
 ## F. Verify authoritative session scope
@@ -321,7 +321,7 @@ Expected:
 
 - `secrets_allowlist` is present
 - `connector_bindings` is present
-- each binding contains `authorization_id`
+- each binding contains `connection_id`
 
 Replace the complete connector binding map:
 
@@ -333,7 +333,7 @@ curl -sS -w "$CURL_STATUS" -X PUT \
   -d '{
     "connector_bindings": {
       "gmail-project": {
-        "authorization_id": "'"$AUTHORIZATION_ID"'"
+        "connection_id": "'"$CONNECTION_ID"'"
       }
     }
   }' |
@@ -343,9 +343,9 @@ curl -sS -w "$CURL_STATUS" -X PUT \
 Expected:
 
 - HTTP `200`
-- the response contains the selected `authorization_id`
+- the response contains the selected `connection_id`
 - the update does not restart the session
-- the next connector call uses the new authorization
+- the next connector call uses the new connection
 
 Replace the secret allowlist:
 
@@ -459,7 +459,7 @@ pnpm --filter @kortix/whitelabel-demo dev
 Verify these surfaces:
 
 1. Create a session from the new-session dialog.
-2. Select the agent, secret allowlist, and connector authorizations.
+2. Select the agent, secret allowlist, and connections.
 3. Open the session workbench.
 4. Confirm the scope bar matches `GET /sessions/{sessionId}/scope`.
 5. Replace secret and connector scope.

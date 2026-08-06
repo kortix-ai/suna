@@ -11,7 +11,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
-  executorExecutions,
+  connectorCalls,
+  projectMembers,
   projectSessions,
   sessionLifecycleCommands,
 } from '@kortix/db';
@@ -30,6 +31,8 @@ let ctx: { projectId: string; accountId: string; userId: string } | null = null;
 let secret = '';
 let humanToken = '';
 let humanUserId = '';
+let readOnlyToken = '';
+let readOnlyUserId = '';
 let priorDemoEnterprise = false;
 
 beforeAll(async () => {
@@ -97,6 +100,50 @@ beforeAll(async () => {
     createdBy: humanUserId,
     visibility: 'private',
   });
+  const readOnlyEmail = `approvals-reader-${crypto.randomUUID()}@example.test`;
+  const readOnlyPassword = `Approval-Reader-${crypto.randomUUID()}-aA1!`;
+  const readOnlyCreated = await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      email: readOnlyEmail,
+      password: readOnlyPassword,
+      email_confirm: true,
+    }),
+  });
+  expect(readOnlyCreated.status).toBe(200);
+  const readOnlyCreatedBody = (await readOnlyCreated.json()) as {
+    id?: string;
+    user?: { id?: string };
+  };
+  readOnlyUserId = readOnlyCreatedBody.user?.id ?? readOnlyCreatedBody.id ?? '';
+  expect(readOnlyUserId).not.toBe('');
+  await db.insert(accountMembers).values({
+    accountId: ctx.accountId,
+    userId: readOnlyUserId,
+    accountRole: 'member',
+  });
+  await db.insert(projectMembers).values({
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    userId: readOnlyUserId,
+    projectRole: 'member',
+  });
+  const readOnlySignedIn = await fetch(`${config.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: {
+      apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email: readOnlyEmail, password: readOnlyPassword }),
+  });
+  expect(readOnlySignedIn.status).toBe(200);
+  readOnlyToken = ((await readOnlySignedIn.json()) as { access_token?: string }).access_token ?? '';
+  expect(readOnlyToken).not.toBe('');
   // The full-trail assertions below need the auditAccess entitlement; flip the
   // enterprise demo on for the suite (restored in afterAll). The unentitled
   // contract has its own dedicated test that toggles it off.
@@ -106,7 +153,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const id of execIds)
-    await db.delete(executorExecutions).where(eq(executorExecutions.executionId, id));
+    await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
   for (const id of minted)
@@ -125,13 +172,32 @@ afterAll(async () => {
       },
     });
   }
+  if (ctx && readOnlyUserId) {
+    await db
+      .delete(projectMembers)
+      .where(
+        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
+      );
+    await db
+      .delete(accountMembers)
+      .where(
+        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
+      );
+    await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${readOnlyUserId}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+  }
   if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
 });
 
 async function seedPending(argsPreviewComplete = true): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
   const [row] = await db
-    .insert(executorExecutions)
+    .insert(connectorCalls)
     .values({
       accountId: ctx.accountId,
       projectId: ctx.projectId,
@@ -146,7 +212,7 @@ async function seedPending(argsPreviewComplete = true): Promise<string> {
         args_preview_complete: argsPreviewComplete,
       },
     })
-    .returning({ id: executorExecutions.executionId });
+    .returning({ id: connectorCalls.executionId });
   execIds.push(row.id);
   return row.id;
 }
@@ -159,6 +225,10 @@ const authPost = (path: string, body: unknown) =>
     headers: { Authorization: `Bearer ${humanToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+const readOnlyGet = (path: string) =>
+  app.request(path, { headers: { Authorization: `Bearer ${readOnlyToken}` } });
+const patGet = (path: string) =>
+  app.request(path, { headers: { Authorization: `Bearer ${secret}` } });
 const patPost = (path: string, body: unknown) =>
   app.request(path, {
     method: 'POST',
@@ -185,8 +255,8 @@ describe('approvals inbox + resolution', () => {
     expect(ap.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     // Approve clears the gate to the terminal `ok` + stamps the resolver.
     expect(after.status).toBe('ok');
     expect(after.approvedBy).toBe(humanUserId);
@@ -254,8 +324,8 @@ describe('approvals inbox + resolution', () => {
     expect(dn.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     expect(after.status).toBe('denied');
     expect(after.resolvedAt).toBeTruthy();
     // The denier is recorded too, so the audit trail attributes the refusal.
@@ -300,6 +370,51 @@ describe('approvals inbox + resolution', () => {
     });
   });
 
+  test('Review Center exposes parameters only to a human who can resolve the approval', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const path = `/v1/projects/${ctx.projectId}/review/items`;
+
+    const owner = await authGet(path);
+    expect(owner.status).toBe(200);
+    const ownerBody = (await owner.json()) as {
+      review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
+    };
+    const ownerItem = ownerBody.review_items.find(
+      (item) => item.review_item_id === `exec:${execId}`,
+    );
+    expect(ownerItem?.detail).toMatchObject({
+      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview_complete: true,
+      args_preview_authorized: true,
+    });
+
+    const readOnly = await readOnlyGet(path);
+    expect(readOnly.status).toBe(200);
+    const readOnlyBody = (await readOnly.json()) as {
+      review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
+    };
+    const readOnlyItem = readOnlyBody.review_items.find(
+      (item) => item.review_item_id === `exec:${execId}`,
+    );
+    expect(readOnlyItem?.detail).not.toHaveProperty('args_preview');
+    expect(readOnlyItem?.detail).toMatchObject({
+      args_preview_complete: false,
+      args_preview_authorized: false,
+    });
+
+    const automated = await patGet(path);
+    expect(automated.status).toBe(200);
+    const automatedBody = (await automated.json()) as {
+      review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
+    };
+    const automatedItem = automatedBody.review_items.find(
+      (item) => item.review_item_id === `exec:${execId}`,
+    );
+    expect(automatedItem?.detail).not.toHaveProperty('args_preview');
+    expect(automatedItem?.detail).toMatchObject({ args_preview_authorized: false });
+  });
+
   test('an incomplete parameter preview blocks approve but still permits deny', async () => {
     if (!ctx) return;
     const execId = await seedPending(false);
@@ -330,7 +445,7 @@ describe('approvals inbox + resolution', () => {
     if (!ctx) return;
     const missingSessionId = crypto.randomUUID();
     const [row] = await db
-      .insert(executorExecutions)
+      .insert(connectorCalls)
       .values({
         accountId: ctx.accountId,
         projectId: ctx.projectId,
@@ -343,7 +458,7 @@ describe('approvals inbox + resolution', () => {
           args_preview_complete: true,
         },
       })
-      .returning({ id: executorExecutions.executionId });
+      .returning({ id: connectorCalls.executionId });
     execIds.push(row.id);
 
     const response = await authPost(`/v1/projects/${ctx.projectId}/approvals/${row.id}`, {
@@ -353,8 +468,8 @@ describe('approvals inbox + resolution', () => {
 
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, row.id));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, row.id));
     expect(after.status).toBe('pending_approval');
     expect(after.approvedBy).toBeNull();
     expect(after.resolvedAt).toBeNull();

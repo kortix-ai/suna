@@ -1,7 +1,7 @@
 import type { CandidateMatch, MatcherPlugin } from "deepsec/config";
 
 const ROUTE_RE =
-  /\b(?:app|router|projectsApp|projectWebhooksApp|kortixRouter|setupLinksPublicApp|oauthApp|tunnelApp|executorApp|adminApp|opsApp|scimRouter|accountsRouter|accountInvitesRouter|sandboxProxyApp|webProxyRouter)\s*\.\s*(?:get|post|put|patch|delete|all|route|openapi|use)\s*\(/;
+  /\b(?:app|router|projectsApp|projectWebhooksApp|kortixRouter|setupLinksPublicApp|oauthApp|tunnelApp|connectorApp|adminApp|opsApp|scimRouter|accountsRouter|accountInvitesRouter|sandboxProxyApp|webProxyRouter)\s*\.\s*(?:get|post|put|patch|delete|all|route|openapi|use)\s*\(/;
 
 export const kortixHonoEntrypoint: MatcherPlugin = {
   slug: "kortix-hono-entrypoint",

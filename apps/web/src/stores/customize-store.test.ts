@@ -5,7 +5,7 @@ import { useCustomizeStore } from './customize-store';
 beforeEach(() => {
   useCustomizeStore.setState({
     open: false,
-    section: 'agents',
+    section: 'secrets',
     llmProvidersTab: 'catalog',
     membersTab: 'people',
   });

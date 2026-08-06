@@ -493,6 +493,85 @@ adminApp.openapi(
   },
 );
 
+// ── Set account contracted-Enterprise entitlement flag ────────────────────────
+// `enterprise_entitled` decouples a contracted cloud Enterprise customer's
+// feature entitlements (SAML SSO, SCIM, RBAC, audit access) from the billing
+// tier. Set this when an account signs an Enterprise agreement that is ALSO
+// per-seat billed (a flat Enterprise fee plus per-seat billing): the
+// per-seat Stripe webhook reconciliation will then populate
+// billing_model/seats/credits from the subscription WITHOUT clobbering the
+// enterprise identity entitlements (it leaves `tier` untouched when this flag
+// is on). Clear it when the Enterprise term ends. For a pure-Enterprise (no
+// per-seat) deal, `tier='enterprise'` alone is still sufficient; this flag is
+// the additional, independent entitlement source for the hybrid case.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-entitlement',
+    tags: ['admin'],
+    summary: "Set the account's contracted-Enterprise entitlement flag",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ enabled: z.boolean() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated entitlement flag'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = c.get('userId') as string | undefined;
+      const body = await c.req.json().catch(() => ({}));
+      const enabled = body.enabled;
+      if (typeof enabled !== 'boolean') {
+        return c.json({ error: 'enabled must be a boolean' }, 400);
+      }
+
+      const {
+        isEnterpriseEntitled,
+        setEnterpriseEntitled,
+      } = await import('../billing/repositories/credit-accounts');
+      const before = await isEnterpriseEntitled(accountId);
+      await setEnterpriseEntitled(accountId, enabled);
+
+      // The per-request entitlement read (SSO/SCIM gates) is uncached and sees
+      // the change immediately; no tier-cache invalidation needed because
+      // enterprise_entitled is resolved independently of the cached tier.
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.enterprise_entitlement.set',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { enterprise_entitled: before },
+          after: { enterprise_entitled: enabled },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the entitlement change */
+      }
+
+      return c.json({ ok: true, enabled });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
 // ── Set account concurrent-session override ─────────────────────────────────
 // `null` restores the tier-derived limit. Operators use this route for account
 // policy changes and for bounded end-to-end limit verification.

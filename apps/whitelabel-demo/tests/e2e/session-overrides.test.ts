@@ -45,25 +45,25 @@ describe('buildSessionCreateInput', () => {
 
   test('a binding is keyed by the alias that was chosen', () => {
     const input = buildSessionCreateInput(
-      { ...NO_OVERRIDES, bindings: { slack: 'prof_9' } },
+      { ...NO_OVERRIDES, bindings: { slack: 'connection_9' } },
       { sessionId: SESSION_ID },
     );
     // The alias used to be hardcoded to one connector, so binding anything
     // else silently bound the wrong one.
     expect(input.connector_bindings).toEqual({
-      slack: { authorization_id: 'prof_9' },
+      slack: { connection_id: 'connection_9' },
     });
     expect(Object.keys(input.connector_bindings ?? {})).not.toContain('gmail');
   });
 
   test('several aliases can be bound in one create', () => {
     const input = buildSessionCreateInput(
-      { ...NO_OVERRIDES, bindings: { slack: 'prof_9', notion: 'prof_3' } },
+      { ...NO_OVERRIDES, bindings: { slack: 'connection_9', notion: 'connection_3' } },
       { sessionId: SESSION_ID },
     );
     expect(input.connector_bindings).toEqual({
-      slack: { authorization_id: 'prof_9' },
-      notion: { authorization_id: 'prof_3' },
+      slack: { connection_id: 'connection_9' },
+      notion: { connection_id: 'connection_3' },
     });
   });
 
@@ -71,7 +71,7 @@ describe('buildSessionCreateInput', () => {
     // Without inherit_unbound, binding ANY alias switches all the others off
     // their project default — picking one connection would unplug the rest.
     const input = buildSessionCreateInput(
-      { ...NO_OVERRIDES, bindings: { slack: 'prof_9' } },
+      { ...NO_OVERRIDES, bindings: { slack: 'connection_9' } },
       { sessionId: SESSION_ID },
     );
     expect(input.inherit_unbound).toBe(true);
@@ -112,7 +112,7 @@ describe('buildSessionCreateInput', () => {
       {
         agent: 'support',
         secrets: ['STRIPE_KEY'],
-        bindings: { slack: 'prof_9' },
+        bindings: { slack: 'connection_9' },
         runtimeContext: null,
       },
       {
@@ -127,7 +127,7 @@ describe('buildSessionCreateInput', () => {
       sandbox_slug: 'python',
       agent_name: 'support',
       secrets: ['STRIPE_KEY'],
-      connector_bindings: { slack: { authorization_id: 'prof_9' } },
+      connector_bindings: { slack: { connection_id: 'connection_9' } },
       inherit_unbound: true,
     });
   });

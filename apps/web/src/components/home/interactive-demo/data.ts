@@ -118,7 +118,7 @@ export const AGENTS: AgentDef[] = [
 
 export const CORE_SKILLS: [string, string][] = [
   ['agent-browser', 'Browser automation CLI for AI agents'],
-  ['kortix-executor', 'One interface to every connected integration'],
+  ['kortix-connectors', 'One interface to every connected connector'],
   ['kortix-memory', 'Read, write, and curate the project brain'],
   ['kortix-slack', 'Answer in Slack as a teammate'],
   ['kortix-system', 'Canonical reference for a Kortix project'],
@@ -193,7 +193,7 @@ export const GKW_SKILLS: [string, string][] = [
   ['xlsx', 'Spreadsheets, financial models & polished workbooks'],
 ];
 
-export const INTEGRATIONS: [string, string, boolean][] = [
+export const CONNECTORS: [string, string, boolean][] = [
   ['github.com', 'GitHub', true],
   ['slack.com', 'Slack', true],
   ['gmail.com', 'Gmail', false],

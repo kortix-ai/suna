@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_VERSION,
   NODE_VERSION,
@@ -33,7 +34,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  executorSdkPath: 'kortix-executor-sdk',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
@@ -73,6 +73,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
+    expect(merged).toContain(`pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}"`);
+    expect(merged).toContain(`test "$(anydoc --version)" = "${ANYDOC_VERSION}"`);
     expect(merged).not.toContain('npm install -g opencode-ai');
     expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');
@@ -126,7 +128,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
     expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
-    expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
+    expect(merged).not.toContain('/opt/kortix/packages/');
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 

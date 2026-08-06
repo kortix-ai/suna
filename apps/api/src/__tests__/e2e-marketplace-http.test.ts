@@ -39,11 +39,11 @@ describe('marketplace HTTP contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { items: Array<{ id: string; name: string; type: string; managedBy?: string; partOfProject?: { id: string; title: string } }> };
 
-    // Kortix-managed system skills (kortix-computer/executor/memory/slack/system/
+    // Kortix-managed system skills (kortix-computer/connectors/memory/slack/system/
     // marketplace/meet/onboarding) are server-injected platform floor now — they
     // never show up as browse-and-install cards.
     expect(body.items.some((item) => item.managedBy === 'kortix')).toBe(false);
-    for (const name of ['kortix-computer', 'kortix-executor', 'kortix-memory', 'kortix-slack', 'kortix-system']) {
+    for (const name of ['kortix-computer', 'kortix-connectors', 'kortix-memory', 'kortix-slack', 'kortix-system']) {
       expect(body.items.find((item) => item.name === name)).toBeUndefined();
     }
 

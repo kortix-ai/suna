@@ -49,6 +49,7 @@ describe('identifierKeyConflicts', () => {
 });
 
 const row = (identifier: string, key: string, value: string): ResolvedProjectSecret => ({
+  secretId: `secret-${identifier}`,
   identifier,
   key,
   value,

@@ -2,7 +2,7 @@
  * Shared build-context staging for sandbox snapshots.
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
- * runtime layer (agent binary + CLI + entrypoint + slack-cli + executor-sdk +
+ * runtime layer (agent binary + CLI + entrypoint + slack-cli +
  * opencode/agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
@@ -12,21 +12,37 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdir, mkdtemp, rename, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  stat,
+  writeFile as writeFileFs,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import {
+  getManagedSkillFiles,
+  getStarterFiles,
+  isKortixManagedSkillName,
+} from '@kortix/starter';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
-import { tmpdir } from 'node:os';
-import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
-import { stagingTarArgs, stagingTarEnv } from './staging-tar';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
+import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
+import { stagingTarArgs, stagingTarEnv } from './staging-tar';
+
 const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,13 +57,11 @@ const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
 const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
 const cliAttestationPath = () => process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH
-  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-executor-runtime.attestation.json');
+  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-connectors-runtime.attestation.json');
 const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
@@ -78,6 +92,62 @@ export interface StagedContext {
   composedPath: string;
   /** Basename of the Dockerfile (for `-f`). */
   dockerfileName: string;
+}
+
+/**
+ * Materialize the managed `kortix-*` skills into a build-context directory —
+ * the same extraction `packages/starter/scripts/write-managed-skills.ts` runs
+ * for the standard sandbox image. The daemon overlays `/opt/kortix/managed-skills`
+ * into the harness skills dir at boot (`ensureInjectedManagedSkills`), so this
+ * is what teaches the meta coordinator the `kortix` CLI.
+ */
+async function stageManagedSkills(outDir: string): Promise<void> {
+  const SKILLS_PREFIX = '.kortix/opencode/skills/';
+  const files = [
+    ...getManagedSkillFiles(),
+    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
+  ];
+  for (const file of files) {
+    if (!file.path.startsWith(SKILLS_PREFIX)) continue;
+    const name = file.path.slice(SKILLS_PREFIX.length).split('/')[0];
+    if (!name || !isKortixManagedSkillName(name)) continue;
+    const dest = join(outDir, file.path.slice(SKILLS_PREFIX.length));
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFileFs(dest, file.content);
+  }
+}
+
+export async function stageMetaBuildContext(): Promise<StagedContext> {
+  const agentPath = agentBinPath();
+  const cliPath = cliBinPath();
+  const entrypointPath = entrypointSrcPath();
+  await assertExists(agentPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
+  await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-meta-snap-'));
+  await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
+  await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
+  await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
+  await stageManagedSkills(join(contextDir, 'managed-skills'));
+  await writeFileFs(
+    join(contextDir, 'kortix-llm-catalog.json'),
+    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
+  );
+
+  const dockerfileName = 'Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  await writeFileFs(
+    composedPath,
+    buildMetaSandboxDockerfile({
+      agentBinaryPath: 'kortix-agent.gz',
+      cliBinaryPath: 'kortix.gz',
+      entrypointScriptPath: 'kortix-entrypoint',
+      catalogPath: 'kortix-llm-catalog.json',
+      managedSkillsPath: 'managed-skills',
+    }),
+  );
+  return { contextDir, composedPath, dockerfileName };
 }
 
 /**
@@ -422,7 +492,6 @@ export async function stageBuildContext(
   const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
   const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
   const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
@@ -430,7 +499,6 @@ export async function stageBuildContext(
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
   await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
   await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
@@ -469,16 +537,6 @@ export async function stageBuildContext(
   await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
   await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
   await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-  // This package is copied as source and imported directly by the in-sandbox
-  // channel CLIs. Its local node_modules is neither used nor portable: pnpm
-  // represents entries as links into the checkout-wide store, and E2B hashes
-  // every context entry before upload, so copying those links produces an
-  // immediate ENOENT outside the original checkout. Keep the provider context
-  // self-contained by staging source/package metadata only.
-  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), {
-    recursive: true,
-    filter: (source) => basename(source) !== 'node_modules',
-  });
   // Stage the starter opencode config for the build-time instance warm-up.
   // Best effort: if it's missing, skip the warm-up (the build still succeeds and
   // sessions just pay the first-instance cost at runtime as before).
@@ -529,7 +587,6 @@ export async function stageBuildContext(
     entrypointScriptPath: 'kortix-entrypoint',
     machineDocPath: 'MACHINE.md',
     slackCliPath: 'kortix-slack-cli',
-    executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
     opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     catalogPath: 'kortix-llm-catalog.json',
@@ -559,7 +616,7 @@ export async function stageBuildContext(
  * Chromium download to lose a cache race on.
  *
  * Unlike `stageBuildContext`, this does NOT stage the agent/CLI binaries,
- * entrypoint, slack-cli, executor-sdk, catalog, or scaffold.git — none of the
+ * entrypoint, slack-cli, catalog, or scaffold.git — none of the
  * artifact tail is re-COPY'd; it's inherited from `baseImageRef`. Only the
  * starter opencode config (if present) is staged, for the instance re-warm.
  *

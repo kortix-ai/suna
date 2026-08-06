@@ -29,7 +29,6 @@ const SANDBOX_ALLOWED_CREDENTIALS: ReadonlySet<string> = new Set([
   'INTERNAL_SERVICE_KEY',
   'TUNNEL_TOKEN',
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
 ]);
 
 /**

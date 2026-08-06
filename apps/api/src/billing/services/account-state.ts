@@ -2,7 +2,7 @@ import { projectSessions, sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { config } from '../../config';
-import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
+import { effectiveTierForLimits, maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
@@ -30,7 +30,7 @@ import {
   isPerSeatAccount,
 } from './tiers';
 import { getAccountEntitlements } from './entitlements';
-import { getUsageBreakdownThisPeriod } from './usage-breakdown';
+import { currentPeriodStart, getUsageBreakdownThisPeriod } from './usage-breakdown';
 
 const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
 
@@ -137,7 +137,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       fetchInstances(),
       countActiveMembers(accountId).catch(() => 1),
       isPerSeatAccount(sub?.billingModel)
-        ? getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
+        ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub?.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
       countActiveSessions(accountId).catch(() => 0),
     ]);
@@ -248,6 +248,13 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // Surface the per-account contracted-Enterprise flag so the admin console
+    // and the frontend can distinguish a real Enterprise contract (entitlements
+    // sourced from `enterprise_entitled`, independent of billing tier) from a
+    // self-serve demo or a self-host license. When true, the frontend hides
+    // the self-serve "Enterprise features — Demo" toggle (a real contract
+    // supersedes the demo) and the admin console shows the contract state.
+    enterprise_entitled: !!sub?.enterpriseEntitled,
     models: [],
     auto_topup: autoTopup,
     instances,
@@ -278,7 +285,14 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         limit:
           typeof sub?.maxConcurrentSessions === 'number' && sub.maxConcurrentSessions > 0
             ? Math.floor(sub.maxConcurrentSessions)
-            : maxConcurrentSessionsForTier(tierName),
+            : // Same tier the SERVER will enforce, not the raw column.
+              // resolveAccountSessionLimit coerces a paying per-seat account
+              // whose stored tier is stale to 'per_seat' (shared/account-limits.ts)
+              // so bad tier data cannot gate a paying team as free. Reading the
+              // raw column here meant the dashboard showed such an account the
+              // FREE ceiling while the server admitted the per-seat one — two
+              // independent derivations of one number.
+              maxConcurrentSessionsForTier(effectiveTierForLimits(tierName, sub)),
       },
     },
   };
@@ -339,6 +353,9 @@ export function buildLocalAccountState(): AccountStateResponse {
       entitlements: getTierEntitlements('free'),
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // No-DB local mode has no credit_accounts row, so the contracted-Enterprise
+    // flag is false by construction (fail-closed).
+    enterprise_entitled: false,
     models: [],
     auto_topup: {
       enabled: false,

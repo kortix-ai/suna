@@ -12,7 +12,7 @@
 import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { legacyCustomizeFilesRedirect, parseCustomizeSection } from '@/lib/customize-sections';
+import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 export default function ProjectCustomizeRedirect() {
@@ -23,11 +23,11 @@ export default function ProjectCustomizeRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files and Changes graduated out of Customize into the standalone Files
-    // surface. Preserve old bookmarks and open Proposed changes when requested.
-    const filesRedirect = legacyCustomizeFilesRedirect(projectId, searchParams.get('section'));
-    if (filesRedirect) {
-      router.replace(filesRedirect);
+    // Files, Changes, Connectors, Skills, and Commands graduated out of
+    // Customize into their own standalone pages. Preserve old bookmarks.
+    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('section'));
+    if (redirect) {
+      router.replace(redirect);
       return;
     }
     const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;

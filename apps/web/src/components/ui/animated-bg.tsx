@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { motion, useMotionValue, useTransform } from 'motion/react';
+import { m, useMotionValue, useTransform } from 'motion/react';
 import type { TargetAndTransition } from 'motion/react';
 import { useEffect, useState, useId, useMemo } from 'react';
 
@@ -316,7 +316,7 @@ const Arc = ({
   }, [blurAmount]);
 
   return (
-    <motion.div
+    <m.div
       className="absolute"
       style={stylePos}
       initial={{ x: 0, y: 0, scale: cfg.scale[0] }}
@@ -355,7 +355,7 @@ const Arc = ({
           blurAmount={currentBlur}
         />
       )}
-    </motion.div>
+    </m.div>
   );
 };
 

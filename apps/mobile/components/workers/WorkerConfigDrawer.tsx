@@ -2,7 +2,7 @@
  * Worker Configuration Drawer
  *
  * Uses @gorhom/bottom-sheet for configuring workers
- * Supports: Instructions, Tools, Integrations
+ * Supports: Instructions, Tools, Connections
  * Excludes: Knowledge (as per requirements)
  */
 
@@ -19,7 +19,7 @@ import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
 import { InstructionsScreen } from './screens/InstructionsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
-import { IntegrationsScreen } from './screens/IntegrationsScreen';
+import { ConnectionsScreen } from './screens/ConnectionsScreen';
 import { TriggersScreen } from './screens/TriggersScreen';
 import { getSheetBg } from '@/lib/theme-colors';
 
@@ -28,16 +28,16 @@ interface WorkerConfigDrawerProps {
   workerId: string | null;
   onClose: () => void;
   onWorkerUpdated?: () => void;
-  initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  initialView?: 'instructions' | 'tools' | 'connections' | 'triggers';
   onUpgradePress?: () => void;
 }
 
-type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
+type ConfigView = 'instructions' | 'tools' | 'connections' | 'triggers';
 
 const menuItems = [
   { id: 'instructions' as const, label: 'Instructions', icon: Brain },
   { id: 'tools' as const, label: 'Tools', icon: Wrench },
-  { id: 'integrations' as const, label: 'Integrations', icon: Server },
+  { id: 'connections' as const, label: 'Connections', icon: Server },
   { id: 'triggers' as const, label: 'Triggers', icon: Zap },
 ];
 
@@ -208,8 +208,8 @@ export function WorkerConfigDrawer({
             {activeView === 'tools' && (
               <ToolsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
             )}
-            {activeView === 'integrations' && (
-              <IntegrationsScreen
+            {activeView === 'connections' && (
+              <ConnectionsScreen
                 agentId={workerId}
                 onUpdate={onWorkerUpdated}
                 onUpgradePress={onUpgradePress}

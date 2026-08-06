@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import dynamic from 'next/dynamic';
 import { useCallback, useRef, useState } from 'react';
 
@@ -95,7 +95,7 @@ export function DiceStage() {
           <div className="min-h-[16rem] max-w-2xl sm:min-h-[15rem]">
             <AnimatePresence mode="wait">
               {layer ? (
-                <motion.div
+                <m.div
                   key={layer.slot}
                   initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }}
                   animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -114,9 +114,9 @@ export function DiceStage() {
                   <p className="mt-5 text-base leading-relaxed text-balance text-white/85 sm:text-lg">
                     {layer.body}
                   </p>
-                </motion.div>
+                </m.div>
               ) : (
-                <motion.p
+                <m.p
                   key="lede"
                   initial={{ opacity: 0, filter: 'blur(6px)' }}
                   animate={{ opacity: 1, filter: 'blur(0px)' }}
@@ -125,7 +125,7 @@ export function DiceStage() {
                   className="max-w-xl text-lg leading-relaxed text-balance text-white/60 sm:text-xl"
                 >
                   {COPY.lede}
-                </motion.p>
+                </m.p>
               )}
             </AnimatePresence>
           </div>
@@ -134,7 +134,7 @@ export function DiceStage() {
             {/* The hint retires itself once the visitor has dragged once. */}
             <AnimatePresence>
               {!hinted ? (
-                <motion.span
+                <m.span
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -142,7 +142,7 @@ export function DiceStage() {
                   className="text-xs tracking-tight text-white/35"
                 >
                   {COPY.hint}
-                </motion.span>
+                </m.span>
               ) : null}
             </AnimatePresence>
             <button

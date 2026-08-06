@@ -2,21 +2,18 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   AlarmIcon as AlarmClock,
   ArrowCircleUpIcon as ArrowUpCircle,
+  WaveformIcon as AudioLines,
+  CubeIcon as Boxes,
   ChatsIcon as ChatMessages,
   CommandIcon as Command,
-  CubeIcon as Boxes,
-  GearSixIcon as LucideSettings,
-  GitForkIcon as GitFork,
-  KeyIcon as KeyRound,
-  MonitorIcon as Monitor,
-  PlugIcon as Plug,
-  RobotIcon as Bot,
   ShippingContainerIcon as Container,
-  SparkleIcon as Sparkles,
-  StorefrontIcon as Store,
+  GitForkIcon as GitFork,
   TrayIcon as Inbox,
+  KeyIcon as KeyRound,
+  GearSixIcon as LucideSettings,
   UsersThreeIcon as LucideUsersRound,
-  WaveformIcon as AudioLines,
+  MonitorIcon as Monitor,
+  StorefrontIcon as Store,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { RailGroup, RailItem } from './type';
@@ -25,9 +22,8 @@ import type { RailGroup, RailItem } from './type';
  * Whether a rail item is the active one for the current section.
  *
  * `llm-management` stands in for every `llm-*` sub-section so deep-links into
- * an LLM sub-page still light up the single LLM rail entry. Every other item —
- * including the independent Agents, Skills, and Commands entries — matches its
- * own section 1:1.
+ * an LLM sub-page still light up the single LLM rail entry. Every other item
+ * matches its own section 1:1.
  */
 export function isRailItemActive(item: RailItem, section: CustomizeSection): boolean {
   if (item.section === 'llm-management') return section.startsWith('llm-');
@@ -63,18 +59,18 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 
 const GROUPS: readonly RailGroup[] = [
   {
+    // Agents graduated to `/projects/<id>/agent` and is no longer an overlay
+    // section. Commands went the other way — its standalone page was deleted
+    // (#6169), so it is Build's one static item again. `customize-panel` drops
+    // groups whose items all filter out, so if this ever empties again an
+    // all-flags-off project renders no orphan header.
     label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
+    items: [{ section: 'commands', label: 'Commands', icon: Command }],
   },
   {
     label: 'Connect',
     items: [
-      { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
+      { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },

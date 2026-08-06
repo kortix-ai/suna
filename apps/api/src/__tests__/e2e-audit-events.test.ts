@@ -76,6 +76,49 @@ describe('audit event middleware', () => {
     expect(auditRows[0]?.durationMs).toBeNumber();
   });
 
+  test('records an authenticated CLI request as CLI traffic', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.patch('/v1/projects/:projectId/secrets/:identifier/strategy', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      return c.json({ ok: true });
+    });
+
+    const res = await app.request(
+      '/v1/projects/00000000-0000-4000-a000-000000000201/secrets/demo/strategy',
+      { method: 'PATCH', headers: { 'X-Kortix-Client': 'cli' }, body: '{}' },
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      actorType: 'human',
+      source: 'cli',
+      outcome: 'success',
+    });
+  });
+
+  test('does not accept an unknown client source label', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/projects/:projectId/detail', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      return c.json({ ok: true });
+    });
+
+    const res = await app.request(
+      '/v1/projects/00000000-0000-4000-a000-000000000201/detail',
+      { headers: { 'X-Kortix-Client': 'forged-source' } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(auditRows[0]).toMatchObject({ source: 'api' });
+  });
+
   test('records failed mutations with a failure outcome', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
@@ -185,7 +228,7 @@ describe('audit event middleware', () => {
       projectId: '00000000-0000-4000-a000-000000000201',
       actorUserId: '00000000-0000-4000-a000-000000000001',
       actorType: 'human',
-      source: 'api',
+      source: 'cli',
       outcome: 'success',
       httpStatus: 201,
       correlationId: 'project-create-1',

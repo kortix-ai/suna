@@ -18,7 +18,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { TriggerApp } from '@/api/types';
-import type { ComposioProfile } from '@/hooks/useComposio';
+import type { ComposioConnection } from '@/hooks/useComposio';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -30,12 +30,12 @@ interface AppSelectionStepProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onAppSelect: (app: TriggerApp) => void;
-  profiles?: ComposioProfile[];
+  connections?: ComposioConnection[];
 }
 
 interface AppCardProps {
   app: TriggerApp;
-  connectionStatus: { isConnected: boolean; hasProfiles: boolean };
+  connectionStatus: { isConnected: boolean; hasConnections: boolean };
   onPress: () => void;
 }
 
@@ -97,7 +97,7 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
           <Text className="mb-3 text-xs text-muted-foreground" numberOfLines={2}>
             {connectionStatus.isConnected
               ? t('triggers.createAutomatedTriggers', { app: app.name })
-              : connectionStatus.hasProfiles
+              : connectionStatus.hasConnections
                 ? t('triggers.connectAccountToCreate', { app: app.name })
                 : t('triggers.setupConnectionToStart', { app: app.name })}
           </Text>
@@ -111,7 +111,7 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
                   {t('triggers.connected')}
                 </Text>
               </>
-            ) : connectionStatus.hasProfiles ? (
+            ) : connectionStatus.hasConnections ? (
               <>
                 <View className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
                 <Text className="font-roobert-medium text-xs text-yellow-600 dark:text-yellow-400">
@@ -142,17 +142,17 @@ export function AppSelectionStep({
   searchQuery,
   onSearchChange,
   onAppSelect,
-  profiles = [],
+  connections = [],
 }: AppSelectionStepProps) {
   const { t } = useLanguage();
 
   // Helper to check connection status for an app
   const getAppConnectionStatus = (appSlug: string) => {
-    const appProfiles = profiles.filter((p: ComposioProfile) => p.toolkit_slug === appSlug);
-    const connectedProfiles = appProfiles.filter((p: ComposioProfile) => p.is_connected);
+    const appConnections = connections.filter((connection: ComposioConnection) => connection.toolkit_slug === appSlug);
+    const connectedConnections = appConnections.filter((connection: ComposioConnection) => connection.is_connected);
     return {
-      isConnected: connectedProfiles.length > 0,
-      hasProfiles: appProfiles.length > 0,
+      isConnected: connectedConnections.length > 0,
+      hasConnections: appConnections.length > 0,
     };
   };
 

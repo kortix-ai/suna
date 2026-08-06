@@ -120,7 +120,7 @@ export interface RenderComposeOptions {
   /**
    * Whether the operator selected the EXPERIMENTAL `local-docker` sandbox
    * provider (ALLOWED_SANDBOX_PROVIDERS includes it — see
-   * configureIntegrations() in commands/self-host.ts). Only then does
+   * configureConnections() in commands/self-host.ts). Only then does
    * kortix-api get the host's Docker socket mounted in (root-equivalent host
    * access) and LOCAL_DOCKER_NETWORK pointed at this Compose project's own
    * default network, so sandbox containers created by the provider

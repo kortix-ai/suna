@@ -65,6 +65,12 @@ export async function readProjectFile(
   return unwrap(
     await backendApi.get<{ path: string; ref: string; content: string }>(
       `/projects/${projectId}/files/content?${params.toString()}`,
+      // Same editor-tier gate as listProjectFiles above: project.file.read
+      // legitimately 403s for a plain member reading one file (e.g. a
+      // skill/command detail modal, or the git-ref file explorer). Every
+      // caller already renders its own inline error state, so the global
+      // sink would only ever be a duplicate, unactionable toast.
+      { showErrors: false },
     ),
   );
 }

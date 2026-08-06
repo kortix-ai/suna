@@ -82,7 +82,7 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
   test('renders Teams as a table row alongside Slack and Email (not a bespoke card)', () => {
     expect(channelsSource).toContain('function TeamsChannelRow');
     expect(channelsSource).toContain('<TeamsChannelRow');
-    expect(channelsSource).toContain('Icon.MicrosoftTeams');
+    expect(channelsSource).toContain('<MicrosoftTeams');
     expect(channelsSource).toMatch(/<SlackChannelRow[\s\S]*<TeamsChannelRow/);
   });
 

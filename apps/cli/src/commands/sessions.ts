@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import {
   emitJson,
   locateSessionAnywhere,
@@ -12,12 +13,25 @@ import {
 import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
-import { runSessionsDigest } from './sessions-digest.ts';
-import { runSessionsScope } from './sessions-scope.ts';
-import { runSessionsShell } from './sessions-shell.ts';
+import type { Auth } from '../api/auth.ts';
+import { hasEnvTokenHost } from '../api/config.ts';
+import { kortixFromAuth } from '../api/sdk.ts';
+import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
-import type { ProjectSession, ProjectSummary } from '../api/types.ts';
+import { runSessionsDigest } from './sessions-digest.ts';
+import {
+  buildPromptWithFiles,
+  buildSpawnPrompt,
+  runSessionsCp,
+  sessionPromptDefaults,
+  uploadTargetsFor,
+  validateUploadSources,
+  writeSessionFile,
+} from './sessions-files.ts';
+import { runSessionsScope } from './sessions-scope.ts';
+import { runSessionsShell } from './sessions-shell.ts';
+import { runSessionsWaitFor } from './sessions-wait.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
@@ -37,6 +51,11 @@ Subcommands:
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
+                                    --with-file <local path> (repeatable)
+                                    uploads the file to
+                                    /workspace/incoming/<name> before the
+                                    prompt is delivered (implies --wait; the
+                                    prompt gets a manifest of the paths).
                                     Session access at creation:
                                     --secret <id>           narrow injected
                                       secrets to these identifiers (repeatable;
@@ -44,13 +63,12 @@ Subcommands:
                                     --no-secrets            inject zero project
                                       secrets into the session (backend token
                                       required).
-                                    --connector <alias>=<authorization-id>
-                                      bind a connector authorization
+                                    --connector <alias>=<connection-id>
+                                      bind a connection
                                       (repeatable).
-                                    --no-connectors          use no connector
-                                      authorizations.
+                                    --no-connectors          use no connections.
                                     --require-connector <alias>
-                                      require a connected authorization before
+                                      require a connection before
                                       provisioning (repeatable).
                                     --context <key>=<value>  runtime context
                                       (repeatable).
@@ -79,6 +97,16 @@ Subcommands:
                                     transcript snippets with tool outputs
                                     stripped. --since <7d>, --json.
                                     Aliases: review, summary.
+  wait-for <session-id>             Block until the session's agent finishes
+                                    its current work, or is blocked on an
+                                    ask, or --timeout <seconds> (default
+                                    300) elapses. Exit 0 done / 3 blocked /
+                                    124 timeout. Alias: wait.
+  cp <src> <dst>                    Copy files between your machine and a
+                                    session's sandbox, or directly between
+                                    two sandboxes. Sandbox refs are
+                                    <session-id>:<path>; -r for directories.
+                                    Overwrites the exact destination path.
   info <session-id>                 Show one session. --json.
   scope <session-id>                Read or replace the session's secret and
                                     connector access. Changes apply to the next
@@ -144,6 +172,14 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'digest' || sub === 'review' || sub === 'summary') {
     return runSessionsDigest(argv.slice(1));
   }
+  // `cp` owns its own flag parsing (scp-style refs + -r/--json).
+  if (sub === 'cp' || sub === 'copy') {
+    return runSessionsCp(argv.slice(1));
+  }
+  // `wait-for` owns its own flag parsing (--timeout + a positional session id).
+  if (sub === 'wait-for' || sub === 'wait') {
+    return runSessionsWaitFor(argv.slice(1));
+  }
   // Interactive-prompt commands own their own flag parsing (repeatable
   // --option, --message, positional request ids).
   if (sub === 'pending' || sub === 'prompts') {
@@ -175,6 +211,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let portFlag: string | undefined;
   let agentFlag: string | undefined;
+  let withFiles: string[] = [];
   let overrides: SessionOverrides = {};
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
@@ -182,6 +219,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
     portFlag = takeFlagValue(rest, ['--port']);
     agentFlag = takeFlagValue(rest, ['--agent']);
+    withFiles = takeFlagValues(rest, ['--with-file']);
     // Backend/override flags for `sessions new`. Other subcommands keep their
     // positional arguments in `rest`.
     overrides = parseSessionOverrides(rest);
@@ -201,7 +239,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsLs(ctxOpts, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides);
+      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles);
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts, json);
@@ -232,13 +270,13 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 export type SessionOverrides = {
   model?: string;
   secrets?: string[];
-  connectors?: Record<string, { authorization_id: string }>;
+  connectors?: Record<string, { connection_id: string }>;
   requiredConnectors?: string[];
   runtimeContext?: Record<string, string>;
 };
 
 /** Parse (and consume) the `sessions new` override flags from argv. Repeatable
- *  flags take `key=value` pairs: --connector gmail=<authorization-id>, --context k=v. */
+ *  flags take `key=value` pairs: --connector gmail=<connection-id>, --context k=v. */
 export function parseSessionOverrides(argv: string[]): SessionOverrides {
   const out: SessionOverrides = {};
   const model = takeFlagValue(argv, ['--model']);
@@ -255,15 +293,15 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   const connectorPairs = takeFlagValues(argv, ['--connector']);
   const noConnectors = takeFlagBool(argv, ['--no-connectors']);
   if (connectorPairs.length && noConnectors) {
-    throw new Error('pass either --connector <alias>=<authorization-id> or --no-connectors, not both');
+    throw new Error('pass either --connector <alias>=<connection-id> or --no-connectors, not both');
   }
   for (const pair of connectorPairs) {
     const eq = pair.indexOf('=');
     if (eq <= 0 || eq === pair.length - 1) {
-      throw new Error(`--connector expects alias=authorization_id, got "${pair}"`);
+      throw new Error(`--connector expects alias=connection_id, got "${pair}"`);
     }
     (out.connectors ??= {})[pair.slice(0, eq)] = {
-      authorization_id: pair.slice(eq + 1),
+      connection_id: pair.slice(eq + 1),
     };
   }
   if (noConnectors) out.connectors = {};
@@ -285,9 +323,7 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
 
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions`,
-    );
+    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -298,7 +334,9 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (sessions.length === 0) {
-    process.stdout.write(`  ${C.dim}No sessions yet — start one with \`kortix sessions new\`.${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}No sessions yet — start one with \`kortix sessions new\`.${C.reset}\n`,
+    );
     return 0;
   }
 
@@ -315,7 +353,9 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
       `  ${pad(label, labelW)}   ${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(branch, 40)}  ${C.faded}${formatRelative(s.updated_at)}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${sessions.length} session${sessions.length === 1 ? '' : 's'}${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${sessions.length} session${sessions.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -326,12 +366,37 @@ async function sessionsNew(
   wait = false,
   agent?: string,
   overrides: SessionOverrides = {},
+  withFiles: string[] = [],
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  // --with-file: uploads need a live sandbox, and the prompt must go out AFTER
+  // the files land (an initial_prompt would race the uploads). So validate the
+  // local files up front, force the readiness wait, and defer the prompt.
+  let uploads: Array<{ local: string; target: string }> = [];
+  if (withFiles.length > 0) {
+    try {
+      uploads = uploadTargetsFor(withFiles);
+      await validateUploadSources(uploads);
+    } catch (err) {
+      process.stderr.write(`${status.err((err as Error).message)}\n`);
+      return 2;
+    }
+    wait = true;
+  }
+
+  // Spawns from inside a sandbox (a coordinator session) carry a session
+  // contract so the worker does the task itself instead of re-delegating.
+  const fromSandbox = hasEnvTokenHost();
+
   const body: Record<string, unknown> = {};
-  if (prompt) body.initial_prompt = prompt;
+  if (prompt && uploads.length === 0) {
+    body.initial_prompt = buildSpawnPrompt(prompt, { fromSandbox });
+  }
+  // Titles derive from the user's words, not from the session-contract or the
+  // --with-file manifest the CLI appends around them.
+  if (prompt) body.title_source = prompt;
   // Explicit caller override — the server otherwise falls back to the
   // project's declared default agent (kortix.yaml's `default_agent`), or the
   // non-binding 'default' sentinel when none is configured. See
@@ -350,10 +415,7 @@ async function sessionsNew(
 
   let created: ProjectSession;
   try {
-    created = await ctx.client.post<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions`,
-      body,
-    );
+    created = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, body);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -371,10 +433,7 @@ async function sessionsNew(
         const start = await ctx.client.post<{
           stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
           reason?: string;
-        }>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
-          {},
-        );
+        }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
@@ -386,7 +445,11 @@ async function sessionsNew(
           if (json) {
             emitJson(created);
           } else {
-            const detail = start.reason ? `: ${start.reason}` : created.error ? `: ${created.error}` : '';
+            const detail = start.reason
+              ? `: ${start.reason}`
+              : created.error
+                ? `: ${created.error}`
+                : '';
             process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
           }
           return 1;
@@ -416,12 +479,43 @@ async function sessionsNew(
     }
   }
 
+  // Deliver --with-file uploads, then the deferred prompt.
+  if (uploads.length > 0) {
+    const files = kortixFromAuth(ctx.auth).session(ctx.projectId, created.session_id).files;
+    try {
+      for (const u of uploads) {
+        const bytes = await readFile(u.local);
+        await writeSessionFile(files, u.target, new Blob([new Uint8Array(bytes)]));
+        if (!json) process.stdout.write(`  ${C.dim}uploaded ${u.target}${C.reset}\n`);
+      }
+      if (prompt) {
+        await sendPromptToSession(
+          ctx,
+          created,
+          buildSpawnPrompt(
+            buildPromptWithFiles(
+              prompt,
+              uploads.map((u) => u.target),
+            ),
+            { fromSandbox },
+          ),
+        );
+      }
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+
   if (json) {
-    emitJson(created);
+    emitJson(
+      uploads.length > 0 ? { ...created, uploaded_files: uploads.map((u) => u.target) } : created,
+    );
     return 0;
   }
 
-  process.stdout.write(`\n${status.ok(`Session started ${C.bold}${shortId(created.session_id)}${C.reset}`)}\n`);
+  process.stdout.write(
+    `\n${status.ok(`Session started ${C.bold}${shortId(created.session_id)}${C.reset}`)}\n`,
+  );
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${created.session_id}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${created.status}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${created.branch_name}\n`);
@@ -430,6 +524,29 @@ async function sessionsNew(
   }
   process.stdout.write('\n');
   return 0;
+}
+
+/** Deliver a prompt through the shipped OpenCode REST runtime. */
+async function sendPromptToSession(
+  ctx: { auth: Auth; projectId: string },
+  session: ProjectSession,
+  text: string,
+): Promise<void> {
+  const handle = kortixFromAuth(ctx.auth).session(ctx.projectId, session.session_id);
+  const ready = await handle.ensureReady();
+  // Carry the session's persisted model + agent: an async prompt without them
+  // is stored but never processed (OpenCode falls back to its own default
+  // model, which Kortix sandboxes don't provision).
+  const defaults = sessionPromptDefaults(session);
+  const result = await handle.runtime.session.promptAsync({
+    sessionID: ready.opencodeSessionId,
+    parts: [{ type: 'text', text }],
+    ...defaults,
+  });
+  if (result?.error) {
+    const detail = (result.error as { data?: { message?: string } })?.data?.message;
+    throw new Error(`prompt delivery failed${detail ? `: ${detail}` : ''}`);
+  }
 }
 
 async function prepareClientCreatedBranch(
@@ -452,23 +569,23 @@ async function prepareClientCreatedBranch(
 
   const baseRef = currentGitBranch();
   if (!baseRef) {
-    process.stderr.write(`${status.err('Not on a git branch; cannot create the session branch locally.')}\n`);
+    process.stderr.write(
+      `${status.err('Not on a git branch; cannot create the session branch locally.')}\n`,
+    );
     return 'error';
   }
 
   const sessionId = randomUUID();
-  const push = runGit([
-    'push',
-    'origin',
-    `refs/heads/${baseRef}:refs/heads/${sessionId}`,
-  ]);
+  const push = runGit(['push', 'origin', `refs/heads/${baseRef}:refs/heads/${sessionId}`]);
   if (!push.ok) {
     const detail = (push.stderr || push.stdout).trim();
     process.stderr.write(
       `${status.err('Could not create the remote session branch with local git credentials.')}\n`,
     );
     if (detail) process.stderr.write(`  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n`);
-    process.stderr.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim} first, then retry.${C.reset}\n`);
+    process.stderr.write(
+      `  ${C.dim}Run ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim} first, then retry.${C.reset}\n`,
+    );
     return 'error';
   }
 
@@ -503,7 +620,9 @@ async function sessionsInfo(
   process.stdout.write('\n');
   process.stdout.write(`  ${C.bold}${s.name ?? shortId(s.session_id)}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${s.session_id}\n`);
-  process.stdout.write(`  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
+  );
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${s.branch_name}\n`);
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);
@@ -584,15 +703,18 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
     (host) => `kortix sessions restart ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   try {
     await located.located.client.post<{ ok: true; status: string }>(
-      `/projects/${located.located.projectId}/sessions/${sessionId}/restart`,
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}/restart`,
     );
   } catch (err) {
     return surfaceApiError(err);
   }
-  process.stdout.write(`${status.ok(`Restarting ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`);
+  process.stdout.write(
+    `${status.ok(`Restarting ${C.bold}${shortId(canonicalSessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`,
+  );
   return 0;
 }
 
@@ -621,7 +743,8 @@ async function sessionsReload(
     (host) => `kortix sessions reload ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const { client, projectId } = located.located;
+  const { client, projectId, session } = located.located;
+  const canonicalSessionId = session.session_id;
 
   if (statusOnly) {
     try {
@@ -630,7 +753,7 @@ async function sessionsReload(
         latest_etag: string | null;
         stale: boolean | null;
         sandbox_reachable: boolean;
-      }>(`/projects/${projectId}/sessions/${sessionId}/config`);
+      }>(`/projects/${projectId}/sessions/${canonicalSessionId}/config`);
       if (json) {
         process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
         return 0;
@@ -665,7 +788,7 @@ async function sessionsReload(
       repo_refreshed: boolean;
       agent_files?: string;
       detail: string;
-    }>(`/projects/${projectId}/sessions/${sessionId}/reload`, {
+    }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
       force: args.includes('--force'),
     });
@@ -689,7 +812,7 @@ async function sessionsReload(
     // plain successes.
     const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
     const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
-    const line = `Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${etags}\n  ${result.detail}`;
+    const line = `Reloaded ${C.bold}${shortId(canonicalSessionId)}${C.reset}${etags}\n  ${result.detail}`;
     process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
     return 0;
   } catch (err) {
@@ -716,11 +839,12 @@ async function sessionsRename(
     (host) => `kortix sessions rename ${sessionId} "${name}" --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   let updated: ProjectSession;
   try {
     updated = await located.located.client.patch<ProjectSession>(
-      `/projects/${located.located.projectId}/sessions/${sessionId}`,
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
       { name },
     );
   } catch (err) {
@@ -730,7 +854,9 @@ async function sessionsRename(
   if (updated.custom_name) {
     process.stdout.write(`${status.ok(`Renamed to ${C.bold}${updated.custom_name}${C.reset}`)}\n`);
   } else {
-    process.stdout.write(`${status.ok(`Name cleared — using automatic title${updated.name ? ` ${C.dim}(${updated.name})${C.reset}` : ''}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Name cleared — using automatic title${updated.name ? ` ${C.dim}(${updated.name})${C.reset}` : ''}`)}\n`,
+    );
   }
   return 0;
 }
@@ -746,13 +872,16 @@ async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise
     (host) => `kortix sessions rm ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   try {
-    await located.located.client.delete(`/projects/${located.located.projectId}/sessions/${sessionId}`);
+    await located.located.client.delete(
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+    );
   } catch (err) {
     return surfaceApiError(err);
   }
-  process.stdout.write(`${status.ok(`Deleted ${C.bold}${shortId(sessionId)}${C.reset}`)}\n`);
+  process.stdout.write(`${status.ok(`Deleted ${C.bold}${shortId(canonicalSessionId)}${C.reset}`)}\n`);
   return 0;
 }
 
@@ -767,7 +896,11 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
     (host) => `kortix sessions open ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const url = sessionWebUrl(located.located.auth.api_base, located.located.projectId, sessionId);
+  const url = sessionWebUrl(
+    located.located.auth.api_base,
+    located.located.projectId,
+    located.located.session.session_id,
+  );
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -781,7 +914,9 @@ function shortId(id: string): string {
 
 function serverCanCreateBranch(project: ProjectSummary): boolean {
   const meta = (project.metadata ?? {}) as Record<string, any>;
-  const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
+  const git = meta.git as
+    | { provider?: string; managed?: boolean; auth?: { method?: string } }
+    | undefined;
   // Managed repos: the server holds the credential and can create the branch.
   if (git?.managed === true) return true;
   const github = meta.github as { auth_source?: string } | undefined;
@@ -791,19 +926,34 @@ function serverCanCreateBranch(project: ProjectSummary): boolean {
 function normalizeGitUrl(url: string): string {
   const trimmed = url.trim();
   const ssh = trimmed.match(/^git@([^:]+):(.+)$/);
-  if (ssh) return `${ssh[1]}/${ssh[2]}`.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+  if (ssh)
+    return `${ssh[1]}/${ssh[2]}`
+      .replace(/\/+$/, '')
+      .replace(/\.git$/i, '')
+      .toLowerCase();
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'ssh:') {
-      return `${parsed.hostname}${parsed.pathname}`.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+      return `${parsed.hostname}${parsed.pathname}`
+        .replace(/\/+$/, '')
+        .replace(/\.git$/i, '')
+        .toLowerCase();
     }
   } catch {
     // Local paths are valid git remotes too; compare them as normalized strings.
   }
-  return trimmed.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+  return trimmed
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '')
+    .toLowerCase();
 }
 
-function runGit(args: string[]): { ok: boolean; stdout: string; stderr: string; code: number | null } {
+function runGit(args: string[]): {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  code: number | null;
+} {
   const result = spawnSync('git', args, { encoding: 'utf8' });
   return {
     ok: result.status === 0,
@@ -865,11 +1015,7 @@ function openInBrowser(url: string): void {
   // so an unvalidated URL is a command-injection vector.
   if (!/^https?:\/\//i.test(url)) return;
   const cmd =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'cmd'
-        : 'xdg-open';
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   spawnSync(cmd, args, { stdio: 'ignore' });
 }

@@ -3,10 +3,16 @@ import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../type
 // Config-free tier facts live in their own module so genuinely pure consumers
 // (billing-state.ts) can import them without booting env validation. Re-exported
 // here so every existing `from './tiers'` import keeps working — one definition.
-import { isPaidTier, isPerSeatAccount } from './tier-facts';
+// Only what this module CALLS. Everything else from tier-facts reaches
+// consumers through the re-export block below — importing a name here purely to
+// re-export it is a dead local binding (CodeQL flags it, and `isPaidTier` had
+// been sitting unused on this line since before the credit plans landed).
+import { isPerSeatAccount } from './tier-facts';
 
 export {
   MINIMUM_CREDIT_FOR_RUN,
+  accountMetersCompute,
+  isCreditPlanAccount,
   isLegacyAccount,
   isPaidTier,
   isPerSeatAccount,
@@ -92,7 +98,7 @@ export const MAX_PROJECTS_PER_ACCOUNT = 200;
 export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT = 100;
 
-export type BillingModel = 'legacy' | 'per_seat';
+export type BillingModel = 'legacy' | 'per_seat' | 'credit';
 
 /** Default auto-topup for a per-seat account given its current seat count. */
 export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {
@@ -208,17 +214,81 @@ const TIERS: Record<string, TierConfig> = {
   // Billing v2 — per-member seat plan. $25 × seat_count / month.
   // The TIERS entry models a single seat; multi-seat math is in
   // grantForSeats() and applied at subscription create + renew.
+  //
+  // GRANDFATHERED (billing v3). Existing per-seat customers keep this tier
+  // exactly as it is — same price, same $25/seat grant, same 200-session cap,
+  // and `models: ['all']` so their managed-model access is NOT withdrawn under
+  // them. It is `hidden` only so the self-serve grid stops offering it to new
+  // customers; every existing subscription resolves it unchanged.
   per_seat: {
     name: 'per_seat',
-    displayName: 'Team',
+    displayName: 'Team (legacy seats)',
     monthlyPrice: PER_SEAT_PRICE_USD,
     yearlyPrice: 0,
     monthlyCredits: INCLUDED_CREDITS_PER_SEAT_USD,
     canPurchaseCredits: true,
     models: ['all'],
     dailyCreditConfig: null,
-    hidden: false,
+    hidden: true,
     concurrentSessionLimit: 200,
+    entitlements: SELF_SERVE,
+  },
+
+  // ── Billing v3 — flat credit plans ───────────────────────────────────────
+  // The plan carries the credit pool and the concurrency limit; headcount does
+  // not enter the price. Seats priced humans, but the cost driver is agents,
+  // and agents run unattended — a team of two could run fifty of them, and a
+  // Kortix-as-a-Backend customer serves end users who are not seats at all.
+  //
+  // `models: []` — NO included managed LLM. `tierGrantsAllModels` is false, so
+  // the wallet funds sandbox compute only, exactly as the free tier already
+  // works. BYOK, OpenCode and ChatGPT-subscription paths are untouched; a
+  // managed key is billed against the wallet only for tiers that grant models.
+  // This takes Kortix out of a short position on model prices: an upstream
+  // increase can no longer eat a fixed plan's margin.
+  //
+  // Price : credits holds at 1.6 : 1, which is ~48% gross margin when a plan
+  // burns its whole pool (COGS = pool ÷ KORTIX_MARKUP). Keep that ratio if you
+  // add a tier — it is the number that makes the ladder coherent.
+  starter: {
+    name: 'starter',
+    displayName: 'Starter',
+    monthlyPrice: 40,
+    yearlyPrice: 0,
+    monthlyCredits: 25,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 3,
+    entitlements: SELF_SERVE,
+  },
+
+  team: {
+    name: 'team',
+    displayName: 'Team',
+    monthlyPrice: 200,
+    yearlyPrice: 0,
+    monthlyCredits: 125,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 10,
+    entitlements: SELF_SERVE,
+  },
+
+  scale: {
+    name: 'scale',
+    displayName: 'Scale',
+    monthlyPrice: 800,
+    yearlyPrice: 0,
+    monthlyCredits: 500,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 30,
     entitlements: SELF_SERVE,
   },
 
@@ -560,8 +630,23 @@ export function getAllTiers(): TierConfig[] {
   return Object.values(TIERS);
 }
 
+/**
+ * Tiers the product may advertise.
+ *
+ * A tier must also be BUYABLE, not merely unhidden. Checkout resolves a Stripe
+ * price and throws `No price configured for this tier` when there is none, so a
+ * tier defined ahead of its Stripe products would otherwise be listed as an
+ * option that fails the moment anyone clicks it.
+ *
+ * Deriving this instead of carrying a second `hidden` flag means the v3 credit
+ * plans stay dark until their prices are created, then appear on their own —
+ * there is no flag to remember to flip, and no window where the grid offers a
+ * plan the billing system cannot sell.
+ */
 export function getVisibleTiers(): TierConfig[] {
-  return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
+  return Object.values(TIERS).filter(
+    (t) => !t.hidden && t.name !== 'none' && resolvePriceId(t.name, 'monthly') !== null,
+  );
 }
 
 export function isValidTier(name: string): boolean {

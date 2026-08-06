@@ -48,10 +48,10 @@ export interface MockSessionCostRow {
   [key: string]: unknown;
 }
 
-/** One `/connector-profiles` row — the shape `selectConnectorBindingChoices`
+/** One `/connections` row — the shape `selectConnectorBindingChoices`
  *  filters. Deliberately the raw upstream shape, not the app's view of it. */
-export interface MockConnectionProfile {
-  profile_id: string;
+export interface MockConnection {
+  connection_id: string;
   connector_alias: string;
   owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
@@ -75,10 +75,10 @@ export interface MockUpstream {
    *  never provisioned, to prove per-user filtering actually filters. */
   seedProject(overrides?: Partial<MockProject>): MockProject;
   seedSessionCosts(projectId: string, rows: MockSessionCostRow[]): void;
-  /** Seed the connection profiles `/connector-profiles` returns for a project. */
-  seedConnectionProfiles(
+  /** Seed the connections `/connections` returns for a project. */
+  seedConnections(
     projectId: string,
-    profiles: MockConnectionProfile[],
+    connections: MockConnection[],
   ): void;
   /** Make GET /v1/usage/session-costs fail for this project id. */
   failSessionCostsFor(projectId: string): void;
@@ -96,7 +96,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
   const projects = new Map<string, MockProject>();
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
   const sessionCosts = new Map<string, MockSessionCostRow[]>();
-  const connectionProfiles = new Map<string, MockConnectionProfile[]>();
+  const connections = new Map<string, MockConnection[]>();
   const failingSessionCostProjects = new Set<string>();
   const malformedCliTokenProjects = new Set<string>();
   const activeIntervals = new Set<ReturnType<typeof setInterval>>();
@@ -223,10 +223,10 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         }
       }
 
-      const profilesMatch = p.match(/^projects\/([^/]+)\/connector-profiles$/);
-      if (profilesMatch && method === 'GET') {
-        const [, id] = profilesMatch;
-        return Response.json({ profiles: connectionProfiles.get(id) ?? [] });
+      const connectionsMatch = p.match(/^projects\/([^/]+)\/connections$/);
+      if (connectionsMatch && method === 'GET') {
+        const [, id] = connectionsMatch;
+        return Response.json({ connections: connections.get(id) ?? [] });
       }
 
       const cliTokenMatch = p.match(/^projects\/([^/]+)\/cli-token$/);
@@ -302,8 +302,8 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         return Response.json({ ok: true, path: p, method });
       }
 
-      // ── executor/projects/:id/... ─────────────────────────────────────
-      if (/^executor\/projects\/[^/]+(\/.*)?$/.test(p)) {
+      // ── connectors/projects/:id/... ────────────────────────────────────
+      if (/^connectors\/projects\/[^/]+(\/.*)?$/.test(p)) {
         return Response.json({ ok: true, path: p, method });
       }
 
@@ -407,8 +407,8 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
     seedSessionCosts(projectId, rows) {
       sessionCosts.set(projectId, rows);
     },
-    seedConnectionProfiles(projectId, profiles) {
-      connectionProfiles.set(projectId, profiles);
+    seedConnections(projectId, connectionRows) {
+      connections.set(projectId, connectionRows);
     },
     failSessionCostsFor(projectId) {
       failingSessionCostProjects.add(projectId);

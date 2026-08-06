@@ -4,13 +4,13 @@
 # fresh from Secrets Manager, so the ECS env can never drift from the EKS env.
 #
 # The env contract lives in ONE place per environment: the Secrets Manager blob
-# `kortix-<env>-env` (the same blob external-secrets syncs into EKS). We read its
-# keys and wire every one into the task-def as a `secrets` entry pointing back at
-# that blob's JSON key — no hand-maintained secret list, no drift.
+# `kortix-<env>-env`. ECS injects the complete JSON document through one stable
+# selector. Application startup expands it into process.env. Adding or removing
+# an optional JSON key cannot invalidate an already-registered task definition.
 #
 # Usage:
 #   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
-#                 [--no-wait] [--dry-run]
+#                 [--database-migrated] [--no-wait] [--dry-run]
 #
 #   env        dev | staging | prod | prod-use2-shadow
 #   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
@@ -26,6 +26,11 @@
 #              job assert the public endpoint serves the released version.
 #   --dry-run  render + print the task-def override, then exit WITHOUT
 #              registering or rolling anything.
+#   --database-migrated
+#              required for a live prod or prod-use2-shadow rollout. This is an
+#              explicit assertion that the environment's migration job passed.
+#              It prevents an emergency direct ECS roll from silently bypassing
+#              the database gate.
 #
 # Requires: awscli v2, jq. Assumes the ECS cluster/service/ALB/target-group and
 # the exec/task IAM roles already exist (Terraform owns those).
@@ -54,11 +59,13 @@ shift 2
 SVC_KIND="api"
 WAIT=1
 DRY_RUN=0
+DATABASE_MIGRATED=0
 VERSION_OVERRIDE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --service) SVC_KIND="$2"; shift 2 ;;
     --version) VERSION_OVERRIDE="$2"; shift 2 ;;
+    --database-migrated) DATABASE_MIGRATED=1; shift ;;
     --no-wait) WAIT=0; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -91,6 +98,13 @@ case "$ENV" in
     ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
 esac
+
+if [ "$DRY_RUN" != "1" ] \
+  && { [ "$ENV" = "prod" ] || [ "$ENV" = "prod-use2-shadow" ]; } \
+  && [ "$DATABASE_MIGRATED" != "1" ]; then
+  echo "refusing live $ENV rollout without --database-migrated; apply and verify all database migrations first" >&2
+  exit 2
+fi
 
 # Each service lives in its own cluster (the ecs-api module names cluster==service):
 #   api     → cluster/service <service-prefix>,         container "api"
@@ -128,15 +142,15 @@ SECRET_ARN="$(aws secretsmanager describe-secret --region "$REGION" \
   --secret-id "$SECRET_NAME" --query 'ARN' --output text)"
 [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ] || { echo "secret $SECRET_NAME not found in $REGION" >&2; exit 1; }
 
-# every key in the blob -> a task-def secret entry pointing at that JSON key
-SECRETS_JSON="$(aws secretsmanager get-secret-value --region "$REGION" \
-  --secret-id "$SECRET_ARN" --query 'SecretString' --output text \
-  | jq --arg arn "$SECRET_ARN" '
-      keys
-      | map({ name: ., valueFrom: ($arn + ":" + . + "::") })')"
-KEYCOUNT="$(echo "$SECRETS_JSON" | jq 'length')"
+# Validate the blob without printing it. The task definition references only the
+# secret ARN, so its selector remains valid when optional keys change later.
+SECRET_VALUE="$(aws secretsmanager get-secret-value --region "$REGION" \
+  --secret-id "$SECRET_ARN" --query 'SecretString' --output text)"
+KEYCOUNT="$(printf '%s' "$SECRET_VALUE" | jq 'if type == "object" and all(.[]; type == "string") then length else error("secret must be a JSON object of strings") end')"
 [ "$KEYCOUNT" -gt 0 ] || { echo "blob $SECRET_NAME has 0 keys — refusing to deploy" >&2; exit 1; }
-echo "▶ wired $KEYCOUNT secret keys from $SECRET_NAME"
+unset SECRET_VALUE
+SECRETS_JSON="$(jq -cn --arg arn "$SECRET_ARN" '[{name: "KORTIX_ENV_JSON", valueFrom: $arn}]')"
+echo "▶ wired $KEYCOUNT environment values through KORTIX_ENV_JSON from $SECRET_NAME"
 
 # ── base task-def = the service's current one, with runtime fields stripped ──
 CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \

@@ -7,7 +7,6 @@ import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
-import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
@@ -20,6 +19,7 @@ import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runAudit } from './commands/audit.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -179,7 +179,7 @@ const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Agents & integrations',
+        title: 'Agents & connectors',
         commands: [
           { name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' },
           {
@@ -190,7 +190,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
           },
           {
             name: 'secrets',
@@ -222,11 +222,6 @@ const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
           },
-          {
-            name: 'executor',
-            args: '<subcommand>',
-            blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
-          },
         ],
       },
       {
@@ -253,6 +248,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'roles',
             args: '<subcommand>',
             blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+          },
+          {
+            name: 'audit',
+            args: '<subcommand>',
+            blurb: 'Read the account audit trail (who did what, when)',
           },
           {
             name: 'grants',
@@ -417,10 +417,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'git-credential') {
     return runGitCredential(argv.slice(1));
   }
-  // `executor` is a MACHINE surface (the in-sandbox agent parses stdout as JSON,
-  // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
-  // + update notices so its output stays clean.
-  if (argv[0] !== 'executor') {
+  const connectorMachineCommand =
+    argv[0] === 'connectors' &&
+    (['call', 'discover', 'mcp'].includes(argv[1] ?? '') ||
+      (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
+      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
+  if (!connectorMachineCommand) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
@@ -497,9 +499,6 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
   }
-  if (argv[0] === 'executor') {
-    return runExecutor(argv.slice(1));
-  }
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
@@ -527,6 +526,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'roles') {
     return runRoles(argv.slice(1));
+  }
+  if (argv[0] === 'audit') {
+    return runAudit(argv.slice(1));
   }
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
@@ -581,11 +583,11 @@ const KNOWN_COMMANDS = [
   'marketplace',
   'system-skills',
   'skills',
-  'executor',
   'registry',
   'agents',
   'access',
   'roles',
+  'audit',
   'grants',
   'update',
   'uninstall',
@@ -644,7 +646,7 @@ async function printUpdateNoticeForCommand(command: string): Promise<void> {
 }
 
 // `process.exit()` does NOT wait for a piped stdout/stderr to flush — on large
-// output (e.g. `kortix projects ls --all --json | jq`, or executor JSON the
+// output (e.g. `kortix projects ls --all --json | jq`, or connector JSON the
 // in-sandbox agent parses) it drops everything past the ~64KiB pipe buffer,
 // producing truncated/invalid output. Instead set the exit code and let the
 // runtime flush both streams and exit naturally. Release stdin first so an

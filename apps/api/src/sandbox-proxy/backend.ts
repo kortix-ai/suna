@@ -48,7 +48,7 @@ export interface SandboxRecord {
   externalId: string;
   /** Owning session — links to project_sessions for the launching identity. */
   sessionId: string;
-  /** Agent the sandbox executor token was minted for. */
+  /** Agent the sandbox connector token was minted for. */
   agentName: string | null;
   projectId: string;
   accountId: string;

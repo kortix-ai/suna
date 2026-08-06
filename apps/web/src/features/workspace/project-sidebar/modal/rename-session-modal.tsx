@@ -13,10 +13,17 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
+import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+
+import {
+  applyRenameResponse,
+  beginOptimisticRename,
+  rollbackOptimisticRename,
+} from './rename-session-cache';
 
 interface RenameSessionModalProps {
   projectId: string;
@@ -45,19 +52,43 @@ export function RenameSessionModal({
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
 
+  const sessionsQueryKey = ['project-sessions', projectId];
+
   const renameMutation = useMutation({
     mutationFn: (name: string) => {
       if (!sessionId) throw new Error('No session selected');
       return updateProjectSession(projectId, sessionId, { name });
     },
-    onSuccess: (_updated, name) => {
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    // Optimistic write: the sidebar, the header, and every other reader of
+    // `sessionsQueryKey` (seven in total) show the new name before the
+    // network round-trip completes, instead of waiting for the refetch this
+    // mutation triggers on settle.
+    onMutate: async (name) => {
+      await queryClient.cancelQueries({ queryKey: sessionsQueryKey });
+      return beginOptimisticRename(queryClient, sessionsQueryKey, sessionId, name);
+    },
+    onSuccess: (updated, name) => {
+      // Write the server's own response into the cache rather than discard
+      // it — it is the authoritative name (normalized) and a fresh
+      // `updated_at`, so this replaces the optimistic guess from `onMutate`
+      // with the real thing. MERGED, not substituted: the PATCH response
+      // carries fewer fields than the list row — see `applyRenameResponse`.
+      queryClient.setQueryData<ProjectSession[]>(sessionsQueryKey, (sessions) =>
+        sessions ? applyRenameResponse(sessions, updated) : sessions,
+      );
       successToast(name ? `Renamed to "${name}"` : 'Session renamed');
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err) => {
+    onError: (err, _name, context) => {
+      rollbackOptimisticRename(queryClient, sessionsQueryKey, context?.previous);
       errorToast(err instanceof Error ? err.message : 'Failed to rename session');
+    },
+    onSettled: () => {
+      // The server stays authoritative: this refetch reconciles the cache
+      // with reality even though onSuccess already wrote the response, e.g.
+      // if another tab changed the session in between.
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
     },
   });
 

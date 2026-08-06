@@ -22,9 +22,9 @@ interface GrantableAgent {
   declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
 }
 interface GrantableResources {
-  agents: GrantableAgent[];
-  skills: { id: string; name: string }[];
-  secrets: { id: string; name: string }[];
+  agents?: GrantableAgent[];
+  skills?: { id: string; name: string }[];
+  secrets?: { id: string; name: string }[];
 }
 interface ResourceGrant {
   grant_id: string;
@@ -141,7 +141,9 @@ export async function runGrants(argv: string[]): Promise<number> {
           emitJson(resp);
           return 0;
         }
-        const { agents, skills, secrets } = resp.resources;
+        const agents = resp.resources.agents ?? [];
+        const skills = resp.resources.skills ?? [];
+        const secrets = resp.resources.secrets ?? [];
         process.stdout.write('\n');
         process.stdout.write(`  ${C.dim}GRANTABLE${C.reset}\n`);
         if (agents.length === 0 && skills.length === 0 && secrets.length === 0) {

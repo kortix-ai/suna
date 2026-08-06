@@ -91,7 +91,7 @@ export const SENTRY_IGNORE_ERRORS = [
   // `assertAllowedSourceAddress` (the marketplace LFI/SSRF guard — non-https
   // URL, private host, local-folder path). The throw is now a TYPED
   // `AllowedSourceValidationError` (code `invalid_source_address`) that the
-  // executor `POST /connectors` + `POST /connectors/auth-discovery` route
+  // connector `POST /connectors` + `POST /connectors/auth-discovery` route
   // handlers catch and convert to a structured 400 (Better Stack pattern
   // `f5c0ce61…`). This entry is defense in depth — mirrors the #5487
   // pool-exhaustion ignore — so any residual `assertAllowedSourceAddress`

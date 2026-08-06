@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 
 
 export function Reveal({
@@ -33,7 +33,7 @@ export function Reveal({
   }, []);
 
   return (
-    <motion.div
+    <m.div
       ref={ref}
       initial={{ opacity: 0, y: 30, filter: 'blur(8px)' }}
       animate={visible ? { opacity: 1, y: 0, filter: 'blur(0px)' } : {}}
@@ -41,6 +41,6 @@ export function Reveal({
       className={className}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }

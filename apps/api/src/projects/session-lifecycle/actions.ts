@@ -4,8 +4,9 @@ import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isMetaAgentName } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
-import { revokeSessionExecutorTokens } from '../../repositories/account-tokens';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { withProjectGitAuth } from '../lib/git';
 import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -116,14 +117,14 @@ export async function deleteSession(input: {
     );
   }
 
-  // The provider sandbox is being removed above, so this session's executor
+  // The provider sandbox is being removed above, so this session's connector
   // token can never be used legitimately again — but nothing expired it, so it
   // stayed a valid bearer forever. Awaited (not fire-and-forget) so the
   // credential is dead before we report the session gone; a failure is logged at
   // error level rather than failing the delete, since the box is already going.
-  await revokeSessionExecutorTokens(sessionId, accountId).catch((err) => {
+  await revokeSessionConnectorTokens(sessionId, accountId).catch((err) => {
     console.error(
-      `[projects] FAILED to revoke executor tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
+      `[projects] FAILED to revoke connector tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
       err,
     );
   });
@@ -224,6 +225,11 @@ export async function restartSession(input: {
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+          // A restarted meta coordinator must keep its meta runtime: without
+          // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
+          // meta agent config, so the daemon clones the project over the meta
+          // workspace and wipes /workspace/AGENTS.md.
+          platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });

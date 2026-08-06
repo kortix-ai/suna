@@ -158,14 +158,14 @@ export function rescopeSessionBindings(input: {
   grantedConnectors: string[] | 'all' | undefined;
 }): RescopeBindingsResult {
   const current: Record<string, string> = {};
-  for (const [alias, profileId] of Object.entries(input.current)) {
-    current[canonicalConnectorAlias(alias.trim())] = profileId;
+  for (const [alias, connectionId] of Object.entries(input.current)) {
+    current[canonicalConnectorAlias(alias.trim())] = connectionId;
   }
 
   const requested: Record<string, string> = {};
-  for (const [alias, profileId] of Object.entries(input.requested)) {
+  for (const [alias, connectionId] of Object.entries(input.requested)) {
     const key = canonicalConnectorAlias(alias.trim());
-    const value = typeof profileId === 'string' ? profileId.trim() : '';
+    const value = typeof connectionId === 'string' ? connectionId.trim() : '';
     if (!key || !value) continue;
     requested[key] = value;
   }

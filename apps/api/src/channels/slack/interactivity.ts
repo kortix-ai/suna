@@ -159,7 +159,7 @@ async function handleReviewAction(
   const verdict = reviewVerbToVerdict(parsed.verb);
   if (!verdict) return;
 
-  // Adapted items (change requests, executor approvals) keep their own act flow —
+  // Adapted items (change requests, connector approvals) keep their own act flow —
   // their verdict can't be applied through the native review path.
   if (isAdaptedId(parsed.id)) {
     await respondViaUrl(payload.response_url, {

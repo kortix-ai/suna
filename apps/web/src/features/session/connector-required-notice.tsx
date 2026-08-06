@@ -98,7 +98,7 @@ export function ConnectorRequiredNotice({
               onClick={() =>
                 openConnectorGate({
                   projectId,
-                  connectorProfiles: connectors,
+                  connectorConnections: connectors,
                   retry: () => resend?.(),
                 })
               }

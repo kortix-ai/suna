@@ -1,4 +1,4 @@
-import { listProjectSecretsSnapshot } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { resolveEffectiveModel } from '../resolution/default-model';
 import type { ModelSource } from '../resolution/effective';
 import {
@@ -41,8 +41,12 @@ export async function listPickerModels(params: {
   // is exactly what request-time resolution (resolveCandidates → project-wide
   // getProjectSecretValue) keys off — so the picker and servability agree.
   try {
-    const snapshot = await listProjectSecretsSnapshot(params.projectId);
-    const connected = new Set(snapshot.names.map((n) => n.toUpperCase()));
+    const names = await listProjectSecretNamesForConsumer({
+      projectId: params.projectId,
+      principalUserId: params.userId,
+      consumer: 'llm_gateway',
+    });
+    const connected = new Set(names);
     models.push(...connectedByokPickerModels(connected));
   } catch {
     // Secret read failed — fall back to managed-only rather than erroring the picker.

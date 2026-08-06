@@ -249,7 +249,7 @@ export function toModelMessages(rawMessages: unknown): {
   };
 }
 
-// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an executor the
+// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an implementation the
 // SDK surfaces the model's tool call in the stream and stops the step (it never
 // tries to run the tool), which is exactly the relay-to-client behaviour the
 // gateway needs — opencode executes tools, not us.

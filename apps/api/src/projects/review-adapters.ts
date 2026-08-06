@@ -1,6 +1,6 @@
 /**
  * Review Center adapters — fold sources that keep their own source-of-truth
- * tables (Change Requests now; executor/tunnel approvals next) into the inbox
+ * tables (Change Requests now; connector/tunnel approvals next) into the inbox
  * read model as `ReviewItem`s. Adapted items carry a namespaced id (`cr:<id>`)
  * so the act endpoint can route a verdict back to the right source.
  *
@@ -9,20 +9,20 @@
  * docs/REVIEW_CENTER_DESIGN.md.
  */
 
-import type { changeRequests, executorExecutions } from '@kortix/db';
+import type { changeRequests, connectorCalls } from '@kortix/db';
 import type { serializeReviewItem } from './review-items';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
-type ExecutorExecutionRow = typeof executorExecutions.$inferSelect;
+type ConnectorCallRow = typeof connectorCalls.$inferSelect;
 
 export const CR_ID_PREFIX = 'cr:';
-export const EXEC_ID_PREFIX = 'exec:';
+export const CALL_ID_PREFIX = 'call:';
 
 /** Source prefixes used by adapted (non-native) review items. */
-export function adapterSourceForId(id: string): 'cr' | 'exec' | null {
+export function adapterSourceForId(id: string): 'cr' | 'call' | null {
   if (id.startsWith(CR_ID_PREFIX)) return 'cr';
-  if (id.startsWith(EXEC_ID_PREFIX)) return 'exec';
+  if (id.startsWith(CALL_ID_PREFIX)) return 'call';
   return null;
 }
 
@@ -31,25 +31,39 @@ export function isAdaptedId(id: string): boolean {
   return adapterSourceForId(id) !== null;
 }
 
-const EXEC_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']> = {
+const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']> = {
   read: 'low',
   write: 'medium',
   destructive: 'high',
 };
 
 /**
- * A pending-approval executor tool call, presented as an `approval` review item.
+ * A pending-approval connector tool call, presented as an `approval` review item.
  * (Only `pending_approval` executions are adapted; the rest are terminal audit.)
  */
-export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewItemDTO {
+export function connectorCallToReviewItem(
+  ex: ConnectorCallRow,
+  options: { includeArgsPreview?: boolean } = {},
+): ReviewItemDTO {
+  const includeArgsPreview = options.includeArgsPreview === true;
+  const summary =
+    ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
+      ? ex.resultSummary
+      : {};
+  const argsPreview =
+    summary.args_preview &&
+    typeof summary.args_preview === 'object' &&
+    !Array.isArray(summary.args_preview)
+      ? summary.args_preview
+      : null;
   return {
-    review_item_id: `${EXEC_ID_PREFIX}${ex.executionId}`,
+    review_item_id: `${CALL_ID_PREFIX}${ex.executionId}`,
     account_id: ex.accountId,
     project_id: ex.projectId,
     origin_session_id: ex.sessionId ?? null,
     kind: 'approval',
     status: 'needs_you',
-    risk: ex.risk ? EXEC_RISK[ex.risk] : 'medium',
+    risk: ex.risk ? CALL_RISK[ex.risk] : 'medium',
     source: 'agent',
     title: `Approve: ${ex.actionPath}`,
     summary: `${ex.actionPath} · awaiting approval`,
@@ -58,13 +72,17 @@ export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewI
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
       request_digest: ex.requestDigest,
+      risk: ex.risk,
+      ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
+      args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
+      args_preview_authorized: includeArgsPreview,
     },
     agent: '',
     created_by: ex.actingUserId ?? '',
     acted_by: ex.approvedBy ?? null,
     acted_at: null,
     feedback: null,
-    metadata: { source: 'executor_execution' },
+    metadata: { source: 'connector_call' },
     created_at: ex.createdAt.toISOString(),
     updated_at: ex.createdAt.toISOString(),
   };

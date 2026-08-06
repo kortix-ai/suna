@@ -101,8 +101,8 @@ pnpm install
 ./bin/kortix hosts use cloud
 ```
 
-`self-host start` creates the config when needed and only asks for product
-integrations: GitHub and Pipedream. Run `self-host configure` later
+`self-host start` creates the config when needed and only asks for external
+connections: GitHub and Pipedream. Run `self-host configure` later
 to change those credentials.
 
 The generated Docker distribution embeds a pinned copy of the official full

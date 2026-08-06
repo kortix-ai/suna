@@ -47,9 +47,41 @@ interface SyncState {
 	applyEvent: (event: OpenCodeEvent) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
-	upsertPart: (messageID: string, part: Part) => void;
+	/**
+	 * `sessionID` is optional. Omitted, the deltaActiveParts guard below reads
+	 * `part.sessionID` directly. Pass it explicitly whenever the caller already
+	 * resolved a more trustworthy session id than the wire part carries — see
+	 * the `message.part.updated` handler in `applyEvent`, which falls back to
+	 * scanning every session's message list specifically because
+	 * `part.sessionID` can be absent on the wire. Without this parameter that
+	 * resolved id has nowhere to go, and the guard silently no-ops for exactly
+	 * the malformed events it exists to protect against.
+	 *
+	 * Kept optional (not merged into `part`, not required) because `upsertPart`
+	 * has real callers outside this file (`apps/web` via `useSessionStateStore`)
+	 * that only ever pass `(messageID, part)` — this stays source-compatible
+	 * with them.
+	 */
+	upsertPart: (messageID: string, part: Part, sessionID?: string) => void;
 	removePart: (messageID: string, partID: string) => void;
+	/**
+	 * `sessionID` is a new REQUIRED leading parameter (was `(messageID, partID,
+	 * field, delta)`) — a breaking arity change for anyone calling this action
+	 * directly. Deliberate, not silent: the only caller of `applyPartDelta` in
+	 * this repo is this file's own `applyEvent` (`message.part.delta` case),
+	 * which already has a reliable `sessionID` on the event itself — no
+	 * "resolve it from an unreliable field" case like `upsertPart` above.
+	 * Kept required, not optional-with-fallback, because there is no
+	 * `part.sessionID`-equivalent to fall back to here that wouldn't be a
+	 * guess. Verified no other in-repo caller exists (`apps/web`, `apps/mobile`
+	 * both use their own stores/methods, not this one). This action is exported
+	 * on `useSyncStore` (`./sync-store`, `./internal/sync-store`), which makes
+	 * it technically part of the published surface, so an out-of-repo consumer
+	 * calling it directly would fail to compile — that needs a semver-relevant
+	 * callout in the next release notes.
+	 */
 	applyPartDelta: (
+		sessionID: string,
 		messageID: string,
 		partID: string,
 		field: string,
@@ -82,6 +114,63 @@ interface SyncState {
 	 *  whose first prompt the server hasn't registered yet. */
 	hasOptimisticMessages: (sessionID: string) => boolean;
 	clearSession: (sessionID: string) => void;
+	/**
+	 * Take a hold on `sessionID`'s transcript for one mounted consumer, and get
+	 * back the release for it. The session's data stays resident until every
+	 * hold is released; see {@link DETACHED_SESSION_LIMIT} for what happens
+	 * after that.
+	 *
+	 * Returning the release rather than exposing a separate `releaseSession`
+	 * makes the pairing structural — a caller cannot take a hold without
+	 * receiving the matching release, and a React effect returns it directly:
+	 *
+	 * ```ts
+	 * useEffect(() => useSyncStore.getState().retainSession(id), [id]);
+	 * ```
+	 *
+	 * Same shape as `retainSessionSyncController` in session-sync-registry.ts.
+	 * The release is idempotent: calling it twice drops one hold, not two.
+	 */
+	retainSession: (sessionID: string) => () => void;
+	/**
+	 * True when this session's `messages` entry — if it has one at all — is a
+	 * post-eviction fragment rather than the transcript.
+	 *
+	 * Eviction deletes the key, and `use-session-sync.ts` reads its absence as
+	 * "the disk copy may repaint". A session whose agent is still running defeats
+	 * that on its own: its SSE frames put the key back within a second or two,
+	 * holding only what streamed after the eviction, so the user came back to the
+	 * fragment and had to `loadOlder` for everything before it.
+	 *
+	 * Answering this at the store is what makes the repaint decision correct
+	 * without dropping any event — dropping events for a session nobody has
+	 * mounted would blind the spawn-tool preview of a child session, which has no
+	 * reconcile of its own and is fed by SSE alone.
+	 *
+	 * Goes false again the moment anything re-establishes the session:
+	 * `hydrate` (the repaint, or a reconcile), `clearSession`, `optimisticAdd`.
+	 */
+	wasTranscriptEvicted: (sessionID: string) => boolean;
+	/**
+	 * Join this session's messages with their parts, memoized on the identity of
+	 * the arrays it read.
+	 *
+	 * Every consumer selects through here — `useSessionSync` and
+	 * `useOpenCodeMessages` alike. It has to be one shared memo rather than one
+	 * per hook: `getMessages` rebuilds via `.map()` on every call, so a raw
+	 * selector returns a new array each time, fails `useSyncExternalStore`'s
+	 * `Object.is` check and re-renders forever. The memo previously existed
+	 * TWICE, once in each hook file, and neither copy was dropped when a
+	 * session's data was — so an evicted transcript stayed reachable through
+	 * whichever memo still held its rows. Keeping it in the store, next to the
+	 * eviction that invalidates it, is what makes that impossible rather than
+	 * merely fixed.
+	 */
+	buildSessionMessages: (
+		sessionID: string,
+		msgs: Message[] | undefined,
+		parts: Record<string, Part[]>,
+	) => MessageWithParts[];
 	hydrate: (
 		sessionID: string,
 		msgs: Array<{ info: Message; parts: Part[] }>,
@@ -113,48 +202,317 @@ const optimisticIds = new Map<string, Set<string>>();
 // can be a copy of it.
 const dispatchedOptimisticIds = new Map<string, Set<string>>();
 
-function trackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+function trackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
-	if (bucket) bucket.add(messageID);
-	else store.set(sessionID, new Set([messageID]));
+	if (bucket) bucket.add(id);
+	else store.set(sessionID, new Set([id]));
 }
 
-function untrackId(store: Map<string, Set<string>>, sessionID: string, messageID: string): void {
+function untrackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
 	if (!bucket) return;
-	bucket.delete(messageID);
+	bucket.delete(id);
 	if (bucket.size === 0) store.delete(sessionID);
 }
 
 function hasTrackedId(
 	store: Map<string, Set<string>>,
 	sessionID: string,
-	messageID: string,
+	id: string,
 ): boolean {
-	return store.get(sessionID)?.has(messageID) ?? false;
+	return store.get(sessionID)?.has(id) ?? false;
 }
 
-/** Release every id this session was tracking — called from `clearSession`. */
+/** Release every id this session was tracking — called from `clearSession`
+ *  and from eviction. */
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	// The joined rows hold the very message and part arrays this session's
+	// data is being dropped from. Left behind, they keep the transcript
+	// reachable and the drop achieves nothing.
+	sessionMessageRows.delete(sessionID);
+	// A session cleared without ever going idle/erroring (the only other
+	// release points, below) would otherwise leave a dead bucket in
+	// deltaActiveParts for the lifetime of the tab — the exact leak class
+	// this function exists to prevent for optimisticIds above.
+	deltaActiveParts.delete(sessionID);
+	// Same leak class, on bridgedPartIds: it used to be released only by
+	// reset() (which application code never calls), not by clearSession, so
+	// a message id stayed "bridged" forever once bridged once. If a LATER
+	// message in a different session ever reused that id, upsertPart's
+	// bridge-clearing branch fired for it too, wiping every part already
+	// stored under it. See bridgedPartIds below.
+	bridgedPartIds.delete(sessionID);
 }
 
 const isOptimistic = (sessionID: string, messageID: string) =>
 	hasTrackedId(optimisticIds, sessionID, messageID);
 const isDispatched = (sessionID: string, messageID: string) =>
 	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
-// Track message IDs where optimistic parts were bridged to the real message.
-// When the first real part arrives for a bridged message, the bridged parts
-// are cleared so optimistic and real parts don't co-exist (which would
+// Track message IDs where optimistic parts were bridged to the real message,
+// keyed by session — same shape and same reason as optimisticIds above. When
+// the first real part arrives for a bridged message, the bridged parts are
+// cleared so optimistic and real parts don't co-exist (which would
 // double-render the user's text).
-const bridgedPartIds = new Set<string>();
+//
+// It used to be one process-wide Set<string> shared by every session in the
+// tab, cleared only by reset() — clearSession never released its entries, so
+// ids accumulated for the lifetime of the tab. A leaked id made upsertPart
+// treat any LATER message that reused it (in any session) as still-bridged:
+// the first real text part for that id wiped every part already stored under
+// it, even though nothing was ever bridged in that session. Keying by session
+// and releasing only the ending session's bucket (via forgetSessionIds)
+// fixes it.
+const bridgedPartIds = new Map<string, Set<string>>();
 
-// Track part IDs that have received at least one delta.
-// Used by upsertPart to avoid overwriting delta-accumulated text with a
-// stale message.part.updated snapshot that arrives in the same event batch.
-// Entries are cleared when the streaming session goes idle.
-const deltaActiveParts = new Set<string>();
+// Track part IDs that have received at least one delta, keyed by session —
+// same shape and same reason as optimisticIds above. Used by upsertPart to
+// avoid overwriting delta-accumulated text with a stale message.part.updated
+// snapshot that arrives in the same event batch. A session's entries are
+// cleared when THAT session's stream goes idle or errors.
+//
+// It used to be one process-wide Set<string> shared by every session in the
+// tab, cleared wholesale on session.idle/session.error. Session B going idle
+// wiped session A's tracking while A was still streaming, so the guard below
+// stopped protecting A — a stale snapshot could then overwrite A's
+// delta-accumulated text. Keying by session and releasing only the ending
+// session's bucket fixes it.
+const deltaActiveParts = new Map<string, Set<string>>();
+
+// ---------------------------------------------------------------------------
+// Session retention — how a transcript ever LEAVES memory again.
+//
+// `messages` and `parts` are keyed by session and nothing removed a key.
+// `clearSession` has one caller (a cache-ownership conflict in
+// use-session-sync.ts) and `reset()` has none in application code, so every
+// session a user opened kept its full transcript and every part for the
+// lifetime of the tab. Open ten long sessions and memory climbs monotonically
+// and never comes back.
+//
+// So: reference-count the mounted consumers of each session and free it once
+// the last one is gone. Same idea as React Query's observer count, but bounded
+// by COUNT rather than by a `gcTime` timer — memory pressure is "how many
+// transcripts are resident", not "how old is this one", and a count needs no
+// timer in a store that has none today and stays deterministic under test.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many sessions keep their transcript resident after their LAST consumer
+ * unmounts, most-recently-detached first.
+ *
+ * Not zero, for two reasons:
+ *  1. React StrictMode double-invokes effects (mount → cleanup → mount) in the
+ *     same commit. Freeing the instant the count hits zero would blank the
+ *     transcript on every dev mount, and again on every fast refresh.
+ *  2. Back-and-forth between two or three sessions is the common navigation.
+ *     Holding them costs nothing to correctness and skips a disk round trip —
+ *     and a round trip is the GOOD case: `getCurrentCacheScope()` returns null
+ *     when unauthenticated, and then nothing was ever written to disk to
+ *     return to.
+ *
+ * Small, because memory must be TIGHTER than disk: `idb-sync-cache.ts` bounds
+ * the on-disk cache at 50 sessions / 7 days.
+ */
+const DETACHED_SESSION_LIMIT = 3;
+
+/**
+ * The joined `MessageWithParts[]` rows, per session — see
+ * {@link SyncState.buildSessionMessages}. Bounded, and dropped for real by
+ * `forgetSessionIds`.
+ */
+const MESSAGE_ROWS_LIMIT = 20;
+const sessionMessageRows = new Map<
+	string,
+	{
+		msgs: Message[] | undefined;
+		partRefs: (Part[] | undefined)[];
+		result: MessageWithParts[];
+	}
+>();
+const EMPTY_MESSAGE_ROWS: MessageWithParts[] = [];
+
+/** Insert-or-refresh `sessionID` as the most recently used entry, dropping the
+ *  least recently used one once the map is over {@link MESSAGE_ROWS_LIMIT}.
+ *  Re-inserting is what moves a key to the end of a Map's iteration order. */
+function touchSessionMessageRows(
+	sessionID: string,
+	entry: {
+		msgs: Message[] | undefined;
+		partRefs: (Part[] | undefined)[];
+		result: MessageWithParts[];
+	},
+): void {
+	sessionMessageRows.delete(sessionID);
+	sessionMessageRows.set(sessionID, entry);
+	if (sessionMessageRows.size > MESSAGE_ROWS_LIMIT) {
+		const leastRecentlyUsed = sessionMessageRows.keys().next().value;
+		if (leastRecentlyUsed) sessionMessageRows.delete(leastRecentlyUsed);
+	}
+}
+
+/** Mounted consumers per session. Absent means "nobody ever retained this" —
+ *  see the release returned by `retainSession`, which then leaves the session
+ *  alone entirely. */
+const sessionConsumers = new Map<string, number>();
+/** Sessions at zero consumers, oldest first (Set preserves insertion order). */
+const detachedSessions = new Set<string>();
+/**
+ * Sessions whose transcript eviction freed, and which nothing authoritative has
+ * reloaded since. See {@link SyncState.wasTranscriptEvicted} for what reads it
+ * and {@link pruneDetachedSessions} for the second thing it is for.
+ *
+ * Holds ids, not data. It is cleared wholesale by `reset()`, and per-session by
+ * every path that re-establishes the session — `hydrate`, `clearSession`,
+ * `optimisticAdd`.
+ */
+const evictedSessions = new Set<string>();
+
+type SyncData = Pick<
+	SyncState,
+	"messages" | "parts" | "sessionStatus" | "diffs" | "todos"
+>;
+
+/**
+ * Free the part buckets belonging to `sessionIDs` that no message points at.
+ *
+ * `parts` is keyed by messageID, so every sweep that walks a session's
+ * `messages` misses the buckets with no message entry to walk from — and the
+ * store creates those on purpose. `message.part.delta` stores the part but
+ * SKIPS creating the assistant message when the session holds no user message
+ * yet (a delta that beats `hydrate()` after a page refresh), so `hydrate` can
+ * attach the real one later. Nothing else ever revisits the bucket, so before
+ * this it outlived both eviction and `clearSession`: the leak this file's
+ * retention work exists to close, left open on the one path that produces it.
+ *
+ * Attribution is by `Part.sessionID`, which is what those stub parts carry.
+ * `every` rather than `some` so a bucket is only freed when the whole thing is
+ * this session's; a bucket whose parts arrived without a `sessionID` is
+ * unattributable and deliberately left alone rather than guessed at.
+ *
+ * Mutates `parts` — a caller-owned copy in both call sites.
+ */
+function deleteOrphanPartBuckets(
+	parts: Record<string, Part[]>,
+	sessionIDs: readonly string[],
+): void {
+	const dropped = new Set(sessionIDs);
+	for (const messageID of Object.keys(parts)) {
+		const bucket = parts[messageID];
+		if (!bucket || bucket.length === 0) continue;
+		const owner = bucket[0].sessionID;
+		if (!owner || !dropped.has(owner)) continue;
+		if (bucket.every((part) => part.sessionID === owner)) delete parts[messageID];
+	}
+}
+
+/**
+ * Drop these sessions' data outright.
+ *
+ * DELETES the `messages` key rather than emptying it, unlike `clearSession`.
+ * The difference is load-bearing: `use-session-sync.ts` reads `sessionId in
+ * store.messages` both for `isLoading` and (via `shouldHydrateFromCache`) to
+ * decide whether the IndexedDB transcript may repaint. An empty array reads as
+ * "loaded, and empty", which would leave a returning user staring at a blank
+ * transcript that never repaints.
+ *
+ * `sessionStatus` is deliberately NOT dropped. It is the one slice read for
+ * sessions that are on purpose not resident — a parent's spawn-tool banner
+ * reads `sessionStatus[child]` for a child whose transcript the parent never
+ * holds (`tool/shared/sub-agent.tsx`, `tool/tools/removed-connector-tool.tsx`).
+ * Dropping it bought no memory either: every `session.status` frame, and the
+ * connect-time `client.session.status()` poll, re-add an entry for every
+ * session on the runtime whether or not it is resident, so the delete was
+ * undone on the next frame — while the gap was visible to the user. One small
+ * status object per session is not the memory this eviction reclaims; the
+ * transcript arrays are.
+ */
+function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncData {
+	const messages = { ...state.messages };
+	const parts = { ...state.parts };
+	const diffs = { ...state.diffs };
+	const todos = { ...state.todos };
+	for (const sessionID of sessionIDs) {
+		for (const message of messages[sessionID] ?? []) delete parts[message.id];
+		delete messages[sessionID];
+		delete diffs[sessionID];
+		delete todos[sessionID];
+	}
+	deleteOrphanPartBuckets(parts, sessionIDs);
+	return { messages, parts, sessionStatus: state.sessionStatus, diffs, todos };
+}
+
+/**
+ * Prune the detached window down to {@link DETACHED_SESSION_LIMIT}, freeing the
+ * oldest sessions past it, plus any already-evicted session the live stream has
+ * since refilled. Returns the ids it freed.
+ *
+ * The second half is what keeps eviction from being a one-shot. Eviction takes
+ * a session OUT of the detach window, so an agent still running in it puts
+ * `messages[id]` back — through SSE, with nobody watching — and that data then
+ * has no path out of memory again. Re-checking {@link evictedSessions} on every
+ * prune gives it one: the next mount of any session sweeps it, exactly like the
+ * first time. It stays marked, because the user can still come back to it.
+ *
+ * Runs when a session is RETAINED, never when one is released. React runs every
+ * passive destroy before any passive create in a commit, so pruning on release
+ * would let the unmount of B evict A in the very commit that mounts A: visit
+ * A → X → Y → B and go back to A, and A is the oldest of four detached
+ * sessions at exactly the wrong moment. Pruning after the incoming session has
+ * been removed from the window makes that unreachable, and keeps `set()` out of
+ * the unmount path entirely.
+ *
+ * The window therefore holds at most LIMIT + (releases since the last retain),
+ * and is back to LIMIT the moment any session mounts.
+ *
+ * Synchronous on purpose. Deferring it (a microtask, a post-commit hook) so
+ * that every retain in a commit lands first would buy nothing, because the
+ * ordering it would buy is already guaranteed. The case that motivates
+ * deferral is a parent's spawn-tool preview of a child session, and the
+ * preview's `useOpenCodeMessages(childId)` is always a React DESCENDANT of the
+ * component that retains the parent (`SessionLayout` → the transcript → the
+ * tool part). React runs passive effects bottom-up, so in any commit that
+ * mounts both, the child's retain lands before the parent's — and therefore
+ * before the prune the parent's retain triggers. Deferral would only cost the
+ * determinism that keeps unmount out of the eviction path.
+ *
+ * (The argument this replaces claimed the child's data "arrives a commit or
+ * more after the parent mounts". That is not universally true — a parent whose
+ * transcript is already resident renders it in the mount commit — and the
+ * conclusion never depended on it.)
+ *
+ * The residual hazard is narrower than it looks, and worth naming exactly.
+ * Only a child session the user opened DIRECTLY and then left is ever an
+ * eviction candidate; one that was only ever previewed was never retained, and
+ * `retainSession` leaves sessions it has never seen alone. What such a child
+ * loses is its `messages`/`parts` — `sessionStatus` survives eviction on
+ * purpose (see `dropSessionData`), so a preview's retry banner keeps reading.
+ * A preview showing a transcript has no repaint path of its own, so closing
+ * the rest needs the reference declared before the data is read — either the
+ * host retaining child ids when it parses the parent's transcript, or
+ * `useOpenCodeMessages` reading the disk cache the way `useSessionSync` does.
+ * The second needs the child's `kortixSessionScope` plumbed through from the
+ * host: entries written for an opened session are keyed
+ * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
+ * misses (idb-sync-cache-key.ts:6-9).
+ */
+function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
+	const evicted: string[] = [];
+	while (detachedSessions.size > DETACHED_SESSION_LIMIT) {
+		const oldest: string | undefined = detachedSessions.values().next().value;
+		if (oldest === undefined) break;
+		detachedSessions.delete(oldest);
+		evicted.push(oldest);
+	}
+	// Refilled since it was last freed, and still nobody's. Gated on the key
+	// actually being back so a quiet evicted session never provokes a `set()`
+	// that changes nothing and re-renders every consumer of this store.
+	for (const sessionID of evictedSessions) {
+		if (sessionConsumers.has(sessionID) || detachedSessions.has(sessionID)) continue;
+		if (sessionID in messages) evicted.push(sessionID);
+	}
+	return evicted;
+}
 
 // ============================================================================
 
@@ -217,13 +575,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		}),
 
-	upsertPart: (messageID, part) =>
+	upsertPart: (messageID, part, sessionID) =>
 		set((s) => {
+			// See the `sessionID` param doc above: prefer the caller-resolved id,
+			// fall back to the part's own field only when no caller passed one.
+			const partSessionID = sessionID ?? part.sessionID;
 			// If this message had bridged (optimistic) parts, clear them now
 			// that a real part has arrived — prevents double-rendering.
 			let list: Part[];
 			let bridgeCleared = false;
-			if (bridgedPartIds.has(messageID)) {
+			if (hasTrackedId(bridgedPartIds, partSessionID, messageID)) {
 				// Only retire the optimistic/bridged user text once a REAL text
 				// part with actual content arrives. A stray non-text part — or an
 				// empty text snapshot — must NOT wipe the bridge, otherwise the
@@ -234,7 +595,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					typeof incoming.text === "string" &&
 					incoming.text.length > 0;
 				if (incomingIsRealText) {
-					bridgedPartIds.delete(messageID);
+					untrackId(bridgedPartIds, partSessionID, messageID);
 					list = [];
 					bridgeCleared = true;
 				} else {
@@ -289,7 +650,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// text (missing the beginning). Skip the insert — the delta-
 				// created version already exists in the parts list under the
 				// message entry created by the delta handler.
-					if (deltaActiveParts.has(part.id) && isTextLikePart(part)) {
+					if (hasTrackedId(deltaActiveParts, partSessionID, part.id) && isTextLikePart(part)) {
 					// Delta-created part already exists — check all messageID
 					// buckets since the delta handler may have stored it under
 					// a different (stub) message entry.
@@ -320,8 +681,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (messageID, partID, field, delta) => {
-		deltaActiveParts.add(partID);
+	applyPartDelta: (sessionID, messageID, partID, field, delta) => {
+		trackId(deltaActiveParts, sessionID, partID);
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -355,6 +716,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	optimisticAdd: (sessionID, message, messageParts) => {
 		trackId(optimisticIds, sessionID, message.id);
+		// The user has typed into this session, so the disk repaint stands down.
+		// `hydrate`'s ordinal fallback pairs an in-flight optimistic message with
+		// the oldest unclaimed real user message, and EVERY message in a disk
+		// copy is unclaimed — a repaint landing mid-send would retire the message
+		// that was just typed. The key-presence check used to make that
+		// unreachable (this action creates the key); the mark has to.
+		evictedSessions.delete(sessionID);
 		set((s) => {
 			const list = s.messages[sessionID] ?? [];
 			// Always append optimistic messages at the end of the list.
@@ -425,9 +793,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Release this session's optimistic tracking along with its messages.
 			// Skipping it is what let ids accumulate for the lifetime of the tab.
 			forgetSessionIds(sessionID);
+			// Emptied on purpose (a cache-ownership conflict). The disk copy is
+			// exactly what must NOT come back, so drop any eviction mark with it.
+			evictedSessions.delete(sessionID);
 			const existingMessages = s.messages[sessionID] ?? [];
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
+			deleteOrphanPartBuckets(nextParts, [sessionID]);
 			return {
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,
@@ -437,8 +809,86 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		}),
 
+	retainSession: (sessionID) => {
+		if (!sessionID) return () => {};
+		// Out of the detach window BEFORE pruning it, so mounting a session can
+		// never be what evicts it.
+		detachedSessions.delete(sessionID);
+		sessionConsumers.set(sessionID, (sessionConsumers.get(sessionID) ?? 0) + 1);
+
+		const evicted = pruneDetachedSessions(get().messages);
+		if (evicted.length > 0) {
+			for (const id of evicted) {
+				forgetSessionIds(id);
+				evictedSessions.add(id);
+			}
+			set((s) => dropSessionData(s, evicted));
+		}
+
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			const held = sessionConsumers.get(sessionID);
+			if (held === undefined) return;
+			// Another consumer still has this session on screen. THE case a raw
+			// unmount gets wrong: a transcript and a context modal, a split
+			// view, or a parent's spawn-tool preview of a child session.
+			if (held > 1) {
+				sessionConsumers.set(sessionID, held - 1);
+				return;
+			}
+			sessionConsumers.delete(sessionID);
+			// Re-insert so this session is the NEWEST detached one, not wherever
+			// a previous detach left it. Nothing is freed here — see
+			// `pruneDetachedSessions`.
+			detachedSessions.delete(sessionID);
+			detachedSessions.add(sessionID);
+		};
+	},
+
+	wasTranscriptEvicted: (sessionID) => evictedSessions.has(sessionID),
+
+	buildSessionMessages: (sessionID, msgs, parts) => {
+		if (!msgs || msgs.length === 0) return EMPTY_MESSAGE_ROWS;
+
+		const cached = sessionMessageRows.get(sessionID);
+		if (cached && cached.msgs === msgs) {
+			let same = cached.partRefs.length === msgs.length;
+			if (same) {
+				for (let i = 0; i < msgs.length; i++) {
+					if (parts[msgs[i].id] !== cached.partRefs[i]) {
+						same = false;
+						break;
+					}
+				}
+			}
+			if (same) {
+				// A hit is USE. Without this the order is insertion order, not
+				// recency, and a stable session that renders unchanged for
+				// minutes is pushed out by other sessions' rebuilds — costing it
+				// a needless rebuild and one extra render.
+				touchSessionMessageRows(sessionID, cached);
+				return cached.result;
+			}
+		}
+
+		const partRefs: (Part[] | undefined)[] = [];
+		const result: MessageWithParts[] = [];
+		for (const info of msgs) {
+			const messageParts = parts[info.id];
+			partRefs.push(messageParts);
+			result.push({ info, parts: messageParts ?? [] });
+		}
+		touchSessionMessageRows(sessionID, { msgs, partRefs, result });
+		return result;
+	},
+
 	hydrate: (sessionID, msgs) =>
 		set((s) => {
+			// An authoritative load — the disk repaint itself, or a reconcile —
+			// re-establishes the session, so its entry is no longer a fragment.
+			evictedSessions.delete(sessionID);
 			const cmp = (a: string, b: string) =>
 				a < b ? -1 : a > b ? 1 : 0;
 			const incoming = msgs
@@ -587,7 +1037,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const serverHasParts = (echoEntry?.parts?.length ?? 0) > 0;
 				if (serverHasParts || newParts[echoId]?.length) continue;
 				newParts[echoId] = bridge;
-				bridgedPartIds.add(echoId);
+				trackId(bridgedPartIds, sessionID, echoId);
 			}
 			for (const m of msgs) {
 				if (!m?.info?.id) continue;
@@ -600,8 +1050,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// If this message still carries bridged optimistic parts, a hydrate
 				// snapshot with real parts should replace them immediately. Otherwise
 				// reconcile-by-extras can keep both copies and duplicate user text.
-				if (bridgedPartIds.has(mid) && inParts.length > 0) {
-					bridgedPartIds.delete(mid);
+				if (hasTrackedId(bridgedPartIds, sessionID, mid) && inParts.length > 0) {
+					untrackId(bridgedPartIds, sessionID, mid);
 					newParts[mid] = inParts;
 					continue;
 				}
@@ -649,6 +1099,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		optimisticIds.clear();
 		dispatchedOptimisticIds.clear();
 		bridgedPartIds.clear();
+		deltaActiveParts.clear();
+		// The data these holds protected is gone, so the holds are too —
+		// otherwise a late unmount could free a session the next page opened.
+		sessionConsumers.clear();
+		detachedSessions.clear();
+		evictedSessions.clear();
+		sessionMessageRows.clear();
 		set({
 			messages: {},
 			parts: {},
@@ -774,7 +1231,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 								}
 								if (bridge && !newParts[info.id]?.length) {
 									newParts[info.id] = bridge;
-									bridgedPartIds.add(info.id);
+									trackId(bridgedPartIds, info.sessionID, info.id);
 								}
 								return {
 									messages: { ...s.messages, [info.sessionID]: next },
@@ -832,7 +1289,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					} as Message);
 				}
 
-				store.upsertPart(part.messageID, part);
+				// Pass resolvedSessionID explicitly — part.sessionID can be absent
+				// on the wire (the fallback chain above exists for exactly that),
+				// and the deltaActiveParts guard in upsertPart must not silently
+				// no-op just because that field is missing.
+				store.upsertPart(part.messageID, part, resolvedSessionID);
 				if (isTextLikePart(part)) {
 					if (!resolvedSessionID) return;
 					const msgInfo = get().messages[resolvedSessionID]?.find(
@@ -899,6 +1360,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 					store.upsertPart(props.messageID, {
 						id: props.partID,
+						sessionID: props.sessionID,
 						messageID: props.messageID,
 						type: "text",
 						[props.field]: "",
@@ -906,6 +1368,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 
 				store.applyPartDelta(
+					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
@@ -942,9 +1405,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
 			if (sessionID) store.setStatus(sessionID, { type: "idle" });
-			// Streaming finished — clear delta tracking so future
-			// message.part.updated snapshots are accepted normally.
-			deltaActiveParts.clear();
+			// Streaming finished for THIS session — clear only its own delta
+			// tracking so future message.part.updated snapshots for it are
+			// accepted normally. Never the whole map: another session may
+			// still be streaming (see comment above deltaActiveParts).
+			if (sessionID) deltaActiveParts.delete(sessionID);
 			return;
 		}
 		case "session.error": {
@@ -954,7 +1419,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const error = props.error;
 			// Mark session idle — errors terminate the response.
 			store.setStatus(sid, { type: "idle" });
-			deltaActiveParts.clear();
+			// Clear only this session's delta tracking — see the idle handler
+			// above and the comment above deltaActiveParts.
+			deltaActiveParts.delete(sid);
 
 			// Patch the error onto the last assistant message in the sync store.
 			// If no assistant message exists yet, create a temporary one so the

@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { access, constants, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
-import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
+import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
@@ -100,7 +100,7 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
-//   1. the optional Kortix Executor MCP server (KORTIX_EXECUTOR_MCP_ENABLED=1)
+//   1. the optional Kortix Connector MCP server (KORTIX_CONNECTORS_MCP_ENABLED=1)
 //   2. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
 //   3. a Slack permission override            (when this is a Slack session)
 //   4. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
@@ -111,8 +111,11 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // decision like #1-3.
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
-export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const executorToken = env.KORTIX_CLI_TOKEN || env.KORTIX_EXECUTOR_TOKEN
+export async function buildOpencodeConfigContent(
+  env: NodeJS.ProcessEnv,
+  opts: { injectedSkillsDir?: string | null } = {},
+): Promise<string | undefined> {
+  const connectorToken = env.KORTIX_CLI_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
   const llmApiKey = env.KORTIX_LLM_API_KEY
@@ -127,17 +130,17 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
   // Optional MCP compatibility face. The agent-facing default is the
-  // `kortix executor` CLI, so we only inject this MCP server when explicitly
-  // enabled. In proxy mode its KORTIX_API_URL points at the local executor proxy
+  // `kortix connectors` CLI, so we only inject this MCP server when explicitly
+  // enabled. In proxy mode its KORTIX_API_URL points at the local connector proxy
   // with a placeholder token; otherwise it receives the real session token.
-  const executorProxyUrl = env.KORTIX_EXECUTOR_PROXY_URL
-  const executorProxyMode = !!executorProxyUrl
-  const executorMcpEnabled = ['1', 'true', 'yes', 'on'].includes(
-    (env.KORTIX_EXECUTOR_MCP_ENABLED ?? '').trim().toLowerCase(),
+  const connectorProxyUrl = env.KORTIX_CONNECTORS_PROXY_URL
+  const connectorProxyMode = !!connectorProxyUrl
+  const connectorMcpEnabled = ['1', 'true', 'yes', 'on'].includes(
+    (env.KORTIX_CONNECTORS_MCP_ENABLED ?? '').trim().toLowerCase(),
   )
 
   // Direct mode needs both token+url; proxy mode needs only the proxy URL.
-  const hasExecutorMcp = executorMcpEnabled && (executorProxyMode || (!!executorToken && !!apiUrl))
+  const hasConnectorMcp = connectorMcpEnabled && (connectorProxyMode || (!!connectorToken && !!apiUrl))
   const hasLlmGateway = hasKortixLlmGateway(env)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
@@ -151,7 +154,14 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // agent behavior itself.
   const compiledAgentConfigRaw = env.KORTIX_COMPILED_AGENT_CONFIG
   const hasCompiledAgentConfig = !!compiledAgentConfigRaw
-  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig) return undefined
+  // (5) The daemon-injected managed skills dir (`ensureInjectedManagedSkills`).
+  // OpenCode loads skills from config-declared `skills.paths` — the overlay dir
+  // must be declared or the baked `kortix-*` skills are never discovered on a
+  // box with no project config (the platform meta sandbox).
+  const injectedSkillsDir =
+    opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
+  if (!hasConnectorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig && !injectedSkillsDir)
+    return undefined
 
   let base: Record<string, unknown> = {}
   if (hasCompiledAgentConfig) {
@@ -175,27 +185,43 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   }
   const out: Record<string, unknown> = { ...base }
 
-  // (1) Optional Kortix Executor MCP server. CLI remains the primary agent path.
-  if (hasExecutorMcp) {
+  // (5) Injected managed skills — append to whatever `skills.paths` the base
+  // config already declares; never clobber.
+  if (injectedSkillsDir) {
+    const skills =
+      out.skills && typeof out.skills === 'object' && !Array.isArray(out.skills)
+        ? (out.skills as Record<string, unknown>)
+        : {}
+    const paths = Array.isArray(skills.paths)
+      ? skills.paths.filter((p): p is string => typeof p === 'string')
+      : []
+    out.skills = {
+      ...skills,
+      paths: paths.includes(injectedSkillsDir) ? paths : [...paths, injectedSkillsDir],
+    }
+  }
+
+  // (1) Optional Kortix Connector MCP server. CLI remains the primary agent path.
+  if (hasConnectorMcp) {
     const mcp =
       out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)
         ? (out.mcp as Record<string, unknown>)
         : {}
     out.mcp = {
       ...mcp,
-      'kortix-executor': {
+      'kortix-connectors': {
         type: 'local',
         // Use the absolute path so OpenCode's MCP launcher does not depend on
-        // PATH propagation. The normal agent path is still `kortix executor`.
-        command: ['/usr/local/bin/kortix', 'executor', 'mcp'],
+        // PATH propagation. The normal agent path is still `kortix connectors`.
+        command: ['/usr/local/bin/kortix', 'connector', 'mcp'],
         enabled: true,
         environment: {
-          // Proxy mode: the MCP talks to the localhost executor proxy with a
+          // Proxy mode: the MCP talks to the localhost connector proxy with a
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
           // restore). Direct mode (cold/Daytona): the real token + api url, as before.
-          KORTIX_EXECUTOR_TOKEN: executorProxyMode ? EXECUTOR_PROXY_PLACEHOLDER_KEY : executorToken!,
-          KORTIX_API_URL: executorProxyMode ? executorProxyUrl! : apiUrl!,
+          KORTIX_CLI_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
+          KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
           // Lets the CLI target the project-explicit gateway route. Optional —
           // the session token also pins the project for the legacy flat route,
@@ -486,7 +512,7 @@ function scheduleCatalogWarmToPath(
   })()
 }
 
-export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
+export const buildConnectorMcpConfigContent = buildOpencodeConfigContent
 
 /**
  * Where the composed Kortix config is materialized for an OpenCode child.
@@ -508,9 +534,9 @@ const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-openc
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
-  opts: { configPath?: string } = {},
+  opts: { configPath?: string; injectedSkillsDir?: string | null } = {},
 ): Promise<string | null> {
-  const content = await buildOpencodeConfigContent(env)
+  const content = await buildOpencodeConfigContent(env, { injectedSkillsDir: opts.injectedSkillsDir })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
   mkdirSync(dirname(configPath), { recursive: true })
@@ -733,6 +759,21 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: false,
     temperature: true,
     limit: { context: 1_000_000, output: 131_072 },
+  },
+  // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
+  // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
+  // `temperature:false` — models.dev advertises Kimi K3 as
+  // `temperature:false` (it rejects a client-sent temperature), matching
+  // capabilitiesOf() in the served catalog. Must NOT advertise temperature
+  // support or OpenCode sends one and 400s the turn.
+  'kimi-k3': {
+    name: 'Kimi K3',
+    provider: 'kortix',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: false,
+    limit: { context: 1_048_576, output: 131_072 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
@@ -1034,7 +1075,9 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
-    const configPath = await writeKortixOpencodeConfig(baseEnv)
+    const configPath = await writeKortixOpencodeConfig(baseEnv, {
+      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+    })
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT

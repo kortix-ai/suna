@@ -3,7 +3,7 @@
 import { KeyRound, ServerCog } from 'lucide-react';
 
 /**
- * Which of the TWO integration shapes this instance is running.
+ * Which of the two connector access modes this instance is running.
  *
  * They use different credential and ownership boundaries:
  *

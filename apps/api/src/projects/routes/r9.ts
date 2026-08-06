@@ -165,7 +165,7 @@ projectsApp.openapi(
     // reconcile it from the new tip — best-effort, never blocks the merge
     // response. The manifest in git stays the source of truth either way; the
     // periodic sweep is the backstop if this best-effort call fails.
-    void import('../../executor/sync')
+    void import('../../connectors/sync')
       .then(({ syncProjectConnectors }) => syncProjectConnectors(projectId, loaded.row.accountId))
       .then((res) => {
         if (res.errors.length) {

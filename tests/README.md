@@ -42,6 +42,8 @@ tests/
     scripts/              #   Helper scripts
       run-gate5-local-verification.sh
       run-gate5-target-rehearsal.sh
+      secrets-injection-smoke.ts
+      terminal-pty-smoke.ts
       verify-gate5-release-evidence.sh
 
   shell/                  # Shell-based live checks
@@ -71,6 +73,19 @@ tests/
 | Suite                 | What it verifies                               |
 | --------------------- | ---------------------------------------------- |
 | `vps/test-vps-e2e.sh` | Caddy HTTPS, basic auth, firewall (run on VPS) |
+
+### Real provider smokes (`tests/e2e/scripts/`)
+
+`secrets-injection-smoke.ts` provisions a disposable project and cloud sandbox.
+It verifies boot injection, identical-revision sync, deny-all scope, restored
+scope, deletion, and shell revocation. The script deletes the session, project,
+secret, and test user in its cleanup path.
+
+```bash
+dotenvx run -f apps/api/.env -f apps/web/.env -- \
+  node --experimental-strip-types \
+  tests/e2e/scripts/secrets-injection-smoke.ts platinum
+```
 
 ## pnpm Scripts
 

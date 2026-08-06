@@ -31,7 +31,7 @@ ID, and the branch name are the same value. See
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
 | `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
-| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connector authorizations |
+| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
 
@@ -123,7 +123,7 @@ run without deleting the session.
 
 ## Session scope and cost
 
-Read the stored secret narrowing and materialized connector authorizations.
+Read the stored secret narrowing and materialized connection bindings.
 `secrets_allowlist: null` means the agent's secret grant applies:
 
 ```ts
@@ -136,13 +136,13 @@ Replace one or both scope fields:
 await s.rescope({
   secrets: ['DATABASE_URL'],
   connector_bindings: {
-    github: { authorization_id: authorizationId },
+    github: { connection_id: connectionId },
   },
 });
 ```
 
 Each supplied field replaces its complete previous value. Omit a field to leave
-it unchanged. Connector authorization changes apply to the next tool call.
+it unchanged. Connection changes apply to the next tool call.
 Secret removal stops future delivery but cannot remove an already disclosed
 value from model context or an existing process.
 

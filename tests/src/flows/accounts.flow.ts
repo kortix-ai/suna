@@ -256,6 +256,103 @@ flow(
   },
 );
 
+// MEM-6 — role-transition matrix on PATCH /members/:userId. MEM-3 only covered
+// member→admin (promotion) + invalid role → 400. The PATCH handler
+// (apps/api/src/accounts/core/members.ts:579-648) encodes several invariants
+// that were unproven:
+//   - same-role PATCH → 200 {unchanged:true} (idempotent no-op)
+//   - admin demotes member→member (admin CAN demote a non-owner) → 200
+//   - admin cannot demote an owner → 403 ("Only an owner can assign or change
+//     the owner role") — distinct from the last-owner 409
+//   - admin cannot promote anyone to owner → 403 ("Only owners can grant the
+//     owner role") — the privilege-escalation guard
+//   - demote the LAST owner → 409 ("Cannot demote the last owner")
+//   - PATCH an unknown userId → 404 ("Member not found")
+flow(
+  'MEM-6',
+  {
+    domain: 'accounts',
+    routes: ['PATCH /v1/accounts/:accountId/members/:userId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const admin = await team.addMember('admin');
+    const member = await team.addMember('member');
+
+    await ctx.step('OWNER demotes admin → member (downward transition) → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: admin.userId! } },
+        );
+      r.status(200).body().has('$.account_role', 'member');
+    });
+    await ctx.step('PATCH same role → 200 {unchanged:true} (idempotent no-op)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: member.userId! } },
+        );
+      r.status(200).body().has('$.unchanged', true).has('$.account_role', 'member');
+    });
+    await ctx.step(
+      'admin cannot demote an owner → 403 (only an owner can change the owner role)',
+      async () => {
+        // OWNER is the only owner on this throwaway team; an admin trying to
+        // change OWNER's role (even to owner — the "change the owner role" branch
+        // fires whenever the TARGET is an owner) → 403.
+        const r = await ctx.client
+          .as(admin)
+          .patch(
+            '/v1/accounts/:accountId/members/:userId',
+            { role: 'admin' },
+            { params: { accountId: team.id, userId: ctx.P.OWNER.userId! } },
+          );
+        r.status(403);
+      },
+    );
+    await ctx.step(
+      'admin cannot promote anyone to owner → 403 (privilege-escalation guard)',
+      async () => {
+        const r = await ctx.client
+          .as(admin)
+          .patch(
+            '/v1/accounts/:accountId/members/:userId',
+            { role: 'owner' },
+            { params: { accountId: team.id, userId: member.userId! } },
+          );
+        r.status(403);
+      },
+    );
+    await ctx.step('PATCH an unknown userId → 404 (Member not found)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: '00000000-0000-4000-a000-000000000000' } },
+        );
+      r.status(404);
+    });
+    await ctx.step('OWNER demoting the last owner → 409 (cannot orphan the account)', async () => {
+      // OWNER is the sole owner of this throwaway team; demoting them would
+      // orphan it. The last-owner guard fires (countOwners <= 1) → 409.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'admin' },
+          { params: { accountId: team.id, userId: ctx.P.OWNER.userId! } },
+        );
+      r.status(409);
+    });
+  },
+);
+
 flow(
   'INV-1',
   { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },

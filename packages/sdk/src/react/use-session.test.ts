@@ -391,7 +391,7 @@ describe('SESSION_START_POLL_OPTIONS', () => {
 });
 
 describe('classifySendError — connector refusals', () => {
-  const profile = {
+  const connection = {
     id: '11111111-1111-4111-a111-111111111111',
     slug: 'gmail',
     name: 'Gmail',
@@ -406,35 +406,35 @@ describe('classifySendError — connector refusals', () => {
     // platform had already refused the turn before the sandbox saw it.
     const result = classifySendError(
       refusal({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-        message: 'Connect the required connector profiles before continuing this session.',
-        connector_profiles: [profile],
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        message: 'Connect the required connectors before continuing this session.',
+        connector_connections: [connection],
       }),
     );
 
     expect(result.kind).toBe('connector');
-    expect(result.connectors).toEqual([profile]);
+    expect(result.connectors).toEqual([connection]);
     expect(result.message).toBe(
-      'Connect the required connector profiles before continuing this session.',
+      'Connect the required connectors before continuing this session.',
     );
   });
 
   test('classification keys on the CODE, never the prose', () => {
     // The message is written for humans and will be reworded.
     expect(
-      classifySendError(refusal({ message: 'Connect the required connector profiles.' })).kind,
+      classifySendError(refusal({ message: 'Connect the required connectors.' })).kind,
     ).toBe('runtime-error');
   });
 
-  test('a refusal naming no usable profile stays generic', () => {
+  test('a refusal naming no usable connection stays generic', () => {
     // A connect prompt that cannot say WHICH connector is worse than the generic
     // error it replaced.
     expect(
-      classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind,
+      classifySendError(refusal({ code: 'CONNECTOR_CONNECTION_REQUIRED' })).kind,
     ).toBe('runtime-error');
     expect(
       classifySendError(
-        refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED', connector_profiles: [{ id: 'x' }] }),
+        refusal({ code: 'CONNECTOR_CONNECTION_REQUIRED', connector_connections: [{ id: 'x' }] }),
       ).kind,
     ).toBe('runtime-error');
   });
@@ -445,15 +445,15 @@ describe('classifySendError — connector refusals', () => {
     expect(
       classifySendError(
         refusal({
-          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-          connector_profiles: [{ ...profile, authorization_strategy: 'workspace' }],
+          code: 'CONNECTOR_CONNECTION_REQUIRED',
+          connector_connections: [{ ...connection, authorization_strategy: 'workspace' }],
         }),
       ).kind,
     ).toBe('runtime-error');
   });
 
   test('billing still wins — a 402 is not a connector problem', () => {
-    expect(classifySendError(refusal({ code: 'CONNECTOR_AUTHORIZATION_REQUIRED' })).kind).not.toBe(
+    expect(classifySendError(refusal({ code: 'CONNECTOR_CONNECTION_REQUIRED' })).kind).not.toBe(
       'billing',
     );
   });

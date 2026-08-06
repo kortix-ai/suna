@@ -54,7 +54,7 @@ export interface AgentConfigBlock {
   enabled?: boolean;
   sandbox?: string;
   connectors?: AgentGrantSetV2;
-  /** Connector profiles that must resolve before the session starts. */
+  /** Connectors that must resolve before the session starts. */
   connectors_required?: string[];
   /** @deprecated Input alias for `connectors_required`. Responses use only
    *  `connectors_required`. */

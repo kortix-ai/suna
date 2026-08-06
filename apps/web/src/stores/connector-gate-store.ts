@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export interface ConnectorGateProfile {
+export interface ConnectorGateConnection {
   id: string;
   slug: string;
   name: string;
@@ -8,19 +8,19 @@ export interface ConnectorGateProfile {
 }
 
 /**
- * Drives the global connector authorization gate. A failed session create opens
- * this gate with every missing connector profile. The gate retries the same
- * session create after all required authorizations are connected.
+ * Drives the global connection gate. A failed session create opens this gate
+ * with every missing connection. The gate retries the same
+ * session create after all required connections are created.
  */
 interface ConnectorGateState {
   isOpen: boolean;
   projectId: string | null;
-  connectorProfiles: ConnectorGateProfile[];
+  connectorConnections: ConnectorGateConnection[];
   /** Re-run the gated session-create after the connector is connected. */
   retry: (() => void) | null;
   openConnectorGate: (opts: {
     projectId: string;
-    connectorProfiles: ConnectorGateProfile[];
+    connectorConnections: ConnectorGateConnection[];
     retry: () => void;
   }) => void;
   closeConnectorGate: () => void;
@@ -29,10 +29,10 @@ interface ConnectorGateState {
 export const useConnectorGateStore = create<ConnectorGateState>((set) => ({
   isOpen: false,
   projectId: null,
-  connectorProfiles: [],
+  connectorConnections: [],
   retry: null,
-  openConnectorGate: ({ projectId, connectorProfiles, retry }) =>
-    set({ isOpen: true, projectId, connectorProfiles, retry }),
+  openConnectorGate: ({ projectId, connectorConnections, retry }) =>
+    set({ isOpen: true, projectId, connectorConnections, retry }),
   closeConnectorGate: () =>
-    set({ isOpen: false, projectId: null, connectorProfiles: [], retry: null }),
+    set({ isOpen: false, projectId: null, connectorConnections: [], retry: null }),
 }));

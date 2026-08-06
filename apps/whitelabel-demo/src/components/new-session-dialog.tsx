@@ -73,7 +73,7 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Set the initial agent, secrets, and connector authorizations. You
+            Set the initial agent, secrets, and connections. You
             can change the session scope later.
           </DialogDescription>
         </DialogHeader>

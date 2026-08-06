@@ -477,7 +477,7 @@ export async function combinedAuth(c: Context, next: Next) {
     // Set the acting token id so engine gates on combinedAuth-mounted routes can
     // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
     // this, a capability check on a combinedAuth route silently no-ops the fold —
-    // a scoped agent PAT would pass gates it shouldn't (e.g. executor connector-admin).
+    // a scoped agent PAT would pass gates it should not (e.g. connector-admin).
     c.set('iamTokenId', patResult.tokenId);
     if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
     c.set('agentGrant', patResult.agentGrant ?? null);
@@ -711,14 +711,14 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
     });
   }
 
-  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
+  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
   // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. The executor branch intentionally includes both gateway and
-  // connector-management routes: the unified Executor MCP exposes add/remove
+  // project. The connector branch intentionally includes both gateway and
+  // connector-management routes: the unified Connector MCP exposes add/remove
   // connector tools from inside the sandbox, while individual routes still gate
   // mutations via project.write in resolveAdmin.
   const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
+    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {

@@ -1,5 +1,5 @@
 /**
- * IAM approval control-plane: project access-requests, the executor
+ * IAM approval control-plane: project access-requests, the connector
  * approval inbox/resolve routes, per-agent secret/connector scoping, the
  * enterprise-demo preview toggle, and self-serve SSO metadata import. Maps
  * to spec §5 (IAM-27..IAM-34).

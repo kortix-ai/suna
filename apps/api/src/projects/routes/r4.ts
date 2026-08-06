@@ -1,13 +1,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  ConnectorAuthorizationMetadataSchema,
-  ConnectorAuthorizationSchema,
-  ReconcileConnectorAuthorizationInputSchema,
-  UpdateConnectorAuthorizationCredentialInputSchema,
+  ConnectionMetadataSchema,
+  ConnectionSchema,
+  ReconcileConnectionInputSchema,
+  UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
-  executorConnectionProfiles,
-  executorConnectors,
+  connectorConnections,
+  connectors,
   projectSessionConnectorBindings,
   projectSessions,
   projectTriggerRuntime,
@@ -61,14 +61,17 @@ import {
 } from '../../channels/turn-relay';
 import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
-import { upsertProfileCredential, upsertProfileOAuth2Credential } from '../../executor/credentials';
-import { revokeProfileOAuth2 } from '../../executor/oauth2-store';
 import {
-  finalizePipedreamProfileConnection,
+  upsertConnectionCredential,
+  upsertConnectionOAuth2Credential,
+} from '../../connectors/credentials';
+import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import {
+  finalizePipedreamConnectionAuthorization,
   pipedreamConfigured,
   pipedreamConnectUrl,
-} from '../../executor/pipedream';
-import { reconcileChannelConnectors } from '../../executor/sync';
+} from '../../connectors/pipedream';
+import { reconcileChannelConnectors } from '../../connectors/sync';
 import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
@@ -95,28 +98,38 @@ import {
   setProjectModelOverrides,
 } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
+import { isUniqueViolation } from '../../shared/postgres-errors';
+import { continueSession } from '../session-lifecycle';
+import {
+  getOpenQuestion,
+  recordPendingQuestion,
+  renderAnswerPrompt,
+  resolvePendingQuestion,
+} from '../lib/pending-questions';
 import { loadProjectAgents } from '../agents';
+import { getAgentGrant } from '../../iam/agent-scope';
 import {
   assertProjectCapability,
   loadProjectForUser,
   projectCapabilityAllowed,
+  loadVisibleSession,
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
-  type ConnectorAuthorizationOwnerType,
+  type ConnectionOwnerType,
   type ConnectorAuthorizationStrategy,
   connectorAuthorizationMatchesStrategy,
   isTrustedManagedChannelAuthorization,
 } from '../lib/connector-authorization-strategy';
-import { sessionMayEnumerateProfile } from '../lib/connector-profile-visibility';
+import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
-  loadEmailInstallProfileId,
+  loadEmailInstallConnectionId,
 } from '../lib/session-connector-bindings';
 import {
   commitManifest,
@@ -132,8 +145,9 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
-import { shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
-import { listProjectSecretsSnapshot } from '../secrets';
+import { childIdleGraceMs, shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 import { turnStreamKindField } from './r4-turn-stream-kind';
@@ -174,19 +188,19 @@ interface SlackAuthTest {
 }
 
 // Keep the existing OpenAPI component id for generated-client compatibility.
-const ConnectorAuthorizationViewSchema = ConnectorAuthorizationSchema.openapi('ConnectionProfile');
+const ConnectionViewSchema = ConnectionSchema.openapi('Connection');
 
 /**
- * The owner/admin roster shape is narrower than ConnectorAuthorization.
+ * The owner/admin roster shape is narrower than Connection.
  * It answers "who has connected this connector, and does it still work?" and
  * nothing else. `label` and `metadata` are omitted on purpose: they are a
  * member's own annotations on a PRIVATE connection and can carry personal
  * identifiers (an email, an inbox id, a workspace id), which a peer manager has
- * no need to see. Credentials are never in any profile shape.
+ * no need to see. Credentials are never in any connection shape.
  */
-const ConnectorAuthorizationRosterEntrySchema = z
+const ConnectionRosterEntrySchema = z
   .object({
-    profile_id: z.string().uuid(),
+    connection_id: z.string().uuid(),
     connector_alias: z.string(),
     owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
     owner_id: z.string().nullable(),
@@ -194,8 +208,8 @@ const ConnectorAuthorizationRosterEntrySchema = z
   })
   .openapi('ConnectionRosterEntry');
 
-function serializeConnectionProfile(row: {
-  profileId: string;
+function serializeConnection(row: {
+  connectionId: string;
   connectorAlias: string;
   ownerType: string;
   ownerId: string | null;
@@ -205,7 +219,7 @@ function serializeConnectionProfile(row: {
   metadata: Record<string, unknown>;
 }) {
   return {
-    profile_id: row.profileId,
+    connection_id: row.connectionId,
     connector_alias: row.connectorAlias,
     owner_type: row.ownerType,
     owner_id: row.ownerId,
@@ -216,10 +230,10 @@ function serializeConnectionProfile(row: {
   };
 }
 
-function mayReadConnectionProfile(
-  profile: {
-    profileId: string;
-    ownerType: ConnectorAuthorizationOwnerType;
+function mayReadConnection(
+  connection: {
+    connectionId: string;
+    ownerType: ConnectionOwnerType;
     ownerId: string | null;
     isDefault: boolean;
     metadata: Record<string, unknown>;
@@ -229,35 +243,35 @@ function mayReadConnectionProfile(
   },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
-  /** Profile ids the CALLER'S session is bound to, or null when the caller is
-   *  not session-bound. See connector-profile-visibility.ts: a sandbox's token
+  /** Connection ids the CALLER'S session is bound to, or null when the caller is
+   *  not session-bound. See connector-connection-visibility.ts: a sandbox's token
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
-  sessionBoundProfileIds: ReadonlySet<string> | null,
+  sessionBoundConnectionIds: ReadonlySet<string> | null,
 ): boolean {
-  if (!sessionMayEnumerateProfile(profile, sessionBoundProfileIds)) return false;
+  if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
   return connectorAuthorizationMatchesStrategy({
-    strategy: profile.authorizationStrategy,
-    ownerType: profile.ownerType,
-    ownerId: profile.ownerId,
+    strategy: connection.authorizationStrategy,
+    ownerType: connection.ownerType,
+    ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: profile.providerType,
+      providerType: connection.providerType,
       platform:
-        typeof profile.connectorConfig.platform === 'string'
-          ? profile.connectorConfig.platform
+        typeof connection.connectorConfig.platform === 'string'
+          ? connection.connectorConfig.platform
           : null,
-      ownerType: profile.ownerType,
-      ownerId: profile.ownerId,
-      metadata: profile.metadata,
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
     }),
   });
 }
 
-function mayMutateConnectionProfile(
-  profile: {
-    ownerType: ConnectorAuthorizationOwnerType;
+function mayMutateConnection(
+  connection: {
+    ownerType: ConnectionOwnerType;
     ownerId: string | null;
     metadata: Record<string, unknown>;
     authorizationStrategy: ConnectorAuthorizationStrategy;
@@ -266,30 +280,30 @@ function mayMutateConnectionProfile(
   },
   userId: string,
   actingPrincipalIsServiceAccount: boolean,
-  mayManageSystemProfiles: boolean,
+  mayManageSystemConnections: boolean,
 ): boolean {
   const strategyMatches = connectorAuthorizationMatchesStrategy({
-    strategy: profile.authorizationStrategy,
-    ownerType: profile.ownerType,
-    ownerId: profile.ownerId,
+    strategy: connection.authorizationStrategy,
+    ownerType: connection.ownerType,
+    ownerId: connection.ownerId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: profile.providerType,
+      providerType: connection.providerType,
       platform:
-        typeof profile.connectorConfig.platform === 'string'
-          ? profile.connectorConfig.platform
+        typeof connection.connectorConfig.platform === 'string'
+          ? connection.connectorConfig.platform
           : null,
-      ownerType: profile.ownerType,
-      ownerId: profile.ownerId,
-      metadata: profile.metadata,
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
     }),
   });
   if (!strategyMatches) return false;
-  return profile.authorizationStrategy === 'user' || mayManageSystemProfiles;
+  return connection.authorizationStrategy === 'user' || mayManageSystemConnections;
 }
 
-async function reconcileConnectionProfileRow(input: {
+async function reconcileConnectionRow(input: {
   accountId: string;
   projectId: string;
   connectorId: string;
@@ -304,53 +318,57 @@ async function reconcileConnectionProfileRow(input: {
   // Identity includes the LABEL: an owner may hold several connections on one
   // connector ("Work", "Personal"), so reconciling a NEW label adds a connection
   // while the same label stays idempotent (updates metadata in place). Matches
-  // idx_executor_connection_profiles_owner.
+  // idx_connector_connections_owner.
   const identity = and(
-    eq(executorConnectionProfiles.connectorId, input.connectorId),
-    eq(executorConnectionProfiles.ownerType, input.ownerType),
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, input.ownerType),
     input.ownerId === null
-      ? isNull(executorConnectionProfiles.ownerId)
-      : eq(executorConnectionProfiles.ownerId, input.ownerId),
-    eq(executorConnectionProfiles.label, input.label),
+      ? isNull(connectorConnections.ownerId)
+      : eq(connectorConnections.ownerId, input.ownerId),
+    eq(connectorConnections.label, input.label),
   );
-  const [existing] = await db.select().from(executorConnectionProfiles).where(identity).limit(1);
+  const [existing] = await db.select().from(connectorConnections).where(identity).limit(1);
   if (existing) {
-    const [profile] = await db
-      .update(executorConnectionProfiles)
+    const [connection] = await db
+      .update(connectorConnections)
       .set({ label: input.label, metadata: input.metadata, updatedAt: new Date() })
-      .where(eq(executorConnectionProfiles.profileId, existing.profileId))
+      .where(eq(connectorConnections.connectionId, existing.connectionId))
       .returning();
-    return { profile, created: false };
+    return { connection, created: false };
   }
-  const [inserted] = await db
-    .insert(executorConnectionProfiles)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      connectorId: input.connectorId,
-      ownerType: input.ownerType,
-      ownerId: input.ownerId,
-      label: input.label,
-      metadata: input.metadata,
-      createdBy: input.createdBy,
-    })
-    .onConflictDoNothing()
-    .returning();
-  if (inserted) return { profile: inserted, created: true };
-  const [raced] = await db.select().from(executorConnectionProfiles).where(identity).limit(1);
-  return { profile: raced, created: false };
+  let inserted: typeof connectorConnections.$inferSelect | undefined;
+  try {
+    [inserted] = await db
+      .insert(connectorConnections)
+      .values({
+        accountId: input.accountId,
+        projectId: input.projectId,
+        connectorId: input.connectorId,
+        ownerType: input.ownerType,
+        ownerId: input.ownerId,
+        label: input.label,
+        metadata: input.metadata,
+        createdBy: input.createdBy,
+      })
+      .returning();
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+  }
+  if (inserted) return { connection: inserted, created: true };
+  const [raced] = await db.select().from(connectorConnections).where(identity).limit(1);
+  return { connection: raced, created: false };
 }
 
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/connector-profiles',
+    path: '/{projectId}/connections',
     tags: ['connectors'],
-    summary: 'List connector authorizations',
+    summary: 'List connections',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.object({ profiles: z.array(ConnectorAuthorizationViewSchema) }), 'Profiles'),
+      200: json(z.object({ connections: z.array(ConnectionViewSchema) }), 'Connections'),
       ...errors(403, 404),
     },
   }),
@@ -359,14 +377,14 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-    // A sandbox executor token is bound to ONE session. Load what that session was
+    // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
     const callerSessionId = callerKortixSessionId(c);
-    let sessionBoundProfileIds: ReadonlySet<string> | null = null;
+    let sessionBoundConnectionIds: ReadonlySet<string> | null = null;
     if (callerSessionId) {
       const bound = await db
-        .select({ profileId: projectSessionConnectorBindings.profileId })
+        .select({ connectionId: projectSessionConnectorBindings.connectionId })
         .from(projectSessionConnectorBindings)
         .where(
           and(
@@ -374,39 +392,39 @@ projectsApp.openapi(
             eq(projectSessionConnectorBindings.projectId, projectId),
           ),
         );
-      sessionBoundProfileIds = new Set(bound.map((row) => row.profileId));
+      sessionBoundConnectionIds = new Set(bound.map((row) => row.connectionId));
     }
     const rows = await db
       .select({
-        profileId: executorConnectionProfiles.profileId,
-        connectorAlias: executorConnectors.slug,
-        ownerType: executorConnectionProfiles.ownerType,
-        ownerId: executorConnectionProfiles.ownerId,
-        label: executorConnectionProfiles.label,
-        status: executorConnectionProfiles.status,
-        isDefault: executorConnectionProfiles.isDefault,
-        metadata: executorConnectionProfiles.metadata,
-        authorizationStrategy: executorConnectors.authorizationStrategy,
-        providerType: executorConnectors.providerType,
-        connectorConfig: executorConnectors.config,
+        connectionId: connectorConnections.connectionId,
+        connectorAlias: connectors.slug,
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        label: connectorConnections.label,
+        status: connectorConnections.status,
+        isDefault: connectorConnections.isDefault,
+        metadata: connectorConnections.metadata,
+        authorizationStrategy: connectors.authorizationStrategy,
+        providerType: connectors.providerType,
+        connectorConfig: connectors.config,
       })
-      .from(executorConnectionProfiles)
+      .from(connectorConnections)
       .innerJoin(
-        executorConnectors,
-        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+        connectors,
+        eq(connectors.connectorId, connectorConnections.connectorId),
       )
-      .where(eq(executorConnectionProfiles.projectId, projectId));
+      .where(eq(connectorConnections.projectId, projectId));
     return c.json({
-      profiles: rows
-        .filter((profile) =>
-          mayReadConnectionProfile(
-            profile,
+      connections: rows
+        .filter((connection) =>
+          mayReadConnection(
+            connection,
             loaded.userId,
             actingPrincipalIsServiceAccount,
-            sessionBoundProfileIds,
+            sessionBoundConnectionIds,
           ),
         )
-        .map(serializeConnectionProfile),
+        .map(serializeConnection),
     });
   },
 );
@@ -414,15 +432,15 @@ projectsApp.openapi(
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/connector-profiles/all',
+    path: '/{projectId}/connections/all',
     tags: ['connectors'],
-    summary: "List every member's connector authorization",
+    summary: "List every member's connections",
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
       200: json(
-        z.object({ profiles: z.array(ConnectorAuthorizationRosterEntrySchema) }),
-        'Authorization roster',
+        z.object({ connections: z.array(ConnectionRosterEntrySchema) }),
+        'Connection roster',
       ),
       ...errors(403, 404),
     },
@@ -437,7 +455,7 @@ projectsApp.openapi(
     // it returns identity + status ONLY. `label` and `metadata` are excluded on
     // purpose: they are a member's own annotations on a PRIVATE connection and
     // can carry personal identifiers (an email, an inbox_id, a workspace id).
-    // The plain list hides other members' profiles entirely, so this route is
+    // The plain list hides other members' connections entirely, so this route is
     // the one place peer rows are visible — it must disclose the minimum that
     // answers "has this person connected?", nothing more.
     const mayManage = await projectCapabilityAllowed(
@@ -445,12 +463,12 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     );
     if (!mayManage) {
       return c.json(
         {
-          error: 'You do not have permission to view all connector authorizations',
+          error: 'You do not have permission to view all connections',
           code: 'FORBIDDEN',
         },
         403,
@@ -458,21 +476,21 @@ projectsApp.openapi(
     }
     const rows = await db
       .select({
-        profileId: executorConnectionProfiles.profileId,
-        connectorAlias: executorConnectors.slug,
-        ownerType: executorConnectionProfiles.ownerType,
-        ownerId: executorConnectionProfiles.ownerId,
-        status: executorConnectionProfiles.status,
+        connectionId: connectorConnections.connectionId,
+        connectorAlias: connectors.slug,
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        status: connectorConnections.status,
       })
-      .from(executorConnectionProfiles)
+      .from(connectorConnections)
       .innerJoin(
-        executorConnectors,
-        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+        connectors,
+        eq(connectors.connectorId, connectorConnections.connectorId),
       )
-      .where(eq(executorConnectionProfiles.projectId, projectId));
+      .where(eq(connectorConnections.projectId, projectId));
     return c.json({
-      profiles: rows.map((row) => ({
-        profile_id: row.profileId,
+      connections: rows.map((row) => ({
+        connection_id: row.connectionId,
         connector_alias: row.connectorAlias,
         owner_type: row.ownerType,
         owner_id: row.ownerId,
@@ -485,9 +503,9 @@ projectsApp.openapi(
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/connector-profiles/me',
+    path: '/{projectId}/connections/me',
     tags: ['connectors'],
-    summary: "Create or reconcile the calling member's connector authorization",
+    summary: "Create or reconcile the calling member's connection",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -498,7 +516,7 @@ projectsApp.openapi(
               .object({
                 connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
                 label: z.string().trim().min(1).max(255),
-                metadata: ConnectorAuthorizationMetadataSchema.optional(),
+                metadata: ConnectionMetadataSchema.optional(),
               })
               .strict(),
           },
@@ -506,8 +524,8 @@ projectsApp.openapi(
       },
     },
     responses: {
-      200: json(ConnectorAuthorizationViewSchema, 'Reconciled authorization'),
-      201: json(ConnectorAuthorizationViewSchema, 'Created authorization'),
+      200: json(ConnectionViewSchema, 'Reconciled connection'),
+      201: json(ConnectionViewSchema, 'Created connection'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -517,7 +535,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (c.get('authType') === 'service_account') {
       return c.json(
-        { error: 'Only human members can reconcile user connector authorizations' },
+        { error: 'Only human members can reconcile user connections' },
         403,
       );
     }
@@ -535,30 +553,30 @@ projectsApp.openapi(
     }
     const [connector] = await db
       .select({
-        connectorId: executorConnectors.connectorId,
-        providerType: executorConnectors.providerType,
-        authorizationStrategy: executorConnectors.authorizationStrategy,
+        connectorId: connectors.connectorId,
+        providerType: connectors.providerType,
+        authorizationStrategy: connectors.authorizationStrategy,
       })
-      .from(executorConnectors)
+      .from(connectors)
       .where(
         and(
-          eq(executorConnectors.projectId, projectId),
-          eq(executorConnectors.accountId, loaded.row.accountId),
-          eq(executorConnectors.slug, connectorAlias),
+          eq(connectors.projectId, projectId),
+          eq(connectors.accountId, loaded.row.accountId),
+          eq(connectors.slug, connectorAlias),
         ),
       )
       .limit(1);
     if (!connector) return c.json({ error: 'Connector not found' }, 404);
     if (connector.providerType === 'channel') {
       return c.json(
-        { error: 'Channel profiles are reconciled from verified channel installations' },
+        { error: 'Channel connections are reconciled from verified channel installations' },
         409,
       );
     }
     if (connector.authorizationStrategy !== 'user') {
       return c.json(
         {
-          error: 'This connector uses project-owned authorizations',
+          error: 'This connector uses project-owned connections',
           code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
         },
         409,
@@ -566,7 +584,7 @@ projectsApp.openapi(
     }
     const ownerType = 'member' as const;
     const ownerId = loaded.userId;
-    const { profile, created } = await reconcileConnectionProfileRow({
+    const { connection, created } = await reconcileConnectionRow({
       accountId: loaded.row.accountId,
       projectId,
       connectorId: connector.connectorId,
@@ -576,29 +594,29 @@ projectsApp.openapi(
       metadata,
       createdBy: loaded.userId,
     });
-    if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
-    return c.json(serializeConnectionProfile({ ...profile, connectorAlias }), created ? 201 : 200);
+    if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
+    return c.json(serializeConnection({ ...connection, connectorAlias }), created ? 201 : 200);
   },
 );
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/connector-profiles',
+    path: '/{projectId}/connections',
     tags: ['connectors'],
-    summary: 'Create or reconcile a connector authorization',
+    summary: 'Create or reconcile a connection',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
       body: {
         content: {
-          'application/json': { schema: ReconcileConnectorAuthorizationInputSchema },
+          'application/json': { schema: ReconcileConnectionInputSchema },
         },
       },
     },
     responses: {
-      200: json(ConnectorAuthorizationViewSchema, 'Reconciled authorization'),
-      201: json(ConnectorAuthorizationViewSchema, 'Created authorization'),
+      200: json(ConnectionViewSchema, 'Reconciled connection'),
+      201: json(ConnectionViewSchema, 'Created connection'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -611,7 +629,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     );
     const body = await readBody(c);
     const requestedAlias =
@@ -620,12 +638,12 @@ projectsApp.openapi(
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
     if (ownerType === 'member' && c.get('authType') === 'service_account') {
       return c.json(
-        { error: 'Only human members can reconcile user connector authorizations' },
+        { error: 'Only human members can reconcile user connections' },
         403,
       );
     }
     // Backwards-compatible manager path: a submitted member owner is always
-    // rewritten to the caller. Managers may create their own member profile,
+    // rewritten to the caller. Managers may create their own member connection,
     // but never mint one on behalf of (or later impersonate) another member.
     const ownerId =
       ownerType === 'member'
@@ -646,7 +664,7 @@ projectsApp.openapi(
     }
     // A `project` (team-shared) connection belongs to the whole project and takes
     // NO owner_id — several may exist per connector, distinguished by label.
-    // Creating one is already gated: this route asserts the profiles-manage
+    // Creating one is already gated: this route asserts the connections-manage
     // capability above, so reaching here means the caller may administer them.
     if (ownerType === 'project') {
       if (!label) return c.json({ error: 'label is required' }, 400);
@@ -655,23 +673,23 @@ projectsApp.openapi(
     }
     const [connector] = await db
       .select({
-        connectorId: executorConnectors.connectorId,
-        providerType: executorConnectors.providerType,
-        authorizationStrategy: executorConnectors.authorizationStrategy,
+        connectorId: connectors.connectorId,
+        providerType: connectors.providerType,
+        authorizationStrategy: connectors.authorizationStrategy,
       })
-      .from(executorConnectors)
+      .from(connectors)
       .where(
         and(
-          eq(executorConnectors.projectId, projectId),
-          eq(executorConnectors.accountId, loaded.row.accountId),
-          eq(executorConnectors.slug, connectorAlias),
+          eq(connectors.projectId, projectId),
+          eq(connectors.accountId, loaded.row.accountId),
+          eq(connectors.slug, connectorAlias),
         ),
       )
       .limit(1);
     if (!connector) return c.json({ error: 'Connector not found' }, 404);
     if (connector.providerType === 'channel') {
       return c.json(
-        { error: 'Channel profiles are reconciled from verified channel installations' },
+        { error: 'Channel connections are reconciled from verified channel installations' },
         409,
       );
     }
@@ -679,7 +697,7 @@ projectsApp.openapi(
     if (
       !connectorAuthorizationMatchesStrategy({
         strategy: connector.authorizationStrategy,
-        ownerType: ownerType as ConnectorAuthorizationOwnerType,
+        ownerType: ownerType as ConnectionOwnerType,
         ownerId: normalizedOwnerId,
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
@@ -687,13 +705,13 @@ projectsApp.openapi(
     ) {
       return c.json(
         {
-          error: `This connector uses ${connector.authorizationStrategy}-owned authorizations`,
+          error: `This connector uses ${connector.authorizationStrategy}-owned connections`,
           code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
         },
         409,
       );
     }
-    const { profile, created } = await reconcileConnectionProfileRow({
+    const { connection, created } = await reconcileConnectionRow({
       accountId: loaded.row.accountId,
       projectId,
       connectorId: connector.connectorId,
@@ -703,8 +721,8 @@ projectsApp.openapi(
       metadata,
       createdBy: loaded.userId,
     });
-    if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
-    const view = serializeConnectionProfile({ ...profile, connectorAlias });
+    if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
+    const view = serializeConnection({ ...connection, connectorAlias });
     return c.json(view, created ? 201 : 200);
   },
 );
@@ -713,18 +731,18 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
+      path: `/{projectId}/connections/{connectionId}/${operation}`,
       tags: ['connectors'],
-      summary: `${operation} connector authorization`,
+      summary: `${operation} connection`,
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
               schema:
                 operation === 'credential'
-                  ? UpdateConnectorAuthorizationCredentialInputSchema
+                  ? UpdateConnectionCredentialInputSchema
                   : z.object({}).strict(),
             },
           },
@@ -737,58 +755,58 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const profileId = c.req.param('profileId');
+      const connectionId = c.req.param('connectionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-      const mayManageSystemProfiles = await projectCapabilityAllowed(
+      const mayManageSystemConnections = await projectCapabilityAllowed(
         c,
         loaded.userId,
         loaded.row.accountId,
         projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
       );
-      const [profile] = await db
+      const [connection] = await db
         .select({
-          connectorId: executorConnectionProfiles.connectorId,
-          ownerType: executorConnectionProfiles.ownerType,
-          ownerId: executorConnectionProfiles.ownerId,
-          metadata: executorConnectionProfiles.metadata,
-          authorizationStrategy: executorConnectors.authorizationStrategy,
-          providerType: executorConnectors.providerType,
-          connectorConfig: executorConnectors.config,
+          connectorId: connectorConnections.connectorId,
+          ownerType: connectorConnections.ownerType,
+          ownerId: connectorConnections.ownerId,
+          metadata: connectorConnections.metadata,
+          authorizationStrategy: connectors.authorizationStrategy,
+          providerType: connectors.providerType,
+          connectorConfig: connectors.config,
         })
-        .from(executorConnectionProfiles)
+        .from(connectorConnections)
         .innerJoin(
-          executorConnectors,
+          connectors,
           and(
-            eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
-            eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
-            eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+            eq(connectors.connectorId, connectorConnections.connectorId),
+            eq(connectors.accountId, connectorConnections.accountId),
+            eq(connectors.projectId, connectorConnections.projectId),
           ),
         )
         .where(
           and(
-            eq(executorConnectionProfiles.profileId, profileId),
-            eq(executorConnectionProfiles.projectId, projectId),
-            eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+            eq(connectorConnections.connectionId, connectionId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.accountId, loaded.row.accountId),
           ),
         )
         .limit(1);
-      if (!profile) return c.json({ error: 'Not found' }, 404);
+      if (!connection) return c.json({ error: 'Not found' }, 404);
       if (
-        !mayMutateConnectionProfile(
-          profile,
+        !mayMutateConnection(
+          connection,
           loaded.userId,
           actingPrincipalIsServiceAccount,
-          mayManageSystemProfiles,
+          mayManageSystemConnections,
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
       }
       if (operation === 'credential') {
         const body = await readBody(c);
-        const parsed = UpdateConnectorAuthorizationCredentialInputSchema.safeParse(body);
+        const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
         if (!parsed.success) {
           return c.json(
             {
@@ -802,18 +820,18 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
         }
         try {
           if ('oauth2' in parsed.data) {
-            await upsertProfileOAuth2Credential({
+            await upsertConnectionOAuth2Credential({
               projectId,
-              connectorId: profile.connectorId,
-              profileId,
+              connectorId: connection.connectorId,
+              connectionId,
               oauth2: parsed.data.oauth2,
               createdBy: loaded.userId,
             });
           } else {
-            await upsertProfileCredential({
+            await upsertConnectionCredential({
               projectId,
-              connectorId: profile.connectorId,
-              profileId,
+              connectorId: connection.connectorId,
+              connectionId,
               value: parsed.data.value,
               kind: parsed.data.kind,
               createdBy: loaded.userId,
@@ -829,27 +847,27 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
         // first, in one transaction, or the update would collide.
         await db.transaction(async (tx) => {
           const sameScope = and(
-            eq(executorConnectionProfiles.connectorId, profile.connectorId),
-            eq(executorConnectionProfiles.ownerType, profile.ownerType),
-            profile.ownerId === null
-              ? isNull(executorConnectionProfiles.ownerId)
-              : eq(executorConnectionProfiles.ownerId, profile.ownerId),
+            eq(connectorConnections.connectorId, connection.connectorId),
+            eq(connectorConnections.ownerType, connection.ownerType),
+            connection.ownerId === null
+              ? isNull(connectorConnections.ownerId)
+              : eq(connectorConnections.ownerId, connection.ownerId),
           );
           await tx
-            .update(executorConnectionProfiles)
+            .update(connectorConnections)
             .set({ isDefault: false, updatedAt: new Date() })
-            .where(and(sameScope, eq(executorConnectionProfiles.isDefault, true)));
+            .where(and(sameScope, eq(connectorConnections.isDefault, true)));
           await tx
-            .update(executorConnectionProfiles)
+            .update(connectorConnections)
             .set({ isDefault: true, updatedAt: new Date() })
-            .where(eq(executorConnectionProfiles.profileId, profileId));
+            .where(eq(connectorConnections.connectionId, connectionId));
         });
       } else {
-        if (operation === 'revoke') await revokeProfileOAuth2(profileId);
+        if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
         await db
-          .update(executorConnectionProfiles)
+          .update(connectorConnections)
           .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
-          .where(eq(executorConnectionProfiles.profileId, profileId));
+          .where(eq(connectorConnections.connectionId, connectionId));
       }
       return c.json({ ok: true });
     },
@@ -860,15 +878,15 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
+      path: `/{projectId}/connections/{connectionId}/${operation}`,
       tags: ['connectors'],
       summary:
         operation === 'connect'
-          ? 'Start Pipedream OAuth for a connector authorization'
-          : 'Finalize Pipedream OAuth for a connector authorization',
+          ? 'Start Pipedream OAuth for a connection'
+          : 'Finalize Pipedream OAuth for a connection',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
@@ -892,68 +910,68 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const profileId = c.req.param('profileId');
+      const connectionId = c.req.param('connectionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
-      const mayManageSystemProfiles = await projectCapabilityAllowed(
+      const mayManageSystemConnections = await projectCapabilityAllowed(
         c,
         loaded.userId,
         loaded.row.accountId,
         projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
       );
-      const [profile] = await db
+      const [connection] = await db
         .select({
-          connectorId: executorConnectionProfiles.connectorId,
-          ownerType: executorConnectionProfiles.ownerType,
-          ownerId: executorConnectionProfiles.ownerId,
-          isDefault: executorConnectionProfiles.isDefault,
-          metadata: executorConnectionProfiles.metadata,
-          connectorAlias: executorConnectors.slug,
-          providerType: executorConnectors.providerType,
-          connectorConfig: executorConnectors.config,
-          authorizationStrategy: executorConnectors.authorizationStrategy,
+          connectorId: connectorConnections.connectorId,
+          ownerType: connectorConnections.ownerType,
+          ownerId: connectorConnections.ownerId,
+          isDefault: connectorConnections.isDefault,
+          metadata: connectorConnections.metadata,
+          connectorAlias: connectors.slug,
+          providerType: connectors.providerType,
+          connectorConfig: connectors.config,
+          authorizationStrategy: connectors.authorizationStrategy,
         })
-        .from(executorConnectionProfiles)
+        .from(connectorConnections)
         .innerJoin(
-          executorConnectors,
+          connectors,
           and(
-            eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
-            eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
-            eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+            eq(connectors.connectorId, connectorConnections.connectorId),
+            eq(connectors.accountId, connectorConnections.accountId),
+            eq(connectors.projectId, connectorConnections.projectId),
           ),
         )
         .where(
           and(
-            eq(executorConnectionProfiles.profileId, profileId),
-            eq(executorConnectionProfiles.projectId, projectId),
-            eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+            eq(connectorConnections.connectionId, connectionId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.accountId, loaded.row.accountId),
           ),
         )
         .limit(1);
       if (
-        !profile ||
-        !mayMutateConnectionProfile(
-          profile,
+        !connection ||
+        !mayMutateConnection(
+          connection,
           loaded.userId,
           actingPrincipalIsServiceAccount,
-          mayManageSystemProfiles,
+          mayManageSystemConnections,
         )
       ) {
         return c.json({ error: 'Not found' }, 404);
       }
-      if (profile.isDefault) {
+      if (connection.isDefault) {
         return c.json(
-          { error: 'Use the shared connector connect endpoint for the default profile' },
+          { error: 'Use the shared connector connect endpoint for the default connection' },
           409,
         );
       }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
       }
-      const app = (profile.connectorConfig as Record<string, unknown> | null)?.app;
-      if (profile.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
+      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
+      if (connection.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
@@ -971,9 +989,9 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
             : undefined;
         const result = await pipedreamConnectUrl(
           projectId,
-          profile.connectorAlias,
+          connection.connectorAlias,
           app,
-          profileId,
+          connectionId,
           redirects,
         );
         return c.json({
@@ -983,12 +1001,12 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           expiresAt: result.expiresAt,
         });
       }
-      const result = await finalizePipedreamProfileConnection({
+      const result = await finalizePipedreamConnectionAuthorization({
         projectId,
-        slug: profile.connectorAlias,
+        slug: connection.connectorAlias,
         app,
-        connectorId: profile.connectorId,
-        profileId,
+        connectorId: connection.connectorId,
+        connectionId,
         createdBy: loaded.userId,
       });
       return c.json(result);
@@ -1804,13 +1822,12 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
-    const connectorSlug =
-      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    const connectorSlug = c.req.query('connector_slug') || 'kortix_email';
     const install = await loadAgentMailInstall(projectId, connectorSlug);
     if (!install) return c.json(null);
     return c.json({
       ...install,
-      profile_id: await loadEmailInstallProfileId(projectId, install.inboxId),
+      connection_id: await loadEmailInstallConnectionId(projectId, install.inboxId),
     });
   },
 );
@@ -1885,7 +1902,6 @@ projectsApp.openapi(
     let body: {
       api_key?: string;
       connector_slug?: string;
-      profile_slug?: string;
       username?: string;
       domain?: string;
       inbox_id?: string;
@@ -1908,8 +1924,7 @@ projectsApp.openapi(
       return c.json({ error: 'AgentMail API key is not configured' }, 503);
     }
 
-    const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const connectorSlug = (body.connector_slug ?? 'kortix_email').trim() || 'kortix_email';
     const requestedAgent = body.agent_name ?? body.agentName;
     const agentName =
       typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent.trim() : null;
@@ -2015,7 +2030,7 @@ projectsApp.openapi(
 
     const summary = await saveAgentMailInstall({
       projectId,
-      profileSlug: connectorSlug,
+      connectionSlug: connectorSlug,
       apiKey: body.api_key?.trim() || null,
       inboxId: inbox.inbox_id,
       email: inbox.email,
@@ -2028,7 +2043,7 @@ projectsApp.openapi(
     await reconcileChannelConnectors(projectId);
     return c.json({
       ...summary,
-      profile_id: await loadEmailInstallProfileId(projectId, summary.inboxId),
+      connection_id: await loadEmailInstallConnectionId(projectId, summary.inboxId),
     });
   },
 );
@@ -2071,7 +2086,6 @@ projectsApp.openapi(
     }
     let body: {
       connector_slug?: string;
-      profile_slug?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
     };
     try {
@@ -2079,8 +2093,7 @@ projectsApp.openapi(
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
-    const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const connectorSlug = (body.connector_slug ?? 'kortix_email').trim() || 'kortix_email';
     let senderPolicy: AgentMailSenderPolicy;
     try {
       senderPolicy = parseSenderPolicyBody(body.sender_policy);
@@ -2088,7 +2101,7 @@ projectsApp.openapi(
       return c.json({ error: (err as Error).message }, 400);
     }
     const summary = await updateAgentMailSenderPolicy(projectId, connectorSlug, senderPolicy);
-    if (!summary) return c.json({ error: 'Email channel profile not found' }, 404);
+    if (!summary) return c.json({ error: 'Email connection not found' }, 404);
     return c.json(summary);
   },
 );
@@ -2120,8 +2133,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    const connectorSlug =
-      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    const connectorSlug = c.req.query('connector_slug') || 'kortix_email';
     await deleteAgentMailInstall(projectId, connectorSlug);
     await reconcileChannelConnectors(projectId, {
       platform: 'email',
@@ -2312,7 +2324,12 @@ projectsApp.openapi(
     // authed for their own project can't relay turn events into another
     // tenant's live session (IDOR).
     const [turnStreamSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({
+        sessionId: projectSessions.sessionId,
+        accountId: projectSessions.accountId,
+        createdBy: projectSessions.createdBy,
+        metadata: projectSessions.metadata,
+      })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -2321,6 +2338,10 @@ projectsApp.openapi(
     if (!turnStreamSession) {
       return c.json({ error: 'Not found' }, 404);
     }
+    const turnStreamMetadata = (turnStreamSession.metadata ?? {}) as Record<string, unknown>;
+    // Coordinator-spawned worker: its idle tail is minutes, not the default
+    // grace — the box wakes on demand when the coordinator returns to it.
+    const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
     // finish (idle) or die (error) without the agent closing its Slack message;
@@ -2353,12 +2374,39 @@ projectsApp.openapi(
       // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
       // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
       // cannot be re-wired here without it.
-      void shortenSandboxDeadlineOnTurnEnd(sessionId, status, errorInfo).catch((err) =>
+      void shortenSandboxDeadlineOnTurnEnd(
+        sessionId,
+        status,
+        errorInfo,
+        childSession ? childIdleGraceMs() : undefined,
+      ).catch((err) =>
         console.warn(
           `[deadline] shorten failed for session ${sessionId}:`,
           err instanceof Error ? err.message : err,
         ),
       );
+      // Second-chance auto-title: create-time generation is a single in-memory
+      // best-effort call, and a session whose only prompt was baked in-guest
+      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // is the natural retry point — the generator is idempotent (needsTitle +
+      // CAS) so an already-titled session is a cheap no-op. The stored
+      // `title_source` outranks the supplied text inside the generator.
+      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
+        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      if (titleRetrySource && turnStreamSession.createdBy) {
+        void generateSessionTitleFromFirstPrompt({
+          projectId,
+          sessionId,
+          accountId: turnStreamSession.accountId,
+          userId: turnStreamSession.createdBy,
+          firstPromptText: titleRetrySource,
+        }).catch((err) =>
+          console.warn(
+            `[title-generate] turn-end retry failed for session ${sessionId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }
@@ -2758,7 +2806,11 @@ projectsApp.openapi(
       ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
       : false;
     const [secrets, defaults, routing] = await Promise.all([
-      listProjectSecretsSnapshot(projectId).catch(() => ({ names: [] as string[] })),
+      listProjectSecretNamesForConsumer({
+        projectId,
+        principalUserId: loaded.userId,
+        consumer: 'llm_gateway',
+      }).catch(() => [] as string[]),
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
@@ -2777,7 +2829,7 @@ projectsApp.openapi(
     ].filter((model): model is string => !!model);
     const models = projectPickerCatalog(
       gatewayModelCatalog(projectId, { freeManagedOnly }),
-      new Set(secrets.names.map((name) => name.toUpperCase())),
+      new Set(secrets),
       requiredModels,
     );
     // Server-owned per-project enablement, resolved HERE and stamped onto each
@@ -3270,14 +3322,164 @@ projectsApp.openapi(
       return c.json({ error: 'no valid questions provided' }, 400);
     }
 
+    // PERSIST FIRST, and independently of any channel.
+    //
+    // A waiting turn makes no gateway LLM calls, earns no deadline extension,
+    // and its box is parked on schedule — correct, and the bounded-lifetime
+    // invariant depends on it. What parking used to destroy is the question
+    // itself: opencode restarts cold, so the user returned to a session that had
+    // forgotten what it asked. Storing it out here lets the box die on time and
+    // the conversation survive it. See lib/pending-questions.ts.
+    //
+    // Deliberately does NOT touch the deadline. A box that could keep itself
+    // alive by reporting "still waiting" is the self-renewal this design
+    // deleted.
+    const resolvedAccountId = (c as any).get('accountId') as string | undefined;
+    if (resolvedAccountId) {
+      await recordPendingQuestion({
+        accountId: resolvedAccountId,
+        projectId,
+        sessionId,
+        requestId: body.request_id?.trim() || `q-${sessionId}`,
+        opencodeSessionId: (body as { opencode_session_id?: string }).opencode_session_id ?? null,
+        questions,
+      }).catch((err) => {
+        // Never fail the relay on a bookkeeping error — the agent is blocked and
+        // the channel render is still worth attempting.
+        console.warn('[turn-question] could not persist pending question:', err);
+        return null;
+      });
+    }
+
     // Non-blocking: post the question(s) into the thread and return immediately
     // with sentinel `answers`. The agent does NOT wait for an inline answer — the
     // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
     // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
     // image (resumes opencode from them) unblocked.
+    //
+    // A session with no channel has nothing to post to. That is not an error now
+    // that the question is durable: it is the ordinary web case, and failing here
+    // would make the relay look broken for every non-Slack session.
     const result = await relayTurnQuestion(sessionId, questions);
-    if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
-    return c.json({ ok: true, answers: result.answers });
+    if (!result.ok) {
+      return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
+    }
+    return c.json({ ok: true, persisted: true, answers: result.answers });
+  },
+);
+
+// GET  /v1/projects/:projectId/sessions/:sessionId/question
+// POST /v1/projects/:projectId/sessions/:sessionId/question
+//
+// The restore half of park-and-restore. The ask survives its sandbox (see
+// lib/pending-questions.ts); these two close the loop.
+//
+// GET returns the open question so a resumed session can render what it is
+// waiting on, instead of showing a conversation that mysteriously stopped.
+//
+// POST answers it. The answer CANNOT go back to the call that blocked — that
+// opencode process was parked and restarted cold, so its request id no longer
+// exists and nothing is waiting on it. It is delivered as a FOLLOW-UP TURN,
+// which is exactly how the channel path has always worked ("the user's
+// in-thread reply arrives as a follow-up turn", above), and continueSession
+// already owns waking a parked box and queueing until it is ready.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/question',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/question',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // The question text is session CONTENT, so it sits behind the same leaf the
+    // other session-content reads use (r7.ts). `loadProjectForUser(…, 'read')`
+    // is only the coarse project floor: a caller whose custom role or scoped
+    // token has `project.session.read` revoked still clears it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    return c.json({ question: await getOpenQuestion(sessionId) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/question',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/question',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(AnyObject, 'Answer delivered'), ...errors(400, 404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    // The `question` tool exists so the agent YIELDS TO A HUMAN. An
+    // agent-session token is scoped to its own session, which is precisely the
+    // session holding the question it just asked — so if it could POST here it
+    // would answer itself and resume, and the tool would be decorative.
+    //
+    // Denied outright rather than scope-gated: `assertAgentScope(…
+    // PROJECT_SESSION_START)` is the usual bar for starting a turn, but that
+    // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
+    // it would admit the self-answer on a stock grant. Answering is a human
+    // operation. Same shape as the token-minting guard in r3.ts.
+    if (getAgentGrant(c)) {
+      return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
+    }
+    // Answering resumes a parked box and starts a turn, so this is a mutation
+    // of the session — the same bar the question relay itself uses.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readBody(c);
+    const answers = (body as { answers?: unknown }).answers;
+    if (!Array.isArray(answers) || answers.length === 0) {
+      return c.json({ error: 'answers must be a non-empty array' }, 400);
+    }
+
+    const open = await getOpenQuestion(sessionId);
+    if (!open) return c.json({ error: 'no open question for this session' }, 409);
+
+    const requestId = (body as { request_id?: string }).request_id?.trim() || open.request_id;
+    // CAS: closing the question is what claims the right to deliver it. Two
+    // clients answering at once must produce ONE follow-up turn, not two.
+    const claimed = await resolvePendingQuestion({ sessionId, requestId, answers });
+    if (!claimed) {
+      return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
+    }
+
+    const outcome = await continueSession({
+      source: 'ui',
+      sessionId,
+      text: renderAnswerPrompt(open.questions, answers),
+      userId: loaded.userId,
+    });
+
+    // 'pending' is success: the box is parked and continueSession has queued the
+    // turn for when it is back. Reporting that as failure would invite a retry
+    // that the CAS above would refuse, stranding the answer.
+    return c.json({ ok: outcome === 'delivered' || outcome === 'pending', delivery: outcome });
   },
 );
 

@@ -60,7 +60,7 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
   const account = await validateAccountToken(token);
   if (account.isValid && account.userId && account.accountId) {
     // projectId/sessionId attribute usage to the calling session (the sandbox
-    // executor token is minted per-session with session_id = sandbox_id) — the
+    // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
     return {
       userId: account.userId,
@@ -218,7 +218,7 @@ const llmActivityThrottle = createExtendThrottle(60_000);
  * money through our own control plane, and the row IS the billing record.
  *
  * `event.sessionId` is safe as the target for exactly the reason `originRef` is:
- * the gateway principal's session id comes from the executor token, minted
+ * the gateway principal's session id comes from the connector token, minted
  * server-side with sessionId = sandboxId = the project session id, so a caller
  * cannot name someone else's session. Fire-and-forget — a deadline write must
  * never fail a billing settlement.

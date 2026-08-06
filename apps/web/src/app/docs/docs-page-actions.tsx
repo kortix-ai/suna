@@ -7,7 +7,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from '@/features/icon/icon';
+import { ChatGPT } from '@/features/icon/icons/chat-gpt';
+import { Claude } from '@/features/icon/icons/claude';
+import { Copy } from '@/features/icon/icons/copy';
+import { Cursor } from '@/features/icon/icons/cursor';
+import { Github } from '@/features/icon/icons/github';
+import { Kortix } from '@/features/icon/icons/kortix';
 import { CheckIcon } from '@/lib/icons/ssr';
 import { cn } from '@/lib/utils';
 // `docs-page-actions.tsx` is 'use client', so — unlike page.tsx/layout.tsx —
@@ -44,31 +49,31 @@ export function DocsPageActions({
   const encodedPrompt = encodeURIComponent(prompt);
 
   const openActions: OpenAction[] = [
-    { key: 'github', label: 'Open in GitHub', href: githubUrl, icon: Icon.Github },
+    { key: 'github', label: 'Open in GitHub', href: githubUrl, icon: Github },
     { key: 'markdown', label: 'View as Markdown', href: markdownPath, icon: MarkdownLogoIcon },
     {
       key: 'kortix',
       label: 'Open in Kortix',
       href: `/projects/start?q=${encodedPrompt}`,
-      icon: Icon.Kortix,
+      icon: Kortix,
     },
     {
       key: 'chatgpt',
       label: 'Open in ChatGPT',
       href: `https://chatgpt.com/?q=${encodedPrompt}`,
-      icon: Icon.ChatGPT,
+      icon: ChatGPT,
     },
     {
       key: 'claude',
       label: 'Open in Claude',
       href: `https://claude.ai/new?q=${encodedPrompt}`,
-      icon: Icon.Claude,
+      icon: Claude,
     },
     {
       key: 'cursor',
       label: 'Open in Cursor',
       href: `cursor://anysphere.cursor-deeplink/prompt?text=${encodedPrompt}`,
-      icon: Icon.Cursor,
+      icon: Cursor,
     },
   ];
 
@@ -105,7 +110,7 @@ export function DocsPageActions({
       </div>
       <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
         <Link href={githubUrl} target="_blank" rel="noreferrer noopener">
-          <Icon.Github className="size-3.5" />
+          <Github className="size-3.5" />
           <span className="sm:hidden">Edit</span>
           <span className="hidden sm:inline">Edit on GitHub</span>
         </Link>
@@ -153,7 +158,7 @@ function CopyMarkdownButton({ markdownPath }: { markdownPath: string }) {
       onClick={handleClick}
       disabled={state === 'copying'}
     >
-      {state === 'copied' ? <CheckIcon className="size-3.5" /> : <Icon.Copy className="size-3.5" />}
+      {state === 'copied' ? <CheckIcon className="size-3.5" /> : <Copy className="size-3.5" />}
       {state === 'copied' ? (
         'Copied'
       ) : (

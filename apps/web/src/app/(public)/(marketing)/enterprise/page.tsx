@@ -30,9 +30,9 @@ const DIFFERENTIATORS = [
   },
   {
     icon: MdShield,
-    eyebrowKey: 'differentiatorExecutorEyebrow',
-    titleKey: 'differentiatorExecutorTitle',
-    descriptionKey: 'differentiatorExecutorDescription',
+    eyebrowKey: 'differentiatorConnectorEyebrow',
+    titleKey: 'differentiatorConnectorTitle',
+    descriptionKey: 'differentiatorConnectorDescription',
   },
   {
     icon: GitBranch,

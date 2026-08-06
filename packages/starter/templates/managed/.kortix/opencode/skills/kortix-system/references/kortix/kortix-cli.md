@@ -139,32 +139,31 @@ into every session sandbox at boot.
 
 > **Asking a human for a secret.** You usually don't *have* the value, so don't
 > use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
-> tool on the `kortix-executor` MCP), surface the returned URL, end your turn, and
+> tool on the `kortix-connectors` MCP), surface the returned URL, end your turn, and
 > when they say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
-### Executor — call connectors as tools
+### Connectors — call external tools
 
-The Executor is the one interface to every configured integration (Pipedream /
-MCP / OpenAPI / GraphQL / HTTP). Calls run **server-side** through the gateway —
-no third-party secret ever touches the sandbox. It has three faces over one
-core: the `kortix-executor` **MCP** (primary; auto-loaded), this **CLI**, and the
-`@kortix/executor-sdk` **TypeScript framework**. JSON output.
+A connector defines actions against an external system. A connection stores one
+usable authorization. Calls run **server-side** through the connector gateway,
+so no third-party credential enters the sandbox. The same gateway is available
+through the `kortix-connectors` **MCP**, this **CLI**, and the
+`@kortix/sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
-| `kortix executor connectors` | List connectors + tools this session can use. |
-| `kortix executor discover "<intent>"` | Search tools by natural language (`--limit`). |
-| `kortix executor describe <connector>.<action>` | Show one tool's input schema + risk. |
-| `kortix executor call <connector> <action> '<json>'` | Run a tool (gateway resolves the credential, enforces policy, audits). |
-| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.yaml` on main + syncs. |
-| `kortix executor rm <slug>` | Remove a connector. |
-| `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
-| `kortix executor mcp` | Run the Executor as a stdio MCP server (opencode auto-loads this). |
+| `kortix connectors ls [--session <id>]` | List project or session-visible connectors and actions. |
+| `kortix connectors discover "<intent>"` | Search actions by natural language (`--limit`). |
+| `kortix connectors show <connector>.<action>` | Show one action's input schema and risk. |
+| `kortix connectors call <connector> <action> '<json>'` | Invoke an action. The gateway resolves the connection, enforces policy, and audits. |
+| `kortix connectors add <slug> --provider pipedream --app <app> --apply` | Add a connector now, commit it to `kortix.yaml` on main, and sync it. |
+| `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
+| `kortix connectors connect <slug>` | Mint a Pipedream connection URL for the human. |
+| `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
 
-> Inside a session, **prefer the `kortix-executor` MCP tools** (`connectors` /
-> `discover` / `describe` / `call`) — they're always loaded. The CLI is the same
-> core for shell/scripting use.
+> Inside a session, the `kortix-connectors` MCP tools can expose the same
+> list/discover/show/call loop. Use the CLI when those tools are absent.
 
 ### Env — dotenv ↔ secrets
 
@@ -184,10 +183,20 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
 | `kortix sessions chat [<id>]` | Talk to a session's agent. `--prompt "<text>"` = one-shot (prints the reply and exits); add `--json` to get that reply as JSON (a synchronous subagent call); no flag = REPL. No id → picks/asks which running session. `--new` starts a fresh one. |
-| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. |
+| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
+| `kortix sessions wait-for <id> [--timeout <s>]` | Block until the session's agent finishes its current work — never poll with sleeps. Exit `0` = done, `3` = blocked on a permission/question ask (answer via `sessions pending`), `124` = still working at the timeout (default 300s). Alias: `wait`. |
+| `kortix sessions cp <src> <dst> [-r]` | Copy files between your machine/sandbox and a session's sandbox, or directly between two sessions' sandboxes. Refs are scp-style: `<session-id>:<path>` is remote, plain is local; paths resolve under `/workspace` unless absolute. Overwrites the exact destination path; `-r` for directories. Wakes stopped sandboxes on demand. |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
+
+Session ids can be abbreviated: any unambiguous prefix works (the 8-char
+ids `sessions ls` prints are fine).
+
+**Stopped ≠ failed.** A spawned session's sandbox stops automatically a
+couple of minutes after its agent finishes, to save compute. Its files
+and conversation are intact — `sessions cp`, `sessions chat`, and
+`sessions wait-for` wake it on demand. Treat `stopped` as *parked*.
 
 **Inside a sandbox:** `KORTIX_SESSION_ID` tells you which session
 you're running in. `kortix sessions info $KORTIX_SESSION_ID` gives
@@ -213,20 +222,28 @@ exits), or drop into a REPL with `kortix sessions chat <id>`.
 spawn many sessions, watch the fleet, collect results, land work:
 
 ```sh
-# spawn a subagent and get a *ready* session id back in one call
-id=$(kortix sessions new --json --wait --prompt "do task X" | jq -r .session_id)
+# spawn a subagent (optionally shipping input files) and get a ready session id
+id=$(kortix sessions new --json --wait \
+       --with-file input.pdf \
+       --prompt "Process /workspace/incoming/input.pdf; write results to /workspace/out/" \
+     | jq -r .session_id)
 
-kortix sessions status --json                 # the fleet: who's working vs idle
-kortix sessions chat "$id" --prompt "result?" --json | jq -r .text   # synchronous call
+kortix sessions wait-for "$id" --timeout 300  # block until it finishes (exit 3 = it asked something)
+kortix sessions cp "$id":out/result.pdf .     # collect the deliverable
 kortix sessions log "$id" --json              # …or read progress without interrupting
+kortix sessions chat "$id" --prompt "status?" --json | jq -r .text   # synchronous call
 
 kortix cr ls --json                           # subagents land work as CRs → review/merge
-kortix sessions rm "$id"                       # tear the subagent down
+kortix sessions rm "$id"                       # tear the subagent down when fully done
 ```
 
 `--json --wait` is the spawn primitive (one call → a running session id you
-can immediately drive); `sessions status` is the at-a-glance fleet view;
-`chat … --prompt --json` is a synchronous call; `log` is async observation.
+can immediately drive); `wait-for` replaces sleep-polling; `sessions cp`
+moves files in/out (also session↔session); `sessions status` is the
+at-a-glance fleet view; `chat … --prompt --json` is a synchronous call;
+`log` is async observation. Session sandboxes have Python (via **uv** —
+`uv run` / `uvx` / `uv pip`, prefer it over bare `pip`), Node, browsers,
+and document tooling preinstalled.
 
 ### Triggers
 
@@ -259,7 +276,7 @@ Kortix-native PR layer for session work landing on `main`. A change
 request proposes merging one branch (`head_ref`) into another
 (`base_ref`) inside a project. The CR layer is **Kortix-native** —
 it works on top of any git host (GitHub, GitLab, plain
-git) without per-host integration. A CR is the **only sanctioned
+git) without a per-host adapter. A CR is the **only sanctioned
 way** for an agent to land session-branch work on `main`; see
 `change-requests.md` (alongside this file) for the full mandate and
 lifecycle.
@@ -392,8 +409,8 @@ KORTIX_SESSION_ID=<uuid>
 KORTIX_BRANCH_NAME=<session-branch>
 ```
 
-The CLI reads `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`)
-automatically and uses `KORTIX_API_URL` as the host base. No config file,
+The CLI reads `KORTIX_CLI_TOKEN` automatically and uses `KORTIX_API_URL` as the
+host base. No config file,
 no `kortix login` needed — `kortix …` just works.
 
 > **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
@@ -488,7 +505,6 @@ conflict story, and data model.
 | Variable | Purpose |
 | --- | --- |
 | `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
-| `KORTIX_EXECUTOR_TOKEN` | Same PAT under another name; the CLI falls back to it. |
 | `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
 | `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |

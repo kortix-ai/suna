@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 import { buildSessionRuntimeEnv } from '../projects/lib/session-runtime-env';
 
 const base = {
@@ -31,5 +32,15 @@ describe('buildSessionRuntimeEnv', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBe('answer this Slack thread');
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+  test('boots the platform meta agent through OpenCode REST', () => {
+    const env = buildSessionRuntimeEnv({
+      ...base,
+      agentName: 'meta',
+      compiledAgentConfig: buildPlatformMetaOpenCodeConfig(),
+    });
+
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(buildPlatformMetaOpenCodeConfig());
   });
 });

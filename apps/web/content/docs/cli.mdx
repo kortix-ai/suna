@@ -68,7 +68,7 @@ This command writes `.kortix/link.json` in the current directory. Kortix reads t
 kortix ship
 ```
 
-`kortix ship` lints your `kortix.yaml`, commits local changes, pushes your branch, and prompts for any missing secret or connector connection. Run it each time you want your local changes on the cloud project. The first run also creates the cloud project and repo if you have not linked one yet.
+`kortix ship` lints your `kortix.yaml`, commits local changes, pushes your branch, and prompts for any missing secret or connection. Run it each time you want your local changes on the cloud project. The first run also creates the cloud project and repo if you have not linked one yet.
 </Step>
 
 <Step>
@@ -332,7 +332,6 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
-| `kortix connectors finalize <slug>` | Confirm a connection completed. |
 | `kortix connectors apps [<query>] [--json]` | Browse the connector app catalog. |
 | `kortix connectors policy ls [--json]` | Show project-wide execution policy. |
 | `kortix connectors policy set --default <risk\|allow_all>` | Set the default execution mode. |
@@ -373,7 +372,7 @@ Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`
 ### System skills
 
 The Kortix system skills are the platform's own documentation. They cover
-sessions, sandboxes, OpenCode, the executor, memory, and
+sessions, sandboxes, OpenCode, the connector, memory, and
 channels. The API serves them live, so they match the deployed host version.
 The binary and a token are enough for an agent to retrieve this context.
 
@@ -389,19 +388,19 @@ Options: `--host <name>`, `--json`.
 
 This list is always the system skills, never a mix. Optional skills live in the marketplace: `kortix marketplace list --type skill`.
 
-### Executor
+### Connector
 
-The in-sandbox agent's interface to every connector. Every call is checked, resolved, and audited server-side; the CLI never holds a third-party credential. Auth: `KORTIX_EXECUTOR_TOKEN`. Output is JSON.
+The in-sandbox agent's interface to every connector. Every call is checked, resolved, and audited server-side; the CLI never holds a third-party credential. Auth: `KORTIX_CLI_TOKEN`. Output is JSON.
 
 | Command | Effect |
 | --- | --- |
-| `kortix executor discover "<intent>"` | Search tools by natural-language intent. |
-| `kortix executor describe <connector>.<action>` | Show a tool's input schema. |
-| `kortix executor call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
-| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
-| `kortix executor rm <slug>` | Remove a connector from the project. |
-| `kortix executor connect <slug>` | Mint a connect link for a human. |
-| `kortix executor mcp` | Run the optional stdio MCP compatibility server. |
+| `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
+| `kortix connectors show <connector>.<action>` | Show an action's input schema. |
+| `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
+| `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
+| `kortix connectors rm <slug>` | Remove a connector from the project. |
+| `kortix connectors connect <slug>` | Mint a connect link for a human. |
+| `kortix connectors mcp` | Run the optional stdio MCP compatibility server. |
 
 ### Files
 
@@ -494,7 +493,7 @@ See [Manifest reference](/docs/project/manifest).
 | Command | Effect |
 | --- | --- |
 | `kortix self-host init` | Create or refresh the self-host config. Does not start the stack. |
-| `kortix self-host configure` | Interactive wizard for integrations and update policy. |
+| `kortix self-host configure` | Interactive wizard for connections and update policy. |
 | `kortix self-host doctor` | Validate local Docker tooling and the rendered config. |
 | `kortix self-host plan` | Validate the rendered Compose config; change nothing. |
 | `kortix self-host start` | Create config if needed, then start the stack. Aliases: `up`, `deploy`. |

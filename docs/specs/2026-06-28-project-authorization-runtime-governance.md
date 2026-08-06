@@ -18,7 +18,7 @@ This exists because three product threads are now the same security problem:
    default.
 
 The token/session/agent identity work is the prerequisite. It makes the runtime
-principal explicit: a sandbox session has a `KORTIX_EXECUTOR_TOKEN` bound to one
+principal explicit: a sandbox session has a `KORTIX_CLI_TOKEN` bound to one
 project, one session, and one boot agent grant. This document defines what that
 grant should eventually control.
 
@@ -35,15 +35,15 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 • 1. What changed
-     Fixed and pushed c21209bf to origin/main and origin/executor-session-identity.
+     Fixed and pushed c21209bf to origin/main and origin/connector-session-identity.
 
      Root cause: restored warm-snapshot sessions minted project-scoped tokens without sessionId / agentGrant, while cold boots minted proper session
-     executor tokens. That made Executor connector lookup resolve as unassigned/empty.
+     connector tokens. That made connector lookup resolve as unassigned/empty.
 
      Main fixes:
-      - Restored warm-snapshot sessions now mint session-bound executor tokens with project, session, agent, connector, and kortix_cli grant context.
+      - Restored warm-snapshot sessions now mint session-bound connector tokens with project, session, agent, connector, and kortix_cli grant context.
       - Auth middleware now exposes sessionId for PAT/account-token auth.
-      - Executor principal resolution now uses token session context, not only X-Kortix-Session-Id.
+      - Connector principal resolution now uses token session context, not only X-Kortix-Session-Id.
       - /accounts/me and kortix whoami/token now show explicit token_context.
       - Added kortix token as a real alias instead of accidentally scaffolding token/.
       - Blocked in-session prompt agent switches with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.
@@ -53,21 +53,21 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
      Local checks passed:
       - API preview proxy tests.
       - restored warm-snapshot / agent-grant / unit scope tests.
-      - executor SDK tests.
+      - connector SDK tests.
       - CLI host/auth tests.
       - API and CLI TypeScript checks.
       - git diff --check.
 
      Live local E2E passed:
       - Real API stack.
-      - Minted real session executor token for veyris.
+      - Minted real session connector token for veyris.
       - /v1/accounts/me.token_context returned correct project/session/agent grants.
-      - Executor catalog returned 200.
+      - Connector catalog returned 200.
       - kortix token --json and human output showed session token context.
       - Confirmed no accidental token/ scaffold directory.
 
      Remote verified:
-      - origin/main and origin/executor-session-identity both point to c21209bfdd02c78451f64145188d1dbae679e823.
+      - origin/main and origin/connector-session-identity both point to c21209bfdd02c78451f64145188d1dbae679e823.
       - CodeQL passed.
       - Deploy Dev initially hit Docker Hub timeout in Tag API dev-<sha8>, I reran failed jobs, and Deploy Dev is now green.
       - https://dev-api.kortix.com/v1/health reports version: 0.9.83-dev.c21209bf, commit c21209bfdd02c78451f64145188d1dbae679e823.
@@ -80,9 +80,9 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
      In dev, start a fresh Veyris session that has connectors = "all", then inside the sandbox run:
       - kortix token
       - kortix whoami --json
-      - the Executor connector/catalog call that previously returned empty or connector_not_assigned
+      - the connector/catalog call that previously returned empty or connector_not_assigned
 
-     Expected result: it should identify as a session token with the correct project/session/agent context, and Executor should see the
+     Expected result: it should identify as a session token with the correct project/session/agent context, and Connector should see the
      configured Veyris connector grants.
 
 ─ Worked for 36m 18s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -91,11 +91,11 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 › Okay, so sh so now should ev everything should work, yeah?
 
 
-• Yes, for the bug we traced: fresh dev sessions should now get a session-scoped executor token, so Executor connector discovery should no
+• Yes, for the bug we traced: fresh dev sessions should now get a session-scoped connector token, so connector discovery should no
   longer be empty just because the sandbox came from a restored warm snapshot.
 
   The fix is live on dev: dev-api.kortix.com reports commit c21209bf. The thing to verify manually is the exact Veyris flow: start a new
-  session, run kortix token / kortix whoami --json, and then call the executor connector path. It should show session token context with
+  session, run kortix token / kortix whoami --json, and then call the connector path. It should show session token context with
   project/session/agent grants and find the configured tools.
 
   One intentional behavior change: switching agents inside the same existing sandbox should now fail with 409 and require a new session.
@@ -253,7 +253,7 @@ A project session starts with exactly one boot agent.
 
 The selected boot agent determines:
 
-- session executor token `agent_grant`
+- session connector token `agent_grant`
 - visible agent persona
 - visible skill set
 - visible commands/tools
@@ -280,7 +280,7 @@ kortix.yaml
   + session token agentGrant
   + server-side connector/secret policy
   -> generated OpenCode config dir
-  -> scoped executor token
+  -> scoped connector token
   -> scoped runtime env
   -> scoped workspace
 ```
@@ -291,7 +291,7 @@ For compatibility, this generated config can still look like native OpenCode:
 - only allowed `skills/*`
 - only allowed commands/tools/plugins
 - generated `opencode.jsonc`
-- generated executor/gateway provider config
+- generated connector/gateway provider config
 
 The key change is ownership: OpenCode reads generated runtime material, while
 Kortix decides what may be generated.
@@ -403,7 +403,7 @@ admin flows without requiring a commit for every membership change.
 
 Done or in progress:
 
-- Session executor tokens include `project_id`, `session_id`, and `agent_grant`.
+- Session connector tokens include `project_id`, `session_id`, and `agent_grant`.
 - Warm-pool claim and cold boot mint the same token shape.
 - `/accounts/me` exposes `token_context`.
 - CLI identity probes show session token context.
@@ -503,7 +503,7 @@ Output:
 
 - effective runtime manifest
 - generated OpenCode config files
-- executor connector allow-list
+- connector allow-list
 - secret/env allow-list
 - workspace mode
 - git credential mode
@@ -585,7 +585,7 @@ Add audit events for:
 9. What is the migration path for existing projects that rely on full repo
    access in every agent?
 10. Which permissions should be enforced by OpenCode config generation versus
-   by the Executor/API on every call?
+   by the Connector/API on every call?
 
 ## Verification Gates
 
@@ -593,7 +593,7 @@ Before this is considered implemented:
 
 1. User A in group `finance` can see and use `veyris`; User B cannot.
 2. User B cannot start `veyris` through web, API, CLI, Slack, or trigger paths.
-3. A `veyris` session sees only allowed connectors in Executor catalog.
+3. A `veyris` session sees only allowed connectors in Connector catalog.
 4. A `veyris` session cannot call a blocked connector even by raw API request.
 5. A `veyris` session cannot load a restricted skill file from the generated
    config dir.
@@ -617,4 +617,4 @@ Before this is considered implemented:
 - [ ] Add generated OpenCode config smoke tests.
 - [ ] Add sandbox boot mode for generated runtime.
 - [ ] Migrate one real project/agent as the pilot.
-- [ ] Add black-box E2E across web, API, CLI, and sandbox Executor.
+- [ ] Add black-box E2E across web, API, CLI, and sandbox Connector.

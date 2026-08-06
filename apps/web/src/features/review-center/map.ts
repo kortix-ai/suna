@@ -5,8 +5,8 @@
  * labels and the actor are derived from the kind + agent. See review-center.tsx.
  */
 
-import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import { looksLikeMarkdown } from '@/lib/markdown-detect';
+import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import type {
   ApprovalAction,
   ApprovalActionIcon,
@@ -74,7 +74,7 @@ export function agentInitials(name: string): string {
 // The API `detail` is polymorphic jsonb that arrives in three different shapes:
 // the rich payload a native agent submission carries, the THIN adapter payload a
 // Change Request produces (`{cr_id, base_ref, head_ref, description}`), or the
-// thin executor-approval payload (`{execution_id, action_path, connector_id}`).
+// thin connector-approval payload (`{execution_id, action_path, connector_id}`).
 // The modal bodies expect the full view-model shape, so we never pass the raw
 // detail through — we build a complete, defaulted detail for every kind. This is
 // what stops `ChangeBody` from reading `.map` of an undefined `whatChanged`.
@@ -104,7 +104,13 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     !native && description && looksLikeMarkdown(description) ? description : undefined;
   const whatChanged =
     native ??
-    (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
+    (descriptionMarkdown
+      ? []
+      : description
+        ? lines(description)
+        : row.summary
+          ? [row.summary]
+          : []);
   return {
     crId: str(d.cr_id),
     number: typeof d.number === 'number' ? d.number : undefined,
@@ -146,11 +152,22 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
       })),
     };
   }
-  // Executor-approval adapter → a single action built from the call descriptor.
+  // Connector-approval adapter → a single action built from the call descriptor.
   // `action_path` is `connector.action` (e.g. `gmail.send_email`); the row's
   // `connector_id` is an opaque UUID, so we take the connector NAME from the path.
   const path = str(d.action_path) ?? '';
   const { connector, action } = splitActionPath(path);
+  const rawArgsPreview = rec(d.args_preview);
+  const hasArgsPreview = Object.keys(rawArgsPreview).length > 0;
+  const argsPreview = Object.entries(rawArgsPreview).map(([key, value]) => ({
+    key,
+    value:
+      value === '[redacted]'
+        ? 'Hidden credential'
+        : typeof value === 'string'
+          ? value
+          : JSON.stringify(value, null, 2),
+  }));
   return {
     actions: [
       {
@@ -161,7 +178,11 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
         consequence: 'Runs against the real connector once you approve',
         risk: row.risk,
         icon: 'generic',
-        argsPreview: [],
+        argsPreview,
+        actionPath: path,
+        rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
+        reviewComplete: d.args_preview_complete === true,
+        connectorRisk: str(d.risk) ?? null,
         policySource: 'Requires approval',
       },
     ],
@@ -256,7 +277,7 @@ export function mapApiReviewItem(
     primaryAction: PRIMARY_ACTION[kind],
     secondaryAction: SECONDARY_ACTION[kind],
     // Build a complete, defaulted detail for the kind — never trust the raw jsonb
-    // to already match the discriminated union (CR/executor adapters are thin).
+    // to already match the discriminated union (CR/connector adapters are thin).
     detail: normalizeDetail(kind, row),
     // kind↔detail correlation can't be statically proven across the switch.
   } as unknown as ReviewItem;

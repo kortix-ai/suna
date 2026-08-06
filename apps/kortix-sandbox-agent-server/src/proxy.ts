@@ -109,6 +109,7 @@ export function buildOpencodeApp(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
+  agentEnvFile?: string,
 ): Hono {
   const app = new Hono()
 
@@ -120,7 +121,9 @@ export function buildOpencodeApp(
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const abortRouter = createAbortRouter(cfg)
-  const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
+  const envRouter = projectEnv
+    ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
+    : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
   const gitRouter = createGitRouter(cfg)
