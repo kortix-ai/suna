@@ -4,7 +4,7 @@ import {
   type projectTaskStatusEnum,
   projectTasks,
 } from '@kortix/db/schema';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 export type ProjectTask = typeof projectTasks.$inferSelect;
 export type ProjectGoalObservation = typeof projectGoalObservations.$inferSelect;
@@ -129,7 +129,9 @@ export class TaskClaimConflictError extends Error {
   readonly taskId: string;
 
   constructor(projectId: string, taskId: string) {
-    super(`task ${taskId} in project ${projectId} has a live claim or does not exist`);
+    super(
+      `task ${taskId} in project ${projectId} is not ready, has an unsatisfied dependency or live claim, or does not exist`,
+    );
     this.name = 'TaskClaimConflictError';
     this.projectId = projectId;
     this.taskId = taskId;
@@ -137,10 +139,11 @@ export class TaskClaimConflictError extends Error {
 }
 
 /**
- * Claim an unclaimed or expired task with one conditional UPDATE.
+ * Claim ready work with one conditional UPDATE and move it to `doing`.
  *
- * The predicate and write execute in the same PostgreSQL statement. A live
- * claim never matches the predicate, so a contender cannot overwrite it.
+ * The predicate and write execute in the same PostgreSQL statement. Terminal
+ * tasks, tasks with unresolved dependencies, and tasks with a live claim do
+ * not match, so a contender cannot overwrite the current owner.
  */
 export async function claimProjectTask(
   database: Database,
@@ -162,6 +165,7 @@ export async function claimProjectTask(
   const [claimed] = await database
     .update(projectTasks)
     .set({
+      status: 'doing',
       claimSessionId: input.sessionId,
       claimedAt: input.now,
       claimExpiresAt,
@@ -171,7 +175,16 @@ export async function claimProjectTask(
       and(
         eq(projectTasks.projectId, input.projectId),
         eq(projectTasks.taskId, input.taskId),
+        inArray(projectTasks.status, ['backlog', 'todo', 'doing']),
         or(isNull(projectTasks.claimSessionId), lte(projectTasks.claimExpiresAt, input.now)),
+        sql`not exists (
+          select 1
+          from unnest(${projectTasks.blockedBy}) as blocker(task_id)
+          left join ${projectTasks} as dependency
+            on dependency.project_id = ${projectTasks.projectId}
+           and dependency.task_id = blocker.task_id
+          where dependency.status is distinct from 'done'::kortix.project_task_status
+        )`,
       ),
     )
     .returning();

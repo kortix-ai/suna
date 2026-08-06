@@ -174,6 +174,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       now: claimedAt,
       leaseMs: 30_000,
     });
+    expect(first.status).toBe('doing');
     expect(first.claimSessionId).toBe(SESSION_A);
     expect(first.claimExpiresAt?.toISOString()).toBe('2026-08-07T10:00:30.000Z');
 
@@ -200,8 +201,83 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       now: new Date('2026-08-07T10:00:30.000Z'),
       leaseMs: 45_000,
     });
+    expect(reclaimed.status).toBe('doing');
     expect(reclaimed.claimSessionId).toBe(SESSION_B);
     expect(reclaimed.claimExpiresAt?.toISOString()).toBe('2026-08-07T10:01:15.000Z');
+  });
+
+  test('claims only ready work, waits for dependencies, and never reclaims terminal tasks', async () => {
+    const database = testDb();
+    const dependency = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Required task',
+      origin: 'dependency-proof',
+      status: 'todo',
+    });
+    const dependent = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Dependent task',
+      origin: 'dependency-proof',
+      status: 'todo',
+      blockedBy: [dependency.task.taskId],
+    });
+    const now = new Date('2026-08-07T10:30:00.000Z');
+
+    await expect(
+      claimProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: dependent.task.taskId,
+        sessionId: SESSION_A,
+        now,
+        leaseMs: 30_000,
+      }),
+    ).rejects.toBeInstanceOf(TaskClaimConflictError);
+
+    const claimedDependency = await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: dependency.task.taskId,
+      sessionId: SESSION_A,
+      now,
+      leaseMs: 30_000,
+    });
+    expect(claimedDependency.status).toBe('doing');
+    await transitionProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: dependency.task.taskId,
+      status: 'done',
+      expectedClaimSessionId: SESSION_A,
+      result: { evidence: [{ ref: 'dependency-proof' }] },
+      now: new Date('2026-08-07T10:30:01.000Z'),
+    });
+
+    const claimedDependent = await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: dependent.task.taskId,
+      sessionId: SESSION_B,
+      now: new Date('2026-08-07T10:30:02.000Z'),
+      leaseMs: 30_000,
+    });
+    expect(claimedDependent.status).toBe('doing');
+    await transitionProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: dependent.task.taskId,
+      status: 'done',
+      expectedClaimSessionId: SESSION_B,
+      result: { evidence: [{ ref: 'dependent-proof' }] },
+      now: new Date('2026-08-07T10:30:03.000Z'),
+    });
+
+    await expect(
+      claimProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: dependent.task.taskId,
+        sessionId: SESSION_A,
+        now: new Date('2026-08-07T10:30:04.000Z'),
+        leaseMs: 30_000,
+      }),
+    ).rejects.toBeInstanceOf(TaskClaimConflictError);
   });
 
   test('concurrent contenders produce one claim and distinct claim conflicts', async () => {
@@ -325,7 +401,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       projectId: PROJECT_ID,
       taskId: task.taskId,
     });
-    expect(unchanged?.status).toBe('backlog');
+    expect(unchanged?.status).toBe('doing');
     expect(unchanged?.claimSessionId).toBe(SESSION_A);
     expect(unchanged?.claimExpiresAt?.toISOString()).toBe('2026-08-07T13:01:00.000Z');
   });

@@ -345,7 +345,7 @@ A `ProjectGoal` contains `slug`, `path`, `title`, `done_when`, `status`,
 | `list(options?)` | List tasks by `goal_slug?`, `statuses?`, and `limit?`. |
 | `get(taskId)` | Return one project task. |
 | `create(input)` | Create a task, or reuse the matching `origin_fingerprint`. Returns `{ task, created }`. |
-| `claim(taskId, input)` | Claim with `{ session_id, lease_seconds? }`. The lease defaults to 900 seconds. |
+| `claim(taskId, input)` | Claim ready work with `{ session_id, lease_seconds? }` and set its status to `doing`. All dependencies must be `done`. The lease defaults to 900 seconds. |
 | `complete(taskId, input)` | Complete with `{ session_id, evidence: [{ ref, summary? }] }`. Evidence cannot be empty. |
 | `block(taskId, input)` | Block with `{ session_id, blocker }`. |
 
