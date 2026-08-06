@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+
 const SOURCE = readFileSync(resolve(import.meta.dir, 'project-settings-nav.tsx'), 'utf8');
 
 /**
@@ -23,7 +25,7 @@ function fnSource(name: string): string {
  * The labels do not follow the destinations here, so these tests exist mostly
  * to stop someone "fixing" the pairing back on intuition:
  *
- *   Customize row -> the capability ROUTE (Connectors first)
+ *   Customize row -> the capability ROUTE (the bar's first tab)
  *   Settings row  -> the Customize OVERLAY
  */
 describe('project Customize sidebar entry (the routed one)', () => {
@@ -41,20 +43,57 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(navItem).not.toContain('router.push');
   });
 
-  test('lands on Connectors by default', () => {
-    // First entry of TAB_PREFERENCE is the landing tab; skills is the only
-    // fallback for a caller denied connector read. (Commands had a fallback
-    // here too, but its standalone page was removed — it lives in the overlay.)
-    expect(SOURCE).toMatch(/TAB_PREFERENCE[\s\S]*?key: 'connectors'/);
+  test('lands on the FIRST tab of the bar it navigates into', () => {
+    // The regression this catches actually happened: CAPABILITY_TABS was
+    // reordered and TAB_PREFERENCE was not, which left the row landing on the
+    // bar's second tab. Derive the expectation instead of hardcoding a name,
+    // so reordering the bar keeps this honest without editing the test.
+    const preference = SOURCE.slice(
+      SOURCE.indexOf('const TAB_PREFERENCE'),
+      SOURCE.indexOf('function useCapabilityTab'),
+    );
+    const orderInNav = [...preference.matchAll(/key: '([^']+)'/g)].map((m) => m[1]);
+
+    expect(orderInNav).toEqual(CAPABILITY_TABS.map((t) => t.key));
   });
 
-  test('reads the two capability leaves, not one', () => {
+  test('the Agents key stays singular — it is the route segment', () => {
+    // `key: 'agents'` builds /projects/<id>/agents, which does not exist.
+    expect(SOURCE).toMatch(/TAB_PREFERENCE[\s\S]*?key: 'agent'/);
+    expect(SOURCE).not.toMatch(/TAB_PREFERENCE[\s\S]*?key: 'agents'/);
+  });
+
+  test('reads all three capability leaves, not one', () => {
     // Gating the whole entry on connector read alone would strand a caller who
     // may open Skills but not Connectors. Commands is gated in the overlay, not
     // here — its standalone page was removed.
+    expect(SOURCE).toContain('PROJECT_AGENT_READ');
     expect(SOURCE).toContain('PROJECT_CONNECTOR_READ');
     expect(SOURCE).toContain('PROJECT_SKILL_READ');
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
+  });
+
+  test('probes every tab in TAB_PREFERENCE', () => {
+    // useProjectCan is a hook, so it cannot be called from a loop that
+    // short-circuits — the probes are written out one per tab. A tab added to
+    // TAB_PREFERENCE without its own probe line reads as permanently denied,
+    // and the row silently stops offering it.
+    // (Not fnSource(): useCapabilityTab is module-private, not exported.)
+    const hookStart = SOURCE.indexOf('function useCapabilityTab');
+    expect(hookStart).toBeGreaterThan(-1);
+
+    // The literal runs from the declaration to the hook that consumes it. Do
+    // NOT cut on the first `];` — the type annotation itself ends
+    // `CapabilityTab['key'];`, which lands inside the annotation and matched
+    // zero entries.
+    const preference = SOURCE.slice(SOURCE.indexOf('const TAB_PREFERENCE'), hookStart);
+    const tabCount = (preference.match(/key: '/g) ?? []).length;
+
+    const hook = SOURCE.slice(hookStart, SOURCE.indexOf('\n}', hookStart));
+    const probeCount = (hook.match(/useProjectCan\(/g) ?? []).length;
+
+    expect(tabCount).toBe(3);
+    expect(probeCount).toBe(tabCount);
   });
 
   test('stays visible while a probe is loading', () => {

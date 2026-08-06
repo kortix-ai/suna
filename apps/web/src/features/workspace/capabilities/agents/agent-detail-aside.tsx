@@ -1,28 +1,28 @@
 'use client';
 
+/**
+ * The right-hand column of the agent detail modal: who inherits this agent,
+ * and how it is configured.
+ *
+ * Moved verbatim out of the Customize overlay's `agents-view.tsx` when Agents
+ * graduated to `/projects/[id]/agent`. The cards are unchanged on purpose —
+ * the configuration surface is being reworked separately, and porting it and
+ * redesigning it in one change would make the redesign impossible to review.
+ *
+ * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) project; the
+ * `fallback` below is what a v1 project still gets — the legacy model + scope
+ * cards. We degrade, never blank the pane.
+ */
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import {
-  detectManifestVersion,
-  type ManifestVersion,
-  useProjectManifestVersion,
-} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
-import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { toArray } from '@/features/workspace/customize/shared/utils';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
@@ -32,161 +32,43 @@ import {
   listProjectSecrets,
   type ProjectConfigSummary,
   setAgentScope,
-  updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
-import {
-  RobotIcon as Bot,
-  CheckIcon as Check,
-  ShieldCheckIcon as ShieldCheck,
-  SparkleIcon as Sparkles,
-  StarIcon as StarSolid,
-  UserIcon as User,
-  UsersIcon as Users,
-} from '@phosphor-icons/react';
+import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-export function AgentsView({ projectId }: { projectId: string }) {
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
-  return (
-    <ConfigEntityView<Agent>
-      projectId={projectId}
-      kind="agent"
-      noun="agent"
-      layout="split"
-      canWrite={canWrite}
-      title="Agents"
-      searchPlaceholder="Search agents"
-      emptyIcon={Bot}
-      emptyTitle="No agents yet"
-      emptyDescription="Create an agent to customize how sessions run."
-      emptyDocsHref="https://opencode.ai/docs/agents/"
-      emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
-      select={(config) => config.agents}
-      renderContext={(config) => (
-        <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
-      )}
-      renderTriggerLabel={(agent) => agent.name}
-      className="p-4 lg:py-0"
-      renderRowTrailing={(agent, config) => (
-        <>
-          {agent.mode ? (
-            <Badge variant="muted" size="xs">
-              {formatMode(agent.mode)}
-            </Badge>
-          ) : null}
-          {config.open_code_default_agent === agent.name ? (
-            <StarSolid weight="fill" className="text-kortix-orange size-4 shrink-0 fill-current" />
-          ) : null}
-        </>
-      )}
-      renderDetailTitle={(agent) => agent.name}
-      renderDetailMeta={(agent, config) => (
-        <>
-          {agent.mode ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground font-medium">
-              {formatMode(agent.mode)}
-            </Badge>
-          ) : null}
-          {agent.source ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
-              {agent.source === 'opencode'
-                ? 'OpenCode'
-                : detectManifestVersion(config.manifest_raw) === 2
-                  ? 'kortix.yaml'
-                  : 'kortix.toml'}
-            </Badge>
-          ) : null}
-          {config.open_code_default_agent === agent.name ? (
-            <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
-              <StarSolid weight="fill" className="text-kortix-orange size-3.5 shrink-0" />
-              Default
-            </Badge>
-          ) : null}
-          {agent.enabled === false ? (
-            <Badge variant="muted" size="sm">
-              Disabled
-            </Badge>
-          ) : null}
-        </>
-      )}
-      renderDetailExtra={(agent, config) => (
-        <div className="space-y-3">
-          <AgentAssignments projectId={projectId} agentName={agent.name} />
-          <AgentConfigEditor
-            projectId={projectId}
-            agent={agent}
-            skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
-            fallback={
-              <>
-                <AgentModel projectId={projectId} agentName={agent.name} />
-                <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
-              </>
-            }
-          />
-        </div>
-      )}
-    />
-  );
-}
-
-function DefaultAgentSelector({
+/**
+ * The whole aside, for one agent. `config` supplies the project's declared
+ * skills for the governance picker — `toArray` because the API can return
+ * `skills` as undefined for a repo-less / capability-gated project, and
+ * `.map` on that throws (the chunk-22256 Sentry cluster).
+ */
+export function AgentDetailAside({
   projectId,
+  agent,
   config,
-  canWrite,
 }: {
   projectId: string;
+  agent: Agent;
   config: ProjectConfigSummary;
-  canWrite: boolean;
 }) {
-  const queryClient = useQueryClient();
-  const isV2 = detectManifestVersion(config.manifest_raw) === 2;
-  const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
-  const current = config.open_code_default_agent;
-  const mutation = useMutation({
-    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
-    onSuccess: async (result) => {
-      successToast(`${result.default_agent} is now the project default`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-      ]);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
-  });
-
-  if (!isV2 || availableAgents.length === 0 || !current) return null;
-
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-foreground text-sm font-medium">Default agent</p>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          New chats in this project start with this agent selected.
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-        <Select
-          value={current}
-          onValueChange={(agentName) => mutation.mutate(agentName)}
-          disabled={!canWrite || mutation.isPending}
-        >
-          <SelectTrigger aria-label="Default agent" className="w-48 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableAgents.map((agent) => (
-              <SelectItem key={agent.name} value={agent.name}>
-                {agent.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="space-y-3">
+      <AgentAssignments projectId={projectId} agentName={agent.name} />
+      <AgentConfigEditor
+        projectId={projectId}
+        agent={agent}
+        skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
+        fallback={
+          <>
+            <AgentModel projectId={projectId} agentName={agent.name} />
+            <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+          </>
+        }
+      />
     </div>
   );
 }
@@ -220,11 +102,10 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
   );
   if (assigned.length === 0) return null;
   return (
-    <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
+    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
       <div className="flex items-center gap-2">
-        <Users className="text-muted-foreground/70 size-3.5 shrink-0" />
-        <span className="text-foreground/80 text-xs font-medium">Assigned to</span>
-        <Badge variant="muted" size="xs">
+        <Label>Assigned to</Label>
+        <Badge variant="muted" size="xs" className="tabular-nums">
           {assigned.length}
         </Badge>
       </div>
@@ -237,13 +118,11 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
               <User className="size-3 shrink-0" />
             )}
             {g.principal_label}
-            {g.principal_type === 'group' ? ' · group' : ''}
           </Badge>
         ))}
       </div>
-      <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; groups inherit this agent's declared secrets &amp; connectors (below) as
-        their own — usable in Secrets, sessions, and connector calls.
+      <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+        They inherit this agent's secrets and connectors as their own.
       </p>
     </div>
   );
@@ -275,10 +154,9 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
       : null;
 
   return (
-    <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
+    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
       <div className="flex items-center gap-2">
-        <Sparkles className="text-muted-foreground/70 size-3.5 shrink-0" />
-        <span className="text-foreground/80 text-xs font-medium">Model</span>
+        <Label>Model</Label>
         {explicit ? (
           <Badge variant="muted" size="xs">
             Pinned
@@ -321,22 +199,22 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
         </Badge>
       )}
 
-      <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
+      <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
         {explicit ? (
           <>
-            Every session run by <span className="font-medium">{agentName}</span> uses{' '}
-            <span className="font-medium">{nameOf(explicit)}</span>.
+            Every session run by this agent uses{' '}
+            <span className="text-foreground font-medium">{nameOf(explicit)}</span>.
           </>
         ) : (
           <>
-            Follows the project / account default
+            Follows the project default
             {resolved ? (
               <>
                 {' '}
-                (<span className="font-medium">{nameOf(resolved)}</span>)
+                (<span className="text-foreground font-medium">{nameOf(resolved)}</span>)
               </>
             ) : null}
-            . Pick a model to pin this agent to it.
+            . Pick a model to pin it.
           </>
         )}
       </p>
@@ -378,7 +256,6 @@ function AgentScopeCard({
   scope: NonNullable<Agent['scope']>;
 }) {
   const queryClient = useQueryClient();
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const accessQuery = useQuery({
     queryKey: ['project-access', projectId],
     queryFn: () => listProjectAccess(projectId),
@@ -437,23 +314,23 @@ function AgentScopeCard({
   // Non-managers get the read-only mirror (the old presentation).
   if (!canManage) {
     return (
-      <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
-        <ScopeHeader manifestVersion={manifestVersion} />
-        <ScopeRow label="Secrets" value={scope.env} />
-        <ScopeRow label="Connectors" value={scope.connectors} />
-        <ScopeRow label="CLI" value={scope.kortix_cli} />
-        <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-          “All” = every item the launching user can see; “None” = fully scoped out. Members you
-          assign to this agent (Members → Resource access) inherit its declared secrets &amp;
-          connectors.
+      <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+        <Label>Access</Label>
+        <dl className="space-y-2">
+          <ScopeRow label="Secrets" value={scope.env} />
+          <ScopeRow label="Connectors" value={scope.connectors} />
+          <ScopeRow label="CLI" value={scope.kortix_cli} />
+        </dl>
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+          All = everything the person launching the session can see. None = fully scoped out.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="border-border/60 bg-muted/20 space-y-4 rounded-lg border p-4">
-      <ScopeHeader manifestVersion={manifestVersion} />
+    <div className="bg-popover space-y-4 rounded-md border px-4 py-4">
+      <Label>Access</Label>
       <ScopeEditor
         key={`env-${editorNonce}`}
         label="Secrets"
@@ -472,52 +349,31 @@ function AgentScopeCard({
         options={connectorOptions}
         onChange={setConnectors}
       />
-      <ScopeRow label="CLI" value={scope.kortix_cli} />
-      <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
-        <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
-          Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
-          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>
-          .
-        </p>
-        <div className="flex shrink-0 items-center gap-2">
-          {dirty && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              disabled={save.isPending}
-              onClick={() => {
-                setEnv(scope.env);
-                setConnectors(scope.connectors);
-                setEditorNonce((n) => n + 1);
-              }}
-            >
-              Reset
-            </Button>
-          )}
+      <dl>
+        <ScopeRow label="CLI" value={scope.kortix_cli} />
+      </dl>
+      {/* The save bar only exists once there is something to save — an always-on
+          disabled pair of buttons is chrome that never earns its row. */}
+      {dirty ? (
+        <div className="border-border/50 flex items-center justify-end gap-2 border-t pt-3">
           <Button
+            variant="ghost"
             size="sm"
-            className="h-7 gap-1.5 px-3 text-xs"
-            disabled={!dirty || save.isPending}
-            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            onClick={() => {
+              setEnv(scope.env);
+              setConnectors(scope.connectors);
+              setEditorNonce((n) => n + 1);
+            }}
           >
+            Reset
+          </Button>
+          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending && <Loading className="size-3.5 shrink-0" />}
-            Save scope
+            Save
           </Button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ScopeHeader({ manifestVersion }: { manifestVersion: ManifestVersion | null }) {
-  return (
-    <div className="flex items-center gap-2">
-      <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
-      <span className="text-foreground/80 text-xs font-medium">Access scope</span>
-      <Badge variant="muted" size="xs" className="font-mono">
-        {manifestVersion === 2 ? 'kortix.yaml agents:' : 'kortix.toml [[agents]]'}
-      </Badge>
+      ) : null}
     </div>
   );
 }
@@ -585,18 +441,17 @@ function ScopeEditor({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground/70 w-24 shrink-0 text-[11px] font-medium tracking-wide uppercase">
-          {label}
-        </span>
-        <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground text-xs">{label}</span>
+        <div className="border-border/70 inline-flex shrink-0 overflow-hidden rounded-md border">
           {(['all', 'specific', 'none'] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => pick(m)}
               className={cn(
-                'px-2.5 py-1 text-xs capitalize transition-colors',
+                'px-2.5 py-1 text-xs capitalize',
+                'transition-[color,background-color] active:scale-[0.96]',
                 mode === m
                   ? 'bg-secondary text-foreground font-medium'
                   : 'text-muted-foreground hover:bg-muted/50',
@@ -606,14 +461,16 @@ function ScopeEditor({
             </button>
           ))}
         </div>
-        {mode === 'all' && <span className="text-muted-foreground/60 text-[11px]">{allLabel}</span>}
       </div>
+      {mode === 'all' ? (
+        <p className="text-muted-foreground text-xs text-pretty">{allLabel}</p>
+      ) : null}
 
       {mode === 'specific' &&
         (rows.length === 0 ? (
-          <p className="text-muted-foreground/60 pl-[6.5rem] text-[11px]">{emptyLabel}</p>
+          <p className="text-muted-foreground text-xs">{emptyLabel}</p>
         ) : (
-          <div className="border-border/60 ml-[6.5rem] max-h-44 overflow-y-auto rounded-md border p-1">
+          <div className="border-border/60 max-h-44 overflow-y-auto rounded-md border p-1">
             {rows.map((o) => {
               const isSel = selected.has(o.id);
               const isOrphan = !optionIds.has(o.id);
@@ -649,27 +506,30 @@ function ScopeEditor({
   );
 }
 
+/**
+ * One label/value line, matching the Configuration card's spec-sheet rhythm.
+ * `all` and `none` render as plain words, not chips — a chip on every row
+ * signals "notice this", and when every row has one, none of them read.
+ * A concrete allowlist still gets chips: there the individual names ARE the
+ * data, and chips are what separates them.
+ */
 function ScopeRow({ label, value }: { label: string; value: string[] | 'all' }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
-      <span className="text-muted-foreground/70 w-24 shrink-0 text-[11px] font-medium tracking-wide uppercase">
-        {label}
-      </span>
-      {value === 'all' ? (
-        <Badge variant="muted" size="xs">
-          All
-        </Badge>
-      ) : value.length === 0 ? (
-        <Badge variant="muted" size="xs">
-          None
-        </Badge>
-      ) : (
-        value.map((key) => (
-          <Badge key={key} variant="outline" size="xs" className="font-mono">
-            {key}
-          </Badge>
-        ))
-      )}
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-muted-foreground shrink-0 text-xs">{label}</dt>
+      <dd className="flex min-w-0 flex-wrap justify-end gap-1">
+        {value === 'all' || value.length === 0 ? (
+          <span className="text-foreground text-xs font-medium">
+            {value === 'all' ? 'All' : 'None'}
+          </span>
+        ) : (
+          value.map((key) => (
+            <Badge key={key} variant="outline" size="xs" className="font-mono">
+              {key}
+            </Badge>
+          ))
+        )}
+      </dd>
     </div>
   );
 }

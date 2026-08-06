@@ -3,8 +3,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CatalogGridSkeleton } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 
 /**
- * Placeholder chrome for the three capability routes (connectors, skills,
- * commands) while their page resolves.
+ * Placeholder chrome for the capability routes (agents, connectors,
+ * skills) while their page resolves.
  *
  * Shared by `(capabilities)/loading.tsx` (the navigation Suspense boundary),
  * so the sidebar's `<Link prefetch>` on ProjectSettingsNavItem has something

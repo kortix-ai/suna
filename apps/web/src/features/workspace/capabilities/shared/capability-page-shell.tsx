@@ -15,8 +15,8 @@ interface CapabilityPageShellProps {
 }
 
 /**
- * Shared page shell for the three capability routes (connectors, skills,
- * commands). `max-w-5xl` is a deliberate departure from
+ * Shared page shell for the three capability routes (agents, connectors,
+ * skills). `max-w-5xl` is a deliberate departure from
  * `CustomizeSectionWrapper`'s `max-w-2xl` — a 3-up card grid does not fit in
  * `max-w-2xl`. These are standalone routed pages, not Customize sections; do
  * not reuse or edit `section-wrapper.tsx` for them.

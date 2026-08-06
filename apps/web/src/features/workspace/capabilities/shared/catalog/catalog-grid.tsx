@@ -15,7 +15,7 @@ export interface CatalogGridProps {
   onRetry: () => void;
   isEmpty: boolean;
   /** Rendered in place of the grid when `isEmpty` is true. The grid does not
-   *  own empty copy — connectors, skills, and commands each know what their
+   *  own empty copy — agents, connectors, and skills each know what their
    *  own "nothing here" invitation should say. */
   empty: ReactNode;
   children: ReactNode;
@@ -47,8 +47,8 @@ export function CatalogCardSkeleton() {
 
 /**
  * The catalog loading grid shared by `CatalogGrid`, `CapabilitiesSkeleton`,
- * and every capabilities route. One component — connectors, skills, and
- * commands never diverge on loading chrome.
+ * and every capabilities route. One component — agents, connectors, and
+ * skills never diverge on loading chrome.
  */
 export function CatalogGridSkeleton({
   count = SKELETON_CARD_COUNT,
@@ -65,7 +65,7 @@ export function CatalogGridSkeleton({
 }
 
 /**
- * The one grid shared by the connectors, skills, and commands catalog pages.
+ * The one grid shared by the agents, connectors, and skills catalog pages.
  * Owns the four states in design-system order: loading -> error -> empty ->
  * content. Callers only supply query state and the content/empty nodes.
  *

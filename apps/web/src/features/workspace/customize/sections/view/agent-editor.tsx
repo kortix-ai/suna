@@ -6,7 +6,8 @@
  * ENTIRE agent-config field space: identity, behavior/model, Kortix governance
  * (skills/connectors/secrets/kortix_cli), and the full OpenCode permission tree.
  *
- * Mounted from agents-view.tsx's detail aside via <AgentConfigEditor/>:
+ * Mounted from the /projects/[id]/agent detail modal's aside
+ * (`capabilities/agents/agent-detail-aside.tsx`) via <AgentConfigEditor/>:
  *   - v2 project (editable) → a compact summary card + "Edit configuration",
  *     which opens the full grouped editor in a Modal.
  *   - v1 project (not editable) → renders the caller's `fallback` (the legacy
@@ -24,9 +25,9 @@
  * queries, save) and the public entry point.
  */
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -40,6 +41,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
+import { cn } from '@/lib/utils';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
@@ -49,7 +51,7 @@ import {
   type RuntimeAgentConfig,
   type ProjectConfigSummary,
 } from '@kortix/sdk';
-import { RobotIcon as Bot, CpuIcon as Cpu, StackIcon as Layers } from '@phosphor-icons/react';
+import { CpuIcon as Cpu, StackIcon as Layers } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { useMemo, useState } from 'react';
@@ -241,7 +243,7 @@ function AgentEditorModal({
   );
 }
 
-// ─── Public entry — mounted from agents-view's detail aside ────────────────
+// ─── Public entry — mounted from the agent detail modal's aside ────────────
 
 /** Summarize a grant set for the compact card. */
 export function grantSummary(v: AgentGrantSetV2 | undefined): {
@@ -299,73 +301,49 @@ export function AgentConfigEditor({
   }
 
   const block = data.block ?? {};
-  const summaries: { key: string; label: string; grant: AgentGrantSetV2 | undefined }[] = [
-    { key: 'skills', label: 'Skills', grant: block.skills },
-    { key: 'connectors', label: 'Connectors', grant: block.connectors },
-    { key: 'secrets', label: 'Secrets', grant: block.secrets },
-    { key: 'kortix_cli', label: 'CLI', grant: block.kortix_cli },
+  const oc = block.opencode ?? {};
+
+  // One flat spec sheet, in the order you'd ask about an agent: what it is,
+  // what it runs on, then what it may reach. Rows for values that are not set
+  // are dropped rather than printed as "—" — an absent optional is not a fact
+  // worth a line.
+  //
+  // Every value is plain text. These were Badges, which put five identical
+  // "All" chips down the card: a chip says "this is a state worth noticing",
+  // and when every row has one, none of them do.
+  const rows: { key: string; label: string; value: string; mono?: boolean }[] = [
+    ...(oc.mode ? [{ key: 'mode', label: 'Mode', value: formatModeLabel(oc.mode) }] : []),
+    ...(oc.model ? [{ key: 'model', label: 'Model', value: oc.model, mono: true }] : []),
+    ...(oc.temperature !== undefined
+      ? [{ key: 'temperature', label: 'Temperature', value: String(oc.temperature) }]
+      : []),
+    { key: 'sandbox', label: 'Environment', value: block.sandbox ?? 'Project default' },
+    { key: 'skills', label: 'Skills', value: grantSummary(block.skills).label },
+    { key: 'connectors', label: 'Connectors', value: grantSummary(block.connectors).label },
+    { key: 'secrets', label: 'Secrets', value: grantSummary(block.secrets).label },
+    { key: 'kortix_cli', label: 'CLI', value: grantSummary(block.kortix_cli).label },
+    ...(oc.hidden ? [{ key: 'hidden', label: 'Visibility', value: 'Hidden' }] : []),
   ];
 
   return (
-    <div className="border-border/60 bg-muted/20 space-y-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <SectionHeader icon={Bot} title="Configuration" />
-        <Badge variant="muted" size="xs" className="font-mono">
-          yaml + .md
-        </Badge>
-      </div>
+    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+      <Label>Configuration</Label>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {block.opencode?.mode ? (
-          <Badge variant="outline" size="xs" className="capitalize">
-            {block.opencode.mode}
-          </Badge>
-        ) : null}
-        {block.opencode?.model ? (
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.opencode.model}
-          </Badge>
-        ) : null}
-        {block.opencode?.temperature !== undefined ? (
-          <Badge variant="outline" size="xs">
-            temp {block.opencode.temperature}
-          </Badge>
-        ) : null}
-        {block.opencode?.hidden ? (
-          <Badge variant="muted" size="xs">
-            hidden
-          </Badge>
-        ) : null}
-        {block.enabled === false ? (
-          <Badge variant="muted" size="xs">
-            disabled
-          </Badge>
-        ) : null}
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-            Environment
-          </span>
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.sandbox ?? 'Project default'}
-          </Badge>
-        </div>
-        {summaries.map((s) => {
-          const sum = grantSummary(s.grant);
-          return (
-            <div key={s.key} className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-                {s.label}
-              </span>
-              <Badge variant={sum.tone} size="xs">
-                {sum.label}
-              </Badge>
-            </div>
-          );
-        })}
-      </div>
+      <dl className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted-foreground shrink-0 text-xs">{row.label}</dt>
+            <dd
+              className={cn(
+                'text-foreground min-w-0 truncate text-xs font-medium',
+                row.mono && 'font-mono',
+              )}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
 
       <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
         Edit configuration
@@ -383,4 +361,9 @@ export function AgentConfigEditor({
       ) : null}
     </div>
   );
+}
+
+/** `primary` -> `Primary`. Sentence case, not the raw manifest token. */
+function formatModeLabel(mode: string): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
 }

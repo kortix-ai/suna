@@ -461,9 +461,10 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  // Connectors and Skills graduated out of Customize into their own routed
-  // pages (see capabilities/tabs.ts) — those tiles carry a capability tab key
-  // instead of a CustomizeSection and navigate there directly.
+  // Agents, Connectors and Skills graduated out of Customize into their own
+  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
+  // carry a capability tab key instead of a CustomizeSection and navigate
+  // there directly.
   section: CustomizeSection | CapabilityTab['key'];
 };
 
@@ -506,7 +507,10 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     icon: Kortix,
     title: 'Agent',
     desc: 'Shape how your agent thinks and acts.',
-    section: 'agents',
+    // 'agent' (the route segment), not the old 'agents' overlay section —
+    // `isCapabilityTabKey` matches on the key, so the wrong spelling would
+    // silently fall through to `openCustomize('agents')` and open nothing.
+    section: 'agent',
   },
 ];
 

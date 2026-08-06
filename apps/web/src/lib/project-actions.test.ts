@@ -24,8 +24,8 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     // The old rule required project.customize.write for every section → a
     // read-only / granular role saw a blank panel. Now the read leaf is enough.
     const can = canFrom(READS); // deliberately no customize.write
-    expect(isCustomizeSectionVisible('agents', can)).toBe(true);
     expect(isCustomizeSectionVisible('channels', can)).toBe(true);
+    expect(isCustomizeSectionVisible('git', can)).toBe(true);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true);
     expect(isCustomizeSectionVisible('schedules', can)).toBe(true);
     expect(isCustomizeSectionVisible('members', can)).toBe(true);
@@ -40,18 +40,18 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     ]);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true); // has secret.read
     expect(isCustomizeSectionVisible('settings', can)).toBe(true); // gates on project.read
-    expect(isCustomizeSectionVisible('agents', can)).toBe(false); // lacks agent.read
+    expect(isCustomizeSectionVisible('channels', can)).toBe(false); // lacks connector.read
   });
 
   test('a role omitting a specific read leaf hides just that section', () => {
     const can = canFrom(READS.filter((a) => a !== PROJECT_ACTIONS.PROJECT_SECRET_READ));
-    expect(isCustomizeSectionVisible('agents', can)).toBe(true);
+    expect(isCustomizeSectionVisible('channels', can)).toBe(true);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(false); // read leaf omitted
   });
 
   test('a role with NO read leaves sees nothing (empty panel, correctly)', () => {
     const can = canFrom([]);
-    expect(isCustomizeSectionVisible('agents', can)).toBe(false);
+    expect(isCustomizeSectionVisible('channels', can)).toBe(false);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(false);
     expect(isCustomizeSectionVisible('settings', can)).toBe(false);
   });

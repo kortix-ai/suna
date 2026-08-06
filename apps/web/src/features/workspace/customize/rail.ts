@@ -8,7 +8,6 @@ import {
   GitForkIcon as GitFork,
   KeyIcon as KeyRound,
   MonitorIcon as Monitor,
-  RobotIcon as Bot,
   ShippingContainerIcon as Container,
   StorefrontIcon as Store,
   TrayIcon as Inbox,
@@ -59,8 +58,12 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 
 const GROUPS: readonly RailGroup[] = [
   {
+    // Agents graduated to `/projects/<id>/agent` and is no longer an overlay
+    // section, so Build starts empty and is composed entirely from the
+    // flag-gated items below. `customize-panel` drops groups whose items all
+    // filter out, so an all-flags-off project renders no orphan header.
     label: 'Build',
-    items: [{ section: 'agents', label: 'Agents', icon: Bot }],
+    items: [],
   },
   {
     label: 'Connect',

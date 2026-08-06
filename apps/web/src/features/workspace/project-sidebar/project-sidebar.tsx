@@ -196,7 +196,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   onClick={handleNewSession}
                   disabled={creatingSession}
                   aria-busy={creatingSession}
-                  className="group/menu-button text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                  className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
                 >
                   <span className="shrink-0">
                     <NavigationArrowIcon className="rotate-90" />

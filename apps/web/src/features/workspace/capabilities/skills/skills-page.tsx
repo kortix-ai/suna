@@ -111,10 +111,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // One control, two labels. The header has a title beside it and can be terse;
   // the empty state is the whole screen and has to name what it creates. Both
   // start the same configure thread, so they cannot drift apart.
-  const createButton = (label: string) =>
+  const createButton = (label: string, className?: string) =>
     canWrite ? (
       <Button
         variant="secondary"
+        className={className}
         onClick={() => configure.start(newConfigPrompt('skill'))}
         disabled={configure.pending}
       >
@@ -131,7 +132,9 @@ export function SkillsPage({ projectId }: { projectId: string }) {
     <CapabilityPageShell
       title="Skills"
       description="Reusable instructions your agents load on demand."
-      action={createButton('New')}
+      // `h-10` matches the search input beside it (Input size="md"); the
+      // Button default is `h-9`, which left the header pair 4px mismatched.
+      action={createButton('New', 'h-10')}
       search={
         <InputGroupSearch>
           <InputGroupSearchIcon>
@@ -142,6 +145,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
+            size='sm'
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>

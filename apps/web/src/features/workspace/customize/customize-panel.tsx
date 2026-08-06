@@ -8,7 +8,6 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
@@ -374,8 +373,9 @@ function SectionContent({
   }
 
   switch (section) {
-    case 'agents':
-      return <AgentsView projectId={projectId} />;
+    // No `agents` case: Agents graduated to /projects/<id>/agent. A stale
+    // `/customize/agents` deep link redirects there (see
+    // `legacyCustomizeRedirect`) rather than opening the overlay.
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'secrets':

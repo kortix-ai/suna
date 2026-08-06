@@ -80,7 +80,10 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   CustomizeSection,
   { read: ProjectAction; write?: ProjectAction }
 > = {
-  agents: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+  // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
+  // itself on PROJECT_AGENT_READ/WRITE directly (project-settings-nav's
+  // TAB_PREFERENCE and the page's own useProjectCan). This map only covers
+  // sections the Customize rail renders.
   secrets: {
     read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,

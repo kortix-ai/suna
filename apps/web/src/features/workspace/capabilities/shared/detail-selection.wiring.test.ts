@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 const PAGES = [
+  { name: 'agents', file: '../agents/agents-page.tsx', clear: 'setSelectedPath(null)' },
   { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
