@@ -122,6 +122,18 @@ describe('META_AGENT_GUIDE control loop', () => {
     );
   });
 
+  test('classifies unmeasurable and stalled goals before selecting work', () => {
+    expect(META_AGENT_GUIDE).toContain(
+      'A declared metric with no observation is `unmeasurable`, never `on_track`.',
+    );
+    expect(META_AGENT_GUIDE).toContain(
+      'Three consecutive goal-push observations with the same value are `stalled`.',
+    );
+    expect(META_AGENT_GUIDE).toContain(
+      'create a bounded measurement or diagnosis task instead of claiming progress.',
+    );
+  });
+
   test('delivers missing secrets and capabilities as blockers without adding a scheduler', () => {
     expect(META_AGENT_GUIDE).toContain(
       'Missing API keys, secrets, approvals, connectors, tools, or capabilities are delivered blockers.',
