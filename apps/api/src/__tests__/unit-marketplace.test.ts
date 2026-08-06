@@ -51,6 +51,41 @@ describe('marketplace catalog', () => {
     expect(starterDetail!.dependencyItems.some((d) => d.name === 'pdf')).toBe(true);
   });
 
+  test('the starter project lists only the starter floor; marketplace-layer skills stay out', async () => {
+    // "What's inside" the Kortix Starter is exactly what a cloned starter repo
+    // ships: the general-knowledge-worker floor. Marketplace-layer extras and
+    // use-case runbook skills must not be badged as starter contents.
+    const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
+    expect(starterDetail!.dependencyItems.map((d) => d.name).sort()).toEqual([
+      'agent-browser',
+      'design-foundations',
+      'docx',
+      'pdf',
+      'presentations',
+      'web-publishing-and-deployments',
+      'webapp',
+      'website-building',
+      'xlsx',
+    ]);
+
+    const all = await listCatalogItems({ source: 'kortix' });
+
+    // A marketplace-layer extra (deep-research) is a standalone browse tile
+    // WITHOUT the "Part of Kortix Starter" badge.
+    const deepResearch = all.find((i) => i.name === 'deep-research');
+    expect(deepResearch).toBeTruthy();
+    expect(deepResearch!.partOfProject).toBeUndefined();
+
+    // A use-case runbook skill (a use-case template dependency) is not a browse
+    // tile at all…
+    expect(all.find((i) => i.name === 'invoice-math')).toBeUndefined();
+    // …but stays resolvable by id for the use-case install wizard.
+    const invoiceMath = await getCatalogItemDetail('kortix-starter:invoice-math');
+    expect(invoiceMath).toBeTruthy();
+    expect(invoiceMath!.useCase).toBe(true);
+    expect(invoiceMath!.partOfProject).toBeUndefined();
+  });
+
   test('lists optional Kortix skills through the marketplace', async () => {
     // agent-browser is browseable alongside every other kortix-starter skill,
     // and it stays fully resolvable by id and shows up inside the starter
@@ -131,7 +166,7 @@ describe('marketplace catalog', () => {
     const managedCandidates = [
       'kortix-cli',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',
@@ -194,9 +229,11 @@ describe('marketplace catalog', () => {
     expect(kortix.external).toBe(false);
     // Kortix browses as the "Kortix Starter" project PLUS every individual
     // kortix-starter skill as its own top-level browse tile — so the facet
-    // count is back to the full browseable kortix set, not the folded model's
-    // single hero tile (1).
-    expect(kortix.count).toBeGreaterThan(20);
+    // count is the full browseable kortix set, not the folded model's single
+    // hero tile (1). Use-case runbook skills (wizard installs) are excluded
+    // from browse, so the count stays in the tens, not the hundreds.
+    expect(kortix.count).toBeGreaterThan(10);
+    expect(kortix.count).toBeLessThan(40);
 
     // The base registries (kortix bundles + kortix-starter skills) collapse to one id…
     expect(marketplaceIdOf('kortix-starter')).toBe('kortix');

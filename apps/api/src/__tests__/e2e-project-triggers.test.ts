@@ -354,7 +354,7 @@ mock.module('../projects/secrets', () => ({
   projectSecretsRevision: async () => 'empty',
   getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
     secretConsumerReads.push(input);
-    return input.consumer === 'executor' ? (secretValues.get(input.name) ?? null) : null;
+    return input.consumer === 'connector' ? (secretValues.get(input.name) ?? null) : null;
   },
 }));
 
@@ -1390,7 +1390,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
       name: 'HOOK_SECRET',
-      consumer: 'executor',
+      consumer: 'connector',
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);

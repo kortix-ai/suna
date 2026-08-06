@@ -126,6 +126,10 @@ RUN case "$(uname -m)" in \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
 
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
@@ -154,7 +158,7 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
+COPY kortix-connectors-sdk/ /opt/kortix/packages/connector-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
@@ -300,6 +304,10 @@ RUN case "$(uname -m)" in \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
 
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
@@ -328,7 +336,7 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
+COPY kortix-connectors-sdk/ /opt/kortix/packages/connector-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
@@ -475,6 +483,10 @@ RUN case "$(uname -m)" in \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
 
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
@@ -516,7 +528,7 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
+COPY kortix-connectors-sdk/ /opt/kortix/packages/connector-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\

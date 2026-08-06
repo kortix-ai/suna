@@ -1,11 +1,11 @@
 // ─── Review Center ──────────────────────────────────────────────────────────
 // Per-project human-in-the-loop inbox. Agents submit outputs / decisions /
 // batches for review; humans approve, reject, request changes, or answer. Native
-// items only this pass — change requests and executor/tunnel approvals are folded
+// items only this pass — change requests and connector/tunnel approvals are folded
 // in by adapters later. See docs/REVIEW_CENTER_DESIGN.md.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { executorExecutions, projectSessions } from '@kortix/db';
+import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -92,15 +92,15 @@ projectsApp.openapi(
     }
     const pendingExecutions = await db
       .select({
-        executionId: executorExecutions.executionId,
-        sessionId: executorExecutions.sessionId,
-        actingUserId: executorExecutions.actingUserId,
+        executionId: connectorCalls.executionId,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
       })
-      .from(executorExecutions)
+      .from(connectorCalls)
       .where(
         and(
-          eq(executorExecutions.projectId, projectId),
-          eq(executorExecutions.status, 'pending_approval'),
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.status, 'pending_approval'),
         ),
       );
     const sessionIds = [
@@ -148,7 +148,7 @@ projectsApp.openapi(
     const items = await listInboxItems(projectId, {
       segment: segment as ReviewSegment | undefined,
       kind: kind as (typeof KINDS)[number] | undefined,
-      canExposeExecutorPreview: (execution) => previewExecutionIds.has(execution.executionId),
+      canExposeConnectorCallPreview: (execution) => previewExecutionIds.has(execution.executionId),
     });
     return c.json({ review_items: items });
   },
@@ -320,7 +320,7 @@ projectsApp.openapi(
         400,
       );
     }
-    // Adapted items (change requests, executor approvals) act through their own
+    // Adapted items (change requests, connector approvals) act through their own
     // source flow, not the review act endpoint.
     if (isAdaptedId(reviewItemId)) {
       return c.json({ error: 'Act on this item from its source view' }, 409);

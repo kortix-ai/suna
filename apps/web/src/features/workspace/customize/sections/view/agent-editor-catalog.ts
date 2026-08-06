@@ -148,7 +148,7 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
     actions: [
       'project.connector.read',
       'project.connector.write',
-      'project.connector.profiles.manage',
+      'project.connector.connections.manage',
     ],
   },
   {

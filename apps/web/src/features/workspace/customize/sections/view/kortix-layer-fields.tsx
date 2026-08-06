@@ -25,7 +25,7 @@ import { WORKSPACE_MODES, WORKSPACE_MODE_HELP } from './agent-editor-catalog';
 import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk';
 
 /**
- * Marks one granted connector profile as required before session start.
+ * Marks one granted connector as required before session start.
  */
 function RequiredConnectorToggle({
   active,
@@ -38,8 +38,8 @@ function RequiredConnectorToggle({
     <Hint
       label={
         active
-          ? 'Required before session start. The connector profile authorization strategy selects the valid authorization.'
-          : 'Optional at session start. Click to require this connector profile.'
+          ? 'Required before session start. The connector authorization strategy selects the valid connection.'
+          : 'Optional at session start. Click to require this connector.'
       }
     >
       <button

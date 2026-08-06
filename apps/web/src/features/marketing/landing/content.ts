@@ -18,7 +18,7 @@
  */
 export const hero = {
   title: 'The open-source AI Management System',
-  sub: 'Your agents, their skills, your company memory and every integration in one platform. Any model, your keys, self-hosted or managed cloud.',
+  sub: 'Your agents, their skills, your company memory and every connector in one platform. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',

@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   ensureEmailSessionBinding,
-  loadEmailInstallProfileId,
+  loadEmailInstallConnectionId,
 } from '../../projects/lib/session-connector-bindings';
 import {
   continueSession as continueLifecycleSession,
@@ -109,7 +109,7 @@ async function spawnEmailAgentTurn(
         inboxId,
       }))
     ) {
-      console.error('[email-webhook] could not bind existing session to inbox profile', {
+      console.error('[email-webhook] could not bind existing session to inbox connection', {
         projectId,
         sessionId: existing.sessionId,
         inboxId,
@@ -120,7 +120,7 @@ async function spawnEmailAgentTurn(
       source: 'email',
       sessionId: existing.sessionId,
       text: renderFollowUpPrompt(event),
-      opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
     if (outcome === 'delivered') {
       await db
@@ -194,7 +194,7 @@ async function createThreadSession(
     const sessionId = await waitForThreadSession(inboxId, threadId);
     if (sessionId) {
       if (!(await ensureEmailSessionBinding({ projectId, sessionId, inboxId }))) {
-        console.error('[email-webhook] could not bind claimed session to inbox profile', {
+        console.error('[email-webhook] could not bind claimed session to inbox connection', {
           projectId,
           sessionId,
           inboxId,
@@ -205,16 +205,16 @@ async function createThreadSession(
         source: 'email',
         sessionId,
         text: renderFollowUpPrompt(event),
-        opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
       });
     }
     return;
   }
 
   const initialPrompt = renderAgentPrompt(event, revived);
-  const emailProfileId = await loadEmailInstallProfileId(projectId, inboxId);
-  if (!emailProfileId) {
-    console.error('[email-webhook] no active connection profile for inbox', {
+  const emailConnectionId = await loadEmailInstallConnectionId(projectId, inboxId);
+  if (!emailConnectionId) {
+    console.error('[email-webhook] no active connection for inbox', {
       projectId,
       inboxId,
     });
@@ -230,14 +230,14 @@ async function createThreadSession(
       agent_name: selection?.agentName || 'default',
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       connector_bindings: {
-        email: { authorization_id: emailProfileId },
+        email: { connection_id: emailConnectionId },
       },
       // Email delivers its prompt via postCreate, so create is the only moment
       // this session has any user text — title from the subject.
       title_source: messageSubject(event) ?? messageSummary(event),
     },
     enforceAccountCap: false,
-    mayManageSystemConnectorProfiles: true,
+    mayManageSystemConnections: true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: claimKey,
     postCreate: [
@@ -269,7 +269,7 @@ async function createThreadSession(
     extraEnvVars: {
       // Email delivery cannot depend on a shell fallback. Enable the
       // session-scoped MCP face so OpenCode exposes the bound inbox as tools.
-      KORTIX_EXECUTOR_MCP_ENABLED: '1',
+      KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_EMAIL_INBOX_ID: inboxId,
       KORTIX_EMAIL_THREAD_ID: threadId,
       KORTIX_EMAIL_MESSAGE_ID: event.message.message_id,
@@ -379,7 +379,7 @@ function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
   return [
     'How to work:',
     '- You are operating an AgentMail inbox assigned to this Kortix project.',
-    '- Use the Executor MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
+    '- Use the Connector MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
     '- Start with `connectors`. Use `discover` to find an action and `describe` to confirm its input schema before the first call.',
     `- Read the current thread with \`call\`: \`${readThreadCall}\`.`,
     `- Reply in the same conversation with \`call\`: \`${replyCall}\`. Use \`html\` instead of \`text\` only when needed.`,

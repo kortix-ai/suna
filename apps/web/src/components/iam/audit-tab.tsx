@@ -102,7 +102,7 @@ const QUICK_FILTERS: Array<{
   { label: 'People', actorType: 'human' },
   { label: 'Agents', actorType: 'agent' },
   { label: 'Sessions', resourceType: 'project_session' },
-  { label: 'Connectors', action: 'executor.' },
+  { label: 'Connectors', action: 'connector.' },
   { label: 'Computer', action: 'computer.' },
   { label: 'Failures', outcome: 'failure' },
 ];
@@ -127,7 +127,7 @@ const SOURCES = [
   { label: 'CLI', value: 'cli' },
   { label: 'SDK', value: 'sdk' },
   { label: 'Agent', value: 'agent' },
-  { label: 'Executor', value: 'executor' },
+  { label: 'Connector', value: 'connector' },
   { label: 'Automation', value: 'automation' },
   { label: 'Slack', value: 'slack' },
   { label: 'Teams', value: 'teams' },

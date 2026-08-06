@@ -496,7 +496,7 @@ function CopyInstallCommand() {
 /** A real terminal recording, replayed from the captured pty output of the
  *  shipped CLI: `curl … | bash` installs it, `kortix projects use` picks the
  *  project, `kortix connectors ls` / `show` lists the connectors and the exact
- *  actions an agent calls through the executor, `kortix sessions new` boots a
+ *  actions an agent calls through the connector, `kortix sessions new` boots a
  *  cloud computer, `kortix sessions status` shows it working. Every character
  *  on screen is output the CLI produced against dev-api.kortix.com. The grid is
  *  112 columns by 18 rows so real output — the host line is 111 characters —

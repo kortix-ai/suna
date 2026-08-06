@@ -26,7 +26,7 @@ const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
-const SESSION_BOUND_PAT = 'kortix_pat_session_executor';
+const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -258,7 +258,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
-  // executor/sync.ts imports these from the same barrel; a wholesale module mock
+  // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
   // reads as "the suite is broken" rather than "the mock is short two names".
   RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},

@@ -29,7 +29,7 @@ export function unwrapError(raw: unknown): string {
       }
       return extractErrorFromObject(parsed) || str;
     } catch {
-      // Not directly parseable as JSON — router/executor errors commonly wrap
+      // Not directly parseable as JSON — router/connector errors commonly wrap
       // a JSON body inside a plain-text prefix, e.g. router tool credit
       // failures: `Error: 402 Error: {"error":true,"message":"Insufficient
       // credits","status":402}`. Extract the outermost {...} substring (if

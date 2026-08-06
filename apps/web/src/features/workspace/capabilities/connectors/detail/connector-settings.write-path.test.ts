@@ -31,16 +31,16 @@ describe('connector settings write path', () => {
     // section label plus the field is the whole explanation now.
     expect(source).toContain('<Label>Connects as</Label>');
     expect(source).not.toContain('Project — one account everyone uses');
-    const section = source.slice(source.indexOf('<Label>Connects as'), source.indexOf('</section>'));
+    const section = source.slice(
+      source.indexOf('<Label>Connects as'),
+      source.indexOf('</section>'),
+    );
     expect(section).not.toMatch(/<p\b/);
   });
 
   test('the danger row never mutates directly — only ConfirmDialog does', () => {
     // The visible Remove button only opens the dialog.
-    const removeButtonBlock = source.slice(
-      source.indexOf('<Button'),
-      source.indexOf('</Button>'),
-    );
+    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
     expect(removeButtonBlock).toContain('onClick={() => setConfirmDelete(true)}');
     expect(removeButtonBlock).not.toContain('remove.mutate()');
 
@@ -57,10 +57,7 @@ describe('connector settings write path', () => {
     // destructive. Scoped to the Remove `<Button>` element itself, not the
     // surrounding prose, which legitimately names "destructive" in a comment
     // explaining this exact rule.
-    const removeButtonBlock = source.slice(
-      source.indexOf('<Button'),
-      source.indexOf('</Button>'),
-    );
+    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
     expect(removeButtonBlock).not.toContain('variant="destructive"');
   });
 
@@ -83,8 +80,7 @@ describe('connector settings write path', () => {
     const root = join(import.meta.dir, '..', '..');
     const callers = readdirSync(root, { recursive: true, encoding: 'utf8' })
       .filter(
-        (name) =>
-          /\.tsx?$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'),
+        (name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'),
       )
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('deleteConnector('));
     expect(callers).toEqual(['connectors/detail/connector-settings.tsx']);
@@ -92,7 +88,7 @@ describe('connector settings write path', () => {
 
   test('the field is called with hideLabel, so "Connects as" stays the only label', () => {
     // "Connects as" is the plain-language section label; `hideLabel`
-    // (asserted structurally against `connector-profile-modal.tsx` in
+    // (asserted structurally against `connector-connection-modal.tsx` in
     // `connector-authorization-lock.test.ts`) suppresses
     // `AuthorizationStrategyField`'s own "Authorization owner" label so the
     // two never stack. Scoped to the call site itself, not the whole file —

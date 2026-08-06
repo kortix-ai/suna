@@ -7,7 +7,7 @@ description: "Canonical reference for Kortix projects, the CLI, sessions, sandbo
 
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-executor`, `kortix-memory`,
+**system skills** — `kortix-system`, `kortix-connectors`, `kortix-memory`,
 `kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
@@ -21,7 +21,7 @@ re-install, no image re-bake):
 skills are marketplace items. Browse them with
 `kortix marketplace list --type skill`.
 
-Before answering anything about Kortix internals — the executor/connectors,
+Before answering anything about Kortix internals — connectors and connections,
 project memory, Slack/channels, reaching a connected computer, or sending a
 notetaker into a meeting — load the matching skill with
 `kortix system-skills get <name>` and follow it. Prefer this over any stale
@@ -58,7 +58,7 @@ multi-source investigation), **browser automation** (logins, forms, JS
 sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 **documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
 transcription), **websites & apps** (build + deploy from the repo),
-**integrations** (3,000+ connectors + MCP/OpenAPI/GraphQL/HTTP, brokered
+**connectors** (3,000+ apps + MCP/OpenAPI/GraphQL/HTTP, brokered
 server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
 (a compounding file-based company brain), **scheduling** (cron/webhook
 triggers — see `<scheduling>` below), **channels** (Slack and chat
@@ -163,8 +163,8 @@ that's intentional. Use `kortix projects info` to inspect **this** project.
 or an app connected, **mint a setup link and surface the URL in the same turn** —
 don't tell the human to "open Customize → Connectors", and don't ask them to
 paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-executor` MCP (or `kortix secrets request` / `kortix executor connect` /
-`kortix connectors link`). The human gets a fill-in
+`kortix-connectors` MCP (or `kortix secrets request` /
+`kortix connectors connect`). The human gets a fill-in
 modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
@@ -440,7 +440,7 @@ manifest.
 agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     sandbox: ml                         # default environment for this agent
-    connectors: [github]                # which connector profiles it may call   (default: none)
+    connectors: [github]                # which connectors it may call   (default: none)
     kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
 ```
 
@@ -486,7 +486,7 @@ project.file.read  project.file.write
 project.customize.read  project.customize.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
-project.connector.read  project.connector.write  project.connector.profiles.manage   # channels (Slack/meet/email) send + connect are gated here
+project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -500,7 +500,7 @@ to see the full enum.
 <reference path=".kortix/opencode/skills/kortix-system/references/capabilities.md">
   The full capabilities reference behind the `<capabilities>` summary
   above: a worked-example paragraph per capability (research, browser,
-  code/data, documents, media, websites/apps, integrations, secrets,
+  code/data, documents, media, websites/apps, connectors, secrets,
   memory, scheduling, channels, subagents, models), "What Kortix is," and
   "What makes Kortix different" for comparison questions. Load whenever a
   capability question needs more than the one-liner in SKILL.md.
@@ -512,7 +512,7 @@ to see the full enum.
   punting the human to the dashboard or asking them to paste a raw key. Covers
   the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix executor connect` / `kortix connectors link` CLI), what the human sees
+  `kortix connectors connect` CLI), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.

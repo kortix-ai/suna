@@ -1,12 +1,12 @@
 /**
  * Shared tunnel RPC core — the one permission-check → relay → audit pipeline.
  *
- * Both the dedicated `POST /v1/tunnel/rpc/:tunnelId` route AND the Executor's
+ * Both the dedicated `POST /v1/tunnel/rpc/:tunnelId` route AND the Connector's
  * `computer` connector call go through `executeTunnelRpc`, so there is a single
  * code path for resolving a method's capability, checking the per-machine tunnel
  * permission, relaying over the WS, and writing the tunnel audit log. The route
  * translates the outcome union → HTTP status codes (unchanged contract); the
- * Executor maps it onto a CallResult.
+ * Connector maps it onto a CallResult.
  *
  * The computer helpers (`listAccountComputers`, `executeComputerCall`) sit here
  * too: they resolve a machine selector → tunnelId (scoped to the account) and
@@ -23,7 +23,7 @@ import { tunnelRateLimiter } from './rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from './scope-validator';
 import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
 
-/** Outcome of a single relayed tunnel RPC. The route + the executor each map this. */
+/** Outcome of a single relayed tunnel RPC. The route + the connector each map this. */
 export type TunnelRpcOutcome =
   | { ok: true; result: unknown }
   | { ok: false; kind: 'permission_required'; requestId: string; message: string }
@@ -50,7 +50,7 @@ export function resolveCapability(method: string): TunnelCapability | null {
  * Run one RPC against a tunnel: rate-limit → resolve capability → check the
  * per-machine permission (creating a permission request on deny) → relay →
  * audit. Ownership of the tunnel (account scoping) is the CALLER's job — the
- * `/rpc` route enforces its ownerClause, the executor resolves the tunnel within
+ * `/rpc` route enforces its ownerClause, the connector resolves the tunnel within
  * the account — so this core is purely the permission/relay/audit pipeline.
  */
 export async function executeTunnelRpc(input: {
@@ -177,7 +177,7 @@ function estimateBytes(result: unknown): number {
 
 // ─── Computer connector helpers ───────────────────────────────────────────────
 
-/** A machine as the executor surfaces it (`list_computers`). */
+/** A machine as the connector surfaces it (`list_computers`). */
 export interface ComputerMachine {
   id: string;
   name: string;

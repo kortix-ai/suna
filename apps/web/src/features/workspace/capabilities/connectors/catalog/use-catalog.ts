@@ -1,18 +1,18 @@
 'use client';
 
-import { listDiscoverIntegrations, listPipedreamApps } from '@kortix/sdk';
+import { listDiscoverConnectors, listPipedreamApps } from '@kortix/sdk';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
 
-import { CATALOG_PREFETCH_PAGES, shouldPrefetchMorePages } from './catalog-prefetch';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
+import { CATALOG_PREFETCH_PAGES, shouldPrefetchMorePages } from './catalog-prefetch';
 
 export interface CatalogState {
   /** The first page, normalised. There is no second one — see the note on
@@ -52,7 +52,7 @@ export interface CatalogState {
  *
  * **Why not merge them.** The two publish overlapping apps under different
  * slugs and different `id` namespaces, and each has its own add flow
- * (`DiscoverAddFlow` vs `ConnectorProfileModal`). A merged list would need a
+ * (`DiscoverAddFlow` vs `ConnectorConnectionModal`). A merged list would need a
  * cross-catalogue identity that neither API provides; picking one source per
  * project is honest and keeps every card's click target unambiguous.
  *
@@ -83,13 +83,9 @@ export function useCatalog(
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
 
   const discoverQuery = useInfiniteQuery({
-    queryKey: ['discover-integrations', projectId, activeQuery],
+    queryKey: ['discover-connectors', projectId, activeQuery],
     queryFn: ({ pageParam }) =>
-      listDiscoverIntegrations(
-        projectId,
-        activeQuery || undefined,
-        pageParam as string | undefined,
-      ),
+      listDiscoverConnectors(projectId, activeQuery || undefined, pageParam as string | undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,

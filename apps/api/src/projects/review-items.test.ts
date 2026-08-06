@@ -37,7 +37,7 @@ describe('collectInboxItems fault isolation', () => {
     const sources: InboxSources = {
       native: async () => [nativeRow()],
       changeRequests: throwing('change_requests'),
-      executorApprovals: throwing('executor_executions'),
+      connectorApprovals: throwing('connector_calls'),
     };
 
     const items = await collectInboxItems(sources);
@@ -51,7 +51,7 @@ describe('collectInboxItems fault isolation', () => {
     const sources: InboxSources = {
       native: throwing('native'),
       changeRequests: throwing('change_requests'),
-      executorApprovals: throwing('executor_executions'),
+      connectorApprovals: throwing('connector_calls'),
     };
 
     // The point of the fix: this must resolve to [], not reject → the route
@@ -68,7 +68,7 @@ describe('collectInboxItems fault isolation', () => {
         nativeRow({ reviewItemId: 'ri_ok2' }),
       ],
       changeRequests: async () => [],
-      executorApprovals: async () => [],
+      connectorApprovals: async () => [],
     };
 
     const items = await collectInboxItems(sources);
@@ -84,7 +84,7 @@ describe('collectInboxItems fault isolation', () => {
         nativeRow({ reviewItemId: 'ri_decision', status: 'needs_you', kind: 'decision' }),
       ],
       changeRequests: async () => [],
-      executorApprovals: async () => [],
+      connectorApprovals: async () => [],
     };
 
     const needsYou = await collectInboxItems(sources, { segment: 'needs_you' });

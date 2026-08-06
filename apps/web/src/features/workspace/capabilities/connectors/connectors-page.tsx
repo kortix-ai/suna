@@ -8,12 +8,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import {
   InputGroupSearch,
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -26,48 +26,57 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
-  connectorAuthorizationQueryKeys,
+  connectorConnectionQueryKeys,
   connectorSetupStatus,
-} from '@/features/workspace/customize/sections/connector-profile-form';
+} from '@/features/workspace/customize/sections/connector-connection-form';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   ConnectorAppIcon,
   ConnectorConnectedMark,
   ConnectorStatusBadge,
 } from './connector-identity';
 import { providerLabel } from './provider-label';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 
+import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
+import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
+import {
+  connectedCatalogKeys,
+  type CatalogEntry,
+} from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
+import {
+  CategorySelect,
+  ConnectorBrowse,
+} from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
+import {
+  ALL_CATEGORIES,
+  catalogCategoryKeys,
+} from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
+import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
-import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import {
   projectDetailQuery,
   useProjectAccountId,
 } from '@/features/workspace/capabilities/shared/project-detail-query';
-import { connectedCatalogKeys, type CatalogEntry } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
-import { CategorySelect, ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
-import { ALL_CATEGORIES, catalogCategoryKeys } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import {
   connectorDisplayName,
   connectorSummary,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
-import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
-import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
-import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 
 /**
  * The two click-gated surfaces, split out of this route's initial chunk.
  *
  * Both reach `customize/sections/connectors-view.tsx` — 5,075 lines whose own
  * import list pulls `@pipedream/sdk/browser`, `HighlightedCode` (shiki),
- * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorProfileModal`. An ES
+ * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorConnectionModal`. An ES
  * module is all-or-nothing to the bundler, so two `import` lines put that
  * entire graph in front of a page that paints a grid of cards.
  * `connector-identity.tsx` was lifted out of that file for exactly this
@@ -219,7 +228,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const emailChannelEnabled = experimental?.agentmail_email === true;
 
   const authorizationQueryKeys = useMemo(
-    () => connectorAuthorizationQueryKeys(projectId),
+    () => connectorConnectionQueryKeys(projectId),
     [projectId],
   );
   const invalidate = useCallback(() => {
@@ -421,7 +430,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           availableCategories={availableCategories}
           onSelect={setCatalogTarget}
           emptyTitle="Catalogue unavailable"
-          emptyDescription="The integration catalogue returned nothing. Try again shortly."
+          emptyDescription="The connector catalogue returned nothing. Try again shortly."
         />
       ) : (
         <CatalogGrid
@@ -469,12 +478,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
       {/* One target, two add flows. `CatalogEntry` is a discriminated union, so
           the source that produced the card decides which flow opens — a
-          Discover entry cannot be handed to Pipedream's profile modal, and
+          Discover entry cannot be handed to Pipedream's connection modal, and
           vice versa. Each receives `null` unless the target is its own kind,
           which is also what keeps them closed. */}
       <DiscoverAddFlow
         projectId={projectId}
-        integration={catalogTarget?.source === 'discover' ? catalogTarget.integration : null}
+        connector={catalogTarget?.source === 'discover' ? catalogTarget.connector : null}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
         onClose={() => setCatalogTarget(null)}

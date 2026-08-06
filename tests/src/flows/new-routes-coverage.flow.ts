@@ -43,22 +43,22 @@ flow(
   {
     domain: 'coverage',
     routes: [
-      'GET /v1/executor/connect-status',
-      'GET /v1/executor/projects/:projectId/catalog',
-      'POST /v1/executor/projects/:projectId/call',
+      'GET /v1/connectors/connect-status',
+      'GET /v1/connectors/projects/:projectId/catalog',
+      'POST /v1/connectors/projects/:projectId/call',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
 
-    await ctx.step('ANON cannot read executor connection status', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/executor/connect-status');
+    await ctx.step('ANON cannot read connection status', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/connectors/connect-status');
       r.status(401);
     });
-    await ctx.step('project member can reach executor catalog', async () => {
+    await ctx.step('project member can reach connector catalog', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/executor/projects/:projectId/catalog', { params: { projectId: p.id } });
+        .get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id } });
       r.status([200, 403, 501]);
     });
     await ctx.step(
@@ -66,7 +66,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post('/v1/executor/projects/:projectId/call', {}, { params: { projectId: p.id } });
+          .post('/v1/connectors/projects/:projectId/call', {}, { params: { projectId: p.id } });
         r.status([400, 403, 404, 501]);
       },
     );
@@ -411,9 +411,9 @@ flow(
   {
     domain: 'coverage',
     routes: [
-      'GET /v1/projects/:projectId/connector-profiles/all',
+      'GET /v1/projects/:projectId/connections/all',
       'GET /v1/projects/:projectId/sessions/:sessionId/scope',
-      'PUT /v1/projects/:projectId/connector-profiles/:profileId/default',
+      'PUT /v1/projects/:projectId/connections/:connectionId/default',
       'PUT /v1/projects/:projectId/sessions/:sessionId/model',
       'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
     ],
@@ -421,19 +421,19 @@ flow(
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: ZERO_UUID };
-    const profileParams = { ...projectParams, profileId: ZERO_UUID };
+    const profileParams = { ...projectParams, connectionId: ZERO_UUID };
     const sessionParams = { ...projectParams, sessionId: ZERO_UUID };
 
-    await ctx.step('unknown project hides the connector authorization roster', async () => {
-      const roster = await owner.get('/v1/projects/:projectId/connector-profiles/all', {
+    await ctx.step('unknown project hides the connection roster', async () => {
+      const roster = await owner.get('/v1/projects/:projectId/connections/all', {
         params: projectParams,
       });
       roster.status(404);
     });
 
-    await ctx.step('unknown project blocks connector profile mutations', async () => {
+    await ctx.step('unknown project blocks connector mutations', async () => {
       const makeDefault = await owner.put(
-        '/v1/projects/:projectId/connector-profiles/:profileId/default',
+        '/v1/projects/:projectId/connections/:connectionId/default',
         {},
         { params: profileParams },
       );
@@ -509,6 +509,62 @@ flow(
         params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
       });
       read.status(400);
+    });
+  },
+);
+
+flow(
+  'COV-12',
+  {
+    domain: 'coverage',
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/question',
+      'POST /v1/projects/:projectId/sessions/:sessionId/question',
+      'POST /v1/projects/:projectId/secrets/sync',
+      'POST /v1/admin/api/accounts/:accountId/enterprise-entitlement',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const sessionParams = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
+
+    await ctx.step('an unknown project hides durable session questions', async () => {
+      const read = await owner.get(
+        '/v1/projects/:projectId/sessions/:sessionId/question',
+        { params: sessionParams },
+      );
+      read.status(404);
+      const answer = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/question',
+        { answers: ['yes'] },
+        { params: sessionParams },
+      );
+      answer.status(404);
+    });
+
+    await ctx.step('an unknown project blocks forced secret synchronization', async () => {
+      const sync = await owner.post(
+        '/v1/projects/:projectId/secrets/sync',
+        {},
+        { params: { projectId: ZERO_UUID } },
+      );
+      sync.status(404);
+    });
+
+    await ctx.step('enterprise entitlement mutation stays platform-admin only', async () => {
+      const params = { accountId: ZERO_UUID };
+      const anonymous = await ctx.client.as(ctx.P.ANON).post(
+        '/v1/admin/api/accounts/:accountId/enterprise-entitlement',
+        { enabled: true },
+        { params },
+      );
+      anonymous.status(401);
+      const nonAdmin = await owner.post(
+        '/v1/admin/api/accounts/:accountId/enterprise-entitlement',
+        { enabled: true },
+        { params },
+      );
+      nonAdmin.status(403);
     });
   },
 );

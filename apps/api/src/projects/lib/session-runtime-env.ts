@@ -37,7 +37,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
-    // config (executor MCP / gateway provider / Slack overlays still apply on
+    // config (connector MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
     // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.

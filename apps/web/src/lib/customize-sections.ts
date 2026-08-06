@@ -1,5 +1,3 @@
-import { capabilityPagesEnabled, isCapabilitySection } from '@/lib/capability-pages';
-
 /**
  * Customize section identifiers + helpers.
  *
@@ -20,12 +18,6 @@ export type CustomizeSection =
   | 'git'
   | 'review'
   | 'agents'
-  // Connectors/Skills/Commands are overlay sections again while the standalone
-  // capability pages (#6054) are behind NEXT_PUBLIC_CAPABILITY_PAGES. With the
-  // flag ON they are still reachable here — the deep link just redirects out.
-  | 'connectors'
-  | 'skills'
-  | 'commands'
   | 'marketplace'
   | 'secrets'
   | 'llm-management'
@@ -51,9 +43,6 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'git',
   'review',
   'agents',
-  'connectors',
-  'skills',
-  'commands',
   'marketplace',
   'secrets',
   'llm-management',
@@ -82,19 +71,6 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
 const GRADUATED: Record<string, (projectId: string) => string> = {
   files: (p) => `/projects/${p}/files`,
   changes: (p) => `/projects/${p}/files?panel=proposed-changes`,
-};
-
-/**
- * Graduated only while the capability pages are enabled (#6054).
- *
- * Files and Changes left the overlay in an earlier, unrelated change and always
- * redirect. These two are the ones the flag governs: with it OFF the deep link
- * must fall through and open the overlay, which is where they live again.
- * Commands had a standalone page under #6054 too, but that page was removed;
- * it stays in the overlay permanently and is intentionally NOT listed here, so
- * a `/customize/commands` deep link never bounces to a dead route.
- */
-const GRADUATED_BEHIND_FLAG: Record<string, (projectId: string) => string> = {
   connectors: (p) => `/projects/${p}/connectors`,
   skills: (p) => `/projects/${p}/skills`,
 };
@@ -104,9 +80,7 @@ export function legacyCustomizeRedirect(
   rawSection: string | null | undefined,
 ): string | null {
   if (!rawSection) return null;
-  const build =
-    GRADUATED[rawSection] ??
-    (capabilityPagesEnabled() ? GRADUATED_BEHIND_FLAG[rawSection] : undefined);
+  const build = GRADUATED[rawSection];
   return build ? build(projectId) : null;
 }
 
@@ -140,12 +114,5 @@ export function resolveCustomizeOverlayHref(href: string): CustomizeOverlayMatch
   if (!match) return { opensOverlay: false };
   if (!match[1]) return { opensOverlay: true, section: undefined };
   const section = parseCustomizeSection(match[1]);
-  if (!section) return { opensOverlay: false };
-  // Connectors/Skills/Commands are overlay sections only while the standalone
-  // capability pages are flagged off (#6054). With the flag ON the caller must
-  // fall through to a normal navigation so the deep-link route can forward to
-  // the real page, instead of the palette opening an overlay section that is
-  // no longer where those live.
-  if (isCapabilitySection(section) && capabilityPagesEnabled()) return { opensOverlay: false };
-  return { opensOverlay: true, section };
+  return section ? { opensOverlay: true, section } : { opensOverlay: false };
 }

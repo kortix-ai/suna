@@ -28,7 +28,7 @@ mock.module('../channels/install-store', () => ({
   listAgentMailInstalls: async () => [],
 }));
 
-const { synthesizeChannelConnectors } = await import('../executor/channel-materialize');
+const { synthesizeChannelConnectors } = await import('../connectors/channel-materialize');
 
 const teamsSpecs = async () =>
   (await synthesizeChannelConnectors('p-1', [])).filter((s) => s.platform === 'teams');

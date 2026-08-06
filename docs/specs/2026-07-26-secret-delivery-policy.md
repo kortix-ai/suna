@@ -60,7 +60,7 @@ The mechanism is proven and in production.
 agent has to know to call `${KORTIX_API_URL}/v1/router/tavily` instead of
 `api.tavily.com`. That means:
 
-- Every integration needs Kortix-specific code. Ordinary SDKs, `curl`, and any
+- Every connector needs Kortix-specific code. Ordinary SDKs, `curl`, and any
   library that hardcodes its vendor base URL all bypass it.
 - It is a *convention*, not a *control*. An agent that ignores the convention and
   calls the vendor directly is not stopped — it just doesn't get a key from us.
@@ -152,11 +152,11 @@ time. A running box that already received a secret in `env` mode still holds it 
 same residue problem as agent-scope switching. Changing a secret's policy should
 be treated as requiring a new sandbox.
 
-## Executor token resolution
+## Connector token resolution
 
-Agent identity has two halves: secret delivery and the executor token grant.
+Agent identity has two halves: secret delivery and the connector token grant.
 
-`mintExecutorToken` (`apps/api/src/platform/services/session-sandbox.ts:129`) has
+`mintConnectorToken` (`apps/api/src/platform/services/session-sandbox.ts:129`) has
 exactly **one** call site — at sandbox provision. It stamps the token with
 `agentGrant` from the session's create-time agent. The proxy rewrites the
 persisted grant when a later prompt switches agents.

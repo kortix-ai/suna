@@ -16,7 +16,7 @@ import Image from 'next/image';
 
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-profile-form';
+import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
 import { cn } from '@/lib/utils';
 
 /**
@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
  * hottest path of `/projects/[id]/connectors`. They used to live in
  * `customize/sections/connectors-view.tsx`, which is ~5,100 lines across 50
  * components and pulls `@pipedream/sdk/browser`, `HighlightedCode`,
- * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorProfileModal`. Importing
+ * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorConnectionModal`. Importing
  * two small components from there put that entire graph in this route's client
  * chunk — an ES module is all-or-nothing to the bundler.
  *

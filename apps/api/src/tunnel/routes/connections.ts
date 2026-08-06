@@ -18,7 +18,7 @@ import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
-import { reconcileComputerConnectors } from '../../executor/sync';
+import { reconcileComputerConnectors } from '../../connectors/sync';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 
 /** Permissive connection row shape, as persisted + serialized. */
@@ -137,7 +137,7 @@ export function createConnectionsRouter() {
         })
         .returning(SAFE_CONNECTION_COLUMNS);
 
-      // Materialize the account's `computer` Executor connector (first machine).
+      // Materialize the account's `computer` connector (first machine).
       void reconcileComputerConnectors(accountId);
 
       return c.json({ ...connection, setupToken }, 201);

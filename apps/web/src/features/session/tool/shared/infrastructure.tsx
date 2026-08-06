@@ -534,7 +534,13 @@ export {
   type ToolOutcome,
 } from './tool-outcome';
 
-import { cleanErrorMessage } from './tool-outcome';
+import {
+  cleanErrorMessage,
+  formatJsonFailureOutput,
+  looksLikeError,
+  parseJsonFailure,
+  type ToolOutcome,
+} from './tool-outcome';
 
 export function JsonFailureOutputCard({
   failure,

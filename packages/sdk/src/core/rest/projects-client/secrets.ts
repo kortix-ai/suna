@@ -5,7 +5,14 @@ import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shar
 
 export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
 export type SecretConsumer =
-  'sandbox' | 'llm_gateway' | 'connector' | 'executor' | 'git_proxy' | 'http_broker' | 'network';
+  | 'sandbox'
+  | 'llm_gateway'
+  /** @deprecated Use `connector`. */
+  | 'executor'
+  | 'connector'
+  | 'git_proxy'
+  | 'http_broker'
+  | 'network';
 export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
 export type SecretInjectionSlot =
   | { kind: 'header'; name: string; template?: string }
@@ -18,7 +25,7 @@ export interface SecretEgressRule {
   inject?: SecretInjectionSlot;
 }
 export interface SecretEgressPolicy {
-  backend?: 'llm_gateway' | 'executor' | 'git_proxy' | 'kortix_fetch';
+  backend?: 'llm_gateway' | 'connector' | 'executor' | 'git_proxy' | 'kortix_fetch';
   base_url_env?: string;
   rules: SecretEgressRule[];
   inject: SecretInjectionSlot;

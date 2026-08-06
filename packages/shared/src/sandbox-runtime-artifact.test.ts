@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  CLI_EXECUTOR_RUNTIME_FILES,
-  buildCliExecutorSourceDigest,
+  CLI_CONNECTOR_RUNTIME_FILES,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from './sandbox-runtime-artifact';
 
@@ -13,9 +13,9 @@ const roots: string[] = [];
 async function createCliFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'kortix-cli-attestation-'));
   roots.push(root);
-  for (const relativePath of CLI_EXECUTOR_RUNTIME_FILES) {
+  for (const relativePath of CLI_CONNECTOR_RUNTIME_FILES) {
     const filePath =
-      relativePath === 'src/executor'
+      relativePath === 'src/connector-gateway'
         ? join(root, relativePath, 'gateway.ts')
         : join(root, relativePath);
     await mkdir(dirname(filePath), { recursive: true });
@@ -30,22 +30,22 @@ afterEach(async () => {
 });
 
 describe('sandbox CLI source digest', () => {
-  test('changes when an in-sandbox Executor source file changes', async () => {
+  test('changes when an in-sandbox Connector source file changes', async () => {
     const root = await createCliFixture();
-    const before = await buildCliExecutorSourceDigest(root);
+    const before = await buildCliConnectorSourceDigest(root);
 
-    await writeFile(join(root, 'src/commands/executor.ts'), 'executor:v2\n');
+    await writeFile(join(root, 'src/commands/connector-gateway.ts'), 'connector-gateway:v2\n');
 
-    expect(await buildCliExecutorSourceDigest(root)).not.toBe(before);
+    expect(await buildCliConnectorSourceDigest(root)).not.toBe(before);
   });
 
   test('does not change for a laptop-only CLI command', async () => {
     const root = await createCliFixture();
-    const before = await buildCliExecutorSourceDigest(root);
+    const before = await buildCliConnectorSourceDigest(root);
 
     await writeFile(join(root, 'src/commands/ship.ts'), 'ship:v2\n');
 
-    expect(await buildCliExecutorSourceDigest(root)).toBe(before);
+    expect(await buildCliConnectorSourceDigest(root)).toBe(before);
   });
 
   test('changes when a compiled artifact changes', async () => {

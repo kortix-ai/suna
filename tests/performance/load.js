@@ -5,7 +5,7 @@ import { makeHandleSummary } from './lib/summary.js';
 export const options = {
   scenarios: {
     load: {
-      executor: 'ramping-vus',
+      connector: 'ramping-vus',
       startVUs: 0,
       stages: [
         { duration: '1m', target: 20 },

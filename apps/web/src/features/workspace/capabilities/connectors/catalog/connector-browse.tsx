@@ -32,10 +32,10 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ConnectorConnectedMark } from '@/features/workspace/capabilities/connectors/connector-identity';
 
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
-import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { cn } from '@/lib/utils';
-import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
+import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
+import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
+import { cn } from '@/lib/utils';
 import { catalogSections, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import {
   ALL_CATEGORIES,
@@ -167,7 +167,7 @@ function CatalogAffordance({ connected }: { connected: boolean }) {
  * 10% in light, pure white at 10% in dark. A tinted neutral would pick up the
  * surface colour behind it and read as dirt on the logo's edge.
  */
-function IntegrationIcon({ icon }: { icon: string | null }) {
+function ConnectorIcon({ icon }: { icon: string | null }) {
   if (!icon) {
     return (
       <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
@@ -176,7 +176,7 @@ function IntegrationIcon({ icon }: { icon: string | null }) {
     );
   }
   return (
-    <span className="  relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+    <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
       <Image
         src={icon}
         alt=""
@@ -211,7 +211,7 @@ function CatalogEntryCard({
 }) {
   return (
     <CatalogCard
-      leading={<IntegrationIcon icon={entry.icon} />}
+      leading={<ConnectorIcon icon={entry.icon} />}
       title={entry.name}
       description={entry.description}
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}

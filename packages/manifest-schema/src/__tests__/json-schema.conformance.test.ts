@@ -724,7 +724,7 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
     }
   });
 
-  test('connector profile fields are discoverable in the versioned schema', () => {
+  test('connector fields are discoverable in the versioned schema', () => {
     const connectorProperties = (
       KORTIX_V2_JSON_SCHEMA as {
         properties: {

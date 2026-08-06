@@ -9,7 +9,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  * governance policy keyed by agent name. Its grant fields cover the two things
  * the agent `.md` can't express:
  *
- *   1. `connectors` — which integration profiles (by `connectors[].slug`) the
+ *   1. `connectors` — which connectors (by `connectors[].slug`) the
  *      agent may call. Default: none.
  *   2. `kortix_cli` — what the agent may do to Kortix itself via the `kortix`
  *      CLI/API (project-scoped iam actions: deploy, open CRs, triggers, …).
@@ -24,7 +24,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  *   agents:
  *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
  *     release-bot:
- *       connectors: ["github"]            # which integration profiles
+ *       connectors: ["github"]            # which connectors
  *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # Kortix CLI/API powers
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
@@ -84,9 +84,9 @@ export interface AgentSpec {
   path: string;
   /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
   enabled: boolean;
-  /** Which connector profiles (by slug) this agent may use. `[]` = none (default). */
+  /** Which connectors (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
-  /** Connector profiles that must resolve before the session starts. */
+  /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
@@ -343,7 +343,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // `default`, so a `default`-booted session is OpenCode's configured
   // `default_agent` (a general-purpose agent, conventionally `kortix`, granted
   // "all") — NOT an unlisted concrete agent. Default-denying it stripped EVERY
-  // connector from such sessions (the `kortix executor connectors` → [] bug,
+  // connector from such sessions (the `kortix connectors ls` → [] bug,
   // and synthetic channel/computer connectors never reaching the agent) even
   // though OpenCode runs them as the fully-privileged default agent. Resolve
   // it the way the proxy already does: non-binding → null (no restriction,
@@ -409,8 +409,8 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
 }
 
 /**
- * Resolve the connector profiles that the selected agent requires at session
- * start. The connector profile controls which authorization owner is valid.
+ * Resolve the connectors that the selected agent requires at session start.
+ * Each connector controls which connection owner is valid.
  */
 export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];

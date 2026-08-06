@@ -106,7 +106,7 @@ function parseToolOutput(rawOutput: string | undefined): {
 }
 
 /**
- * Detect the "completed but actually failed" shape router/executor tools
+ * Detect the "completed but actually failed" shape router/connector tools
  * (web_search, image_search, connector calls) commonly return: the wire's
  * `state.status` says `completed`, but the JSON output body itself carries
  * `success: false` or a top-level `error`. Without this, a real prod failure

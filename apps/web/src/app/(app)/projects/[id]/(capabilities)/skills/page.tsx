@@ -2,8 +2,6 @@
 
 import { useParams } from 'next/navigation';
 
-import { CapabilityRouteGate } from '@/features/workspace/capabilities/shared/capability-route-gate';
-
 import { SkillsPage } from '@/features/workspace/capabilities/skills/skills-page';
 
 /**
@@ -14,10 +12,8 @@ export default function ProjectSkillsPage() {
   const { id: projectId } = useParams<{ id: string }>();
 
   return (
-    <CapabilityRouteGate projectId={projectId} section="skills">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <SkillsPage projectId={projectId} />
-      </div>
-    </CapabilityRouteGate>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <SkillsPage projectId={projectId} />
+    </div>
   );
 }

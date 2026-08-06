@@ -18,7 +18,7 @@ import { useSessionScope } from './use-session-scope';
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {
   secrets: { status: 'unavailable' },
-  connector_profiles: { status: 'unavailable' },
+  connector_connections: { status: 'unavailable' },
 };
 
 export interface SessionScopeToolbarProps {
@@ -42,7 +42,7 @@ export function getSessionScopeAvailability(
 ): SessionScopeAvailability {
   return {
     secrets: catalog.secrets.status === 'ready',
-    connector_bindings: catalog.connector_profiles.status === 'ready',
+    connector_bindings: catalog.connector_connections.status === 'ready',
   };
 }
 
@@ -59,10 +59,11 @@ function canonicalDraftFromReplacement(replacement: SessionScopeInput): SessionS
   if (replacement.connector_bindings) {
     draft.connector_bindings = Object.fromEntries(
       Object.entries(replacement.connector_bindings).map(([alias, binding]) => {
-        if (!binding.authorization_id) {
-          throw new Error(`Connector ${alias} is missing authorization_id.`);
+        const connectionId = binding.connection_id;
+        if (!connectionId) {
+          throw new Error(`Connector ${alias} is missing connection_id.`);
         }
-        return [alias, { authorization_id: binding.authorization_id }];
+        return [alias, { connection_id: connectionId }];
       }),
     );
   }
@@ -151,7 +152,7 @@ export function SessionScopeToolbar({
     const identity = `${projectId}:${sessionId ?? 'new'}:${agentName ?? ''}`;
     if (sessionId) {
       if (!scope) return null;
-      return `${identity}:${catalog.secrets.status}:${catalog.connector_profiles.status}:${activeScopeSignature(scope)}`;
+      return `${identity}:${catalog.secrets.status}:${catalog.connector_connections.status}:${activeScopeSignature(scope)}`;
     }
     return `${identity}:${newScopeCatalogSignature(catalog)}`;
   }, [agentName, catalog, projectId, scope, sessionId]);

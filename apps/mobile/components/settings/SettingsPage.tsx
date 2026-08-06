@@ -38,7 +38,7 @@ import { PlanPage } from './PlanPage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
-import { IntegrationsPage } from './IntegrationsPage';
+import { ConnectionsPage } from './ConnectionsPage';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
@@ -66,7 +66,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
-  const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
+  const [isConnectionsPageVisible, setIsConnectionsPageVisible] = React.useState(false);
 
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
   const isGuest = !user;
@@ -131,10 +131,10 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     setIsUsagePageVisible(true);
   }, []);
 
-  const handleIntegrations = React.useCallback(() => {
-    log.log('🎯 Integrations pressed');
+  const handleConnections = React.useCallback(() => {
+    log.log('🎯 Connections pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsIntegrationsPageVisible(true);
+    setIsConnectionsPageVisible(true);
   }, []);
 
   const handleTheme = React.useCallback(() => {
@@ -220,8 +220,8 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
 
             <SettingsItem
               icon={Plug}
-              label={t('integrations.title', 'Integrations')}
-              onPress={handleIntegrations}
+              label={t('connections.title', 'Connections')}
+              onPress={handleConnections}
             />
 
             <SettingsItem
@@ -335,9 +335,9 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
       </AnimatedPageWrapper>
       <AnimatedPageWrapper
-        visible={isIntegrationsPageVisible}
-        onClose={() => setIsIntegrationsPageVisible(false)}>
-        <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
+        visible={isConnectionsPageVisible}
+        onClose={() => setIsConnectionsPageVisible(false)}>
+        <ConnectionsPage visible onClose={() => setIsConnectionsPageVisible(false)} />
       </AnimatedPageWrapper>
     </View>
   );

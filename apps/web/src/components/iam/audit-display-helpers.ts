@@ -108,12 +108,12 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
   'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
   'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
-  'PUT /v1/projects/:projectId/connector-profiles/:profileId/activate':
-    'Activated connector profile',
-  'PUT /v1/projects/:projectId/connector-profiles/:profileId/default':
-    'Set default connector profile',
-  'PUT /v1/projects/:projectId/connector-profiles/:profileId/revoke': 'Revoked connector profile',
-  'POST /v1/projects/:projectId/connector-profiles/me': 'Created personal connector profile',
+  'PUT /v1/projects/:projectId/connections/:connectionId/activate':
+    'Activated connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/default':
+    'Set default connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
+  'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
   'POST /v1/projects/:projectId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
   'POST /v1/projects/:projectId/git/collaborators': 'Added Git collaborator',
@@ -122,10 +122,11 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
   'POST /v1/projects/suna-migration/start': 'Started project migration',
-  'POST /v1/executor/call': 'Ran connector action',
-  'POST /v1/executor/projects/:projectId/call': 'Ran project connector action',
-  'GET /v1/executor/projects/:projectId/catalog': 'Viewed connector catalog',
-  'PUT /v1/executor/projects/:projectId/connectors/:slug/secret-binding':
+  'POST /v1/connectors/call': 'Ran connector call',
+  'GET /v1/connectors/catalog': 'Viewed connector catalog',
+  'POST /v1/connectors/projects/:projectId/call': 'Ran project connector action',
+  'GET /v1/connectors/projects/:projectId/catalog': 'Viewed connector catalog',
+  'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding':
     'Updated connector secret binding',
   'POST /v1/router/web-search': 'Searched the web',
   'POST /v1/router/image-search': 'Searched images',
@@ -196,7 +197,7 @@ const IRREGULAR_SINGULARS: Record<string, string> = {
   groups: 'group',
   identities: 'identity',
   installations: 'installation',
-  integrations: 'integration',
+  integrations: 'connector',
   invites: 'invitation',
   items: 'item',
   keys: 'key',
@@ -612,16 +613,16 @@ function describeNamedAction(action: string): HumanizedAuditAction | null {
   if (action === 'session.created') {
     return { title: 'Started session', kind: 'create' };
   }
-  if (action === 'executor.approval.approved') {
+  if (action === 'connector.approval.approved') {
     return { title: 'Approved connector action', kind: 'grant' };
   }
-  if (action === 'executor.approval.denied') {
+  if (action === 'connector.approval.denied') {
     return { title: 'Denied connector action', kind: 'revoke' };
   }
-  if (action.startsWith('executor.')) {
+  if (action.startsWith('connector.')) {
     return {
-      title: 'Ran connector action',
-      detail: action.slice('executor.'.length),
+      title: 'Ran connector call',
+      detail: action.slice('connector.'.length),
       kind: 'update',
     };
   }
@@ -651,7 +652,7 @@ function routeArea(path: string): string {
   if (path.includes('/accounts/:accountId/iam')) return 'Identity and access';
   if (path.includes('/projects/:projectId/sessions') || path.includes('/turn-')) return 'Sessions';
   if (path.includes('/projects/:projectId/gateway')) return 'AI gateway';
-  if (path.includes('/connector') || path.startsWith('/v1/executor/')) return 'Connectors';
+  if (path.includes('/connector') || path.startsWith('/v1/connectors/')) return 'Connectors';
   if (path.startsWith('/v1/billing/')) return 'Billing';
   if (path.startsWith('/v1/tunnel/')) return 'Computer';
   if (path.startsWith('/v1/admin/')) return 'Administration';

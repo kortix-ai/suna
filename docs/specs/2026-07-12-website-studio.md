@@ -114,6 +114,6 @@ initiates — is fully autonomous.
 - Email wiring: ship with a concrete inbound provider recipe (channel vs. raw
   webhook + signature) rather than leaving it to the operator.
 - A tiny `payments` reference skill (Stripe payment-link + subscription recipes)
-  would sharpen step 2; today it's the Stripe connector via `kortix-executor`.
+  would sharpen step 2; today it's the Stripe connector via `kortix-connectors`.
 - Deploy provider is assumed Vercel; document the connector contract.
 - Domain purchase flow via a registrar connector (propose → buy within budget).

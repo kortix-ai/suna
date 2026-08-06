@@ -147,7 +147,7 @@ describe('rescopeSessionBindings — SET semantics', () => {
     expect(result.ok && result.dropped).toEqual(['gmail']);
   });
 
-  test('a blank alias or profile id is dropped rather than stored', () => {
+  test('a blank alias or connection id is dropped rather than stored', () => {
     const result = rescopeSessionBindings({
       current: {},
       requested: { '': 'p1', gmail: '  ' },

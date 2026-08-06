@@ -419,7 +419,7 @@ function deleteOrphanPartBuckets(
  * `sessionStatus` is deliberately NOT dropped. It is the one slice read for
  * sessions that are on purpose not resident — a parent's spawn-tool banner
  * reads `sessionStatus[child]` for a child whose transcript the parent never
- * holds (`tool/shared/sub-agent.tsx`, `tool/tools/removed-integration-tool.tsx`).
+ * holds (`tool/shared/sub-agent.tsx`, `tool/tools/removed-connector-tool.tsx`).
  * Dropping it bought no memory either: every `session.status` frame, and the
  * connect-time `client.session.status()` poll, re-add an entry for every
  * session on the runtime whether or not it is resident, so the delete was

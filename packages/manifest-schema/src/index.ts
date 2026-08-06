@@ -65,7 +65,7 @@ export {
 // why: it broke an index.ts ⇄ json-schema.ts import cycle).
 // `[[connectors]].headers` — arbitrary static request headers. Its own
 // dependency-free module (same rationale as `constants.ts`) so the validator,
-// the JSON Schema, apps/api's parser and the executor share ONE ruleset.
+// the JSON Schema, apps/api's parser and the connector share ONE ruleset.
 export {
   type ConnectorHeadersParse,
   CONNECTOR_FORBIDDEN_HEADER_NAMES,

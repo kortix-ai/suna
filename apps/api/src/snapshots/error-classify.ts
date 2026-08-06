@@ -57,7 +57,7 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
   // Our packaging is missing an artifact the layered Dockerfile COPYs in.
   {
     category: 'runtime',
-    test: /required artifact missing|required directory missing|kortix_snapshot_.*_path|kortix-agent|kortix-entrypoint|slack-cli|executor-sdk|run `bun run build`/i,
+    test: /required artifact missing|required directory missing|kortix_snapshot_.*_path|kortix-agent|kortix-entrypoint|slack-cli|connector-sdk|run `bun run build`/i,
   },
   // The sandbox can't call back to the API (dead tunnel / loopback KORTIX_URL).
   {
@@ -100,7 +100,7 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
   // The user's Dockerfile / build steps failed.
   {
     category: 'dockerfile',
-    test: /dockerfile|failed to solve|did not complete successfully|non-zero code|exit code: [1-9]|copy failed|apt-get|npm err|returned a non-zero|executor failed|empty dockerfile|no such file or directory|unable to find image/i,
+    test: /dockerfile|failed to solve|did not complete successfully|non-zero code|exit code: [1-9]|copy failed|apt-get|npm err|returned a non-zero|connector failed|empty dockerfile|no such file or directory|unable to find image/i,
   },
 ];
 

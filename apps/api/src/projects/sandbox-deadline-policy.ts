@@ -153,8 +153,8 @@ export function childIdleGraceMs(): number {
  * Two credentials reach the control plane from inside a box, and BOTH must be
  * caught:
  *   - `kortix_sb_…`, the sandbox token, which sets apiKeyType 'sandbox';
- *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN /
- *     KORTIX_EXECUTOR_TOKEN and used by the in-box `kortix` CLI), whose auth
+ *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN
+ *     and used by the in-box `kortix` CLI), whose auth
  *     branch never sets apiKeyType at all.
  * Testing apiKeyType alone therefore lets the box renew itself forever with its
  * own CLI token. A non-null session binding is the reliable signal: every

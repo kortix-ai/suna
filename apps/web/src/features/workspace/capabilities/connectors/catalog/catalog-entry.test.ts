@@ -1,4 +1,4 @@
-import type { AdminConnector, DiscoverIntegration, PipedreamApp } from '@kortix/sdk';
+import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -11,7 +11,7 @@ import {
 } from './catalog-entry';
 import { CATEGORY_ROW_CAP } from './connector-categories';
 
-const integration = (over: Partial<DiscoverIntegration> = {}): DiscoverIntegration =>
+const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
   ({
     id: 'int_1',
     kind: 'mcp',
@@ -25,7 +25,7 @@ const integration = (over: Partial<DiscoverIntegration> = {}): DiscoverIntegrati
     feeds: [],
     popularity: null,
     ...over,
-  }) as DiscoverIntegration;
+  }) as DiscoverConnector;
 
 const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
   slug: 'google_sheets',
@@ -53,11 +53,11 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
   }) as AdminConnector;
 
 describe('normalising the two catalogues', () => {
-  test('a Discover entry keeps its rank and its raw integration', () => {
-    const entry = catalogEntryFromDiscover(integration({ popularity: 42 }));
+  test('a Discover entry keeps its rank and its raw connector', () => {
+    const entry = catalogEntryFromDiscover(connector({ popularity: 42 }));
     expect(entry.source).toBe('discover');
     expect(entry.popularity).toBe(42);
-    if (entry.source === 'discover') expect(entry.integration.id).toBe('int_1');
+    if (entry.source === 'discover') expect(entry.connector.id).toBe('int_1');
   });
 
   // Pipedream publishes no ranking. `null` keeps these out of the Popular
@@ -72,7 +72,7 @@ describe('normalising the two catalogues', () => {
   // Both catalogues publish a `slack`. Un-prefixed keys would collide into one
   // React key the moment anything renders them in the same list.
   test('keys are namespaced by source so the two catalogues cannot collide', () => {
-    expect(catalogEntryFromDiscover(integration({ id: 'slack', slug: 'slack' })).key).toBe(
+    expect(catalogEntryFromDiscover(connector({ id: 'slack', slug: 'slack' })).key).toBe(
       'discover:slack',
     );
     expect(catalogEntryFromEasyConnect(app({ slug: 'slack' })).key).toBe('easy-connect:slack');
@@ -80,7 +80,7 @@ describe('normalising the two catalogues', () => {
 });
 
 describe('connected join', () => {
-  // The default add flow proposes a profile slug from the app's NAME, so a
+  // The default add flow proposes a connection slug from the app's NAME, so a
   // catalogue slug of `google_sheets` becomes a connector slug of
   // `google-sheets`. Folding both sides is what makes that card show ✓.
   test('matches across slug spellings', () => {
@@ -90,19 +90,19 @@ describe('connected join', () => {
 
   test('matches on the connector display name when the slug diverges', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'my-tracker', name: 'Linear' })]);
-    expect(isCatalogEntryConnected(catalogEntryFromDiscover(integration()), keys)).toBe(true);
+    expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(true);
   });
 
   test('an unrelated connector does not light up a catalogue card', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'stripe', name: 'Stripe' })]);
-    expect(isCatalogEntryConnected(catalogEntryFromDiscover(integration()), keys)).toBe(false);
+    expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
   });
 
   // The documented ceiling of this join. It must degrade to a redundant `+`,
   // never to a wrong `✓` on some other app.
   test('a fully renamed connector falls back to + rather than matching wrongly', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'tracker', name: 'Tracker' })]);
-    expect(isCatalogEntryConnected(catalogEntryFromDiscover(integration()), keys)).toBe(false);
+    expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
   });
 
   // A connector with a blank name must not index the empty string, or every
@@ -114,7 +114,7 @@ describe('connected join', () => {
 
 describe('catalogSections', () => {
   const ranked = (slug: string, popularity: number, categories: string[]) =>
-    catalogEntryFromDiscover(integration({ id: slug, slug, name: slug, popularity, categories }));
+    catalogEntryFromDiscover(connector({ id: slug, slug, name: slug, popularity, categories }));
 
   test('Popular leads, ordered by descending rank and capped', () => {
     const sections = catalogSections(

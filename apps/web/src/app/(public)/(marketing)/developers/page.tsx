@@ -440,7 +440,7 @@ function ConnectorsRequestPath() {
           <Server className="text-foreground size-4 shrink-0" />
           <span className="font-medium">
             {tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxTextKortixExecutor80880ab2',
+              'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
             )}
           </span>
           <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
@@ -1122,7 +1122,7 @@ export default function DevelopersPage() {
             },
             {
               icon: Plug,
-              title: 'Self-healing integrations',
+              title: 'Self-healing connections',
               body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
             },
             {

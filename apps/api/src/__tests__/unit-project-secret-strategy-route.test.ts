@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { executorConnectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
 
@@ -81,7 +81,7 @@ function queryResult(fields: Record<string, unknown> | undefined) {
 const databaseMock = {
   select: (fields?: Record<string, unknown>) => ({
     from: (table: unknown) => {
-      if (table === executorConnectors) {
+      if (table === connectors) {
         return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
       }
       if (table !== projectSecrets) throw new Error('unexpected table');
@@ -389,7 +389,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(updates).toHaveLength(0);
   });
 
-  test('configures an automation consumer without a network policy', async () => {
+  test('normalizes the legacy executor consumer to connector', async () => {
     const response = await buildApp().request(
       `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
@@ -402,13 +402,13 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       strategy: 'broker',
-      consumer: 'executor',
+      consumer: 'connector',
       delivery_status: 'available',
       egress_policy: null,
     });
     expect(updates[0]).toMatchObject({
       strategy: 'broker',
-      consumer: 'executor',
+      consumer: 'connector',
       egressPolicy: null,
     });
   });

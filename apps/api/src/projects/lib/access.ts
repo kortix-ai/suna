@@ -5,7 +5,7 @@ import {
   resolveShareSubject,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';

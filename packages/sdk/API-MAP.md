@@ -149,9 +149,9 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | **request-changes** (Review Center feedback) | `POST .../change-requests/:cr/request-changes` → client fn already existed (`requestChangesOnChangeRequest`), now also on the facade: `project(id).changeRequests.requestChanges(crId, feedback)` ✅ |
 | project files (git-backed) | `GET /v1/projects/:id/files`, `POST /files/{content,search}`, `GET /files/archive` |
 
-### 12. Connectors / integrations  ✅ (project) · 🟡 (executor)
+### 12. Connectors and connections  ✅ (project) · 🟡 (connector)
 - project connectors + sharing/policies → `projects-client/{connectors,policies}.ts` ✅
-- executor runtime (`/v1/executor/projects/:id/connectors/*`, Slack/Pipedream/CUA) → 🟡 web-local (`lib/*`)
+- connector runtime (`/v1/connectors/projects/:id/connectors/*`, Slack/Pipedream/CUA) → 🟡 web-local (`lib/*`)
 
 ### 13. Triggers / scheduled tasks  🟡
 `projects-client/triggers.ts` ✅ (client) ; `useProjectTriggers` now in `@kortix/sdk/react` ✅ (list + create/update/remove/fire, invalidation-wired); the web app's own `hooks/scheduled-tasks` hook hasn't migrated onto it yet.
@@ -296,7 +296,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription | 🟡 client fns ✅ in SDK, hooks still web-local |
 | Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
-| Executor connectors runtime | 🟡 web-local |
+| Connector runtime | 🟡 web-local |
 | kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's an opencode-runtime surface, reached via the opencode-client subpath) |
 
 ### To make the SDK the whole data layer

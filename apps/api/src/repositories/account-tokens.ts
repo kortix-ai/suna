@@ -20,7 +20,7 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token is scoped to one project; the auth
    *  middleware enforces URL :projectId === this value. */
   projectId?: string | null;
-  /** Non-null = this token belongs to a specific session (sandbox executor
+  /** Non-null = this token belongs to a specific session (sandbox connector
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
@@ -34,7 +34,7 @@ export interface CreateAccountTokenParams {
   accountId: string;
   userId: string;
   name: string;
-  /** Non-null = token is scoped to one project. Session executor tokens also
+  /** Non-null = token is scoped to one project. Session connector tokens also
    *  set sessionId + agentGrant. Null/undefined = user-scoped laptop CLI PAT. */
   projectId?: string;
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
@@ -263,7 +263,7 @@ export async function revokeAllAccountTokensForUser(
 }
 
 /**
- * Revoke every live executor token minted for ONE session.
+ * Revoke every live connector token minted for ONE session.
  *
  * Session tokens are minted with no `expiresAt` and are deliberately exempt from
  * the PAT idle-revoke sweep ("lifetime tied to the sandbox" — see
@@ -281,7 +281,7 @@ export async function revokeAllAccountTokensForUser(
  * same `session_id`), so this revokes all of them. Scoped by account: a
  * session id must never reach across tenants.
  */
-export async function revokeSessionExecutorTokens(
+export async function revokeSessionConnectorTokens(
   sessionId: string,
   accountId: string,
 ): Promise<number> {

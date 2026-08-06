@@ -22,11 +22,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Disclosure,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,14 +52,18 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
-import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import {
   draftToRules,
   type PatternDraftRow,
   seedPatternDraft,
   signPatternRules,
 } from '@/features/workspace/capabilities/connectors/tools/pattern-rule-draft';
-import { filterActions, groupToolsByRisk, type ToolGroup, toolRowText } from '@/features/workspace/capabilities/connectors/tools/tool-groups';
+import {
+  filterActions,
+  groupToolsByRisk,
+  type ToolGroup,
+  toolRowText,
+} from '@/features/workspace/capabilities/connectors/tools/tool-groups';
 import {
   applyBulkPolicy,
   isLockedByProject,
@@ -78,6 +78,7 @@ import {
   POLICY_CHOICE_LABEL,
   POLICY_SEGMENTS,
 } from '@/features/workspace/capabilities/connectors/tools/tool-policy-labels';
+import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 
 /** Below this many tools the search field is clutter; above it the list is
  *  unusable without one. */
@@ -131,7 +132,7 @@ export interface ConnectorToolsProps {
  *    default renders with NO segment lit and a `Hint` naming the default.
  *    Lighting Allow would claim a choice nobody made.
  * 3. **A project rule is not editable here.** Project scope is evaluated first
- *    and wins (`resolveEffectiveAction`, executor/policy.ts:342), so those rows
+ *    and wins (`resolveEffectiveAction`, connectors/policy.ts:342), so those rows
  *    are disabled and say where the rule actually lives.
  *
  * Everything else — the `sensitive` toggle and the pattern-rule editor — is
@@ -151,7 +152,7 @@ export function ConnectorTools({
   const queryKey = useMemo(() => ['connector-policies', projectId, slug], [projectId, slug]);
 
   // Reading policies is admin-gated on the server (`resolveAdmin`,
-  // executor/router.ts:1193), so a reader would get a 403 and a permanent
+  // connectors/router.ts:1193), so a reader would get a 403 and a permanent
   // skeleton. `connectorTabs` already hides this tab from them; the guard
   // below keeps that true if it ever stops doing so.
   const policiesQuery = useQuery({
@@ -231,9 +232,7 @@ export function ConnectorTools({
     mutationFn: (next: boolean) => setConnectorSensitive(projectId, slug, next),
     onSuccess: (_result, next) => {
       successToast(
-        next
-          ? 'Every tool will ask before it runs'
-          : 'Tools follow the rules below again',
+        next ? 'Every tool will ask before it runs' : 'Tools follow the rules below again',
       );
       void queryClient.invalidateQueries({ queryKey });
       onChanged();
@@ -460,9 +459,7 @@ export function ConnectorTools({
         onOpenChange={setAdvancedOpen}
       >
         <DisclosureTrigger variant="outline">
-          <Button
-            variant="popover"
-          >
+          <Button variant="popover">
             Advanced
             {advancedRules.length > 0 ? (
               <Badge variant="secondary" size="sm">
@@ -499,8 +496,8 @@ export function ConnectorTools({
               <Label>Pattern rules</Label>
               <p className="text-muted-foreground text-xs text-pretty">
                 Cover many tools at once with a glob (<code className="font-mono">delete_*</code>)
-                or a regex (<code className="font-mono">/^send/i</code>). A per-tool decision
-                above always wins over a pattern.
+                or a regex (<code className="font-mono">/^send/i</code>). A per-tool decision above
+                always wins over a pattern.
               </p>
               {draft.map((row) => (
                 <div key={row.id} className="flex items-center gap-2">
@@ -648,8 +645,7 @@ function bulkConfirmTitle(count: number, choice: PolicyChoice): string {
 }
 
 function bulkConfirmDescription(groupLabel: string, choice: PolicyChoice): string {
-  const tail =
-    'Pattern rules are left alone, and you can change any tool individually afterwards.';
+  const tail = 'Pattern rules are left alone, and you can change any tool individually afterwards.';
   return choice === 'default'
     ? `Deletes the per-tool rule for every tool listed under ${groupLabel} right now, so each one follows the connector default again. ${tail}`
     : `Every tool listed under ${groupLabel} right now is set to ${POLICY_CHOICE_LABEL[choice]}. ${tail}`;
@@ -658,9 +654,12 @@ function bulkConfirmDescription(groupLabel: string, choice: PolicyChoice): strin
 /**
  * What happens to a tool nobody has decided on — read off the server's own
  * answer, never guessed. `sensitive` beats `default_mode` at the gate
- * (`resolveEffectiveAction`, executor/policy.ts:362), so it is stated first.
+ * (`resolveEffectiveAction`, connectors/policy.ts:362), so it is stated first.
  */
-function describeDefault(sensitive: boolean, defaultMode: 'risk' | 'allow_all' | undefined): string {
+function describeDefault(
+  sensitive: boolean,
+  defaultMode: 'risk' | 'allow_all' | undefined,
+): string {
   if (sensitive) {
     return 'Every tool asks for approval before it runs, including reads. Set a tool below to change that.';
   }

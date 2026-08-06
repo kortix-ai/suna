@@ -1,6 +1,6 @@
 'use client';
 
-import { parseErrorContent } from '@/features/session/tool/shared/error-and-executor';
+import { parseErrorContent } from '@/features/session/tool/shared/error-and-connector';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import { StructuredOutput } from '@/features/session/tool/shared/structured-output';
 import { cn } from '@/lib/utils';

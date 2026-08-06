@@ -83,7 +83,7 @@ describe('applyBulkPolicy', () => {
   });
 
   // The engine compiles every matcher with the `i` flag (`globToRegex`,
-  // apps/api/src/executor/policy.ts:69), so `GetPetById` already governs
+  // apps/api/src/connectors/policy.ts:69), so `GetPetById` already governs
   // `getpetbyid`. De-duping on exact string equality would leave the old rule
   // in front of the new one, dead behind it — the same defect class as the
   // ordering bug.
@@ -128,9 +128,9 @@ describe('applyBulkPolicy', () => {
   });
 
   test("'default' clears a whole group at once, and a path with no rule is a no-op", () => {
-    expect(
-      applyBulkPolicy([{ match: 'a', action: 'block' }], ['a', 'b', 'c'], 'default'),
-    ).toEqual([]);
+    expect(applyBulkPolicy([{ match: 'a', action: 'block' }], ['a', 'b', 'c'], 'default')).toEqual(
+      [],
+    );
   });
 
   test("'default' also clears a mis-cased rule", () => {
@@ -162,7 +162,7 @@ describe('isPatternRule', () => {
 });
 
 describe('orderPolicyRules', () => {
-  // The runtime is first-match-wins (apps/api/src/executor/policy.ts
+  // The runtime is first-match-wins (apps/api/src/connectors/policy.ts
   // `resolveEffectiveAction`), so a `*` rule sitting ahead of an exact rule
   // makes that exact rule dead. Exact rules must be sent first.
   test('exact rules are sent before pattern rules', () => {
@@ -212,7 +212,7 @@ describe('toolChoice', () => {
   });
   test('falls back to the stored rule when the server sent no effective list', () => {
     // `effective` is [] for a manifest-only connector
-    // (apps/api/src/executor/db-deps.ts:1151) and on older servers.
+    // (apps/api/src/connectors/db-deps.ts:1151) and on older servers.
     expect(toolChoice('send_email', [{ match: 'send_email', action: 'block' }], [])).toBe('block');
   });
   test('a pattern rule is not an exact rule, so the fallback stays default', () => {

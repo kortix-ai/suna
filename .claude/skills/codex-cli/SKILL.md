@@ -9,7 +9,7 @@ description: Drive OpenAI's Codex CLI (`codex exec`) as a non-interactive coding
 Codex CLI is OpenAI's terminal coding agent (Rust). Its **non-interactive** mode,
 `codex exec`, makes it a perfect disposable sub-agent: you write the metaprompt,
 Codex explores/edits/runs commands on its own, and returns a final message you
-capture and verify. You stay the long-context planner; Codex is the executor.
+capture and verify. You stay the long-context planner; Codex is the implementer.
 
 The golden rule: **Codex's self-report is a claim, not the truth.** Always
 capture its output, then independently verify the artifacts yourself (read the

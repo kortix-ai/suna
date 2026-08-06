@@ -74,21 +74,48 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  authorization_id: string;
+  /** Canonical connection id. */
+  connection_id: string;
+  /** @deprecated Use `connection_id`. Retained on SDK-normalized responses. */
+  authorization_id?: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
 export type SessionConnectorBindingInput =
   | {
-      authorization_id: string;
-      /** @deprecated Use `authorization_id`. Equal dual IDs remain accepted. */
+      connection_id: string;
+      /** @deprecated Use `connection_id`. Equal dual IDs remain accepted. */
+      authorization_id?: string;
+      /** @deprecated Use `connection_id`. Equal dual IDs remain accepted. */
       profile_id?: string;
     }
   | {
+      connection_id?: never;
+      /** @deprecated Use `connection_id`. */
+      authorization_id: string;
+      profile_id?: string;
+    }
+  | {
+      connection_id?: never;
       authorization_id?: never;
-      /** @deprecated Use `authorization_id`. */
+      /** @deprecated Use `connection_id`. */
       profile_id: string;
     };
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
+
+function normalizeConnectorBindings(
+  bindings: SessionConnectorBindingsInput | undefined,
+): Record<string, { connection_id: string }> | undefined {
+  if (!bindings) return undefined;
+  return Object.fromEntries(
+    Object.entries(bindings).map(([alias, binding]) => [
+      alias,
+      {
+        connection_id:
+          binding.connection_id ?? binding.authorization_id ?? binding.profile_id,
+      },
+    ]),
+  ) as Record<string, { connection_id: string }>;
+}
 
 export interface PendingSessionPrompt {
   text: string;
@@ -131,9 +158,9 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
-   * Connector profiles that must resolve a strategy-compatible authorization
+   * Connectors that must resolve a strategy-compatible authorization
    * before provisioning. Missing authorizations return
-   * `CONNECTOR_AUTHORIZATION_REQUIRED`.
+   * `CONNECTOR_CONNECTION_REQUIRED`.
    */
   require_connectors?: string[];
   /**
@@ -300,8 +327,11 @@ export async function revokeSessionPublicShare(
  * provisions/resumes idempotently and reports readiness.
  */
 export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
+  const body = input?.connector_bindings
+    ? { ...input, connector_bindings: normalizeConnectorBindings(input.connector_bindings) }
+    : (input ?? {});
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, body),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -353,7 +383,7 @@ export async function getProjectSession(
   );
 }
 
-/** One governed action an agent took in a session (from the executor audit). */
+/** One governed action an agent took in a session (from the connector audit). */
 export interface SessionAuditAction {
   execution_id: string;
   action: string;
@@ -398,7 +428,7 @@ export interface SessionAudit {
   actions: SessionAuditAction[];
 }
 
-/** Per-session audit trail: every executor-gated action the agent took, with its
+/** Per-session audit trail: every connector-gated action the agent took, with its
  *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
  *  see the session (its launcher + project managers). */
 export async function getSessionAudit(
@@ -691,9 +721,9 @@ export interface SessionScopeInput {
    *
    * Unlike `connector_bindings`, an alias here needs nothing connected to it:
    * that is the point. A binding says "use THIS connection" and must carry an
-   * authorization id, so it cannot express "this session needs Gmail and has
+   * connection id, so it cannot express "this session needs Gmail and has
    * none". Naming an alias here makes the next turn stop with
-   * `CONNECTOR_AUTHORIZATION_REQUIRED` and a connect prompt instead of letting
+   * `CONNECTOR_CONNECTION_REQUIRED` and a connect prompt instead of letting
    * the agent discover the gap mid-answer.
    */
   require_connectors?: string[] | null;
@@ -721,15 +751,34 @@ export interface SessionScope {
 /** @deprecated Use `SessionScope`. */
 export type SessionScopeResult = SessionScope;
 
+function normalizeSessionScope(scope: SessionScope): SessionScope {
+  return {
+    ...scope,
+    connector_bindings: Object.fromEntries(
+      Object.entries(scope.connector_bindings).map(([alias, binding]) => {
+        const wire = binding as SessionConnectorBinding;
+        const connectionId = wire.connection_id ?? wire.authorization_id;
+        return [
+          alias,
+          {
+            connection_id: connectionId,
+            authorization_id: connectionId,
+          },
+        ];
+      }),
+    ),
+  };
+}
+
 export async function getProjectSessionScope(
   projectId: string,
   sessionId: string,
 ): Promise<SessionScope> {
-  return unwrap(
+  return normalizeSessionScope(unwrap(
     await backendApi.get<SessionScope>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
     ),
-  );
+  ));
 }
 
 /**
@@ -741,12 +790,15 @@ export async function setProjectSessionScope(
   sessionId: string,
   scope: SessionScopeInput,
 ): Promise<SessionScope> {
-  return unwrap(
+  const body = scope.connector_bindings
+    ? { ...scope, connector_bindings: normalizeConnectorBindings(scope.connector_bindings) }
+    : scope;
+  return normalizeSessionScope(unwrap(
     await backendApi.put<SessionScope>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
-      scope,
+      body,
     ),
-  );
+  ));
 }
 
 export interface SessionModelChangeResult {

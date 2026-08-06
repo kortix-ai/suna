@@ -474,7 +474,7 @@ const isCapabilityTabKey = (section: SetupTile['section']): section is Capabilit
 const PROJECT_SETUP_TILES: SetupTile[] = [
   {
     icon: HiOutlineViewGrid,
-    title: 'Integrations',
+    title: 'Connectors',
     desc: 'Connect tools your agent can act in.',
     section: 'connectors',
   },

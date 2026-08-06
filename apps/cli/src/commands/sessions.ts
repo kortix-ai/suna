@@ -63,13 +63,12 @@ Subcommands:
                                     --no-secrets            inject zero project
                                       secrets into the session (backend token
                                       required).
-                                    --connector <alias>=<authorization-id>
-                                      bind a connector authorization
+                                    --connector <alias>=<connection-id>
+                                      bind a connection
                                       (repeatable).
-                                    --no-connectors          use no connector
-                                      authorizations.
+                                    --no-connectors          use no connections.
                                     --require-connector <alias>
-                                      require a connected authorization before
+                                      require a connection before
                                       provisioning (repeatable).
                                     --context <key>=<value>  runtime context
                                       (repeatable).
@@ -271,13 +270,13 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 export type SessionOverrides = {
   model?: string;
   secrets?: string[];
-  connectors?: Record<string, { authorization_id: string }>;
+  connectors?: Record<string, { connection_id: string }>;
   requiredConnectors?: string[];
   runtimeContext?: Record<string, string>;
 };
 
 /** Parse (and consume) the `sessions new` override flags from argv. Repeatable
- *  flags take `key=value` pairs: --connector gmail=<authorization-id>, --context k=v. */
+ *  flags take `key=value` pairs: --connector gmail=<connection-id>, --context k=v. */
 export function parseSessionOverrides(argv: string[]): SessionOverrides {
   const out: SessionOverrides = {};
   const model = takeFlagValue(argv, ['--model']);
@@ -294,15 +293,15 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   const connectorPairs = takeFlagValues(argv, ['--connector']);
   const noConnectors = takeFlagBool(argv, ['--no-connectors']);
   if (connectorPairs.length && noConnectors) {
-    throw new Error('pass either --connector <alias>=<authorization-id> or --no-connectors, not both');
+    throw new Error('pass either --connector <alias>=<connection-id> or --no-connectors, not both');
   }
   for (const pair of connectorPairs) {
     const eq = pair.indexOf('=');
     if (eq <= 0 || eq === pair.length - 1) {
-      throw new Error(`--connector expects alias=authorization_id, got "${pair}"`);
+      throw new Error(`--connector expects alias=connection_id, got "${pair}"`);
     }
     (out.connectors ??= {})[pair.slice(0, eq)] = {
-      authorization_id: pair.slice(eq + 1),
+      connection_id: pair.slice(eq + 1),
     };
   }
   if (noConnectors) out.connectors = {};
@@ -704,16 +703,17 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
     (host) => `kortix sessions restart ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   try {
     await located.located.client.post<{ ok: true; status: string }>(
-      `/projects/${located.located.projectId}/sessions/${sessionId}/restart`,
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}/restart`,
     );
   } catch (err) {
     return surfaceApiError(err);
   }
   process.stdout.write(
-    `${status.ok(`Restarting ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`,
+    `${status.ok(`Restarting ${C.bold}${shortId(canonicalSessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`,
   );
   return 0;
 }
@@ -743,7 +743,8 @@ async function sessionsReload(
     (host) => `kortix sessions reload ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const { client, projectId } = located.located;
+  const { client, projectId, session } = located.located;
+  const canonicalSessionId = session.session_id;
 
   if (statusOnly) {
     try {
@@ -752,7 +753,7 @@ async function sessionsReload(
         latest_etag: string | null;
         stale: boolean | null;
         sandbox_reachable: boolean;
-      }>(`/projects/${projectId}/sessions/${sessionId}/config`);
+      }>(`/projects/${projectId}/sessions/${canonicalSessionId}/config`);
       if (json) {
         process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
         return 0;
@@ -787,7 +788,7 @@ async function sessionsReload(
       repo_refreshed: boolean;
       agent_files?: string;
       detail: string;
-    }>(`/projects/${projectId}/sessions/${sessionId}/reload`, {
+    }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
       force: args.includes('--force'),
     });
@@ -811,7 +812,7 @@ async function sessionsReload(
     // plain successes.
     const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
     const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
-    const line = `Reloaded ${C.bold}${shortId(sessionId)}${C.reset}${etags}\n  ${result.detail}`;
+    const line = `Reloaded ${C.bold}${shortId(canonicalSessionId)}${C.reset}${etags}\n  ${result.detail}`;
     process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
     return 0;
   } catch (err) {
@@ -838,11 +839,12 @@ async function sessionsRename(
     (host) => `kortix sessions rename ${sessionId} "${name}" --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   let updated: ProjectSession;
   try {
     updated = await located.located.client.patch<ProjectSession>(
-      `/projects/${located.located.projectId}/sessions/${sessionId}`,
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
       { name },
     );
   } catch (err) {
@@ -870,15 +872,16 @@ async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise
     (host) => `kortix sessions rm ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
+  const canonicalSessionId = located.located.session.session_id;
 
   try {
     await located.located.client.delete(
-      `/projects/${located.located.projectId}/sessions/${sessionId}`,
+      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
     );
   } catch (err) {
     return surfaceApiError(err);
   }
-  process.stdout.write(`${status.ok(`Deleted ${C.bold}${shortId(sessionId)}${C.reset}`)}\n`);
+  process.stdout.write(`${status.ok(`Deleted ${C.bold}${shortId(canonicalSessionId)}${C.reset}`)}\n`);
   return 0;
 }
 
@@ -893,7 +896,11 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
     (host) => `kortix sessions open ${sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const url = sessionWebUrl(located.located.auth.api_base, located.located.projectId, sessionId);
+  const url = sessionWebUrl(
+    located.located.auth.api_base,
+    located.located.projectId,
+    located.located.session.session_id,
+  );
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
