@@ -355,7 +355,7 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
-  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
+  test('meta sessions receive a bounded project grant without a standing service-account ceiling', async () => {
     await provisionSessionSandbox({
       ...baseOpts(),
       agentName: 'meta',
@@ -370,12 +370,19 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',
-        kortixCli: 'all',
         connectors: [],
         env: [],
       },
       serviceAccountId: null,
     });
+    const grant = accountTokenCreateCalls[0]?.agentGrant as { kortixCli?: unknown };
+    const kortixCli = grant.kortixCli;
+    expect(Array.isArray(kortixCli)).toBe(true);
+    if (!Array.isArray(kortixCli)) throw new Error('meta grant must be an action allowlist');
+    expect(kortixCli).toContain('project.cr.open');
+    expect(kortixCli).toContain('project.gitops.push');
+    expect(kortixCli).not.toContain('project.cr.merge');
+    expect(kortixCli).not.toContain('project.gitops.merge');
     expect(serviceAccountCreateCalls).toHaveLength(0);
   });
 
