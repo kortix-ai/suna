@@ -134,12 +134,22 @@ describe('messageFor', () => {
     expect(messageFor(err)).toBe('Check the workspace name and try again.');
   });
 
-  test('maps 502/503 to a retry hint, not the raw server text', () => {
+  test('maps 502 to a retry hint, not the raw server text', () => {
     expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
       'Could not create the workspace. Try again.',
     );
-    expect(messageFor(new ApiError('Service Unavailable', { status: 503 }))).toBe(
-      'Could not create the workspace. Try again.',
+  });
+
+  // This route's ONLY 503 is the managed-git-unavailable one
+  // (`isManagedGitUnavailableError`, `ensure-first-project.ts`) — a server
+  // configuration state, not a transient failure. Unlike 502, it must NOT
+  // get the retry-hint message: nothing the user does changes the outcome.
+  test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
+    const msg = messageFor(new ApiError('Service Unavailable', { status: 503 }));
+    expect(msg).not.toBe('Could not create the workspace. Try again.');
+    expect(msg).not.toContain('Try again');
+    expect(msg).toBe(
+      "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.",
     );
   });
 

@@ -65,7 +65,7 @@ export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
   const [state, setState] = useState<NewWorkspaceFormState>(INITIAL_FORM_STATE);
   const [touched, setTouched] = useState(false);
-  const { create, status, error: createError } = useCreateWorkspace();
+  const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();
   const submitting = status === 'creating';
 
   // Only surface a name error after the field has been left once. Validating
@@ -225,14 +225,38 @@ export function NewWorkspacePage() {
         </Button>
         {/* Form-level, not a field error: every failure `messageFor`
             (`use-create-workspace.ts`) maps — 403 wrong-account, 400 bad
-            name, 502/503, or a generic retry hint — is about the SUBMIT, not
-            one input, so it sits below the button rather than inside the
-            card. `role="alert"` announces it the moment `status` flips to
-            `'error'`, matching the a11y treatment already on the name field. */}
+            name, a managed-git-unavailable 503, a retryable 502, or a
+            generic retry hint — is about the SUBMIT, not one input, so it
+            sits below the button rather than inside the card. `role="alert"`
+            announces it the moment `status` flips to `'error'`, matching the
+            a11y treatment already on the name field.
+
+            The retry control is gated on `canRetry` (`useCreateWorkspace`,
+            derived from `isRetryableError`), not just `status === 'error'`:
+            the managed-git-unavailable 503 is a server configuration state,
+            not a transient one, and `retry` — which reuses the SAME
+            idempotency key rather than minting a new one — can never turn
+            that into a success. Offering it anyway would waste the user's
+            time on a click that cannot work. Styled to match the page's one
+            other secondary control (`Log out`, above) — `variant="ghost"
+            size="sm"` with the identical `text-muted-foreground
+            hover:text-foreground` treatment — rather than introducing a
+            third button weight beside the primary submit and that one. */}
         {status === 'error' && createError ? (
-          <p role="alert" className="text-destructive text-center text-xs">
-            {createError}
-          </p>
+          <div role="alert" className="flex flex-col items-center gap-1.5">
+            <p className="text-destructive text-center text-xs">{createError}</p>
+            {canRetry ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={retry}
+              >
+                Try again
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </form>
     </main>

@@ -11,6 +11,7 @@ import {
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { useAuth } from '@/features/providers/auth-provider';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   listAccounts,
@@ -109,6 +110,17 @@ export function buildCreatePayload(
  * `ApiError` field names verified at
  * `packages/sdk/src/core/http/api/errors.ts:46-55`: `status?: number`,
  * `code?: string` — branches below read those, not invented names.
+ *
+ * 502 and 503 are NOT the same failure and must not share a message. This
+ * route's only 503 is `isManagedGitUnavailableError`
+ * (`ensure-first-project.ts:254`) — managed git is not configured on this
+ * server, a server-config state no client-side retry can fix. Telling the
+ * user to "try again" there is false: nothing they do changes the outcome
+ * until an operator configures it. 502 (an upstream/gateway fault) keeps the
+ * retryable generic message, matching every OTHER call site that reuses
+ * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
+ * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
+ * between the toast those use and the inline message here.
  */
 export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
@@ -117,8 +129,28 @@ export function messageFor(error: unknown): string {
     return 'You need owner or admin access in this account to create a workspace.';
   }
   if (status === 400) return message || 'Check the workspace name and try again.';
-  if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
+  if (isManagedGitUnavailableError(error)) {
+    return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
+  }
+  if (status === 502) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
+}
+
+/**
+ * Whether a failed create should offer a retry.
+ *
+ * False ONLY for the managed-git-unavailable 503 — see `messageFor` above:
+ * that failure is a server configuration state, not a transient one, and
+ * retrying with the SAME `idempotency_key` (`runCreate`'s whole point) can
+ * never succeed until an operator fixes it server-side. True for everything
+ * else `runCreate` can reject with (403 wrong account, 400 bad name, 502 bad
+ * gateway, a plain network `Error`) — those are exactly the cases where
+ * pressing the button again can plausibly land differently. Reuses
+ * `isManagedGitUnavailableError` rather than re-deriving the 503 check, so
+ * this and `messageFor` can never disagree about which failure is which.
+ */
+export function isRetryableError(error: unknown): boolean {
+  return !isManagedGitUnavailableError(error);
 }
 
 /**
@@ -268,12 +300,18 @@ export function useCreateWorkspace(): {
   /** Null until Task 19 wires the stream; see {@link ProvisionPhase}. */
   phase: ProvisionPhase | null;
   retry: () => void;
+  /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
+  canRetry: boolean;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [status, setStatus] = useState<CreateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  // The raw thrown value, not just its formatted message — `canRetry` below
+  // needs to classify it with `isRetryableError`, which reads `.status`, not
+  // the already-rendered string.
+  const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
   const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: listAccounts, staleTime: 60_000 });
@@ -304,6 +342,7 @@ export function useCreateWorkspace(): {
       if (!result.ok) {
         setStatus('error');
         setError(messageFor(result.error));
+        setLastError(result.error);
       }
     },
     [creatableAccounts, queryClient, router, user?.id],
@@ -313,5 +352,13 @@ export function useCreateWorkspace(): {
     if (lastState) void create(lastState);
   }, [create, lastState]);
 
-  return { create, status, error, phase: null as ProvisionPhase | null, retry };
+  // Gated on `status === 'error'` as well as `isRetryableError`, not just the
+  // latter: `lastError` deliberately outlives one failed attempt (it is
+  // never cleared on success or on the next `create()` call other than by a
+  // fresh failure overwriting it), so without the status check `canRetry`
+  // could still read `true`/`false` from a PREVIOUS failure while a new
+  // create is `'creating'` or has already succeeded.
+  const canRetry = status === 'error' && isRetryableError(lastError);
+
+  return { create, status, error, phase: null as ProvisionPhase | null, retry, canRetry };
 }
