@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-06 — session `connector-compat-removal` claim
+
+No **Now** task claimed. This is the second phase of the user-directed connector
+terminology cutover after PR #6173 deployed successfully to Dev.
+
+Claimed scope:
+
+- Remove remaining active `executor` and connector `profile` compatibility from
+  the SDK, API, CLI, web, connector SDK, and database schema.
+- Make `connector`, `connection`, and `connector call` the only active product
+  nouns and wire identifiers.
+- Remove deprecated published SDK aliases such as `ConnectionProfile*` and
+  legacy `profile_id` response handling.
+- Run RED, GREEN, and REFACTOR manually because the required `tdd` skill is not
+  available in this session.
+
+This is an intentional user-authorized breaking public SDK cutover. The package
+version field will not be edited. Required SDK gates are typecheck, the complete
+test suite, and packed-install smoke.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-08-05 — session `cli-connectors-refactor` claim
 
 Claimed scope:
