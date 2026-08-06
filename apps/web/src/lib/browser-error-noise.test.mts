@@ -22,6 +22,7 @@ import {
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isNonErrorUndefinedRejectionNoise,
+  isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
   isOperationErrorPopErrorScopeNoise,
@@ -2248,6 +2249,572 @@ test('does NOT suppress a real app SyntaxError from a de-minified first-party fr
       filename: 'app:///apps/web/src/features/foo.tsx',
     }),
     false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Old-browser third-party-library DOM null-deref noise on the marketing
+// homepage — two SIBLING Better Stack prod patterns (Kortix Frontend prod,
+// application_id 2346967), both `TypeError: Cannot read properties of null
+// (reading '<X>')` (V8 wording) from minified third-party library internals
+// running on VERY OLD browsers (Windows 7 Chrome, Chrome 95 Linux) hitting
+// `https://kortix.com/` (marketing homepage). UNCAUGHT global `onerror`
+// (`auto.browser.global_handlers.onerror`, `handled:false` — never reached a
+// React error boundary). 2 occurrences each, 0 identified users, marketing
+// page only — browser-compatibility noise, not a product defect.
+//
+//   Pattern 1: e02e022f7433a02c7acdc9ae33c3dd1bdec938eeb694f0bf83d290c1d696d853
+//   `Cannot read properties of null (reading 'scrollLeft')`, call site
+//   function `measureScroll` in chunk `0d5wqj98qv1e9.js` (minified). Last
+//   2026-08-06 11:11:14 UTC.
+//
+//   Pattern 2: 8ab4ae816505dc3a17c7b8258e6894b3964ab7d10056afc47477833824fa8648
+//   `Cannot read properties of null (reading 'appendChild')`, call site
+//   function `ft` in chunk `0foj1ouh5ijrj.js` (minified). Same timestamp.
+//
+// `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+// first-party React code DOES call, so the matcher requires BOTH the exact
+// message AND a NEGATIVE guard (any resolved first-party `apps/web/src/…`
+// frame → keep reporting). The prod events carry only minified chunk frames +
+// `<anonymous>`, so the negative guard does NOT fire for them.
+// ---------------------------------------------------------------------------
+
+const MEASURE_SCROLL_CHUNK = 'app:///_next/static/chunks/0d5wqj98qv1e9.js'
+const APPEND_CHILD_CHUNK = 'app:///_next/static/chunks/0foj1ouh5ijrj.js'
+
+test('classifies the production scrollLeft measureScroll noise (Pattern 1, exact prod frames)', () => {
+  // Exact shape of Better Stack pattern e02e022f…: V8 wording, `measureScroll`
+  // in the minified `0d5wqj98qv1e9` chunk + an `<anonymous>` frame, UNCAUGHT.
+  const frames = [
+    { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+    { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+    { filename: '<anonymous>', function: '?' },
+  ]
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames,
+    }),
+    true,
+  )
+  // The Sentry `beforeSend` gate suppresses it.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the production appendChild ft noise (Pattern 2, exact prod frames)', () => {
+  // Exact shape of Better Stack pattern 8ab4ae81…: V8 wording, `ft` in the
+  // minified `0foj1ouh5ijrj` chunk, 3 frames, UNCAUGHT.
+  const frames = [
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+  ]
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'appendChild')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses both old-browser DOM null-deref patterns through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and
+  // `<Word>Error: ` (e.g. `TypeError: `) prefixes so all capture paths
+  // (window.onerror, onunhandledrejection, Sentry exception) classify
+  // consistently.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "Cannot read properties of null (reading 'scrollLeft')",
+    "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+    "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'scrollLeft')",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      true,
+      `expected "${message}" to be classified as old-browser DOM null-deref noise`,
+    )
+  }
+  const appendFrame = { filename: APPEND_CHILD_CHUNK, function: 'ft' }
+  for (const message of [
+    "Cannot read properties of null (reading 'appendChild')",
+    "TypeError: Cannot read properties of null (reading 'appendChild')",
+    "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'appendChild')",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [appendFrame] }),
+      true,
+      `expected "${message}" to be classified as old-browser DOM null-deref noise`,
+    )
+  }
+})
+
+test('classifies the old-JSC wording variants of both sibling patterns (different engine, same class)', () => {
+  // Old JSC (old Safari/iOS) phrases a null property access as
+  // `Cannot read property '<X>' of null` — different engine, same old-browser
+  // DOM null-deref class. The matcher must catch both engine wordings.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read property 'scrollLeft' of null",
+      frames: [chunkFrame],
+    }),
+    true,
+  )
+  const appendFrame = { filename: APPEND_CHILD_CHUNK, function: 'ft' }
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read property 'appendChild' of null",
+      frames: [appendFrame],
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless window.onerror variant as noise (message alone is specific)', () => {
+  // A frameless window.onerror capture carries the exact message + no
+  // `filename`. `measureScroll` and the minified `ft` are third-party library
+  // internals, and a real first-party `el.scrollLeft` / `parent.appendChild`
+  // null-deref almost always has a resolvable frame with a stack, so a
+  // frameless capture with one of these exact messages is safe to drop.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+    }),
+    true,
+  )
+  // The runtime (window.onerror) gate suppresses a frameless capture too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+    }),
+    true,
+  )
+})
+
+test('suppresses the old-browser DOM null-deref noise via the runtime (window.onerror) gate with a chunk filename', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      filename: APPEND_CHILD_CHUNK,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the old-browser DOM null-deref when a first-party frame is present (real regression)', () => {
+  // `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+  // first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
+  // hover.ts` reads `container.scrollLeft`, portal/tooltip ref-callbacks call
+  // `appendChild`). A real first-party null-deref de-minifies (via Sentry's
+  // sourcemap resolution) to a frame whose filename contains `apps/web/src/`
+  // and MUST keep reporting — the negative guard is the load-bearing over-match
+  // protection.
+  const firstPartyFrames = [
+    { filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' },
+    { filename: 'apps/web/src/features/workspace/project-sidebar/session-title.tsx' },
+    { filename: 'app:///apps/web/src/components/ui/portal.tsx' },
+  ]
+  for (const frames of [
+    [firstPartyFrames[0]],
+    [firstPartyFrames[1]],
+    [firstPartyFrames[2]],
+    // A stack that mixes a first-party frame with the minified chunk frame
+    // STILL keeps reporting — the first-party frame is the actionable anchor.
+    [firstPartyFrames[0], { filename: MEASURE_SCROLL_CHUNK }],
+    [{ filename: APPEND_CHILD_CHUNK }, firstPartyFrames[2]],
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({
+        message: "Cannot read properties of null (reading 'scrollLeft')",
+        frames,
+      }),
+      false,
+      `expected first-party scrollLeft null-deref with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({
+        message: "Cannot read properties of null (reading 'appendChild')",
+        frames,
+      }),
+      false,
+      `expected first-party appendChild null-deref with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+  // And via the Sentry `beforeSend` gate.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: {
+              frames: [{ filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+  // And via the runtime (window.onerror) gate with a first-party filename.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      filename: 'app:///apps/web/src/components/ui/portal.tsx',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a near-worded null-deref message (over-match guard)', () => {
+  // Only the EXACT V8/old-JSC messages for `scrollLeft` and `appendChild` are
+  // noise. A different DOM method, a different access pattern, or a near-
+  // worded regression keeps reporting.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    // Different DOM method on null — not the two anchored methods.
+    "Cannot read properties of null (reading 'scrollTop')",
+    "Cannot read properties of null (reading 'removeChild')",
+    "Cannot read properties of null (reading 'appendChild') extra",
+    // `undefined` (not `null`) — a different null-deref class.
+    "Cannot read properties of undefined (reading 'scrollLeft')",
+    "Cannot read properties of undefined (reading 'appendChild')",
+    // A real first-party-shaped message that happens to mention the method.
+    "Cannot read properties of null (reading 'appendChild') in portal mount",
+    // Substring without the exact wrapper.
+    "scrollLeft is null",
+    "appendChild failed",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected near-worded message "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-V8/JSC engine wording (over-match guard)', () => {
+  // SpiderMonkey (Firefox) phrases a null property access as
+  // `null is not an object (evaluating '<expr>')` or
+  // `can't access property "<m>"<…>` — different engine wordings the matcher
+  // does NOT anchor on (the prod events are V8/old-JSC from Chrome). Keep
+  // reporting so a genuine Firefox null-deref regression stays observable.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "null is not an object (evaluating 'el.scrollLeft')",
+    "null is not an object (evaluating 'parent.appendChild')",
+    'can\'t access property "scrollLeft" of null',
+    'can\'t access property "appendChild" of null',
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected non-V8/JSC message "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('suppresses the scrollLeft noise when the only frame is the <anonymous> throw site (prod shape)', () => {
+  // The prod Pattern 1 stack ends with an `<anonymous>` frame after the two
+  // `measureScroll` chunk frames. A capture that surfaces ONLY the
+  // `<anonymous>` throw site (e.g. a truncated stack) still classifies as
+  // noise — `<anonymous>` is not a resolved first-party source, so the
+  // negative guard does not fire.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames: [{ filename: '<anonymous>', function: '?' }],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: { frames: [{ filename: '<anonymous>', function: '?' }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the appendChild noise when the stack is fully minified chunk frames (prod shape)', () => {
+  // The prod Pattern 2 stack is 3 frames all in the `0foj1ouh5ijrj` chunk.
+  // None resolve to a first-party `apps/web/src/…` path, so the negative
+  // guard does not fire.
+  const frames = [
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+  ]
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "TypeError: Cannot read properties of null (reading 'appendChild')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the old-JSC wording variants through both gates (runtime + beforeSend)', () => {
+  // The old-JSC wording `Cannot read property '<X>' of null` must also be
+  // suppressed by both the runtime (window.onerror) gate and the Sentry
+  // `beforeSend` gate, not just the matcher.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read property 'scrollLeft' of null",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read property 'appendChild' of null",
+            stacktrace: { frames: [{ filename: APPEND_CHILD_CHUNK, function: 'ft' }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a null-deref on a DIFFERENT DOM method (over-match guard, first-party stays observable)', () => {
+  // Only `scrollLeft` and `appendChild` are anchored. A null-deref on any
+  // other DOM method — even from a minified chunk on an old browser — keeps
+  // reporting, because it is not one of the two observed prod patterns and
+  // may be a real first-party or third-party regression worth triaging.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "Cannot read properties of null (reading 'scrollTop')",
+    "Cannot read properties of null (reading 'scrollWidth')",
+    "Cannot read properties of null (reading 'removeChild')",
+    "Cannot read properties of null (reading 'insertBefore')",
+    "Cannot read properties of null (reading 'appendChild')x", // trailing char
+    "Cannot read properties of null (reading 'el.scrollLeft')", // dotted expr
+    "Cannot read properties of null (reading 'parent.appendChild')", // dotted
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless non-matching message even with the scrollLeft/appendChild substring (over-match guard)', () => {
+  // The matcher anchors on the EXACT V8/old-JSC message, not a substring. A
+  // frameless capture with a message that merely CONTAINS `scrollLeft` or
+  // `appendChild` (but is not the exact null-deref wording) keeps reporting.
+  for (const message of [
+    "Cannot read properties of undefined (reading 'scrollLeft')",
+    "Cannot read properties of null (reading 'el.scrollLeft')",
+    "el.scrollLeft is null",
+    "Cannot read properties of null (reading 'parent.appendChild')",
+    "TypeError: parent.appendChild is not a function",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      false,
+      `expected runtime "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-first-party but resolvable chunk URL for a different message shape (regression guard)', () => {
+  // A Vercel `?dpl=dpl_…` chunk URL is NOT a first-party `apps/web/src/…`
+  // path, so it does not trip the negative guard. But the matcher only
+  // suppresses the EXACT `scrollLeft`/`appendChild` null-deref wording — a
+  // different message from the same chunk URL keeps reporting.
+  const vercelChunk = 'https://kortix.com/_next/static/chunks/0d5wqj98qv1e9.js?dpl=dpl_abc123'
+  for (const message of [
+    "Cannot read properties of null (reading 'foo')",
+    'Something completely different',
+    "Cannot read properties of null (reading 'appendChild')", // <- this one IS noise
+  ]) {
+    const expected = message === "Cannot read properties of null (reading 'appendChild')"
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [{ filename: vercelChunk }] }),
+      expected,
+      `expected "${message}" from Vercel chunk to ${expected ? 'be noise' : 'keep reporting'}`,
+    )
+  }
+})
+
+test('the two prod patterns classify as noise independently (sibling isolation)', () => {
+  // Each sibling pattern must classify as noise on its own — the matcher is
+  // not coupled to both being present. This pins the independence so a future
+  // refactor that, say, only handles `scrollLeft` does not silently let
+  // `appendChild` leak back to Better Stack.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames: [{ filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }],
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      frames: [{ filename: APPEND_CHILD_CHUNK, function: 'ft' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses both prod patterns through the runtime gate with the exact prod chunk filename', () => {
+  // End-to-end pin: the exact production Better Stack shapes — message + the
+  // prod chunk filename — are suppressed by the runtime (window.onerror)
+  // gate, which is the gate that actually receives the UNCAUGHT global
+  // `onerror` captures (`auto.browser.global_handlers.onerror`).
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      filename: APPEND_CHILD_CHUNK,
+    }),
+    true,
+  )
+})
+
+test('suppresses both prod patterns through the Sentry beforeSend gate with the exact prod stack', () => {
+  // End-to-end pin: the exact production Better Stack shapes — message + the
+  // prod stack frames — are suppressed by the Sentry `beforeSend` gate.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: {
+              frames: [
+                { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+                { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+                { filename: '<anonymous>', function: '?' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'appendChild')",
+            stacktrace: {
+              frames: [
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
   )
 })
 

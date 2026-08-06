@@ -389,6 +389,78 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /^Cannot use import statement outside a module$/,
 ];
 
+// Old-browser third-party-library DOM null-deref noise on the marketing
+// homepage. Two SIBLING patterns, both `TypeError: Cannot read properties of
+// null (reading '<X>')` (V8 wording; old JSC says `Cannot read property '<X>'
+// of null`) from minified third-party library internals running on VERY OLD
+// browsers hitting the marketing homepage (`https://kortix.com/`):
+//
+//   Pattern 1 (2 occurrences, last 2026-08-06 11:11:14 UTC):
+//     Better Stack pattern
+//     e02e022f7433a02c7acdc9ae33c3dd1bdec938eeb694f0bf83d290c1d696d853
+//     `Cannot read properties of null (reading 'scrollLeft')`, call site
+//     function `measureScroll` in chunk `0d5wqj98qv1e9.js` (minified). User
+//     agents: Windows 7 Chrome (very old) + Chrome 95 Linux (very old).
+//     Mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT,
+//     `handled:false` — never reached a React error boundary).
+//
+//   Pattern 2 (2 occurrences — sibling, same timestamp):
+//     Better Stack pattern
+//     8ab4ae816505dc3a17c7b8258e6894b3964ab7d10056afc47477833824fa8648
+//     `Cannot read properties of null (reading 'appendChild')`, call site
+//     function `ft` in chunk `0foj1ouh5ijrj.js` (minified). Same old UAs, same
+//     UNCAUGHT global `onerror`, same marketing homepage.
+//
+// Classification: browser-compatibility noise. `measureScroll` and `ft` are
+// THIRD-PARTY library internals (a smooth-scroll / scroll-measurement library
+// and an animation/DOM-manipulation helper respectively), not first-party
+// Kortix code — the minified call-site function names (`measureScroll`, `ft`)
+// do not appear in `apps/web/src/…` source. The throws happen because very old
+// browsers (Win7 Chrome, Chrome 95) have quirkier DOM behavior: a scroll-
+// measurement helper reaches for a DOM element that resolved to `null` (the
+// element was not in the DOM yet, or the old browser returned `null` from a
+// `querySelector`/`getBoundingClientRect` path), then accesses `.scrollLeft` on
+// it → `TypeError`. Same for `appendChild`: an animation library calls
+// `parent.appendChild(child)` on a `parent` that resolved to `null` in the old
+// browser. These are 2 occurrences each, 0 identified users, marketing page
+// only — not a product flow, not a deterministic app regression.
+//
+// `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+// first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
+// hover.ts` reads `container.scrollLeft`, `apps/web/src/features/workspace/
+// project-sidebar/session-title.tsx` sets `el.scrollLeft`, ref-callback
+// `appendChild` calls exist in portal/tooltip code), so matching on the bare
+// message would swallow a real first-party null-deref regression. The matcher
+// therefore requires BOTH the exact V8/old-JSC message AND a NEGATIVE guard:
+// if ANY frame (or the window.onerror `filename`) resolves to a de-minified
+// first-party `apps/web/src/…` source path, the event KEEPS reporting — that
+// means our own code is the null-deref culprit and is actionable to fix. The
+// prod events carry only minified `app:///_next/static/chunks/…` chunk frames
+// (the third-party library internals) + an `<anonymous>` frame, so the
+// negative guard does NOT fire for them. A frameless capture with one of these
+// exact messages still classifies as noise: `measureScroll` and the minified
+// `ft` are third-party library internals, and the messages are specific
+// enough (the DOM method names `scrollLeft`/`appendChild` paired with `null`
+// access) that a frameless capture is safe to drop — a real first-party
+// `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+// resolvable frame with a stack. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// null-deref regression the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate. The runtime `window.onerror` gate
+// (`shouldIgnoreBrowserRuntimeNoise`) is also wired so a frameless onerror
+// capture with the exact message + no first-party `filename` drops.
+const OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording for both siblings.
+  /^Cannot read properties of null \(reading 'scrollLeft'\)$/,
+  /^Cannot read properties of null \(reading 'appendChild'\)$/,
+  // Old JSC (old Safari/iOS): `Cannot read property '<X>' of null` — different
+  // engine, same old-browser DOM null-deref class.
+  /^Cannot read property 'scrollLeft' of null$/,
+  /^Cannot read property 'appendChild' of null$/,
+];
+
 // Android System WebView native-bridge instrumentation noise. The Android
 // WebView injects a synthetic `app://navigation_performance_logger_android`
 // script that records navigation timing (FBNavResponseStart / FBNavDomContent-
@@ -1647,6 +1719,65 @@ export function isOldBrowserSyntaxParseError(input: {
     ...(input.frames ?? []).map((frame) => frame?.filename),
   ];
   return sources.some((filename) => isMinifiedChunkSource(filename));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the old-browser third-party-
+ * library DOM null-deref noise class: a `TypeError: Cannot read properties of
+ * null (reading 'scrollLeft')` / `… (reading 'appendChild')` (V8 wording; old
+ * JSC says `Cannot read property '<X>' of null`) thrown from minified
+ * THIRD-PARTY library internals (`measureScroll` in a scroll-measurement
+ * library, `ft` in an animation/DOM-manipulation helper) running on VERY OLD
+ * browsers (Windows 7 Chrome, Chrome 95 Linux) hitting the marketing
+ * homepage. The browser's quirkier DOM behavior returns `null` where modern
+ * browsers return an element, and the library accesses `.scrollLeft` /
+ * `.appendChild` on the `null` → `TypeError`. UNCAUGHT global `onerror`
+ * (`handled:false` — never reaches a React error boundary), 2 occurrences
+ * each, 0 identified users, marketing page only — browser-compatibility
+ * noise, not a product defect.
+ *
+ * `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+ * first-party React code DOES call (e.g. `use-proximity-hover.ts` reads
+ * `container.scrollLeft`, `session-title.tsx` sets `el.scrollLeft`, portal/
+ * tooltip ref-callbacks call `appendChild`), so the matcher requires BOTH the
+ * exact V8/old-JSC message AND a NEGATIVE guard: if ANY frame (or the
+ * window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event KEEPS reporting — our own code is
+ * the null-deref culprit and is actionable to fix. The production noise
+ * events carry only minified `app:///_next/static/chunks/…` chunk frames
+ * (the third-party library internals) + an `<anonymous>` frame, so the
+ * negative guard does NOT fire for them. A frameless capture with one of
+ * these exact messages still classifies as noise — `measureScroll` and the
+ * minified `ft` are third-party library internals, and a real first-party
+ * `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+ * resolvable frame with a stack. See
+ * `OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS` for the full rationale and the
+ * two production Better Stack patterns.
+ */
+export function isOldBrowserDomNullDerefNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!message) return false;
+  const stripped = stripErrorWrappers(message);
+  if (!OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code is the null-deref culprit →
+  // actionable; keep reporting so the call site can be found + fixed. A real
+  // first-party `el.scrollLeft` / `parent.appendChild` null-deref de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -2950,6 +3081,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // filename means our own code is the null-deref culprit → actionable; keep
+  // reporting. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Android System WebView native-bridge instrumentation noise — the WebView's
   // injected `app://navigation_performance_logger_android` script
   // `sendDataToNative` → `postMessage` to a GC'd Java bridge object. Requires
@@ -3238,6 +3382,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
   // safe gate because it can anchor on the chunk frame.
   if (isOldBrowserSyntaxParseError({ message, frames })) {
+    return true;
+  }
+
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // frame means our own code is the null-deref culprit → actionable; keep
+  // reporting. The prod events carry only minified `app:///_next/static/
+  // chunks/…` chunk frames + `<anonymous>`, so the negative guard does NOT
+  // fire for them. A frameless capture with one of these exact messages still
+  // classifies as noise. NOTE: deliberately NOT added to
+  // `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+  // context, so a bare-string match there would swallow a real first-party
+  // `el.scrollLeft` / `parent.appendChild` null-deref the negative guard
+  // exists to preserve; the frame-aware `beforeSend` hook (which calls this
+  // helper) is the only safe gate. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, frames })) {
     return true;
   }
 
