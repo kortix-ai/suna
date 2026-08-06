@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Plus } from '@/features/icon/icons/plus';
@@ -36,15 +35,7 @@ import {
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 
-export type AccountSwitcherVariant = 'header' | 'sidebar';
-
-export function AccountSwitcher({
-  variant = 'header',
-  className,
-}: {
-  variant?: AccountSwitcherVariant;
-  className?: string;
-}) {
+export function AccountSwitcher({ className }: { className?: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
@@ -108,44 +99,28 @@ export function AccountSwitcher({
   };
 
   const label = activeAccount?.name || 'Account';
-  const tile = <EntityAvatar label={label} size={variant === 'header' ? 'xs' : 'sm'} />;
+  const tile = <EntityAvatar label={label} size="xs" />;
 
-  const trigger =
-    variant === 'header' ? (
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn('max-sm:gap-1 max-sm:px-1.5', className)}
-        aria-label={tHardcodedUi.raw(
-          'componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount',
-        )}
-      >
-        {tile}
-        <span className="max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
-        <ChevronsUpDown className="text-muted-foreground hidden size-3 shrink-0 lg:block" />
-      </Button>
-    ) : (
-      <SidebarMenuButton
-        size="lg"
-        className={cn(
-          'group/trigger relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
-          'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
-        )}
-      >
-        {tile}
-        <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-          {label}
-        </span>
-        <ChevronsUpDown className="text-muted-foreground/40 ml-auto size-3 shrink-0 group-data-[collapsible=icon]:hidden" />
-      </SidebarMenuButton>
-    );
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn('max-sm:gap-1 max-sm:px-1.5', className)}
+      aria-label={tHardcodedUi.raw(
+        'componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount',
+      )}
+    >
+      {tile}
+      <span className="max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
+      <ChevronsUpDown className="text-muted-foreground hidden size-3 shrink-0 lg:block" />
+    </Button>
+  );
 
   if (accountsQuery.isLoading && !activeAccount) {
-    // Header: render nothing while accounts load. The breadcrumb logo + page
+    // Render nothing while accounts load. The breadcrumb logo + page
     // label carry the header on their own, so a skeleton chip between them just
     // reads as noise — collapse it so it's simply `[logo] [label]`.
-    return variant === 'header' ? null : <Skeleton className="h-9 w-full rounded-lg" />;
+    return null;
   }
 
   const dropdown = (
@@ -259,15 +234,7 @@ export function AccountSwitcher({
 
   return (
     <>
-      {variant === 'sidebar' ? (
-        <SidebarMenu>
-          <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
-            {dropdown}
-          </SidebarMenuItem>
-        </SidebarMenu>
-      ) : (
-        dropdown
-      )}
+      {dropdown}
 
       <CreateAccountModal
         open={createOpen}

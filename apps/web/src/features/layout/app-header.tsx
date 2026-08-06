@@ -82,7 +82,7 @@ export function AppHeader({
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbItem className="min-w-0 shrink">
-                <AccountSwitcher variant="header" />
+                <AccountSwitcher />
               </BreadcrumbItem>
               {breadcrumb != null && (
                 <div className="hidden lg:block">
