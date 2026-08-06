@@ -69,7 +69,7 @@ export function WorkspaceSwitcher({
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
-  const { selectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const endSwitch = useProjectSwitchStore((s) => s.endSwitch);
   const switching = useIsSwitchingProject();
@@ -202,6 +202,9 @@ export function WorkspaceSwitcher({
   const switchProject = (project: KortixProject) => {
     if (project.project_id === activeProjectId) return close();
     beginSwitch(project.project_id);
+    if (project.account_id !== selectedAccountId) {
+      setSelectedAccountId(project.account_id);
+    }
     close();
     router.push(`/projects/${project.project_id}`);
   };

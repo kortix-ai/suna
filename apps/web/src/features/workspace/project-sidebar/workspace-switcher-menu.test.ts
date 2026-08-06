@@ -30,8 +30,20 @@ describe('workspace switcher menu', () => {
   });
 
   test('account settings links to the accounts page', () => {
-    expect(source).toContain('Account settings');
-    expect(source).toContain('/accounts/');
+    // Slice around the Account settings text to ensure the route is part of the same item
+    const settingsStart = source.indexOf('Account settings');
+    expect(settingsStart).toBeGreaterThan(-1);
+    const settingsItem = source.slice(
+      source.lastIndexOf('<DropdownMenuItem', settingsStart),
+      source.indexOf('</DropdownMenuItem>', settingsStart) + '</DropdownMenuItem>'.length,
+    );
+    expect(settingsItem).toContain('Account settings');
+    expect(settingsItem).toContain('/accounts/');
+  });
+
+  test('switching to a workspace in a different account updates the selected account', () => {
+    expect(source).toContain('project.account_id !== selectedAccountId');
+    expect(source).toContain('setSelectedAccountId(project.account_id)');
   });
 
   test('a failed account keeps its group header, not a vanished group', () => {
