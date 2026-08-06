@@ -160,7 +160,7 @@ const eslintConfig = [
           // so a NEW literal (`['project-widgets', id]`) is caught too.
           selector:
             "Property[key.name='queryKey'] > ArrayExpression > " +
-            "Literal[value=/^projects?(-[a-z-]+)?$/]",
+            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -173,7 +173,24 @@ const eslintConfig = [
           // sites hand-typed ['kx', 'projects'] instead of calling the
           // factory, which is exactly the hole this closes.
           selector:
-            "Property[key.name='queryKey'] > ArrayExpression > Literal[value='kx']",
+            "Property[key.name='queryKey'] > ArrayExpression > Literal:first-child[value='kx']",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The two rules above only see a key written as the `queryKey:`
+          // PROPERTY of an options object (`useQuery({ queryKey: [...] })`).
+          // TanStack's direct cache API instead takes the key as a
+          // positional first argument (`setQueryData(['project-detail',
+          // id], data)`), which is structurally invisible to a
+          // `Property[key.name='queryKey']` selector. That gap matters more
+          // than the read side: a write parked on a key nobody reads is the
+          // exact silent-failure class this migration exists to remove — a
+          // stale `useQuery` observer never learns the write happened.
+          // Covers every TanStack QueryClient method whose first positional
+          // argument is (or can be) a query key.
+          selector:
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
