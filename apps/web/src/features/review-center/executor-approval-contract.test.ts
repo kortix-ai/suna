@@ -13,6 +13,12 @@ describe('executor approval review contract', () => {
     expect(source).not.toContain('useResolveApproval');
     expect(source).not.toContain("decision: 'approve'");
     expect(source).not.toContain("decision: 'deny'");
+    expect(source).toContain('<Badge');
+    expect(source).toContain('text-kortix-orange');
+    expect(source).not.toContain('text-amber-');
+    expect(source).not.toContain('bg-amber-');
+    expect(source).not.toContain('text-[');
+    expect(source).not.toContain('h-7');
   });
 
   test('Review Center uses the shared full-parameter component', () => {

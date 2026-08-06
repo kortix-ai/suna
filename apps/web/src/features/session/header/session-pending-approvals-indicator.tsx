@@ -20,7 +20,7 @@ import {
   riskTone,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import { ArrowSquareOutIcon, ShieldWarningIcon as ShieldAlert } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, ShieldWarningIcon } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -54,10 +54,10 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
           aria-label={`${pending.length} action${pending.length === 1 ? '' : 's'} awaiting your approval`}
           className="relative"
         >
-          <ShieldAlert className="size-4 text-amber-500" />
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] leading-none font-semibold text-white">
+          <ShieldWarningIcon className="text-kortix-orange size-4" />
+          <Badge variant="warning" size="tabular" className="absolute -top-1 -right-1">
             {pending.length}
-          </span>
+          </Badge>
         </Button>
       </PopoverTrigger>
 
@@ -89,19 +89,19 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     </Badge>
                   ) : null}
                 </div>
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
+                <p className="text-muted-foreground mt-0.5 text-xs">
                   {a.acted_by_email ?? 'agent'} · {relativeTime(a.at)}
                 </p>
                 <div className="mt-2 flex items-center gap-1.5">
                   {a.approval_url ? (
-                    <Button size="sm" className="h-7 gap-1 px-2 text-xs" asChild>
+                    <Button size="sm" asChild>
                       <a href={a.approval_url}>
                         Review parameters
                         <ArrowSquareOutIcon className="size-3 shrink-0" />
                       </a>
                     </Button>
                   ) : (
-                    <Button size="sm" className="h-7 px-2 text-xs" onClick={openAudit}>
+                    <Button size="sm" onClick={openAudit}>
                       Review in Audit
                     </Button>
                   )}
