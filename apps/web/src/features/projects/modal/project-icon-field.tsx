@@ -265,8 +265,7 @@ export function ProjectIconField({
         The width is the emoji grid's exact width, not a round number.
         `EmojiPicker` lays out 9 columns (frimousse 0.3.0's `columns` default;
         the picker passes no override) of `size-8` cells in a row padded
-        `px-1.5` — in Tailwind `--spacing` units, 9*8 + 2*1.5 = 75. The `+2px`
-        covers the 1px border per side, because PopoverContent is `border-box`.
+        `px-1.5` — in Tailwind `--spacing` units, 9*8 + 2*1.5 = 75.
         `GlyphPicker`, rendered on the Icon tab inside `ProjectIconPicker`,
         copies the same four literals for exactly this reason — see its own
         file header — so the popover never resizes on tab switch.
@@ -312,7 +311,7 @@ export function ProjectIconField({
       <PopoverContent
         align="start"
         aria-label="Choose project icon"
-        className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+        className="w-[calc(75*var(--spacing))] overflow-hidden p-0"
       >
         <ProjectIconPicker
           onEmojiSelect={(picked) => {

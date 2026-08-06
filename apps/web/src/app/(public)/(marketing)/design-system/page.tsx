@@ -891,12 +891,11 @@ function EmojiPickerDemo() {
           </Button>
         </PopoverTrigger>
         {/* Exactly as wide as the 9-column grid inside it: 9 cells of size-8 in
-            a row padded px-1.5, plus 1px of border per side on a border-box
-            surface. p-0 because the picker owns its own padding. */}
+            a row padded px-1.5. p-0 because the picker owns its own padding. */}
         <PopoverContent
           align="start"
           aria-label="Choose an icon"
-          className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+          className="w-[calc(75*var(--spacing))] overflow-hidden p-0"
         >
           <EmojiPicker
             onEmojiSelect={(emoji) => {
@@ -969,7 +968,7 @@ function ProjectIconPickerDemo() {
         <PopoverContent
           align="start"
           aria-label="Choose a project icon"
-          className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+          className="w-[calc(75*var(--spacing))] overflow-hidden p-0"
         >
           <ProjectIconPicker
             onEmojiSelect={(next) => {
