@@ -76,6 +76,9 @@ export interface CatalogItem {
   /** Set when this item also ships inside a whole `registry:project` (e.g. a
    *  starter skill) — the UI badges it "Part of <project>" and links to it. */
   partOfProject?: { id: string; title: string };
+  /** A use-case template dependency (runbook skill): installed through the
+   *  guided use-case wizard, resolvable by id, but not a browse tile. */
+  useCase?: boolean;
 }
 
 export interface DependencyItem {
@@ -305,6 +308,7 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
       typeof (e.item.meta.partOfProject as { id?: unknown }).id === "string"
         ? (e.item.meta.partOfProject as { id: string; title: string })
         : undefined,
+    useCase: e.item.meta?.useCase === true ? true : undefined,
   };
 }
 
@@ -344,20 +348,25 @@ function memSource(map: Map<string, string>): BuildSource {
 }
 
 function buildStarterRegistry(): RegistryJson {
-  const files = [
+  const starterFloorFiles = [
     ...getManagedSkillFiles(),
     ...getStarterFiles({
       projectName: "Kortix Starter",
       template: "general-knowledge-worker",
     }),
-    ...getMarketplaceFiles(),
   ];
+  // The `marketplace` template layer is "listed in the Kortix marketplace but
+  // not part of the starter floor" (see getMarketplaceFiles in @kortix/starter):
+  // standalone optional skills plus the use-case templates' runbook skills.
+  const files = [...starterFloorFiles, ...getMarketplaceFiles()];
+  const starterFloorPaths = new Set(starterFloorFiles.map((f) => f.path));
   const map = new Map(files.map((f) => [f.path, f.content] as const));
   const { registry } = buildRegistry({
     name: "kortix-starter",
     source: memSource(map),
   });
   for (const item of registry.items ?? []) {
+    const primaryPath = item.files?.[0]?.path;
     if (item.type === "registry:skill" && isKortixManagedSkillName(item.name)) {
       item.categories = [
         ...new Set([...(item.categories ?? []), "kortix-managed"]),
@@ -367,15 +376,32 @@ function buildStarterRegistry(): RegistryJson {
         managedBy: "kortix",
         updatePolicy: "kortix-managed",
       };
-    } else if (item.type === "registry:skill") {
-      // A browsable starter skill: it stands on its own in the catalog AND ships
+    } else if (
+      item.type === "registry:skill" &&
+      primaryPath != null &&
+      starterFloorPaths.has(primaryPath)
+    ) {
+      // A starter-floor skill: it stands on its own in the catalog AND ships
       // inside the Kortix Starter project, so tag it so the UI can badge it
       // "Part of Kortix Starter" and link back to the whole project.
       item.meta = {
         ...(item.meta ?? {}),
         partOfProject: { id: STARTER_KIT_ITEM_ID, title: "Kortix Starter" },
       };
+    } else if (
+      item.type === "registry:skill" &&
+      primaryPath?.startsWith("runtime/")
+    ) {
+      // A use-case runbook skill (declared in the marketplace template's
+      // kortix.registry.json): it exists as a use-case template dependency and
+      // installs through the guided wizard. Not starter content, and not a
+      // standalone browse tile — resolvable by id only, like the use-case
+      // templates and agents themselves.
+      item.meta = { ...(item.meta ?? {}), useCase: true };
     }
+    // Remaining marketplace-layer skills (deep-research, search, coding, …)
+    // are ordinary standalone browse tiles: optional installs, not part of
+    // the Kortix Starter project.
     for (const f of item.files ?? []) {
       const content = map.get(f.path);
       if (content != null) f.content = content;
@@ -459,10 +485,12 @@ const STARTER_KIT_README = `# Kortix Starter
 The default Kortix project — a general knowledge worker that's ready to do real
 work from the very first message.
 
-It comes preloaded with the full Kortix skill kit: research and the web,
-documents (PDF, DOCX, XLSX) and slides, coding and web apps, browser automation,
-and a set of editable persona starters (recruiting, marketing, accounting,
-support, product, legal) you can shape into your own operations.
+It comes preloaded with the core Kortix skill floor: documents (PDF, DOCX,
+XLSX) and slides, web apps and websites, browser automation, publishing and
+deployments, and design foundations. The managed Kortix platform skills
+(sessions, memory, the CLI) are injected into every session automatically.
+More skills — research, outreach, and per-role runbooks — are one install away
+in the marketplace.
 
 Everything here is **yours** — plain files in your project's git repo that you
 and your agents can read, edit, extend, and land through change requests. Nothing
@@ -481,9 +509,12 @@ what you do, tailors the kit to your work, and gets you one real result fast.
 
 function buildStarterKitProjectItem(): RegistryItem {
   const registry = buildStarterRegistry();
+  // Only skills tagged as part of the starter (the starter-floor layer) belong
+  // in "what's inside" — marketplace-layer extras and use-case runbook skills
+  // do not ship in a cloned starter project.
   const skillNames = (registry.items ?? [])
     .filter(
-      (it) => it.type === "registry:skill" && !isKortixManagedSkillName(it.name),
+      (it) => it.type === "registry:skill" && it.meta?.partOfProject != null,
     )
     .map((it) => it.name)
     .sort((a, b) => a.localeCompare(b));
@@ -503,7 +534,7 @@ function buildStarterKitProjectItem(): RegistryItem {
     type: "registry:project",
     title: "Kortix Starter",
     description:
-      "The default Kortix project — a general knowledge worker preloaded with the full skill kit (research, documents, slides, spreadsheets, the web, and more), ready to work from the first session.",
+      "The default Kortix project — a general knowledge worker preloaded with the core skill floor (documents, slides, spreadsheets, web apps, browser automation, and more), ready to work from the first session.",
     categories: ["project", "starter"],
     registryDependencies: skillNames,
     files,
@@ -1731,17 +1762,22 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).
   if (it.managedBy === "kortix") return false;
+  if (it.useCase) return false;
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
 /** Resolvable-by-id (detail + file fetch) but not necessarily browse-listed.
- *  Use-case templates and the agents they install stay OUT of the browse grid
- *  (that's the use-case pages' job), yet `kortix marketplace show <id>` /
- *  install-session must read them — so they resolve by id. */
+ *  Use-case templates, the agents they install, and their runbook skills stay
+ *  OUT of the browse grid (that's the use-case pages' job), yet
+ *  `kortix marketplace show <id>` / install-session must read them — so they
+ *  resolve by id. */
 function isResolvableCatalogItem(it: CatalogItem): boolean {
   if (isBrowseableCatalogItem(it)) return true;
+  if (it.hidden) return false;
   return (
-    (it.type === "registry:template" || it.type === "registry:agent") && !it.hidden
+    it.type === "registry:template" ||
+    it.type === "registry:agent" ||
+    it.useCase === true
   );
 }
 
