@@ -1,4 +1,9 @@
+import type { AgentGrant } from '@kortix/db';
+import { isMetaAgentName } from '@kortix/shared';
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
+
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
  * authorization.
@@ -13,9 +18,6 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * A null grant (non-agent token: laptop CLI PAT, dashboard session, or a project
  * that hasn't adopted `[[agents]]`) imposes no restriction.
  */
-import { HTTPException } from 'hono/http-exception';
-import type { Context } from 'hono';
-import type { AgentGrant } from '@kortix/db';
 
 /** Read the agent grant off the request context (set by the auth middleware). */
 export function getAgentGrant(c: Context): AgentGrant | null {
@@ -42,9 +44,17 @@ const AGENT_ACTION_ALIASES: Readonly<Record<string, string>> = {
   'project.gitops.merge': 'project.cr.merge',
 };
 
+const META_AGENT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
+  'project.cr.merge',
+  'project.gitops.merge',
+]);
+
 /** True if the agent-session grant permits `action` (or there is no grant). */
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
+  // This principal-level deny protects sessions minted before the platform
+  // grant was narrowed, including stale tokens stamped with `kortixCli: all`.
+  if (isMetaAgentName(grant.agent) && META_AGENT_DENIED_ACTIONS.has(action)) return false;
   if (grant.kortixCli === 'all') return true;
   if (grant.kortixCli.includes(action)) return true;
   const alias = AGENT_ACTION_ALIASES[action];

@@ -20,6 +20,7 @@ const OTHER_ACCOUNT = 'acct-other';
 let projectRow: Record<string, unknown> | null = null;
 let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
+let sandboxRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
 let authorizeCalls: Array<{
   userId: string;
@@ -30,11 +31,16 @@ let authorizeCalls: Array<{
 
 mock.module('../shared/db', () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({ limit: async () => (projectRow ? [projectRow] : []) }),
-      }),
-    }),
+    select: (fields?: unknown) => {
+      const rows = fields ? (sandboxRow ? [sandboxRow] : []) : (projectRow ? [projectRow] : []);
+      const query = { where: () => ({ limit: async () => rows }) };
+      return {
+        from: () => ({
+          ...query,
+          leftJoin: () => query,
+        }),
+      };
+    },
   },
   hasDatabase: true,
 }));
@@ -74,6 +80,7 @@ beforeEach(() => {
   projectRow = { projectId: PROJECT_ID, accountId: OWNER_ACCOUNT, status: 'active' };
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
+  sandboxRow = { sandboxId: 'sandbox-1', agentName: 'worker' };
   authorizeAllowed = false;
   authorizeCalls = [];
 });
@@ -83,6 +90,39 @@ describe('authorizeGitProxy — CLI PAT', () => {
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
     expect(res.ok).toBe(true);
     expect(authorizeCalls).toHaveLength(0);
+  });
+
+  test('a reserved meta session PAT cannot push, even with a stale all grant', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-meta',
+      projectId: PROJECT_ID,
+      agentGrant: { agent: 'meta', kortixCli: 'all', connectors: [], env: [] },
+    };
+
+    const write = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const read = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+
+    expect(write).toMatchObject({ ok: false, status: 403 });
+    expect(read.ok).toBe(true);
+    expect(authorizeCalls).toHaveLength(0);
+  });
+
+  test('an ordinary project agent PAT keeps write access', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-agent',
+      projectId: PROJECT_ID,
+      agentGrant: { agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {
@@ -170,6 +210,37 @@ describe('authorizeGitProxy — account API key', () => {
   test('an API key on the owning account is allowed', async () => {
     patResult = { isValid: false };
     apiKeyResult = { isValid: true, accountId: OWNER_ACCOUNT, type: 'user' };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+  });
+
+  test('a reserved meta sandbox token cannot push but can read', async () => {
+    patResult = { isValid: false };
+    apiKeyResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      type: 'sandbox',
+      sandboxId: 'sandbox-1',
+    };
+    sandboxRow = { sandboxId: 'sandbox-1', agentName: 'meta' };
+
+    const write = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const read = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+
+    expect(write).toMatchObject({ ok: false, status: 403 });
+    expect(read.ok).toBe(true);
+  });
+
+  test('an ordinary project-agent sandbox token keeps write access', async () => {
+    patResult = { isValid: false };
+    apiKeyResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      type: 'sandbox',
+      sandboxId: 'sandbox-1',
+    };
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
 

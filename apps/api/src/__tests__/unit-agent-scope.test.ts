@@ -234,6 +234,12 @@ describe('agentMayPerform — kortix_cli gate', () => {
   test('"all" → allowed', () => {
     expect(agentMayPerform({ agent: 'kortix', kortixCli: 'all', connectors: 'all' }, 'project.cr.merge')).toBe(true);
   });
+  test('reserved meta is denied both merge actions even with a stale all grant', () => {
+    const staleMetaGrant = { agent: 'meta', kortixCli: 'all' as const, connectors: [] };
+    expect(agentMayPerform(staleMetaGrant, 'project.cr.merge')).toBe(false);
+    expect(agentMayPerform(staleMetaGrant, 'project.gitops.merge')).toBe(false);
+    expect(agentMayPerform(staleMetaGrant, 'project.cr.open')).toBe(true);
+  });
   test('granted action → allowed', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] }, 'project.cr.open')).toBe(true);
   });

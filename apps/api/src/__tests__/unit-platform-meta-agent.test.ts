@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
@@ -7,7 +9,6 @@ import {
   projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
@@ -45,7 +46,7 @@ describe('platform meta agent', () => {
       scope: {
         env: [],
         connectors: [],
-        kortix_cli: 'all',
+        kortix_cli: expect.any(Array),
       },
     });
     expect(config.open_code_default_agent).toBe('meta');
@@ -70,13 +71,34 @@ describe('platform meta agent', () => {
     expect(() => resolvePlatformMetaSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
   });
 
-  test('grants the coordinator every project action without secrets or connectors', () => {
+  test('denies merge authority by construction while retaining other project actions', () => {
+    const expectedActions = Object.values(PROJECT_ACTIONS).filter(
+      (action) => action !== 'project.cr.merge' && action !== 'project.gitops.merge',
+    );
+
     expect(platformMetaAgentGrant()).toEqual({
       agent: 'meta',
-      kortixCli: 'all',
+      kortixCli: expectedActions,
       connectors: [],
       env: [],
     });
+    expect(platformMetaAgentGrant().kortixCli).not.toBe('all');
+    expect(
+      addPlatformMetaAgent({
+        agents: [],
+        commands: [],
+        skills: [],
+        is_kortix_repo: true,
+        signals: {},
+        manifest_raw: null,
+        manifest: {},
+        manifest_version: resolveManifestVerdict({ raw: null, format: 'yaml', path: null }),
+        env: { required: [], optional: [] },
+        open_code_raw: null,
+        open_code_default_agent: null,
+        agent_discovery: 'opencode',
+      }).agents[0]?.scope?.kortix_cli,
+    ).toEqual(expectedActions);
   });
 
   test('is gated on the meta_agent experimental flag, default off', () => {

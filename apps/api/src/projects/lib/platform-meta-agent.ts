@@ -1,10 +1,50 @@
-import {
-  META_AGENT_NAME,
-  META_SANDBOX_SLUG,
-} from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
+import { META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { resolveExperimentalFeature } from '../../experimental/features';
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import type { ProjectConfigSummary } from '../git/types';
+
+const PLATFORM_META_AGENT_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_READ,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_DELETE,
+  PROJECT_ACTIONS.PROJECT_CR_OPEN,
+  PROJECT_ACTIONS.PROJECT_SESSION_READ,
+  PROJECT_ACTIONS.PROJECT_SESSION_START,
+  PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+  PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
+  PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+  PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+  PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+  PROJECT_ACTIONS.PROJECT_GATEWAY_BUDGET_SET,
+  PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
+  PROJECT_ACTIONS.PROJECT_AGENT_READ,
+  PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+  PROJECT_ACTIONS.PROJECT_SKILL_READ,
+  PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
+  PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+  PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+  PROJECT_ACTIONS.PROJECT_FILE_READ,
+  PROJECT_ACTIONS.PROJECT_FILE_WRITE,
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+  PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+  PROJECT_ACTIONS.PROJECT_SECRET_READ,
+  PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+  PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
+  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
+] as const;
 
 /** Per-project opt-in for the platform coordinator (Customize → Experimental). */
 export function projectMetaAgentEnabled(metadata: unknown): boolean {
@@ -27,7 +67,7 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
         scope: {
           env: [],
           connectors: [],
-          kortix_cli: 'all',
+          kortix_cli: [...PLATFORM_META_AGENT_ACTIONS],
         },
       },
       ...config.agents.filter((agent) => agent.name !== META_AGENT_NAME),
@@ -49,16 +89,17 @@ export function buildPlatformMetaOpenCodeConfig(): string {
 }
 
 /**
- * The platform coordinator can manage every surface inside its bound project.
+ * The platform coordinator can manage project surfaces except landing code.
  *
- * The project-bound PAT and the launching user's IAM role remain the outer
- * authorization boundaries. Project secrets and connectors stay unavailable
- * because the coordinator delegates project work to specialized sessions.
+ * Merge actions stay absent from this explicit allowlist. An added project
+ * action therefore does not silently grant the coordinator new authority.
+ * Project secrets and connectors stay unavailable because the coordinator
+ * delegates project work to specialized sessions.
  */
 export function platformMetaAgentGrant(): AgentGrant {
   return {
     agent: META_AGENT_NAME,
-    kortixCli: 'all',
+    kortixCli: [...PLATFORM_META_AGENT_ACTIONS],
     connectors: [],
     env: [],
   };

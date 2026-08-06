@@ -74,7 +74,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
     expect(res.status).not.toBe(403);
   });
 
-  test('meta agent with all project actions → passes the scope gate', async () => {
+  test('meta agent with a stale all grant → 403 at the independent reserved-principal gate', async () => {
     if (!ctx) return;
     const secret = await mintToken({
       agent: 'meta',
@@ -83,7 +83,7 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
       env: [],
     });
     const res = await mergeReq(secret);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   test('token with NO grant (human/legacy) → passes the gate (not 403)', async () => {

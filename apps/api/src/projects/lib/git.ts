@@ -12,7 +12,8 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
+import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -624,7 +625,7 @@ export type GitProxyAuth =
  *
  * The owning account is the trust boundary:
  *  - sandbox runtime token → must be scoped to an active sandbox of THIS
- *    project (read + write);
+ *    project (read + write, except the reserved meta coordinator is read-only);
  *  - account API key (kortix_…) → the account must own the project;
  *  - CLI PAT (kortix_pat_…) → the account owns the project, OR the token's user
  *    holds `project.gitops.push` / `.read` on it; a project-scoped PAT must
@@ -688,6 +689,12 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
+    // The reserved coordinator has no checkout and must delegate repository
+    // changes. Deny receive-pack by principal, not only by its current grant,
+    // so a stale pre-hardening token cannot push the default branch directly.
+    if (scope === 'write' && isMetaAgentName(result.agentGrant?.agent)) {
+      return { ok: false, status: 403, message: 'the meta agent cannot push repository changes' };
+    }
     if (result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
@@ -708,8 +715,12 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          agentName: projectSessions.agentName,
+        })
         .from(sessionSandboxes)
+        .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
         .where(and(
           eq(sessionSandboxes.sandboxId, result.sandboxId),
           eq(sessionSandboxes.projectId, projectId),
@@ -719,6 +730,9 @@ export async function authorizeGitProxy(
         .limit(1);
       if (!sandbox) {
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
+      }
+      if (scope === 'write' && isMetaAgentName(sandbox.agentName)) {
+        return { ok: false, status: 403, message: 'the meta agent cannot push repository changes' };
       }
       return { ok: true, project };
     }
