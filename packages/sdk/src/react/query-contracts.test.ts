@@ -19,9 +19,16 @@ describe('freshness contracts', () => {
     expect(contract('live').staleTime).toBe(Infinity);
   });
 
-  test('no tier refetches on mount', () => {
+  // Empirically verified against the real TanStack engine (see query-contracts.ts's
+  // doc comment): with refetchOnMount:false, invalidateQueries's default
+  // refetchType:'active' does nothing for an entry with no mounted observer, so
+  // an invalidated-but-unobserved entry serves its stale (or wrongly-optimistic)
+  // value for the rest of gcTime. refetchOnMount:true self-heals on the very next
+  // mount, and — because it still respects staleTime — costs zero extra fetches
+  // when the entry is fresh.
+  test('every tier refetches on mount, so an invalidated-but-unobserved entry self-heals', () => {
     for (const tier of TIERS) {
-      expect(contract(tier).refetchOnMount).toBe(false);
+      expect(contract(tier).refetchOnMount).toBe(true);
     }
   });
 

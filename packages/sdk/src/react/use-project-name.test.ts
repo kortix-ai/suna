@@ -32,7 +32,7 @@ describe('useProjectName', () => {
     expect(lastConfig?.queryKey).toEqual(qk.project.detail('proj-1'));
     expect(lastConfig?.staleTime).toBe(contract('config').staleTime);
     expect(lastConfig?.gcTime).toBe(contract('config').gcTime);
-    expect(lastConfig?.refetchOnMount).toBe(false);
+    expect(lastConfig?.refetchOnMount).toBe(true);
   });
 
   test('is disabled without a projectId', () => {
@@ -62,7 +62,7 @@ describe('useProjectAccountId', () => {
     expect(lastConfig?.queryKey).toEqual(qk.project.detail('proj-1'));
     expect(lastConfig?.staleTime).toBe(contract('config').staleTime);
     expect(lastConfig?.gcTime).toBe(contract('config').gcTime);
-    expect(lastConfig?.refetchOnMount).toBe(false);
+    expect(lastConfig?.refetchOnMount).toBe(true);
   });
 
   test('is disabled without a projectId', () => {

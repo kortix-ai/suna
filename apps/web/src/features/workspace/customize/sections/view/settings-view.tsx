@@ -53,15 +53,13 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import {
-  contract,
-  invalidateProject,
-  invalidateProjectIdentity,
-  qk,
-  refreshProjectProviderState,
-  writeProjectNameOptimistically,
-} from '@kortix/sdk/react';
+import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
+import {
+  renameOnError,
+  renameOnMutate,
+  renameOnSettled,
+} from '@/hooks/projects/project-rename-cache';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
   applySandboxProviderResult,
@@ -737,22 +735,19 @@ function GeneralProjectCard({
       updateProject(project.project_id, {
         name: nextName,
       }),
-    // Paint the new name in the same frame it's typed, and invalidate BOTH
-    // name caches on settle — not just the list. The sidebar (list) and the
-    // project home title (detail) used to disagree until the detail cache
-    // happened to be evicted, which is exactly this bug's root cause.
-    onMutate: (nextName) => {
-      writeProjectNameOptimistically(queryClient, project.project_id, nextName);
-    },
+    // Paint the new name in the same frame it's typed, snapshotting what it
+    // overwrote so a REJECTED rename can put it back. `renameOnMutate` /
+    // `renameOnError` / `renameOnSettled` are shared with
+    // `edit-project-modal.tsx` so the two rename paths cannot drift.
+    onMutate: (nextName) => renameOnMutate(queryClient, project.project_id, nextName),
     onSuccess: (updated) => {
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
-      // qk.projects.scope(): restores the reach the old bare
-      // projects-literal prefix match had. A rename is rare —
-      // over-invalidating a few extra account lists costs nothing.
-      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
-    onSettled: () => invalidateProjectIdentity(queryClient, project.project_id),
+    onError: (error: Error, _nextName, context) => {
+      renameOnError(queryClient, project.project_id, context);
+      errorToast(error.message || 'Failed to update project');
+    },
+    onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
 
   const { mutate, isPending } = mutation;

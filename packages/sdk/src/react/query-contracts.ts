@@ -7,8 +7,30 @@
  * on which pages happened to be mounted. Tiers remove the choice from the call
  * site: a consumer spreads a contract, it never authors one.
  *
- * `refetchOnMount` is false everywhere on purpose. Explicit invalidation is the
- * freshness channel; a component mounting is not evidence that data changed.
+ * `refetchOnMount` is `true` everywhere, DELIBERATELY, and it is the second
+ * time this file has gotten it wrong — the first version said `false`
+ * "because explicit invalidation is the freshness channel". That is
+ * empirically false: `invalidateQueries` defaults to `refetchType: 'active'`,
+ * which only refetches queries with a currently-mounted observer. An
+ * invalidated entry with NO mounted observer — the exact shape of a route the
+ * user has navigated away from — is marked invalidated but never refetched,
+ * and `refetchOnMount:false` means the next mount doesn't refetch it either.
+ * It serves its stale (or, worse, wrongly-optimistic — see
+ * `invalidate-project.ts`) value for the rest of `gcTime`. Verified against
+ * the real TanStack engine:
+ *
+ *   refetchOnMount:false -> {"seen":"OPTIMISTIC","totalFetches":1}   wrong value survives
+ *   refetchOnMount:true  -> {"seen":"SERVER","totalFetches":2}        self-heals
+ *
+ * This is NOT a tradeoff against "wasted" fetches on remount, because
+ * `refetchOnMount:true` still respects `staleTime` — it only refetches an
+ * entry that is actually stale or invalidated. A remount of FRESH data costs
+ * the same either way:
+ *
+ *   FRESH-FALSE {"refetchedOnRemount":0,"isPending":false}
+ *   FRESH-TRUE  {"refetchedOnRemount":0,"isPending":false}
+ *
+ * Do not "optimise" this back to `false` without redoing both probes above.
  */
 export type FreshnessTier = 'live' | 'config' | 'inventory' | 'volatile';
 
@@ -29,7 +51,7 @@ export function contract(tier: FreshnessTier) {
   return {
     staleTime: TIERS[tier].staleTime,
     gcTime: GC_TIME,
-    refetchOnMount: false as const,
+    refetchOnMount: true as const,
   };
 }
 

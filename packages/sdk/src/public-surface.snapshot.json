@@ -875,6 +875,7 @@
     "resolveHiddenAutoModel",
     "resolveModelDefault",
     "resolvePromptModel",
+    "restoreProjectName",
     "runPtyCommand",
     "runtimeKeys",
     "safeParseJsonArray",
