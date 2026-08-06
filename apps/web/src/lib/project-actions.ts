@@ -81,6 +81,19 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   { read: ProjectAction; write?: ProjectAction }
 > = {
   agents: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+  // Overlay sections again while the standalone capability pages are flagged
+  // off (#6054). Same leaves the pages themselves assert — connectors-page,
+  // skills-page and commands-page each gate their write affordances on the
+  // `.write` below — so the overlay grants exactly what the page would.
+  connectors: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  skills: { read: PROJECT_ACTIONS.PROJECT_SKILL_READ, write: PROJECT_ACTIONS.PROJECT_SKILL_WRITE },
+  commands: {
+    read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+    write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+  },
   secrets: {
     read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,

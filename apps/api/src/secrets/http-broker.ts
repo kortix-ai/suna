@@ -1,7 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { request as httpsRequest } from 'node:https';
+import { request as httpsRequest, type RequestOptions } from 'node:https';
 import { isIP } from 'node:net';
-import type { LookupFunction } from 'node:net';
 import type {
   SecretBrokerRequest,
   SecretBrokerResponse,
@@ -252,13 +251,22 @@ async function resolvePinnedAddress(url: URL): Promise<{ address: string; family
   return { address: selected.address, family: selected.family === 6 ? 6 : 4 };
 }
 
-export function createPinnedLookup(pinned: { address: string; family: 4 | 6 }): LookupFunction {
-  return (_hostname, options, callback) => {
-    if (options.all) {
-      callback(null, [pinned]);
-      return;
-    }
-    callback(null, pinned.address, pinned.family);
+export function createPinnedRequestOptions(
+  prepared: PreparedBrokerRequest,
+  pinned: { address: string; family: 4 | 6 },
+): RequestOptions {
+  return {
+    protocol: 'https:',
+    hostname: pinned.address,
+    family: pinned.family,
+    port: prepared.url.port || 443,
+    path: `${prepared.url.pathname}${prepared.url.search}`,
+    method: prepared.method,
+    headers: {
+      ...prepared.headers,
+      host: prepared.url.host,
+    },
+    servername: isIP(prepared.url.hostname) === 0 ? prepared.url.hostname : undefined,
   };
 }
 
@@ -274,16 +282,7 @@ export async function pinnedHttpsTransport(
       reject(error);
     };
     const request = httpsRequest(
-      {
-        protocol: 'https:',
-        hostname: prepared.url.hostname,
-        port: prepared.url.port || 443,
-        path: `${prepared.url.pathname}${prepared.url.search}`,
-        method: prepared.method,
-        headers: prepared.headers,
-        servername: isIP(prepared.url.hostname) === 0 ? prepared.url.hostname : undefined,
-        lookup: createPinnedLookup(pinned),
-      },
+      createPinnedRequestOptions(prepared, pinned),
       (response) => {
         const chunks: Buffer[] = [];
         let size = 0;

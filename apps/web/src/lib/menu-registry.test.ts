@@ -129,15 +129,22 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(true);
   });
 
-  test('the Connectors/Skills/Commands entries navigate to the standalone pages, not /customize/*', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(commandsItem!.href).toBe('/projects/{projectId}/commands');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
+  test('the Connectors/Skills/Commands entries point at the flag-aware deep link', () => {
+    // These were literal `/projects/{projectId}/<section>` hrefs until #6054
+    // went behind NEXT_PUBLIC_CAPABILITY_PAGES. A registry href is a static
+    // string and cannot read the flag, so it now targets the /customize/<section>
+    // deep link, which resolves to the standalone page when the flag is ON and
+    // opens the overlay when it is OFF. One href, correct in both positions.
+    expect(skillsItem!.href).toBe('/projects/{projectId}/customize/skills');
+    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
+    expect(connectorsItem!.href).toBe('/projects/{projectId}/customize/connectors');
   });
 
-  test('proj-connectors-policies no longer advertises a Customize destination it cannot reach', () => {
+  test('proj-connectors-policies still does not promise a destination it cannot reach', () => {
+    // The label must not claim a Policies tab. The href follows the same
+    // flag-aware deep link as the other capability entries.
     expect(policiesItem).toBeDefined();
-    expect(policiesItem!.href).toBe('/projects/{projectId}/connectors');
-    expect(policiesItem!.label).not.toContain('Customize');
+    expect(policiesItem!.href).toBe('/projects/{projectId}/customize/connectors');
+    expect(policiesItem!.label).not.toContain('Policies tab');
   });
 });

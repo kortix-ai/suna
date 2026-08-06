@@ -176,6 +176,92 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
   'No model available for compaction. Please configure a model in settings.',
 ] as const;
 
+// Expected "model not available for this account" UI validation state. The API
+// returns a TYPED 409 with `code: 'model_not_servable'`
+// (`apps/api/src/projects/routes/r4.ts:3045` and `channel-bindings.ts:288`, both
+// via `isModelServableForAccount`) when a user picks a model their account
+// can't use — a free-tier managed model, or a BYOK model whose provider isn't
+// connected. The SAME wording is also returned as a 400 with
+// `code: 'INVALID_SESSION_MODEL'` (`apps/api/src/projects/routes/r7.ts:2811`
+// and `apps/api/src/projects/lib/sessions.ts:741`) for an explicit session
+// model. Both are EXPECTED, user-facing validation states — the SDK's
+// `useModelDefaults` `setMutation` `onError` already branches on the typed
+// 409 code and surfaces a user-facing toast via `platformConfig().onToast`,
+// and `makeRequest` already classifies the typed 409 as SILENT to `onError`
+// (Sentry) — see `MODEL_NOT_SERVABLE_CODE` in
+// `packages/sdk/src/core/http/api-client.ts` (PR #6082).
+//
+// BUT every call site fire-and-forgets the returned promise —
+// `void setAccountDefault(...)` / `void setAgentDefault(...)` /
+// `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
+// `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
+// (`setAccountDefault`/…) promise rejects → `void` discards the rejected
+// promise with no `.catch()` → UNHANDLED rejection → Sentry's
+// `onunhandledrejection` global handler auto-captures it. The `setMutation`
+// `onError` SWALLOWS the rejection inside react-query (the toast fires), but
+// react-query v5's `onError` does NOT prevent `mutateAsync`'s returned
+// promise from rejecting, so the `void`-discarded promise still surfaces as
+// an uncaught global rejection. The SDK `makeRequest` gate silences the
+// `onError` (Sentry) callback, but the unhandled rejection happens at the
+// `.then()`/`void` level — AFTER `makeRequest` returned — so the gate never
+// sees it. This left the 7 occurrences STILL reaching Sentry as UNCAUGHT
+// `onunhandledrejection` (`handled:false`) post-#6082.
+//
+// Better Stack pattern
+// 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
+// (Kortix Frontend prod, application_id 2346967): `ApiError`, message
+// `Model "openai/gpt-5.4-mini" is not available for this account`, 7
+// occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL
+// post-v0.12.4, release `160f0b286f0ad5c53debc343d5e055241694e24d`),
+// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…`
+// (co-worker session page), browser Android Chrome mobile, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`).
+//
+// This is the leak-path backstop for the #6082 SDK gate, sibling to
+// `isExpectedBillingGateMessage` / `isExpectedCompactionNoModelMessage`
+// (also `ApiError`/Error throws that leak via `void` fire-and-forget →
+// `onunhandledrejection`). The model name varies (e.g.
+// `openai/gpt-5.4-mini`, `nvidia/minimaxai/minimax-m3`), so — unlike the
+// billing-gate / compaction exact-string matchers — this is a REGEX anchored
+// on the EXACT API wording `Model "…" is not available for this account`
+// (the `Model "` prefix and `is not available for this account` suffix are
+// the API's own canonical strings across all four emitting routes), with the
+// canonical `ApiError: ` / `Unhandled promise rejection: ` wrappers stripped
+// so all capture paths (window.onerror, onunhandledrejection, Sentry
+// exception) classify consistently. Deliberately message-only with NO
+// first-party frame negative guard — mirroring the billing-gate / compaction
+// matchers — because (a) the message is the API's own canonical wording
+// (never a coincidental app-logic phrase), (b) the SDK gate already handles
+// the `onError` path, and (c) the unhandled-rejection stack DOES carry
+// resolved first-party `apps/web/src/…` call-site frames (the `void`
+// call sites in `session-chat.tsx`/`agents-view.tsx`/`gateway-view.tsx`), so a
+// first-party negative guard would FAIL to suppress the actual prod noise.
+// A genuine first-party `throw new Error('Model "…" is not available for this
+// account')` regression is vanishingly unlikely (the wording is the API's,
+// not app logic) AND is already covered by the SDK's `onError` Sentry
+// capture for non-409 cases. NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list as a bare regex — that gate has no frame context and
+// the message is specific enough that the `beforeSend` hook
+// (`shouldIgnoreSentryBrowserNoise`) is the safe gate; the anchored regex
+// below covers frameless `onunhandledrejection` captures too.
+const MODEL_NOT_SERVABLE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The bare API message (the SDK `ApiError.message`), with any non-empty
+  // model id between the quotes.
+  /^Model "[^"]+" is not available for this account$/,
+  // `ApiError: `-prefixed wrapper (e.g. a console/error-boundary re-throw, or
+  // Sentry's exception `value` formatting).
+  /^ApiError: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper preserving the message (Sentry
+  // `onunhandledrejection` auto-capture, `handled:false`).
+  /^Unhandled promise rejection: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper around an `ApiError:`-prefixed re-throw
+  // (the full wrapper stack).
+  /^Unhandled promise rejection: ApiError: Model "[^"]+" is not available for this account$/,
+];
+
 // Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
 // cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
 // the webpack runtime chunk is served from a different deployment, so
@@ -390,6 +476,78 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /^Unexpected token\b/,
   /^Invalid or unexpected token$/,
   /^Cannot use import statement outside a module$/,
+];
+
+// Old-browser third-party-library DOM null-deref noise on the marketing
+// homepage. Two SIBLING patterns, both `TypeError: Cannot read properties of
+// null (reading '<X>')` (V8 wording; old JSC says `Cannot read property '<X>'
+// of null`) from minified third-party library internals running on VERY OLD
+// browsers hitting the marketing homepage (`https://kortix.com/`):
+//
+//   Pattern 1 (2 occurrences, last 2026-08-06 11:11:14 UTC):
+//     Better Stack pattern
+//     e02e022f7433a02c7acdc9ae33c3dd1bdec938eeb694f0bf83d290c1d696d853
+//     `Cannot read properties of null (reading 'scrollLeft')`, call site
+//     function `measureScroll` in chunk `0d5wqj98qv1e9.js` (minified). User
+//     agents: Windows 7 Chrome (very old) + Chrome 95 Linux (very old).
+//     Mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT,
+//     `handled:false` — never reached a React error boundary).
+//
+//   Pattern 2 (2 occurrences — sibling, same timestamp):
+//     Better Stack pattern
+//     8ab4ae816505dc3a17c7b8258e6894b3964ab7d10056afc47477833824fa8648
+//     `Cannot read properties of null (reading 'appendChild')`, call site
+//     function `ft` in chunk `0foj1ouh5ijrj.js` (minified). Same old UAs, same
+//     UNCAUGHT global `onerror`, same marketing homepage.
+//
+// Classification: browser-compatibility noise. `measureScroll` and `ft` are
+// THIRD-PARTY library internals (a smooth-scroll / scroll-measurement library
+// and an animation/DOM-manipulation helper respectively), not first-party
+// Kortix code — the minified call-site function names (`measureScroll`, `ft`)
+// do not appear in `apps/web/src/…` source. The throws happen because very old
+// browsers (Win7 Chrome, Chrome 95) have quirkier DOM behavior: a scroll-
+// measurement helper reaches for a DOM element that resolved to `null` (the
+// element was not in the DOM yet, or the old browser returned `null` from a
+// `querySelector`/`getBoundingClientRect` path), then accesses `.scrollLeft` on
+// it → `TypeError`. Same for `appendChild`: an animation library calls
+// `parent.appendChild(child)` on a `parent` that resolved to `null` in the old
+// browser. These are 2 occurrences each, 0 identified users, marketing page
+// only — not a product flow, not a deterministic app regression.
+//
+// `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+// first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
+// hover.ts` reads `container.scrollLeft`, `apps/web/src/features/workspace/
+// project-sidebar/session-title.tsx` sets `el.scrollLeft`, ref-callback
+// `appendChild` calls exist in portal/tooltip code), so matching on the bare
+// message would swallow a real first-party null-deref regression. The matcher
+// therefore requires BOTH the exact V8/old-JSC message AND a NEGATIVE guard:
+// if ANY frame (or the window.onerror `filename`) resolves to a de-minified
+// first-party `apps/web/src/…` source path, the event KEEPS reporting — that
+// means our own code is the null-deref culprit and is actionable to fix. The
+// prod events carry only minified `app:///_next/static/chunks/…` chunk frames
+// (the third-party library internals) + an `<anonymous>` frame, so the
+// negative guard does NOT fire for them. A frameless capture with one of these
+// exact messages still classifies as noise: `measureScroll` and the minified
+// `ft` are third-party library internals, and the messages are specific
+// enough (the DOM method names `scrollLeft`/`appendChild` paired with `null`
+// access) that a frameless capture is safe to drop — a real first-party
+// `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+// resolvable frame with a stack. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// null-deref regression the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate. The runtime `window.onerror` gate
+// (`shouldIgnoreBrowserRuntimeNoise`) is also wired so a frameless onerror
+// capture with the exact message + no first-party `filename` drops.
+const OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording for both siblings.
+  /^Cannot read properties of null \(reading 'scrollLeft'\)$/,
+  /^Cannot read properties of null \(reading 'appendChild'\)$/,
+  // Old JSC (old Safari/iOS): `Cannot read property '<X>' of null` — different
+  // engine, same old-browser DOM null-deref class.
+  /^Cannot read property 'scrollLeft' of null$/,
+  /^Cannot read property 'appendChild' of null$/,
 ];
 
 // Android System WebView native-bridge instrumentation noise. The Android
@@ -1436,6 +1594,35 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
 }
 
 /**
+ * Whether a message is the EXPECTED "model not available for this account"
+ * UI validation state — the typed 409 `code: 'model_not_servable'` the API
+ * returns (`apps/api/src/projects/routes/r4.ts` + `channel-bindings.ts` via
+ * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
+ * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
+ * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a
+ * user-facing toast, and `makeRequest` already classifies the typed 409 as
+ * SILENT to `onError` (Sentry) — see `MODEL_NOT_SERVABLE_CODE` (PR #6082) —
+ * but every call site fire-and-forgets the returned promise
+ * (`void setAccountDefault(...)` / `void setAgentDefault(...)` /
+ * `void setProjectDefault(...)`), so the rejected `mutateAsync` becomes an
+ * UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+ * which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+ * This is the leak-path backstop. The model name varies, so the match is a
+ * REGEX anchored on the EXACT API wording `Model "…" is not available for
+ * this account`, with the canonical `ApiError: ` / `Unhandled promise
+ * rejection: ` wrappers, so a longer real error that merely mentions the
+ * phrase is never matched. Sibling to `isExpectedBillingGateMessage` /
+ * `isExpectedCompactionNoModelMessage` (also `ApiError`/Error throws that
+ * leak via `void` fire-and-forget); deliberately message-only with NO
+ * first-party frame negative guard — see `MODEL_NOT_SERVABLE_NOISE_PATTERNS`
+ * for the full rationale. See Better Stack pattern `9784f440…`.
+ */
+export function isModelNotServableNoise(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return MODEL_NOT_SERVABLE_NOISE_PATTERNS.some((re) => re.test(normalized));
+}
+
+/**
  * Whether a Sentry exception is the stale-deploy webpack-runtime
  * `… (reading 'call')` TypeError. Requires BOTH the exact webpack
  * module-loader message AND the throwing frame (the last stack frame, per
@@ -1650,6 +1837,65 @@ export function isOldBrowserSyntaxParseError(input: {
     ...(input.frames ?? []).map((frame) => frame?.filename),
   ];
   return sources.some((filename) => isMinifiedChunkSource(filename));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the old-browser third-party-
+ * library DOM null-deref noise class: a `TypeError: Cannot read properties of
+ * null (reading 'scrollLeft')` / `… (reading 'appendChild')` (V8 wording; old
+ * JSC says `Cannot read property '<X>' of null`) thrown from minified
+ * THIRD-PARTY library internals (`measureScroll` in a scroll-measurement
+ * library, `ft` in an animation/DOM-manipulation helper) running on VERY OLD
+ * browsers (Windows 7 Chrome, Chrome 95 Linux) hitting the marketing
+ * homepage. The browser's quirkier DOM behavior returns `null` where modern
+ * browsers return an element, and the library accesses `.scrollLeft` /
+ * `.appendChild` on the `null` → `TypeError`. UNCAUGHT global `onerror`
+ * (`handled:false` — never reaches a React error boundary), 2 occurrences
+ * each, 0 identified users, marketing page only — browser-compatibility
+ * noise, not a product defect.
+ *
+ * `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+ * first-party React code DOES call (e.g. `use-proximity-hover.ts` reads
+ * `container.scrollLeft`, `session-title.tsx` sets `el.scrollLeft`, portal/
+ * tooltip ref-callbacks call `appendChild`), so the matcher requires BOTH the
+ * exact V8/old-JSC message AND a NEGATIVE guard: if ANY frame (or the
+ * window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event KEEPS reporting — our own code is
+ * the null-deref culprit and is actionable to fix. The production noise
+ * events carry only minified `app:///_next/static/chunks/…` chunk frames
+ * (the third-party library internals) + an `<anonymous>` frame, so the
+ * negative guard does NOT fire for them. A frameless capture with one of
+ * these exact messages still classifies as noise — `measureScroll` and the
+ * minified `ft` are third-party library internals, and a real first-party
+ * `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+ * resolvable frame with a stack. See
+ * `OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS` for the full rationale and the
+ * two production Better Stack patterns.
+ */
+export function isOldBrowserDomNullDerefNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!message) return false;
+  const stripped = stripErrorWrappers(message);
+  if (!OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code is the null-deref culprit →
+  // actionable; keep reporting so the call site can be found + fixed. A real
+  // first-party `el.scrollLeft` / `parent.appendChild` null-deref de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -3201,6 +3447,21 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) — but every call
+  // site fire-and-forgets the returned promise (`void setXxxDefault(...)`), so
+  // the rejected `mutateAsync` becomes an UNHANDLED rejection →
+  // `onunhandledrejection`, which the #6082 SDK gate never sees (it's past the
+  // `makeRequest` return). Drop it here so the expected validation state never
+  // pages Better Stack. See `isModelNotServableNoise` and Better Stack pattern
+  // `9784f440…`.
+  if (isModelNotServableNoise(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
@@ -3223,6 +3484,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Requires a `_next/static/chunks/` / `?dpl=dpl_…` filename so a real
   // first-party eval/`new Function` SyntaxError keeps reporting.
   if (isOldBrowserSyntaxParseError({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // filename means our own code is the null-deref culprit → actionable; keep
+  // reporting. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -3472,6 +3746,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` (and a 400
+  // `INVALID_SESSION_MODEL` sibling with the SAME message) when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) (PR #6082), but
+  // every call site fire-and-forgets the returned promise
+  // (`void setXxxDefault(...)`), so the rejected `mutateAsync` becomes an
+  // UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+  // which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+  // It can also leak through `<ClientErrorBoundary>` / route / system-fault
+  // boundaries. Drop it here so the expected validation state never pages
+  // Better Stack. The match is a REGEX (model name varies) anchored on the
+  // exact API wording, with canonical wrappers; a longer real error that
+  // merely mentions the phrase keeps reporting. See `isModelNotServableNoise`
+  // and Better Stack pattern `9784f440…`.
+  if (isModelNotServableNoise(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps on the marketing site — WebKit-specific wording, only old Safari/iOS
   // visitors hit it. The de-minified frame points at our own chunk, so this
@@ -3517,6 +3811,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
   // safe gate because it can anchor on the chunk frame.
   if (isOldBrowserSyntaxParseError({ message, frames })) {
+    return true;
+  }
+
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // frame means our own code is the null-deref culprit → actionable; keep
+  // reporting. The prod events carry only minified `app:///_next/static/
+  // chunks/…` chunk frames + `<anonymous>`, so the negative guard does NOT
+  // fire for them. A frameless capture with one of these exact messages still
+  // classifies as noise. NOTE: deliberately NOT added to
+  // `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+  // context, so a bare-string match there would swallow a real first-party
+  // `el.scrollLeft` / `parent.appendChild` null-deref the negative guard
+  // exists to preserve; the frame-aware `beforeSend` hook (which calls this
+  // helper) is the only safe gate. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, frames })) {
     return true;
   }
 

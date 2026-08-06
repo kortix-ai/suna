@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
   KORTIX_MANAGED_PROVIDER_ENABLED: true,
@@ -6,7 +7,10 @@ const config: Record<string, unknown> = {
   ASTER_API_URL: 'https://api.asterlab.ai/v1',
 };
 mock.module('../../config', () => ({ config }));
+// Spread the real module — see the note in resolve-candidates.test.ts. Listing
+// three exports by hand silently removed every other one from the registry.
 mock.module('../../billing/services/tiers', () => ({
+  ...realTiers,
   getTierEntitlements: () => ({}),
   llmPriceMarkup: () => 2,
   tierHasEntitlement: () => false,

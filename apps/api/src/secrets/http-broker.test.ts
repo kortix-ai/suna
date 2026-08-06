@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SecretBrokerRequest } from '@kortix/api-contract';
 import type { SecretEgressPolicy } from '@kortix/db';
 import {
-  createPinnedLookup,
+  createPinnedRequestOptions,
   executeSecretBrokerRequest,
   prepareSecretBrokerRequest,
   redactSecretFromResponse,
@@ -170,19 +170,27 @@ test('redactSecretFromResponse handles repeated literal values', () => {
   expect(redacted.toString('utf8')).toBe('[REDACTED]:[REDACTED]');
 });
 
-test('createPinnedLookup returns an array when the runtime requests all addresses', async () => {
-  const lookup = createPinnedLookup({ address: '203.0.113.10', family: 4 });
-  const result = await new Promise<{ address: unknown; family: number | undefined }>(
-    (resolve, reject) => {
-      lookup('api.example.com', { all: true }, (error, address, family) => {
-        if (error) reject(error);
-        else resolve({ address, family });
-      });
-    },
+test('pinned transport connects to the verified IP without a runtime DNS lookup', () => {
+  const prepared = prepareSecretBrokerRequest(
+    policy({ rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }] }),
+    SECRET,
+    request({ url: 'https://api.example.com:8443/v1/messages' }),
   );
-
-  expect(result).toEqual({
-    address: [{ address: '203.0.113.10', family: 4 }],
-    family: undefined,
+  const options = createPinnedRequestOptions(prepared, {
+    address: '203.0.113.10',
+    family: 4,
   });
+
+  expect(options).toMatchObject({
+    hostname: '203.0.113.10',
+    port: '8443',
+    path: '/v1/messages',
+    method: 'POST',
+    servername: 'api.example.com',
+    headers: {
+      authorization: `Bearer ${SECRET}`,
+      host: 'api.example.com:8443',
+    },
+  });
+  expect('lookup' in options).toBe(false);
 });

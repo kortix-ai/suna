@@ -1,6 +1,9 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+
 import { ScheduleView } from '@/components/projects/schedule-view';
+import Loading from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
@@ -9,6 +12,36 @@ import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
+// Restored overlay sections while the standalone capability pages are flagged
+// off (#6054). Loaded lazily — `connectors-view.tsx` alone is ~5k lines, and
+// the overlay opens on `agents`, so none of this belongs in its first chunk.
+// Same components the capability pages render.
+const ConnectorsView = dynamic(
+  () =>
+    import('@/features/workspace/customize/sections/connectors-view').then((m) => m.ConnectorsView),
+  { ssr: false, loading: () => <SectionChunkFallback /> },
+);
+const SkillsView = dynamic(
+  () =>
+    import('@/features/workspace/customize/sections/view/skills-view').then((m) => m.SkillsView),
+  { ssr: false, loading: () => <SectionChunkFallback /> },
+);
+const CommandsView = dynamic(
+  () =>
+    import('@/features/workspace/customize/sections/view/commands-view').then(
+      (m) => m.CommandsView,
+    ),
+  { ssr: false, loading: () => <SectionChunkFallback /> },
+);
+
+/** Holds the section's space while its chunk arrives. */
+function SectionChunkFallback() {
+  return (
+    <div className="flex min-h-64 items-center justify-center">
+      <Loading className="size-5 shrink-0" />
+    </div>
+  );
+}
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
@@ -376,6 +409,15 @@ function SectionContent({
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
+    // Back in the overlay while the standalone capability pages are flagged off
+    // (#6054). These are the SAME view components the new pages render, so the
+    // flag decides the shell, not the functionality.
+    case 'connectors':
+      return <ConnectorsView projectId={projectId} />;
+    case 'skills':
+      return <SkillsView projectId={projectId} />;
+    case 'commands':
+      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'secrets':

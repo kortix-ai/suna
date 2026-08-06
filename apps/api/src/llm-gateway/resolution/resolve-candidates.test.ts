@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
+import * as realTiers from '../../billing/services/tiers';
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
@@ -25,7 +26,12 @@ mock.module('../../billing/services/entitlements', () => ({
   getCachedAccountTier,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits. The deletion surfaces in
+// whatever unrelated file imports a missing name next, only when the files are
+// co-run, and is attributed to that file rather than to this stub.
 mock.module('../../billing/services/tiers', () => ({
+  ...realTiers,
   accountIsFreeTierForModels: (tier: string) => tier === 'free',
 }));
 

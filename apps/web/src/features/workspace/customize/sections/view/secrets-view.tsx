@@ -75,8 +75,8 @@ import {
   type SecretEgressPolicy,
   deleteProjectSecret,
   getProjectDetail,
-  listProjectSecrets,
   listConnectors,
+  listProjectSecrets,
   setConnectorSecretBinding,
   setProjectSecretStrategy,
   upsertProjectSecret,
@@ -96,6 +96,13 @@ import {
   secretDeliveryOptions,
   secretDeliveryPresentation,
 } from './secret-delivery';
+import {
+  type OptimisticProjectSecretInput,
+  type ProjectSecretsCache,
+  applyProjectSecretResponse,
+  beginOptimisticProjectSecretSave,
+  rollbackOptimisticProjectSecretSave,
+} from './secret-optimistic-cache';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -124,6 +131,19 @@ interface SecretRow {
   egressPolicy: SecretEgressPolicy | null;
   requiresRotation: boolean;
 }
+
+type SecretSavePlan = {
+  finalKey: string;
+  finalIdentifier: string;
+  strategy: SecretDeliveryStrategy;
+  nextConsumer: SecretConsumer | null;
+  value: string | undefined;
+  hasValueChange: boolean;
+  shouldSetStrategy: boolean;
+  egressPolicy: SecretEgressPolicy | undefined;
+  bindingChanges: { bind: string[]; unbind: string[] };
+  optimistic: OptimisticProjectSecretInput;
+};
 
 export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -316,7 +336,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               )}
 
               <SecretDialog
-                key={dialogOpen ? (dialogRow?.identifier ?? 'new') : 'closed'}
+                key={dialogRow?.identifier ?? 'new'}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
                 projectId={projectId}
@@ -608,6 +628,33 @@ function SecretDialog({
     currentInjection?.kind === 'header' ? (currentInjection.template ?? '') : '',
   );
 
+  const resetForm = () => {
+    setIdentifier(row?.identifier ?? '');
+    setKey(row?.key ?? '');
+    setValue('');
+    setStrategy(row?.strategy ?? 'runtime');
+    setBrokerConsumer(
+      row?.consumer === 'llm_gateway' ||
+        row?.consumer === 'connector' ||
+        row?.consumer === 'executor'
+        ? row.consumer
+        : 'http_broker',
+    );
+    setSelectedConnectorSlugs(null);
+    setBrokerHosts(currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '');
+    setBrokerMethods(currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST');
+    setBrokerPath(currentPolicy?.rules[0]?.path ?? '/');
+    setInjectionKind(currentInjection?.kind ?? 'header');
+    setInjectionTarget(
+      currentInjection?.kind === 'json_body_field'
+        ? currentInjection.path
+        : (currentInjection?.name ?? 'authorization'),
+    );
+    setInjectionTemplate(
+      currentInjection?.kind === 'header' ? (currentInjection.template ?? '') : '',
+    );
+  };
+
   const requiresValue = !row?.configured;
   const brokerPolicy = buildBrokerPolicy({
     hosts: brokerHosts,
@@ -618,72 +665,110 @@ function SecretDialog({
     template: injectionTemplate,
   });
 
-  const save = useMutation({
-    mutationFn: async () => {
-      const finalKey = (row?.key ?? key).trim().toUpperCase();
-      const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
-      const nextConnectorSlugs =
-        strategy === 'broker' && brokerConsumer === 'connector'
-          ? effectiveSelectedConnectorSlugs
-          : [];
-      const bindingChanges = connectorBindingChanges(
-        connectors,
-        finalIdentifier,
-        nextConnectorSlugs,
-      );
-      if (!SECRET_NAME_REGEX.test(finalKey)) {
-        throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
-      }
-      if (!IDENTIFIER_REGEX.test(finalIdentifier)) {
-        throw new Error('Identifier: letters, numbers, _, ., - only. Max 128 chars.');
-      }
-      if (requiresValue && !value.trim()) {
-        throw new Error('Value is required.');
-      }
-      if (finalKey.startsWith('KORTIX_')) {
-        throw new Error('KORTIX_* keys are reserved for platform variables');
-      }
-      if (strategy === 'runtime' && row?.requiresRotation && !value.trim()) {
-        throw new Error('Enter a new value before making this secret readable in the sandbox.');
-      }
-      if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
-        throw new Error('Complete the broker destination and credential placement.');
-      }
-      if (
-        strategy === 'broker' &&
-        brokerConsumer === 'connector' &&
-        nextConnectorSlugs.length === 0
-      ) {
-        throw new Error('Select at least one connector.');
-      }
+  const prepareSavePlan = (): SecretSavePlan => {
+    const finalKey = (row?.key ?? key).trim().toUpperCase();
+    const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
+    const nextConnectorSlugs =
+      strategy === 'broker' && brokerConsumer === 'connector'
+        ? effectiveSelectedConnectorSlugs
+        : [];
+    const bindingChanges = connectorBindingChanges(connectors, finalIdentifier, nextConnectorSlugs);
+    if (!SECRET_NAME_REGEX.test(finalKey)) {
+      throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
+    }
+    if (!IDENTIFIER_REGEX.test(finalIdentifier)) {
+      throw new Error('Identifier: letters, numbers, _, ., - only. Max 128 chars.');
+    }
+    if (requiresValue && !value.trim()) {
+      throw new Error('Value is required.');
+    }
+    if (finalKey.startsWith('KORTIX_')) {
+      throw new Error('KORTIX_* keys are reserved for platform variables');
+    }
+    if (strategy === 'runtime' && row?.requiresRotation && !value.trim()) {
+      throw new Error('Enter a new value before making this secret readable in the sandbox.');
+    }
+    if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
+      throw new Error('Complete the broker destination and credential placement.');
+    }
+    if (
+      strategy === 'broker' &&
+      brokerConsumer === 'connector' &&
+      nextConnectorSlugs.length === 0
+    ) {
+      throw new Error('Select at least one connector.');
+    }
 
-      if (!(strategy === 'broker' && brokerConsumer === 'connector')) {
+    const nextConsumer: SecretConsumer | null =
+      strategy === 'runtime'
+        ? 'sandbox'
+        : strategy === 'denied'
+          ? null
+          : strategy === 'egress'
+            ? 'network'
+            : brokerConsumer;
+    const hasValueChange = Boolean(value.trim()) || !row?.configured;
+    const egressPolicy =
+      strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+        ? brokerPolicy
+        : undefined;
+    const shouldSetStrategy =
+      strategy !== (row?.strategy ?? 'runtime') ||
+      nextConsumer !== (row?.consumer ?? 'sandbox') ||
+      strategy === 'broker';
+    return {
+      finalKey,
+      finalIdentifier,
+      strategy,
+      nextConsumer,
+      value: value.trim() ? value : undefined,
+      hasValueChange,
+      shouldSetStrategy,
+      egressPolicy,
+      bindingChanges,
+      optimistic: {
+        projectId,
+        identifier: finalIdentifier,
+        name: finalKey,
+        strategy,
+        consumer: nextConsumer,
+        deliveryStatus: strategy === 'denied' ? 'disabled' : 'available',
+        egressPolicy: egressPolicy ?? null,
+        valueChanged: Boolean(value.trim()),
+      },
+    };
+  };
+
+  const save = useMutation({
+    mutationFn: async (plan: SecretSavePlan) => {
+      const {
+        finalKey,
+        finalIdentifier,
+        strategy,
+        nextConsumer,
+        value: nextValue,
+        hasValueChange,
+        shouldSetStrategy,
+        egressPolicy,
+        bindingChanges,
+      } = plan;
+
+      if (!(strategy === 'broker' && nextConsumer === 'connector')) {
         await Promise.all(
           bindingChanges.unbind.map((slug) => setConnectorSecretBinding(projectId, slug, null)),
         );
       }
 
-      const nextConsumer: SecretConsumer | null =
-        strategy === 'runtime'
-          ? 'sandbox'
-          : strategy === 'denied'
-            ? null
-            : strategy === 'egress'
-              ? 'network'
-              : brokerConsumer;
-      const hasValueChange = Boolean(value.trim()) || !row?.configured;
       if (hasValueChange) {
         const result = await upsertProjectSecret(projectId, {
           name: finalKey,
           identifier: finalIdentifier,
-          ...(value.trim() ? { value } : {}),
+          ...(nextValue ? { value: nextValue } : {}),
           strategy,
           consumer: nextConsumer,
-          ...(strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
-            ? { egress_policy: brokerPolicy }
-            : {}),
+          ...(egressPolicy ? { egress_policy: egressPolicy } : {}),
         });
-        if (strategy === 'broker' && brokerConsumer === 'connector') {
+        if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
             ...bindingChanges.unbind.map((slug) =>
               setConnectorSecretBinding(projectId, slug, null),
@@ -695,18 +780,12 @@ function SecretDialog({
         }
         return result;
       }
-      if (
-        strategy !== (row?.strategy ?? 'runtime') ||
-        nextConsumer !== (row?.consumer ?? 'sandbox') ||
-        strategy === 'broker'
-      ) {
+      if (shouldSetStrategy) {
         const result = await setProjectSecretStrategy(projectId, finalIdentifier, strategy, {
           consumer: nextConsumer,
-          ...(strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
-            ? { egress_policy: brokerPolicy }
-            : {}),
+          ...(egressPolicy ? { egress_policy: egressPolicy } : {}),
         });
-        if (strategy === 'broker' && brokerConsumer === 'connector') {
+        if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
             ...bindingChanges.unbind.map((slug) =>
               setConnectorSecretBinding(projectId, slug, null),
@@ -720,22 +799,48 @@ function SecretDialog({
       }
       return null;
     },
-    onSuccess: () => {
-      successToast(
-        `Saved ${(row?.identifier ?? identifier).trim() || (row?.key ?? key).trim().toUpperCase()}`,
-      );
+    onMutate: async (plan) => {
+      const queryKey = ['project-secrets', projectId] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const context = beginOptimisticProjectSecretSave(queryClient, queryKey, plan.optimistic);
+      onOpenChange(false);
+      return context;
+    },
+    onSuccess: (result, plan) => {
+      if (result) {
+        queryClient.setQueryData<ProjectSecretsCache>(['project-secrets', projectId], (cache) =>
+          cache ? applyProjectSecretResponse(cache, result) : cache,
+        );
+      }
+      successToast(`Saved ${plan.finalIdentifier}`);
+      resetForm();
       onSaved();
       queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
-      onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to save secret'),
+    onError: (err: Error, _plan, context) => {
+      rollbackOptimisticProjectSecretSave(
+        queryClient,
+        ['project-secrets', projectId],
+        context?.previous,
+      );
+      onOpenChange(true);
+      errorToast(err.message || 'Failed to save secret');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (save.isPending) return;
     if (!isEdit && !key.trim()) return;
-    save.mutate();
+    try {
+      save.mutate(prepareSavePlan());
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : 'Failed to save secret');
+    }
   }
 
   const title = !row
@@ -775,6 +880,7 @@ function SecretDialog({
       open={open}
       onOpenChange={(next) => {
         if (save.isPending) return;
+        if (!next) resetForm();
         onOpenChange(next);
       }}
     >

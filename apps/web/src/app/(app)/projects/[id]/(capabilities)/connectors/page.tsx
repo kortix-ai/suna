@@ -1,6 +1,8 @@
 'use client';
 
 import { useParams } from 'next/navigation';
+
+import { CapabilityRouteGate } from '@/features/workspace/capabilities/shared/capability-route-gate';
 import { Suspense } from 'react';
 
 import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
@@ -21,10 +23,12 @@ export default function ProjectConnectorsPage() {
   const { id: projectId } = useParams<{ id: string }>();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Suspense fallback={<CapabilitiesSkeleton />}>
-        <ConnectorsPage projectId={projectId} />
-      </Suspense>
-    </div>
+    <CapabilityRouteGate projectId={projectId} section="connectors">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <Suspense fallback={<CapabilitiesSkeleton />}>
+          <ConnectorsPage projectId={projectId} />
+        </Suspense>
+      </div>
+    </CapabilityRouteGate>
   );
 }
