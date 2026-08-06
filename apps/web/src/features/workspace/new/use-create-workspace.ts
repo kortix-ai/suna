@@ -171,9 +171,89 @@ export async function runCreateAttempt(
 }
 
 /**
+ * Every side effect `runCreate` drives, injected so the FULL orchestration
+ * (not just the provision sub-step `runCreateAttempt` already covers) is
+ * unit-tested — same reason as `CreateWorkspaceClient` above: no
+ * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
+ *
+ * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
+ * React and could be given real module-level defaults (as
+ * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
+ * three (`primeProjectCache`, `invalidateProjects`, `navigate`) are
+ * inherently render-scoped — they close over the live `queryClient`/`router`
+ * a hook only has inside a component — so there is no single "no-args"
+ * default here. `useCreateWorkspace` below always supplies the whole object
+ * explicitly; tests supply their own fakes for the render-scoped three and
+ * the REAL functions (with a fake `localStorage`) for the rest.
+ */
+export type CreateOrchestrationClient = {
+  attemptKeyFor: (fingerprint: string, now: number) => string;
+  clearAttemptKey: (fingerprint: string) => void;
+  runCreateAttempt: (payload: ProvisionProjectInput) => Promise<KortixProject>;
+  primeProjectCache: (accountId: string, project: KortixProject) => void;
+  invalidateProjects: () => void;
+  writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
+  navigate: (path: string) => void;
+  now: () => number;
+};
+
+export type CreateResult = { ok: true; project: KortixProject } | { ok: false; error: unknown };
+
+/**
+ * The full sequence one submit runs:
+ *
+ * ```
+ * mint/reuse key -> provision (with retry) -> [on success only]
+ *   clear key -> prime cache -> invalidate -> write cookie -> navigate
+ * ```
+ *
+ * The key is cleared FIRST among the success-path steps, before any of the
+ * other four. The API's own contract (`r1.ts`) is that the key identifies the
+ * ATTEMPT, not the payload — once the server has confirmed this attempt
+ * succeeded, the key must never be replayed, or a LATER, genuinely different
+ * create with the same name would silently return THIS project instead of
+ * making a new one. Clearing it first, rather than last, also means that if
+ * cache priming or navigation ever throws, the key is already gone and
+ * cannot be resurrected by a subsequent retry.
+ *
+ * On any failure — including exhausting `runCreateAttempt`'s retry budget —
+ * the key is deliberately left untouched, so a user-initiated retry (the
+ * SAME `state`, submitted again) reuses it instead of minting a new one and
+ * risking a second upstream repo.
+ */
+export async function runCreate(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  userId: string | null | undefined,
+  client: CreateOrchestrationClient,
+): Promise<CreateResult> {
+  const fingerprint = fingerprintOf(state);
+  const idempotencyKey = client.attemptKeyFor(fingerprint, client.now());
+  const payload = buildCreatePayload(
+    state,
+    creatableAccounts,
+    idempotencyKey,
+  ) as unknown as ProvisionProjectInput;
+
+  try {
+    const project = await client.runCreateAttempt(payload);
+    client.clearAttemptKey(fingerprint);
+    client.primeProjectCache(project.account_id, project);
+    client.invalidateProjects();
+    client.writeLastProjectId(userId, project.project_id);
+    client.navigate(`/projects/${project.project_id}`);
+    return { ok: true, project };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/**
  * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
- * workspace caches, and navigates to the new project on success.
+ * workspace caches, and navigates to the new project on success. All of that
+ * sequencing lives in `runCreate`, above — this hook only wires it to the
+ * live `queryClient`/`router`/`user` and to component state.
  *
  * Fetches `['accounts']` itself — the same cache entry `new-workspace-page.tsx`,
  * `WorkspaceSwitcher` and `AccountSwitcher` already read — rather than taking
@@ -205,31 +285,25 @@ export function useCreateWorkspace(): {
       setStatus('creating');
       setError(null);
 
-      const fingerprint = fingerprintOf(state);
-      const idempotencyKey = attemptKeyFor(fingerprint, Date.now());
-      const payload = buildCreatePayload(
-        state,
-        creatableAccounts,
-        idempotencyKey,
-      ) as unknown as ProvisionProjectInput;
+      const result = await runCreate(state, creatableAccounts, user?.id, {
+        attemptKeyFor,
+        clearAttemptKey,
+        runCreateAttempt,
+        primeProjectCache: (accountId, project) => {
+          queryClient.setQueryData<KortixProject[]>(['projects', accountId], (existing) => [
+            project,
+            ...(existing ?? []),
+          ]);
+        },
+        invalidateProjects: () => void queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        writeLastProjectId,
+        navigate: (path) => router.push(path),
+        now: Date.now,
+      });
 
-      try {
-        const project = await runCreateAttempt(payload);
-        // The attempt succeeded, so its key must never be replayed — a later
-        // create with the same name would otherwise silently return THIS
-        // workspace instead of creating a new one (see `r1.ts`'s
-        // `idempotency_key` doc comment).
-        clearAttemptKey(fingerprint);
-        queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (existing) => [
-          project,
-          ...(existing ?? []),
-        ]);
-        void queryClient.invalidateQueries({ queryKey: ['projects'] });
-        writeLastProjectId(user?.id, project.project_id);
-        router.push(`/projects/${project.project_id}`);
-      } catch (caught) {
+      if (!result.ok) {
         setStatus('error');
-        setError(messageFor(caught));
+        setError(messageFor(result.error));
       }
     },
     [creatableAccounts, queryClient, router, user?.id],
