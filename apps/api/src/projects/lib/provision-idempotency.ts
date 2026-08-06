@@ -160,11 +160,12 @@ export async function findIdempotentProvision(
  * WHY A WINDOW EXISTS AT ALL. The create path inserts the row with
  * `metadata.git.seed = {expected:true, seeded:false}` and only THEN pushes the
  * scaffold. If that push fails it deletes the upstream repo AND
- * `db.delete(projects)` the row it just inserted (`routes/r1.ts`, the seed
- * rollback). A replay served during that gap hands the caller a `project_id`
- * that is about to stop existing — and its next retry, finding nothing, creates
- * a second project. That is the exact double-submit case the key exists for, so
- * a fresh pending row must be a retryable `409`, never a confident `201`.
+ * `db.delete(projects)` the row it just inserted (`../provision-core.ts`, the
+ * seed rollback inside `runProvision`). A replay served during that gap hands
+ * the caller a `project_id` that is about to stop existing — and its next
+ * retry, finding nothing, creates a second project. That is the exact
+ * double-submit case the key exists for, so a fresh pending row must be a
+ * retryable `409`, never a confident `201`.
  *
  * WHY IT MUST EXPIRE. A pod killed mid-seed leaves `{expected:true,
  * seeded:false}` on the row permanently. `shouldSelfHealManagedRepoSeed`

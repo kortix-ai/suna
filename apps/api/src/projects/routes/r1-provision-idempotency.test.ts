@@ -1,7 +1,7 @@
 /**
  * A SOURCE-LEVEL guard on the one property of the provision dedupe that no
  * unit test of `../lib/provision-idempotency.ts` can express: WHERE the check
- * sits in `r1.ts`'s POST /provision handler.
+ * sits in `runProvision` (`../provision-core.ts`).
  *
  * `backend.createRepo` creates a real repository on the managed git host. A
  * dedupe that runs after it still returns the right project — and still leaves
@@ -11,22 +11,34 @@
  * Reads the file as text. No database, no GitHub, no `mock.module` (which is
  * process-wide in this app and leaks into sibling suites) — same shape as
  * `../sandbox-deadline-call-sites.test.ts`.
+ *
+ * REPOINTED by Task 16 (workspace-switcher, 2026-08-06): this guard used to
+ * read `r1.ts`'s POST /provision handler directly. That handler's body now
+ * lives in `runProvision` (`../provision-core.ts`), extracted so a streaming
+ * variant of the route can share it instead of forking a second copy of the
+ * create logic. Every assertion below is UNCHANGED IN SUBSTANCE — only the
+ * file it reads, and the markers used to slice out the handler body, moved
+ * with the code. `r1.ts`'s own POST /provision handler is now a thin wrapper
+ * (`buildProvisionContext` + `runProvision` + `c.json(result.body, ...)`)
+ * with nothing left in it for a source guard to check.
  */
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-const ROUTE_FILE = join(import.meta.dir, 'r1.ts');
+const CORE_FILE = join(import.meta.dir, '../provision-core.ts');
 
-async function provisionHandlerSource(): Promise<string> {
-  const source = await Bun.file(ROUTE_FILE).text();
-  // The provision handler runs from its route registration to the next route
-  // registered on the app — slicing keeps a later handler's `createRepo` (or a
-  // later idempotency helper) from satisfying an assertion about this one.
-  const start = source.indexOf("path: '/provision'");
+async function runProvisionSource(): Promise<string> {
+  const source = await Bun.file(CORE_FILE).text();
+  // `runProvision` is the LAST export in the file. Slicing to its start
+  // excludes `buildProvisionContext` and the `provisionReplayAccess`
+  // DEFINITION (both declared above it in the same file), so the call-count
+  // assertions below see only the two CALL sites inside `runProvision`, not
+  // a third phantom match on the declaration — same property the original
+  // `path: '/provision'` .. `path: '/{projectId}/git-token'` slice enforced
+  // in `r1.ts`.
+  const start = source.indexOf('export async function runProvision(');
   expect(start).toBeGreaterThan(-1);
-  const end = source.indexOf("path: '/{projectId}/git-token'", start);
-  expect(end).toBeGreaterThan(start);
-  return source.slice(start, end);
+  return source.slice(start);
 }
 
 /**
@@ -55,7 +67,7 @@ function codeOnly(source: string): string {
 
 describe('POST /provision resolves the idempotency key before it creates anything upstream', () => {
   test('the lookup precedes backend.createRepo', async () => {
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     const lookup = handler.indexOf('findIdempotentProvision(');
     const createRepo = handler.indexOf('backend.createRepo(');
@@ -68,7 +80,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   test('the short-circuit return precedes backend.createRepo', async () => {
     // The lookup being first is not enough — the early return it feeds has to
     // be there too, or the handler reads the key and provisions anyway.
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     expect(handler.indexOf('provisionReplayResponse(')).toBeLessThan(
       handler.indexOf('backend.createRepo('),
@@ -76,7 +88,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   });
 
   test('the lookup precedes the quota check, so a retry is not refused by its own project', async () => {
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     expect(handler.indexOf('findIdempotentProvision(')).toBeLessThan(
       handler.indexOf('enforceProjectQuota('),
@@ -84,7 +96,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   });
 
   test('the key is parsed before any of it is used', async () => {
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     expect(handler.indexOf('readProvisionIdempotencyKey(')).toBeLessThan(
       handler.indexOf('findIdempotentProvision('),
@@ -94,7 +106,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   test('the key is persisted on the project row, not just read', async () => {
     // Without the write there is nothing for the next call to find, and the
     // dedupe would survive neither a restart nor another replica.
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     expect(handler).toContain('idempotencyKey,');
     expect(handler.indexOf('.insert(projects)')).toBeGreaterThan(
@@ -103,7 +115,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   });
 
   test('the losing side of an insert race deletes the repo it minted', async () => {
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     const conflict = handler.indexOf('isProvisionIdempotencyConflict(');
     expect(conflict).toBeGreaterThan(-1);
@@ -117,7 +129,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     // this pass or fail for the wrong reason. (The surviving clause "no repoUrl
     // to treat as an idempotent re-link" is still accurate: the QUOTA check
     // really has no repoUrl to key off. It is not the stale claim.)
-    const handler = flattened(await provisionHandlerSource());
+    const handler = flattened(await runProvisionSource());
 
     expect(handler).not.toContain(
       'Provision always mints a brand-new managed repo, so the quota check is a straight count',
@@ -129,7 +141,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     // The create path inserts with seed {expected:true, seeded:false} and only
     // then pushes; a failed push deletes the row. Replaying inside that gap
     // hands the caller an id that stops existing.
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     const classify = handler.indexOf('classifyProvisionReplay(');
     expect(classify).toBeGreaterThan(-1);
@@ -145,7 +157,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   test('the race cleanup records its OUTCOME, not just its intent', async () => {
     // An orphaned managed repo with no log is the acceptance criterion failing
     // invisibly, on the one path whose whole purpose is preventing orphans.
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     const conflict = handler.indexOf('isProvisionIdempotencyConflict(');
     const deleteCall = handler.indexOf('backend.deleteRepo(', conflict);
@@ -167,7 +179,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     // A's INSERT, while A's seed push is still running. So on this path "the
     // winner is still in flight" is the normal case, not a narrow overlap, and
     // replaying A's project_id hands B an id that A's rollback may delete.
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
     const raceTail = handler.slice(handler.indexOf('isProvisionIdempotencyConflict('));
 
     const classify = raceTail.indexOf('classifyProvisionReplay(');
@@ -179,7 +191,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   });
 
   test('both replay call sites go through the SAME classifier, not a parallel rule', async () => {
-    const code = codeOnly(await provisionHandlerSource());
+    const code = codeOnly(await runProvisionSource());
 
     // Two replay responses (pre-check + race loser) and two classifications.
     expect(code.match(/provisionReplayResponse\(/g) ?? []).toHaveLength(2);
@@ -192,7 +204,7 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   });
 
   test('the replay does not claim a project grant the caller may not hold', async () => {
-    const handler = await provisionHandlerSource();
+    const handler = await runProvisionSource();
 
     expect(handler).toContain('provisionReplayAccess(');
     // Every replay response resolves access; none hard-codes it.
@@ -205,8 +217,19 @@ describe('POST /provision resolves the idempotency key before it creates anythin
   test('the key-is-not-a-fingerprint non-goal is stated for callers', async () => {
     // Task 6 picks the key. Silence here would leave "same key, different name"
     // as undocumented behaviour a client could reasonably get wrong.
-    const handler = flattened(await provisionHandlerSource());
+    const handler = flattened(await runProvisionSource());
 
     expect(handler).toContain('It identifies the ATTEMPT, not the payload');
+  });
+
+  test('runProvision never calls c.json — it returns a plain result the caller shapes', async () => {
+    // New for Task 16: the extraction's entire point is that `runProvision`
+    // has no Hono-response coupling, so a streaming route can turn its result
+    // into an SSE event instead of a single JSON response. A stray `c.json(`
+    // here would mean a return path was missed during extraction.
+    const handler = await runProvisionSource();
+
+    expect(handler).not.toContain('c.json(');
+    expect(handler).toContain('status: 201');
   });
 });
