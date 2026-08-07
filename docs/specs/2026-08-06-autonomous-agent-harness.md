@@ -139,14 +139,17 @@ server-owned worker stop, and wakes the coordinator. Restarts cannot reset this
 policy because every decision is stored and compare-and-set in PostgreSQL.
 
 The LLM gateway enforces bounds after billing and project budget checks. It
-uses `gateway_request_logs` for actual LLM tokens and cost, and
-`sandbox_compute_sessions` for compute cost. Iteration admission atomically
-increments `liveness_iterations_admitted` before provider dispatch. Actual
-usage finalization is best-effort after billing reconciliation, so a liveness
-failure cannot lose the billing hold reconciliation. The existing singleton
-project-trigger scheduler sweeps active bounded workers for wall, token, cost,
-compute, and iteration exhaustion. It does not add a workflow engine or another
-scheduler.
+writes each completed managed request synchronously to `usage_events` with a
+server-owned, per-account idempotency key. Admission, settlement, `/no-progress`,
+and the liveness sweep read that ledger for actual LLM tokens and cost.
+`gateway_request_logs` remains asynchronous observability data and is not an
+authoritative liveness input. `sandbox_compute_sessions` supplies compute cost.
+If the synchronous usage write fails, the server blocks the bounded task and
+keeps the request fence closed instead of admitting unaccounted work. Iteration
+admission atomically increments `liveness_iterations_admitted` before provider
+dispatch. The existing singleton project-trigger scheduler sweeps active bounded
+workers for wall, token, cost, compute, and iteration exhaustion. It does not add
+a workflow engine or another scheduler.
 
 A durable PostgreSQL admission fence permits one in-flight provider request per
 bounded worker. Gateway completion and pre-dispatch error paths settle the fence
@@ -156,7 +159,9 @@ then blocks the task and releases its sessions. Token and cost limits can still
 overshoot by the usage of that one admitted provider request because actual usage
 exists only after the provider responds. Concurrent requests cannot multiply the
 overshoot. Iteration admission remains exact because its counter increments in
-the same atomic update that acquires the fence.
+the same atomic update that acquires the fence. Native provider calls, external
+APIs, and delayed compute metering remain outside exact instantaneous token and
+cost enforcement.
 
 `queued` and `drained` describe local lifecycle-command handling only.
 `drained` does not prove remote prompt delivery. An empty newly created worker

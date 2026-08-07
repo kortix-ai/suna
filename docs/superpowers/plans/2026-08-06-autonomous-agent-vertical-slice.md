@@ -92,6 +92,10 @@ with completion.
 ## Delivery state
 
 - Local implementation and focused local verification are complete on `agi-kernel`.
+- A local Supabase password-grant JWT exercised goal reads, manual goal push,
+  task claim, worker registration, progress, evidence-bound completion,
+  settlement replay, continuation, escalation, and stop through the real HTTP
+  server, PostgreSQL tables, and lifecycle outbox.
 - No claim of AGI, production readiness, or remote user-visible delivery follows from local outbox state.
 - The branch remains local because remote delivery requires explicit user approval.
 - PR checks, merge, Deploy Dev, deployed-SHA proof, and Dev black-box verification remain pending.
