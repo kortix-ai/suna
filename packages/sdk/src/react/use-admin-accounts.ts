@@ -1,6 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
 
+/**
+ * Lifecycle of an admin-issued trial. `active` is the only status that grants
+ * the trial tier; every other value is history the row keeps for audit.
+ * Mirrors `TRIAL_STATUS` in `apps/api/src/billing/services/effective-tier.ts`.
+ */
+export type AdminTrialStatus = 'none' | 'active' | 'expired' | 'revoked' | 'converted';
+
+/** The trial overlay as the admin accounts list reports it. */
+export interface AdminAccountTrial {
+  status: AdminTrialStatus | string;
+  /** Paid tier the trial emulates (never 'free'/'none'). */
+  tier: string | null;
+  seats: number | null;
+  startedAt: string | null;
+  endsAt: string | null;
+  note: string | null;
+}
+
 export interface AdminAccount {
   accountId: string;
   name: string | null;
@@ -18,6 +36,14 @@ export interface AdminAccount {
   billingCustomerId: string | null;
   billingCustomerEmail: string | null;
   createdAt: string | null;
+  /** e.g. 'per_seat' — how the account is billed, independent of `tier`. */
+  billingModel: string | null;
+  seatCount: number | null;
+  trial: AdminAccountTrial;
+  /** null = the effective tier decides; true = force managed models; false = BYOK only. */
+  managedModelsOverride: boolean | null;
+  demoEnterprise: boolean;
+  enterpriseEntitled: boolean;
 }
 
 export interface AdminAccountsSummary {
@@ -189,6 +215,151 @@ export function useAdminSetTier() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'accounts'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'accounts', accountId] });
     },
+  });
+}
+
+/**
+ * Every entitlement mutation below invalidates the same two keys the credit
+ * mutations do: the paginated accounts list (the row carries `trial`,
+ * `managedModelsOverride`, `demoEnterprise` and `enterpriseEntitled`) and the
+ * per-account detail subtree.
+ */
+function invalidateAdminAccount(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accountId: string,
+): void {
+  queryClient.invalidateQueries({ queryKey: ['admin', 'accounts'] });
+  queryClient.invalidateQueries({ queryKey: ['admin', 'accounts', accountId] });
+}
+
+export interface AdminGrantTrialVariables {
+  accountId: string;
+  /** An existing paid tier key — the server rejects 'free' and 'none'. */
+  tierKey: string;
+  seats: number;
+  durationDays: number;
+  /** USD wallet credits granted with the trial (sandbox compute always debits the wallet). */
+  creditGrant?: number;
+  note?: string;
+}
+
+export interface AdminTrialMutationResult {
+  ok: boolean;
+  trial: AdminAccountTrial;
+  credit_granted?: number;
+}
+
+/**
+ * Grant or replace an admin-issued trial. The account BEHAVES as `tierKey`
+ * until the window ends, without touching `credit_accounts.tier` (which the
+ * Stripe webhook owns). Re-granting over an active trial is allowed and
+ * overwrites the window — extend/adjust = re-grant.
+ */
+export function useAdminGrantTrial() {
+  const queryClient = useQueryClient();
+  return useMutation<AdminTrialMutationResult, Error, AdminGrantTrialVariables>({
+    mutationFn: async ({ accountId, tierKey, seats, durationDays, creditGrant, note }) => {
+      const body: Record<string, unknown> = {
+        tier_key: tierKey,
+        seats,
+        duration_days: durationDays,
+      };
+      if (creditGrant !== undefined) body.credit_grant = creditGrant;
+      if (note !== undefined) body.note = note;
+      const response = await backendApi.post<AdminTrialMutationResult>(
+        `/admin/api/accounts/${accountId}/trial`,
+        body,
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+/** Revoke an active trial immediately. The route answers 400 when none is active. */
+export function useAdminRevokeTrial() {
+  const queryClient = useQueryClient();
+  return useMutation<AdminTrialMutationResult, Error, { accountId: string }>({
+    mutationFn: async ({ accountId }) => {
+      const response = await backendApi.delete<AdminTrialMutationResult>(
+        `/admin/api/accounts/${accountId}/trial`,
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+/**
+ * Set the account's managed-models override. Tri-state: `null` restores "the
+ * effective tier decides", `true` forces managed (Kortix-credential) models on,
+ * `false` forces BYOK-only.
+ */
+export function useAdminSetManagedModels() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; override: boolean | null },
+    Error,
+    { accountId: string; override: boolean | null }
+  >({
+    mutationFn: async ({ accountId, override }) => {
+      const response = await backendApi.post<{ ok: boolean; override: boolean | null }>(
+        `/admin/api/accounts/${accountId}/managed-models`,
+        { override },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+/**
+ * Set the account's enterprise-demo flag — an interactive preview of SSO, SCIM,
+ * RBAC and audit. Operator-only since the self-serve IAM toggle was retired.
+ */
+export function useAdminSetEnterpriseDemo() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; enabled: boolean },
+    Error,
+    { accountId: string; enabled: boolean }
+  >({
+    mutationFn: async ({ accountId, enabled }) => {
+      const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
+        `/admin/api/accounts/${accountId}/enterprise-demo`,
+        { enabled },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+/**
+ * Set the contracted-Enterprise entitlement flag. Independent of `tier`: it
+ * keeps SSO/SCIM/RBAC/audit entitled for a signed Enterprise account that is
+ * ALSO per-seat billed, which the Stripe webhook would otherwise reconcile away.
+ */
+export function useAdminSetEnterpriseEntitled() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; enabled: boolean },
+    Error,
+    { accountId: string; enabled: boolean }
+  >({
+    mutationFn: async ({ accountId, enabled }) => {
+      const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
+        `/admin/api/accounts/${accountId}/enterprise-entitlement`,
+        { enabled },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
   });
 }
 

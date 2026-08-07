@@ -132,6 +132,17 @@ adminApp.openapi(
         provider: creditAccounts.provider,
         planType: creditAccounts.planType,
         stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+        billingModel: creditAccounts.billingModel,
+        seatCount: creditAccounts.seatCount,
+        trialStatus: creditAccounts.trialStatus,
+        trialTier: creditAccounts.trialTier,
+        trialSeats: creditAccounts.trialSeats,
+        trialStartedAt: creditAccounts.trialStartedAt,
+        trialEndsAt: creditAccounts.trialEndsAt,
+        trialNote: creditAccounts.trialNote,
+        managedModelsOverride: creditAccounts.managedModelsOverride,
+        demoEnterprise: creditAccounts.demoEnterprise,
+        enterpriseEntitled: creditAccounts.enterpriseEntitled,
         ownerEmail,
         memberCount,
       })
@@ -162,6 +173,19 @@ adminApp.openapi(
       provider: r.provider ?? null,
       planType: r.planType ?? null,
       stripeSubscriptionId: r.stripeSubscriptionId ?? null,
+      billingModel: r.billingModel ?? null,
+      seatCount: r.seatCount ?? null,
+      trial: {
+        status: r.trialStatus ?? 'none',
+        tier: r.trialTier ?? null,
+        seats: r.trialSeats ?? null,
+        startedAt: r.trialStartedAt ?? null,
+        endsAt: r.trialEndsAt ?? null,
+        note: r.trialNote ?? null,
+      },
+      managedModelsOverride: r.managedModelsOverride ?? null,
+      demoEnterprise: r.demoEnterprise ?? false,
+      enterpriseEntitled: r.enterpriseEntitled ?? false,
       // Stripe customer id/email aren't on credit_accounts — left null until a
       // billing-customers join is added; the console degrades gracefully.
       billingCustomerId: null,
@@ -463,11 +487,16 @@ adminApp.openapi(
     const before = await getSubscriptionInfo(accountId);
     await upsertCreditAccount(accountId, { tier });
 
-    // Tier feeds resolveAccountTier's 60s cache (LLM-gateway entitlement); clear
-    // so the change is visible immediately. The per-request entitlement read
-    // (SSO/SCIM gates) is uncached and already sees it.
+    // Tier feeds TWO caches: the limit cache (60s) and the gateway tier-
+    // snapshot cache (30s, entitlements.ts — the managed-models decision on
+    // the auth hot path). Clear both so the change is visible immediately;
+    // clearing only the limit cache left the gateway serving the old tier for
+    // up to 30s. The per-request entitlement read (SSO/SCIM gates) is uncached
+    // and already sees it.
     const { clearAccountLimitCache } = await import('../shared/account-limits');
+    const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
     clearAccountLimitCache();
+    invalidateCachedAccountTier(accountId);
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');
@@ -641,6 +670,285 @@ adminApp.openapi(
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
   }
+  },
+);
+
+// ── Grant / replace an account trial ─────────────────────────────────────────
+// An admin-issued trial makes the account BEHAVE as `tier_key` (entitlements,
+// project/session limits, managed-models gate) until `duration_days` elapse —
+// without touching `credit_accounts.tier`, which belongs to the Stripe webhook.
+// Re-granting overwrites the window (extend/adjust = re-grant). `credit_grant`
+// (USD credits) funds sandbox compute: even a BYOK trial needs wallet balance
+// to run sessions.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/trial',
+    tags: ['admin'],
+    summary: 'Grant or replace an account trial',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              tier_key: z.string().min(1).max(50),
+              seats: z.number().int().min(1),
+              duration_days: z.number().int().min(1),
+              note: z.string().max(2000).optional(),
+              credit_grant: z.number().min(0).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Trial granted'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as {
+        tier_key: string;
+        seats: number;
+        duration_days: number;
+        note?: string;
+        credit_grant?: number;
+      };
+      const { grantTrial, validateGrantTrialInput } = await import(
+        '../billing/services/trial-admin'
+      );
+      const input = {
+        accountId,
+        tierKey: body.tier_key,
+        seats: body.seats,
+        durationDays: body.duration_days,
+        note: body.note ?? null,
+        actorUserId,
+        creditGrant: body.credit_grant,
+      };
+      const invalid = validateGrantTrialInput(input);
+      if (invalid) return c.json({ error: invalid }, 400);
+
+      const result = await grantTrial(input);
+
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.trial.grant',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { trial: result.before },
+          after: { trial: result.current, credit_granted: result.creditGranted },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the grant */
+      }
+
+      return c.json({ ok: true, trial: result.current, credit_granted: result.creditGranted });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// ── Revoke an account trial ──────────────────────────────────────────────────
+adminApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/api/accounts/{id}/trial',
+    tags: ['admin'],
+    summary: 'Revoke an active account trial',
+    ...auth,
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Trial revoked'),
+      400: json(z.record(z.string(), z.any()), 'No active trial'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const { revokeTrial } = await import('../billing/services/trial-admin');
+      let result;
+      try {
+        result = await revokeTrial(accountId);
+      } catch (e: any) {
+        return c.json({ error: e?.message || String(e) }, 400);
+      }
+
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.trial.revoke',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { trial: result.before },
+          after: { trial: result.current },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the revoke */
+      }
+
+      return c.json({ ok: true, trial: result.current });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// ── Set the account managed-models override ──────────────────────────────────
+// `override: null` restores "the effective tier decides". true grants managed
+// (Kortix-credential) models regardless of tier; false forces BYOK-only.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/managed-models',
+    tags: ['admin'],
+    summary: "Set the account's managed-models override",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ override: z.boolean().nullable() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), override: z.boolean().nullable() }),
+        'Updated managed-models override',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { override: boolean | null };
+
+      const { getCreditAccount, setManagedModelsOverride } = await import(
+        '../billing/repositories/credit-accounts'
+      );
+      const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
+      await setManagedModelsOverride(accountId, body.override);
+
+      // The managed-models answer is served from the shared tier-snapshot
+      // cache (gateway auth hot path) AND the limit cache (sandbox-provision
+      // gateway mount) — clear both so the flip is visible immediately.
+      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
+      const { clearAccountLimitCache } = await import('../shared/account-limits');
+      invalidateCachedAccountTier(accountId);
+      clearAccountLimitCache();
+
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.managed_models.set',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { managed_models_override: before },
+          after: { managed_models_override: body.override },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+
+      return c.json({ ok: true, override: body.override });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// ── Set the account enterprise-demo flag (admin-only) ────────────────────────
+// The self-serve IAM toggle was retired: enterprise-demo is an operator
+// decision now (see accounts/iam/enterprise-demo.ts). Same storage
+// (credit_accounts.demo_enterprise), same entitlement effect.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-demo',
+    tags: ['admin'],
+    summary: "Set the account's enterprise-demo flag",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ enabled: z.boolean() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated demo flag'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { enabled: boolean };
+
+      const { isDemoEnterprise, setDemoEnterprise } = await import(
+        '../billing/repositories/credit-accounts'
+      );
+      const before = await isDemoEnterprise(accountId);
+      await setDemoEnterprise(accountId, body.enabled);
+
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.enterprise_demo.set',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { demo_enterprise: before },
+          after: { demo_enterprise: body.enabled },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the change */
+      }
+
+      return c.json({ ok: true, enabled: body.enabled });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
   },
 );
 

@@ -15,8 +15,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
   agentMailUpstreamStatus,
@@ -2764,10 +2763,9 @@ projectsApp.openapi(
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
     // synthetic AUTO stay hidden from the picker.
-    const freeManagedOnly =
-      config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+    const freeManagedOnly = ownerAccountId
+      ? !(await accountMayUseManagedModels(ownerAccountId))
+      : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
   },
@@ -2802,9 +2800,7 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
-      : false;
+    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
     const [secrets, defaults, routing] = await Promise.all([
       listProjectSecretNamesForConsumer({
         projectId,
@@ -3003,9 +2999,7 @@ projectsApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
-    const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeTier = !(await accountMayUseManagedModels(ownerAccountId));
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.
@@ -3081,9 +3075,7 @@ projectsApp.openapi(
       );
     }
 
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));
     const servable = await isModelServableForAccount({
       userId,
       accountId: ownerAccountId,

@@ -3,8 +3,8 @@ import {
   GatewayResolutionError,
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels, isPaidTier } from '../../billing/services/tiers';
+import { accountMayUseManagedModels, getCachedAccountTier } from '../../billing/services/entitlements';
+import { isPaidTier } from '../../billing/services/tiers';
 import { config } from '../../config';
 import {
   getProjectSecretValueForConsumer,
@@ -47,6 +47,12 @@ const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 // boundary stays unit-testable without a real wall-clock sleep — this is a
 // thin re-export, not a second implementation.
 export const resolveCachedAccountTier = getCachedAccountTier;
+
+// Managed-models entitlement, same shared snapshot cache. Trial overlay and
+// the operator `managed_models_override` are applied inside — never derive
+// this from a tier string here (that is exactly the conflation the comment
+// below warns about).
+export const resolveCachedManagedModels = accountMayUseManagedModels;
 
 // A managed model to fall over to when a BYOK key hits a limit (429/402/403).
 // Gated on the managed gateway being on + the managed provider being on (CLOUD-
@@ -187,10 +193,9 @@ export async function resolveCandidates(
       // 2. May this account use MANAGED inference at all? `models: []` says no
       //    for Starter/Team/Scale even though they are paid, so this cannot be a
       //    `tier === 'free'` check — it has to be the same entitlement predicate
-      //    the direct managed path uses. Billing disabled (self-hosted) keeps
-      //    the fallback, as before.
-      const mayUseManagedModels =
-        !config.KORTIX_BILLING_INTERNAL_ENABLED || !accountIsFreeTierForModels(tier);
+      //    the direct managed path uses (trial + operator override included).
+      //    Billing disabled (self-hosted) keeps the fallback, as before.
+      const mayUseManagedModels = await resolveCachedManagedModels(principal.accountId);
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
       // Capability flags from the catalog (models.dev enrichment) so the
       // transport can decide which params a reasoning-restricted model
@@ -283,10 +288,10 @@ export async function resolveCandidates(
       );
     }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-      const tier = await resolveCachedAccountTier(principal.accountId);
-      if (accountIsFreeTierForModels(tier)) {
+      if (!(await resolveCachedManagedModels(principal.accountId))) {
         // A v3 credit plan lands here too — it pays, it just doesn't bundle
         // managed inference. Telling that customer to "upgrade" is wrong.
+        const tier = await resolveCachedAccountTier(principal.accountId);
         throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
       }
     }

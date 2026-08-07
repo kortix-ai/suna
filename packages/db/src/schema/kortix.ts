@@ -2777,6 +2777,28 @@ export const creditAccounts = kortixSchema.table(
     // abuse containment). Set out-of-band (data migration / operator SQL),
     // like tier='enterprise'.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
+    // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
+    // (webhooks.ts syncSubscriptionState) overwrites `tier` on every
+    // subscription event, so a trial encoded there would be clobbered. Instead
+    // the trial overlays at resolution time (billing/services/effective-tier):
+    // while `trial_status='active'` AND `trial_ends_at` is in the future, the
+    // account resolves entitlements/limits/models as `trial_tier`. Expiry is
+    // lazy (the resolver checks the timestamp) so correctness never depends on
+    // a cron; the billing cron only flips `trial_status` to 'expired' for
+    // hygiene. Reuses the vestigial baseline columns `trial_status`,
+    // `trial_started_at`, `trial_ends_at` (previously written by nothing).
+    trialTier: varchar('trial_tier', { length: 50 }),
+    // Seat allowance while the trial is active. Enforced on member add/invite
+    // for non-per_seat accounts (per-seat accounts meter seats via Stripe).
+    trialSeats: integer('trial_seats'),
+    trialNote: text('trial_note'),
+    trialGrantedBy: uuid('trial_granted_by'),
+    // Operator-set managed-models override. NULL (default) = the effective
+    // tier decides (TierConfig.models includes 'all'). true = account may use
+    // Kortix-managed model credentials regardless of tier. false = BYOK only,
+    // even on a tier that normally grants managed models. Resolved in
+    // billing/services/entitlements alongside the tier cache.
+    managedModelsOverride: boolean('managed_models_override'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),

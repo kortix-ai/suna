@@ -8,8 +8,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import { setContextField } from '../../lib/request-context';
@@ -752,9 +751,7 @@ export async function createProjectSession(input: {
     };
   }
 
-  const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-    ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
-    : false;
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
 
   // Model: normalize + fail-fast at create. An unservable / retired / typo'd

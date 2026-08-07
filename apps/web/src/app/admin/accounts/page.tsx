@@ -16,6 +16,7 @@ import {
   FunnelIcon as Filter,
   KanbanIcon as FolderKanban,
   ClockCounterClockwiseIcon as History,
+  KeyIcon as Key,
   EnvelopeIcon as Mail,
   ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
@@ -59,6 +60,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
@@ -67,6 +69,11 @@ import {
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
+  useAdminGrantTrial,
+  useAdminRevokeTrial,
+  useAdminSetEnterpriseDemo,
+  useAdminSetEnterpriseEntitled,
+  useAdminSetManagedModels,
   useAdminSetTier,
   type AdminAccount,
   type AdminAccountsFilters,
@@ -197,12 +204,78 @@ function formatDateTime(value: string | null | undefined) {
 
 function tierLabel(tier: string | null) {
   if (!tier) return 'No plan';
-  return TIER_OPTIONS.find((t) => t.value === tier)?.label ?? tier;
+  // TIER_OPTIONS is the filter list; TRIAL_TIER_OPTIONS carries the paid tiers
+  // that are grantable but not filterable (starter/team/scale), so a trial
+  // tier renders as "Team", not the raw key.
+  return (
+    TIER_OPTIONS.find((t) => t.value === tier)?.label ??
+    TRIAL_TIER_OPTIONS.find((t) => t.value === tier)?.label ??
+    tier
+  );
 }
 
 function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badge>['variant'] {
   if (!tier || tier === 'free' || tier === 'none') return 'muted';
   return 'info';
+}
+
+// ── Trial helpers ────────────────────────────────────────────────────────────
+// `active` is the only status that grants the trial tier. The other four are
+// history the row keeps for audit, so they render greyed rather than hidden.
+
+/** Trial tiers offered in the grant form. `free`/`none` are rejected server-side. */
+const TRIAL_TIER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'starter', label: 'Starter' },
+  { value: 'pro', label: 'Pro' },
+  { value: 'team', label: 'Team' },
+  { value: 'per_seat', label: 'Team (per-seat)' },
+  { value: 'scale', label: 'Scale' },
+  { value: 'enterprise', label: 'Enterprise' },
+];
+
+const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
+const MAX_TRIAL_SEATS = 100; // MAX_SEATS_PER_ACCOUNT in billing/services/tiers.ts
+const MAX_TRIAL_DURATION_DAYS = 365; // MAX_TRIAL_DURATION_DAYS in billing/services/trial-admin.ts
+const MAX_TRIAL_CREDIT_GRANT = 10_000;
+
+function trialIsActive(trial: AdminAccount['trial'] | undefined): boolean {
+  return trial?.status === 'active';
+}
+
+function trialBadgeVariant(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
+  switch (status) {
+    case 'active':
+      return 'success';
+    case 'converted':
+      return 'info';
+    case 'revoked':
+      return 'destructive';
+    case 'expired':
+      return 'warning';
+    default:
+      return 'muted';
+  }
+}
+
+/**
+ * Signed relative distance. `formatRelative` collapses any negative diff to
+ * "just now", which would print an active trial's future end date as "just now".
+ */
+function formatCountdown(value: string | null): string {
+  if (!value) return '—';
+  const ms = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return '—';
+  const abs = Math.abs(ms);
+  // Round, don't floor: a 90-day window read a millisecond after it is issued
+  // is 89.999 days, and "in 89d" for a trial the operator just set to 90 reads
+  // as an off-by-one bug.
+  const unit =
+    abs < 3_600_000
+      ? `${Math.max(1, Math.round(abs / 60_000))}m`
+      : abs < 86_400_000
+        ? `${Math.round(abs / 3_600_000)}h`
+        : `${Math.round(abs / 86_400_000)}d`;
+  return ms < 0 ? `${unit} ago` : `in ${unit}`;
 }
 
 function paymentStatusBadge(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
@@ -291,6 +364,14 @@ export default function AdminAccountsPage() {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const filtersCount = activeFilterCount(filters);
+
+  // `selected` is the row object captured at click time. Re-resolve it against
+  // the latest page so an in-sheet mutation (credits, trial, entitlement flags)
+  // shows its own result once the invalidated list query refetches, instead of
+  // rendering the pre-mutation snapshot until the sheet is reopened.
+  const selectedAccount = selected
+    ? (accounts.find((a) => a.accountId === selected.accountId) ?? selected)
+    : null;
 
   const setSort = useCallback((sortBy: AdminAccountsSortBy) => {
     setFilters((f) => {
@@ -536,7 +617,7 @@ export default function AdminAccountsPage() {
         </div>
       )}
 
-      <AccountDetailSheet account={selected} onClose={() => setSelected(null)} />
+      <AccountDetailSheet account={selectedAccount} onClose={() => setSelected(null)} />
     </SectionContainer>
   );
 }
@@ -1064,6 +1145,15 @@ function AccountDetail({ account }: { account: AdminAccount }) {
               <CreditCard className="h-3.5 w-3.5" />
               Credits
             </TabsTrigger>
+            <TabsTrigger value="entitlements" className="gap-1.5">
+              <Key className="h-3.5 w-3.5" />
+              Entitlements
+              {trialIsActive(account.trial) && (
+                <Badge variant="success" size="sm">
+                  trial
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="users" className="gap-1.5">
               <Users className="h-3.5 w-3.5" />
               Users
@@ -1094,6 +1184,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 
           <TabsContent value="credits" className="mt-4">
             <CreditsTab account={account} />
+          </TabsContent>
+          <TabsContent value="entitlements" className="mt-4">
+            <EntitlementsTab account={account} />
           </TabsContent>
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
@@ -1318,6 +1411,420 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         isPending={debit.isPending}
       />
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entitlements — trial + per-account overrides
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One labelled row inside an entitlement panel: text left, control right. */
+function EntitlementRow({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground text-sm font-medium">{title}</div>
+        <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">{description}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function EntitlementsTab({ account }: { account: AdminAccount }) {
+  const grantTrial = useAdminGrantTrial();
+  const revokeTrial = useAdminRevokeTrial();
+  const setManagedModels = useAdminSetManagedModels();
+  const setEnterpriseDemo = useAdminSetEnterpriseDemo();
+  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
+
+  const trial = account.trial;
+  const isActive = trialIsActive(trial);
+
+  const [tierKey, setTierKey] = useState('team');
+  const [seats, setSeats] = useState('5');
+  const [durationDays, setDurationDays] = useState('30');
+  const [creditGrant, setCreditGrant] = useState('25');
+  const [note, setNote] = useState('');
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+
+  const parsedSeats = Number(seats);
+  const parsedDuration = Number(durationDays);
+  const parsedCredit = Number(creditGrant);
+  const seatsValid = Number.isInteger(parsedSeats) && parsedSeats >= 1 && parsedSeats <= MAX_TRIAL_SEATS;
+  const durationValid =
+    Number.isInteger(parsedDuration) &&
+    parsedDuration >= 1 &&
+    parsedDuration <= MAX_TRIAL_DURATION_DAYS;
+  const creditValid =
+    creditGrant.trim() === '' ||
+    (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
+  const formValid = seatsValid && durationValid && creditValid;
+
+  const accountLabel = account.name || account.accountId;
+
+  async function handleGrantTrial() {
+    if (!formValid) return;
+    try {
+      await grantTrial.mutateAsync({
+        accountId: account.accountId,
+        tierKey,
+        seats: parsedSeats,
+        durationDays: parsedDuration,
+        creditGrant: creditGrant.trim() === '' ? undefined : parsedCredit,
+        note: note.trim() === '' ? undefined : note.trim(),
+      });
+      successToast(isActive ? 'Trial replaced' : 'Trial granted', {
+        description: `${accountLabel} behaves as ${tierLabel(tierKey)} for ${parsedDuration} days.`,
+      });
+      setNote('');
+    } catch (error) {
+      errorToast('Failed to grant trial', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleRevokeTrial() {
+    try {
+      await revokeTrial.mutateAsync({ accountId: account.accountId });
+      successToast('Trial revoked', { description: `${accountLabel} is back on its billed tier.` });
+    } catch (error) {
+      errorToast('Failed to revoke trial', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setConfirmRevoke(false);
+    }
+  }
+
+  async function handleManagedModels(override: boolean | null) {
+    try {
+      await setManagedModels.mutateAsync({ accountId: account.accountId, override });
+      successToast('Managed models updated', {
+        description:
+          override === null
+            ? 'The effective tier decides again.'
+            : override
+              ? 'Managed models forced on.'
+              : 'Restricted to BYOK keys.',
+      });
+    } catch (error) {
+      errorToast('Failed to set managed models', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleEnterpriseDemo(enabled: boolean) {
+    try {
+      await setEnterpriseDemo.mutateAsync({ accountId: account.accountId, enabled });
+      successToast(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
+    } catch (error) {
+      errorToast('Failed to set enterprise demo', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleEnterpriseEntitled(enabled: boolean) {
+    try {
+      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
+      successToast(
+        enabled ? 'Enterprise contract entitlements on' : 'Enterprise contract entitlements off',
+      );
+    } catch (error) {
+      errorToast('Failed to set enterprise entitlements', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const managedModelsChoices: { value: boolean | null; label: string }[] = [
+    { value: null, label: 'Default (tier)' },
+    { value: true, label: 'Force on' },
+    { value: false, label: 'BYOK only' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Trial — an admin-issued overlay: the account BEHAVES as the trial tier
+          until it ends, without touching credit_accounts.tier (Stripe owns
+          that). Re-granting overwrites the window: extend = re-grant. */}
+      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-foreground text-sm font-medium">Trial</div>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Emulates a paid tier for a fixed window. Billed tier stays{' '}
+              <span className="text-foreground/80">{tierLabel(account.tier)}</span>.
+            </p>
+          </div>
+          <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
+            {trial?.status ?? 'none'}
+          </Badge>
+        </div>
+
+        {trial && trial.status !== 'none' ? (
+          <div className="border-border/60 divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">Tier</div>
+              <div className="mt-0.5 text-sm font-medium">
+                {trial.tier ? tierLabel(trial.tier) : '—'}
+                {trial.seats != null && (
+                  <span className="text-muted-foreground font-normal">
+                    {' '}
+                    · {trial.seats} seat{trial.seats === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* A revoked or converted trial keeps its original window for audit,
+                and that window can still be in the future — so the countdown is
+                only meaningful while the trial is active. */}
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                {isActive ? 'Ends' : 'Window ended'}
+              </div>
+              <div className="mt-0.5 text-sm font-medium">
+                {isActive ? formatCountdown(trial.endsAt) : formatDateTime(trial.endsAt)}
+              </div>
+              {isActive && (
+                <div className="text-muted-foreground text-xs">{formatDateTime(trial.endsAt)}</div>
+              )}
+            </div>
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Started
+              </div>
+              <div className="mt-0.5 text-sm font-medium">{formatRelative(trial.startedAt)}</div>
+              <div className="text-muted-foreground text-xs">{formatDateTime(trial.startedAt)}</div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">No trial has ever been issued.</p>
+        )}
+
+        {trial?.note && (
+          <p className="text-muted-foreground border-border/60 border-l-2 pl-3 text-xs">
+            {trial.note}
+          </p>
+        )}
+
+        {/* Grant / replace form */}
+        <div className="border-border/60 space-y-3 border-t pt-4">
+          <div className="text-foreground text-sm font-medium">
+            {isActive ? 'Replace trial' : 'Grant trial'}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Tier
+              </label>
+              <Select value={tierKey} onValueChange={setTierKey}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRIAL_TIER_OPTIONS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Seats
+              </label>
+              <Input
+                type="number"
+                min={1}
+                max={MAX_TRIAL_SEATS}
+                step={1}
+                value={seats}
+                onChange={(e) => setSeats(e.target.value)}
+                aria-invalid={!seatsValid}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Credit grant ($)
+              </label>
+              <Input
+                type="number"
+                min={0}
+                max={MAX_TRIAL_CREDIT_GRANT}
+                step="0.01"
+                value={creditGrant}
+                onChange={(e) => setCreditGrant(e.target.value)}
+                aria-invalid={!creditValid}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+              Duration
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {TRIAL_DURATION_PRESETS.map((d) => (
+                <Button
+                  key={d}
+                  type="button"
+                  size="sm"
+                  variant={durationDays === String(d) ? 'default' : 'outline'}
+                  className="h-7"
+                  onClick={() => setDurationDays(String(d))}
+                >
+                  {d}d
+                </Button>
+              ))}
+              <Input
+                type="number"
+                min={1}
+                max={MAX_TRIAL_DURATION_DAYS}
+                step={1}
+                value={durationDays}
+                onChange={(e) => setDurationDays(e.target.value)}
+                aria-label="Custom trial duration in days"
+                aria-invalid={!durationValid}
+                className="h-7 w-24"
+              />
+            </div>
+          </div>
+
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note (why, who asked, deal context)"
+            maxLength={2000}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleGrantTrial}
+              disabled={!formValid || grantTrial.isPending || revokeTrial.isPending}
+              className="gap-1.5"
+            >
+              {grantTrial.isPending && <Loading className="h-3.5 w-3.5" />}
+              {isActive ? 'Replace trial' : 'Grant trial'}
+            </Button>
+            {isActive && (
+              <Button
+                variant="outline"
+                onClick={() => setConfirmRevoke(true)}
+                disabled={grantTrial.isPending || revokeTrial.isPending}
+              >
+                Revoke trial
+              </Button>
+            )}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions.
+            The free welcome grant is $2; one per-seat month is $25.
+          </p>
+        </div>
+      </div>
+
+      {/* Managed models override — tri-state, null restores tier control. */}
+      <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
+        <EntitlementRow
+          title="Managed models"
+          description="Force Kortix-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {managedModelsChoices.map((choice) => (
+              <Button
+                key={String(choice.value)}
+                type="button"
+                size="sm"
+                variant={account.managedModelsOverride === choice.value ? 'default' : 'outline'}
+                className="h-7"
+                disabled={setManagedModels.isPending}
+                onClick={() => handleManagedModels(choice.value)}
+              >
+                {choice.label}
+              </Button>
+            ))}
+          </div>
+        </EntitlementRow>
+      </div>
+
+      {/* Enterprise flags. Demo = evaluation preview; entitled = signed contract. */}
+      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+        <EntitlementRow
+          title="Enterprise demo"
+          description="Interactive preview of SSO, SCIM, advanced RBAC, and audit logs. Evaluation only — no billing change."
+        >
+          <Switch
+            checked={account.demoEnterprise}
+            disabled={setEnterpriseDemo.isPending}
+            onCheckedChange={handleEnterpriseDemo}
+            aria-label="Toggle enterprise demo"
+          />
+        </EntitlementRow>
+
+        <div className="border-border/60 border-t pt-4">
+          <EntitlementRow
+            title="Enterprise contract entitlements"
+            description="Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also per-seat billed, so the Stripe reconciliation cannot strip them."
+          >
+            <Switch
+              checked={account.enterpriseEntitled}
+              disabled={setEnterpriseEntitled.isPending}
+              onCheckedChange={handleEnterpriseEntitled}
+              aria-label="Toggle enterprise contract entitlements"
+            />
+          </EntitlementRow>
+        </div>
+      </div>
+
+      {/* Read-only context the operator needs before issuing a trial. */}
+      <div className="border-border/60 bg-card divide-border grid grid-cols-2 divide-x rounded-2xl border text-sm">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+            Billing model
+          </span>
+          <span className="text-right font-medium">{account.billingModel || '—'}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">Seats</span>
+          <span className="text-right font-medium">{account.seatCount ?? '—'}</span>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmRevoke}
+        onOpenChange={setConfirmRevoke}
+        title="Revoke trial"
+        description={
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="font-medium">{accountLabel}</span> drops back to{' '}
+              <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>{' '}
+              immediately.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Entitlements, project and session limits, and the managed-models gate all revert on
+              the next request. Credits already granted are not clawed back.
+            </p>
+          </div>
+        }
+        confirmLabel="Revoke trial"
+        onConfirm={handleRevokeTrial}
+        isPending={revokeTrial.isPending}
+      />
+    </div>
   );
 }
 

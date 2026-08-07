@@ -6706,3 +6706,56 @@ composes are tested directly.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+---
+
+## Session `trial-entitlements` — admin trial + entitlement-override hooks (2026-08-07)
+
+Additive only. `src/react/use-admin-accounts.ts` gains five mutation hooks over
+the new admin routes (`apps/api/src/admin/index.ts`), matching the existing
+`useAdminSetTier` / `useAdminGrantCredits` shape:
+
+- `useAdminGrantTrial` — `POST /admin/api/accounts/{id}/trial`. Maps camelCase
+  variables to the snake_case body the route validates (`tier_key`, `seats`,
+  `duration_days`, optional `credit_grant` / `note`).
+- `useAdminRevokeTrial` — `DELETE …/trial` (the route answers `400` when no
+  trial is active; the hook rethrows the message).
+- `useAdminSetManagedModels` — tri-state `{override: boolean|null}`.
+- `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled` — `{enabled}`.
+
+All five invalidate `['admin','accounts']` + `['admin','accounts',accountId]`.
+`AdminAccount` gains the fields the list route now returns: `billingModel`,
+`seatCount`, `trial` (new `AdminAccountTrial` / `AdminTrialStatus`),
+`managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled`.
+
+RED first: `src/react/use-admin-accounts.test.ts` (13 tests) was watched failing
+with `useAdminGrantTrial is not a function` — `0 pass, 13 fail` — before any
+implementation, then green.
+
+Both surface snapshots were re-recorded. The diff is **14 insertions, 0
+deletions** — 5 runtime names + 4 type names + the same 5 in the type snapshot.
+No rename, no removal, so no consumer breaks.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1603 pass`, `2 skip`, `0 fail`, `6486
+  expect()` across `126` files (was `1590`/`126` before this change).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+Also verified end to end against the live local stack: the admin panel's new
+Entitlements tab drove `POST …/trial` → `200` with body
+`{"tier_key":"team","seats":5,"duration_days":90,"credit_grant":25,"note":…}`,
+and `DELETE …/trial` → trial `status: revoked`, both read back from
+`GET /admin/api/accounts`.
+
+**Judgment call for review:** the six new `AdminAccount` fields are **required**,
+not optional. The route always populates them (`?? null` / `?? false`), and the
+type is admin-only, but a consumer that constructs an `AdminAccount` literal
+would now fail to compile. Flagging rather than burying it.
+
+**Status:** COMPLETE (uncommitted — left in the working tree on branch
+`trial-entitlements` at the requester's instruction, so no claim commit was
+made; this entry is the handoff record).
+
+**SDK package shippable to production: YES.**

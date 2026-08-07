@@ -1,11 +1,16 @@
 'use client';
 
-// Self-serve "enterprise demo" toggle. Enterprise features (SSO, SCIM, …) are
-// normally sales-assigned via the enterprise tier; this switch lets any account
-// admin flip on an interactive PREVIEW of the whole surface — no sales contact,
-// no billing change — so prospects can evaluate it and we can dogfood in dev.
-// It is explicitly a demo: real production use still requires a signed
-// Enterprise agreement (the "Request access" link below).
+// "Enterprise demo" state card. Enterprise features (SSO, SCIM, …) are normally
+// sales-assigned via the enterprise tier; the demo flag turns on an interactive
+// PREVIEW of the whole surface — no billing change — so prospects can evaluate
+// it and we can dogfood in dev. It is explicitly a demo: real production use
+// still requires a signed Enterprise agreement (the "Request access" link).
+//
+// The WRITE is platform-admin-only. `PUT /v1/accounts/{id}/iam/enterprise-demo`
+// answers 403 {code:'admin_required'} for everyone else, so an account admin
+// sees the state read-only plus a "contact Kortix" hint instead of a switch
+// that would only ever fail. Platform admins keep the working switch here; the
+// operator console (/admin/accounts → Entitlements) is the other write path.
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { accountStateKeys } from '@/hooks/billing/use-account-state';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { getEnterpriseDemo, setEnterpriseDemo } from '@/lib/iam-client';
 
 interface EnterpriseDemoCardProps {
@@ -26,6 +32,8 @@ interface EnterpriseDemoCardProps {
 export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardProps) {
   const queryClient = useQueryClient();
   const openDemo = useRequestDemo();
+  const adminRoleQuery = useAdminRole();
+  const isPlatformAdmin = !!adminRoleQuery.data?.isAdmin;
 
   const stateQuery = useQuery({
     queryKey: ['iam-enterprise-demo', accountId],
@@ -49,6 +57,9 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
   });
 
   const enabled = stateQuery.data ?? false;
+  // Both queries must settle before the control renders: showing a switch and
+  // then swapping it for a read-only badge one tick later reads as a bug.
+  const isLoading = stateQuery.isLoading || adminRoleQuery.isLoading;
 
   return (
     <div className="bg-popover rounded-md border">
@@ -64,10 +75,15 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             Turn on an interactive preview of SSO, SCIM, advanced RBAC, and audit logs for this
             account. Evaluation only, not a production plan.
           </p>
+          {!isLoading && !isPlatformAdmin ? (
+            <p className="text-muted-foreground/70 mt-1.5 max-w-prose text-xs">
+              Contact Kortix to enable this preview.
+            </p>
+          ) : null}
         </div>
-        {stateQuery.isLoading ? (
+        {isLoading ? (
           <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
-        ) : (
+        ) : isPlatformAdmin ? (
           <Switch
             checked={enabled}
             disabled={!canManage || toggleMutation.isPending}
@@ -75,6 +91,10 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             aria-label="Toggle enterprise features demo"
             className="shrink-0"
           />
+        ) : (
+          <Badge variant={enabled ? 'success' : 'muted'} size="sm" className="shrink-0">
+            {enabled ? 'Enabled' : 'Not enabled'}
+          </Badge>
         )}
       </div>
       {/* The request-enterprise CTA lives on the EnterpriseUpsell panel below —

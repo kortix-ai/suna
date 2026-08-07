@@ -185,6 +185,9 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
 
   await upsertCreditAccount(accountId, {
     tier: tierKey,
+    // A real subscription ends an admin-issued trial: mark it converted so the
+    // trial overlay (effective-tier.ts) stops masking the purchased plan.
+    ...(existingAccount?.trialStatus === 'active' ? { trialStatus: 'converted' } : {}),
     provider: 'stripe',
     stripeSubscriptionId: subscriptionId,
     stripeSubscriptionStatus: 'active',
@@ -424,6 +427,18 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       updates.autoTopupThreshold = String(defaults.threshold);
       updates.autoTopupAmount = String(defaults.amount);
     }
+  }
+
+  // A real, paying subscription ends an admin-issued trial: mark it converted
+  // so the trial overlay (effective-tier.ts) stops masking the purchased plan.
+  // Only paying statuses count — an incomplete/past_due sub must not eat the
+  // trial the account is still evaluating on.
+  if (
+    account?.trialStatus === 'active' &&
+    (updates.tier || perSeatItem) &&
+    (subscription.status === 'active' || subscription.status === 'trialing')
+  ) {
+    updates.trialStatus = 'converted';
   }
 
   if (!account) {

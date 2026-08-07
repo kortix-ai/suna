@@ -29,8 +29,7 @@ import { accountGroupMembers, accountGroups, accountMembers, connectors, connect
 } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { config } from '../../config';
 import {
   canChangeSessionModel,
@@ -2837,9 +2836,7 @@ projectsApp.openapi(
     // Same servability gate as create — otherwise this endpoint becomes the very
     // back door the PATCH guard just closed.
     const trimmed = requested.trim();
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(loaded.row.accountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
     const servable = await isModelServableForAccount({
       userId: loaded.userId,
       accountId: loaded.row.accountId,
