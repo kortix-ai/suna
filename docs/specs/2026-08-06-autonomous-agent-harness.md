@@ -120,6 +120,49 @@ separate memory service.
 13. A sandbox or kernel restart cannot repeat an irreversible effect.
 14. The same session and principal identifiers join state, effect, and control records.
 
+### 6.1 Implemented task-worker liveness contract
+
+PostgreSQL owns each coordinator-to-worker binding, immutable wall/token/cost/
+iteration contract, deadline, admitted-iteration counter, progress evidence,
+idempotent settlement replay, continuation consumption, escalation, and blocker.
+Registration verifies the project, live coordinator claim, worker session, and
+`metadata.spawned_by_session`. It atomically binds those identities and queues
+the initial prompt through the existing session lifecycle outbox. The coordinator
+creates the worker without a prompt before registration.
+
+The coordinator records exactly one of two outcomes for a settled turn:
+semantic evidence through `/progress`, or no progress through `/no-progress`.
+`/no-progress` requires a stable `settlement_id`. A replay returns the stored
+action. The first distinct settlement queues the only continuation. A second
+distinct settlement atomically blocks and releases the task, queues a
+server-owned worker stop, and wakes the coordinator. Restarts cannot reset this
+policy because every decision is stored and compare-and-set in PostgreSQL.
+
+The LLM gateway enforces bounds after billing and project budget checks. It
+uses `gateway_request_logs` for actual LLM tokens and cost, and
+`sandbox_compute_sessions` for compute cost. Iteration admission atomically
+increments `liveness_iterations_admitted` before provider dispatch. Actual
+usage finalization is best-effort after billing reconciliation, so a liveness
+failure cannot lose the billing hold reconciliation. The existing singleton
+project-trigger scheduler sweeps active bounded workers for wall, token, cost,
+compute, and iteration exhaustion. It does not add a workflow engine or another
+scheduler.
+
+Token and cost limits can overshoot by one provider request because actual
+usage exists only after the provider responds. Iteration limits do not have this
+overshoot. The post-usage finalizer and leader sweep block all later work.
+
+`queued` and `drained` describe local lifecycle-command handling only.
+`drained` does not prove remote prompt delivery. An empty newly created worker
+remains pending initial-prompt delivery and is not classified as settled or
+no-progress. A liveness-stopped worker must not be revived.
+
+The reserved meta principal excludes broad project write, arbitrary session
+stop, protected-branch push, and merge. Server-owned finalization performs the
+bounded worker stop. Session principals can attribute goal observations only to
+their own session. A human principal may cite only a validated session in the
+same project.
+
 ## 7. Memory model
 
 Use four cognitive categories without creating four storage products:

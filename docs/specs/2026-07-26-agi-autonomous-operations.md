@@ -336,6 +336,44 @@ R-33 — A session that ends without either advancing a task, changing a status,
 or recording why it could not, MUST be recorded as having made no progress, and
 that fact MUST be visible.
 
+### 8.1 Implemented task-worker enforcement
+
+PostgreSQL owns the restart-safe worker binding and settlement ledger on
+`kortix.project_tasks`. The serialized fields are
+`liveness_worker_session_id`, `liveness_coordinator_session_id`,
+`liveness_worker_contract`, `liveness_started_at`, `liveness_deadline_at`,
+`liveness_iterations_admitted`, `no_progress_settlements`,
+`continuation_consumed_at`, `last_progress_at`, `last_progress_ref`,
+`last_no_progress_settlement_id`, `last_no_progress_action`,
+`last_no_progress_command_id`, `escalated_at`, and `liveness_blocker`.
+
+The API exposes three project-task mutations. `POST .../worker` atomically binds
+one spawned worker, its immutable wall/token/cost/iteration bounds, and its
+initial prompt outbox command. `POST .../progress` records authenticated
+semantic evidence. `POST .../no-progress` consumes an idempotent
+`settlement_id`; the first distinct settlement queues one continuation, while a
+second distinct settlement or exhausted bound blocks and releases the task.
+The finalizer inserts server-owned worker `stop_session` and coordinator
+continuation commands into the existing lifecycle outbox.
+
+The LLM gateway reads server-ledger token and cost aggregates and atomically
+increments `liveness_iterations_admitted` before provider dispatch. Non-worker
+sessions use only the indexed binding probe and skip aggregation. Actual usage
+is checked again after recording the response. The existing project-trigger
+scheduler leader sweeps all bounded active workers for wall, token, cost, and
+iteration exhaustion. No scheduler or workflow engine was added.
+
+Iteration admission is exact. Token and cost limits can overshoot by at most one
+provider request because the current request's actual usage is known only after
+the response. The post-usage finalizer catches that overshoot and blocks future
+dispatch. Sandbox compute cost can grow without an LLM request; the leader sweep
+loads the server compute ledger and finalizes it.
+
+The `/worker` response reports only local API delivery state: `drained` means
+the immediate local drain succeeded, while `queued` means the durable outbox
+will retry. Neither value proves remote user-visible delivery. This mechanism
+does not claim AGI.
+
 ---
 
 ## 9. The AGI agent

@@ -137,3 +137,43 @@ flow(
     });
   },
 );
+
+
+flow(
+  'TASK-3',
+  {
+    domain: 'goals-tasks',
+    routes: [
+      'POST /v1/projects/:projectId/tasks/:taskId/worker',
+      'POST /v1/projects/:projectId/tasks/:taskId/progress',
+      'POST /v1/projects/:projectId/tasks/:taskId/no-progress',
+    ],
+  },
+  async (ctx) => {
+    const params = { projectId: UNKNOWN_PROJECT, taskId: UNKNOWN_TASK };
+    const worker = {
+      session_id: 'coordinator-session', worker_session_id: 'worker-session',
+      prompt: 'Execute the bounded task.',
+      contract: { max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5, max_iterations: 8 },
+    };
+    const progress = {
+      session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123',
+    };
+    const noProgress = {
+      session_id: 'coordinator-session', worker_session_id: 'worker-session',
+      settlement_id: 'turn-1', reason: 'No terminal evidence',
+    };
+    await ctx.step('task liveness mutations require authentication', async () => {
+      const anon = ctx.client.as(ctx.P.ANON);
+      (await anon.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(401);
+      (await anon.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })).status(401);
+      (await anon.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, { params })).status(401);
+    });
+    await ctx.step('task liveness mutations hide an unknown project', async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      (await owner.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(404);
+      (await owner.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })).status(404);
+      (await owner.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, { params })).status(404);
+    });
+  },
+);

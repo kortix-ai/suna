@@ -45,11 +45,27 @@ with completion.
      write-back, and escalation rules.
 
 6. **Liveness and authority**
-   - Do not accept session idle as task or goal completion.
-   - Permit one idempotent no-progress continuation, then escalate through an
-     existing review/human-delivery surface.
-   - Prevent the reserved meta principal from merging its own change request or
-     landing a protected default-branch push.
+   - Persist coordinator/worker identity, immutable bounds, deadline, admitted
+     iterations, progress refs, settlement replay state, escalation, and blocker
+     fields on `project_tasks`.
+   - Expose separate `/worker`, `/progress`, and `/no-progress` mutations through
+     API, SDK, and CLI. Register bounds and the initial prompt in one transaction.
+   - Best-effort drain the initial prompt command. Report local `queued|drained`
+     state without claiming remote delivery.
+   - Admit bounded worker LLM requests through an atomic PostgreSQL iteration
+     CAS. Load token/cost from server gateway ledgers before admission and again
+     after actual usage recording.
+   - Use the existing singleton project-trigger scheduler to sweep wall,
+     token, cost, iteration, and compute growth. Do not add a scheduler.
+   - Accept one-request token/cost overshoot because actual provider usage is
+     unavailable pre-dispatch. Block all later dispatch and finalize after usage.
+   - Permit one idempotent no-progress continuation. Then atomically block,
+     release, queue server-owned worker stop, and wake the coordinator through
+     the lifecycle outbox.
+   - Do not accept session idle or an empty not-yet-prompted session as task or
+     goal completion.
+   - Prevent the reserved meta principal from merging, pushing a protected
+     branch, stopping arbitrary sessions, or using broad project write.
 
 7. **Verification and delivery**
    - Run focused package tests and typechecks.
@@ -73,6 +89,7 @@ with completion.
 
 ## Delivery state
 
-- Local implementation and local black-box verification are complete on `agi-kernel`.
+- Local implementation and focused local verification are complete on `agi-kernel`.
+- No claim of AGI, production readiness, or remote user-visible delivery follows from local outbox state.
 - The branch remains local because remote delivery requires explicit user approval.
 - PR checks, merge, Deploy Dev, deployed-SHA proof, and Dev black-box verification remain pending.
