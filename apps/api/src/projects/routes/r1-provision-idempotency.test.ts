@@ -232,4 +232,26 @@ describe('POST /provision resolves the idempotency key before it creates anythin
     expect(handler).not.toContain('c.json(');
     expect(handler).toContain('status: 201');
   });
+
+  test('runProvision really is the last export — nothing after it silently joins this slice', async () => {
+    // `runProvisionSource()` slices from `export async function
+    // runProvision(` to end-of-file and every assertion above operates on
+    // that slice. Until now, "runProvision is the last export" was stated
+    // only in the comment on `runProvisionSource()` — asserted nowhere. Task
+    // 17 (workspace-switcher) added a route in `r1.ts` that is exactly the
+    // kind of change most likely to tempt appending a new export below
+    // `runProvision` in a NEIGHBORING file; this guard makes that mistake
+    // fail here too, in `provision-core.ts` itself, instead of passing
+    // silently because the slice quietly grew a second declaration.
+    //
+    // Every top-level export in this file starts at column 0 (`export
+    // const`/`type`/`interface`/`async function`), so a newline immediately
+    // followed by `export ` anywhere after runProvision's own declaration
+    // line is exactly a second export. The slice's very first characters ARE
+    // `export async function runProvision(`, so this only matches a LATER
+    // occurrence, never runProvision's own.
+    const handler = await runProvisionSource();
+
+    expect(handler).not.toMatch(/\nexport /);
+  });
 });

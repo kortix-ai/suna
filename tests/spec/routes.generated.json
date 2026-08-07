@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 529,
+  "count": 532,
   "routes": [
     {
       "method": "GET",
@@ -1711,6 +1711,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload"
     },
@@ -1853,6 +1861,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/provision"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/provision-stream"
     },
     {
       "method": "GET",

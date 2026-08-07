@@ -72,8 +72,21 @@ export const PROVISION_PHASES = [
 
 export type ProvisionPhase = (typeof PROVISION_PHASES)[number];
 export type ProvisionEmit = (phase: ProvisionPhase) => void;
+
+/**
+ * The exact status codes `runProvision` can produce, matching both routes'
+ * declared OpenAPI responses (`201` + `errors(400, 403, 409, 502, 503)`).
+ * Kept as a literal union, not `number`, so `c.json(result.body,
+ * result.status)` is checked against the route's declared responses instead
+ * of a route silently casting the mismatch away with `as never`. 403 is
+ * produced here too — `enforceProjectQuota` (`lib/access.ts`) returns a raw
+ * `c.json({...}, 403)` `Response` when the account is at its project limit,
+ * not only from each route's own pre-`runProvision` `authorize()` gate.
+ */
+export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
+
 export interface ProvisionResult {
-  status: number;
+  status: ProvisionResultStatus;
   body: unknown;
 }
 
@@ -268,7 +281,13 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
 
   const provisionQuota = await enforceProjectQuota(c, scope.accountId);
   if (provisionQuota) {
-    return { status: provisionQuota.status, body: await provisionQuota.json() };
+    // `enforceProjectQuota` hands back a raw Hono `Response` — `.status` is
+    // a plain `number` at the type level even though its only failure branch
+    // is a literal `403` (see `lib/access.ts`). This is the one place a
+    // `number` from an external `Response` crosses into
+    // `ProvisionResultStatus`; narrowed here instead of widening the field
+    // for every other, fully-literal return in this function.
+    return { status: provisionQuota.status as ProvisionResultStatus, body: await provisionQuota.json() };
   }
 
   emit('creating_repository');

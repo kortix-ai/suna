@@ -425,7 +425,105 @@ projectsApp.openapi(
     // here on purpose — /provision's response shape is depended on by the CLI
     // (`kortix ship`) and the SDK and must not change.
   });
-  return c.json(result.body, result.status as never);
+  return c.json(result.body, result.status);
+},
+);
+
+// POST /v1/projects/provision-stream
+// Same create as POST /provision, but reports which phase it is in over
+// Server-Sent Events instead of returning a single response at the end.
+//
+// A SECOND ROUTE rather than a changed one: /provision's single-201 shape is
+// depended on by the CLI (`kortix ship`) and the SDK's provisionProject. Both
+// routes call the SAME `runProvision` — there is exactly one implementation
+// of "create a repo, insert a row, seed it, roll back on failure", and there
+// must stay exactly one. Two copies diverge, and the copy that diverges is
+// the one that leaves an orphaned managed repo behind.
+//
+// Framing is a raw Response + ReadableStream — this codebase's one SSE
+// pattern (see tunnel/routes/permission-requests.ts's GET /stream), not
+// `hono/streaming`'s `streamSSE`, which nothing else in apps/api uses.
+// Unlike that tunnel stream, frames here carry NO `event:` line — see the
+// `write` comment below for why.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/provision-stream',
+    tags: ['projects'],
+    summary: 'POST /provision-stream',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: {
+          description:
+            'A text/event-stream of provision phases, always ending in a terminal ' +
+            '`done` or `error` frame — never a bare close.',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(403),
+    },
+  }),
+  async (c: any) => {
+  const ctx = await buildProvisionContext(c);
+  // Same gate as POST /provision, and it MUST run before the stream opens. An
+  // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
+  // then carries an error frame; a 200 status has to mean "authorized", or
+  // clients learn to keep reading a 200 body to find out whether they were.
+  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
+        // payload already carries a `type` field ('phase' | 'done' |
+        // 'error') — a discriminated union the SDK switches on. Adding an
+        // `event:` name would duplicate that discriminator in two places
+        // that can drift out of sync with each other. Do not "fix" this by
+        // adding one back.
+        const write = (data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // The client disconnected. Provisioning has no AbortSignal (see
+            // ProvisionContext in ../provision-core.ts) and keeps running to
+            // completion regardless — cancelling between backend.createRepo
+            // and the DB insert is exactly how an upstream repo gets
+            // orphaned, so a lost reader must not cancel it.
+          }
+        };
+
+        try {
+          const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
+          if (result.status === 201) {
+            write({ type: 'done', project: result.body });
+          } else {
+            write({ type: 'error', ...(result.body as object) });
+          }
+        } catch (error) {
+          // The stream must never end in a bare close — that would hand the
+          // client an undefined project id. This catch is what guarantees a
+          // terminal frame even when runProvision THROWS instead of
+          // returning an error result.
+          write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
+        } finally {
+          try { controller.close(); } catch {}
+        }
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    },
+  ) as any;
 },
 );
 
