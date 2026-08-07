@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { appDeployments, appRuntimes, apps } from '@kortix/db';
+import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
 import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -10,6 +10,7 @@ import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { assertAppBudgetAvailable } from './budget';
 import { AppHostingProvider } from './hosting';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 const EDGE_HOST_HEADER = 'x-kortix-app-host';
 const EDGE_TIMESTAMP_HEADER = 'x-kortix-app-timestamp';
@@ -108,11 +109,14 @@ export function verifyAppEdgeRequest(
 }
 
 export async function loadPublicApp(routeKey: string) {
-  const [app] = await db
-    .select()
+  const [loaded] = await db
+    .select({ app: apps, projectMetadata: projects.metadata })
     .from(apps)
+    .innerJoin(projects, eq(projects.projectId, apps.projectId))
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
     .limit(1);
+  const app = loaded?.app;
+  if (!loaded || !resolveExperimentalFeature(loaded.projectMetadata, 'apps')) return null;
   if (!app || !app.activeDeploymentId) return null;
   const [deployment] = await db
     .select()

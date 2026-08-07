@@ -6,27 +6,17 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import type { App, AppDeployment, CreateAppInput } from '@kortix/sdk';
+import type { App, AppDeployment } from '@kortix/sdk';
 import { useAppDeployments, useProjectApps } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
@@ -35,11 +25,11 @@ import {
   GlobeIcon,
   PauseIcon,
   PlayIcon,
-  PlusIcon,
   TerminalWindowIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { type FormEvent, useState } from 'react';
+import { useState } from 'react';
+import { notFound } from 'next/navigation';
 
 function deploymentTone(
   status: AppDeployment['status'],
@@ -61,20 +51,12 @@ function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
-function normalizeAppSlug(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63)
-    .replace(/-+$/g, '');
-}
-
 export function AppsView({ projectId }: { projectId: string }) {
-  const apps = useProjectApps(projectId);
+  const appsGate = useAppsFeatureEnabled(projectId);
+  const apps = useProjectApps(appsGate.enabled ? projectId : null);
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
-  const [createOpen, setCreateOpen] = useState(false);
+  if (!appsGate.isLoading && !appsGate.enabled) notFound();
 
   return (
     <CustomizeSectionWrapper
@@ -82,16 +64,8 @@ export function AppsView({ projectId }: { projectId: string }) {
       description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/sdk/apps"
       showSidebarToggleButton
-      action={
-        canWrite ? (
-          <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>
-            <PlusIcon className="size-4" />
-            New App
-          </Button>
-        ) : null
-      }
     >
-      {apps.isLoading ? (
+      {appsGate.isLoading || apps.isLoading ? (
         <ul className="space-y-2">
           {Array.from({ length: 3 }).map((_, index) => (
             <li
@@ -127,14 +101,7 @@ export function AppsView({ projectId }: { projectId: string }) {
         <EmptyState
           icon={GlobeIcon}
           title="No Apps deployed"
-          description="Create an App, then deploy a static site, bundle, Dockerfile, or OCI image with the Kortix CLI."
-          action={
-            canWrite ? (
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                Create App
-              </Button>
-            ) : undefined
-          }
+          description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image with the Kortix CLI. Deployed Apps appear here."
         />
       )}
 
@@ -157,20 +124,6 @@ export function AppsView({ projectId }: { projectId: string }) {
         </code>
       </InfoBanner>
 
-      <CreateAppModal
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        pending={apps.create.isPending}
-        onCreate={async (input) => {
-          try {
-            const created = await apps.create.mutateAsync(input);
-            setCreateOpen(false);
-            successToast(`${created.name} created`);
-          } catch (error) {
-            errorToast(error instanceof Error ? error.message : 'Failed to create App');
-          }
-        }}
-      />
     </CustomizeSectionWrapper>
   );
 }
@@ -377,86 +330,5 @@ function DeploymentRow({
         </Button>
       ) : null}
     </div>
-  );
-}
-
-function CreateAppModal({
-  open,
-  onOpenChange,
-  pending,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  pending: boolean;
-  onCreate: (input: CreateAppInput) => Promise<void>;
-}) {
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const normalizedSlug = normalizeAppSlug(slug || name);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await onCreate({ name: name.trim(), slug: normalizedSlug });
-    setName('');
-    setSlug('');
-  };
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>Create App</ModalTitle>
-          <ModalDescription>
-            Create the stable App identity. Deploy source with the CLI after creation.
-          </ModalDescription>
-        </ModalHeader>
-        <form onSubmit={submit}>
-          <ModalBody className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="app-name">Name</Label>
-              <Input
-                id="app-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Storefront"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="app-slug">Slug</Label>
-              <Input
-                id="app-slug"
-                value={slug}
-                onChange={(event) =>
-                  setSlug(
-                    event.target.value
-                      .toLowerCase()
-                      .replace(/[^a-z0-9-]/g, '')
-                      .slice(0, 63),
-                  )
-                }
-                placeholder={normalizedSlug || 'storefront'}
-              />
-              <p className="text-muted-foreground text-xs">
-                The slug appears in the App URL and cannot change.
-              </p>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              type="button"
-              variant="outline-ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={pending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending || !name.trim() || !normalizedSlug}>
-              {pending ? <Loading className="size-4 shrink-0" /> : null}
-              Create App
-            </Button>
-          </ModalFooter>
-        </form>
-      </ModalContent>
-    </Modal>
   );
 }

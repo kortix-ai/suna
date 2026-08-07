@@ -17,7 +17,7 @@ function findCatalogFeature(key: string) {
 
 describe('isExperimentalFeatureKey', () => {
   test('accepts known keys, rejects others', () => {
-    expect(isExperimentalFeatureKey('apps')).toBe(false);
+    expect(isExperimentalFeatureKey('apps')).toBe(true);
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('connectors_api_discover')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
@@ -58,6 +58,18 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
     ).toBe(false);
+  });
+
+  test('apps is explicit opt-in', () => {
+    expect(resolveExperimentalFeature({}, 'apps')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { apps: true } }, 'apps')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { apps: false } }, 'apps')).toBe(false);
+    expect(findCatalogFeature('apps')).toMatchObject({
+      name: 'Apps',
+      stability: 'experimental',
+      available: true,
+      enabled: false,
+    });
   });
 
   test('teams is explicit opt-in and needs no operator env var', () => {

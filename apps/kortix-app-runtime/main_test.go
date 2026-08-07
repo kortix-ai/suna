@@ -6,11 +6,54 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestDaemonizeStartsOnceAndWritesPid(t *testing.T) {
+	originalCommand := daemonCommand
+	originalAlive := daemonProcessAlive
+	starts := 0
+	daemonCommand = func() (*exec.Cmd, error) {
+		starts++
+		return exec.Command("sh", "-c", "sleep 30"), nil
+	}
+	daemonProcessAlive = func(pid int) bool {
+		return syscall.Kill(pid, 0) == nil
+	}
+	t.Cleanup(func() {
+		daemonCommand = originalCommand
+		daemonProcessAlive = originalAlive
+	})
+
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "appd.pid")
+	logPath := filepath.Join(dir, "appd.log")
+	if err := daemonize(pidPath, logPath); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if err := daemonize(pidPath, logPath); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 {
+		t.Fatalf("daemon starts = %d, want 1", starts)
+	}
+}
 
 func TestValidateSpecRejectsReservedPorts(t *testing.T) {
 	for _, port := range []int{controlPort, ingressPort} {

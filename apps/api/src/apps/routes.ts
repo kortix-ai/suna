@@ -21,6 +21,7 @@ import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { projectsApp } from '../projects/lib/app';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
@@ -181,6 +182,7 @@ async function authorizedProject(c: any, projectId: string, write = false) {
     projectId,
     write ? PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE : PROJECT_ACTIONS.PROJECT_GITOPS_READ,
   );
+  if (!resolveExperimentalFeature(loaded.row.metadata, 'apps')) return null;
   return loaded;
 }
 
@@ -469,7 +471,7 @@ projectsApp.openapi(
   createRoute({
     method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
     request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
-    responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409) },
+    responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409, 503) },
   }),
   async (c: any) => {
     const { projectId, appId, deploymentId } = c.req.param();
@@ -479,8 +481,23 @@ projectsApp.openapi(
       .where(and(eq(appRuntimes.deploymentId, deploymentId), eq(appDeployments.appId, appId))).orderBy(desc(appRuntimes.createdAt)).limit(1);
     if (!runtime) return c.json({ error: 'Deployment has no runtime' }, 409);
     const row = runtime.app_runtimes;
-    const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
-    return c.json(logs);
+    if (row.status === 'stopped' || row.status === 'error' || row.status === 'deleted') {
+      return c.json({
+        error: 'App runtime is not running',
+        code: 'app_runtime_not_running',
+        runtime_status: row.status,
+      }, 409);
+    }
+    try {
+      const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
+      return c.json(logs);
+    } catch (error) {
+      console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
+      return c.json({
+        error: 'App runtime logs are temporarily unavailable',
+        code: 'app_runtime_unavailable',
+      }, 503);
+    }
   },
 );
 

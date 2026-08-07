@@ -47,6 +47,15 @@ interface PlatinumSandbox {
   backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+type PlatinumExecResponse = {
+  result?: {
+    stdout?: string;
+    stderr?: string;
+    exit_code?: number;
+    error?: string;
+  };
+  error?: string;
+};
 
 /**
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
@@ -267,13 +276,39 @@ export class PlatinumProvider implements SandboxProvider {
     };
   }
 
-  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
-    // Platinum honors the image ENTRYPOINT on create and resumes its process
-    // tree on wake. appd is therefore already running.
+  async ensureAppRuntimeStarted(externalId: string): Promise<void> {
+    // Platinum restores the template filesystem but does not run the image
+    // ENTRYPOINT. appd owns daemonization, locking, and PID validation so this
+    // path works in images without a shell or flock utility.
+    const response = await platinumJson<PlatinumExecResponse>(
+      `/v1/sandboxes/${externalId}/exec`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ cmd: ['/kortix/bin/kortix-appd', '--daemon'], timeout_ms: 15_000 }),
+      },
+    );
+    const result = response.result;
+    if (!result || result.exit_code !== 0) {
+      const detail = result?.stderr || result?.error || response.error || 'missing exec result';
+      throw new Error(
+        `Platinum App bootstrap failed for ${externalId}: exit ${result?.exit_code ?? 'unknown'}: ${detail.slice(0, 500)}`,
+      );
+    }
   }
 
   async start(externalId: string): Promise<void> {
-    await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+    try {
+      await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+    } catch (error) {
+      // A retry can race the previous start response. Platinum answers 409 when
+      // the sandbox is already running. Confirm the provider state before
+      // treating that response as an idempotent success.
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (!/ -> 409\b/.test(message)) throw error;
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+      if (String(sandbox.state ?? '').toLowerCase() === 'running') return;
+      throw error;
+    }
   }
 
   async stop(externalId: string): Promise<void> {

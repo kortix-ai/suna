@@ -5,6 +5,8 @@ description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable
 
 Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
 
+Apps is experimental and off by default. Enable **Apps** for the selected project under Project Settings → Experimental. The API returns `404`, and the CLI and web surfaces stay hidden, while the feature is disabled.
+
 ```ts
 const apps = kortix.project(projectId).apps;
 const app = await apps.create({ slug: 'docs', name: 'Docs' });

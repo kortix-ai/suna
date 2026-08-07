@@ -27,7 +27,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let requests: Array<{ method: string; path: string; authorization: string | null; body?: unknown }> = [];
 
-function writeConfig(apiBase: string): string {
+function writeConfig(apiBase: string, defaultProject = false): string {
   const path = join(tmp, 'config.json');
   writeFileSync(
     path,
@@ -41,6 +41,13 @@ function writeConfig(apiBase: string): string {
           user_email: 'user@example.test',
           account_id: 'account_1',
           logged_in_at: '2026-01-01T00:00:00.000Z',
+          ...(defaultProject ? {
+            default_project: {
+              project_id: 'proj_e2e',
+              account_id: 'account_1',
+              name: 'Apps Test',
+            },
+          } : {}),
         },
       },
     }),
@@ -155,7 +162,7 @@ function startSystemSkillsServer() {
   return `http://127.0.0.1:${server.port}`;
 }
 
-function startAppsServer() {
+function startAppsServer(appsEnabled = true) {
   const app = {
     app_id: 'app_1',
     account_id: 'account_1',
@@ -185,6 +192,14 @@ function startAppsServer() {
         authorization: req.headers.get('authorization'),
         body,
       });
+      if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'GET') {
+        return Response.json({
+          project_id: 'proj_e2e',
+          account_id: 'account_1',
+          name: 'Apps Test',
+          experimental: { apps: appsEnabled },
+        });
+      }
       if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'GET') {
         return Response.json({ apps: [app] });
       }
@@ -547,11 +562,14 @@ describe('kortix CLI black-box behavior', () => {
   });
 
   test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
-    const help = await runCli(['--help']);
-    expect(help.stdout).toContain('apps <subcommand>');
+    const unscopedHelp = await runCli(['--help']);
+    expect(unscopedHelp.stdout).not.toContain('apps <subcommand>');
 
     const apiBase = startAppsServer();
-    const configFile = writeConfig(apiBase);
+    const configFile = writeConfig(apiBase, true);
+
+    const help = await runCli(['--help'], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(help.stdout).toContain('apps <subcommand>');
 
     const listed = await runCli(['apps', 'list', '--project', 'proj_e2e', '--json'], tmp, {
       KORTIX_CONFIG_FILE: configFile,
@@ -584,13 +602,16 @@ describe('kortix CLI black-box behavior', () => {
       deployment: { deployment_id: 'deployment_1', status: 'queued' },
     });
     expect(requests.map((request) => [request.method, request.path])).toEqual([
+      ['GET', '/v1/projects/proj_e2e'],
+      ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e/apps'],
+      ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e/apps'],
       ['POST', '/v1/projects/proj_e2e/apps/artifacts'],
       ['POST', '/v1/projects/proj_e2e/apps/app_1/deployments'],
     ]);
-    expect(requests[2]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
-    expect(requests[3]?.body).toEqual({
+    expect(requests[5]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
+    expect(requests[6]?.body).toEqual({
       artifact_id: 'artifact_1',
       source: {
         kind: 'oci_image',
@@ -600,6 +621,27 @@ describe('kortix CLI black-box behavior', () => {
       },
       provider: 'daytona',
     });
+  }, 20_000);
+
+  test('Apps help and commands stay hidden when the selected project has Apps disabled', async () => {
+    const apiBase = startAppsServer(false);
+    const configFile = writeConfig(apiBase, true);
+    const env = { KORTIX_CONFIG_FILE: configFile };
+
+    const landing = await runCli(['--help'], tmp, env);
+    expect(landing.code).toBe(0);
+    expect(landing.stdout).not.toContain('apps <subcommand>');
+
+    const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
+    expect(help.code).toBe(2);
+    expect(help.stdout).not.toContain('Usage: kortix apps');
+    expect(help.stderr).toContain('Apps is not enabled for this project');
+
+    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+    expect(listed.code).toBe(1);
+    expect(listed.stdout).not.toContain('No Apps deployed');
+    expect(listed.stderr).toContain('Apps is not enabled for this project');
+    expect(requests.every((request) => request.path === '/v1/projects/proj_e2e')).toBe(true);
   }, 20_000);
 
   test('tunnel is no longer a top-level command', async () => {

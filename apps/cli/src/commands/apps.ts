@@ -14,6 +14,8 @@ import ignore from 'ignore';
 import * as tar from 'tar';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import { hasEnvTokenHost } from '../api/config.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -23,6 +25,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadLocalManifest } from '../manifest.ts';
+import { loadLink, resolveProjectId } from '../project-link.ts';
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
@@ -149,11 +152,37 @@ async function context(options: ContextOptions): Promise<{
 } | null> {
   const resolved = await resolveProjectContext(options);
   if (!resolved) return null;
+  const kortix = kortixFromAuth(resolved.auth);
+  const project = await withKortixScope(resolved.auth, () =>
+    kortix.project(resolved.projectId).get(),
+  );
+  if (project.experimental?.apps !== true) {
+    process.stderr.write(
+      `${status.err('Apps is not enabled for this project.')} Enable Apps in Project Settings → Experimental.\n`,
+    );
+    return null;
+  }
   return {
     projectId: resolved.projectId,
     auth: resolved.auth,
-    apps: kortixFromAuth(resolved.auth).project(resolved.projectId).apps,
+    apps: kortix.project(resolved.projectId).apps,
   };
+}
+
+/** Read-only landing-page discovery. Missing auth, project, or flag stays dark. */
+export async function selectedProjectAppsEnabled(): Promise<boolean> {
+  const projectId = resolveProjectId();
+  if (!projectId) return false;
+  const linkedHost = hasEnvTokenHost() ? undefined : loadLink()?.host;
+  const auth = linkedHost ? loadAuthForHost(linkedHost) : loadAuth();
+  if (!auth?.token) return false;
+  try {
+    const kortix = kortixFromAuth(auth);
+    const project = await withKortixScope(auth, () => kortix.project(projectId).get());
+    return project.experimental?.apps === true;
+  } catch {
+    return false;
+  }
 }
 
 async function scoped<T>(ctx: NonNullable<Awaited<ReturnType<typeof context>>>, fn: () => Promise<T>) {
@@ -194,6 +223,12 @@ function takeCommon(rest: string[]) {
 
 export async function runApps(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
+    const helpArgs = argv.slice(1);
+    const helpContext = await context({
+      projectArg: takeFlagValue(helpArgs, ['--project']),
+      hostArg: takeFlagValue(helpArgs, ['--host']),
+    });
+    if (!helpContext) return 2;
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
   }

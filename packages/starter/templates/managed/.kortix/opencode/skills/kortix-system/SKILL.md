@@ -201,6 +201,10 @@ version. The control plane starts the App sandbox on the first public request,
 keeps it running while requests arrive, and stops it after the configured idle
 timeout. Manual `stop` blocks cold wake until `start` is called.
 
+Apps is experimental and off by default. Enable **Apps** for the selected
+project under Project Settings → Experimental before using the CLI or SDK. The
+CLI does not list its Apps commands until the selected project enables it.
+
 Use the CLI from the source directory:
 
 ```sh

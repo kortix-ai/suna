@@ -45,10 +45,7 @@ import {
   connectedCatalogKeys,
   type CatalogEntry,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
-import {
-  CategorySelect,
-  ConnectorBrowse,
-} from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
+import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import {
   ALL_CATEGORIES,
   catalogCategoryKeys,
@@ -287,9 +284,43 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const scope: ConnectorScope = scopeChoice ?? 'discover';
   const catalogActive = scope !== 'connected';
 
-  const catalog = useCatalog(projectId, query, { enabled: catalogActive, discoverEnabled });
+  // The category the catalogue should fetch FOR, as opposed to the one the
+  // user picked. `null` while browsing everything and while a search runs —
+  // the search is server-side across every category, so deepening one would be
+  // work against a grid that is ignoring it.
+  //
+  // Read off `query`, not `catalog.activeQuery`: this is an input to the hook
+  // that produces `catalog`, so it cannot depend on its output. The 300ms
+  // debounce difference only means focus stops one tick earlier, which is the
+  // right direction.
+  const focusCategory =
+    catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
-  // Derived ONCE, for both the `Select` and the grid. Deriving it twice is what
+  const catalog = useCatalog(projectId, query, {
+    enabled: catalogActive,
+    discoverEnabled,
+    focusCategory,
+  });
+
+  // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
+  // resolves and the source flips, every entry is replaced and the picked
+  // category is a token from a namespace that no longer exists —
+  // `resolveActiveCategory` already stops the GRID rendering it, but
+  // `focusCategory` above would still spend the catalogue's whole page budget
+  // fetching for a bucket that can never have anything in it.
+  //
+  // Adjusted during render, not in an effect. React re-runs this component
+  // before committing, so the reset lands in the same paint and `useCatalog`'s
+  // own effects never observe the stale value. The effect version was one
+  // render late by construction — which is exactly long enough to schedule the
+  // first wasted page — and cost a second commit to do it.
+  const [categorySource, setCategorySource] = useState(catalog.source);
+  if (categorySource !== catalog.source) {
+    setCategorySource(catalog.source);
+    setCategory(ALL_CATEGORIES);
+  }
+
+  // Derived ONCE, for both the rail and the grid. Deriving it twice is what
   // let the control and the content disagree about which categories exist.
   const availableCategories = useMemo(
     () => catalogCategoryKeys(catalog.entries, (entry) => entry.categories),
@@ -407,17 +438,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               ))}
             </TabsList>
           </Tabs>
-          {/* Hidden during a catalogue search: the search is server-side across
-              every category, so the grid ignores the category while one is
-              running. Leaving the control on screen showing "Design" over
-              results that are not filtered to Design would be a lie. */}
-          {catalogActive && catalog.activeQuery.length === 0 ? (
-            <CategorySelect
-              categories={availableCategories}
-              value={category}
-              onChange={setCategory}
-            />
-          ) : null}
+          {/* The category filter is NOT here. It is a rail of chips rendered by
+              `ConnectorBrowse` directly above the grid it filters — this row is
+              too narrow for it, and the rail has to sit next to its content for
+              the lit chip to read as "this is why you are seeing these". */}
         </>
       }
     >
@@ -428,6 +452,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
           availableCategories={availableCategories}
+          onCategoryChange={setCategory}
           onSelect={setCatalogTarget}
           emptyTitle="Catalogue unavailable"
           emptyDescription="The connector catalogue returned nothing. Try again shortly."
@@ -438,6 +463,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           // wording depends on `projectQuery` too. Same gate as the filter row.
           isLoading={!settled}
           isError={isError}
+          error={connectorsQuery.error ?? projectQuery.error}
           onRetry={retry}
           isEmpty={emptyKind !== null}
           empty={

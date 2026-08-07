@@ -131,6 +131,10 @@ Apps have stable URLs and immutable deployment versions. Each deployment runs
 in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
 stop blocks wake.
 
+The selected project must enable **Apps** under Project Settings →
+Experimental. The top-level CLI help and every `kortix apps` command stay dark
+when no selected project has the feature enabled.
+
 | Command | Effect |
 | --- | --- |
 | `kortix apps ls [--json]` | List the project's Apps, state, and stable URL. |

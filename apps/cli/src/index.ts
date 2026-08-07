@@ -3,7 +3,7 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
-import { runApps } from './commands/apps.ts';
+import { runApps, selectedProjectAppsEnabled } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -292,8 +292,12 @@ function tierBand(label: string): string {
   return `  ${C.faded}${label} ${'─'.repeat(dashes)}${C.reset}`;
 }
 
-function renderHelp(): string {
-  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => s.commands));
+function renderHelp(appsEnabled = false): string {
+  const visibleCommands = (commands: readonly Command[]) =>
+    commands.filter((command) => command.name !== 'apps' || appsEnabled);
+  const allCommands = TIERS.flatMap((t) =>
+    t.sections.flatMap((s) => visibleCommands(s.commands)),
+  );
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -302,7 +306,9 @@ function renderHelp(): string {
   lines.push(header('Kortix CLI', VERSION));
   lines.push(rule());
   for (const tier of TIERS) {
-    const sections = tier.sections.filter((s) => s.commands.length > 0);
+    const sections = tier.sections
+      .map((section) => ({ ...section, commands: visibleCommands(section.commands) }))
+      .filter((s) => s.commands.length > 0);
     if (sections.length === 0) continue;
     lines.push('');
     lines.push(tierBand(tier.label));
@@ -343,7 +349,7 @@ async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
   }
-  process.stdout.write(renderHelp());
+  process.stdout.write(renderHelp(await selectedProjectAppsEnabled()));
 }
 
 /** Can we actually ask a question here? `resolveUpdateStatus` already rules out

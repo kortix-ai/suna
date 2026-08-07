@@ -28,6 +28,9 @@ const (
 	defaultReadinessPath = "/"
 	defaultLogCapacity   = 10000
 	shutdownGrace        = 10 * time.Second
+	daemonPIDPath        = "/tmp/kortix-appd.pid"
+	daemonLogPath        = "/tmp/kortix-appd-bootstrap.log"
+	daemonLockPath       = "/tmp/kortix-appd-bootstrap.lock"
 )
 
 var caddyCommand = func(configPath string) *exec.Cmd {
@@ -36,6 +39,73 @@ var caddyCommand = func(configPath string) *exec.Cmd {
 		path = "/kortix/bin/caddy"
 	}
 	return exec.Command(path, "run", "--config", configPath, "--adapter", "caddyfile")
+}
+
+var daemonCommand = func() (*exec.Cmd, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve appd executable: %w", err)
+	}
+	return exec.Command(executable), nil
+}
+
+var daemonProcessAlive = func(pid int) bool {
+	return pid > 0 && syscall.Kill(pid, 0) == nil
+}
+
+func daemonize(pidPath, logPath string) error {
+	lock, err := os.OpenFile(daemonLockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return fmt.Errorf("open daemon lock: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock daemon bootstrap: %w", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	if raw, readErr := os.ReadFile(pidPath); readErr == nil {
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if parseErr == nil && daemonProcessAlive(pid) {
+			return nil
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return fmt.Errorf("read daemon pid: %w", readErr)
+	}
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("open daemon log: %w", err)
+	}
+	defer logFile.Close()
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		return fmt.Errorf("open null input: %w", err)
+	}
+	defer null.Close()
+
+	cmd, err := daemonCommand()
+	if err != nil {
+		return err
+	}
+	cmd.Stdin = null
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start appd daemon: %w", err)
+	}
+	pid := cmd.Process.Pid
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(pid)+"\n"), 0600); err != nil {
+		_ = cmd.Process.Kill()
+		return fmt.Errorf("write daemon pid: %w", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if !daemonProcessAlive(pid) {
+		return fmt.Errorf("appd daemon %d exited during bootstrap", pid)
+	}
+	return cmd.Process.Release()
 }
 
 type appSpec struct {
@@ -513,6 +583,12 @@ func loadSpec() (appSpec, error) {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--daemon" {
+		if err := daemonize(daemonPIDPath, daemonLogPath); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	spec, err := loadSpec()
 	if err != nil {
 		log.Fatal(err)
