@@ -337,12 +337,24 @@ export class TaskGitWriteInFlightError extends Error {
   }
 }
 
-function noLiveTaskGitWrite(now: Date) {
+function noLiveTaskGitWrite(_now: Date) {
   return or(
     isNull(projectTasks.gitWriteRequestId),
-    lte(projectTasks.gitWriteLeaseExpiresAt, now),
+    eq(projectTasks.gitWriteState, 'settled'),
   );
 }
+
+export const TASK_GIT_WRITE_ABORT_SAFETY_MS = 5_000;
+export const TASK_GIT_WRITE_RECONCILE_GRACE_MS = 30_000;
+
+const clearTaskGitWrite = {
+  gitWriteRequestId: null,
+  gitWriteLeaseExpiresAt: null,
+  gitWriteState: null,
+  gitWriteRef: null,
+  gitWriteOldOid: null,
+  gitWriteNewOid: null,
+} as const;
 
 function noLiveTaskLivenessAdmission(now: Date) {
   return or(
@@ -365,6 +377,35 @@ async function revokeWorkerSessionTokens(
     eq(accountTokens.accountId, accountId),
     eq(accountTokens.status, 'active'),
   ));
+}
+
+async function queueTaskWorkerStopAndEscalation(
+  database: Pick<Database, 'insert'>,
+  task: Pick<ProjectTask, 'projectId' | 'taskId' | 'livenessWorkerSessionId' | 'livenessCoordinatorSessionId'>,
+  input: { accountId: string; reason: string; now: Date },
+): Promise<void> {
+  if (!task.livenessWorkerSessionId || !task.livenessCoordinatorSessionId) return;
+  await database.insert(sessionLifecycleCommands).values([
+    {
+      commandType: 'stop_session', source: 'cli', status: 'queued' as const,
+      projectId: task.projectId, accountId: input.accountId,
+      sessionId: task.livenessWorkerSessionId,
+      idempotencyKey: `task-stop:${task.taskId}:${task.livenessWorkerSessionId}`,
+      payload: { reason: 'task_liveness_exhausted' }, result: {},
+      availableAt: input.now, updatedAt: input.now,
+    },
+    {
+      commandType: 'continue_session', source: 'cli', status: 'queued' as const,
+      projectId: task.projectId, accountId: input.accountId,
+      sessionId: task.livenessCoordinatorSessionId,
+      idempotencyKey: `task-bound-escalate:${task.taskId}`,
+      payload: {
+        text: `Task ${task.taskId} is blocked: ${input.reason}. Escalate through the existing review, question, or channel path.`,
+        messageId: normalizeOpenCodeMessageId(`task-bound-escalate:${task.taskId}`),
+      },
+      result: {}, availableAt: input.now, updatedAt: input.now,
+    },
+  ]).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
 }
 
 /**
@@ -397,8 +438,7 @@ export async function transitionProjectTask(
           claimExpiresAt: null,
           livenessAdmissionId: null,
           livenessAdmissionExpiresAt: null,
-          gitWriteRequestId: null,
-          gitWriteLeaseExpiresAt: null,
+          ...clearTaskGitWrite,
         } : {}),
         updatedAt: input.now,
       })
@@ -457,7 +497,7 @@ export async function transitionProjectTask(
     clearsClaim &&
     current.gitWriteRequestId &&
     current.gitWriteLeaseExpiresAt &&
-    current.gitWriteLeaseExpiresAt > input.now
+    current.gitWriteState !== 'settled'
   ) {
     throw new TaskGitWriteInFlightError(current.taskId, current.gitWriteLeaseExpiresAt);
   }
@@ -880,7 +920,7 @@ export async function settleProjectTaskNoProgress(
       escalates &&
       task.gitWriteRequestId &&
       task.gitWriteLeaseExpiresAt &&
-      task.gitWriteLeaseExpiresAt > input.now
+      task.gitWriteState !== 'settled'
     ) {
       throw new TaskGitWriteInFlightError(task.taskId, task.gitWriteLeaseExpiresAt);
     }
@@ -937,8 +977,7 @@ export async function settleProjectTaskNoProgress(
         claimExpiresAt: null,
         livenessAdmissionId: null,
         livenessAdmissionExpiresAt: null,
-        gitWriteRequestId: null,
-        gitWriteLeaseExpiresAt: null,
+        ...clearTaskGitWrite,
       } : { continuationConsumedAt: input.now }),
       updatedAt: input.now,
     }).where(and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId))).returning();
@@ -1035,23 +1074,44 @@ export async function projectTaskWorkerIsBound(
 /**
  * Acquire the one durable receive-pack lease for a doing task worker.
  *
- * The lease expires at the immutable worker wall deadline. A crashed proxy can
- * therefore block terminalization only until the task must stop. The single
- * conditional UPDATE is the cross-replica mutex; there is no memory lock and no
- * database transaction held across the upstream network request.
+ * The proxy aborts before the immutable wall deadline. The durable live state
+ * remains through a post-deadline grace window. It changes to `settled` only
+ * after a receive-pack response or recurring remote-ref reconciliation.
  */
 export async function acquireProjectTaskGitWrite(
   database: Database,
-  input: { projectId: string; workerSessionId: string; requestId: string; now: Date },
+  input: {
+    projectId: string;
+    workerSessionId: string;
+    requestId: string;
+    ref: string;
+    oldOid: string;
+    newOid: string;
+    now: Date;
+  },
 ): Promise<{
   taskId: string;
   requestId: string;
+  abortAt: Date;
   leaseExpiresAt: Date;
 } | null> {
   assertValidDate(input.now, 'now');
+  if (input.ref !== `refs/heads/${input.workerSessionId}`) {
+    throw new RangeError('task Git write ref must equal the worker session branch');
+  }
+  if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/.test(input.oldOid) ||
+      !/^([0-9a-f]{40}|[0-9a-f]{64})$/.test(input.newOid) ||
+      input.oldOid.length !== input.newOid.length || /^0+$/.test(input.newOid)) {
+    throw new RangeError('task Git write object ids are invalid');
+  }
+  const graceSeconds = TASK_GIT_WRITE_RECONCILE_GRACE_MS / 1_000;
   const [admitted] = await database.update(projectTasks).set({
     gitWriteRequestId: input.requestId,
-    gitWriteLeaseExpiresAt: sql`${projectTasks.livenessDeadlineAt}`,
+    gitWriteLeaseExpiresAt: sql`${projectTasks.livenessDeadlineAt} + make_interval(secs => ${graceSeconds})`,
+    gitWriteState: 'live',
+    gitWriteRef: input.ref,
+    gitWriteOldOid: input.oldOid,
+    gitWriteNewOid: input.newOid,
     updatedAt: input.now,
   }).where(and(
     eq(projectTasks.projectId, input.projectId),
@@ -1062,32 +1122,100 @@ export async function acquireProjectTaskGitWrite(
   )).returning({
     taskId: projectTasks.taskId,
     requestId: projectTasks.gitWriteRequestId,
+    workerDeadlineAt: projectTasks.livenessDeadlineAt,
     leaseExpiresAt: projectTasks.gitWriteLeaseExpiresAt,
   });
-  if (!admitted?.requestId || !admitted.leaseExpiresAt) return null;
+  if (!admitted?.requestId || !admitted.workerDeadlineAt || !admitted.leaseExpiresAt) return null;
   return {
     taskId: admitted.taskId,
     requestId: admitted.requestId,
+    abortAt: new Date(admitted.workerDeadlineAt.getTime() - TASK_GIT_WRITE_ABORT_SAFETY_MS),
     leaseExpiresAt: admitted.leaseExpiresAt,
   };
 }
 
-/** Clear only the matching receive-pack request. Late settlement is harmless. */
+/** Mark only the matching receive-pack request as confirmed settled. */
 export async function settleProjectTaskGitWrite(
   database: Database,
   input: { projectId: string; workerSessionId: string; requestId: string; now: Date },
 ): Promise<boolean> {
   assertValidDate(input.now, 'now');
   const [settled] = await database.update(projectTasks).set({
-    gitWriteRequestId: null,
-    gitWriteLeaseExpiresAt: null,
+    gitWriteState: 'settled',
     updatedAt: input.now,
   }).where(and(
     eq(projectTasks.projectId, input.projectId),
     eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
     eq(projectTasks.gitWriteRequestId, input.requestId),
+    eq(projectTasks.gitWriteState, 'live'),
   )).returning({ taskId: projectTasks.taskId });
   return Boolean(settled);
+}
+
+export interface TaskGitWriteReconciliationTarget {
+  projectId: string;
+  taskId: string;
+  workerSessionId: string;
+  requestId: string;
+  ref: string;
+  oldOid: string;
+  newOid: string;
+}
+
+/**
+ * Reconcile crashed or aborted receive-pack requests after their grace window.
+ * A failed observation leaves the durable state live. The recurring sweep
+ * retries it, so a crash lease neither expires unsafely nor blocks forever.
+ */
+export async function reconcileProjectTaskGitWrites(
+  database: Database,
+  input: {
+    now: Date;
+    limit?: number;
+    reconcileRemoteRef: (target: TaskGitWriteReconciliationTarget) => Promise<boolean>;
+  },
+): Promise<number> {
+  assertValidDate(input.now, 'now');
+  const limit = boundedLimit(input.limit, 25, 100);
+  const rows = await database.select({
+    projectId: projectTasks.projectId,
+    taskId: projectTasks.taskId,
+    workerSessionId: projectTasks.livenessWorkerSessionId,
+    requestId: projectTasks.gitWriteRequestId,
+    ref: projectTasks.gitWriteRef,
+    oldOid: projectTasks.gitWriteOldOid,
+    newOid: projectTasks.gitWriteNewOid,
+  }).from(projectTasks).where(and(
+    eq(projectTasks.gitWriteState, 'live'),
+    lte(projectTasks.gitWriteLeaseExpiresAt, input.now),
+  )).orderBy(asc(projectTasks.gitWriteLeaseExpiresAt), asc(projectTasks.taskId)).limit(limit);
+
+  const outcomes = await Promise.all(rows.map(async (row): Promise<number> => {
+    if (!row.workerSessionId || !row.requestId || !row.ref || !row.oldOid || !row.newOid) return 0;
+    const target = {
+      projectId: row.projectId, taskId: row.taskId, workerSessionId: row.workerSessionId,
+      requestId: row.requestId, ref: row.ref, oldOid: row.oldOid, newOid: row.newOid,
+    };
+    try {
+      // The provider callback must observe the allowed ref and make the old
+      // compare-and-swap impossible before it confirms settlement.
+      if (!await input.reconcileRemoteRef(target)) return 0;
+      return await settleProjectTaskGitWrite(database, {
+        projectId: target.projectId,
+        workerSessionId: target.workerSessionId,
+        requestId: target.requestId,
+        now: input.now,
+      }) ? 1 : 0;
+    } catch (error) {
+      console.warn('[task-git-write] remote-ref reconciliation failed', {
+        projectId: target.projectId,
+        taskId: target.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
+    }
+  }));
+  return outcomes.reduce((total, outcome) => total + outcome, 0);
 }
 
 export const TASK_LIVENESS_ADMISSION_LEASE_POLICY = 'worker_deadline' as const;
@@ -1121,7 +1249,11 @@ export async function admitProjectTaskWorkerIteration(
     .limit(1);
   if (!row) return null;
   const active = row.task;
-  if (active.status !== 'doing') throw new TaskLivenessLimitExceededError(active.taskId);
+  // A nonterminal task can remain behind a live Git fence after its worker is
+  // quiesced. The durable blocker denies every replay and new prompt request.
+  if (active.status !== 'doing' || active.livenessBlocker) {
+    throw new TaskLivenessLimitExceededError(active.taskId);
+  }
   if (
     active.livenessAdmissionId === input.requestId &&
     active.livenessAdmissionExpiresAt &&
@@ -1147,6 +1279,7 @@ export async function admitProjectTaskWorkerIteration(
   }).where(and(
     eq(projectTasks.taskId, active.taskId),
     eq(projectTasks.status, 'doing'),
+    isNull(projectTasks.livenessBlocker),
     gt(projectTasks.livenessDeadlineAt, input.now),
     or(
       isNull(projectTasks.livenessAdmissionId),
@@ -1280,7 +1413,8 @@ async function finalizeTaskLiveness(
     expectedAdmissionId?: string;
   },
 ): Promise<boolean> {
-  if (!task.livenessWorkerSessionId || !task.livenessCoordinatorSessionId) return false;
+  const workerSessionId = task.livenessWorkerSessionId;
+  if (!workerSessionId || !task.livenessCoordinatorSessionId) return false;
   return database.transaction(async (tx) => {
     const [blocked] = await tx.update(projectTasks).set({
       status: 'blocked',
@@ -1292,8 +1426,7 @@ async function finalizeTaskLiveness(
       claimExpiresAt: null,
       livenessAdmissionId: null,
       livenessAdmissionExpiresAt: null,
-      gitWriteRequestId: null,
-      gitWriteLeaseExpiresAt: null,
+      ...clearTaskGitWrite,
       updatedAt: input.now,
     }).where(and(
       eq(projectTasks.taskId, task.taskId),
@@ -1303,29 +1436,33 @@ async function finalizeTaskLiveness(
         : []),
       noLiveTaskGitWrite(input.now),
     )).returning();
-    if (!blocked) return false;
-    await revokeWorkerSessionTokens(tx, task.livenessWorkerSessionId!, input.accountId, input.now);
-    await tx.insert(sessionLifecycleCommands).values([
-      {
-        commandType: 'stop_session', source: 'cli', status: 'queued' as const,
-        projectId: task.projectId, accountId: input.accountId,
-        sessionId: task.livenessWorkerSessionId,
-        idempotencyKey: `task-stop:${task.taskId}:${task.livenessWorkerSessionId}`,
-        payload: { reason: 'task_liveness_exhausted' }, result: {}, availableAt: input.now, updatedAt: input.now,
-      },
-      {
-        commandType: 'continue_session', source: 'cli', status: 'queued' as const,
-        projectId: task.projectId, accountId: input.accountId,
-        sessionId: task.livenessCoordinatorSessionId,
-        idempotencyKey: `task-bound-escalate:${task.taskId}`,
-        payload: {
-          text: `Task ${task.taskId} is blocked: ${input.reason}. Escalate through the existing review, question, or channel path.`,
-          messageId: normalizeOpenCodeMessageId(`task-bound-escalate:${task.taskId}`),
-        },
-        result: {}, availableAt: input.now, updatedAt: input.now,
-      },
-    ]).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
-    return true;
+
+    if (!blocked) {
+      // A receive-pack without confirmed settlement must keep the task
+      // nonterminal. It must not keep runtime authority. Quiesce the worker and
+      // persist the blocker in the same transaction as token revocation and
+      // both lifecycle commands. Reconciliation can terminalize the task later.
+      const [quiesced] = await tx.update(projectTasks).set({
+        escalatedAt: sql`coalesce(${projectTasks.escalatedAt}, ${input.now.toISOString()}::timestamptz)`,
+        livenessBlocker: sql`coalesce(${projectTasks.livenessBlocker}, ${input.reason})`,
+        updatedAt: input.now,
+      }).where(and(
+        eq(projectTasks.taskId, task.taskId),
+        eq(projectTasks.status, 'doing'),
+        or(
+          eq(projectTasks.gitWriteState, 'live'),
+          and(isNull(projectTasks.gitWriteState), sql`${projectTasks.gitWriteRequestId} is not null`),
+        ),
+        ...(input.expectedAdmissionId
+          ? [eq(projectTasks.livenessAdmissionId, input.expectedAdmissionId)]
+          : []),
+      )).returning({ taskId: projectTasks.taskId });
+      if (!quiesced) return false;
+    }
+
+    await revokeWorkerSessionTokens(tx, workerSessionId, input.accountId, input.now);
+    await queueTaskWorkerStopAndEscalation(tx, task, input);
+    return Boolean(blocked);
   });
 }
 

@@ -39,6 +39,12 @@ import { makeOpenApiApp } from '../openapi';
 import { db } from '../shared/db';
 import { acquireProjectTaskGitWrite, settleProjectTaskGitWrite } from '../projects/generated-state-store';
 import { TaskGitWriteNotAdmittedError, runTaskWorkerGitWrite } from './task-write-fence';
+import {
+  TaskWorkerReceivePackError,
+  completeTaskWorkerReceivePackResponse,
+  inspectTaskWorkerReceivePack,
+  type TaskWorkerReceivePackCommand,
+} from './task-worker-receive-pack';
 import { loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
 
@@ -108,8 +114,42 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
     return c.text(auth.message, auth.status);
   }
 
-  const upstream = await resolveProjectUpstream(auth.project, scope);
+  let requestBody = c.req.raw.body;
+  let taskWorkerCommand: TaskWorkerReceivePackCommand | null = null;
+  if (suffix === '/git-receive-pack' && auth.taskWorkerSessionId) {
+    const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+    if (contentType !== 'application/x-git-receive-pack-request') {
+      return c.text('invalid task worker receive-pack content-type', 400);
+    }
+    try {
+      const inspected = await inspectTaskWorkerReceivePack({
+        body: requestBody,
+        workerSessionId: auth.taskWorkerSessionId,
+        contentLength: c.req.header('content-length'),
+      });
+      requestBody = inspected.body;
+      taskWorkerCommand = inspected.command;
+    } catch (error) {
+      if (error instanceof TaskWorkerReceivePackError) {
+        return c.text(error.message, error.status);
+      }
+      throw error;
+    }
+  }
+
+  // Resolve the short-lived provider credential only after a bound worker's
+  // command prelude passes local authorization. Rejected refs never reach or
+  // cause a credential-bearing request to the provider.
+  let upstream: Awaited<ReturnType<typeof resolveProjectUpstream>>;
+  try {
+    upstream = await resolveProjectUpstream(auth.project, scope);
+  } catch (error) {
+    await requestBody?.cancel(error).catch(() => undefined);
+    console.warn(`[git-proxy] upstream resolution failed for ${projectId}`);
+    return c.text('git upstream unreachable', 502);
+  }
   if (!upstream || !upstream.url) {
+    await requestBody?.cancel('no git upstream').catch(() => undefined);
     return c.text('No git upstream is configured for this project', 502);
   }
 
@@ -144,7 +184,7 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
     return fetch(target, {
       method,
       headers,
-      body: c.req.raw.body,
+      body: requestBody,
       redirect: 'manual',
       signal,
       // @ts-ignore — Bun extensions: stream the request body, don't decompress.
@@ -156,20 +196,29 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   let res: Response;
   try {
     if (suffix === '/git-receive-pack' && auth.taskWorkerSessionId) {
+      const command = taskWorkerCommand;
+      if (!command) throw new Error('task worker receive-pack command was not inspected');
       const requestId = randomUUID();
       res = await runTaskWorkerGitWrite({
         projectId,
         workerSessionId: auth.taskWorkerSessionId,
         requestId,
-        acquire: (input) => acquireProjectTaskGitWrite(db, input),
+        acquire: (input) => acquireProjectTaskGitWrite(db, {
+          ...input,
+          ref: command.ref,
+          oldOid: command.oldOid,
+          newOid: command.newOid,
+        }),
         settle: (input) => settleProjectTaskGitWrite(db, input),
-        execute: (signal) => fetchUpstream(signal),
+        execute: async (signal) =>
+          completeTaskWorkerReceivePackResponse(await fetchUpstream(signal)),
       });
     } else {
       res = await fetchUpstream();
     }
   } catch (err) {
     if (err instanceof TaskGitWriteNotAdmittedError) {
+      await requestBody?.cancel(err).catch(() => undefined);
       return c.text('task worker Git write is already in flight or no longer active', 409);
     }
     console.warn(`[git-proxy] upstream fetch failed for ${projectId}:`, err);

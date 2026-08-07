@@ -23,7 +23,9 @@ describe('raw git capability boundaries', () => {
 
   test('provision never returns its upstream push credential to a session or agent principal', async () => {
     const handler = await routeBlock('r1.ts', 'POST /provision');
-    const runtimeDeny = handler.indexOf('if (isProjectSessionPrincipal(c)) exportablePushToken = null');
+    const runtimeDeny = handler.indexOf(
+      'if (isProjectSessionPrincipal(c)) exportablePushToken = null',
+    );
     const exportValue = handler.indexOf('push_token: exportablePushToken');
     expect(runtimeDeny).toBeGreaterThan(-1);
     expect(exportValue).toBeGreaterThan(runtimeDeny);
@@ -50,9 +52,29 @@ describe('raw git capability boundaries', () => {
     expect(fence).toContain('settleProjectTaskGitWrite');
   });
 
+  test('task receive-pack validates one session ref before provider credential resolution', async () => {
+    const source = await Bun.file(join(import.meta.dir, '../../git-proxy/index.ts')).text();
+    const workerParser = source.indexOf('inspectTaskWorkerReceivePack({');
+    const providerCredential = source.indexOf('resolveProjectUpstream(auth.project, scope)');
+    expect(workerParser).toBeGreaterThan(-1);
+    expect(providerCredential).toBeGreaterThan(workerParser);
+    expect(source).toContain('ref: command.ref');
+    expect(source).toContain('body: requestBody');
+    expect(source).toContain('completeTaskWorkerReceivePackResponse(await fetchUpstream(signal))');
+  });
+
+  test('ordinary principals retain the uninspected receive-pack stream', async () => {
+    const source = await Bun.file(join(import.meta.dir, '../../git-proxy/index.ts')).text();
+    expect(source).toContain("suffix === '/git-receive-pack' && auth.taskWorkerSessionId");
+    expect(source).toContain('let requestBody = c.req.raw.body');
+    expect(source).not.toContain("suffix === '/git-receive-pack' && !auth.taskWorkerSessionId");
+  });
+
   test('commit-push requires the literal push grant before repository writes', async () => {
     const handler = await routeBlock('r8.ts', 'POST /:projectId/sessions/:sessionId/commit-push');
-    const exactGate = handler.indexOf('assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)');
+    const exactGate = handler.indexOf(
+      'assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)',
+    );
     const providerWrite = handler.indexOf('/kortix/git/commit-push');
     expect(exactGate).toBeGreaterThan(-1);
     expect(providerWrite).toBeGreaterThan(exactGate);

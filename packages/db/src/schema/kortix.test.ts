@@ -417,6 +417,10 @@ describe('generated project state tables', () => {
       'liveness_admission_expires_at',
       'git_write_request_id',
       'git_write_lease_expires_at',
+      'git_write_state',
+      'git_write_ref',
+      'git_write_old_oid',
+      'git_write_new_oid',
       'liveness_last_swept_at',
       'no_progress_settlements',
       'continuation_consumed_at',
@@ -435,16 +439,27 @@ describe('generated project state tables', () => {
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_deadline');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_worker');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_sweep');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_git_write_reconcile');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_claim_session');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_liveness_coordinator');
   });
 
-  test('task Git write leases require one doing bound worker and fit its deadline', () => {
+  test('task Git write state binds one valid command to a doing worker', () => {
     const checks = getTableConfig(projectTasks).checks;
     const names = checks.map((candidate) => candidate.name);
-    expect(names).toContain('project_tasks_git_write_lease_pair');
-    expect(names).toContain('project_tasks_git_write_lease_within_worker_deadline');
+    expect(names).toContain('project_tasks_git_write_complete');
+    expect(names).toContain('project_tasks_git_write_state_valid');
+    expect(names).toContain('project_tasks_git_write_ref_valid');
+    expect(names).toContain('project_tasks_git_write_oid_valid');
     expect(names).toContain('project_tasks_git_write_requires_doing_worker');
+    const complete = checks.find(
+      (candidate) => candidate.name === 'project_tasks_git_write_complete',
+    );
+    expect(complete).toBeDefined();
+    if (!complete) {
+      throw new Error('missing project_tasks_git_write_complete');
+    }
+    expect(new PgDialect().sqlToQuery(complete.value).sql).toContain('in (0, 2, 6)');
     const worker = checks.find(
       (candidate) => candidate.name === 'project_tasks_git_write_requires_doing_worker',
     );
@@ -463,6 +478,7 @@ describe('generated project state tables', () => {
     expect(sql).toContain(`not in ('done', 'blocked')`);
     expect(sql).toContain('liveness_admission_id');
     expect(sql).toContain('git_write_request_id');
+    expect(sql).toContain('git_write_state');
   });
 
   test('worker contracts cannot exceed server-owned platform ceilings', () => {

@@ -28,6 +28,7 @@ import {
   listProjectGoalObservations,
   recordProjectGoalObservation,
   recordProjectTaskProgress,
+  reconcileProjectTaskGitWrites,
   registerProjectTaskWorker,
   projectTaskWorkerIsBound,
   settleProjectTaskGitWrite,
@@ -54,6 +55,13 @@ const SESSION_D = 'generated-state-session-d';
 const SESSION_E = 'generated-state-session-e';
 const USER_A = '00000000-0000-4000-a000-00000000a703';
 const USER_B = '00000000-0000-4000-a000-00000000a704';
+const GIT_OLD_OID = '1'.repeat(40);
+const GIT_NEW_OID = '2'.repeat(40);
+const gitWriteCommand = (workerSessionId: string) => ({
+  ref: `refs/heads/${workerSessionId}`,
+  oldOid: GIT_OLD_OID,
+  newOid: GIT_NEW_OID,
+});
 
 let integrationDb: Database | null = null;
 function testDb(): Database {
@@ -1098,7 +1106,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     const transitioned = await bind(SESSION_B, 'terminal-transition-fence', transitionNow);
     const transitionLeases = await Promise.all(['git-transition-a', 'git-transition-b'].map(
       (requestId) => acquireProjectTaskGitWrite(database, {
-        projectId: PROJECT_ID, workerSessionId: SESSION_B, requestId,
+        projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId,
         now: new Date(transitionNow.getTime() + 1_000),
       }),
     ));
@@ -1118,11 +1126,11 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     })).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
     expect(await tokenStatus(SESSION_B)).toBe('active');
     expect(await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_B, requestId: 'wrong-request',
+      projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId: 'wrong-request',
       now: new Date(transitionNow.getTime() + 3_000),
     })).toBe(false);
     expect(await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_B, requestId: transitionRequestId!,
+      projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId: transitionRequestId!,
       now: new Date(transitionNow.getTime() + 3_000),
     })).toBe(true);
     await expect(transitionProjectTask(database, {
@@ -1153,7 +1161,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       now: new Date(noProgressNow.getTime() + 1_000),
     });
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_C, requestId: 'git-no-progress',
+      projectId: PROJECT_ID, workerSessionId: SESSION_C, ...gitWriteCommand(SESSION_C), requestId: 'git-no-progress',
       now: new Date(noProgressNow.getTime() + 2_000),
     });
     await expect(settleProjectTaskNoProgress(database, {
@@ -1164,7 +1172,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     })).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
     expect(await tokenStatus(SESSION_C)).toBe('active');
     await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_C, requestId: 'git-no-progress',
+      projectId: PROJECT_ID, workerSessionId: SESSION_C, ...gitWriteCommand(SESSION_C), requestId: 'git-no-progress',
       now: new Date(noProgressNow.getTime() + 4_000),
     });
     await settleProjectTaskNoProgress(database, {
@@ -1181,16 +1189,20 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       workerSessionId: SESSION_D, requestId: 'ledger-admission', usage: zeroUsage, now: ledgerNow,
     });
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_D, requestId: 'git-ledger',
+      projectId: PROJECT_ID, workerSessionId: SESSION_D, ...gitWriteCommand(SESSION_D), requestId: 'git-ledger',
       now: new Date(ledgerNow.getTime() + 1_000),
     });
     expect(await blockProjectTaskWorkerAdmission(database, {
       workerSessionId: SESSION_D, admissionId: ledgerAdmission!.admissionId,
       reason: 'ledger write failed', now: new Date(ledgerNow.getTime() + 2_000),
     })).toBe(false);
-    expect(await tokenStatus(SESSION_D)).toBe('active');
+    expect(await tokenStatus(SESSION_D)).toBe('revoked');
+    await expect(admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_D, requestId: 'ledger-prompt-after-quiesce',
+      usage: zeroUsage, now: new Date(ledgerNow.getTime() + 2_001),
+    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
     await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_D, requestId: 'git-ledger',
+      projectId: PROJECT_ID, workerSessionId: SESSION_D, ...gitWriteCommand(SESSION_D), requestId: 'git-ledger',
       now: new Date(ledgerNow.getTime() + 3_000),
     });
     expect(await blockProjectTaskWorkerAdmission(database, {
@@ -1200,20 +1212,68 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(await tokenStatus(SESSION_D)).toBe('revoked');
 
     const sweepNow = new Date('2026-08-07T20:00:00.000Z');
-    await bind(SESSION_E, 'sweep-fence', sweepNow);
+    const sweepFence = await bind(SESSION_E, 'sweep-fence', sweepNow);
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_E, requestId: 'git-sweep',
+      projectId: PROJECT_ID, workerSessionId: SESSION_E, ...gitWriteCommand(SESSION_E), requestId: 'git-sweep',
       now: new Date(sweepNow.getTime() + 1_000),
     });
-    const loadExceededUsage = async () => ({ ...zeroUsage, total_tokens: 1_001 });
+    const loadZeroUsage = async () => zeroUsage;
     expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 2_000), 100, loadExceededUsage,
+      database, new Date(sweepNow.getTime() + 2_000), 100, loadZeroUsage,
     )).toBe(0);
     expect(await tokenStatus(SESSION_E)).toBe('active');
-    // Simulate a crashed proxy: no settlement arrives. The lease equals the
-    // immutable worker deadline, so equality lets the wall-bound sweep finish.
+    // Simulate a crashed proxy and an unavailable provider. Deadline equality
+    // is not settlement, so the task stays nonterminal behind the live fence.
+    // The same transaction revokes runtime authority and queues both commands.
     expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 600_000), 100, loadExceededUsage,
+      database, new Date(sweepNow.getTime() + 600_000), 100, loadZeroUsage,
+    )).toBe(0);
+    expect(await tokenStatus(SESSION_E)).toBe('revoked');
+    const quiesced = await getProjectTask(database, {
+      projectId: PROJECT_ID, taskId: sweepFence.taskId,
+    });
+    expect(quiesced).toMatchObject({
+      status: 'doing',
+      livenessBlocker: 'max_wall_seconds exceeded',
+      gitWriteState: 'live',
+    });
+    await expect(admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_E,
+      requestId: 'prompt-after-quiesce',
+      usage: zeroUsage,
+      now: new Date(sweepNow.getTime() + 600_001),
+    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    const quiesceCommands = (await database.select().from(sessionLifecycleCommands)).filter(
+      (row) => row.idempotencyKey === `task-stop:${sweepFence.taskId}:${SESSION_E}` ||
+        row.idempotencyKey === `task-bound-escalate:${sweepFence.taskId}`,
+    );
+    expect(quiesceCommands).toHaveLength(2);
+
+    expect(await sweepTaskLivenessBounds(
+      database, new Date(sweepNow.getTime() + 630_000), 100, loadZeroUsage,
+    )).toBe(0);
+    expect(await reconcileProjectTaskGitWrites(database, {
+      now: new Date(sweepNow.getTime() + 630_001),
+      reconcileRemoteRef: async () => { throw new Error('provider unavailable'); },
+    })).toBe(0);
+    expect(await tokenStatus(SESSION_E)).toBe('revoked');
+    expect(await reconcileProjectTaskGitWrites(database, {
+      now: new Date(sweepNow.getTime() + 630_001),
+      reconcileRemoteRef: async () => false,
+    })).toBe(0);
+    expect(await tokenStatus(SESSION_E)).toBe('revoked');
+
+    const observed: string[] = [];
+    expect(await reconcileProjectTaskGitWrites(database, {
+      now: new Date(sweepNow.getTime() + 630_001),
+      reconcileRemoteRef: async (target) => {
+        observed.push(target.ref);
+        return true;
+      },
+    })).toBe(1);
+    expect(observed).toEqual([`refs/heads/${SESSION_E}`]);
+    expect(await sweepTaskLivenessBounds(
+      database, new Date(sweepNow.getTime() + 630_002), 100, loadZeroUsage,
     )).toBe(1);
     expect(await tokenStatus(SESSION_E)).toBe('revoked');
   });

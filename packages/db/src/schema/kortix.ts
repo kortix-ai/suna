@@ -878,9 +878,13 @@ export const projectTasks = kortixSchema.table(
     /** Durable single-request gateway fence. Cleared only by its matching request. */
     livenessAdmissionId: text('liveness_admission_id'),
     livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
-    /** Durable single receive-pack fence. It expires at the immutable worker deadline. */
+    /** Durable receive-pack state. Only `settled` proves upstream can no longer mutate. */
     gitWriteRequestId: text('git_write_request_id'),
     gitWriteLeaseExpiresAt: timestamp('git_write_lease_expires_at', { withTimezone: true }),
+    gitWriteState: varchar('git_write_state', { length: 16 }),
+    gitWriteRef: text('git_write_ref'),
+    gitWriteOldOid: varchar('git_write_old_oid', { length: 64 }),
+    gitWriteNewOid: varchar('git_write_new_oid', { length: 64 }),
     /** Rotation cursor for starvation-free recurring bounded-worker sweeps. */
     livenessLastSweptAt: timestamp('liveness_last_swept_at', { withTimezone: true }),
     noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
@@ -918,6 +922,9 @@ export const projectTasks = kortixSchema.table(
     index('idx_project_tasks_liveness_sweep')
       .on(table.status, table.livenessLastSweptAt, table.taskId)
       .where(sql`${table.livenessWorkerSessionId} is not null`),
+    index('idx_project_tasks_git_write_reconcile')
+      .on(table.gitWriteLeaseExpiresAt, table.taskId)
+      .where(sql`${table.gitWriteState} = 'live'`),
     uniqueIndex('idx_project_tasks_active_claim_session')
       .on(table.claimSessionId)
       .where(sql`${table.status} = 'doing' and ${table.claimSessionId} is not null`),
@@ -968,12 +975,28 @@ export const projectTasks = kortixSchema.table(
       sql`${table.livenessAdmissionExpiresAt} is null or ${table.livenessAdmissionExpiresAt} <= ${table.livenessDeadlineAt}`,
     ),
     check(
-      'project_tasks_git_write_lease_pair',
-      sql`num_nonnulls(${table.gitWriteRequestId}, ${table.gitWriteLeaseExpiresAt}) in (0, 2)`,
+      'project_tasks_git_write_complete',
+      sql`num_nonnulls(
+        ${table.gitWriteRequestId}, ${table.gitWriteLeaseExpiresAt}, ${table.gitWriteState},
+        ${table.gitWriteRef}, ${table.gitWriteOldOid}, ${table.gitWriteNewOid}
+      ) in (0, 2, 6)`,
     ),
     check(
-      'project_tasks_git_write_lease_within_worker_deadline',
-      sql`${table.gitWriteLeaseExpiresAt} is null or ${table.gitWriteLeaseExpiresAt} <= ${table.livenessDeadlineAt}`,
+      'project_tasks_git_write_state_valid',
+      sql`${table.gitWriteState} is null or ${table.gitWriteState} in ('live', 'settled')`,
+    ),
+    check(
+      'project_tasks_git_write_ref_valid',
+      sql`${table.gitWriteRef} is null or ${table.gitWriteRef} = 'refs/heads/' || ${table.livenessWorkerSessionId}`,
+    ),
+    check(
+      'project_tasks_git_write_oid_valid',
+      sql`${table.gitWriteOldOid} is null or (
+        ${table.gitWriteOldOid} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'
+        and ${table.gitWriteNewOid} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'
+        and length(${table.gitWriteOldOid}) = length(${table.gitWriteNewOid})
+        and ${table.gitWriteNewOid} !~ '^0+$'
+      )`,
     ),
     check(
       'project_tasks_git_write_requires_doing_worker',
@@ -989,7 +1012,11 @@ export const projectTasks = kortixSchema.table(
         ${table.livenessAdmissionId},
         ${table.livenessAdmissionExpiresAt},
         ${table.gitWriteRequestId},
-        ${table.gitWriteLeaseExpiresAt}
+        ${table.gitWriteLeaseExpiresAt},
+        ${table.gitWriteState},
+        ${table.gitWriteRef},
+        ${table.gitWriteOldOid},
+        ${table.gitWriteNewOid}
       ) = 0`,
     ),
     check(

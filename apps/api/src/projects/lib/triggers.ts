@@ -6,7 +6,11 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
-import { sweepTaskLivenessBounds } from '../generated-state-store';
+import {
+  reconcileProjectTaskGitWrites,
+  sweepTaskLivenessBounds,
+} from '../generated-state-store';
+import { reconcileProjectTaskGitRemoteRef } from '../../git-proxy/task-write-reconcile';
 import { getSessionResourceUsage } from '../../shared/session-costs';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
@@ -1259,8 +1263,16 @@ export async function drainTriggerExecutionQueue(
 
 export async function runTaskLivenessSweep(
   leader = isLeader(),
-  sweep: () => Promise<number> = () =>
-    sweepTaskLivenessBounds(db, new Date(), 100, getSessionResourceUsage),
+  sweep: () => Promise<number> = async () => {
+    const now = new Date();
+    // Reconcile expired receive-pack requests first. A terminal liveness sweep
+    // in this tick can then proceed only from a confirmed remote observation.
+    await reconcileProjectTaskGitWrites(db, {
+      now,
+      reconcileRemoteRef: reconcileProjectTaskGitRemoteRef,
+    });
+    return sweepTaskLivenessBounds(db, now, 100, getSessionResourceUsage);
+  },
 ): Promise<number | null> {
   if (!leader || taskLivenessSweepRunning) return null;
   taskLivenessSweepRunning = true;
