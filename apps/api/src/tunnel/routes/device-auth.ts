@@ -22,7 +22,7 @@ import { config } from '../../config';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { requireUserCredential } from './auth';
-import { reconcileComputerConnectors } from '../../executor/sync';
+import { reconcileComputerConnectors } from '../../connectors/sync';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 
@@ -374,7 +374,7 @@ export function createDeviceAuthRouter() {
         })
         .where(eq(tunnelDeviceAuthRequests.id, row.id));
 
-      // Materialize the account's `computer` Executor connector (first machine).
+      // Materialize the account's `computer` connector (first machine).
       void reconcileComputerConnectors(accountId);
 
       return c.json({ success: true, tunnelId: connection.tunnelId });

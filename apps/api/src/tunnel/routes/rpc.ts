@@ -47,7 +47,7 @@ export function createRpcRouter() {
 
       // Ownership / existence: scoped to the caller's account (personal or team).
       // The shared core then handles rate-limit / capability / permission /
-      // relay / audit — the same path the Executor's `computer` connector uses.
+      // relay / audit — the same path the Connector's `computer` connector uses.
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)

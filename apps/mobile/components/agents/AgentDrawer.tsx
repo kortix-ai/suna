@@ -44,16 +44,13 @@ import { EntityList } from '@/components/shared/EntityList';
 import { useSearch } from '@/lib/utils/search';
 import { useAvailableModels } from '@/lib/models';
 import type { Agent, Model } from '@/api/types';
-import {
-  AppBubble,
-  IntegrationsPageContent,
-} from '@/components/settings/IntegrationsPage';
-import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
-import { ComposioAppDetailContent } from '@/components/settings/integrations/ComposioAppDetail';
-import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
-import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
-import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
-import { CustomMcpToolsContent } from '@/components/settings/integrations/CustomMcpToolsSelector';
+import { ConnectionsPageContent } from '@/components/settings/ConnectionsPage';
+import { ComposioAppsContent } from '@/components/settings/connections/ComposioAppsList';
+import { ComposioAppDetailContent } from '@/components/settings/connections/ComposioAppDetail';
+import { ComposioConnectorContent } from '@/components/settings/connections/ComposioConnector';
+import { ComposioToolsContent } from '@/components/settings/connections/ComposioToolsSelector';
+import { CustomMcpContent } from '@/components/settings/connections/CustomMcpDialog';
+import { CustomMcpToolsContent } from '@/components/settings/connections/CustomMcpToolsSelector';
 import { log } from '@/lib/logger';
 import { getSheetBg } from '@/lib/theme-colors';
 
@@ -63,7 +60,7 @@ interface AgentDrawerProps {
   onCreateAgent?: () => void;
   onOpenWorkerConfig?: (
     workerId: string,
-    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+    view?: 'instructions' | 'tools' | 'connections' | 'triggers'
   ) => void;
   onDismiss?: () => void;
 }
@@ -71,7 +68,7 @@ interface AgentDrawerProps {
 type ViewState =
   | 'main'
   | 'agents'
-  | 'integrations'
+  | 'connections'
   | 'composio'
   | 'composio-detail'
   | 'composio-connector'
@@ -130,11 +127,11 @@ export function AgentDrawer({
   const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
   const isOpeningRef = React.useRef(false);
-  const timeoutRef = React.useRef<number | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
   const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);
-  const [selectedComposioProfile, setSelectedComposioProfile] = React.useState<any>(null);
+  const [selectedComposioConnection, setSelectedComposioConnection] = React.useState<any>(null);
   const [customMcpConfig, setCustomMcpConfig] = React.useState<{
     serverName: string;
     url: string;
@@ -235,7 +232,7 @@ export function AgentDrawer({
     [selectAgent, navigateToView]
   );
 
-  const handleIntegrationsPress = React.useCallback(() => {
+  const handleConnectionsPress = React.useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (hasFreeTier) {
       handleUpgradeRequired();
@@ -245,7 +242,7 @@ export function AgentDrawer({
       Alert.alert('No Worker Selected', 'Please select a worker first.', [{ text: 'OK' }]);
       return;
     }
-    setCurrentView('integrations');
+    setCurrentView('connections');
   }, [selectedAgent, hasFreeTier, handleUpgradeRequired, advancedFeaturesEnabled]);
 
   const renderBackdrop = React.useCallback(
@@ -286,11 +283,11 @@ export function AgentDrawer({
         )}
       </View>
 
-      {/* Integrations */}
+      {/* Connections */}
       <Pressable
-        onPress={handleIntegrationsPress}
+        onPress={handleConnectionsPress}
         style={({ pressed }) => [
-          styles.integrationsContainer,
+          styles.connectionsContainer,
           {
             backgroundColor: pressed 
               ? isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
@@ -299,19 +296,19 @@ export function AgentDrawer({
           },
         ]}
       >
-        <View style={styles.integrationsRow}>
-          <View style={[styles.integrationsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+        <View style={styles.connectionsRow}>
+          <View style={[styles.connectionsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             {hasFreeTier ? (
               <Lock size={18} color={colors.muted} strokeWidth={2} />
             ) : (
               <Plug size={18} color={colors.text} strokeWidth={2} />
             )}
           </View>
-          <View style={styles.integrationsTextContainer}>
-            <Text style={[styles.integrationsTitle, { color: colors.text }]}>
+          <View style={styles.connectionsTextContainer}>
+            <Text style={[styles.connectionsTitle, { color: colors.text }]}>
               Connect your Apps
             </Text>
-            <Text style={[styles.integrationsSubtitle, { color: colors.muted }]}>
+            <Text style={[styles.connectionsSubtitle, { color: colors.muted }]}>
               {hasFreeTier ? 'Upgrade to unlock' : 'Google, Slack, GitHub & more'}
             </Text>
           </View>
@@ -424,7 +421,7 @@ export function AgentDrawer({
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
-                    onOpenWorkerConfig(selectedAgentId, 'integrations');
+                    onOpenWorkerConfig(selectedAgentId, 'connections');
                     onClose?.();
                   }
                 }}
@@ -545,7 +542,7 @@ export function AgentDrawer({
       {['composio', 'composio-detail', 'composio-connector'].includes(currentView) ? (
         currentView === 'composio' ? (
           <ComposioAppsContent
-            onBack={() => setCurrentView('integrations')}
+            onBack={() => setCurrentView('connections')}
             onAppSelect={(app) => {
               setSelectedComposioApp(app);
               setCurrentView('composio-detail');
@@ -557,14 +554,14 @@ export function AgentDrawer({
           <ComposioAppDetailContent
             app={selectedComposioApp}
             onBack={() => setCurrentView('composio')}
-            onComplete={() => setCurrentView('integrations')}
+            onComplete={() => setCurrentView('connections')}
             onNavigateToConnector={(app) => {
               setSelectedComposioApp(app);
               setCurrentView('composio-connector');
             }}
-            onNavigateToTools={(app, profile) => {
+            onNavigateToTools={(app, connection) => {
               setSelectedComposioApp(app);
-              setSelectedComposioProfile(profile);
+              setSelectedComposioConnection(connection);
               setCurrentView('composio-tools');
             }}
             noPadding={true}
@@ -574,10 +571,10 @@ export function AgentDrawer({
           <ComposioConnectorContent
             app={selectedComposioApp}
             onBack={() => setCurrentView('composio-detail')}
-            onComplete={() => setCurrentView('integrations')}
-            onNavigateToTools={(app, profile) => {
+            onComplete={() => setCurrentView('connections')}
+            onNavigateToTools={(app, connection) => {
               setSelectedComposioApp(app);
-              setSelectedComposioProfile(profile);
+              setSelectedComposioConnection(connection);
               setCurrentView('composio-tools');
             }}
             mode="full"
@@ -590,15 +587,15 @@ export function AgentDrawer({
         <BottomSheetView style={styles.toolsView}>
           {currentView === 'composio-tools' &&
             selectedComposioApp &&
-            selectedComposioProfile &&
+            selectedComposioConnection &&
             selectedAgent && (
               <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)} style={{ flex: 1 }}>
                 <ComposioToolsContent
                   app={selectedComposioApp}
-                  profile={selectedComposioProfile}
+                  connection={selectedComposioConnection}
                   agentId={selectedAgent.agent_id}
                   onBack={() => setCurrentView('composio-detail')}
-                  onComplete={() => setCurrentView('integrations')}
+                  onComplete={() => setCurrentView('connections')}
                   noPadding={true}
                 />
               </Animated.View>
@@ -612,10 +609,10 @@ export function AgentDrawer({
                 onBack={() => setCurrentView('customMcp')}
                 onComplete={(enabledTools) => {
                   Alert.alert(
-                    t('integrations.customMcp.toolsConfigured'),
-                    t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length })
+                    t('connections.customMcp.toolsConfigured'),
+                    t('connections.customMcp.toolsConfiguredMessage', { count: enabledTools.length })
                   );
-                  setCurrentView('integrations');
+                  setCurrentView('connections');
                 }}
                 noPadding={true}
               />
@@ -638,9 +635,9 @@ export function AgentDrawer({
               {renderAgentsView()}
             </Animated.View>
           )}
-          {currentView === 'integrations' && (
+          {currentView === 'connections' && (
             <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
-              <IntegrationsPageContent
+              <ConnectionsPageContent
                 onBack={() => setCurrentView('main')}
                 noPadding={true}
                 onNavigate={(view) => setCurrentView(view as ViewState)}
@@ -651,7 +648,7 @@ export function AgentDrawer({
           {currentView === 'customMcp' && (
             <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
               <CustomMcpContent
-                onBack={() => setCurrentView('integrations')}
+                onBack={() => setCurrentView('connections')}
                 noPadding={true}
                 onSave={(config) => {
                   setCustomMcpConfig({
@@ -706,33 +703,33 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 4,
   },
-  integrationsContainer: {
+  connectionsContainer: {
     borderRadius: 14,
     borderWidth: 1,
   },
-  integrationsRow: {
+  connectionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 14,
     gap: 12,
   },
-  integrationsIcon: {
+  connectionsIcon: {
     width: 40,
     height: 40,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  integrationsTextContainer: {
+  connectionsTextContainer: {
     flex: 1,
     gap: 2,
   },
-  integrationsTitle: {
+  connectionsTitle: {
     fontSize: 15,
     fontFamily: 'Roobert-Medium',
   },
-  integrationsSubtitle: {
+  connectionsSubtitle: {
     fontSize: 12,
     fontFamily: 'Roobert',
   },

@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -27,23 +28,33 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
-import { Icon } from '@/features/icon/icon';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { Slack } from '@/features/icon/icons/slack';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import type { Command } from '@kortix/sdk/react';
+import {
+  CAPABILITY_TABS,
+  capabilityTabHref,
+  type CapabilityTab,
+} from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
+  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
-  type SandboxTemplate,
 } from '@kortix/sdk';
-import { chalkColors } from '@kortix/shared';
+import type { Command } from '@kortix/sdk/react';
+import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
@@ -66,25 +77,17 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const {
-    state: sidebarState,
-    toggleSidebar,
-    peek,
-    peekEnter,
-    peekLeave,
-    isMobile: isMobileViewport,
-  } = useSidebar();
-  const sidebarToggleLabel =
-    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
-  // Same rule as the session header: on desktop this toggle only brings a
-  // hidden panel back, because the collapse control lives in the panel's own
-  // header (ProjectSidebar) — so it self-hides while the panel is docked.
-  // Mobile keeps it unconditionally: `sidebarState` there tracks the desktop
-  // cookie, not the Sheet, so gating on it would strand the only way to open
-  // the sheet on this page.
-  const showSidebarToggle = isMobileViewport || sidebarState !== 'expanded';
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
+  // Shared gate — see sidebar-opener.ts. This used to be a local
+  // `isMobileViewport || state !== 'expanded'`, which is true on the desktop
+  // shell too: the button below is `absolute top-2 left-2`, so on macOS it
+  // rendered directly on top of the traffic lights, alongside the shell's own
+  // opener at x=72. The shell owns that corner; this one stands down there.
+  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
@@ -95,6 +98,11 @@ export function ProjectHome({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
+  const metaSelected = isMetaAgentName(selectedAgent);
+
+  useEffect(() => {
+    if (metaSelected) setSelectedSlug(null);
+  }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
@@ -119,10 +127,14 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        ...(selectedSlug ? { sandbox_slug: selectedSlug } : {}),
+        ...(metaSelected
+          ? { sandbox_slug: META_SANDBOX_SLUG }
+          : selectedSlug
+            ? { sandbox_slug: selectedSlug }
+            : {}),
       });
     },
-    [selectedSlug, onSend],
+    [metaSelected, selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -207,8 +219,11 @@ export function ProjectHome({
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )}
             prefill={prefill}
+            onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={
-              showSandboxPicker ? (
+              metaSelected ? (
+                <MetaRuntimeIndicator />
+              ) : showSandboxPicker ? (
                 <SandboxPicker
                   items={sandboxItems}
                   activeSlug={activeSlug}
@@ -221,6 +236,17 @@ export function ProjectHome({
         }
       />
     </div>
+  );
+}
+
+function MetaRuntimeIndicator() {
+  return (
+    <Hint label="Meta uses a fixed minimal sandbox. It starts specialized sessions for project work.">
+      <span className="text-muted-foreground inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium">
+        <Container className="size-3.5" />
+        Meta runtime
+      </span>
+    </Hint>
   );
 }
 
@@ -273,7 +299,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections />
+        <ProjectHomeSections projectId={projectId} />
       </div>
     </div>
   );
@@ -430,14 +456,21 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  section: CustomizeSection;
+  // Agents, Connectors and Skills graduated out of Customize into their own
+  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
+  // carry a capability tab key instead of a CustomizeSection and navigate
+  // there directly.
+  section: CustomizeSection | CapabilityTab['key'];
 };
+
+const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
+  CAPABILITY_TABS.some((tab) => tab.key === section);
 
 /** Static navigation does not fetch counts before the user opens Customize. */
 const PROJECT_SETUP_TILES: SetupTile[] = [
   {
     icon: HiOutlineViewGrid,
-    title: 'Integrations',
+    title: 'Connectors',
     desc: 'Connect tools your agent can act in.',
     section: 'connectors',
   },
@@ -454,7 +487,7 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     section: 'skills',
   },
   {
-    icon: Icon.Slack,
+    icon: Slack,
     title: 'Slack',
     desc: 'Run this project right from chat.',
     section: 'channels',
@@ -466,15 +499,19 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     section: 'members',
   },
   {
-    icon: Icon.Kortix,
+    icon: Kortix,
     title: 'Agent',
     desc: 'Shape how your agent thinks and acts.',
-    section: 'agents',
+    // 'agent' (the route segment), not the old 'agents' overlay section —
+    // `isCapabilityTabKey` matches on the key, so the wrong spelling would
+    // silently fall through to `openCustomize('agents')` and open nothing.
+    section: 'agent',
   },
 ];
 
-function ProjectHomeSections() {
+function ProjectHomeSections({ projectId }: { projectId: string }) {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
   const tiles = PROJECT_SETUP_TILES;
 
   return (
@@ -487,7 +524,11 @@ function ProjectHomeSections() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => openCustomize(section)}
+              onClick={() =>
+                isCapabilityTabKey(section)
+                  ? router.push(capabilityTabHref(projectId, section))
+                  : openCustomize(section)
+              }
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />

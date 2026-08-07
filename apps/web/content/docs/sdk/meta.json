@@ -1,4 +1,4 @@
 {
   "title": "SDK",
-  "pages": ["index", "example", "auth", "sessions", "react", "reference"]
+  "pages": ["index", "example", "auth", "sessions", "apps", "react", "reference"]
 }

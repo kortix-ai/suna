@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { TypedTitle } from '@/components/ui/typed-title';
-import { Icon } from '@/features/icon/icon';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import {
   getSessionDisplayTitle,
   shortRelative,
@@ -42,8 +43,8 @@ const SESSION_RELATIVE_TIME_CLASS =
 
 const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string }>> = {
   chat: ChatTeardropTextIcon,
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: EnvelopeIcon,
   schedule: CalendarDotsIcon,
   webhook: WebhooksLogoIcon,

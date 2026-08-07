@@ -20,7 +20,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config'
@@ -139,6 +139,25 @@ describe('syncOpencodeConfigDirToBase', () => {
 
     expect(result).toEqual({ synced: false, skipped: 'local commits' })
     expect(agentText()).toBe('MY COMMITTED PROMPT\n')
+  })
+
+  test('preserves a conflicting config commit and unrelated dirty work together', async () => {
+    write(work, AGENT, 'SESSION PROMPT\n')
+    git(work, 'add', AGENT)
+    git(work, 'commit', '-qm', 'session config')
+    const head = git(work, 'rev-parse', 'HEAD')
+    write(work, 'app.ts', 'export const x = 999\n')
+    write(work, 'notes/untracked.txt', 'keep me\n')
+
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: false, skipped: 'local commits' })
+    expect(git(work, 'rev-parse', 'HEAD')).toBe(head)
+    expect(git(work, 'branch', '--show-current')).toBe('ses-1111-2222')
+    expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(false)
+    expect(agentText()).toBe('SESSION PROMPT\n')
+    expect(readFileSync(join(work, 'app.ts'), 'utf8')).toBe('export const x = 999\n')
+    expect(readFileSync(join(work, 'notes/untracked.txt'), 'utf8')).toBe('keep me\n')
   })
 
   test('an untracked file under the config dir also blocks it', async () => {

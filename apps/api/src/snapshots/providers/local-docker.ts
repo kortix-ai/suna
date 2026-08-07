@@ -26,6 +26,8 @@ import {
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   stageBuildContext,
+  stageAppBuildContext,
+  stageMetaBuildContext,
 } from '../build-context';
 import { getDockerClient, localDockerSocketLooksPresent } from '../../platform/providers/local-docker';
 import { normalizeExistingProviderState } from './state';
@@ -74,7 +76,11 @@ class LocalDockerSnapshotAdapter implements SandboxProviderAdapter {
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const docker: Docker = getDockerClient();
-    const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
+    const ctx = input.runtimeProfile === 'app'
+      ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
+      : input.runtimeProfile === 'meta'
+      ? await stageMetaBuildContext()
+      : await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
     try {
       console.info(
         `[snapshots] ${input.snapshotName}: building (slug="${input.slug}", provider=local-docker, ` +

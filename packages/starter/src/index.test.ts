@@ -225,6 +225,7 @@ describe('getStarterFiles', () => {
       // Design quality for every artifact below (CSS, PPT, matplotlib, PDF).
       'design-foundations',
       // Documents & decks.
+      'convert-documents-to-markdown',
       'docx',
       'pdf',
       'presentations',
@@ -282,7 +283,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',

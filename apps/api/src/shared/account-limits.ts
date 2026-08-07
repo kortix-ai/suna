@@ -182,3 +182,33 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
 export function clearAccountLimitCache() {
   accountLimitCache.clear();
 }
+
+/**
+ * The tier the LIMIT layer will actually use, given possibly-stale tier data.
+ *
+ * `resolveAccountSessionLimit` coerces a paying per-seat account whose stored
+ * `tier` is not a paid one to `per_seat`, so stale tier data cannot gate a
+ * paying team as free. Anything that DISPLAYS a tier-derived limit has to apply
+ * the same rule or it shows a different number than the server enforces —
+ * exported here so there is one derivation instead of two.
+ */
+export function effectiveTierForLimits(
+  tier: string | null | undefined,
+  subscription: {
+    billingModel?: string | null;
+    stripeSubscriptionId?: string | null;
+    stripeSubscriptionStatus?: string | null;
+  } | null | undefined,
+): string {
+  const raw = tier ?? 'free';
+  if (
+    !isPaidTier(raw) &&
+    isPerSeatAccount(subscription?.billingModel) &&
+    !!subscription?.stripeSubscriptionId &&
+    subscription.stripeSubscriptionStatus !== 'canceled' &&
+    subscription.stripeSubscriptionStatus !== 'unpaid'
+  ) {
+    return 'per_seat';
+  }
+  return raw;
+}

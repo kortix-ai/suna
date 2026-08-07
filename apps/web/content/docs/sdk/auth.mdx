@@ -18,6 +18,10 @@ const kortix = createKortix({
 `backendUrl` and `getToken` are required. The SDK caches nothing: it calls
 `getToken` on every request, so your app owns token storage and refresh.
 
+Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
+separate source in the centralized audit log. This value identifies the client
+surface. It does not change the authenticated actor or their permissions.
+
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.

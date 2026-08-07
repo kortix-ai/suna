@@ -68,6 +68,37 @@ export interface CreateSandboxOpts {
    * cannot create persistent boxes.
    */
   autoStopInterval?: number;
+  /**
+   * Runtime contract hosted by the provider object. Missing means `session`
+   * for backward compatibility with every existing caller.
+   */
+  workloadType?: 'session' | 'app';
+  /** Provider-normalized App machine limits. Session snapshots retain their existing limits. */
+  resourceSpec?: {
+    cpuCores: number;
+    memoryGb: number;
+    diskGb: number;
+  };
+  /** Ports that the provider must make reachable through resolveIngress(). */
+  publishedPorts?: number[];
+}
+
+export function sandboxWorkloadType(opts: CreateSandboxOpts): 'session' | 'app' {
+  return opts.workloadType ?? 'session';
+}
+
+export function assertWorkloadCredential(
+  provider: ProviderName,
+  opts: CreateSandboxOpts,
+  envVars: Record<string, string>,
+): void {
+  const workloadType = sandboxWorkloadType(opts);
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  if (!envVars[required]) {
+    throw new Error(
+      `[${provider}] create() called without ${required} for ${workloadType} workload`,
+    );
+  }
 }
 
 export interface ProvisionResult {
@@ -164,6 +195,13 @@ export interface SandboxProvider {
   sandboxFacingApiOrigin?(): string;
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
+  /**
+   * Ensure the Kortix App supervisor is running after create or resume.
+   * Providers that honor the image ENTRYPOINT implement this as a no-op.
+   * Providers that replace ENTRYPOINT must start `/kortix/bin/kortix-appd`
+   * through their native process API. The operation must be idempotent.
+   */
+  ensureAppRuntimeStarted(externalId: string): Promise<void>;
   /**
    * FIX-A: boot a sandbox from an EXACT provider template id (not a name). The
    * boot path uses this to honor a project's activated

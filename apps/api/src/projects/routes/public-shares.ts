@@ -123,8 +123,8 @@ projectsApp.openapi(
     ) {
       return c.json(
         {
-          error: 'Sessions using a personal connector profile cannot be shared publicly',
-          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+          error: 'Sessions using a personal connection cannot be shared publicly',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
         },
         409,
       );

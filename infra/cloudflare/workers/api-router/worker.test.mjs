@@ -91,6 +91,69 @@ describe('api-router worker', () => {
     );
   });
 
+  test('injects the environment secret as one JSON blob instead of per-key selectors', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const apiEntry = readFileSync(
+      new URL('../../../../apps/api/src/index.ts', import.meta.url),
+      'utf8',
+    );
+    const gatewayEntry = readFileSync(
+      new URL('../../../../apps/llm-gateway/src/main.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain('name: "KORTIX_ENV_JSON"');
+    expect(ecsDeploy).not.toContain('keys\n      | map({ name: .');
+    expect(apiEntry.indexOf("import './environment-secret';")).toBeLessThan(
+      apiEntry.indexOf("import './lib/sentry';"),
+    );
+    expect(gatewayEntry.indexOf("import './environment-secret';")).toBeLessThan(
+      gatewayEntry.indexOf("import { config } from './config';"),
+    );
+  });
+
+  test('requires an explicit database migration gate for live production ECS rolls', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const prodWorkflow = readFileSync(
+      new URL('../../../../.github/workflows/deploy-prod.yml', import.meta.url),
+      'utf8',
+    );
+    const shadowWorkflow = readFileSync(
+      new URL(
+        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain('refusing live $ENV rollout without --database-migrated');
+    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(2);
+    expect(shadowWorkflow.match(/--database-migrated/g)?.length).toBe(2);
+  });
+
+  test('keeps production API tasks at the incident-tested 4 GiB and three-task floor', () => {
+    const prodTerraform = readFileSync(
+      new URL('../../../terraform/environments/prod/main.tf', import.meta.url),
+      'utf8',
+    );
+    const shadowTerraform = readFileSync(
+      new URL('../../../terraform/environments/prod-us-east-2-shadow/main.tf', import.meta.url),
+      'utf8',
+    );
+
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?desired_count\s*=\s*3/);
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?secrets_blob_arn\s*=\s*var\.secret_arn/);
+  });
+
   test('runs privileged US workflows only from the protected prod branch', () => {
     const workflows = [
       'activate-prod-us-east-2-writers.yml',

@@ -366,7 +366,7 @@ git project -> session -> isolated computer + session branch
           lean: 'both',
         },
         {
-          dimension: 'Client integration',
+          dimension: 'Client connection',
           them: 'Core HTTP API; deployment contract package',
           kortix: 'Published TypeScript SDK + CLI + REST',
         },
@@ -536,7 +536,7 @@ npm exec qm -- outputs --json`,
     },
     {
       type: 'p',
-      text: 'They could coexist, but no supported integration exists today. QM could own the conversational scope while Kortix runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as an integration project, not a configuration flag.',
+      text: 'They could coexist, but no supported connection exists today. QM could own the conversational scope while Kortix runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as a connector project, not a configuration flag.',
     },
     { type: 'h2', text: 'The real conclusion' },
     {
@@ -1116,7 +1116,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the project files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors--connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
+      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the project files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
     },
     { type: 'h2', text: 'Server-side credentials change the failure mode' },
     {
@@ -1125,7 +1125,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is the model behind the Kortix Executor. Every session gets a scoped Executor token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
+      text: 'That is the model behind the Kortix Connector. Every session gets a scoped Connector token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
     },
     {
       type: 'callout',
@@ -1139,7 +1139,7 @@ agents:
     {
       type: 'ul',
       items: [
-        '**It is too broad.** The key usually carries every permission the integration owner had, not the minimum action the agent needs.',
+        '**It is too broad.** The key usually carries every permission the connection owner had, not the minimum action the agent needs.',
         '**It is hard to attribute.** Downstream systems see the shared key, not the agent, session, person, or approval that caused the call.',
         '**It is hard to revoke safely.** Rotating a shared key breaks every workflow using it; leaving it in place keeps the blast radius large.',
         '**It hides policy in code and prompts.** Security reviewers need declarative grants and logs, not “the agent instructions say don’t delete things.”',
@@ -1172,7 +1172,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more integrations. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
+      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more connectors. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
     },
     {
       type: 'cta',
@@ -1280,7 +1280,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     { type: 'h2', text: 'Why consultancies feel this first' },
     {
       type: 'p',
-      text: 'Consultancies and systems integrators are where the repeatability pressure shows up fastest. They do not need one beautiful demo. They need a way to deploy the same architecture across many clients, many departments, and many compliance profiles without rebuilding the plumbing every time.',
+      text: 'Consultancies and systems connectors are where the repeatability pressure shows up fastest. They do not need one beautiful demo. They need a way to deploy the same architecture across many clients, many departments, and many compliance profiles without rebuilding the plumbing every time.',
     },
     {
       type: 'ul',
@@ -1532,7 +1532,7 @@ const kortixVsPoetic: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'What Kortix does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Executor gateway, and the typed client for it is published as [`@kortix/executor-sdk`](https://www.npmjs.com/package/@kortix/executor-sdk).',
+      text: 'What Kortix does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Connector gateway, and the typed client is part of [`@kortix/sdk`](https://www.npmjs.com/package/@kortix/sdk).',
     },
     { type: 'h2', text: 'What "verifiable" means here, concretely' },
     {
@@ -1545,16 +1545,18 @@ const kortixVsPoetic: BlogPostEntry = {
     },
     {
       type: 'code',
-      code: `import { createExecutorClient } from '@kortix/executor-sdk';
+      code: `import { createKortix } from '@kortix/sdk';
 
-const executor = createExecutorClient({
-  apiUrl: process.env.KORTIX_API_URL!,
-  token: process.env.KORTIX_CLI_TOKEN!,
-  projectId: process.env.KORTIX_PROJECT_ID,
+const kortix = createKortix({
+  backendUrl: process.env.KORTIX_API_URL!,
+  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
 });
+const connectors = process.env.KORTIX_PROJECT_ID
+  ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
+  : kortix.connectors;
 
 // The catalog is the contract. Refuse to run if it drifted.
-const action = await executor.describe('stripe.close_dispute');
+const action = await connectors.describe('stripe.close_dispute');
 if (action?.risk !== 'write') {
   throw new Error(\`refusing to run: catalog says \${action?.risk ?? 'unknown'}\`);
 }`,
@@ -1565,13 +1567,13 @@ if (action?.risk !== 'write') {
     },
     {
       type: 'code',
-      code: `import { type ExecutorCallResult } from '@kortix/executor-sdk';
-// \`executor\` is the client created above.
+      code: `import { type ConnectorCallResult } from '@kortix/sdk';
+// \`connectors\` is the client created above.
 
 type Dispute = { id: string; amount_cents: number };
 
 // 1. Read. risk: 'read' — the gateway never gates this.
-const open = await executor.call<{ disputes: Dispute[] }>('stripe', 'list_disputes', {
+const open = await connectors.call<{ disputes: Dispute[] }>('stripe.list_disputes', {
   status: 'needs_response',
   limit: 50,
 });
@@ -1582,7 +1584,7 @@ for (const dispute of open.data?.disputes ?? []) {
   if (dispute.amount_cents > 500_00) continue;
 
   // 3. Act. A gated write returns one approval handoff immediately.
-  const result: ExecutorCallResult = await executor.call('stripe', 'close_dispute', {
+  const result: ConnectorCallResult = await connectors.call('stripe.close_dispute', {
     dispute: dispute.id,
   });
 
@@ -1596,11 +1598,11 @@ for (const dispute of open.data?.disputes ?? []) {
     },
     {
       type: 'callout',
-      text: 'Both snippets above type-check under `strict` against the published `@kortix/executor-sdk` source, and the package’s own unit suite covers route selection, the call envelope, error mapping and catalog flattening. The approval handoff, risk classification and audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
+      text: 'Both snippets above type-check under `strict` against the published `@kortix/sdk` source, and the package unit suite covers route selection, the call envelope, error mapping and catalog flattening. The approval handoff, risk classification and audit row are enforced in the gateway, not in this client — a script cannot opt out of them by not calling them.',
     },
     {
       type: 'p',
-      text: 'The honest scope note: `@kortix/executor-sdk` is a typed client for the action boundary. It is not a workflow compiler and it does not make your workflow deterministic. It makes the *edges* of your workflow legible. The determinism you get is the determinism of the TypeScript you wrote around it. That is a weaker guarantee than Poetic’s and a more general one.',
+      text: 'The honest scope note: the Connector client in `@kortix/sdk` is a typed client for the action boundary. It is not a workflow compiler and it does not make your workflow deterministic. It makes the *edges* of your workflow legible. The determinism you get is the determinism of the TypeScript you wrote around it. That is a weaker guarantee than Poetic’s and a more general one.',
     },
     { type: 'h2', text: 'Now the part that is actually different: ownership' },
     {
@@ -1620,7 +1622,7 @@ for (const dispute of open.data?.disputes ?? []) {
     },
     {
       type: 'p',
-      text: 'Concretely: if Kortix disappeared tomorrow, your skills are still markdown, your logic is still TypeScript, your manifest is still YAML, and the repo still clones. The Executor gateway is the piece you would have to replace, and its client is a 209-line file whose surface is five methods. That asymmetry — a lot of durable artifact, a small replaceable runtime — is the entire ownership argument, and it is the reason we think it is worth stating plainly rather than dressing up.',
+      text: 'Concretely: if Kortix disappeared tomorrow, your skills are still markdown, your logic is still TypeScript, your manifest is still YAML, and the repo still clones. The Connector gateway is the piece you would have to replace, and its client is a 209-line file whose surface is five methods. That asymmetry — a lot of durable artifact, a small replaceable runtime — is the entire ownership argument, and it is the reason we think it is worth stating plainly rather than dressing up.',
     },
     { type: 'h2', text: 'Where this comparison does not favour us' },
     {
@@ -2040,7 +2042,7 @@ $ kortix hosts use cloud
     },
     {
       type: 'p',
-      text: 'None of the above is a roadmap item. Every layer runs today, and every page it points at is written against the code rather than the pitch. The long form on each layer: [company as code](/company-as-code), [agents and skills](/agents-and-skills), [the agent computer](/agent-computer), [connectors](/integrations), [channels](/channels), [automations](/automations), [security](/security) and [self-hosting](/self-hosted). The architecture argument behind all of it is in [AGI-ready architecture](/blog/agi-ready-architecture); the direct comparisons are [Claude Cowork](/blog/kortix-vs-claude-cowork), [Glean](/blog/kortix-vs-glean) and [Poetic](/blog/kortix-vs-poetic).',
+      text: 'None of the above is a roadmap item. Every layer runs today, and every page it points at is written against the code rather than the pitch. The long form on each layer: [company as code](/company-as-code), [agents and skills](/agents-and-skills), [the agent computer](/agent-computer), [connectors](/connectors), [channels](/channels), [automations](/automations), [security](/security) and [self-hosting](/self-hosted). The architecture argument behind all of it is in [AGI-ready architecture](/blog/agi-ready-architecture); the direct comparisons are [Claude Cowork](/blog/kortix-vs-claude-cowork), [Glean](/blog/kortix-vs-glean) and [Poetic](/blog/kortix-vs-poetic).',
     },
     {
       type: 'cta',
@@ -2064,7 +2066,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
   blocks: [
     {
       type: 'lead',
-      text: 'There is a convergence happening in AI right now that is barely discussed. Open any agent platform — Perplexity Computer, Manus, GenSpark, OpenClaw, Hermes, Claude Cowork, Notion AI, Lovable, Cursor, Replit — and architecturally, they are nearly identical. An LLM with tools, a sandboxed execution environment, a memory layer, and a multi-step loop. The marginal differences are UX, a handful of custom integrations, and how they handle memory. None of that takes more than a few months to replicate.',
+      text: 'There is a convergence happening in AI right now that is barely discussed. Open any agent platform — Perplexity Computer, Manus, GenSpark, OpenClaw, Hermes, Claude Cowork, Notion AI, Lovable, Cursor, Replit — and architecturally, they are nearly identical. An LLM with tools, a sandboxed execution environment, a memory layer, and a multi-step loop. The marginal differences are UX, a handful of custom connectors, and how they handle memory. None of that takes more than a few months to replicate.',
     },
     {
       type: 'p',
@@ -2497,7 +2499,7 @@ const theConvergenceOfAiProducts: BlogPostEntry = {
   blocks: [
     {
       type: 'lead',
-      text: 'Open any agent platform today. Perplexity Computer, Manus, GenSpark, OpenClaw, Hermes, Claude Cowork, Notion AI, Lovable, Cursor, Replit. Architecturally, they are nearly identical. An LLM with tools. A sandboxed execution environment. A memory layer. A multi-step loop. The differences are UX, a handful of custom integrations, and how they handle memory. None of that takes more than a few months to replicate.',
+      text: 'Open any agent platform today. Perplexity Computer, Manus, GenSpark, OpenClaw, Hermes, Claude Cowork, Notion AI, Lovable, Cursor, Replit. Architecturally, they are nearly identical. An LLM with tools. A sandboxed execution environment. A memory layer. A multi-step loop. The differences are UX, a handful of custom connectors, and how they handle memory. None of that takes more than a few months to replicate.',
     },
     {
       type: 'h2',
@@ -2505,7 +2507,7 @@ const theConvergenceOfAiProducts: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'This is not a criticism. It is a structural observation. The underlying architecture of an AI agent platform is converging to a minimum viable set of components. The LLM is a commodity. The sandbox is a commodity. The tool integration pattern is a commodity. The memory layer is the only variable, and even that is converging to a small set of approaches.',
+      text: 'This is not a criticism. It is a structural observation. The underlying architecture of an AI agent platform is converging to a minimum viable set of components. The LLM is a commodity. The sandbox is a commodity. The connector pattern is a commodity. The memory layer is the only variable, and even that is converging to a small set of approaches.',
     },
     {
       type: 'p',
@@ -2523,7 +2525,7 @@ const theConvergenceOfAiProducts: BlogPostEntry = {
       type: 'ul',
       items: [
         '**UX** \u2014 good design matters, but it is not a moat. A competitor can match it in a quarter.',
-        '**Custom tools** \u2014 integrations are implementation work, not differentiation. Everyone will build the same connectors.',
+        '**Custom tools** \u2014 connectors are implementation work, not differentiation. Everyone will build the same connectors.',
         '**Memory handling** \u2014 the approach converges. Short-term, long-term, episodic. Everyone is building the same abstractions.',
       ],
     },

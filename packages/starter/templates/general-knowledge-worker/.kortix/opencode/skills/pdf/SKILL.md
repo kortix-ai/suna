@@ -26,6 +26,7 @@ Use this for fast inspection. Move to the tool-specific sections below when you 
 
 | Task | Tool | Details |
 |------|------|---------|
+| Convert to Markdown | anydoc | `anydoc document.pdf -o out.md` — no OCR; scanned PDFs exit `1` |
 | Create PDF from scratch | ReportLab | [libraries/reportlab.md](libraries/reportlab.md) |
 | Read / merge / split / rotate / encrypt | pypdf | — |
 | Extract text and tables | pdfplumber | [libraries/pdfplumber.md](libraries/pdfplumber.md) |

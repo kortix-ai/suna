@@ -90,7 +90,7 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, sideOffset = 4, style, ...props }, ref) => {
+>(({ className, side, align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
@@ -100,6 +100,7 @@ const DropdownMenuSubContent = React.forwardRef<
       className={cn(
         DROPDOWN_PANEL,
         className,
+        "rounded-lg",
         side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
         side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
         side === 'left' && 'data-[side=left]:slide-in-from-right-2',

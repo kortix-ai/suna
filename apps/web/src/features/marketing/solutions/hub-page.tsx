@@ -146,7 +146,7 @@ export function SolutionsHubPage(): ReactNode {
               <Link href="/agent-computer">The agent computer</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
-              <Link href="/integrations">Connectors</Link>
+              <Link href="/connectors">Connectors</Link>
             </Button>
             <Button size="lg" variant="secondary" asChild>
               <Link href="/security">Security</Link>

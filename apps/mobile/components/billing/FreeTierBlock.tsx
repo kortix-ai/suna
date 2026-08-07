@@ -16,7 +16,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export type FreeTierBlockVariant = 'integrations' | 'triggers' | 'automation' | 'custom';
+export type FreeTierBlockVariant = 'connections' | 'triggers' | 'automation' | 'custom';
 
 interface FreeTierBlockProps {
   variant?: FreeTierBlockVariant;
@@ -28,8 +28,8 @@ interface FreeTierBlockProps {
 }
 
 const VARIANT_CONFIG = {
-  integrations: {
-    title: 'Unlock Integrations',
+  connections: {
+    title: 'Unlock Connections',
     description:
       'Connect Google Drive, Slack, Notion, and 100+ apps to supercharge your AI Workers',
     icon: Server,

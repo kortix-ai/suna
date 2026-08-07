@@ -375,7 +375,7 @@ export async function deleteProjectResourceGrant(projectId: string, grantId: str
 
 // ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
 
-/** An executor action a policy gated as `require_approval`, still awaiting a
+/** A connector call a policy gated as `require_approval`, still awaiting a
  *  human decision. */
 export interface PendingApproval {
   execution_id: string;

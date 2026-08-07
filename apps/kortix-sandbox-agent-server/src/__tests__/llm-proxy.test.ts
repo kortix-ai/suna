@@ -9,12 +9,12 @@ import {
   llmProxyBaseUrl,
   stopLlmProxy,
   LLM_PROXY_PLACEHOLDER_KEY,
-  startExecutorProxy,
-  setExecutorProxyToken,
-  executorProxyReady,
-  executorProxyBaseUrl,
-  stopExecutorProxy,
-  EXECUTOR_PROXY_PLACEHOLDER_KEY,
+  startConnectorProxy,
+  setConnectorProxyToken,
+  connectorProxyReady,
+  connectorProxyBaseUrl,
+  stopConnectorProxy,
+  CONNECTOR_PROXY_PLACEHOLDER_KEY,
 } from '../llm-proxy'
 import { buildOpencodeConfigContent, refreshGatewayCatalogFile } from '../opencode'
 
@@ -44,7 +44,7 @@ async function fetchJson(url: string): Promise<{ auth: string | null; path: stri
 describe('credential proxy — live token swap (the no-restart mechanism)', () => {
   afterEach(() => {
     stopLlmProxy()
-    stopExecutorProxy()
+    stopConnectorProxy()
   })
 
   test('fails closed (503) before any token is set — never an open relay', async () => {
@@ -83,18 +83,18 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
     }
   })
 
-  test('executor proxy injects + swaps its token independently', async () => {
+  test('connector proxy injects + swaps its token independently', async () => {
     const up = mockUpstream()
     try {
-      startExecutorProxy(14320, up.url, 'exec-A')
-      const base = executorProxyBaseUrl()
+      startConnectorProxy(14320, up.url, 'exec-A')
+      const base = connectorProxyBaseUrl()
       expect(base).toBe('http://127.0.0.1:14320')
-      expect(executorProxyReady()).toBe(true)
+      expect(connectorProxyReady()).toBe(true)
 
       const r1 = await fetchJson(`${base}/v1/projects/p/exec`)
       expect(r1.auth).toBe('Bearer exec-A')
 
-      setExecutorProxyToken('exec-B')
+      setConnectorProxyToken('exec-B')
       const r2 = await fetchJson(`${base}/v1/projects/p/exec`)
       expect(r2.auth).toBe('Bearer exec-B')
     } finally {
@@ -111,14 +111,14 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     JSON.stringify({ models: { 'kortix/test-model': { id: 'kortix/test-model', name: 'Test' } } }),
   )
 
-  test('PROXY mode: session-independent provider by default, no executor MCP unless enabled', async () => {
+  test('PROXY mode: session-independent provider by default, no connector MCP unless enabled', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
-      KORTIX_EXECUTOR_PROXY_URL: 'http://127.0.0.1:4320',
+      KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
       KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_EXECUTOR_TOKEN: 'real-session-exec-token',
+      KORTIX_CLI_TOKEN: 'real-session-exec-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
@@ -129,31 +129,31 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(cfg.provider.kortix.options.apiKey).toBe(LLM_PROXY_PLACEHOLDER_KEY)
     expect(cfg.provider.kortix.options.apiKey).not.toBe('real-session-llm-key')
 
-    // Executor MCP is an optional compatibility face. The CLI is primary.
+    // Connector MCP is an optional compatibility face. The CLI is primary.
     expect(cfg.mcp).toBeUndefined()
 
     // full catalog came from the baked file
     expect(Object.keys(cfg.provider.kortix.models)).toContain('kortix/test-model')
   })
 
-  test('PROXY mode can opt into session-independent executor MCP compatibility', async () => {
+  test('PROXY mode can opt into session-independent connector MCP compatibility', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
-      KORTIX_EXECUTOR_PROXY_URL: 'http://127.0.0.1:4320',
+      KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
       KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_EXECUTOR_TOKEN: 'real-session-exec-token',
-      KORTIX_EXECUTOR_MCP_ENABLED: '1',
+      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
     const cfg = JSON.parse(json!)
 
-    expect(cfg.mcp['kortix-executor'].command).toEqual(['/usr/local/bin/kortix', 'executor', 'mcp'])
-    expect(cfg.mcp['kortix-executor'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
-    expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).toBe(EXECUTOR_PROXY_PLACEHOLDER_KEY)
-    expect(cfg.mcp['kortix-executor'].environment.KORTIX_EXECUTOR_TOKEN).not.toBe('real-session-exec-token')
+    expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connector', 'mcp'])
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).not.toBe('real-session-exec-token')
   })
 
   test('DIRECT mode (cold/Daytona): real key + token baked, unchanged', async () => {
@@ -161,7 +161,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
       KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_EXECUTOR_TOKEN: 'real-session-exec-token',
+      KORTIX_CLI_TOKEN: 'real-session-exec-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()

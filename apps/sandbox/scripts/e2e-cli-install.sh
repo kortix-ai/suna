@@ -31,7 +31,7 @@ cd "$REPO_ROOT"
 IMAGE="kortix-cli-e2e:test"
 PORT="${KORTIX_E2E_PORT:-17790}"
 PROJECT="proj-e2e-123"
-PAT="kortix_pat_e2e_executor"          # project-scoped PAT (KORTIX_CLI_TOKEN)
+PAT="kortix_pat_e2e_connector"          # project-scoped PAT (KORTIX_CLI_TOKEN)
 SBKEY="kortix_sb_e2e_service_key"       # sandbox service key (KORTIX_TOKEN)
 PUSH_TOKEN="FRESH-PUSH-TOKEN-e2e"
 

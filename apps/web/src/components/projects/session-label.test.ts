@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '@kortix/sdk';
-import { availableSessionFilterOptions } from './session-label';
+import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
+import {
+  matchesSourceFilters,
+  matchesStatusFilters,
+  SESSION_DISPLAY_STATUS_LABELS,
+  sessionDisplayStatus,
+  type SessionDisplayStatus,
+} from './session-label';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -17,58 +23,116 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   } as unknown as ProjectSession;
 }
 
-const myChat = () => makeSession({ is_owner: true });
-const sharedChat = () => makeSession({ is_owner: false });
-const slack = () => makeSession({ metadata: { source: 'slack' } });
-const email = () => makeSession({ metadata: { source: 'email' } });
-const scheduled = () =>
-  makeSession({ metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'daily' } });
-const telegram = () => makeSession({ metadata: { source: 'telegram' } });
+describe('sessionDisplayStatus', () => {
+  const cases: Array<[ProjectSessionStatus, SessionDisplayStatus]> = [
+    ['queued', 'starting'],
+    ['branching', 'starting'],
+    ['provisioning', 'starting'],
+    ['running', 'running'],
+    ['completed', 'done'],
+    ['stopped', 'stopped'],
+    ['failed', 'failed'],
+  ];
 
-describe('availableSessionFilterOptions', () => {
-  test('one source only: no options, because every filter equals "All"', () => {
-    expect(availableSessionFilterOptions([myChat(), myChat()])).toEqual([]);
-    expect(availableSessionFilterOptions([sharedChat()])).toEqual([]);
-    expect(availableSessionFilterOptions([slack(), slack()])).toEqual([]);
-    expect(availableSessionFilterOptions([email()])).toEqual([]);
-    expect(availableSessionFilterOptions([scheduled()])).toEqual([]);
+  for (const [status, expected] of cases) {
+    test(`maps ${status} to ${expected}`, () => {
+      expect(sessionDisplayStatus(makeSession({ status }))).toBe(expected);
+    });
+  }
+
+  test('defaults reviewCount to 0 so a running session stays running', () => {
+    expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
   });
 
-  test('no sessions: no options', () => {
-    expect(availableSessionFilterOptions([])).toEqual([]);
+  test('a pending review overrides every lifecycle status', () => {
+    for (const [status] of cases) {
+      expect(sessionDisplayStatus(makeSession({ status }), 1)).toBe('needs-you');
+    }
   });
 
-  test('two sources: "All" plus exactly the present ones, in canonical order', () => {
-    const options = availableSessionFilterOptions([slack(), myChat(), email()]);
-
-    expect(options.map((option) => option.value)).toEqual(['all', 'mine', 'slack', 'email']);
+  test('a zero review count does not override', () => {
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }), 0)).toBe('done');
   });
 
-  test('a source with zero sessions never gets a row', () => {
-    const options = availableSessionFilterOptions([myChat(), sharedChat()]);
-
-    expect(options.map((option) => option.value)).toEqual(['all', 'mine', 'shared']);
-    expect(options.every((option) => option.count > 0)).toBe(true);
+  test('every display status has a label', () => {
+    const all: SessionDisplayStatus[] = [
+      'needs-you', 'starting', 'running', 'done', 'stopped', 'failed',
+    ];
+    for (const value of all) {
+      expect(SESSION_DISPLAY_STATUS_LABELS[value]).toBeTruthy();
+    }
   });
 
-  test('counts match the sessions each filter selects', () => {
-    const sessions = [myChat(), myChat(), sharedChat(), slack(), scheduled(), scheduled()];
-
-    const counts = Object.fromEntries(
-      availableSessionFilterOptions(sessions).map((option) => [option.value, option.count]),
-    );
-
-    expect(counts).toEqual({ all: 6, mine: 2, shared: 1, slack: 1, schedule: 2 });
+  test('an unknown lifecycle value degrades instead of throwing', () => {
+    // ProjectSessionStatus is a published SDK union: an API that grows an
+    // eighth member ships a value this build has never seen. Returning
+    // undefined here used to take the whole sidebar down at
+    // STATUS_DOT_STYLE[undefined].color.
+    const session = makeSession({ status: 'hibernating' as ProjectSessionStatus });
+    expect(() => sessionDisplayStatus(session)).not.toThrow();
+    const display = sessionDisplayStatus(session);
+    expect(SESSION_DISPLAY_STATUS_LABELS[display]).toBeTruthy();
+    // Never green: green means live or actionable.
+    expect(display).not.toBe('running');
+    expect(display).not.toBe('needs-you');
   });
 
-  test('"All" counts kinds no filter covers, so the total never lies', () => {
-    const options = availableSessionFilterOptions([myChat(), slack(), telegram()]);
+  test('labels never say "Active" — the data cannot support it', () => {
+    expect(Object.values(SESSION_DISPLAY_STATUS_LABELS)).not.toContain('Active');
+  });
+});
 
-    expect(options[0]).toEqual({ value: 'all', label: 'All', count: 3 });
-    expect(options.map((option) => option.value)).not.toContain('telegram');
+describe('matchesStatusFilters', () => {
+  test('an empty array matches everything', () => {
+    for (const status of ['queued', 'running', 'completed', 'stopped', 'failed'] as const) {
+      expect(matchesStatusFilters(makeSession({ status }), [])).toBe(true);
+    }
   });
 
-  test('telegram-only projects get no menu: it is one source with no filter', () => {
-    expect(availableSessionFilterOptions([telegram(), telegram()])).toEqual([]);
+  test('running covers the starting family plus running', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
+      expect(matchesStatusFilters(makeSession({ status }), ['running'])).toBe(true);
+    }
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['running'])).toBe(false);
+  });
+
+  test('several selected values are ORed', () => {
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['done', 'failed'])).toBe(true);
+    expect(matchesStatusFilters(makeSession({ status: 'failed' }), ['done', 'failed'])).toBe(true);
+    expect(matchesStatusFilters(makeSession({ status: 'stopped' }), ['done', 'failed'])).toBe(false);
+  });
+
+  test('reads the lifecycle, never the review overlay', () => {
+    expect(matchesStatusFilters(makeSession({ status: 'running' }), ['running'])).toBe(true);
+  });
+});
+
+describe('matchesSourceFilters', () => {
+  test('an empty array matches everything', () => {
+    expect(matchesSourceFilters(makeSession(), [])).toBe(true);
+    expect(matchesSourceFilters(makeSession({ metadata: { source: 'slack' } }), [])).toBe(true);
+  });
+
+  test('mine and shared split chats by ownership', () => {
+    expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'])).toBe(true);
+    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'])).toBe(false);
+    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['shared'])).toBe(true);
+  });
+
+  test('unknown ownership counts as mine so nothing is silently hidden', () => {
+    expect(matchesSourceFilters(makeSession(), ['mine'])).toBe(true);
+  });
+
+  test('automation sources match their kind', () => {
+    const slack = makeSession({ metadata: { source: 'slack' } });
+    expect(matchesSourceFilters(slack, ['slack'])).toBe(true);
+    expect(matchesSourceFilters(slack, ['email'])).toBe(false);
+    expect(matchesSourceFilters(slack, ['mine', 'slack'])).toBe(true);
+  });
+
+  test('telegram matches its own kind only', () => {
+    const telegram = makeSession({ metadata: { source: 'telegram' } });
+    expect(matchesSourceFilters(telegram, ['telegram'])).toBe(true);
+    expect(matchesSourceFilters(telegram, ['slack'])).toBe(false);
   });
 });

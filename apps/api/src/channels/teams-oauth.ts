@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
-import { reconcileChannelConnectors } from '../executor/sync';
+import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectFeatureEnabled } from '../experimental/for-project';
 import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';

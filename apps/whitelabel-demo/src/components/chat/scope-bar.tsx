@@ -139,7 +139,7 @@ export function ScopeBar({
   );
   const connections = scopeBarConnectors({
     choices: connectors.data?.connectors,
-    boundAuthorizations: liveBindings,
+    boundConnections: liveBindings,
   });
 
   // `undefined` = untouched, so the draft simply IS this session's scope until

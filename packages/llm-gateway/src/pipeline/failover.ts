@@ -5,8 +5,14 @@ import type {
   ModelGenerationDefaults,
   UpstreamDescriptor,
 } from '../domain';
-import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
+import {
+  CircuitOpenError,
+  ClientAbortError,
+  UpstreamHttpError,
+  looksLikeTerminalAuthFailure,
+} from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
@@ -28,33 +34,14 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function parseUpstreamBody(body: string): { message: string; code?: string } {
-  if (!body) return { message: 'Upstream request failed' };
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const nested = parsed.error;
-    if (typeof nested === 'string') {
-      return { message: nested, code: typeof parsed.code === 'string' ? parsed.code : undefined };
-    }
-    if (nested && typeof nested === 'object') {
-      const error = nested as Record<string, unknown>;
-      return {
-        message: typeof error.message === 'string' ? error.message : body,
-        code:
-          typeof error.code === 'string'
-            ? error.code
-            : typeof error.type === 'string'
-              ? error.type
-              : undefined,
-      };
-    }
-    return {
-      message: typeof parsed.message === 'string' ? parsed.message : body,
-      code: typeof parsed.code === 'string' ? parsed.code : undefined,
-    };
-  } catch {
-    return { message: body };
-  }
+// Mines the REAL human-readable message + code from an upstream error's
+// response body (the raw `UpstreamHttpError.body` the AI SDK populates with
+// `responseBody`). Delegates to the shared `parseUpstreamErrorBody` so the
+// non-streaming and streaming paths surface the same message for the same
+// upstream failure — e.g. "context length exceeded from messages" instead of a
+// generic "Bad Request"/"Bad Gateway" (2026-08-01 defect).
+function parseUpstreamBody(body: string): { message: string; code?: string | number } {
+  return parseUpstreamErrorBody(body);
 }
 
 function suggestionFor(status: number): string {
@@ -153,6 +140,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const { descriptor, routeModel } = candidate;
     const hasFallback = i < candidates.length - 1;
     const hasModelFallback = candidates.slice(i + 1).some((next) => next.routeModel !== routeModel);
+    const hasCredentialFallback = candidates.slice(i + 1).some(
+      (next) =>
+        next.routeModel === routeModel &&
+        next.descriptor.provider === descriptor.provider &&
+        descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== descriptor.credentialRef,
+    );
     tried.push(descriptor.provider);
     if (modelsTried.at(-1) !== routeModel) modelsTried.push(routeModel);
     attempts += 1;
@@ -251,13 +246,24 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         };
       }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
+        const upstreamError = parseUpstreamBody(err.body);
+        const credentialFailure =
+          hasCredentialFallback &&
+          (err.status === 401 ||
+            (err.status === 400 &&
+              looksLikeTerminalAuthFailure(
+                `${upstreamError.message} ${upstreamError.code ?? ''}`,
+              )));
         // A rate-limit / quota / billing error (429/402/403) on a candidate that
         // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
         // managed model queued next — falls over instead of failing the turn.
         // (429 was already retried on this candidate by callUpstream, so reaching
         // here means it's persistent, not a transient blip.) Other 4xx — bad
-        // request, auth, model-not-found — are the caller's to fix: return as-is.
+        // here means it is persistent. Authentication failures advance only
+        // when the same route has another configured credential. Other 4xx
+        // responses return unchanged.
         if (
+          credentialFailure ||
           (LIMIT_STATUSES.has(err.status) && hasFallback) ||
           (fallbackOn === 'any-error' && hasModelFallback)
         ) {
@@ -266,7 +272,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
             fromModel: routeModel,
             status: err.status,
             reason:
-              fallbackOn === 'any-error' && hasModelFallback ? 'model_policy' : 'provider_limit',
+              credentialFailure
+                ? 'credential'
+                : fallbackOn === 'any-error' && hasModelFallback
+                  ? 'model_policy'
+                  : 'provider_limit',
           });
           continue;
         }
@@ -274,7 +284,6 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           provider: descriptor.provider,
           status: err.status,
         });
-        const upstreamError = parseUpstreamBody(err.body);
         emit({
           ...trace,
           resolvedModel: descriptor.resolvedModel,

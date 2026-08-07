@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
                   <span style={{ color: '#e2e8f0', fontSize: '18px', fontWeight: 600 }}>
                     {template.mcp_requirements.length}
                   </span>
-                  <span style={{ color: '#64748b', fontSize: '18px' }}>integrations</span>
+                  <span style={{ color: '#64748b', fontSize: '18px' }}>connectors</span>
                 </div>
               )}
             </div>

@@ -69,15 +69,27 @@ export async function getAccountEntitlements(
   // Self-host enterprise license: an operator holding a Kortix Enterprise
   // license unlocks every enterprise entitlement platform-wide, regardless of
   // billing tier — self-host has no Stripe-backed tier to assign 'enterprise'
-  // to. Checked before the per-account demo override so a licensed operator
-  // never needs to also flip the per-account demo toggle.
+  // to. Checked before the per-account overrides so a licensed operator never
+  // needs to also flip a per-account flag.
   if (config.ENTERPRISE_LICENSE_AVAILABLE) return getTierEntitlements('enterprise');
   const acct = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
+  // Contracted cloud Enterprise: an operator sets `enterprise_entitled` when
+  // an account signs an Enterprise agreement. This grants the full enterprise
+  // entitlement set (SSO/SCIM/RBAC/audit) regardless of `tier`, so a deal that
+  // is BOTH Enterprise (entitlements) AND per-seat (billing) can hold both at
+  // once — `tier`/`billing_model` may be `per_seat` for Stripe seat
+  // reconciliation while enterprise identity surfaces stay on. Without this,
+  // the per-seat webhook reconciliation clobbers `tier` to `per_seat` and
+  // strips entitlements on every ordinary subscription update. Distinct from
+  // the demo flag below: this is the real-contract flag, set out-of-band by an
+  // operator at sign-up time.
+  if (acct?.enterpriseEntitled) return getTierEntitlements('enterprise');
   // Demo/dogfood override: an account can self-enable an interactive demo of the
   // enterprise surface from account settings. When on, it unlocks EVERY
   // enterprise entitlement — whatever the `enterprise` tier grants — regardless
   // of billing tier, so gates added later are covered automatically. This is a
-  // preview, NOT a real Enterprise plan (which is sales-assigned).
+  // preview, NOT a real Enterprise plan (which is sales-assigned or set via
+  // `enterprise_entitled`).
   if (acct?.demoEnterprise) return getTierEntitlements('enterprise');
   return getTierEntitlements(acct?.tier ?? 'none');
 }
@@ -89,6 +101,7 @@ export async function accountHasEntitlement(
 ): Promise<boolean> {
   if (config.ENTERPRISE_LICENSE_AVAILABLE) return true;
   const acct = await getCreditAccount(accountId);
+  if (acct?.enterpriseEntitled) return true;
   if (acct?.demoEnterprise) return true;
   return tierHasEntitlement(acct?.tier ?? 'none', key);
 }

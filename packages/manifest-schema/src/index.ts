@@ -65,7 +65,7 @@ export {
 // why: it broke an index.ts ⇄ json-schema.ts import cycle).
 // `[[connectors]].headers` — arbitrary static request headers. Its own
 // dependency-free module (same rationale as `constants.ts`) so the validator,
-// the JSON Schema, apps/api's parser and the executor share ONE ruleset.
+// the JSON Schema, apps/api's parser and the connector share ONE ruleset.
 export {
   type ConnectorHeadersParse,
   CONNECTOR_FORBIDDEN_HEADER_NAMES,
@@ -121,6 +121,8 @@ export {
   type PermissionConfigV2,
   type GrantSetV2,
   type AgentBlockV2,
+  type AppBlockV2,
+  type AppResourcesV2,
   type ManifestV2,
   resolveGrantSet,
   validatePermissionConfig,
@@ -275,7 +277,7 @@ function validateManifestBodyV2(
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
-  rejectRetiredApps(parsed.apps, 'apps', issues);
+  validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
@@ -733,6 +735,120 @@ function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[])
     message: 'The hosted `apps` manifest section has been removed. Delete this section.',
     severity: 'error',
   });
+}
+
+const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
+const APP_KEYS = new Set([
+  'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
+  'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
+  'monthly_budget_usd', 'resources', 'env', 'secrets',
+]);
+
+function validateAppStringMap(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+  validateKey: boolean,
+): void {
+  if (node === undefined) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: 'must be a key-to-string map.', severity: 'error' });
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    const where = `${path}.${key}`;
+    if (validateKey && !ENV_NAME_RE.test(key)) {
+      issues.push({ path: where, message: 'key must be an uppercase environment variable name.', severity: 'error' });
+    }
+    if (typeof value !== 'string' || value.trim() === '') {
+      issues.push({ path: where, message: 'must be a non-empty string.', severity: 'error' });
+    }
+  }
+}
+
+function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: 'must be a map keyed by App slug.', severity: 'error' });
+    return;
+  }
+  for (const [slug, value] of Object.entries(node)) {
+    const where = `${path}.${slug}`;
+    if (!SLUG_RE.test(slug)) {
+      issues.push({ path: where, message: 'App key must be a lowercase slug.', severity: 'error' });
+    }
+    if (!isTable(value)) {
+      issues.push({ path: where, message: 'must be an App configuration object.', severity: 'error' });
+      continue;
+    }
+    for (const key of Object.keys(value)) {
+      if (!APP_KEYS.has(key)) {
+        issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
+      }
+    }
+    const type = value.type;
+    if (type !== undefined && (typeof type !== 'string' || !APP_TYPES.has(type))) {
+      issues.push({ path: `${where}.type`, message: 'must be static, bundle, dockerfile, or oci_image.', severity: 'error' });
+    }
+    for (const key of ['path', 'dockerfile', 'root', 'output_dir'] as const) {
+      expectRelativePathOrAbsent(value[key], `${where}.${key}`, issues);
+    }
+    for (const key of ['image', 'install_command', 'build_command'] as const) {
+      expectStringOrAbsent(value[key], `${where}.${key}`, issues);
+    }
+    if (value.command !== undefined) {
+      if (!Array.isArray(value.command) || value.command.length === 0 ||
+          !value.command.every((item) => typeof item === 'string' && item.length > 0)) {
+        issues.push({ path: `${where}.command`, message: 'must be a non-empty string array.', severity: 'error' });
+      }
+    }
+    if (value.port !== undefined) {
+      const port = Number(value.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 7331 || port === 8080) {
+        issues.push({ path: `${where}.port`, message: 'must be an integer from 1 to 65535, excluding 7331 and 8080.', severity: 'error' });
+      }
+    }
+    if ((type === 'dockerfile' || type === 'oci_image') &&
+        (!Array.isArray(value.command) || value.command.length === 0)) {
+      if (!issues.some((issue) => issue.path === `${where}.command`)) {
+        issues.push({ path: `${where}.command`, message: `is required for ${type} Apps.`, severity: 'error' });
+      }
+    }
+    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined) {
+      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps.`, severity: 'error' });
+    }
+    if (type === 'oci_image' && (typeof value.image !== 'string' || !value.image.trim())) {
+      issues.push({ path: `${where}.image`, message: 'is required for oci_image Apps.', severity: 'error' });
+    }
+    if (value.spa !== undefined && typeof value.spa !== 'boolean') {
+      issues.push({ path: `${where}.spa`, message: 'must be a boolean.', severity: 'error' });
+    }
+    if (value.readiness_path !== undefined &&
+        (typeof value.readiness_path !== 'string' || !value.readiness_path.startsWith('/'))) {
+      issues.push({ path: `${where}.readiness_path`, message: 'must be an absolute HTTP path.', severity: 'error' });
+    }
+    expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
+    if (value.monthly_budget_usd !== undefined &&
+        (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
+      issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.resources !== undefined) {
+      if (!isTable(value.resources)) {
+        issues.push({ path: `${where}.resources`, message: 'must be an object.', severity: 'error' });
+      } else {
+        expectBoundedIntOrAbsent(value.resources.cpu, `${where}.resources.cpu`, { min: 1, max: 64 }, issues);
+        expectBoundedIntOrAbsent(value.resources.memory_gb, `${where}.resources.memory_gb`, { min: 1, max: 512 }, issues);
+        expectBoundedIntOrAbsent(value.resources.disk_gb, `${where}.resources.disk_gb`, { min: 1, max: 2048 }, issues);
+        for (const key of Object.keys(value.resources)) {
+          if (!['cpu', 'memory_gb', 'disk_gb'].includes(key)) {
+            issues.push({ path: `${where}.resources.${key}`, message: 'is not a supported resource field.', severity: 'error' });
+          }
+        }
+      }
+    }
+    validateAppStringMap(value.env, `${where}.env`, issues, true);
+    validateAppStringMap(value.secrets, `${where}.secrets`, issues, true);
+  }
 }
 
 function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {

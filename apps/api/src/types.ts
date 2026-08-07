@@ -87,7 +87,7 @@ export interface AuthVariables {
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
   tokenProjectId?: string;
-  /** Set for session-scoped sandbox executor PATs. */
+  /** Set for session-scoped sandbox connector PATs. */
   sessionId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
@@ -220,6 +220,14 @@ export interface AccountStateResponse {
    *  any "Request enterprise access" upsell — there's nothing to demo-enable
    *  or upsell when the license already turned it on unconditionally. */
   enterprise_license_available: boolean;
+  /** True when an operator has flagged this account as a contracted cloud
+   *  Enterprise customer via `credit_accounts.enterprise_entitled`. The
+   *  account then resolves all enterprise entitlements (SSO/SCIM/RBAC/audit)
+   *  regardless of its billing tier, so a deal that is BOTH Enterprise
+   *  (entitlements) AND per-seat (billing) can hold both at once. Surfaced
+   *  for the admin console and for the frontend to hide the self-serve demo
+   *  toggle (a real Enterprise contract supersedes the demo). */
+  enterprise_entitled: boolean;
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
   auto_topup: {

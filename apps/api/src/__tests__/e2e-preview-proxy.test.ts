@@ -209,7 +209,7 @@ mock.module('../iam', () => ({
 
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,
-  // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
+  // Mirrors the REAL narrowing (connector/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
   // ignored callerSessionId entirely, so a test could pass one and prove
   // nothing; the WebSocket leg's isolation had no coverage at all.
@@ -363,10 +363,17 @@ mock.module('../projects/secrets', () => {
     listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
+    listProjectSecretNamesForConsumer: async () => [],
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    materializeSecretDelivery: async () => undefined,
+    projectSecretIsConfiguredForConsumer: async () => false,
     projectSecretsRevision: (env: Record<string, string>) =>
       `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
+    getProjectSecretValueForConsumer: async () => null,
+    resolveProjectSecretForConsumer: async () => null,
+    resolveProjectSecretsForConsumer: async () => ({}),
+    withholdUndeliverable: () => undefined,
   };
 });
 
@@ -865,6 +872,7 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });

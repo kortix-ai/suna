@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors via the executor, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -44,9 +44,27 @@ kortix whoami                                   # which project + account this t
 kortix secrets request <NAME>                   # mint a link for a human to enter a key (never handle raw keys)
 kortix sessions status                          # every agent on the project + what it's doing now
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
-kortix executor call <connector> <action> '…'   # run a configured connector as a tool (server-side)
+kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 ```
+
+## Coordinating sessions (spawn → wait → collect)
+
+```bash
+kortix sessions new --json --wait --with-file data.csv --prompt "…"   # files land in /workspace/incoming/ BEFORE the prompt
+kortix sessions wait-for <id> --timeout 300     # block until the agent finishes (0=done, 3=blocked on an ask, 124=timeout) — never sleep-poll
+kortix sessions pending <id>                    # see what a blocked agent is asking; answer with approve/answer
+kortix sessions cp <id>:out/result.pdf .        # pull deliverables; also local→session and session→session, -r for dirs
+```
+
+- A finished session's sandbox **stops automatically** to save compute.
+  `stopped` means *parked*, not failed — `sessions cp`, `sessions chat`, and
+  `sessions wait-for` wake it on demand.
+- Session ids abbreviate: any unambiguous prefix (the 8-char ids `sessions ls`
+  prints) works.
+- Session sandboxes have Python via **uv** (`uv run` / `uvx` / `uv pip` —
+  prefer these over bare `pip`), Node, browsers, and document tooling
+  preinstalled — spawn the task, not an environment-setup plan.
 
 Every read command takes `--json` (clean payload on stdout), so the CLI is a
 100% scriptable surface. For anything beyond the above — flags, the token-scope

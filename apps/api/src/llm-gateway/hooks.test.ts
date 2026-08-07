@@ -32,6 +32,7 @@ mock.module('../config', () => ({
 }));
 
 mock.module('../billing/services/entitlements', () => ({
+  accountHasEntitlement: async () => false,
   getCachedAccountTier: async () => accountTier,
 }));
 

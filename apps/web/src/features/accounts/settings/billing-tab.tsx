@@ -171,7 +171,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                   )}
                 </p>
               </div>
-              <div className="bg-popover rounded-md border px-4 py-5">
+              <div className="bg-popover rounded-md border px-4 py-3">
                 <AutoTopupCard fetchSettings showSaveButton />
               </div>
             </section>
@@ -187,7 +187,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                   )}
                 </p>
               </div>
-              <div className="bg-popover rounded-md border px-4 py-5">
+              <div className="bg-popover rounded-md border px-4 py-3">
                 <CreditTopupSection />
               </div>
             </section>

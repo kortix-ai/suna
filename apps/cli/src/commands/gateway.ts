@@ -54,7 +54,7 @@ Access:
 Observability:
   usage [--days N]                  Request/error/cost totals + by-model. --json.
   logs [--limit N] [--failed]       Recent gateway requests. --json.
-  logs <logId>                      One request's full detail (JSON).
+  logs <logId|requestId>            One request's full detail (JSON).
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
 
 Global options:
@@ -461,7 +461,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
   }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  // `gateway logs <logId>` fetches one row's full request/response detail.
+  // `gateway logs <logId|requestId>` fetches one row's full request/response detail.
   const id = rest.find((a) => !a.startsWith('-'));
   try {
     if (id) {

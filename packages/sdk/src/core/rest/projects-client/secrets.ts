@@ -7,11 +7,45 @@ export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
 export type SecretConsumer =
   | 'sandbox'
   | 'llm_gateway'
-  | 'executor'
+  | 'connector'
   | 'git_proxy'
   | 'http_broker'
   | 'network';
 export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
+export type SecretInjectionSlot =
+  | { kind: 'header'; name: string; template?: string }
+  | { kind: 'query'; name: string }
+  | { kind: 'json_body_field'; path: string };
+export interface SecretEgressRule {
+  host: string;
+  methods?: string[];
+  path?: string;
+  inject?: SecretInjectionSlot;
+}
+export interface SecretEgressPolicy {
+  backend?: 'llm_gateway' | 'connector' | 'git_proxy' | 'kortix_fetch';
+  base_url_env?: string;
+  rules: SecretEgressRule[];
+  inject: SecretInjectionSlot;
+  on_no_match?: 'deny' | 'observe';
+  tls?: 'terminate' | 'tunnel';
+}
+export interface UpdateSecretStrategyOptions {
+  consumer?: SecretConsumer | null;
+  egress_policy?: SecretEgressPolicy;
+  handle_prefix?: string;
+}
+export interface SecretBrokerRequest {
+  url: string;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+  headers?: Record<string, string>;
+  body_base64?: string;
+}
+export interface SecretBrokerResponse {
+  status: number;
+  headers: Record<string, string>;
+  body_base64: string;
+}
 
 /**
  * One project secret: `{ identifier, name (the env var KEY), value }`.
@@ -54,7 +88,7 @@ export interface ProjectSecret {
   /** Whether the selected delivery path is usable in this deployment. */
   delivery_status?: SecretDeliveryStatus;
   /** Network policy metadata. The secret value is never present. */
-  egress_policy?: Record<string, unknown> | null;
+  egress_policy?: SecretEgressPolicy | null;
   strategy_locked?: boolean;
   last_rotated_at?: string | null;
   /** The stored value may have entered an earlier sandbox and must be replaced. */
@@ -101,24 +135,43 @@ export async function upsertProjectSecret(
      *  one identifier per key). Set explicitly to create a SECOND secret under
      *  the same key (e.g. "GMAPS-backup" also GOOGLE_MAPS_API_KEY). */
     identifier?: string;
+    /** The only service allowed to receive plaintext. */
+    consumer?: SecretConsumer | null;
+    /** Use `broker` for every server-side consumer. */
+    strategy?: SecretDeliveryStrategy;
+    /** Required when `consumer` is `http_broker`. */
+    egress_policy?: SecretEgressPolicy;
+    handle_prefix?: string;
     /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
   },
 ) {
-  return unwrap(
-    await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
-  );
+  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
 }
 
 export async function setProjectSecretStrategy(
   projectId: string,
   identifier: string,
   strategy: SecretDeliveryStrategy,
+  options: UpdateSecretStrategyOptions = {},
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
       `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
-      { strategy },
+      { strategy, ...options },
+    ),
+  );
+}
+
+export async function brokerProjectSecretRequest(
+  projectId: string,
+  identifier: string,
+  input: SecretBrokerRequest,
+): Promise<SecretBrokerResponse> {
+  return unwrap(
+    await backendApi.post<SecretBrokerResponse>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
+      input,
     ),
   );
 }
@@ -156,10 +209,9 @@ export async function startProjectProviderOAuth(
   input?: { sharing?: ConnectorSharing },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<ProviderOAuthStart>(
-      `/projects/${projectId}/oauth/${provider}/start`,
-      { sharing: input?.sharing },
-    ),
+    await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
+      sharing: input?.sharing,
+    }),
   );
 }
 
@@ -169,17 +221,21 @@ export async function pollProjectProviderOAuth(
   flowId: string,
 ): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProviderOAuthPoll>(
-      `/projects/${projectId}/oauth/${provider}/poll`,
-      { flow_id: flowId },
+    await backendApi.post<ProviderOAuthPoll>(`/projects/${projectId}/oauth/${provider}/poll`, {
+      flow_id: flowId,
+    }),
+  );
+}
+
+export async function deleteProjectProviderOAuth(projectId: string, provider: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
 
-export async function upsertProjectGitCredential(
-  projectId: string,
-  input: { token: string },
-) {
+export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {
   return unwrap(
     await backendApi.put<{
       configured: boolean;

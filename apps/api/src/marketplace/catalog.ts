@@ -74,7 +74,8 @@ export interface CatalogItem {
   defaultProjectInstallOrder?: number;
   hidden?: boolean;
   /** Set when this item also ships inside a whole `registry:project` (e.g. a
-   *  starter skill) — the UI badges it "Part of <project>" and links to it. */
+   *  starter skill, or a use-case runbook skill inside the Use-case pack) —
+   *  the UI badges it "Part of <project>" and links to it. */
   partOfProject?: { id: string; title: string };
 }
 
@@ -344,20 +345,25 @@ function memSource(map: Map<string, string>): BuildSource {
 }
 
 function buildStarterRegistry(): RegistryJson {
-  const files = [
+  const starterFloorFiles = [
     ...getManagedSkillFiles(),
     ...getStarterFiles({
       projectName: "Kortix Starter",
       template: "general-knowledge-worker",
     }),
-    ...getMarketplaceFiles(),
   ];
+  // The `marketplace` template layer is "listed in the Kortix marketplace but
+  // not part of the starter floor" (see getMarketplaceFiles in @kortix/starter):
+  // standalone optional skills plus the use-case templates' runbook skills.
+  const files = [...starterFloorFiles, ...getMarketplaceFiles()];
+  const starterFloorPaths = new Set(starterFloorFiles.map((f) => f.path));
   const map = new Map(files.map((f) => [f.path, f.content] as const));
   const { registry } = buildRegistry({
     name: "kortix-starter",
     source: memSource(map),
   });
   for (const item of registry.items ?? []) {
+    const primaryPath = item.files?.[0]?.path;
     if (item.type === "registry:skill" && isKortixManagedSkillName(item.name)) {
       item.categories = [
         ...new Set([...(item.categories ?? []), "kortix-managed"]),
@@ -367,15 +373,34 @@ function buildStarterRegistry(): RegistryJson {
         managedBy: "kortix",
         updatePolicy: "kortix-managed",
       };
-    } else if (item.type === "registry:skill") {
-      // A browsable starter skill: it stands on its own in the catalog AND ships
+    } else if (
+      item.type === "registry:skill" &&
+      primaryPath != null &&
+      starterFloorPaths.has(primaryPath)
+    ) {
+      // A starter-floor skill: it stands on its own in the catalog AND ships
       // inside the Kortix Starter project, so tag it so the UI can badge it
       // "Part of Kortix Starter" and link back to the whole project.
       item.meta = {
         ...(item.meta ?? {}),
         partOfProject: { id: STARTER_KIT_ITEM_ID, title: "Kortix Starter" },
       };
+    } else if (
+      item.type === "registry:skill" &&
+      primaryPath?.startsWith("runtime/")
+    ) {
+      // A use-case runbook skill (declared in the marketplace template's
+      // kortix.registry.json): it ships inside the Use-case pack project, not
+      // the Kortix Starter. Tag it so the explore grid folds it under the
+      // pack tile while it stays resolvable for the use-case install wizard.
+      item.meta = {
+        ...(item.meta ?? {}),
+        partOfProject: { id: USE_CASE_PACK_ITEM_ID, title: USE_CASE_PACK_TITLE },
+      };
     }
+    // Remaining marketplace-layer skills (deep-research, search, coding, …)
+    // are ordinary standalone browse tiles: optional installs, not part of
+    // the Kortix Starter project.
     for (const f of item.files ?? []) {
       const content = map.get(f.path);
       if (content != null) f.content = content;
@@ -454,15 +479,25 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
 export const STARTER_KIT_ITEM_NAME = "starter";
 export const STARTER_KIT_ITEM_ID = `kortix-projects:${STARTER_KIT_ITEM_NAME}`;
 
+// The second synthetic project: the Use-case pack. One browse tile that groups
+// every use-case runbook skill + persona agent from the marketplace template
+// layer (`packages/starter/templates/marketplace/runtime/**`) — visible and
+// clonable in the marketplace, but never advertised as Kortix Starter content.
+export const USE_CASE_PACK_ITEM_NAME = "use-case-pack";
+export const USE_CASE_PACK_ITEM_ID = `kortix-projects:${USE_CASE_PACK_ITEM_NAME}`;
+export const USE_CASE_PACK_TITLE = "Use-case pack";
+
 const STARTER_KIT_README = `# Kortix Starter
 
 The default Kortix project — a general knowledge worker that's ready to do real
 work from the very first message.
 
-It comes preloaded with the full Kortix skill kit: research and the web,
-documents (PDF, DOCX, XLSX) and slides, coding and web apps, browser automation,
-and a set of editable persona starters (recruiting, marketing, accounting,
-support, product, legal) you can shape into your own operations.
+It comes preloaded with the core Kortix skill floor: documents (PDF, DOCX,
+XLSX) and slides, web apps and websites, browser automation, publishing and
+deployments, and design foundations. The managed Kortix platform skills
+(sessions, memory, the CLI) are injected into every session automatically.
+More skills — research, outreach, and per-role runbooks — are one install away
+in the marketplace.
 
 Everything here is **yours** — plain files in your project's git repo that you
 and your agents can read, edit, extend, and land through change requests. Nothing
@@ -481,9 +516,15 @@ what you do, tailors the kit to your work, and gets you one real result fast.
 
 function buildStarterKitProjectItem(): RegistryItem {
   const registry = buildStarterRegistry();
+  // Only skills tagged as part of the starter (the starter-floor layer) belong
+  // in "what's inside" — marketplace-layer extras and use-case runbook skills
+  // do not ship in a cloned starter project.
   const skillNames = (registry.items ?? [])
     .filter(
-      (it) => it.type === "registry:skill" && !isKortixManagedSkillName(it.name),
+      (it) =>
+        it.type === "registry:skill" &&
+        (it.meta?.partOfProject as { id?: string } | undefined)?.id ===
+          STARTER_KIT_ITEM_ID,
     )
     .map((it) => it.name)
     .sort((a, b) => a.localeCompare(b));
@@ -503,8 +544,74 @@ function buildStarterKitProjectItem(): RegistryItem {
     type: "registry:project",
     title: "Kortix Starter",
     description:
-      "The default Kortix project — a general knowledge worker preloaded with the full skill kit (research, documents, slides, spreadsheets, the web, and more), ready to work from the first session.",
+      "The default Kortix project — a general knowledge worker preloaded with the core skill floor (documents, slides, spreadsheets, web apps, browser automation, and more), ready to work from the first session.",
     categories: ["project", "starter"],
+    registryDependencies: skillNames,
+    files,
+    meta: { source: "kortix", visibility: "global" },
+  };
+}
+
+const USE_CASE_PACK_README = `# Use-case pack
+
+Every Kortix use-case runbook in one place: the day-to-day operations playbooks
+(sales, finance, support, recruiting, engineering, and more) plus the persona
+agents that run them.
+
+## How to use it
+
+- **Guided (recommended):** each use case installs individually through the
+  [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
+  its skill, grants, and any scheduled trigger into your project.
+- **Bulk clone:** clone this pack as a project to get every runbook skill under
+  \`.kortix/opencode/skills/\` and every persona agent file under
+  \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
+  want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before
+  using them.
+
+Everything is plain files in your repo: read, edit, and adapt them to how your
+team actually works.
+`;
+
+/** Rewrite a marketplace-template `runtime/` path to its conventional
+ *  in-project location, mirroring the install wizard's target mapping
+ *  (`@skills/y` → `.kortix/opencode/skills/y`, `@agents/x.md` →
+ *  `.kortix/opencode/agents/x.md`). Non-runtime paths return undefined. */
+function useCasePackRepoPath(path: string): string | undefined {
+  if (path.startsWith("runtime/skills/"))
+    return `.kortix/opencode/skills/${path.slice("runtime/skills/".length)}`;
+  if (path.startsWith("runtime/agents/"))
+    return `.kortix/opencode/agents/${path.slice("runtime/agents/".length)}`;
+  return undefined;
+}
+
+function buildUseCasePackProjectItem(): RegistryItem {
+  const registry = buildStarterRegistry();
+  const skillNames = (registry.items ?? [])
+    .filter(
+      (it) =>
+        it.type === "registry:skill" &&
+        (it.meta?.partOfProject as { id?: string } | undefined)?.id ===
+          USE_CASE_PACK_ITEM_ID,
+    )
+    .map((it) => it.name)
+    .sort((a, b) => a.localeCompare(b));
+  const files = [
+    { path: "README.md", type: "registry:file" as const, content: USE_CASE_PACK_README },
+    ...getMarketplaceFiles().flatMap((f) => {
+      const repoPath = useCasePackRepoPath(f.path);
+      return repoPath
+        ? [{ path: repoPath, type: "registry:file" as const, content: f.content }]
+        : [];
+    }),
+  ];
+  return {
+    name: USE_CASE_PACK_ITEM_NAME,
+    type: "registry:project",
+    title: USE_CASE_PACK_TITLE,
+    description:
+      "Every Kortix use-case runbook and persona agent in one pack — sales, finance, support, recruiting, engineering ops, and more. Install use cases one at a time from the use-case pages, or clone the whole pack.",
+    categories: ["project", "use-case"],
     registryDependencies: skillNames,
     files,
     meta: { source: "kortix", visibility: "global" },
@@ -519,6 +626,8 @@ const KORTIX_REPO = "https://github.com/kortix-ai/suna";
  *  are real files in this repo, not a synthetic/external registry, so "View
  *  source" can point straight at them. */
 function projectTemplateSourceUrl(slug: string): string {
+  if (slug === USE_CASE_PACK_ITEM_NAME)
+    return `${KORTIX_REPO}/tree/main/packages/starter/templates/marketplace`;
   return `${KORTIX_REPO}/tree/main/packages/starter/templates/marketplace-projects/${slug}`;
 }
 
@@ -549,7 +658,11 @@ function getBaseCatalog(): Catalog {
     { name: "kortix-starter", items: buildStarterRegistry().items ?? [] },
     {
       name: "kortix-projects",
-      items: [buildStarterKitProjectItem(), ...buildProjectTemplateRegistry()],
+      items: [
+        buildStarterKitProjectItem(),
+        buildUseCasePackProjectItem(),
+        ...buildProjectTemplateRegistry(),
+      ],
     },
   ];
   const items: CatalogItem[] = [];
@@ -574,6 +687,8 @@ function getBaseCatalog(): Catalog {
 
 // ── external catalog (async, cached, progressive) ──────────────────────────
 const EXTERNAL_TTL_MS = 24 * 60 * 60 * 1000; // 24h — sources rarely change; refresh lazily
+const EXTERNAL_REFRESH_JITTER_MS = 60 * 60 * 1000;
+export const MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY = 4;
 
 // The cache lives on globalThis so it survives `bun --hot` reloads in dev
 // (otherwise every edit re-scans every source → the "so slow"). External sources
@@ -590,6 +705,7 @@ export interface SourceStatus {
 interface MarketplaceCache {
   external: Catalog | null; // last fully-resolved external catalog (the 24h cache)
   externalAt: number;
+  externalRefreshAt: number;
   partial: Catalog | null; // in-progress accumulator on a COLD build (grows per source)
   pending: number; // sources still resolving this round
   building: boolean;
@@ -606,6 +722,7 @@ const CACHE: MarketplaceCache = ((
 ).__kortixMarketplaceCache2 ??= {
   external: null,
   externalAt: 0,
+  externalRefreshAt: 0,
   partial: null,
   pending: 0,
   building: false,
@@ -803,7 +920,7 @@ function isAllowedSourceRef(ref: RegistryRef): boolean {
  * Stable error code for the expected "user supplied a source address we refuse
  * to fetch / read" validation state (non-https URL, private host, local-folder
  * path). Surfaced on the typed {@link AllowedSourceValidationError} so the
- * executor route handlers can catch it and return a structured 400 instead of
+ * connector route handlers can catch it and return a structured 400 instead of
  * letting the throw propagate to `app.onError` → `captureException` → Sentry
  * (Better Stack pattern `f5c0ce61…`). Mirrors the `feature_not_supported`
  * (#5240) + `RepoFileNotFoundError` (#5652) typed-error pattern: an EXPECTED
@@ -860,7 +977,8 @@ export function assertAllowedSourceAddress(address: string): void {
  *  is in. Sets `building`/`partial` SYNCHRONOUSLY so progressive readers see the
  *  loading state on the very first call. */
 function startExternalBuild(): Promise<Catalog> {
-  if (CACHE.external && Date.now() - CACHE.externalAt < EXTERNAL_TTL_MS)
+  const refreshAt = CACHE.externalRefreshAt || CACHE.externalAt + EXTERNAL_TTL_MS;
+  if (CACHE.external && Date.now() < refreshAt)
     return Promise.resolve(CACHE.external);
   // Coalesce concurrent cold callers onto ONE build (no re-scan stampede).
   if (CACHE.inflight) return CACHE.inflight;
@@ -879,6 +997,25 @@ function startExternalBuild(): Promise<Catalog> {
 }
 
 type LoadedRegistry = Awaited<ReturnType<typeof loadRegistry>>;
+
+async function forEachWithConcurrency<T>(
+  values: readonly T[],
+  concurrency: number,
+  operation: (value: T, index: number) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await operation(values[index]!, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
 
 async function buildExternalCatalog(): Promise<Catalog> {
   const refs = await externalRefs();
@@ -905,8 +1042,10 @@ async function buildExternalCatalog(): Promise<Catalog> {
   // Resolve sources concurrently with isolation — one slow/huge/dead source
   // neither blocks the others nor sinks the catalog; each folds in the instant
   // it arrives so the list streams Kortix-first, then source-by-source.
-  await Promise.allSettled(
-    refs.map(async ({ ref, sourceId }, i) => {
+  await forEachWithConcurrency(
+    refs,
+    MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY,
+    async ({ ref, sourceId }, i) => {
       try {
         addRegistryToCatalog(
           acc,
@@ -924,10 +1063,14 @@ async function buildExternalCatalog(): Promise<Catalog> {
         CACHE.pending = Math.max(0, CACHE.pending - 1);
         CACHE.gen++; // a source landed → next read re-merges and streams it in
       }
-    }),
+    },
   );
   CACHE.external = acc;
   CACHE.externalAt = Date.now();
+  CACHE.externalRefreshAt =
+    CACHE.externalAt +
+    EXTERNAL_TTL_MS +
+    Math.floor(Math.random() * EXTERNAL_REFRESH_JITTER_MS);
   return acc;
 }
 
@@ -1726,7 +1869,7 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill", "registry:project"]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
-  // Kortix-managed system skills (kortix-system/executor/memory/slack/computer/
+  // Kortix-managed system skills (kortix-system/connectors/memory/slack/computer/
   // meet) are the platform floor — they ship in every project and are served
   // live via `kortix skills get`, so they're not browse-and-install cards. They
   // stay installable by id (getCatalogEntry, ungated).
@@ -1737,7 +1880,9 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
 /** Resolvable-by-id (detail + file fetch) but not necessarily browse-listed.
  *  Use-case templates and the agents they install stay OUT of the browse grid
  *  (that's the use-case pages' job), yet `kortix marketplace show <id>` /
- *  install-session must read them — so they resolve by id. */
+ *  install-session must read them — so they resolve by id. Runbook skills are
+ *  ordinary browseable items badged into the Use-case pack, so the web folds
+ *  them under that tile. */
 function isResolvableCatalogItem(it: CatalogItem): boolean {
   if (isBrowseableCatalogItem(it)) return true;
   return (
@@ -2047,6 +2192,7 @@ async function readExternalFile(
 export function _resetExternalCache(): void {
   CACHE.external = null;
   CACHE.externalAt = 0;
+  CACHE.externalRefreshAt = 0;
   CACHE.partial = null;
   CACHE.pending = 0;
   CACHE.building = false;

@@ -51,7 +51,7 @@ const MARKETING_SOURCES = {
   automations: 'apps/web/src/app/(public)/(marketing)/automations/page.tsx',
   channels: 'apps/web/src/app/(public)/(marketing)/channels/page.tsx',
   'company-as-code': 'apps/web/src/app/(public)/(marketing)/company-as-code/page.tsx',
-  integrations: 'apps/web/src/app/(public)/(marketing)/integrations/page.tsx',
+  connectors: 'apps/web/src/app/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/(public)/(marketing)/self-hosted/page.tsx',
   // Solutions: the hub, then one entry per role. The eight role pages share a

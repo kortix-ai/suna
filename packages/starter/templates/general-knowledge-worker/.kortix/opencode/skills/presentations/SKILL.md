@@ -224,11 +224,11 @@ Use this path — instead of (or in addition to) the HTML deck's `export_pptx` a
 
 | Objective | Technique | Reference |
 |-----------|-----------|-----------|
-| Extract text or data | `python3 -m markitdown presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
+| Extract text or data | `anydoc presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
 | Modify an existing file or template | Unpack to XML, edit, repack | See [PPTX-EDITING.md](PPTX-EDITING.md) |
 | Generate a deck from scratch | JavaScript with `pptxgenjs` | See [PPTX-CREATING.md](PPTX-CREATING.md) |
 
-LibreOffice (`soffice`) and Poppler (`pdftoppm`) are installed system tools. Python packages such as `lxml`, `pillow`, `python-pptx`, `playwright`, and `markitdown[pptx]` are pre-installed — run scripts with `python3`. Use `uv run --with <package>` only for a package that is not pre-installed. Project-local Node packages provide `pptxgenjs`, React, and Sharp.
+LibreOffice (`soffice`), Poppler (`pdftoppm`), and `anydoc` are installed system tools. Python packages such as `lxml`, `pillow`, `python-pptx`, `playwright`, and `markitdown[pptx]` are pre-installed — run scripts with `python3`. Use `uv run --with <package>` only for a package that is not pre-installed. Project-local Node packages provide `pptxgenjs`, React, and Sharp.
 
 Scripts live in `skills/presentations/scripts/`: `repair.py` (fix pptxgenjs OOXML bugs), `unpack.py` / `pack.py` (unpack a `.pptx` to editable XML and repack it), `slides.py` (`clean` / `add` / `thumbnail` subcommands for slide-level XML surgery).
 
@@ -240,16 +240,16 @@ Render equations with Unicode math symbols only. Do not use OMML or generate equ
 
 Every plain-PPTX task MUST complete ALL three QA steps below before delivering the file. Skipping any step is a failure.
 
-**Step 1: Content QA.** Run markitdown on the output file and review the extracted text:
+**Step 1: Content QA.** Run anydoc on the output file and review the extracted text:
 
 ```bash
-python3 -m markitdown output.pptx
+anydoc output.pptx
 ```
 
 Check for missing content, typos, wrong order. When using templates, check for leftover placeholder text:
 
 ```bash
-python3 -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
+anydoc output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
 ```
 
 If grep returns results, fix them before proceeding.

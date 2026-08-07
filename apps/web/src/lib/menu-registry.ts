@@ -17,7 +17,9 @@
  * ============================================================================
  */
 
-import { Icon } from '@/features/icon/icon';
+import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
+import { Moon } from '@/features/icon/icons/moon';
+import { Sun } from '@/features/icon/icons/sun';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { ExperimentalFeatureKey } from '@kortix/sdk';
 import {
@@ -376,7 +378,13 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords: 'customize configure project agents skills commands',
+    // 'agents', 'skills' and 'commands' were deliberately dropped: those three
+    // graduated out of the overlay into their own palette entries (proj-agents,
+    // proj-skills, proj-commands). Keeping the words here made this bare
+    // Customize entry match those queries too and — since filteredNavItems
+    // preserves registry declaration order rather than ranking by relevance —
+    // it listed ahead of the real Agents/Skills/Commands entries.
+    keywords: 'customize configure project settings',
   },
   {
     id: 'proj-files',
@@ -390,30 +398,45 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository project drive browser explorer',
   },
   {
+    id: 'proj-apps',
+    label: 'Apps',
+    icon: Globe,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/apps',
+    requiresProject: true,
+    requiresExperimental: 'apps',
+    keywords: 'apps deploy deployments serverless docker static hosting urls',
+  },
+  {
     id: 'proj-agents',
-    label: 'Customize · Agents',
+    label: 'Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/agents',
+    // The standalone page, not `/customize/agents`. That href still works —
+    // `legacyCustomizeRedirect` bounces it here — but routing through the
+    // redirect costs a second navigation and paints the overlay route first.
+    href: '/projects/{projectId}/agent',
     requiresProject: true,
     keywords: 'agents subagents project customize ai',
   },
   {
     id: 'proj-skills',
-    label: 'Customize · Skills',
+    label: 'Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/skills',
+    href: '/projects/{projectId}/skills',
     requiresProject: true,
     keywords: 'skills project customize abilities',
   },
   {
     id: 'proj-commands',
-    label: 'Customize · Commands',
+    label: 'Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -435,27 +458,32 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-connectors',
-    label: 'Customize · Connectors',
+    label: 'Connectors',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/connectors',
+    href: '/projects/{projectId}/connectors',
     requiresProject: true,
     keywords:
-      'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+      'connectors connections pipedream mcp openapi postman collections apps connector project customize',
   },
   {
     id: 'proj-connectors-policies',
-    label: 'Customize · Connectors · Policies',
+    // Was "Customize · Connectors · Policies" — no longer accurate: this no
+    // longer lives under Customize, and the href below cannot deep-link into
+    // a Policies tab (the connectors page doesn't host one yet), so the label
+    // must not promise a destination it does not reach.
+    label: 'Connectors · Policies',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/connectors?tab=policies',
+    // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
+    href: '/projects/{projectId}/connectors',
     requiresProject: true,
     keywords:
-      'policies approval block require_approval rules tools executor guardrails project customize',
+      'policies approval block require_approval rules tools connector guardrails project customize',
   },
   {
     id: 'proj-git',
@@ -572,7 +600,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/channels',
     requiresProject: true,
     keywords:
-      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
+      'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
   },
   {
     id: 'proj-settings',
@@ -695,7 +723,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop',
     label: 'Desktop',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'navigation',
     subGroup: 'services',
     showIn: ['rightSidebar'],
@@ -753,7 +781,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop-cmd',
     label: 'Desktop',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -893,7 +921,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-light',
     label: 'Light Theme',
-    icon: Icon.Sun,
+    icon: Sun,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -903,7 +931,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-dark',
     label: 'Dark Theme',
-    icon: Icon.Moon,
+    icon: Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -913,7 +941,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-system',
     label: 'System Theme',
-    icon: Icon.Monitor,
+    icon: MonitorIcon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',

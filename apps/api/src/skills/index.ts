@@ -26,8 +26,8 @@
  * they stay behind a token rather than becoming an anonymous crawl target. Using
  * combinedAuth (rather than supabaseAuth) is what makes the two callers that
  * matter work with no new auth scheme: the CLI holding a `kortix_pat_`, and an
- * in-sandbox agent holding the platform-injected `KORTIX_CLI_TOKEN` /
- * `KORTIX_EXECUTOR_TOKEN` session PAT. Content is identical for every caller —
+ * in-sandbox agent holding the platform-injected `KORTIX_CLI_TOKEN` session PAT.
+ * Content is identical for every caller —
  * this is authentication, not authorization; no account scoping applies.
  */
 

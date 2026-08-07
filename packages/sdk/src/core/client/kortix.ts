@@ -297,30 +297,48 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
+  function connectorDataPlane(projectId?: string) {
+    return {
+      /** Callable catalog for this project or token scope. */
+      catalog: () => P.getConnectorCatalog(projectId),
+      /** Flattened `<connector>.<action>` tool list. */
+      tools: () => P.listConnectorTools(projectId),
+      /** Search callable tools by id and description. */
+      search: (...a: DropFirst<Parameters<typeof P.searchConnectorTools>>) =>
+        P.searchConnectorTools(projectId, ...a),
+      /** Describe one `<connector>.<action>` tool. */
+      describe: (...a: DropFirst<Parameters<typeof P.describeConnectorTool>>) =>
+        P.describeConnectorTool(projectId, ...a),
+      /** Call one `<connector>.<action>` tool. */
+      call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
+        P.callConnector<T>(projectId, ...a),
+      /** Upload bytes for use by a later connector call. */
+      uploadAttachment: (
+        ...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>
+      ) => P.uploadConnectorAttachment(projectId, ...a),
+    };
+  }
+
   function project(projectId: string) {
-    const connectorAuthorizations = {
-      list: () => P.listConnectorAuthorizations(projectId),
-      listAll: () => P.listAllConnectorAuthorizations(projectId),
-      reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectorAuthorization>>) =>
-        P.reconcileConnectorAuthorization(projectId, ...a),
-      reconcileMember: (
-        ...a: DropFirst<Parameters<typeof P.reconcileMemberConnectorAuthorization>>
-      ) => P.reconcileMemberConnectorAuthorization(projectId, ...a),
-      updateCredential: (
-        ...a: DropFirst<Parameters<typeof P.updateConnectorAuthorizationCredential>>
-      ) => P.updateConnectorAuthorizationCredential(projectId, ...a),
-      revoke: (...a: DropFirst<Parameters<typeof P.revokeConnectorAuthorization>>) =>
-        P.revokeConnectorAuthorization(projectId, ...a),
-      activate: (...a: DropFirst<Parameters<typeof P.activateConnectorAuthorization>>) =>
-        P.activateConnectorAuthorization(projectId, ...a),
-      setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnectorAuthorization>>) =>
-        P.setDefaultConnectorAuthorization(projectId, ...a),
-      pipedreamConnect: (
-        ...a: DropFirst<Parameters<typeof P.pipedreamConnectConnectorAuthorization>>
-      ) => P.pipedreamConnectConnectorAuthorization(projectId, ...a),
-      pipedreamFinalize: (
-        ...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnectorAuthorization>>
-      ) => P.pipedreamFinalizeConnectorAuthorization(projectId, ...a),
+    const connections = {
+      list: () => P.listConnections(projectId),
+      listAll: () => P.listAllConnections(projectId),
+      reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnection>>) =>
+        P.reconcileConnection(projectId, ...a),
+      reconcileMember: (...a: DropFirst<Parameters<typeof P.reconcileMemberConnection>>) =>
+        P.reconcileMemberConnection(projectId, ...a),
+      updateCredential: (...a: DropFirst<Parameters<typeof P.updateConnectionCredential>>) =>
+        P.updateConnectionCredential(projectId, ...a),
+      revoke: (...a: DropFirst<Parameters<typeof P.revokeConnection>>) =>
+        P.revokeConnection(projectId, ...a),
+      activate: (...a: DropFirst<Parameters<typeof P.activateConnection>>) =>
+        P.activateConnection(projectId, ...a),
+      setDefault: (...a: DropFirst<Parameters<typeof P.setDefaultConnection>>) =>
+        P.setDefaultConnection(projectId, ...a),
+      pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
+        P.pipedreamConnectConnection(projectId, ...a),
+      pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
+        P.pipedreamFinalizeConnection(projectId, ...a),
     };
     return {
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
@@ -332,6 +350,36 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
+
+      /** Provider-neutral serverless Apps owned by this project. */
+      apps: {
+        list: () => P.listApps(projectId),
+        create: (input: Parameters<typeof P.createApp>[1]) => P.createApp(projectId, input),
+        get: (appId: string) => P.getApp(projectId, appId),
+        update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
+        remove: (appId: string) => P.deleteApp(projectId, appId),
+        artifacts: {
+          register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
+            P.registerAppArtifact(projectId, input),
+          uploadArchive: (...a: DropFirst<Parameters<typeof P.uploadAppArtifactArchive>>) =>
+            P.uploadAppArtifactArchive(projectId, ...a),
+          finalize: (...a: DropFirst<Parameters<typeof P.finalizeAppArtifact>>) =>
+            P.finalizeAppArtifact(projectId, ...a),
+        },
+        deployments: {
+          create: (...a: DropFirst<Parameters<typeof P.createAppDeployment>>) =>
+            P.createAppDeployment(projectId, ...a),
+          list: (appId: string) => P.listAppDeployments(projectId, appId),
+          get: (...a: DropFirst<Parameters<typeof P.getAppDeployment>>) =>
+            P.getAppDeployment(projectId, ...a),
+          logs: (...a: DropFirst<Parameters<typeof P.getAppDeploymentLogs>>) =>
+            P.getAppDeploymentLogs(projectId, ...a),
+        },
+        start: (appId: string) => P.startApp(projectId, appId),
+        stop: (appId: string) => P.stopApp(projectId, appId),
+        rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
+          P.rollbackApp(projectId, ...a),
+      },
 
       /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
       tokens: {
@@ -361,6 +409,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.upsertProjectSecret(projectId, input),
         setStrategy: (...a: DropFirst<Parameters<typeof P.setProjectSecretStrategy>>) =>
           P.setProjectSecretStrategy(projectId, ...a),
+        broker: (...a: DropFirst<Parameters<typeof P.brokerProjectSecretRequest>>) =>
+          P.brokerProjectSecretRequest(projectId, ...a),
         remove: (name: string) => P.deleteProjectSecret(projectId, name),
         setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
           P.setPersonalProjectSecret(projectId, ...a),
@@ -372,6 +422,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.startProjectProviderOAuth(projectId, ...a),
         pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
           P.pollProjectProviderOAuth(projectId, ...a),
+        removeProviderOAuth: (provider: string) =>
+          P.deleteProjectProviderOAuth(projectId, provider),
       },
 
       access: {
@@ -407,6 +459,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       connectors: {
+        ...connectorDataPlane(projectId),
         list: () => P.listConnectors(projectId),
         config: (...a: DropFirst<Parameters<typeof P.getConnectorConfig>>) =>
           P.getConnectorConfig(projectId, ...a),
@@ -430,9 +483,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorCredential(projectId, ...a),
         setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
           P.setConnectorSensitive(projectId, ...a),
-        authorizations: connectorAuthorizations,
-        /** @deprecated Use `authorizations`. */
-        profiles: connectorAuthorizations,
+        connections,
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
             P.getConnectorPolicies(projectId, ...a),
@@ -448,12 +499,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
             P.pipedreamFinalize(projectId, ...a),
         },
-        /** Direct integrations.sh catalogue and normalized domain surfaces. */
+        /** Direct connector catalogue and normalized domain surfaces. */
         discover: {
-          list: (...a: DropFirst<Parameters<typeof P.listDiscoverIntegrations>>) =>
-            P.listDiscoverIntegrations(projectId, ...a),
-          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverIntegration>>) =>
-            P.getDiscoverIntegration(projectId, ...a),
+          list: (...a: DropFirst<Parameters<typeof P.listDiscoverConnectors>>) =>
+            P.listDiscoverConnectors(projectId, ...a),
+          detail: (...a: DropFirst<Parameters<typeof P.getDiscoverConnector>>) =>
+            P.getDiscoverConnector(projectId, ...a),
         },
       },
 
@@ -542,7 +593,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.bulkActReviewItems(projectId, input),
       },
 
-      /** The manager inbox of executor-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
+      /** The manager inbox of connector-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
       approvals: {
         list: (options?: Parameters<typeof P.listPendingApprovals>[1]) =>
           P.listPendingApprovals(projectId, options),
@@ -582,7 +633,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.runGatewayPlayground(projectId, prompt, models, system),
       },
 
-      /** Slack + email + Meet channel integrations. */
+      /** Slack + email + Meet channel connections. */
       channels: {
         slack: {
           installation: () => P.getSlackInstallation(projectId),
@@ -896,7 +947,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
-      /** Per-session audit trail of executor-gated agent actions. */
+      /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: { showErrors?: boolean }) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
@@ -964,7 +1015,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _persistedPromptDefaults = null;
         return result;
       },
-      /** Read the authoritative secret allowlist and connector authorizations. */
+      /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>
@@ -1105,6 +1156,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
     accountInvites,
     projects,
+    /** Connector calls scoped by an agent/session token when no project id is available. */
+    connectors: connectorDataPlane(),
     project,
     session,
     /** GitHub App installation + repository linking (account-scoped). */

@@ -5,7 +5,7 @@ import {
   resolveShareSubject,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
@@ -26,6 +26,10 @@ import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/acc
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
+import {
+  isRepositoryProjectAction,
+  sessionWorkspaceAllowsRepositoryAccess,
+} from './session-workspace-access';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -441,6 +445,9 @@ export async function assertProjectCapability(
   // resource-grants.ts). Used by the agent/skill launch gates.
   resource?: { type: 'agent' | 'skill'; id: string },
 ): Promise<void> {
+  if (isRepositoryProjectAction(action)) {
+    await assertAgentSessionWorkspaceAllowsRepository(c, accountId, projectId);
+  }
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
   await assertAuthorized(
@@ -470,6 +477,12 @@ export async function projectCapabilityAllowed(
   projectId: string,
   action: string,
 ): Promise<boolean> {
+  if (
+    isRepositoryProjectAction(action) &&
+    !(await agentSessionWorkspaceAllowsRepository(c, accountId, projectId))
+  ) {
+    return false;
+  }
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
   const verdict = await authorize(
@@ -481,6 +494,33 @@ export async function projectCapabilityAllowed(
     deriveRequestContext(c),
   );
   return verdict.allowed;
+}
+
+function agentSessionIdFromRequest(c: Context): string | null {
+  if (c.get('authType') !== 'pat') return null;
+  const sessionId = c.get('sessionId');
+  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
+}
+
+export async function agentSessionWorkspaceAllowsRepository(
+  c: Context,
+  accountId: string,
+  projectId: string,
+): Promise<boolean> {
+  const sessionId = agentSessionIdFromRequest(c);
+  if (!sessionId) return true;
+  return sessionWorkspaceAllowsRepositoryAccess({ sessionId, accountId, projectId });
+}
+
+export async function assertAgentSessionWorkspaceAllowsRepository(
+  c: Context,
+  accountId: string,
+  projectId: string,
+): Promise<void> {
+  if (await agentSessionWorkspaceAllowsRepository(c, accountId, projectId)) return;
+  throw new HTTPException(403, {
+    message: 'session workspace does not allow repository access',
+  });
 }
 
 // `projects.project_id` is a Postgres `uuid` column, so a malformed id

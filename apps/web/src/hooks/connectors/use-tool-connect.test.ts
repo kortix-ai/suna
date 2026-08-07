@@ -3,13 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import { buildToolConnectorDraft, requestToolAuthorization } from './use-tool-connect';
 
 describe('buildToolConnectorDraft', () => {
-  test('uses the selected profile identity instead of the provider slug', () => {
+  test('uses the selected connector identity instead of the provider slug', () => {
     expect(
       buildToolConnectorDraft({
         appSlug: 'notion',
         appName: 'Notion',
-        profileName: 'Product workspace',
-        profileSlug: 'notion-product',
+        connectorName: 'Product workspace',
+        connectorSlug: 'notion-product',
         authorizationStrategy: 'user',
       }),
     ).toEqual({
@@ -28,33 +28,33 @@ describe('requestToolAuthorization', () => {
   const input = {
     appSlug: 'notion',
     appName: 'Notion',
-    profileName: 'Product workspace',
-    profileSlug: 'notion-product',
+    connectorName: 'Product workspace',
+    connectorSlug: 'notion-product',
     authorizationStrategy: 'user' as const,
   };
 
-  test('uses only member authorization endpoints for a user-owned profile', async () => {
+  test('uses only member connection endpoints for a user-owned connector', async () => {
     const calls: string[] = [];
     const result = await requestToolAuthorization('project-1', input, {
       connectProject: async () => {
         calls.push('project-connect');
         return {};
       },
-      reconcileMember: async (_projectId, authorization) => {
-        calls.push(`member-reconcile:${authorization.connector_alias}:${authorization.label}`);
+      reconcileMember: async (_projectId, connection) => {
+        calls.push(`member-reconcile:${connection.connector_alias}:${connection.label}`);
         return {
-          profile_id: 'authorization-1',
-          connector_alias: authorization.connector_alias,
+          connection_id: 'connection-1',
+          connector_alias: connection.connector_alias,
           owner_type: 'member',
           owner_id: 'user-1',
-          label: authorization.label,
+          label: connection.label,
           status: 'active',
           is_default: true,
           metadata: {},
         };
       },
-      connectMember: async (_projectId, authorizationId) => {
-        calls.push(`member-connect:${authorizationId}`);
+      connectMember: async (_projectId, connectionId) => {
+        calls.push(`member-connect:${connectionId}`);
         return { token: 'token', app: 'notion' };
       },
     });
@@ -62,15 +62,15 @@ describe('requestToolAuthorization', () => {
     expect(result).toEqual({
       token: 'token',
       app: 'notion',
-      authorizationId: 'authorization-1',
+      connectionId: 'connection-1',
     });
     expect(calls).toEqual([
       'member-reconcile:notion-product:Product workspace',
-      'member-connect:authorization-1',
+      'member-connect:connection-1',
     ]);
   });
 
-  test('uses the project endpoint for a project-owned profile', async () => {
+  test('uses the project endpoint for a project-owned connector', async () => {
     const calls: string[] = [];
     const result = await requestToolAuthorization(
       'project-1',
@@ -89,7 +89,7 @@ describe('requestToolAuthorization', () => {
       },
     );
 
-    expect(result).toEqual({ token: 'token', app: 'notion', authorizationId: null });
+    expect(result).toEqual({ token: 'token', app: 'notion', connectionId: null });
     expect(calls).toEqual(['project-connect:notion-product']);
   });
 });

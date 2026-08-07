@@ -1,4 +1,4 @@
-import type { ConnectorGateProfile } from '@/stores/connector-gate-store';
+import type { ConnectorGateConnection } from '@/stores/connector-gate-store';
 
 /**
  * How a failed session create resolves, keyed by the server's error code.
@@ -25,11 +25,11 @@ export function resolveCreateFailure(
   // the API has never emitted it — a dead branch that cost nothing only because
   // the live code sits beside it.
   //
-  // `REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` deliberately does NOT open the gate.
+  // `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` deliberately does NOT open the gate.
   // It means the project has no such connector at all, so the gate would ask
   // someone to connect an account to something that does not exist; the toast is
   // the honest outcome until a project owner adds it.
-  if (code === 'CONNECTOR_AUTHORIZATION_REQUIRED') return 'connect';
+  if (code === 'CONNECTOR_CONNECTION_REQUIRED') return 'connect';
   return 'toast';
 }
 
@@ -37,7 +37,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isConnectorGateProfile(value: unknown): value is ConnectorGateProfile {
+function isConnectorGateConnection(value: unknown): value is ConnectorGateConnection {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
@@ -50,24 +50,28 @@ function isConnectorGateProfile(value: unknown): value is ConnectorGateProfile {
   );
 }
 
-export function getConnectorAuthorizationRequiredProfiles(
+export function getRequiredConnectorConnections(
   error: unknown,
-): ConnectorGateProfile[] | null {
+): ConnectorGateConnection[] | null {
   if (!isRecord(error)) return null;
 
   const rootCode = error.code;
   const payloads = [error.data, error.details, error].filter(isRecord);
   for (const payload of payloads) {
     if (
-      rootCode !== 'CONNECTOR_AUTHORIZATION_REQUIRED' &&
-      payload.code !== 'CONNECTOR_AUTHORIZATION_REQUIRED'
+      rootCode !== 'CONNECTOR_CONNECTION_REQUIRED' &&
+      payload.code !== 'CONNECTOR_CONNECTION_REQUIRED'
     ) {
       continue;
     }
 
-    const profiles = payload.connector_profiles;
-    if (Array.isArray(profiles) && profiles.length > 0 && profiles.every(isConnectorGateProfile)) {
-      return profiles;
+    const connections = payload.connector_connections;
+    if (
+      Array.isArray(connections) &&
+      connections.length > 0 &&
+      connections.every(isConnectorGateConnection)
+    ) {
+      return connections;
     }
   }
 

@@ -28,12 +28,14 @@ mock.module('../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') {
-          return [{
-            id: 'test-platform-default',
-            models: ['codex/gpt-5.6-sol'],
-            fallbackModels: ['glm-5.2'],
-            fallbackOn: 'any-error',
-          }];
+          return [
+            {
+              id: 'test-platform-default',
+              models: ['codex/gpt-5.6-sol'],
+              fallbackModels: ['glm-5.2'],
+              fallbackOn: 'any-error',
+            },
+          ];
         }
         return target[key];
       },
@@ -63,6 +65,10 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  getProjectSecretValueForConsumer: async () => 'user-key',
+  resolveProjectSecretsForConsumer: async (input: { name: string }) => [
+    { identifier: input.name, value: 'user-key' },
+  ],
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({
@@ -70,6 +76,7 @@ mock.module('../projects/secrets', () => ({
     names: [],
     revision: 'empty',
   }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({
     env: {},
     names: [],
@@ -154,7 +161,9 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('blocks managed premium candidates for free accounts', async () => {
     accountTier = 'free';
-    await expect(resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6')).rejects.toMatchObject({
+    await expect(
+      resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6'),
+    ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',
     });

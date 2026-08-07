@@ -264,6 +264,11 @@ export function createMockCreditAccount(overrides: Record<string, any> = {}) {
     lastRenewalPeriodStart: null,
     paymentStatus: 'active',
     lastPaymentFailure: null,
+    // Enterprise entitlement overrides — default off so existing per-seat/legacy
+    // tests are unaffected; per-seat webhook tests can override to assert the
+    // no-clobber guard for enterprise-entitled accounts.
+    enterpriseEntitled: false,
+    demoEnterprise: false,
     revenuecatCustomerId: null,
     revenuecatSubscriptionId: null,
     revenuecatCancelledAt: null,

@@ -4,8 +4,10 @@ import test from 'node:test'
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isCanvasImageDataOOMNoise,
   isClientRequestTimeoutMessage,
   isConnectionClosedNoise,
+  isDocumentStateNotFoundNoise,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isEmbedPdfTilingReactUpdateDepthNoise,
   isEmbedPdfTilingTileDestructureNoise,
@@ -21,7 +23,10 @@ import {
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
+  isModelNotServableNoise,
+  isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
+  isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
   isOperationErrorPopErrorScopeNoise,
@@ -34,6 +39,7 @@ import {
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
   isSupabaseTokenExpiredNoise,
+  isThirdPartyReactUpdateDepthNoise,
   isTronLinkProxyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
@@ -409,6 +415,14 @@ const BILLING_GATE_EXPECTED_EVENTS = [
   // The other two billing-gate 402 reasons — same expected business state,
   // same leak paths, same fix (prevents the next noise pattern).
   'No credit account found. Complete account setup first.',
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+]
+
+// The seat price lives in apps/api and this filter matches the rendered string,
+// so the two drift silently: the API moved to $40, this list stayed at $20, and
+// an expected billing state paged as an error until someone read the Sentry
+// volume. A stale price must fail the suite, not the on-call rotation.
+const SUPERSEDED_BILLING_GATE_MESSAGES = [
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ]
 
@@ -418,6 +432,18 @@ test('classifies every billing-gate 402 message as an expected business state', 
       isExpectedBillingGateMessage(message),
       true,
       `expected ${message} to be classified as an expected billing-gate message`,
+    )
+  }
+})
+
+test('a superseded seat price is NOT still carried as an expected message', () => {
+  // Keeping the old string "working" is what hides the drift: the filter looks
+  // healthy while the message the API actually sends sails past it.
+  for (const message of SUPERSEDED_BILLING_GATE_MESSAGES) {
+    assert.equal(
+      isExpectedBillingGateMessage(message),
+      false,
+      `stale seat price still allow-listed: ${message}`,
     )
   }
 })
@@ -615,6 +641,177 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
   ]) {
     assert.equal(
       isExpectedCompactionNoModelMessage(value),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error
+// 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
+// (Kortix Frontend prod): `ApiError`, message
+// `Model "openai/gpt-5.4-mini" is not available for this account`, 7
+// occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL post-v0.12.4),
+// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…` (co-
+// worker session page), browser Android Chrome mobile, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`). PR #6082 added an SDK classification gate in
+// `packages/sdk/src/core/http/api-client.ts` `makeRequest` that silences the
+// typed 409 `code === 'model_not_servable'` from `onError` (Sentry), and added
+// an `onError` handler to `useModelDefaults`'s `setMutation` that surfaces a
+// user-facing toast. BUT the 7 occurrences STILL reached Sentry as UNCAUGHT
+// `onunhandledrejection` because every call site fire-and-forgets the
+// returned promise — `void setAccountDefault(...)` / `void setAgentDefault
+// (...)` / `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
+// `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
+// promise rejects → `void` discards the rejected promise with no `.catch()` →
+// unhandled rejection → Sentry's `onunhandledrejection`. The `setMutation`
+// `onError` swallows the rejection inside react-query (the toast fires), but
+// react-query v5's `onError` does NOT prevent `mutateAsync`'s returned promise
+// from rejecting, so the `void`-discarded promise still surfaces as an
+// uncaught global rejection. The SDK `makeRequest` gate silences `onError`
+// (the Sentry callback), but the unhandled rejection happens at the `.then()`
+// / `void` level — AFTER `makeRequest` returned — so the gate never sees it.
+// This matcher is the leak-path backstop, sibling to the billing-gate /
+// compaction-no-model matchers (also `ApiError`/Error throws that leak via
+// `void` fire-and-forget → `onunhandledrejection`). The model name varies, so
+// the match is a REGEX anchored on the EXACT API wording
+// `Model "…" is not available for this account` (the same template across all
+// four emitting routes — `r4.ts:3045`, `channel-bindings.ts:288`, `r7.ts:2811`,
+// `sessions.ts:741`), with the canonical `ApiError: ` / `Unhandled promise
+// rejection: ` wrappers, so a longer real error that merely mentions the
+// phrase is never matched.
+const MODEL_NOT_SERVABLE_EVENTS = [
+  // The bare API message — the SDK `ApiError.message` — for the assigned
+  // prod pattern (`openai/gpt-5.4-mini`).
+  'Model "openai/gpt-5.4-mini" is not available for this account',
+  // A different model id (BYOK `provider/model` shape) — the prior prod
+  // recurrence (`nvidia/minimaxai/minimax-m3`, pattern `ed07f6c5…`). The
+  // matcher must anchor on the wording, not a specific model.
+  'Model "nvidia/minimaxai/minimax-m3" is not available for this account',
+  // An `ApiError:`-prefixed wrapper (e.g. Sentry's exception `value`
+  // formatting, or a console/error-boundary re-throw).
+  'ApiError: Model "openai/gpt-5.4-mini" is not available for this account',
+  // An unhandled-rejection wrapper preserving the message (Sentry
+  // `onunhandledrejection` auto-capture, `handled:false` — the prod shape).
+  'Unhandled promise rejection: Model "openai/gpt-5.4-mini" is not available for this account',
+  // An unhandled-rejection wrapper around an `ApiError:`-prefixed re-throw
+  // (the full wrapper stack).
+  'Unhandled promise rejection: ApiError: Model "openai/gpt-5.4-mini" is not available for this account',
+]
+
+test('classifies the model-not-servable validation state as expected', () => {
+  for (const message of MODEL_NOT_SERVABLE_EVENTS) {
+    assert.equal(
+      isModelNotServableNoise(message),
+      true,
+      `expected "${message}" to be classified as model-not-servable noise`,
+    )
+  }
+})
+
+test('suppresses a model-not-servable Sentry event regardless of capture path', () => {
+  for (const value of MODEL_NOT_SERVABLE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              // The unhandled-rejection stack DOES carry resolved first-party
+              // `apps/web/src/…` call-site frames (the `void setXxxDefault(...)`
+              // call sites in session-chat.tsx / agents-view.tsx / gateway-view.tsx).
+              // The matcher is deliberately message-only (NO first-party
+              // negative guard) — mirroring the billing-gate / compaction-no-model
+              // matchers — so a first-party call-site frame does NOT veto
+              // suppression (that's the whole point: the prod noise carries
+              // first-party frames and must still be dropped).
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/sdk.js' },
+                  { filename: 'apps/web/src/features/session/session-chat.tsx' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a model-not-servable unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Model "openai/gpt-5.4-mini" is not available for this account',
+    }),
+    true,
+  )
+  // The runtime gate also receives the raw `reason` (the `ApiError` instance),
+  // whose `message` is the bare API string — the `extractMessage` path must
+  // classify it too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      reason: { message: 'Model "openai/gpt-5.4-mini" is not available for this account' },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a longer real error containing the model-not-servable wording', () => {
+  for (const value of [
+    'Failed to set default: Model "openai/gpt-5.4-mini" is not available for this account',
+    'Model "openai/gpt-5.4-mini" is not available for this account while saving',
+    'ApiError: Model "openai/gpt-5.4-mini" is not available for this account and more',
+    'Unhandled promise rejection: Something else: Model "x" is not available for this account',
+  ]) {
+    assert.equal(
+      isModelNotServableNoise(value),
+      false,
+      `expected longer message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected longer Sentry event "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected longer runtime error "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real model-defaults mutation failure (network / 5xx)', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'TypeError: Cannot read properties of undefined (reading modelID)',
+    'Failed to fetch',
+  ]) {
+    assert.equal(
+      isModelNotServableNoise(value),
       false,
       `expected real error "${value}" to keep reporting`,
     )
@@ -2252,6 +2449,572 @@ test('does NOT suppress a real app SyntaxError from a de-minified first-party fr
 })
 
 // ---------------------------------------------------------------------------
+// Old-browser third-party-library DOM null-deref noise on the marketing
+// homepage — two SIBLING Better Stack prod patterns (Kortix Frontend prod,
+// application_id 2346967), both `TypeError: Cannot read properties of null
+// (reading '<X>')` (V8 wording) from minified third-party library internals
+// running on VERY OLD browsers (Windows 7 Chrome, Chrome 95 Linux) hitting
+// `https://kortix.com/` (marketing homepage). UNCAUGHT global `onerror`
+// (`auto.browser.global_handlers.onerror`, `handled:false` — never reached a
+// React error boundary). 2 occurrences each, 0 identified users, marketing
+// page only — browser-compatibility noise, not a product defect.
+//
+//   Pattern 1: e02e022f7433a02c7acdc9ae33c3dd1bdec938eeb694f0bf83d290c1d696d853
+//   `Cannot read properties of null (reading 'scrollLeft')`, call site
+//   function `measureScroll` in chunk `0d5wqj98qv1e9.js` (minified). Last
+//   2026-08-06 11:11:14 UTC.
+//
+//   Pattern 2: 8ab4ae816505dc3a17c7b8258e6894b3964ab7d10056afc47477833824fa8648
+//   `Cannot read properties of null (reading 'appendChild')`, call site
+//   function `ft` in chunk `0foj1ouh5ijrj.js` (minified). Same timestamp.
+//
+// `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+// first-party React code DOES call, so the matcher requires BOTH the exact
+// message AND a NEGATIVE guard (any resolved first-party `apps/web/src/…`
+// frame → keep reporting). The prod events carry only minified chunk frames +
+// `<anonymous>`, so the negative guard does NOT fire for them.
+// ---------------------------------------------------------------------------
+
+const MEASURE_SCROLL_CHUNK = 'app:///_next/static/chunks/0d5wqj98qv1e9.js'
+const APPEND_CHILD_CHUNK = 'app:///_next/static/chunks/0foj1ouh5ijrj.js'
+
+test('classifies the production scrollLeft measureScroll noise (Pattern 1, exact prod frames)', () => {
+  // Exact shape of Better Stack pattern e02e022f…: V8 wording, `measureScroll`
+  // in the minified `0d5wqj98qv1e9` chunk + an `<anonymous>` frame, UNCAUGHT.
+  const frames = [
+    { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+    { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+    { filename: '<anonymous>', function: '?' },
+  ]
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames,
+    }),
+    true,
+  )
+  // The Sentry `beforeSend` gate suppresses it.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies the production appendChild ft noise (Pattern 2, exact prod frames)', () => {
+  // Exact shape of Better Stack pattern 8ab4ae81…: V8 wording, `ft` in the
+  // minified `0foj1ouh5ijrj` chunk, 3 frames, UNCAUGHT.
+  const frames = [
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+  ]
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      frames,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'appendChild')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses both old-browser DOM null-deref patterns through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` strips `Unhandled promise rejection: ` and
+  // `<Word>Error: ` (e.g. `TypeError: `) prefixes so all capture paths
+  // (window.onerror, onunhandledrejection, Sentry exception) classify
+  // consistently.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "Cannot read properties of null (reading 'scrollLeft')",
+    "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+    "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'scrollLeft')",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      true,
+      `expected "${message}" to be classified as old-browser DOM null-deref noise`,
+    )
+  }
+  const appendFrame = { filename: APPEND_CHILD_CHUNK, function: 'ft' }
+  for (const message of [
+    "Cannot read properties of null (reading 'appendChild')",
+    "TypeError: Cannot read properties of null (reading 'appendChild')",
+    "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'appendChild')",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [appendFrame] }),
+      true,
+      `expected "${message}" to be classified as old-browser DOM null-deref noise`,
+    )
+  }
+})
+
+test('classifies the old-JSC wording variants of both sibling patterns (different engine, same class)', () => {
+  // Old JSC (old Safari/iOS) phrases a null property access as
+  // `Cannot read property '<X>' of null` — different engine, same old-browser
+  // DOM null-deref class. The matcher must catch both engine wordings.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read property 'scrollLeft' of null",
+      frames: [chunkFrame],
+    }),
+    true,
+  )
+  const appendFrame = { filename: APPEND_CHILD_CHUNK, function: 'ft' }
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read property 'appendChild' of null",
+      frames: [appendFrame],
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless window.onerror variant as noise (message alone is specific)', () => {
+  // A frameless window.onerror capture carries the exact message + no
+  // `filename`. `measureScroll` and the minified `ft` are third-party library
+  // internals, and a real first-party `el.scrollLeft` / `parent.appendChild`
+  // null-deref almost always has a resolvable frame with a stack, so a
+  // frameless capture with one of these exact messages is safe to drop.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+    }),
+    true,
+  )
+  // The runtime (window.onerror) gate suppresses a frameless capture too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+    }),
+    true,
+  )
+})
+
+test('suppresses the old-browser DOM null-deref noise via the runtime (window.onerror) gate with a chunk filename', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      filename: APPEND_CHILD_CHUNK,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the old-browser DOM null-deref when a first-party frame is present (real regression)', () => {
+  // `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+  // first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
+  // hover.ts` reads `container.scrollLeft`, portal/tooltip ref-callbacks call
+  // `appendChild`). A real first-party null-deref de-minifies (via Sentry's
+  // sourcemap resolution) to a frame whose filename contains `apps/web/src/`
+  // and MUST keep reporting — the negative guard is the load-bearing over-match
+  // protection.
+  const firstPartyFrames = [
+    { filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' },
+    { filename: 'apps/web/src/features/workspace/project-sidebar/session-title.tsx' },
+    { filename: 'app:///apps/web/src/components/ui/portal.tsx' },
+  ]
+  for (const frames of [
+    [firstPartyFrames[0]],
+    [firstPartyFrames[1]],
+    [firstPartyFrames[2]],
+    // A stack that mixes a first-party frame with the minified chunk frame
+    // STILL keeps reporting — the first-party frame is the actionable anchor.
+    [firstPartyFrames[0], { filename: MEASURE_SCROLL_CHUNK }],
+    [{ filename: APPEND_CHILD_CHUNK }, firstPartyFrames[2]],
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({
+        message: "Cannot read properties of null (reading 'scrollLeft')",
+        frames,
+      }),
+      false,
+      `expected first-party scrollLeft null-deref with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({
+        message: "Cannot read properties of null (reading 'appendChild')",
+        frames,
+      }),
+      false,
+      `expected first-party appendChild null-deref with frames ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+  // And via the Sentry `beforeSend` gate.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: {
+              frames: [{ filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+  // And via the runtime (window.onerror) gate with a first-party filename.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      filename: 'app:///apps/web/src/components/ui/portal.tsx',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a near-worded null-deref message (over-match guard)', () => {
+  // Only the EXACT V8/old-JSC messages for `scrollLeft` and `appendChild` are
+  // noise. A different DOM method, a different access pattern, or a near-
+  // worded regression keeps reporting.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    // Different DOM method on null — not the two anchored methods.
+    "Cannot read properties of null (reading 'scrollTop')",
+    "Cannot read properties of null (reading 'removeChild')",
+    "Cannot read properties of null (reading 'appendChild') extra",
+    // `undefined` (not `null`) — a different null-deref class.
+    "Cannot read properties of undefined (reading 'scrollLeft')",
+    "Cannot read properties of undefined (reading 'appendChild')",
+    // A real first-party-shaped message that happens to mention the method.
+    "Cannot read properties of null (reading 'appendChild') in portal mount",
+    // Substring without the exact wrapper.
+    "scrollLeft is null",
+    "appendChild failed",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected near-worded message "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-V8/JSC engine wording (over-match guard)', () => {
+  // SpiderMonkey (Firefox) phrases a null property access as
+  // `null is not an object (evaluating '<expr>')` or
+  // `can't access property "<m>"<…>` — different engine wordings the matcher
+  // does NOT anchor on (the prod events are V8/old-JSC from Chrome). Keep
+  // reporting so a genuine Firefox null-deref regression stays observable.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "null is not an object (evaluating 'el.scrollLeft')",
+    "null is not an object (evaluating 'parent.appendChild')",
+    'can\'t access property "scrollLeft" of null',
+    'can\'t access property "appendChild" of null',
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected non-V8/JSC message "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('suppresses the scrollLeft noise when the only frame is the <anonymous> throw site (prod shape)', () => {
+  // The prod Pattern 1 stack ends with an `<anonymous>` frame after the two
+  // `measureScroll` chunk frames. A capture that surfaces ONLY the
+  // `<anonymous>` throw site (e.g. a truncated stack) still classifies as
+  // noise — `<anonymous>` is not a resolved first-party source, so the
+  // negative guard does not fire.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames: [{ filename: '<anonymous>', function: '?' }],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: { frames: [{ filename: '<anonymous>', function: '?' }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the appendChild noise when the stack is fully minified chunk frames (prod shape)', () => {
+  // The prod Pattern 2 stack is 3 frames all in the `0foj1ouh5ijrj` chunk.
+  // None resolve to a first-party `apps/web/src/…` path, so the negative
+  // guard does not fire.
+  const frames = [
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+    { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+  ]
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "TypeError: Cannot read properties of null (reading 'appendChild')",
+            stacktrace: { frames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the old-JSC wording variants through both gates (runtime + beforeSend)', () => {
+  // The old-JSC wording `Cannot read property '<X>' of null` must also be
+  // suppressed by both the runtime (window.onerror) gate and the Sentry
+  // `beforeSend` gate, not just the matcher.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read property 'scrollLeft' of null",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read property 'appendChild' of null",
+            stacktrace: { frames: [{ filename: APPEND_CHILD_CHUNK, function: 'ft' }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a null-deref on a DIFFERENT DOM method (over-match guard, first-party stays observable)', () => {
+  // Only `scrollLeft` and `appendChild` are anchored. A null-deref on any
+  // other DOM method — even from a minified chunk on an old browser — keeps
+  // reporting, because it is not one of the two observed prod patterns and
+  // may be a real first-party or third-party regression worth triaging.
+  const chunkFrame = { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }
+  for (const message of [
+    "Cannot read properties of null (reading 'scrollTop')",
+    "Cannot read properties of null (reading 'scrollWidth')",
+    "Cannot read properties of null (reading 'removeChild')",
+    "Cannot read properties of null (reading 'insertBefore')",
+    "Cannot read properties of null (reading 'appendChild')x", // trailing char
+    "Cannot read properties of null (reading 'el.scrollLeft')", // dotted expr
+    "Cannot read properties of null (reading 'parent.appendChild')", // dotted
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [chunkFrame] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless non-matching message even with the scrollLeft/appendChild substring (over-match guard)', () => {
+  // The matcher anchors on the EXACT V8/old-JSC message, not a substring. A
+  // frameless capture with a message that merely CONTAINS `scrollLeft` or
+  // `appendChild` (but is not the exact null-deref wording) keeps reporting.
+  for (const message of [
+    "Cannot read properties of undefined (reading 'scrollLeft')",
+    "Cannot read properties of null (reading 'el.scrollLeft')",
+    "el.scrollLeft is null",
+    "Cannot read properties of null (reading 'parent.appendChild')",
+    "TypeError: parent.appendChild is not a function",
+  ]) {
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      false,
+      `expected runtime "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-first-party but resolvable chunk URL for a different message shape (regression guard)', () => {
+  // A Vercel `?dpl=dpl_…` chunk URL is NOT a first-party `apps/web/src/…`
+  // path, so it does not trip the negative guard. But the matcher only
+  // suppresses the EXACT `scrollLeft`/`appendChild` null-deref wording — a
+  // different message from the same chunk URL keeps reporting.
+  const vercelChunk = 'https://kortix.com/_next/static/chunks/0d5wqj98qv1e9.js?dpl=dpl_abc123'
+  for (const message of [
+    "Cannot read properties of null (reading 'foo')",
+    'Something completely different',
+    "Cannot read properties of null (reading 'appendChild')", // <- this one IS noise
+  ]) {
+    const expected = message === "Cannot read properties of null (reading 'appendChild')"
+    assert.equal(
+      isOldBrowserDomNullDerefNoise({ message, frames: [{ filename: vercelChunk }] }),
+      expected,
+      `expected "${message}" from Vercel chunk to ${expected ? 'be noise' : 'keep reporting'}`,
+    )
+  }
+})
+
+test('the two prod patterns classify as noise independently (sibling isolation)', () => {
+  // Each sibling pattern must classify as noise on its own — the matcher is
+  // not coupled to both being present. This pins the independence so a future
+  // refactor that, say, only handles `scrollLeft` does not silently let
+  // `appendChild` leak back to Better Stack.
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'scrollLeft')",
+      frames: [{ filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' }],
+    }),
+    true,
+  )
+  assert.equal(
+    isOldBrowserDomNullDerefNoise({
+      message: "Cannot read properties of null (reading 'appendChild')",
+      frames: [{ filename: APPEND_CHILD_CHUNK, function: 'ft' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses both prod patterns through the runtime gate with the exact prod chunk filename', () => {
+  // End-to-end pin: the exact production Better Stack shapes — message + the
+  // prod chunk filename — are suppressed by the runtime (window.onerror)
+  // gate, which is the gate that actually receives the UNCAUGHT global
+  // `onerror` captures (`auto.browser.global_handlers.onerror`).
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'scrollLeft')",
+      filename: MEASURE_SCROLL_CHUNK,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "TypeError: Cannot read properties of null (reading 'appendChild')",
+      filename: APPEND_CHILD_CHUNK,
+    }),
+    true,
+  )
+})
+
+test('suppresses both prod patterns through the Sentry beforeSend gate with the exact prod stack', () => {
+  // End-to-end pin: the exact production Better Stack shapes — message + the
+  // prod stack frames — are suppressed by the Sentry `beforeSend` gate.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'scrollLeft')",
+            stacktrace: {
+              frames: [
+                { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+                { filename: MEASURE_SCROLL_CHUNK, function: 'measureScroll' },
+                { filename: '<anonymous>', function: '?' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of null (reading 'appendChild')",
+            stacktrace: {
+              frames: [
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+                { filename: APPEND_CHILD_CHUNK, function: 'ft' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+// ---------------------------------------------------------------------------
 // "No error message" + unresolved minified chunk frames (Better Stack
 // patterns a81b7cd3… / 576172fbd8… in chunk 21544-ac9e889808bbe0af.js).
 // ---------------------------------------------------------------------------
@@ -3463,20 +4226,558 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
     assert.equal(
       isAndroidWebViewNativeBridgePostMessageNoise({
         message,
-        frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+        frames: [],
       }),
       false,
-      `expected "${message}" from an app chunk (no bridge frame) to keep reporting`,
+      `expected "${message}" to keep reporting`,
     )
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value: message }] },
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
       }),
       false,
-      `expected frameless Sentry event for "${message}" to keep reporting`,
+      `expected Sentry event "${message}" to keep reporting`,
     )
   }
 })
+
+// ---------------------------------------------------------------------------
+// Third-party editor-library (ProseMirror/TipTap-based) document-state race
+// noise (Better Stack patterns
+// 6d6fa794a67a293ce9fa5d093648a9d76a2dd243e04f4f9dd9fbbd67bfb0c9ef and
+// a954c7e7553065986e8177c68b82ccf3c3d83d6eabb413700974b2a11f841fb7, Kortix
+// Frontend prod, application_id 2346967). A ProseMirror/TipTap-based editor
+// library holds an internal document-state map keyed by document id; when the
+// editor is unmounted / the document closed while an async interaction or
+// selection is still in flight (a race in the library's async interaction
+// handling, fired by WebKit's async timing differing from Chrome's), the
+// library's own internal `getDocumentStateOrThrow` / `getDocumentState`
+// helpers throw `<Interaction|Selection> state not found for document:
+// <docId>`. Both Better Stack patterns are the SAME doc id
+// (`doc-1785904808253-gbsixyvii`), same Safari 26.5 session
+// (`be897489-001b-4ca4-b9ca-a1aa770c4082`), same minified chunk
+// `17631.2j-4o95.js`, last 2026-08-05 04:40:45 UTC (POST-v0.12.3), UNCAUGHT
+// (`handled:false`, mechanism `addEventListener`), NO first-party
+// `apps/web/src/…` frame. 28 occurrences (interaction) + 2 occurrences
+// (selection) from a single session in a short window — a transient race, not
+// a persistent bug. The matcher anchors on the
+// `/^(Interaction|Selection) state not found for document:/` message prefix
+// with a NEGATIVE guard: any resolved first-party `apps/web/src/…` frame →
+// keep reporting (a real first-party `throw new Error('Interaction state not
+// found for document: …')` regression de-minifies to `apps/web/src/…`).
+// ---------------------------------------------------------------------------
+
+// The exact interaction-state message from the production event (pattern
+// 6d6fa794…, 28 occurrences).
+const DOCUMENT_STATE_INTERACTION_MESSAGE =
+  'Interaction state not found for document: doc-1785904808253-gbsixyvii'
+
+// The exact selection-state message from the production event (pattern
+// a954c7e7…, 2 occurrences, SAME doc id).
+const DOCUMENT_STATE_SELECTION_MESSAGE =
+  'Selection state not found for document: doc-1785904808253-gbsixyvii'
+
+// Pattern 6d6fa794 — the production stack frames (oldest-first → throwing
+// frame last): the entry `r` in chunk `13jg6.ewllp.z.js`, then the editor
+// library's internal `v` → `getActiveMode` → `getDocumentStateOrThrow` in
+// chunk `17631.2j-4o95.js`. All minified third-party library chunk frames —
+// NO first-party `apps/web/src/…` frame.
+const DOCUMENT_STATE_INTERACTION_FRAMES = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'v' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getActiveMode' },
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentStateOrThrow' },
+]
+
+// Pattern a954c7e7 — the selection sibling's call site is the library's
+// `getDocumentState` in the same `17631.2j-4o95.js` chunk.
+const DOCUMENT_STATE_SELECTION_FRAMES = [
+  { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentState' },
+]
+
+// The production Sentry event shape (pattern 6d6fa794): UNCAUGHT, mechanism
+// `auto.browser.browserapierrors.addEventListener`, handled:false, on the
+// co-worker session page.
+const DOCUMENT_STATE_INTERACTION_EVENT = {
+  request: {
+    url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+  },
+  exception: {
+    values: [
+      {
+        value: DOCUMENT_STATE_INTERACTION_MESSAGE,
+        mechanism: {
+          type: 'auto.browser.browserapierrors.addEventListener',
+          handled: false,
+        },
+        stacktrace: { frames: DOCUMENT_STATE_INTERACTION_FRAMES },
+      },
+    ],
+  },
+}
+
+test('classifies the editor document-state interaction race as noise (pattern 6d6fa794)', () => {
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      frames: DOCUMENT_STATE_INTERACTION_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('classifies the editor document-state selection race as noise (pattern a954c7e7)', () => {
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_SELECTION_MESSAGE,
+      frames: DOCUMENT_STATE_SELECTION_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned editor document-state interaction Sentry event via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise(DOCUMENT_STATE_INTERACTION_EVENT),
+    true,
+  )
+})
+
+test('suppresses the editor document-state event via the runtime gate too', () => {
+  // The runtime gate sees the window.onerror `filename`; the prod event's
+  // throw site is the library chunk, so a runtime capture with the chunk
+  // filename + the canonical message classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      filename: 'app:///_next/static/chunks/17631.2j-4o95.js',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: DOCUMENT_STATE_SELECTION_MESSAGE,
+      filename: 'app:///_next/static/chunks/17631.2j-4o95.js',
+    }),
+    true,
+  )
+})
+
+test('suppresses the editor document-state event even with no frames (message-only capture)', () => {
+  // The `for document:` suffix names the library's document-state map; a
+  // frameless capture with this exact message prefix still classifies as
+  // noise (the message wording is library-specific). This mirrors the
+  // Connection-closed / Paper-Shaders-WebGL-unsupported matchers.
+  assert.equal(
+    isDocumentStateNotFoundNoise({
+      message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: DOCUMENT_STATE_INTERACTION_MESSAGE, stacktrace: { frames: [] } },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the editor document-state throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw this
+  // state-lookup message → actionable regression; the negative guard MUST
+  // preserve it so the call site can be found + fixed. The message wording
+  // alone is not enough to drop — the library's canonical wording could be
+  // reused by a hostile/copy-pasted first-party throw.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [
+      { filename: 'app:///_next/static/chunks/17631.2j-4o95.js', function: 'getDocumentStateOrThrow' },
+      { filename: 'app:///apps/web/src/features/editor/state.ts', function: 'lookup' },
+    ],
+  ]) {
+    assert.equal(
+      isDocumentStateNotFoundNoise({
+        message: DOCUMENT_STATE_INTERACTION_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party document-state throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: DOCUMENT_STATE_INTERACTION_MESSAGE,
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party document-state throw from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message that is not a document-state lookup (over-match guard)', () => {
+  // Only the `<Interaction|Selection> state not found for document:` prefix
+  // is noise; a different wording keeps reporting so the matcher does not
+  // over-match.
+  for (const message of [
+    'Interaction state not found',
+    'Selection state not found',
+    'state not found for document: doc-x',
+    'Interaction state not found for widget: w-1',
+    'Document state not found for document: doc-x',
+  ]) {
+    assert.equal(
+      isDocumentStateNotFoundNoise({
+        message,
+        frames: DOCUMENT_STATE_INTERACTION_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: DOCUMENT_STATE_INTERACTION_FRAMES } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Broader third-party-library React #185 "Maximum update depth exceeded"
+// fallback noise (Better Stack patterns
+// 223d7d7e1000bc98be5969f2cddac143e03134cb39442f0b959cf1def53ccb8a,
+// 51b14963e617b4cee9926db4a4d6a9d50d4bdfb3b71d5f32faf1c83d33066d12, and
+// cd68e360db0f42e7dca4e9e922cfe80ed629e878dbb327f74ac889d194da0276, Kortix
+// Frontend prod, application_id 2346967). A ProseMirror/TipTap-based editor
+// library's async interaction/selection handler re-enters the React render
+// loop after its document-state-map race (see the document-state matcher
+// above), tripping React's 50-nested-update guard (#185) WITHOUT an
+// `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
+// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
+// (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
+// matcher anchors on the `onTileRendering` frame and does NOT catch these —
+// they have no `onTileRendering` frame. This broader fallback matcher runs
+// AFTER the tiling matcher and catches non-tiling third-party #185s. It
+// requires the #185 message AND TWO negative guards: NO resolved first-party
+// `apps/web/src/…` frame (a real first-party setState loop de-minifies to
+// `apps/web/src/…` and is preserved), AND the event is UNCAUGHT (mechanism is
+// a global/BrowserApiErrors auto-handler with `handled:false` — a CAUGHT #185
+// that reached a React error boundary may be actionable).
+// ---------------------------------------------------------------------------
+
+// Pattern 223d7d7e — mechanism `auto.browser.global_handlers.onerror`, frames
+// `r @ 13jg6.ewllp.z.js | f_ @ 0foj1ouh5ijrj.js | fL | s4 | nM | ? | sZ | ?
+// @ 00ym4.y9k1959.js | ov | oy`. NO `onTileRendering` frame, NO first-party
+// `apps/web/src/…` frame.
+const REACT185_THIRDPARTY_FRAMES_223D7D7E = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'f_' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'fL' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 's4' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'nM' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'sZ' },
+  { filename: 'app:///_next/static/chunks/00ym4.y9k1959.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+// Pattern 51b14963 — mechanism
+// `auto.browser.browserapierrors.setInterval`, frames
+// `r @ 13jg6.ewllp.z.js | ? @ 12r-_umoe~03c.js | ov @ 0foj1ouh5ijrj.js | oy
+// @ 0foj1ouh5ijrj.js`.
+const REACT185_THIRDPARTY_FRAMES_51B14963 = [
+  { filename: 'app:///_next/static/chunks/13jg6.ewllp.z.js', function: 'r' },
+  { filename: 'app:///_next/static/chunks/12r-_umoe~03c.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+// Pattern cd68e360 — mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (handled:false), frames
+// `? @ 0d5wqj98qv1e9.js | onExitComplete @ 0f7hq0oahq8u6.js | ? @
+// 0f7hq0oahq8u6.js | ov @ 0foj1ouh5ijrj.js | oy @ 0foj1ouh5ijrj.js`. The
+// `onExitComplete` frame is the editor library's exit/teardown re-render
+// path — the same document-close race that produces the doc-state throws.
+const REACT185_THIRDPARTY_FRAMES_CD68E360 = [
+  { filename: 'app:///_next/static/chunks/0d5wqj98qv1e9.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0f7hq0oahq8u6.js', function: 'onExitComplete' },
+  { filename: 'app:///_next/static/chunks/0f7hq0oahq8u6.js', function: '?' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'ov' },
+  { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+]
+
+test('classifies the editor re-render-loop React #185 siblings as noise (patterns 223d7d7e / 51b14963 / cd68e360)', () => {
+  for (const [label, frames, mechanism] of [
+    ['223d7d7e', REACT185_THIRDPARTY_FRAMES_223D7D7E, 'auto.browser.global_handlers.onerror'],
+    ['51b14963', REACT185_THIRDPARTY_FRAMES_51B14963, 'auto.browser.browserapierrors.setInterval'],
+    ['cd68e360', REACT185_THIRDPARTY_FRAMES_CD68E360, 'auto.browser.global_handlers.onunhandledrejection'],
+  ] as const) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism,
+        handled: false,
+        frames,
+      }),
+      true,
+      `expected React #185 ${label} (no onTileRendering, uncaught) to classify as noise`,
+    )
+  }
+})
+
+test('suppresses the assigned editor re-render-loop React #185 Sentry events via the beforeSend gate', () => {
+  for (const [label, frames, mechanism] of [
+    ['223d7d7e', REACT185_THIRDPARTY_FRAMES_223D7D7E, 'auto.browser.global_handlers.onerror'],
+    ['51b14963', REACT185_THIRDPARTY_FRAMES_51B14963, 'auto.browser.browserapierrors.setInterval'],
+    ['cd68e360', REACT185_THIRDPARTY_FRAMES_CD68E360, 'auto.browser.global_handlers.onunhandledrejection'],
+  ] as const) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: {
+          url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+        },
+        exception: {
+          values: [
+            {
+              value: REACT_185,
+              mechanism: { type: mechanism, handled: false },
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress React #185 ${label}`,
+    )
+  }
+})
+
+test('suppresses the editor re-render-loop React #185 when handled is omitted (mechanism implies uncaught)', () => {
+  // `handled` is optional in the Sentry payload; the global/BrowserApiErrors
+  // mechanisms are UNCAUGHT by definition. A missing `handled` is treated as
+  // uncaught.
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onunhandledrejection',
+      frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a React #185 with a resolved first-party frame (real first-party setState loop)', () => {
+  // A resolved `apps/web/src/…` frame means our own component is the looping
+  // culprit → actionable; the negative guard MUST preserve it. This is the
+  // whole reason the matcher is frame-aware (React #185 is also a real
+  // first-party setState-loop message).
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    [
+      { filename: 'app:///_next/static/chunks/0foj1ouh5ijrj.js', function: 'oy' },
+      { filename: 'app:///apps/web/src/features/editor/editor.tsx', function: 'render' },
+    ],
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism: 'auto.browser.global_handlers.onerror',
+        handled: false,
+        frames,
+      }),
+      false,
+      `expected first-party React #185 from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: REACT_185,
+              mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party React #185 from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress a CAUGHT React #185 (handled:true — reached a React error boundary)', () => {
+  // A CAUGHT #185 (mechanism `handled:true`) reached a React error boundary;
+  // the boundary exists to surface first-party render loops the app chose to
+  // handle, so it may be actionable and keeps reporting.
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: true,
+      frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: true },
+            stacktrace: { frames: REACT185_THIRDPARTY_FRAMES_223D7D7E },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a React #185 whose mechanism is not a global/BrowserApiErrors auto-handler', () => {
+  // A non-global, non-BrowserApiErrors mechanism (e.g. an explicit
+  // `captureException` call, or a custom instrumented boundary) may be
+  // actionable; keep reporting. Only the UNCAUGHT global/BrowserApiErrors
+  // class is dropped.
+  for (const mechanism of [
+    'generic',
+    'instrument',
+    'auto.function.console',
+    'manual',
+    '',
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message: REACT_185,
+        mechanism,
+        handled: false,
+        frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+      }),
+      false,
+      `expected React #185 with mechanism "${mechanism}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a React #185 with no frames (cannot confirm it is third-party)', () => {
+  // No frames → can't confirm the throw is third-party (no `apps/web/src/…`
+  // negative guard evidence, no chunk anchor). Keep reporting rather than
+  // blanket-dropping frameless #185s of unknown origin. (Distinct from the
+  // doc-state matcher, whose message prefix is library-specific enough that
+  // a frameless capture is still noise.)
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: false,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT replace or subsume the @embedpdf tiling #185 matcher — the tiling matcher still wins for onTileRendering', () => {
+  // The broader fallback matcher runs AFTER
+  // `isEmbedPdfTilingReactUpdateDepthNoise` in `shouldIgnoreSentryBrowserNoise`.
+  // A tiling #185 with an `onTileRendering` frame is dropped by the TILING
+  // matcher (which has the more specific anchor) — the gate returns true for
+  // it. The broader matcher is the FALLBACK for non-tiling third-party #185s
+  // (no `onTileRendering` frame), NOT a replacement for the tiling matcher.
+  const tilingFrames = [
+    { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+  ]
+  // The tiling matcher (specific anchor) classifies it as noise.
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames: tilingFrames }),
+    true,
+  )
+  // The gate (which tries the tiling matcher FIRST) drops the tiling #185.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: tilingFrames },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  // A tiling #185 that ALSO carries a first-party frame keeps reporting via
+  // BOTH matchers' negative guards (the tiling matcher's negative guard
+  // already preserves it; the broader matcher's negative guard agrees).
+  const tilingFramesWithFirstParty = [
+    { filename: 'app:///_next/static/chunks/78309.4a49d57927d341e9.js', function: 'Object.r [as onTileRendering]' },
+    { filename: 'apps/web/src/components/ui/extend/pdf-viewer.tsx', function: 'PDFViewerInner' },
+  ]
+  assert.equal(
+    isEmbedPdfTilingReactUpdateDepthNoise({ message: REACT_185, frames: tilingFramesWithFirstParty }),
+    false,
+  )
+  assert.equal(
+    isThirdPartyReactUpdateDepthNoise({
+      message: REACT_185,
+      mechanism: 'auto.browser.global_handlers.onerror',
+      handled: false,
+      frames: tilingFramesWithFirstParty,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REACT_185,
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: tilingFramesWithFirstParty },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-React message that happens to mention #185 via the broader matcher', () => {
+  // The broader matcher anchors on `Minified React error #185` — a different
+  // message wording must not be matched.
+  for (const message of [
+    'Maximum update depth exceeded',
+    'Error #185 in custom handler',
+    'react.dev/errors/185',
+  ]) {
+    assert.equal(
+      isThirdPartyReactUpdateDepthNoise({
+        message,
+        mechanism: 'auto.browser.global_handlers.onerror',
+        handled: false,
+        frames: REACT185_THIRDPARTY_FRAMES_223D7D7E,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
 
 test('does NOT suppress a real first-party postMessage failure that throws from an app chunk', () => {
   // A genuine `window.postMessage` / structured-clone failure in our own code
@@ -5798,6 +7099,289 @@ test('does NOT suppress a message that only mentions the non-Error rejection wor
 })
 
 // ---------------------------------------------------------------------------
+// Supabase gotrue OTP-expired-link `Object Not Found Matching Id:…,
+// MethodName:update, ParamCount:…` non-Error promise rejection noise (Better
+// Stack pattern
+// e9a720020c921fbf82323125c20714fd7455e803295cf13aa624440de6d35e8e, Kortix
+// Frontend prod, application_id 2346967, `UnhandledRejection`). A user landed
+// on an expired/invalid OTP email link and the Supabase auth client's
+// session-update from the expired OTP token rejected with a bare STRING
+// `Object Not Found Matching Id:2, MethodName:update, ParamCount:4` (gotrue's
+// "no row found" wording for the session-update RPC — the `Id:2` /
+// `ParamCount:4` integers vary per call). Because the rejected value is a
+// bare string (NOT an Error instance), Sentry 10.x's GlobalHandlers
+// `onunhandledrejection` integration cannot extract a `.message`/`.stack` from
+// it: it synthesizes the canonical "Non-Error promise rejection captured with
+// value: Object Not Found Matching Id:2, MethodName:update, ParamCount:4"
+// (the rejection value inlined after `value: `) with NO stacktrace frames at
+// all. 116 occurrences, 0 identified users (anonymous), first 2026-06-02 /
+// recurring, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (`handled:false` — UNCAUGHT, never reached a React error boundary),
+// `synthetic:true`, release `160f0b286f0ad5c53debc343d5e055241694e24d`
+// (v0.12.4 prod), request URL
+// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// description=Email+link+is+invalid+or+has+expired` (the auth error page — the
+// OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
+// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// auth client initializing), then a navigation to the same `#error=otp_expired`
+// URL, then marketing-site fetches (`/api/github-stars`,
+// `/_vercel/insights/view`, `/api/maintenance`). Stack trace: NONE — the raw
+// exception payload is `{"values":[{"type":"UnhandledRejection","value":
+// "Non-Error promise rejection captured with value: Object Not Found Matching
+// Id:2, MethodName:update, ParamCount:4","mechanism":{"type":"auto.browser.
+// global_handlers.onunhandledrejection","handled":false}}]}` with NO
+// `stacktrace` key, NO frames, NO `call_site_file`/`call_site_function`,
+// NO `call_stack_hash`.
+//
+// SIBLING of the bare-`undefined` non-Error rejection class
+// (`isNonErrorUndefinedRejectionNoise`, PR #5200, pattern `5cfc90e5…`) and
+// the Supabase `TOKEN_EXPIRED` rejection class (`isSupabaseTokenExpiredNoise`,
+// pattern `63b0cde7…`): all three are frameless non-Error promise rejections
+// captured by Sentry's GlobalHandlers `onunhandledrejection` integration as a
+// synthetic message with NO frames. The `undefined` matcher rejects with the
+// primitive `undefined`; the `TOKEN_EXPIRED` matcher rejects with a
+// `{ code, message, status }` object (Sentry emits "Object captured as
+// promise rejection with keys: …"); THIS matcher rejects with a bare STRING
+// (Sentry emits "Non-Error promise rejection captured with value: <string>").
+// The three message prefixes are disjoint, so the matchers do not shadow each
+// other.
+//
+// The matcher anchors on the STABLE prefix `/^Non-Error promise rejection
+// captured with value: Object Not Found Matching/` (the `Id:…, MethodName:…,
+// ParamCount:…` suffix varies per gotrue call) and requires the frameless
+// shape as a positive guard with a negative guard preserving any first-party
+// `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic message from the production event.
+const NON_ERROR_OBJECT_NOT_FOUND_REJECTION =
+  'Non-Error promise rejection captured with value: Object Not Found Matching Id:2, MethodName:update, ParamCount:4'
+
+test('classifies the OTP-expired Object-Not-Found non-Error promise rejection noise', () => {
+  // Exact production shape: the canonical message, NO frames (the rejection
+  // carried no stack — it was a bare-string non-Error rejection).
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the OTP-expired Object-Not-Found rejection Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `UnhandledRejection`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL the auth error page
+  // (`/#error=access_denied&error_code=otp_expired`).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
+      },
+      exception: {
+        values: [
+          {
+            value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the OTP-expired Object-Not-Found noise when frames are absent entirely (no stacktrace key)', () => {
+  // The production event has no frames at all — Sentry omits the stacktrace
+  // key entirely when there is nothing to serialize (the raw payload has no
+  // `stacktrace` key). The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired',
+      },
+      exception: {
+        values: [{ value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION }],
+      },
+    }),
+    true,
+  )
+})
+
+test('matches the variable Id/MethodName/ParamCount gotrue suffix (the integers vary per call)', () => {
+  // The production suffix is `Id:2, MethodName:update, ParamCount:4`, but the
+  // gotrue RPC's internal ids/counts vary per call — a sibling occurrence
+  // might be `Id:7, MethodName:update, ParamCount:2`. The matcher anchors on
+  // the STABLE prefix, so every variant of this OTP-expired session-update
+  // rejection is dropped.
+  for (const message of [
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:7, MethodName:update, ParamCount:2',
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:0, MethodName:update, ParamCount:1',
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:999, MethodName:update, ParamCount:12',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      true,
+      `expected variant "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      true,
+      `expected Sentry event for variant "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress the OTP-expired rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code rejected a promise
+  // with the bare-string gotrue value → actionable; the negative guard MUST
+  // preserve it so the call site can be found + fixed. This is the whole
+  // reason the matcher is frame-aware (the prefix is also a real first-party
+  // `Promise.reject('Object Not Found Matching…')` signature).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/auth/supabase-client.ts', function: 'updateSession' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/auth/otp-callback.ts', function: 'handleOtp' },
+    ],
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+        frames,
+      }),
+      false,
+      `expected first-party OTP-expired rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party OTP-expired rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the OTP-expired rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject('Object Not Found Matching…')` with a stack we can trace.
+  // Keep reporting; only the frameless capture (the production noise pattern)
+  // is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://supa.kortix.com/auth/v1/user', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+        frames,
+      }),
+      false,
+      `expected attributable OTP-expired rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT shadow the sibling undefined-rejection matcher (different value)', () => {
+  // The bare-`undefined` non-Error rejection class (PR #5200) emits
+  // "Non-Error promise rejection captured with value: undefined" — a
+  // DIFFERENT value than `Object Not Found Matching…`. The two matchers are
+  // disjoint; this matcher must return false for the undefined value (it has
+  // its own dedicated matcher), and vice versa.
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: 'Non-Error promise rejection captured with value: undefined',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    isNonErrorUndefinedRejectionNoise({
+      message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT shadow the sibling Supabase TOKEN_EXPIRED object-rejection matcher (different message prefix)', () => {
+  // The Supabase `TOKEN_EXPIRED` rejection class rejects with a
+  // `{ code, message, status }` OBJECT, so Sentry emits the disjoint
+  // "Object captured as promise rejection with keys: code, message, status"
+  // message (handled by `isSupabaseTokenExpiredNoise`). THIS matcher anchors
+  // on the "Non-Error promise rejection captured with value: Object Not
+  // Found Matching" prefix, so it must NOT match the object-rejection message.
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: 'Object captured as promise rejection with keys: code, message, status',
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-matching message (prefix-only / near-miss wording)', () => {
+  // The matcher anchors on the canonical prefix; a different wording that
+  // merely mentions parts of it must not be matched.
+  for (const message of [
+    'Object Not Found Matching Id:2, MethodName:update, ParamCount:4',
+    'Non-Error promise rejection captured with value: undefined',
+    'Non-Error promise rejection captured with value: some other string',
+    'Non-Error promise rejection captured with value: Object Not Found',
+    'Non-Error promise rejection',
+    'Object Not Found Matching',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different message', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class
+  // — keep reporting it via this matcher. (The bare-`undefined` / OperationError
+  // / TOKEN_EXPIRED classes have their own dedicated matchers + tests; not
+  // re-tested here.)
+  for (const message of [
+    'Something else entirely',
+    'UnhandledRejection: a different value',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for frameless "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Browser-internal DOM/binding `OperationError: Instance dropped in
 // popErrorScope` noise (Better Stack pattern
 // 5e1aca208331fa2d7540c9810b815b6c94f1373c470ff54e15f39d389dac7e0c,
@@ -6426,6 +8010,212 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
       }),
       false,
       `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Canvas `getImageData` out-of-memory noise (BS b4b43847…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event (V8/Chrome wording).
+const CANVAS_GETIMAGEDATA_OOM_MESSAGE =
+  "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation"
+
+// A minified third-party canvas library chunk frame — the call site file from
+// the production event (`app:///_next/static/chunks/0fl4m2af7bsiq.js`). No
+// resolved first-party `apps/web/src/…` source, so the negative guard does NOT
+// fire. Represents the production event's frame shape.
+const CANVAS_OOM_PROD_CHUNK_FRAME = 'app:///_next/static/chunks/0fl4m2af7bsiq.js'
+
+// The two production stack frames (both minified third-party canvas library
+// chunk frames — NO resolved first-party `apps/web/src/…` source). The call
+// site function is `Image.<anonymous>` (the `addEventListener` callback the
+// third-party library registered).
+const CANVAS_OOM_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: CANVAS_OOM_PROD_CHUNK_FRAME, function: 'Image.<anonymous>' },
+  { filename: 'app:///_next/static/chunks/0fl4m2af7bsiq.js', function: '?' },
+]
+
+// The canonical capture-path forms: raw, `RangeError:` prefix, and stacked
+// `Unhandled promise rejection: RangeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const CANVAS_OOM_CAPTURE_FORMS = [
+  CANVAS_GETIMAGEDATA_OOM_MESSAGE,
+  `RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+  `Unhandled promise rejection: RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+]
+
+test('classifies every Canvas getImageData OOM capture form as noise (no first-party frame)', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    // Matcher-level: message alone (frameless — still noise because the message
+    // is the browser's canonical OOM wording and is specific enough).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message }),
+      true,
+      `expected "${message}" to be classified as Canvas getImageData OOM noise`,
+    )
+    // Matcher-level: with a minified chunk frame (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({
+        message,
+        frames: [{ filename: CANVAS_OOM_PROD_CHUNK_FRAME }],
+      }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    // Matcher-level: with a window.onerror filename (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the production Canvas getImageData OOM Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b4b43847…, release
+  // v0.12.4, request URL https://kortix.com/ (marketing homepage), mechanism
+  // auto.browser.browserapierrors.addEventListener (UNCAUGHT, handled:false),
+  // call site function Image.<anonymous>, call site file
+  // app:///_next/static/chunks/0fl4m2af7bsiq.js, 2 minified chunk frames.
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              mechanism: {
+                type: 'auto.browser.browserapierrors.addEventListener',
+                handled: false,
+              },
+              stacktrace: { frames: CANVAS_OOM_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless Canvas getImageData OOM Sentry event (no first-party frame to preserve)', () => {
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Canvas getImageData OOM via the runtime (window.onerror) gate', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a Canvas getImageData OOM whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code called
+  // `getImageData()` and the browser ran out of memory — a real first-party
+  // OOM regression, actionable to fix (e.g. shrink the canvas, guard the
+  // allocation, or drop the call on low-memory devices). This is the negative
+  // guard that distinguishes actionable first-party code regressions from the
+  // third-party-library noise class.
+  const realAppFrames: Array<Array<{ filename: unknown; function?: unknown }>> = [
+    [{ filename: 'app:///apps/web/src/features/marketing/hyper-logo.ts', function: 'samplePixels' }],
+    [{ filename: 'apps/web/src/lib/canvas/pixel-reader.ts', function: 'readRegion' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+      assert.equal(
+        isCanvasImageDataOOMNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/canvas/pixel-reader.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the exact OOM suffix (over-match guard)', () => {
+  // The `Out of memory at ImageData creation` suffix is part of the anchor —
+  // a different `getImageData` failure (e.g. a different DOM exception, or a
+  // different allocation reason) must keep reporting so the matcher does not
+  // over-match a real first-party canvas bug.
+  for (const message of [
+    // A different `getImageData` DOM exception (e.g. index out of range).
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Index is not in the allowed range.",
+    // A different OOM wording without the `ImageData creation` suffix.
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory.",
+    // A different Canvas 2D method entirely.
+    "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation",
+    // A near-worded first-party throw (no `Failed to execute` DOM prefix).
+    'Out of memory at ImageData creation',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-OOM RangeError (over-match guard on the RangeError type)', () => {
+  // The matcher anchors on the EXACT `getImageData` OOM message, NOT on the
+  // `RangeError` type. A generic `RangeError: Maximum call stack size
+  // exceeded.` (the iOS-WebKit stack-overflow class, handled by
+  // `isUnresolvableStackOverflowNoise`) or a first-party `RangeError` keeps
+  // reporting unless it matches the exact canvas OOM wording.
+  for (const message of [
+    'Maximum call stack size exceeded.',
+    'RangeError: Maximum call stack size exceeded.',
+    'Array length must be finite.',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
     )
   }
 })

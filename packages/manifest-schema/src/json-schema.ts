@@ -531,7 +531,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       connectors_required: {
         type: 'array',
         items: NON_EMPTY_STRING,
-        description: 'Connector profile slugs that must resolve before the session starts.',
+        description: 'Connector slugs that must resolve before the session starts.',
       },
       connectors_personal: {
         type: 'array',
@@ -548,6 +548,66 @@ function agentBlockV2Schema(): JsonSchemaFragment {
   };
 }
 
+function appStringMapSchema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: ENV_NAME_PATTERN },
+    additionalProperties: { type: 'string', minLength: 1 },
+  };
+}
+
+function appBlockV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: {
+      path: relativePathSchema(),
+      type: { type: 'string', enum: ['static', 'bundle', 'dockerfile', 'oci_image'] },
+      image: { type: 'string', minLength: 1 },
+      dockerfile: relativePathSchema(),
+      command: { type: 'array', minItems: 1, items: NON_EMPTY_STRING },
+      port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+      root: relativePathSchema(),
+      output_dir: relativePathSchema(),
+      install_command: NON_EMPTY_STRING,
+      build_command: NON_EMPTY_STRING,
+      spa: { type: 'boolean' },
+      readiness_path: { type: 'string', pattern: '^/' },
+      idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      monthly_budget_usd: { type: 'number', minimum: 0 },
+      resources: {
+        type: 'object',
+        properties: {
+          cpu: { type: 'integer', minimum: 1, maximum: 64 },
+          memory_gb: { type: 'integer', minimum: 1, maximum: 512 },
+          disk_gb: { type: 'integer', minimum: 1, maximum: 2048 },
+        },
+        additionalProperties: false,
+      },
+      env: appStringMapSchema(),
+      secrets: appStringMapSchema(),
+    },
+    additionalProperties: false,
+    allOf: [
+      {
+        if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
+        then: { required: ['command', 'port'] },
+      },
+      {
+        if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
+        then: { required: ['image'] },
+      },
+    ],
+  };
+}
+
+function appsV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: appBlockV2Schema(),
+  };
+}
+
 /** Sections shared byte-for-byte between v1 and v2 (spec §2.7: "every v1
  *  top-level section keeps its v1 shape" except `agents`/`channels`). */
 function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
@@ -560,7 +620,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
-    apps: false,
+    apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
 }
 

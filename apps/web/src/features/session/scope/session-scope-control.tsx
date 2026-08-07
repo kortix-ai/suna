@@ -83,17 +83,17 @@ export function toggleSessionSecret(
   };
 }
 
-export function setSessionConnectorAuthorization(
+export function setSessionConnectorConnection(
   draft: SessionScopeDraft,
-  connectorProfile: string,
-  authorizationId: string | null,
+  connectorConnection: string,
+  connectionId: string | null,
 ): SessionScopeDraft {
   const connectorBindings = { ...(draft.connector_bindings ?? {}) };
 
-  if (authorizationId === null) {
-    delete connectorBindings[connectorProfile];
+  if (connectionId === null) {
+    delete connectorBindings[connectorConnection];
   } else {
-    connectorBindings[connectorProfile] = { authorization_id: authorizationId };
+    connectorBindings[connectorConnection] = { connection_id: connectionId };
   }
 
   return {
@@ -116,27 +116,26 @@ export function setSessionConnectorEnabled(
       : base;
 
   if (!enabled) {
-    return withoutRequirement(setSessionConnectorAuthorization(draft, connector.slug, null));
+    return withoutRequirement(setSessionConnectorConnection(draft, connector.slug, null));
   }
 
   if (draft.connector_bindings?.[connector.slug]) {
     return draft;
   }
 
-  const authorization =
-    connector.authorizations.find((candidate) => candidate.is_default) ??
-    connector.authorizations[0];
+  const connection =
+    connector.connections.find((candidate) => candidate.is_default) ?? connector.connections[0];
 
-  if (authorization) {
+  if (connection) {
     return withoutRequirement(
-      setSessionConnectorAuthorization(draft, connector.slug, authorization.authorization_id),
+      setSessionConnectorConnection(draft, connector.slug, connection.connection_id),
     );
   }
 
   // Nothing connected to this connector yet — and selecting it anyway is the
   // point. It used to be un-checkable, so the only way to say "this session
   // needs Gmail" was to already have Gmail working. Recorded as a REQUIREMENT
-  // instead of a binding (a binding needs an authorization id it does not have),
+  // instead of a binding (a binding needs a connection id it does not have),
   // which makes the next turn stop at a connect prompt rather than letting the
   // agent discover it mid-answer.
   return draft.require_connectors?.includes(connector.slug)
@@ -295,7 +294,7 @@ export function SessionScopeControlContent({
                 </span>
               </span>
               <Badge variant="secondary" size="xs" className="tabular-nums">
-                {catalog.connector_profiles.status === 'ready'
+                {catalog.connector_connections.status === 'ready'
                   ? connectorSummary(draft)
                   : 'Unavailable'}
               </Badge>
@@ -303,31 +302,31 @@ export function SessionScopeControlContent({
             </Button>
           </DisclosureTrigger>
           <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            {catalog.connector_profiles.status === 'unavailable' ? (
+            {catalog.connector_connections.status === 'unavailable' ? (
               <div className="p-2">
                 <InfoBanner tone="neutral" title="Connector access is unavailable">
                   The current connector selection stays unchanged.
                 </InfoBanner>
               </div>
-            ) : catalog.connector_profiles.items.length === 0 ? (
+            ) : catalog.connector_connections.items.length === 0 ? (
               <p className="text-muted-foreground px-3 py-3 text-xs text-pretty">
-                No connector profiles are available for this agent.
+                No connectors are available for this agent.
               </p>
             ) : (
               <ul className="space-y-1 p-1">
-                {catalog.connector_profiles.items.map((connector) => {
-                  const currentAuthorization =
-                    draft.connector_bindings?.[connector.slug]?.authorization_id;
-                  const currentAuthorizationIsAvailable = connector.authorizations.some(
-                    (authorization) => authorization.authorization_id === currentAuthorization,
+                {catalog.connector_connections.items.map((connector) => {
+                  const currentConnection =
+                    draft.connector_bindings?.[connector.slug]?.connection_id;
+                  const currentConnectionIsAvailable = connector.connections.some(
+                    (connection) => connection.connection_id === currentConnection,
                   );
-                  const bound = currentAuthorization !== undefined;
+                  const bound = currentConnection !== undefined;
                   // Required but not connected: the session declares it and the
                   // next turn will stop for a connect prompt.
                   const requiredUnconnected =
                     !bound && (draft.require_connectors?.includes(connector.slug) ?? false);
                   const selected = bound || requiredUnconnected;
-                  const hasAuthorization = connector.authorizations.length > 0;
+                  const hasConnection = connector.connections.length > 0;
 
                   return (
                     <li key={connector.slug}>
@@ -345,7 +344,7 @@ export function SessionScopeControlContent({
                             <Badge variant="outline" size="xs">
                               {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
                             </Badge>
-                            {!hasAuthorization ? (
+                            {!hasConnection ? (
                               <span className="text-muted-foreground truncate text-xs font-normal">
                                 {requiredUnconnected
                                   ? 'Required — connect to continue'
@@ -359,7 +358,7 @@ export function SessionScopeControlContent({
                         }
                       />
                       {requiredUnconnected ? (
-                        // No authorization exists, so there is nothing for the
+                        // No connection exists, so there is nothing for the
                         // Select to offer — rendering it would show an empty
                         // dropdown that looks broken. Say what will happen instead.
                         <p className="text-muted-foreground pr-2 pb-2 pl-10 text-xs text-pretty">
@@ -370,14 +369,14 @@ export function SessionScopeControlContent({
                       {selected && !requiredUnconnected ? (
                         <div className="pr-2 pb-2 pl-10">
                           <Select
-                            value={currentAuthorization}
+                            value={currentConnection}
                             disabled={controlsDisabled}
-                            onValueChange={(authorizationId) =>
+                            onValueChange={(connectionId) =>
                               onChange(
-                                setSessionConnectorAuthorization(
+                                setSessionConnectorConnection(
                                   draft,
                                   connector.slug,
-                                  authorizationId,
+                                  connectionId,
                                 ),
                               )
                             }
@@ -386,23 +385,23 @@ export function SessionScopeControlContent({
                               size="md"
                               variant="outline"
                               className="w-full"
-                              aria-label={`Authorization for ${connector.name}`}
+                              aria-label={`Connection for ${connector.name}`}
                             >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent align="end">
-                              {currentAuthorization && !currentAuthorizationIsAvailable ? (
-                                <SelectItem value={currentAuthorization}>
-                                  Current authorization
+                              {currentConnection && !currentConnectionIsAvailable ? (
+                                <SelectItem value={currentConnection}>
+                                  Current connection
                                 </SelectItem>
                               ) : null}
-                              {connector.authorizations.map((authorization) => (
+                              {connector.connections.map((connection) => (
                                 <SelectItem
-                                  key={authorization.authorization_id}
-                                  value={authorization.authorization_id}
+                                  key={connection.connection_id}
+                                  value={connection.connection_id}
                                 >
-                                  {authorization.label}
-                                  {authorization.is_default ? ' · Default' : ''}
+                                  {connection.label}
+                                  {connection.is_default ? ' · Default' : ''}
                                 </SelectItem>
                               ))}
                             </SelectContent>

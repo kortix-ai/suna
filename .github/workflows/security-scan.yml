@@ -16,6 +16,7 @@ on:
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"
+      - "apps/kortix-app-runtime/**"
       - ".github/workflows/security-scan.yml"
       - ".gitleaks.toml"
   workflow_dispatch:
@@ -50,7 +51,7 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -81,7 +82,7 @@ jobs:
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -104,7 +105,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov
@@ -126,14 +127,14 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Hadolint → SARIF
-        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5
+        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6
         with:
           dockerfile: ${{ matrix.dockerfile }}
           format: sarif
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}

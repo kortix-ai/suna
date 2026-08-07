@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -611,7 +611,7 @@ function RepoCollaboratorInvite({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_auto] sm:items-end sm:gap-x-3">
               <Field>
                 <div className="relative min-w-0">
-                  <Icon.Github className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                  <Github className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
                   <Input
                     id="repo-collaborator-username"
                     value={username}
@@ -633,10 +633,7 @@ function RepoCollaboratorInvite({
                   value={permission}
                   onValueChange={(v) => setPermission(v as 'read' | 'write')}
                 >
-                  <SelectTrigger
-                    id="repo-collaborator-permission"
-                    className="w-full"
-                  >
+                  <SelectTrigger id="repo-collaborator-permission" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

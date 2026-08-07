@@ -38,7 +38,7 @@ const VALUE_PROPS = [
   {
     icon: <Boxes className="size-4" />,
     title: 'Batteries included',
-    desc: '3,000+ integrations, 60+ skills, and agents pre-built for your industry.',
+    desc: '3,000+ connectors, 60+ skills, and agents pre-built for your industry.',
   },
   {
     icon: <ShieldCheck className="size-4" />,

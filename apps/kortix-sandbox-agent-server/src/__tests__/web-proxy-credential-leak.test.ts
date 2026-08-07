@@ -141,7 +141,14 @@ describe('/web-proxy stays off the box control plane', () => {
   const OPENCODE = 4096
 
   function guarded() {
-    return createWebProxyRouter({ blockedSelfPorts: new Set([DAEMON, OPENCODE]) })
+    return createWebProxyRouter({
+      blockedSelfPorts: new Set([DAEMON, OPENCODE]),
+      // Test the resolver result, not the availability or latency of nip.io.
+      // GitHub-hosted runners can take longer than Bun's 5-second test timeout
+      // to resolve the public name. The production path still uses real DNS.
+      resolveHost: async (hostname) =>
+        hostname === '127.0.0.1.nip.io' ? [{ address: '127.0.0.1' }] : [],
+    })
   }
 
   test('it refuses a loopback tunnel into opencode', async () => {

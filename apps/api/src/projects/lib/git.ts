@@ -6,8 +6,13 @@ import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
-import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
+import {
+  decryptProjectSecret,
+  encryptProjectSecret,
+  getProjectSecretValueForConsumer,
+} from '../secrets';
+import { recordAuditEvent } from '../../shared/audit';
+import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -20,6 +25,10 @@ import { authorize } from '../../iam/dispatcher';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import {
+  sessionWorkspaceAllowsRepositoryAccess,
+  workspaceMetadataAllowsRepositoryAccess,
+} from './session-workspace-access';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request. Each DB statement is a fast same-region roundtrip (~3ms measured,
@@ -525,9 +534,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   if (remote.authMethod === 'project_credential') {
     const credential = await getProjectGitCredential(project.projectId, remote.provider);
     if (credential) {
+      const token = decryptProjectSecret(project.projectId, credential.valueEnc);
+      await recordAuditEvent({
+        accountId: project.accountId,
+        projectId: project.projectId,
+        action: 'secret.consumer.used',
+        resourceType: 'project_git_credential',
+        resourceId: credential.credentialId,
+        source: 'git_proxy',
+        metadata: { provider: remote.provider, consumer: 'git_proxy' },
+      });
       return {
         auth: {
-          token: decryptProjectSecret(project.projectId, credential.valueEnc),
+          token,
           source: 'project_credential',
         },
         authSource: 'project_credential',
@@ -535,7 +554,12 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
-  const legacyToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
+  const legacyToken = await getProjectSecretValueForConsumer({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    name: PROJECT_GIT_AUTH_SECRET_NAME,
+    consumer: 'git_proxy',
+  });
   if (legacyToken) {
     return {
       auth: {
@@ -668,6 +692,20 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
+    if (
+      result.sessionId &&
+      !(await sessionWorkspaceAllowsRepositoryAccess({
+        sessionId: result.sessionId,
+        accountId: result.accountId,
+        projectId,
+      }))
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        message: 'session workspace does not allow repository access',
+      };
+    }
     if (result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
@@ -688,8 +726,19 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionMetadata: projectSessions.metadata,
+        })
         .from(sessionSandboxes)
+        .innerJoin(
+          projectSessions,
+          and(
+            eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+            eq(projectSessions.projectId, sessionSandboxes.projectId),
+            eq(projectSessions.accountId, sessionSandboxes.accountId),
+          ),
+        )
         .where(and(
           eq(sessionSandboxes.sandboxId, result.sandboxId),
           eq(sessionSandboxes.projectId, projectId),
@@ -699,6 +748,9 @@ export async function authorizeGitProxy(
         .limit(1);
       if (!sandbox) {
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
+      }
+      if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
+        return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
       return { ok: true, project };
     }

@@ -73,7 +73,7 @@ mock.module('../../lib/sandbox-env-sync', () => ({
       serviceKey: 'service-key-1',
       previewUrl: 'https://sandbox.test',
       providerName: 'daytona',
-      opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
   },
 }));
@@ -123,7 +123,7 @@ describe('continueSession runtime env', () => {
         source: 'email',
         sessionId: SESSION_ID,
         text: 'new email',
-        opencodeEnv: { KORTIX_EXECUTOR_MCP_ENABLED: '1' },
+        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
       }),
     ).toBe('delivered');
     expect(events).toEqual(['open', 'sync', 'prompt']);

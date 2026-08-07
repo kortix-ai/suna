@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { backendApi, isAdminBypassEnabled, setAdminBypass } from './api-client';
+import {
+  backendApi,
+  isAdminBypassEnabled,
+  PROVISION_IN_FLIGHT_CODE,
+  setAdminBypass,
+} from './api-client';
 import { ApiError } from './api/errors';
 import { configureKortix } from './config';
 
@@ -60,6 +65,21 @@ describe('makeRequest admin-bypass header', () => {
       setAdminBypass(false);
       await backendApi.get('/projects/abc/detail');
       expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('attaches the configured client surface to backend requests', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'test-token',
+      clientSource: 'cli',
+    });
+    const stub = stubFetch();
+    try {
+      await backendApi.get('/projects/abc/detail');
+      expect(stub.getHeaders()?.['X-Kortix-Client']).toBe('cli');
     } finally {
       stub.restore();
     }
@@ -374,16 +394,16 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
 
 // Regression for Better Stack frontend pattern `1f3c4d96…`
 // (`ApiError: not supported`, HTTP 501) on the co-worker session "add
-// connector" path: `POST /v1/executor/projects/:id/connectors/auth-discovery`
-// returned a bare `{ error: 'not supported' }` 501 when an optional executor
+// connector" path: `POST /v1/connectors/projects/:id/connectors/auth-discovery`
+// returned a bare `{ error: 'not supported' }` 501 when an optional connector
 // capability wasn't wired on the deployment, and `makeRequest` forwarded it
 // to `onError` → Sentry as an opaque, unhandled-looking `ApiError`. The API
 // now returns a TYPED 501 envelope with `code: 'feature_not_supported'`
-// (executor router `featureNotSupportedResponse`); `makeRequest` classifies
+// (connector router `featureNotSupportedResponse`); `makeRequest` classifies
 // that as an EXPECTED "feature unavailable" state — silent to `onError`
 // (Sentry) but still returned as an `ApiError` so callers/UI can branch on
 // `.code`. Mirrors the billing-gate 402 / no-compaction-model classification.
-// See `apps/api/src/__tests__/unit-executor-feature-not-supported.test.ts`
+// See `apps/api/src/__tests__/unit-connector-feature-not-supported.test.ts`
 // for the API-side half of this contract.
 describe('makeRequest classifies a typed feature_not_supported 501 as silent to Sentry', () => {
   function stubFetchOnce(status: number, body: unknown) {
@@ -414,7 +434,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
       feature: 'connector_auth_discovery',
     });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {
         provider: 'openapi',
         spec: 'https://example.com/openapi.json',
       });
@@ -444,7 +464,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
     });
     const restore = stubFetchOnce(501, { error: 'something broke', message: 'something broke' });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {});
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {});
       expect(res.success).toBe(false);
       expect(res.error).toBeInstanceOf(ApiError);
       expect(res.error?.status).toBe(501);
@@ -541,6 +561,78 @@ describe('makeRequest classifies a typed model_not_servable 409 as silent to Sen
       expect(res.error?.status).toBe(409);
       // A real conflict (no typed code) still reports — the classification
       // gate must never swallow a genuine defect.
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// `POST /projects/provision` answers 409 `provision_in_flight` when another
+// call carrying the same `idempotency_key` is still creating (see
+// `apps/api/src/projects/lib/provision-idempotency.ts`). `provisionProject`
+// passes no `showErrors`, so it defaults to `true` — without a carve-out the
+// web host's global `onError` shows a 5s red toast reading "Another provision
+// with this idempotency_key is in flight" during FIRST-RUN onboarding, for a
+// race the onboarding retry loop resolves on its own. Silence it here, and
+// keep the `ApiError` so `isProvisionInFlightError` can still branch.
+describe('makeRequest classifies a typed provision_in_flight 409 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 409 with code=provision_in_flight does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: 'Another provision with this idempotency_key is in flight',
+      code: PROVISION_IN_FLIGHT_CODE,
+    });
+    try {
+      const res = await backendApi.post('/projects/provision', {
+        account_id: 'a1',
+        idempotency_key: 'onboarding-first-project:abc',
+      });
+      expect(res.success).toBe(false);
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(409);
+      expect(res.error?.code).toBe('provision_in_flight');
+      // The user must never be shown this message — it names an internal field
+      // and describes a state that resolves without their involvement.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 409 on /provision (no typed code) STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, { error: 'Conflict', message: 'Conflict' });
+    try {
+      const res = await backendApi.post('/projects/provision', { account_id: 'a1' });
+      expect(res.success).toBe(false);
+      expect(res.error?.status).toBe(409);
       expect(onErrorCalls).toBe(1);
     } finally {
       restore();

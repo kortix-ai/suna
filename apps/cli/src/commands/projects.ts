@@ -528,7 +528,7 @@ async function projectsUse(arg?: string): Promise<number> {
     process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
   }
   process.stdout.write(
-    `  ${C.dim}Used by connectors/executor/sessions when a directory isn't linked.${C.reset}\n`,
+    `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
   );
   return 0;
 }

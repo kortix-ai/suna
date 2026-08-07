@@ -21,7 +21,7 @@ Options:
   --secret <identifier>          Replace the secret allowlist (repeatable).
   --no-secrets                   Allow no project secrets.
   --inherit-secrets              Remove session narrowing; use the agent grant.
-  --connector <alias>=<auth-id>  Replace connector bindings (repeatable).
+  --connector <alias>=<connection-id>  Replace connector bindings (repeatable).
   --no-connectors                Replace explicit connector bindings with none.
   --require-connector <alias>    Replace required connector aliases (repeatable).
   --no-required-connectors       Require no connector aliases.
@@ -46,17 +46,17 @@ function unique(values: string[]): string[] {
 
 function parseBindings(
   values: string[],
-): Record<string, { authorization_id: string }> {
-  const bindings: Record<string, { authorization_id: string }> = {};
+): Record<string, { connection_id: string }> {
+  const bindings: Record<string, { connection_id: string }> = {};
   for (const pair of values) {
     const separator = pair.indexOf("=");
     if (separator <= 0 || separator === pair.length - 1) {
       throw new Error(
-        `--connector expects alias=authorization_id, got "${pair}"`,
+        `--connector expects alias=connection_id, got "${pair}"`,
       );
     }
     bindings[pair.slice(0, separator)] = {
-      authorization_id: pair.slice(separator + 1),
+      connection_id: pair.slice(separator + 1),
     };
   }
   return bindings;
@@ -129,6 +129,18 @@ function listScopeLabel(values: string[] | null): string {
   return values.join(", ");
 }
 
+function canonicalScope(scope: SessionScope): SessionScope {
+  return {
+    ...scope,
+    connector_bindings: Object.fromEntries(
+      Object.entries(scope.connector_bindings).map(([alias, binding]) => [
+        alias,
+        { connection_id: binding.connection_id },
+      ]),
+    ),
+  };
+}
+
 function printScope(
   scope: SessionScope,
   sessionId: string,
@@ -150,7 +162,7 @@ function printScope(
   );
   for (const [alias, binding] of bindings) {
     process.stdout.write(
-      `               ${alias} ${C.dim}→ ${binding.authorization_id}${C.reset}\n`,
+      `               ${alias} ${C.dim}→ ${binding.connection_id}${C.reset}\n`,
     );
   }
   process.stdout.write("\n");
@@ -184,8 +196,8 @@ export async function runSessionsScope(argv: string[]): Promise<number> {
     (host) => `kortix sessions scope ${command.sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const { auth, projectId } = located.located;
-  const session = kortixFromAuth(auth).session(projectId, command.sessionId);
+  const { auth, projectId, session: sessionRow } = located.located;
+  const session = kortixFromAuth(auth).session(projectId, sessionRow.session_id);
 
   let scope: SessionScope;
   try {
@@ -196,7 +208,7 @@ export async function runSessionsScope(argv: string[]): Promise<number> {
     return surfaceApiError(error);
   }
 
-  if (command.json) emitJson(scope);
-  else printScope(scope, command.sessionId, command.update);
+  if (command.json) emitJson(canonicalScope(scope));
+  else printScope(scope, sessionRow.session_id, command.update);
   return 0;
 }

@@ -1,6 +1,6 @@
 ---
 name: kortix-computer
-description: How to reach a CONNECTED MACHINE (a user's laptop/desktop, or any computer paired over the Agent Computer Tunnel) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. It works through the Executor's `computer` connector (the same connectors/discover/describe/call path as every other integration), so there is no separate tunnel client and no token. Load this when the task is about acting ON a specific physical/remote computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. For files INSIDE this sandbox, just use normal shell/fs — not this.
+description: How to reach a CONNECTED MACHINE (a user's laptop/desktop, or any computer paired over the Agent Computer Tunnel) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. It works through the `computer` connector and the same list/discover/show/call path as every other connector, so there is no separate tunnel client and no token. Load this when the task is about acting ON a specific physical/remote computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. For files INSIDE this sandbox, just use normal shell/fs — not this.
 ---
 
 <skill name="kortix-computer">
@@ -8,9 +8,9 @@ description: How to reach a CONNECTED MACHINE (a user's laptop/desktop, or any c
 <overview>
 A user can connect their own machine to Kortix over the **Agent Computer Tunnel**
 (a permissioned reverse tunnel). Once connected, you reach that machine through
-the **Executor** — it shows up as a single **`computer`** connector that fronts
+the **connector gateway** — it shows up as a single **`computer`** connector that fronts
 **all** of the account's connected machines. You use the normal
-`kortix-executor` MCP tools (`connectors` → `discover` → `describe` → `call`);
+`kortix-connectors` MCP tools (`connectors` → `discover` → `describe` → `call`);
 there is **no token and no separate tunnel CLI** — the live tunnel is the
 credential, resolved server-side.
 
@@ -33,7 +33,7 @@ task is explicitly about the user's own machine.
 </overview>
 
 <usage>
-**1. See which machines are connected.** Call the executor `call` tool:
+**1. See which machines are connected.** Call the connector `call` tool:
 
 ```jsonc
 { "connector": "computer", "action": "list_computers" }
@@ -88,7 +88,7 @@ when only one machine is online.
 The machine's owner grants access **per capability** (filesystem / shell /
 desktop), scoped (allowed paths, allowed commands, allowed desktop features), in
 **Customize → Computers**. The tunnel layer enforces this on every call — the
-Executor does not bypass it.
+The connector gateway does not bypass it.
 
 If you call something that isn't yet granted, the call comes back as
 **pending_approval**: a permission request is created and surfaced to the user in
@@ -98,7 +98,7 @@ denial (there is no token to fall back to, by design).
 </permissions>
 
 <rules>
-- **Use the Executor's `computer` connector** — never hand-roll a tunnel client
+- **Use the `computer` connector** — never hand-roll a tunnel client
   or look for a tunnel token. There isn't one in the sandbox by design.
 - **Pick the machine deliberately.** When more than one is online, always pass
   `computer`; a call without it errors and lists the options. Use

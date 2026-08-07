@@ -10,8 +10,8 @@ const source = [
 
 describe('Slack channel connector catalogue', () => {
   test('uses the built-in Slack install flow instead of creating the reserved slug', () => {
-    expect(source).toContain('<AddSlackProfileCard projectId={projectId} onAdded={onAdded} />');
-    expect(source).not.toMatch(/<ChannelProfileCard[\s\S]*slug="kortix_slack"/);
+    expect(source).toContain('<AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />');
+    expect(source).not.toMatch(/<ChannelConnectionCard[\s\S]*slug="kortix_slack"/);
   });
 
   test('keeps Slack out of the Pipedream OAuth Discover catalogue', () => {
@@ -19,7 +19,7 @@ describe('Slack channel connector catalogue', () => {
     expect(source).toContain(
       "(app) => app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug)",
     );
-    expect(source).toContain('const discoverCards = [...integrationCards, ...pipedreamOAuthCards]');
+    expect(source).toContain('const discoverCards = [...connectorCards, ...pipedreamOAuthCards]');
   });
 
   test('uses Slack branding for the built-in channel card', () => {
@@ -43,8 +43,8 @@ describe('Slack channel connector catalogue', () => {
 });
 
 describe('Email channel connector catalogue', () => {
-  test('keeps Email profiles behind the experimental flag', () => {
-    expect(source).toContain('{emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}');
+  test('keeps Email connections behind the experimental flag', () => {
+    expect(source).toContain('{emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}');
   });
 
   test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {

@@ -56,9 +56,7 @@ export function isSecretStrategy(value: unknown): value is SecretStrategy {
  * a manifest that lists a secret as a bare string (today's only form) expresses
  * no delivery opinion, so it must not drag a brokered row back down to rank 0.
  */
-export function maxStrategy(
-  ...declared: Array<SecretStrategy | null | undefined>
-): SecretStrategy {
+export function maxStrategy(...declared: Array<SecretStrategy | null | undefined>): SecretStrategy {
   let winner: SecretStrategy = 'runtime';
   let seen = false;
   for (const candidate of declared) {
@@ -90,15 +88,17 @@ export function isFullyWithheld(strategy: SecretStrategy): boolean {
  * construction rather than by review.
  */
 import type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from '@kortix/db';
+import type { SecretConsumer } from '@kortix/api-contract';
 
-export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot };
+export type { SecretConsumer, SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot };
 
 export type EgressPolicyParse =
-  | { ok: true; policy: SecretEgressPolicy }
-  | { ok: false; error: string };
+  { ok: true; policy: SecretEgressPolicy } | { ok: false; error: string };
 
 const HOST_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const BLOCKED_JSON_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
 
 /**
  * Validate a host pattern.
@@ -117,6 +117,49 @@ function validHost(raw: unknown): string | null {
   const labels = body.split('.');
   if (labels.length < 2) return null;
   return labels.every((l) => HOST_LABEL.test(l)) ? host : null;
+}
+
+function parseInjectionSlot(input: unknown): SecretInjectionSlot | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const raw = input as Record<string, unknown>;
+  if (raw.kind === 'header') {
+    const name = typeof raw.name === 'string' ? raw.name.trim().toLowerCase() : '';
+    if (!name || name.length > 128 || !HEADER_NAME.test(name)) return null;
+    if (raw.template !== undefined) {
+      if (
+        typeof raw.template !== 'string' ||
+        raw.template.length > 1024 ||
+        !raw.template.includes('{{secret}}') ||
+        raw.template.includes('\r') ||
+        raw.template.includes('\n')
+      ) {
+        return null;
+      }
+    }
+    return {
+      kind: 'header',
+      name,
+      ...(typeof raw.template === 'string' ? { template: raw.template } : {}),
+    };
+  }
+  if (raw.kind === 'query') {
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    return name && name.length <= 128 ? { kind: 'query', name } : null;
+  }
+  if (raw.kind === 'json_body_field') {
+    const path = typeof raw.path === 'string' ? raw.path.trim() : '';
+    const segments = path.split('.');
+    if (
+      !path ||
+      path.length > 512 ||
+      segments.length > 16 ||
+      segments.some((segment) => !segment || BLOCKED_JSON_SEGMENTS.has(segment))
+    ) {
+      return null;
+    }
+    return { kind: 'json_body_field', path };
+  }
+  return null;
 }
 
 export function parseEgressPolicy(input: unknown): EgressPolicyParse {
@@ -161,44 +204,35 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
       path = r.path;
     }
 
-    rules.push({ host, ...(methods ? { methods } : {}), ...(path ? { path } : {}) });
+    let inject: SecretInjectionSlot | undefined;
+    if (r.inject !== undefined) {
+      inject = parseInjectionSlot(r.inject) ?? undefined;
+      if (!inject) return { ok: false, error: 'invalid rule injection' };
+    }
+
+    rules.push({
+      host,
+      ...(methods ? { methods } : {}),
+      ...(path ? { path } : {}),
+      ...(inject ? { inject } : {}),
+    });
   }
 
-  const injectRaw = raw.inject;
-  if (!injectRaw || typeof injectRaw !== 'object') {
-    return { ok: false, error: 'policy.inject is required' };
-  }
-  const inj = injectRaw as Record<string, unknown>;
-  let inject: SecretInjectionSlot;
-  if (inj.kind === 'header') {
-    if (typeof inj.name !== 'string' || !inj.name.trim()) {
-      return { ok: false, error: 'inject.name is required for a header injection' };
-    }
-    inject = {
-      kind: 'header',
-      name: inj.name.trim(),
-      ...(typeof inj.template === 'string' ? { template: inj.template } : {}),
-    };
-  } else if (inj.kind === 'query') {
-    if (typeof inj.name !== 'string' || !inj.name.trim()) {
-      return { ok: false, error: 'inject.name is required for a query injection' };
-    }
-    inject = { kind: 'query', name: inj.name.trim() };
-  } else if (inj.kind === 'json_body_field') {
-    if (typeof inj.path !== 'string' || !inj.path.trim()) {
-      return { ok: false, error: 'inject.path is required for a json_body_field injection' };
-    }
-    inject = { kind: 'json_body_field', path: inj.path.trim() };
-  } else {
-    return { ok: false, error: `unknown inject.kind: ${String(inj.kind)}` };
-  }
+  const inject = parseInjectionSlot(raw.inject);
+  if (!inject) return { ok: false, error: 'policy.inject is invalid' };
 
   const backend = raw.backend;
   if (
     backend !== undefined &&
-    !['llm_gateway', 'executor', 'git_proxy', 'kortix_fetch'].includes(String(backend))
+    !['llm_gateway', 'connector', 'git_proxy', 'kortix_fetch'].includes(String(backend))
   ) {
     return { ok: false, error: `unknown backend: ${String(backend)}` };
+  }
+  if (raw.on_no_match !== undefined && raw.on_no_match !== 'deny') {
+    return { ok: false, error: 'policy.on_no_match must be deny' };
+  }
+  if (raw.tls !== undefined && !['terminate', 'tunnel'].includes(String(raw.tls))) {
+    return { ok: false, error: `unknown tls mode: ${String(raw.tls)}` };
   }
 
   return {
@@ -208,6 +242,8 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
       inject,
       ...(backend ? { backend: backend as SecretEgressPolicy['backend'] } : {}),
       ...(typeof raw.base_url_env === 'string' ? { base_url_env: raw.base_url_env } : {}),
+      ...(raw.on_no_match === 'deny' ? { on_no_match: 'deny' as const } : {}),
+      ...(raw.tls === 'terminate' || raw.tls === 'tunnel' ? { tls: raw.tls } : {}),
     },
   };
 }
@@ -281,9 +317,7 @@ function handleKey(rootSecret: string): Buffer {
 }
 
 function tagFor(rootSecret: string, lookupId: string): string {
-  const mac = createHmac('sha256', handleKey(rootSecret))
-    .update(`kxs.v1|${lookupId}`)
-    .digest();
+  const mac = createHmac('sha256', handleKey(rootSecret)).update(`kxs.v1|${lookupId}`).digest();
   return base32(mac, TAG_LEN);
 }
 

@@ -25,7 +25,7 @@ test('listAccountAudit sends reconstruction filters', async () => {
     projectId: 'project-1',
     sessionId: 'session-1',
     actorType: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'failure',
     requestId: 'request-1',
     correlationId: 'execution-1',
@@ -40,7 +40,7 @@ test('listAccountAudit sends reconstruction filters', async () => {
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'failure',
     request_id: 'request-1',
     correlation_id: 'execution-1',
@@ -77,7 +77,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'success',
   });
 
@@ -86,7 +86,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'success',
   });
 });

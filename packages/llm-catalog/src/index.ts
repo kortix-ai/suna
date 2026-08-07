@@ -557,6 +557,32 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_000_000, output: 131_072 },
   },
   {
+    // Kimi K3 (Moonshot AI) served through AsterLab's OpenAI-compatible
+    // endpoint — same `aster` transport + ASTER_API_KEY as GLM 5.2, so no new
+    // credential is needed. AsterLab accepts the bare `kimi-k3` slug on
+    // https://api.asterlab.ai/v1/chat/completions. `pricingRef` resolves to a
+    // REAL models.dev entry (moonshotai/kimi-k3), so capability lookups borrow
+    // the real reasoning_options (toggle + effort low/high/max) and
+    // temperature:false (K3 rejects a client-sent temperature) instead of the
+    // permissive synthetic fallback. `pricing` is the published Moonshot
+    // upstream rate ($3/$15, $0.30 cache read); Aster is an OpenAI-compatible
+    // proxy — verify against Aster's own price list and adjust via the
+    // LLM_GATEWAY_MANAGED_MODELS overlay if Aster's rate differs.
+    id: 'kimi-k3',
+    name: 'Kimi K3',
+    upstreamModelId: 'kimi-k3',
+    transport: 'aster',
+    pricingRef: 'moonshotai/kimi-k3',
+    pricing: {
+      inputPerMillion: 3,
+      cachedInputPerMillion: 0.3,
+      outputPerMillion: 15,
+    },
+    tier: 'balanced',
+    vision: true,
+    limit: { context: 1_048_576, output: 131_072 },
+  },
+  {
     id: 'deepseek-v4-flash',
     name: 'DeepSeek V4 Flash',
     upstreamModelId: 'deepseek/deepseek-v4-flash',

@@ -5,19 +5,17 @@ import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
-import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
-import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
@@ -178,6 +176,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
 
+        {/* Desktop shell: this modal is `inset-0`, so its first row starts at
+            the window's top-left — under the macOS traffic lights, and under
+            the Win/Linux control cluster. The rail's "Back to workspace"
+            button landed straight on the lights.
+
+            A `.kx-titlebar-spacer` (display:none on the web, band-height and
+            draggable on desktop) drops the WHOLE modal below the band, which
+            covers the narrow-window variant too — the old guard was a
+            left-only `.kx-customize-header` indent that only ever fixed the
+            wide layout, and whose class stopped being rendered when this
+            became a two-column grid. */}
+        <div className="kx-titlebar-spacer shrink-0" />
+
         <div
           className={cn(
             'min-h-0 flex-1',
@@ -217,7 +228,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                     className="text-muted-foreground shrink-0"
                     aria-label="Close"
                   >
-                    <Icon.Close className="text-foreground size-4 stroke-1" />
+                    <Close className="text-foreground size-4 stroke-1" />
                   </Button>
                 </ModalClose>
               </div>
@@ -376,14 +387,13 @@ function SectionContent({
   }
 
   switch (section) {
-    case 'agents':
-      return <AgentsView projectId={projectId} />;
-    case 'skills':
-      return <SkillsView projectId={projectId} />;
+    // No `agents` case: Agents graduated to /projects/<id>/agent. A stale
+    // `/customize/agents` deep link redirects there (see
+    // `legacyCustomizeRedirect`) rather than opening the overlay.
+    case 'commands':
+      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
-    case 'connectors':
-      return <ConnectorsView projectId={projectId} />;
     case 'secrets':
       return <SecretsView projectId={projectId} />;
     case 'channels':

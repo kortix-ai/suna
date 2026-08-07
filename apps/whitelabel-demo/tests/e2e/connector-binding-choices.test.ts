@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { connectorBindingNotice } from '../../src/lib/connector-binding';
 import { selectConnectorBindingChoices } from '../../src/server/bindable-connections';
 
-const profile = (over: Record<string, unknown> = {}) =>
+const connection = (over: Record<string, unknown> = {}) =>
   ({
-    profile_id: 'p1',
+    connection_id: 'p1',
     connector_alias: 'gmail',
     owner_type: 'project',
     owner_id: null,
@@ -18,8 +18,8 @@ const profile = (over: Record<string, unknown> = {}) =>
 describe('selectConnectorBindingChoices', () => {
   test('groups by alias, so no connector is privileged over another', () => {
     const choices = selectConnectorBindingChoices([
-      profile({ connector_alias: 'slack', profile_id: 'a' }),
-      profile({ connector_alias: 'gmail', profile_id: 'b' }),
+      connection({ connector_alias: 'slack', connection_id: 'a' }),
+      connection({ connector_alias: 'gmail', connection_id: 'b' }),
     ]);
     expect(choices.map((c) => c.alias)).toEqual(['gmail', 'slack']);
     expect(choices.every((c) => c.connections.length === 1)).toBe(true);
@@ -30,7 +30,7 @@ describe('selectConnectorBindingChoices', () => {
     // account — so it looks connected and cannot be bound. Dropping the alias
     // from the list would leave nothing to explain.
     const [choice] = selectConnectorBindingChoices([
-      profile({ owner_type: 'member', owner_id: 'u1' }),
+      connection({ owner_type: 'member', owner_id: 'u1' }),
     ]);
     expect(choice!.connections).toEqual([]);
     expect(choice!.unavailable).toBe('private_only');
@@ -38,21 +38,21 @@ describe('selectConnectorBindingChoices', () => {
 
   test('a revoked project connection is a different ask than a private one', () => {
     const [choice] = selectConnectorBindingChoices([
-      profile({ status: 'revoked' }),
+      connection({ status: 'revoked' }),
     ]);
     expect(choice!.unavailable).toBe('project_connection_inactive');
   });
 
   test('a bindable connection wins over any unbindable sibling on the same alias', () => {
     const [choice] = selectConnectorBindingChoices([
-      profile({ profile_id: 'mine', owner_type: 'member', owner_id: 'u1' }),
-      profile({ profile_id: 'project', label: 'Project inbox' }),
+      connection({ connection_id: 'mine', owner_type: 'member', owner_id: 'u1' }),
+      connection({ connection_id: 'project', label: 'Project inbox' }),
     ]);
     expect(choice!.unavailable).toBeNull();
-    expect(choice!.connections.map((c) => c.authorizationId)).toEqual(['project']);
+    expect(choice!.connections.map((c) => c.connectionId)).toEqual(['project']);
   });
 
-  test('no profiles is no connectors, not a crash', () => {
+  test('no connections is no connectors, not a crash', () => {
     expect(selectConnectorBindingChoices(undefined)).toEqual([]);
   });
 });
@@ -73,7 +73,7 @@ describe('connectorBindingNotice', () => {
           unavailable: null,
           connections: [
             {
-              authorizationId: 'p',
+              connectionId: 'p',
               connectorAlias: 'gmail',
               label: 'Support',
               isDefault: true,
@@ -122,9 +122,9 @@ describe('connectorBindingNotice', () => {
 });
 
 describe('unavailable reason must not mislabel a shared connection (F4)', () => {
-  const profile = (owner: string, status = 'active') =>
+  const connection = (owner: string, status = 'active') =>
     ({
-      profile_id: `p-${owner}`,
+      connection_id: `p-${owner}`,
       connector_alias: 'gmail',
       label: owner,
       owner_type: owner,
@@ -132,27 +132,27 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
       is_default: false,
     }) as never;
 
-  test('an EXTERNAL profile is not "private only" — channel installs mint those', () => {
-    // executor/sync.ts inserts owner_type:'external' profiles for channel/inbox
+  test('an EXTERNAL connection is not "private only" — channel installs mint those', () => {
+    // connector/sync.ts inserts owner_type:'external' connections for channel/inbox
     // installs, and the platform WILL bind them for a caller who may manage
-    // system profiles. Calling that "only connected to people's own accounts"
+    // system connections. Calling that "only connected to people's own accounts"
     // is false AND names an action — ask a teammate to share it — that fixes
     // nothing.
     const choices = selectConnectorBindingChoices([
-      profile('external', 'revoked'),
+      connection('external', 'revoked'),
     ]);
     expect(choices[0]?.unavailable).toBe('project_connection_inactive');
   });
 
   test('only a MEMBER-owned connection is genuinely private to one person', () => {
     const choices = selectConnectorBindingChoices([
-      profile('member', 'revoked'),
+      connection('member', 'revoked'),
     ]);
     expect(choices[0]?.unavailable).toBe('private_only');
   });
 
   test('an active project connection is offered, not reported unavailable', () => {
-    const choices = selectConnectorBindingChoices([profile('project')]);
+    const choices = selectConnectorBindingChoices([connection('project')]);
     expect(choices[0]?.unavailable).toBeNull();
     expect(choices[0]?.connections).toHaveLength(1);
   });

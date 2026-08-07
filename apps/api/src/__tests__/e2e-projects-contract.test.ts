@@ -237,6 +237,7 @@ mock.module('../projects/lib/project-deletion', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -561,6 +562,21 @@ describe('projects API contract', () => {
     );
     expect(typedMissingFile.status).toBe(404);
     expect(await typedMissingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+
+    // Absolute and traversal paths can never resolve inside the repo tree —
+    // the meta agent's /workspace/AGENTS.md source lives in the sandbox image.
+    // The route answers 404 without reaching git instead of letting the path
+    // guard throw a 500.
+    const absolutePath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('/workspace/AGENTS.md')}`,
+    );
+    expect(absolutePath.status).toBe(404);
+    expect(await absolutePath.json()).toEqual({ error: 'File not found' });
+    const traversalPath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('../etc/passwd')}`,
+    );
+    expect(traversalPath.status).toBe(404);
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);

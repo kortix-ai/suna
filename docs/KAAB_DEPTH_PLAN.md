@@ -134,7 +134,7 @@ Remaining, in order of what teaches the most:
    Nothing in the demo models it; without it, wrapper authors will not know the
    flow exists.
 2. **Connector-binding picker** — choose which connection a session runs as,
-   using the per-row `profile_id`.
+   using the per-row `connection_id`.
 3. **Model switcher** wired to `PUT /sessions/{id}/model`, showing the
    `applied_live` distinction honestly rather than pretending it is instant.
 4. **Secrets allowlist** — narrow a session to a subset, and show that the
@@ -153,7 +153,7 @@ Remaining, in order of what teaches the most:
 - **Mid-session agent switch re-mints the token grant.** Connectors and Kortix
   CLI actions now follow the agent that actually runs; secrets keep refusing the
   switch, for the reason that difference exists (secrets are already in the box).
-- **Executor tokens are revoked when their sandbox is gone.** They had no
+- **Connector tokens are revoked when their sandbox is gone.** They had no
   expiry and were exempt from idle-revoke, so every session ever run left a live
   bearer behind.
 

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { Icon } from '@/features/icon/icon';
+import { Monitor } from '@/features/icon/icons/monitor';
+import { Moon } from '@/features/icon/icons/moon';
+import { Sun } from '@/features/icon/icons/sun';
 
 import { THEME_OPTIONS } from './user-menu';
 
@@ -38,11 +40,7 @@ describe('THEME_OPTIONS', () => {
     // Identity, not resemblance: the submenu and the settings tab must render
     // the same component, or the two surfaces drift into different glyphs for
     // the same choice.
-    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([
-      Icon.Sun,
-      Icon.Moon,
-      Icon.Monitor,
-    ]);
+    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([Sun, Moon, Monitor]);
   });
 
   test('pairs every value with a label and an icon', () => {

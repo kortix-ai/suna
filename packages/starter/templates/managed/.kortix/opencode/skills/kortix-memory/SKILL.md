@@ -8,14 +8,14 @@ description: How to read, write, and curate project memory in `.kortix/memory/` 
 <overview>
 Every Kortix project has a **project brain** at `.kortix/memory/` — a
 folder of curated markdown files describing what this project is,
-which integrations it talks to, the conventions the team works by, and
+which connections it uses, the conventions the team works by, and
 the decisions worth not re-litigating.
 
 `MEMORY.md` is the **index**. Memory is **not** auto-injected into the
 prompt — the **memory protocol** is: at the start of a task, `view`
 `.kortix/memory` with the `memory` tool to read the index and recover
 prior context, then `view` the sub-files (`overview.md`,
-`integrations.md`, etc.) the index points at when they're relevant.
+`connections.md`, etc.) the index points at when they're relevant.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `.kortix/memory/` is lost.
 
@@ -35,7 +35,7 @@ never by pushing directly.
 <when-to-load>
 Load this skill when you:
 
-- Discover a project convention, integration detail, decision, or
+- Discover a project convention, connection detail, decision, or
   workaround that should outlast this session
 - Notice the project brain is out of date or contradicts current code
 - Are the `memory-reflector` agent doing your scheduled reflection run
@@ -52,7 +52,7 @@ memory is about durable knowledge, not session state.
 .kortix/memory/
 ├── MEMORY.md           Index. `view` this first. One line per sub-file.
 ├── overview.md         What this project IS — purpose, shape, stakeholders.
-├── integrations.md     Third parties, MCP servers, channels, executor connectors.
+├── connections.md      Third parties, MCP servers, channels, and connectors.
 ├── conventions.md      Coding patterns, naming, do / don't, style decisions.
 └── decisions.md        Architectural and business decisions worth not re-debating.
 ```
@@ -78,7 +78,7 @@ there's enough depth to warrant a click.
   one-sentence pitch.
 - **Architecture-level decisions** — why we use X over Y, which
   service owns what, the data flow.
-- **Integration details** — which third parties / MCP servers /
+- **Connection details** — which third parties / MCP servers /
   channels are wired, what credentials they need, how they're scoped.
 - **Conventions** — naming, code style, branching, review norms — the
   stuff that's *de facto* across the codebase but not stated.
@@ -140,7 +140,7 @@ on `main` through the normal change-request flow (below).
 
 1. `view` `.kortix/memory` to see what's there.
 2. Identify the right file. Most additions fit `overview.md`,
-   `integrations.md`, `conventions.md`, or `decisions.md`. `create` a
+   `connections.md`, `conventions.md`, or `decisions.md`. `create` a
    new file only when a topic deserves its own page.
 3. Edit with `str_replace` / `insert`. Keep entries short, factual, and
    consistent with the surrounding prose.

@@ -3,12 +3,13 @@ import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
-import { IconProvider } from '@/components/ui/icon-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
+import { LazyMotionProvider } from '@/components/lazy-motion-provider';
+import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
@@ -337,69 +338,71 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           enableSystem
           disableTransitionOnChange
         >
-          <IconProvider>
-            <TooltipProvider delayDuration={300}>
-            <AuthProvider>
-              <I18nProvider>
-                <BrowserNoiseGuard />
-                <DesktopChrome />
-                <DesktopUrlPrompt />
-                <ReactQueryProvider>
-                  <Toaster />
-                  {/* Global "Request a demo" qualifier modal — mounted once here
+          <LazyMotionProvider>
+            <IconProvider>
+              <TooltipProvider delayDuration={300}>
+                <AuthProvider>
+                  <I18nProvider>
+                    <BrowserNoiseGuard />
+                    <DesktopChrome />
+                    <DesktopUrlPrompt />
+                    <ReactQueryProvider>
+                      <Toaster />
+                      {/* Global "Request a demo" qualifier modal — mounted once here
                       so every enterprise CTA across the app (accounts settings,
                       billing, IAM) can open it via useRequestDemo(). */}
-                  <RequestDemoProvider>
-                    {/* Account-wide MFA: catches the SDK's kortix:mfa-required
+                      <RequestDemoProvider>
+                        {/* Account-wide MFA: catches the SDK's kortix:mfa-required
                         event (coded 403) and walks the user through a TOTP
                         step-up so the retried action passes the IAM gate. */}
-                    <MfaStepUpProvider>
-                      <KortixProjectScope>{children}</KortixProjectScope>
-                    </MfaStepUpProvider>
-                  </RequestDemoProvider>
-                  {/* Global maintenance/incident banner (info/warning/critical).
+                        <MfaStepUpProvider>
+                          <KortixProjectScope>{children}</KortixProjectScope>
+                        </MfaStepUpProvider>
+                      </RequestDemoProvider>
+                      {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}
-                  <Suspense fallback={null}>
-                    <MaintenanceBannerHost />
-                  </Suspense>
-                  {/* Fallback file-preview modal for surfaces with no session side
+                      <Suspense fallback={null}>
+                        <MaintenanceBannerHost />
+                      </Suspense>
+                      {/* Fallback file-preview modal for surfaces with no session side
                       panel (dashboard, project pages). Its file/history hooks need
                       the query client, so it mounts inside ReactQueryProvider like
                       MaintenanceBannerHost above. */}
-                  <Suspense fallback={null}>
-                    <AppFilePreviewHost />
-                  </Suspense>
-                </ReactQueryProvider>
-                {/* Analytics - lazy loaded to not block FCP */}
-                <Suspense fallback={null}>
-                  <Analytics />
-                </Suspense>
-                {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
-                  <Suspense fallback={null}>
-                    <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
-                  </Suspense>
-                )}
-                <Suspense fallback={null}>
-                  <SpeedInsights />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <PostHogIdentify />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <RouteChangeTracker />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <AuthEventTracker />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <LocalhostLinkInterceptor />
-                </Suspense>
-              </I18nProvider>
-            </AuthProvider>
-            </TooltipProvider>
-          </IconProvider>
+                      <Suspense fallback={null}>
+                        <AppFilePreviewHost />
+                      </Suspense>
+                    </ReactQueryProvider>
+                    {/* Analytics - lazy loaded to not block FCP */}
+                    <Suspense fallback={null}>
+                      <Analytics />
+                    </Suspense>
+                    {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+                      <Suspense fallback={null}>
+                        <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+                      </Suspense>
+                    )}
+                    <Suspense fallback={null}>
+                      <SpeedInsights />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <PostHogIdentify />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <RouteChangeTracker />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <AuthEventTracker />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <LocalhostLinkInterceptor />
+                    </Suspense>
+                  </I18nProvider>
+                </AuthProvider>
+              </TooltipProvider>
+            </IconProvider>
+          </LazyMotionProvider>
         </ThemeProvider>
-        <div id="portal" className="fixed left-0 top-0 z-40" />
+        <div id="portal" className="fixed top-0 left-0 z-40" />
       </body>
     </html>
   );

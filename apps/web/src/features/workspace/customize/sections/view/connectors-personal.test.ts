@@ -27,7 +27,9 @@ describe('pruneRequiredConnectors', () => {
   });
 
   test('the editor uses canonical required terminology', async () => {
-    const source = await Bun.file(new URL('./kortix-layer-fields.tsx', import.meta.url)).text();
+    const source = await Bun.file(
+      new URL('./agent-editor-access-fields.tsx', import.meta.url),
+    ).text();
     expect(source).toContain('RequiredConnectorToggle');
     expect(source).toContain('Required before session start');
     expect(source).not.toContain('PersonalConnectorToggle');

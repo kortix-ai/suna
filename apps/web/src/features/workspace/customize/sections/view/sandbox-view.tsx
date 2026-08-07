@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
@@ -45,6 +45,7 @@ import {
   CheckCircleIcon as CheckCircleSolid,
   CaretDownIcon as ChevronDown,
   ShippingContainerIcon as Container,
+  WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon as Edit3,
   FileCodeIcon as FileCode,
   PackageIcon as Package,
@@ -52,7 +53,6 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   SparkleIcon as SparklesSolid,
   TrashIcon as Trash2,
-  WarningIcon as DangerTriangleSolid,
   XCircleIcon as XCircleSolid,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -683,7 +683,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
       action={
         canManage && (
           <Button size="sm" variant="secondary" className="gap-1.5" onClick={openNewForm}>
-            <Icon.Plus className="size-4 shrink-0" />
+            <PlusIcon className="size-4 shrink-0" />
             {tI18nHardcoded.raw(
               'autoComponentsProjectsSandboxSnapshotCardJsxTextNewTemplate62cccf85',
             )}

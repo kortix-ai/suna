@@ -96,8 +96,10 @@ assign('sessions', [
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 assign('apps', [
   'connector_get', 'connector_list', 'connector_setup',
-  'kortix_executor_call', 'kortix_executor_connectors',
-  'kortix_executor_describe', 'kortix_executor_discover',
+  'kortix_connector_call', 'kortix_connectors',
+  'kortix_connectors_connectors', 'kortix_connectors_discover',
+  'kortix_connectors_describe', 'kortix_connectors_call',
+  'kortix_connector_describe', 'kortix_connector_discover',
 ]);
 assign('automations', [
   'triggers', 'trigger_create', 'trigger_delete', 'trigger_get', 'trigger_list',
@@ -282,10 +284,10 @@ const APP_ACTION: Record<string, AppAction> = {
   connector_setup: 'connect',
   connector_get: 'read',
   connector_list: 'read',
-  kortix_executor_discover: 'read',
-  kortix_executor_describe: 'read',
-  kortix_executor_connectors: 'read',
-  kortix_executor_call: 'call',
+  kortix_connector_discover: 'read',
+  kortix_connector_describe: 'read',
+  kortix_connectors: 'read',
+  kortix_connector_call: 'call',
 };
 
 function appAction(part: ToolPart): AppAction {
@@ -746,7 +748,7 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
     case 'ask':
       return 'Asked you a question';
     case 'retired':
-      return 'Used an integration that has since been removed';
+      return 'Used a connector that has since been removed';
     case 'other': {
       if (n === 1) return `Used ${humanizeToolName(parts[0].tool)}`;
       // Never inspect only parts[0] — a mixed group of unrecognized/MCP tools
@@ -802,7 +804,7 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
     case 'ask':
       return "Couldn't ask you a question";
     case 'retired':
-      return 'Used an integration that has since been removed';
+      return 'Used a connector that has since been removed';
     case 'other': {
       // 'other' is the catch-all family, so a grouped step can hold several
       // distinct tools of which only one errored — naming parts[0] would blame

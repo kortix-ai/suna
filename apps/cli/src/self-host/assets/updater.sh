@@ -547,7 +547,7 @@ write_status() {
   notify_webhook
 }
 
-# Optional, one env var, no vendor integration: if the operator sets
+# Optional, one env var, no vendor connector: if the operator sets
 # KORTIX_UPDATE_WEBHOOK_URL, POST this run's status JSON (the exact contents
 # of $STATUS_FILE) to it after every run — success, degraded, failed, or
 # skipped-by-lock alike — so an operator who wants a push notification can

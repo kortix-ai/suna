@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import {
-  buildCliExecutorSourceDigest,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
 
@@ -61,7 +61,7 @@ export async function assertCliArtifactAttested(input: {
   }
 
   const recorded = parseAttestation(input.attestationPath, raw);
-  const current = await buildCliExecutorSourceDigest(input.cliRoot);
+  const current = await buildCliConnectorSourceDigest(input.cliRoot);
   if (recorded.source_sha256 !== current) {
     throw new Error(
       `Compiled sandbox CLI is stale: attested source ${recorded.source_sha256}, current source ${current}. Run \`bun run build\` in apps/cli before building a sandbox snapshot.`,

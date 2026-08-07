@@ -15,18 +15,18 @@ export interface AgentMailWebhook {
 const AGENTMAIL_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
- * Stable, profile-scoped AgentMail idempotency keys.
+ * Stable, connection-scoped AgentMail idempotency keys.
  *
- * A Kortix project may contain several email profiles. Project-only client ids
- * cause AgentMail to return the first inbox and webhook for every later profile.
- * Hash the project/profile tuple so retries remain idempotent while distinct
- * profiles always provision distinct provider resources.
+ * A Kortix project may contain several email connections. Project-only client ids
+ * cause AgentMail to return the first inbox and webhook for every later connection.
+ * Hash the project/connection tuple so retries remain idempotent while distinct
+ * connections always provision distinct provider resources.
  */
-export function agentMailProvisioningClientIds(projectId: string, profileSlug: string) {
+export function agentMailProvisioningClientIds(projectId: string, connectionSlug: string) {
   const scope = createHash('sha256')
     .update(projectId)
     .update('\0')
-    .update(profileSlug.trim().toLowerCase())
+    .update(connectionSlug.trim().toLowerCase())
     .digest('hex')
     .slice(0, 40);
   return {

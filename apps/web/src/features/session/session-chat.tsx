@@ -18,7 +18,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,12 +29,12 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import type { QueueDrainGates } from './message-queue-boundary';
-import { useMessageQueueDrain } from './use-message-queue-drain';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
+import { useMessageQueueDrain } from './use-message-queue-drain';
 
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
@@ -104,13 +104,13 @@ import {
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
-  useMessageQueueStore,
   type WebQueuedMessage,
   type WebSessionQueue,
+  useMessageQueueStore,
 } from '@/stores/message-queue-store';
+import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import {
   useSessionComposerPrefillStore,
@@ -118,6 +118,7 @@ import {
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
+import { Copy } from '@/features/icon/icons/copy';
 import {
   type Command,
   type MessageWithParts,
@@ -158,11 +159,11 @@ import {
   applyOptimisticAbort,
   ascendingId,
   beginOptimisticSend,
-  markOptimisticSendDispatched,
   classifySendError,
   clearStartStash,
   formatModelString,
   formatPromptModel,
+  markOptimisticSendDispatched,
   parseModelKey,
   readStartStash,
   recoverFromSendFailure,
@@ -188,7 +189,6 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
-import { Icon } from '../icon/icon';
 import { SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
@@ -1430,7 +1430,7 @@ function SessionTurn({
           >
             <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'copy'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -1441,9 +1441,9 @@ function SessionTurn({
                   {copied ? (
                     <CheckIcon className="text-foreground size-4" />
                   ) : (
-                    <Icon.Copy className="size-4" />
+                    <Copy className="size-4" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </Button>
@@ -1674,7 +1674,7 @@ export function SessionChat({
   // default off): the picker still defaults to the session's agent (seeded via
   // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
   // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
-  // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
+  // connector-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
   const localAgentSet = local.agent.set;
@@ -3686,7 +3686,7 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Optimistic turn — the user's message plus the waiting row,

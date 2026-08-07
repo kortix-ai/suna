@@ -744,7 +744,7 @@
                     "project.secret.read",
                     "project.secret.write",
                     "project.connector.read",
-                    "project.connector.profiles.manage",
+                    "project.connector.connections.manage",
                     "project.connector.write",
                     "project.review.read",
                     "project.review.submit",

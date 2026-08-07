@@ -20,7 +20,7 @@ const item: ReviewCardItem = {
 
 describe('reviewActionId / parseReviewActionId', () => {
   test('round-trips verb + id, including adapted ids with colons', () => {
-    for (const id of ['rv-1', 'cr:abc-123', 'exec:def-456']) {
+    for (const id of ['rv-1', 'cr:abc-123', 'call:def-456']) {
       const a = reviewActionId(id, 'approve');
       expect(parseReviewActionId(a)).toEqual({ verb: 'approve', id });
     }

@@ -47,6 +47,7 @@ import {
 
 export {
   ABSOLUTE_RUN_CAP_MS,
+  childIdleGraceMs,
   createExtendThrottle,
   idleGraceMs,
   isPreviewUseObservation,
@@ -198,9 +199,10 @@ export async function shortenSandboxDeadlineOnTurnEnd(
   sessionId: string,
   status: 'idle' | 'error',
   error?: { isRetryable?: boolean } | null,
+  graceMs?: number,
 ): Promise<void> {
   if (!isTerminalTurnEnd(status, error)) return;
-  await shortenSandboxDeadline(sessionId);
+  await shortenSandboxDeadline(sessionId, graceMs);
 }
 
 /**

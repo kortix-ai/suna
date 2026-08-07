@@ -1,14 +1,14 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpIcon as ArrowUp,
   PaperclipIcon as Paperclip,
   MicrophoneIcon as RiMicAiFill,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { SCENARIOS } from './scenarios';
@@ -65,7 +65,7 @@ export function CyclingPromptText({ className }: { className?: string }) {
   return (
     <div aria-hidden className={cn('relative overflow-hidden', className)}>
       <AnimatePresence mode="wait" initial={false}>
-        <motion.span
+        <m.span
           key={index}
           className="absolute inset-x-0 top-0 block"
           initial={{ opacity: 0, y: 8 }}
@@ -73,7 +73,7 @@ export function CyclingPromptText({ className }: { className?: string }) {
           exit={{ opacity: 0, y: -8, transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] } }}
         >
           {HOME_PROMPT_MESSAGES[index]}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </div>
   );
@@ -148,7 +148,7 @@ export function Composer({
                   <KortixLogo size={12} /> kortix
                 </span>
                 <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
-                  <Icon.Claude className="size-3.5" />
+                  <Claude className="size-3.5" />
                   {tI18nHardcoded.raw(
                     'autoComponentsHomeInteractiveDemoChatComposerJsxTextClaudeOpusf5c492d2',
                   )}

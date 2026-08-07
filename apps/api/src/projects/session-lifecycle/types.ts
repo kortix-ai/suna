@@ -51,7 +51,7 @@ export interface CreateSessionCommand {
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
+  mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -67,6 +67,7 @@ export interface CreateSessionCommand {
   authType?: string | null;
   apiKeyType?: string | null;
   inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -76,7 +77,7 @@ export interface QueuedCreateSessionPayload {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
+  mayManageSystemConnections?: boolean;
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued
@@ -85,6 +86,7 @@ export interface QueuedCreateSessionPayload {
   authType?: string | null;
   apiKeyType?: string | null;
   inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface ContinueSessionCommand {

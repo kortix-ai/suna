@@ -10,20 +10,20 @@
  *      never becomes the shared one.
  *   2. An existing shared (userId-null) row is left untouched.
  *   3. Every `per_user` connector flips to `shared`.
- *   4. The `executor_connectors_credential_mode_shared_only` CHECK constraint
+ *   4. The `connectors_credential_mode_shared_only` CHECK constraint
  *      rejects any future `per_user` write.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql, eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { projects, executorConnectors, executorCredentials } from '@kortix/db';
+import { connectors, connectionCredentials } from '@kortix/db';
 
 const CONN_SHARED_ALREADY = 'bbbbbbbb-1111-4000-8000-000000000001';
 const CONN_PER_USER_WITH_SHARED = 'bbbbbbbb-1111-4000-8000-000000000002';
 const CONN_PER_USER_NO_SHARED = 'bbbbbbbb-1111-4000-8000-000000000003';
 const CONNECTOR_IDS = [CONN_SHARED_ALREADY, CONN_PER_USER_WITH_SHARED, CONN_PER_USER_NO_SHARED];
 
-const CONSTRAINT_NAME = 'executor_connectors_credential_mode_shared_only';
+const CONSTRAINT_NAME = 'connectors_credential_mode_shared_only';
 
 let projectId = '';
 let accountId = '';
@@ -33,14 +33,14 @@ let seeded = false;
 /** Replays the migration's exact up-statements (idempotent — safe to re-run). */
 async function runMigrationLogic(): Promise<void> {
   await db.execute(sql`
-    delete from kortix.executor_credentials as ec
-    using kortix.executor_connectors as conn
+    delete from kortix.connection_credentials as ec
+    using kortix.connectors as conn
     where ec.connector_id = conn.connector_id
       and conn.credential_mode = 'per_user'
       and ec.user_id is not null
   `);
   await db.execute(sql`
-    update kortix.executor_connectors
+    update kortix.connectors
     set credential_mode = 'shared'
     where credential_mode = 'per_user'
   `);
@@ -52,7 +52,7 @@ async function runMigrationLogic(): Promise<void> {
 async function restoreCheckConstraint(): Promise<void> {
   await db.execute(sql.raw(`
     DO $$ BEGIN
-      ALTER TABLE kortix.executor_connectors
+      ALTER TABLE kortix.connectors
         ADD CONSTRAINT ${CONSTRAINT_NAME} CHECK (credential_mode = 'shared');
     EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
@@ -74,9 +74,9 @@ beforeAll(async () => {
 
   // Transiently drop the CHECK constraint so we can seed `per_user` fixture rows
   // (the pre-migration state) — restored by the last test / afterAll below.
-  await db.execute(sql.raw(`ALTER TABLE kortix.executor_connectors DROP CONSTRAINT IF EXISTS ${CONSTRAINT_NAME}`));
+  await db.execute(sql.raw(`ALTER TABLE kortix.connectors DROP CONSTRAINT IF EXISTS ${CONSTRAINT_NAME}`));
 
-  await db.insert(executorConnectors).values([
+  await db.insert(connectors).values([
     {
       connectorId: CONN_SHARED_ALREADY,
       accountId,
@@ -106,7 +106,7 @@ beforeAll(async () => {
     },
   ]);
 
-  await db.insert(executorCredentials).values([
+  await db.insert(connectionCredentials).values([
     { connectorId: CONN_PER_USER_WITH_SHARED, userId: null, kind: 'connection', valueEnc: 'enc-shared' },
     { connectorId: CONN_PER_USER_WITH_SHARED, userId: memberUserId, kind: 'connection', valueEnc: 'enc-member-1' },
     { connectorId: CONN_PER_USER_NO_SHARED, userId: memberUserId, kind: 'connection', valueEnc: 'enc-member-2' },
@@ -116,8 +116,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!seeded) return;
-  await db.delete(executorCredentials).where(inArray(executorCredentials.connectorId, CONNECTOR_IDS));
-  await db.delete(executorConnectors).where(inArray(executorConnectors.connectorId, CONNECTOR_IDS));
+  await db.delete(connectionCredentials).where(inArray(connectionCredentials.connectorId, CONNECTOR_IDS));
+  await db.delete(connectors).where(inArray(connectors.connectorId, CONNECTOR_IDS));
   // Defensive: guarantee the constraint is back even if an assertion above threw
   // before the dedicated test restored it.
   await restoreCheckConstraint();
@@ -128,9 +128,9 @@ describe('per_user → shared credential-mode migration', () => {
     if (!seeded) return;
     await runMigrationLogic();
     const rows = await db
-      .select({ connectorId: executorConnectors.connectorId, credentialMode: executorConnectors.credentialMode })
-      .from(executorConnectors)
-      .where(inArray(executorConnectors.connectorId, CONNECTOR_IDS));
+      .select({ connectorId: connectors.connectorId, credentialMode: connectors.credentialMode })
+      .from(connectors)
+      .where(inArray(connectors.connectorId, CONNECTOR_IDS));
     for (const row of rows) expect(row.credentialMode).toBe('shared');
   });
 
@@ -138,9 +138,9 @@ describe('per_user → shared credential-mode migration', () => {
     if (!seeded) return;
     await runMigrationLogic();
     const remaining = await db
-      .select({ connectorId: executorCredentials.connectorId, userId: executorCredentials.userId })
-      .from(executorCredentials)
-      .where(inArray(executorCredentials.connectorId, CONNECTOR_IDS));
+      .select({ connectorId: connectionCredentials.connectorId, userId: connectionCredentials.userId })
+      .from(connectionCredentials)
+      .where(inArray(connectionCredentials.connectorId, CONNECTOR_IDS));
     // The shared (userId-null) row on CONN_PER_USER_WITH_SHARED survives...
     expect(remaining).toContainEqual({ connectorId: CONN_PER_USER_WITH_SHARED, userId: null });
     // ...but every per-member row (userId set) is gone, on both connectors.
@@ -152,9 +152,9 @@ describe('per_user → shared credential-mode migration', () => {
     if (!seeded) return;
     await runMigrationLogic();
     const remaining = await db
-      .select({ connectorId: executorCredentials.connectorId })
-      .from(executorCredentials)
-      .where(eq(executorCredentials.connectorId, CONN_PER_USER_NO_SHARED));
+      .select({ connectorId: connectionCredentials.connectorId })
+      .from(connectionCredentials)
+      .where(eq(connectionCredentials.connectorId, CONN_PER_USER_NO_SHARED));
     expect(remaining).toHaveLength(0);
   });
 
@@ -166,14 +166,14 @@ describe('per_user → shared credential-mode migration', () => {
     await restoreCheckConstraint();
     const attemptBadWrite = async () => {
       await db.execute(
-        sql`update kortix.executor_connectors set credential_mode = 'per_user' where connector_id = ${CONN_SHARED_ALREADY}::uuid`,
+        sql`update kortix.connectors set credential_mode = 'per_user' where connector_id = ${CONN_SHARED_ALREADY}::uuid`,
       );
     };
     await expect(attemptBadWrite()).rejects.toThrow();
     const [row] = await db
-      .select({ credentialMode: executorConnectors.credentialMode })
-      .from(executorConnectors)
-      .where(eq(executorConnectors.connectorId, CONN_SHARED_ALREADY));
+      .select({ credentialMode: connectors.credentialMode })
+      .from(connectors)
+      .where(eq(connectors.connectorId, CONN_SHARED_ALREADY));
     expect(row?.credentialMode).toBe('shared');
   });
 });

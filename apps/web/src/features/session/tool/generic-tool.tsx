@@ -10,17 +10,25 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
-function parseToolName(tool: string): {
+import { humanizeToolName } from '@/features/session/action-panel/shared/narration';
+
+/**
+ * `linear/create_issue` → server `linear`, display `Create Issue`.
+ *
+ * The display half delegates to `humanizeToolName` rather than word-splitting
+ * `tool` here. MCP ids also arrive as `mcp__server__tool_name`, where `__` is
+ * the hierarchy separator, and a `/`-only split left the whole identifier in
+ * the title ("Mcp  Linear  Create Issue", double space included) — directly
+ * under a group row that had already humanized the same call correctly. One
+ * humanizer, one result, everywhere a tool name is shown.
+ */
+export function parseToolName(tool: string): {
   server: string | null;
-  name: string;
   display: string;
 } {
   const slashIdx = tool.lastIndexOf('/');
   const server = slashIdx > 0 ? tool.slice(0, slashIdx) : null;
-  const name = slashIdx > 0 ? tool.slice(slashIdx + 1) : tool;
-
-  const display = name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return { server, name, display };
+  return { server, display: humanizeToolName(tool) };
 }
 
 export function GenericTool({ part }: ToolProps) {

@@ -5,18 +5,18 @@ session. They ship as PATH shims baked into the Daytona sandbox image, auth via
 env vars injected at sandbox spawn, and emit **JSON only** so the agent can parse
 results.
 
-> **Scope today: just `slack`.** The Executor — once the `executor` /
-> `executor-mcp` shims here — has been absorbed into the one `kortix` CLI as
-> `kortix executor` (the agent-facing CLI) plus the optional
-> `kortix executor mcp` compatibility server, both built on the
-> `@kortix/executor-sdk` framework. The old
+> **Scope today: just `slack`.** The Connector — once the `connector` /
+> `connector-mcp` shims here — has been absorbed into the one `kortix` CLI as
+> `kortix connectors` (the agent-facing CLI) plus the optional
+> `kortix connectors mcp` compatibility server. Both use `@kortix/sdk` through
+> the compiled `kortix` binary. The old
 > `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
 > channel state is in the sandbox env already, and secrets are `kortix secrets …`.
 > Slack stays here as a standalone vendor adapter.
 
 Not the same thing as the user-facing `kortix` CLI in [`apps/cli`](../../cli),
 which is a compiled binary for people's laptops (and is *also* baked into the
-sandbox image — that's what `kortix executor` runs from).
+sandbox image — that's what `kortix connectors` runs from).
 
 ## Layout
 
@@ -42,19 +42,16 @@ collisions — pick a unique name.
 
 ```typescript
 #!/usr/bin/env bun
-import { parseArgs, out, handleError, CliError, validateRequired, kortixProjectId, getEnv } from "../lib"
-import { createExecutorClient } from "../../../../packages/executor-sdk/src/index"
+import { parseArgs, out, handleError, validateRequired, kortixConnectorCall } from "../lib"
 
 async function send(opts: { channel: string; text: string }) {
-  // Vendor calls go through the Kortix Executor — the credential is resolved
+  // Vendor calls go through the Kortix Connector — the credential is resolved
   // SERVER-SIDE, so there is NO vendor token (no SLACK_BOT_TOKEN etc.) in the
   // sandbox. Authenticate to the gateway with the session token instead.
-  const client = createExecutorClient({
-    apiUrl: getEnv("KORTIX_API_URL")!,
-    token: getEnv("KORTIX_CLI_TOKEN")!,
-    projectId: kortixProjectId(),
+  const res = await kortixConnectorCall("slack.send_message", {
+    channel: opts.channel,
+    text: opts.text,
   })
-  const res = await client.call("slack", "send_message", { channel: opts.channel, text: opts.text })
   return res.data
 }
 
@@ -82,7 +79,7 @@ Rules:
 - **JSON-only stdout**, exit 0 on success and 1 on failure. The agent parses
   results — never write progress to stdout.
 - **No vendor tokens in the sandbox.** Vendor calls (e.g. Slack) run through the
-  Kortix Executor, which resolves the credential server-side; the CLI auths to
+  Kortix Connector, which resolves the credential server-side; the CLI auths to
   apps/api with the per-session `KORTIX_CLI_TOKEN` (+ `KORTIX_API_URL`). Binary /
   multipart vendor ops the JSON gateway can't carry (Slack file download/upload)
   go through dedicated apps/api proxy routes — still token-free in the box.
@@ -95,7 +92,7 @@ Rules:
   here following the contract above; rebuild the image, `install-shims.sh` picks
   it up.
 - **Kortix-platform capability** (anything that talks to apps/api as the user —
-  connectors, secrets, sessions, change requests, the Executor) → add it as a
+  connectors, secrets, sessions, change requests, the Connector) → add it as a
   subcommand of the one `kortix` CLI in [`apps/cli`](../../cli) instead, so there
   is a single surface.
 

@@ -1,17 +1,16 @@
 import type {
   AdminConnector,
-  ConnectorAuthorization,
+  Connection,
   ProjectSecret,
-  SessionConnectorBindings,
   SessionScope,
   SessionScopeInput,
 } from '@kortix/sdk';
 
 export interface SessionScopeDraft {
   secrets?: string[] | null;
-  connector_bindings?: SessionConnectorBindings;
+  connector_bindings?: Record<string, { connection_id: string }>;
   /**
-   * Connectors this session REQUIRES but has no authorization for yet.
+   * Connectors this session REQUIRES but has no connection for yet.
    *
    * A binding is "use THIS connection", so a connector with nothing connected
    * had nowhere to be recorded and the checkbox was simply greyed out — you
@@ -38,7 +37,7 @@ export interface SessionScopeCatalogGrants {
 export interface SessionScopeRawCatalogs {
   secrets: SessionScopeCatalogState<ProjectSecret>;
   connectors: SessionScopeCatalogState<AdminConnector>;
-  authorizations: SessionScopeCatalogState<ConnectorAuthorization>;
+  connections: SessionScopeCatalogState<Connection>;
   grants?: SessionScopeCatalogGrants;
 }
 
@@ -47,8 +46,8 @@ export interface SessionScopeSecretOption {
   name: string;
 }
 
-export interface SessionScopeAuthorizationOption {
-  authorization_id: string;
+export interface SessionScopeConnectionOption {
+  connection_id: string;
   label: string;
   is_default: boolean;
 }
@@ -57,12 +56,12 @@ export interface SessionScopeConnectorOption {
   slug: string;
   name: string;
   authorization_strategy: AdminConnector['authorizationStrategy'];
-  authorizations: SessionScopeAuthorizationOption[];
+  connections: SessionScopeConnectionOption[];
 }
 
 export interface SessionScopeSelectionCatalog {
   secrets: SessionScopeCatalogState<SessionScopeSecretOption>;
-  connector_profiles: SessionScopeCatalogState<SessionScopeConnectorOption>;
+  connector_connections: SessionScopeCatalogState<SessionScopeConnectorOption>;
 }
 
 export interface SessionScopeAvailability {
@@ -75,11 +74,15 @@ export interface SessionScopeCommit {
   availability: SessionScopeAvailability;
 }
 
-function cloneBindings(bindings: SessionConnectorBindings): SessionConnectorBindings {
+function cloneBindings(
+  bindings: Record<string, { connection_id: string }>,
+): Record<string, { connection_id: string }> {
   return Object.fromEntries(
     Object.entries(bindings).map(([alias, binding]) => [
       alias,
-      { authorization_id: binding.authorization_id },
+      {
+        connection_id: binding.connection_id,
+      },
     ]),
   );
 }
@@ -98,7 +101,7 @@ export function createSessionScopeDraft(
   if (!catalog || catalog.secrets.status === 'ready') {
     draft.secrets = scope.secrets_allowlist === null ? null : [...scope.secrets_allowlist];
   }
-  if (!catalog || catalog.connector_profiles.status === 'ready') {
+  if (!catalog || catalog.connector_connections.status === 'ready') {
     draft.connector_bindings = cloneBindings(scope.connector_bindings);
     draft.require_connectors = [...(scope.required_connectors ?? [])];
   }
@@ -110,9 +113,15 @@ export function createNewSessionScopeDraft(
 ): SessionScopeDraft {
   const draft: SessionScopeDraft = {};
   if (catalog.secrets.status === 'ready') {
-    draft.secrets = [];
+    // No user override yet. `null` means "inherit everything the agent's grant
+    // allows" — the same state a server-created session starts in. `[]` would be
+    // an EXPLICIT "inject zero project secrets", which silently denied every
+    // browser-created session its grant on the first prompt. The user can still
+    // deliberately deselect all (see `setAllSessionSecrets`) to get `[]`; the
+    // two are opposite and must not be conflated.
+    draft.secrets = null;
   }
-  if (catalog.connector_profiles.status === 'ready') {
+  if (catalog.connector_connections.status === 'ready') {
     draft.connector_bindings = {};
     draft.require_connectors = [];
   }
@@ -173,18 +182,18 @@ export function buildSessionScopeSelectionCatalog(
             })),
         };
 
-  if (input.connectors.status === 'unavailable' || input.authorizations.status === 'unavailable') {
+  if (input.connectors.status === 'unavailable' || input.connections.status === 'unavailable') {
     return {
       secrets,
-      connector_profiles: { status: 'unavailable' },
+      connector_connections: { status: 'unavailable' },
     };
   }
   const connectors = input.connectors.items;
-  const authorizations = input.authorizations.items;
+  const connections = input.connections.items;
 
   return {
     secrets,
-    connector_profiles: {
+    connector_connections: {
       status: 'ready',
       items: connectors
         .filter(
@@ -198,22 +207,22 @@ export function buildSessionScopeSelectionCatalog(
             slug: connector.slug,
             name: connector.name,
             authorization_strategy: connector.authorizationStrategy,
-            authorizations: authorizations
+            connections: connections
               .filter(
-                (authorization) =>
-                  authorization.connector_alias === connector.slug &&
-                  authorization.owner_type === ownerType &&
-                  authorization.status === 'active',
+                (connection) =>
+                  connection.connector_alias === connector.slug &&
+                  connection.owner_type === ownerType &&
+                  connection.status === 'active',
               )
               .sort(
                 (left, right) =>
                   Number(right.is_default) - Number(left.is_default) ||
-                  left.profile_id.localeCompare(right.profile_id),
+                  left.connection_id.localeCompare(right.connection_id),
               )
-              .map((authorization) => ({
-                authorization_id: authorization.profile_id,
-                label: authorization.label,
-                is_default: authorization.is_default,
+              .map((connection) => ({
+                connection_id: connection.connection_id,
+                label: connection.label,
+                is_default: connection.is_default,
               })),
           };
         }),

@@ -1,9 +1,9 @@
-import { parseSharingIntent } from '../../executor/share';
+import { parseSharingIntent } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
-import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
+import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
@@ -11,18 +11,45 @@ import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
-import { UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
-import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
+import { SecretConsumerSchema, UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
+import { parseEgressPolicy } from '../../secrets/strategy';
+import {
+  connectors,
+  projectSecrets,
+  projectSessionSecretHandles,
+  projects,
+  sessionSandboxes,
+} from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  loadProjectForUser,
+  assertProjectCapability,
+} from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
+
+type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
+
+async function connectorSecretBindings(projectId: string, identifier: string): Promise<string[]> {
+  const rows = await db
+    .select({ slug: connectors.slug })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.projectId, projectId),
+        eq(connectors.authSecret, identifier),
+      ),
+    );
+  return rows.map((row) => row.slug).sort();
+}
 
 projectsApp.openapi(
   createRoute({
@@ -79,7 +106,7 @@ projectsApp.openapi(
 // middleware enforces that the URL's `:projectId` matches the token's
 // project_id, so the token is useless outside this one project. They're
 // auto-minted at session-create time and injected into the sandbox as
-// `KORTIX_TOKEN` so the in-container CLI works with zero config.
+// `KORTIX_CLI_TOKEN` so the in-container CLI works with zero config.
 
 
 projectsApp.openapi(
@@ -253,6 +280,7 @@ projectsApp.openapi(
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     projectRow = loaded.row;
   } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
     const accountId = (c as any).get('accountId') as string | undefined;
@@ -261,7 +289,10 @@ projectsApp.openapi(
       return c.json({ error: 'clone credentials require a sandbox token' }, 403);
     }
     const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+      })
       .from(sessionSandboxes)
       .where(and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -272,6 +303,15 @@ projectsApp.openapi(
       .limit(1);
     if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+    if (
+      !(await sessionWorkspaceAllowsRepositoryAccess({
+        sessionId: sandbox.sessionId,
+        accountId,
+        projectId,
+      }))
+    ) {
+      return c.json({ error: 'sandbox workspace does not allow repository access' }, 403);
     }
     const [row] = await db
       .select()
@@ -531,6 +571,82 @@ projectsApp.openapi(
   }
 
   const value = typeof body.value === 'string' ? body.value : null;
+  const requestedConsumer =
+    body.consumer === undefined ? undefined : SecretConsumerSchema.nullable().safeParse(body.consumer);
+  if (requestedConsumer && !requestedConsumer.success) {
+    return c.json({ error: 'consumer is invalid' }, 400);
+  }
+  const requestedConsumerData = requestedConsumer?.success
+    ? requestedConsumer.data
+    : undefined;
+  const requestedStrategy = body.strategy;
+  if (
+    requestedStrategy !== undefined &&
+    !['runtime', 'broker', 'denied'].includes(String(requestedStrategy))
+  ) {
+    return c.json({ error: 'secret creation supports runtime, broker, or denied delivery' }, 400);
+  }
+  if (
+    requestedStrategy === 'broker' &&
+    requestedConsumerData !== 'llm_gateway' &&
+    requestedConsumerData !== 'connector' &&
+    requestedConsumerData !== 'http_broker'
+  ) {
+    return c.json({ error: 'broker creation requires a supported server consumer' }, 400);
+  }
+  if (
+    requestedStrategy === 'runtime' &&
+    requestedConsumer !== undefined &&
+    requestedConsumerData !== 'sandbox'
+  ) {
+    return c.json({ error: 'runtime creation requires the sandbox consumer' }, 400);
+  }
+  if (
+    requestedStrategy === 'denied' &&
+    requestedConsumer !== undefined &&
+    requestedConsumerData !== null
+  ) {
+    return c.json({ error: 'denied creation cannot have a consumer' }, 400);
+  }
+  if (requestedStrategy === undefined && requestedConsumer !== undefined) {
+    return c.json({ error: 'consumer requires a strategy' }, 400);
+  }
+  const defaultToGateway =
+    requestedStrategy === undefined &&
+    requestedConsumer === undefined &&
+    isGatewayManagedEnv(name);
+  const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
+    | 'runtime'
+    | 'broker'
+    | 'denied'
+    | undefined;
+  const explicitConsumer =
+    requestedConsumer === undefined
+      ? defaultToGateway
+        ? 'llm_gateway'
+        : requestedStrategy === 'runtime'
+          ? 'sandbox'
+          : requestedStrategy === 'denied'
+            ? null
+            : undefined
+      : requestedConsumerData;
+  let explicitPolicy = null;
+  if (explicitConsumer === 'http_broker') {
+    const policy = parseEgressPolicy(body.egress_policy);
+    if (!policy.ok || policy.policy.backend !== 'kortix_fetch') {
+      return c.json({ error: policy.ok ? 'HTTP broker requires the kortix_fetch backend' : policy.error }, 400);
+    }
+    explicitPolicy = policy.policy;
+  } else if (body.egress_policy !== undefined) {
+    return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
+  }
+  const explicitHandlePrefix =
+    explicitConsumer === 'http_broker' && typeof body.handle_prefix === 'string'
+      ? body.handle_prefix.trim()
+      : null;
+  if (explicitHandlePrefix && explicitHandlePrefix.length > 48) {
+    return c.json({ error: 'handle_prefix must contain at most 48 characters' }, 400);
+  }
 
   // Look up the existing SHARED row by IDENTIFIER so a key-unchanged edit
   // doesn't force re-entering the value. Creating a brand-new secret still
@@ -540,6 +656,7 @@ projectsApp.openapi(
       secretId: projectSecrets.secretId,
       name: projectSecrets.name,
       strategy: projectSecrets.strategy,
+      consumer: projectSecrets.consumer,
     })
     .from(projectSecrets)
     .where(and(
@@ -577,6 +694,10 @@ projectsApp.openapi(
             identifier,
             name,
             valueEnc: encryptProjectSecret(projectId, value),
+            ...(explicitStrategy ? { strategy: explicitStrategy } : {}),
+            ...(explicitConsumer !== undefined ? { consumer: explicitConsumer } : {}),
+            ...(explicitPolicy ? { egressPolicy: explicitPolicy } : {}),
+            ...(explicitHandlePrefix ? { handlePrefix: explicitHandlePrefix } : {}),
             createdBy: loaded.userId,
             rotatedAt: now,
             updatedAt: now,
@@ -586,6 +707,10 @@ projectsApp.openapi(
             targetWhere: isNull(projectSecrets.ownerUserId),
             set: {
               valueEnc: encryptProjectSecret(projectId, value),
+              ...(explicitStrategy ? { strategy: explicitStrategy } : {}),
+              ...(explicitConsumer !== undefined ? { consumer: explicitConsumer } : {}),
+              ...(explicitConsumer !== undefined ? { egressPolicy: explicitPolicy } : {}),
+              ...(explicitConsumer !== undefined ? { handlePrefix: explicitHandlePrefix } : {}),
               rotatedAt: now,
               updatedAt: now,
             },
@@ -609,10 +734,15 @@ projectsApp.openapi(
       action: existing ? 'secret.updated' : 'secret.created',
       resourceType: 'project_secret',
       resourceId,
-      before: existing ? { configured: true, strategy: existing.strategy } : null,
+      before: existing
+        ? { configured: true, strategy: existing.strategy, consumer: existing.consumer }
+        : null,
       after: {
         configured: true,
-        strategy: existing?.strategy ?? 'runtime',
+        strategy: explicitStrategy ?? existing?.strategy ?? 'runtime',
+        consumer:
+          explicitConsumer !== undefined ? explicitConsumer : (existing?.consumer ?? 'sandbox'),
+        egress_policy: explicitPolicy,
         rotated: value !== null,
       },
       metadata: { identifier, name },
@@ -684,10 +814,84 @@ projectsApp.openapi(
     if (isSystemProjectSecretName(identifier)) {
       return c.json({ error: `${identifier} is managed by Kortix` }, 403);
     }
-    if (parsed.data.strategy === 'broker' || parsed.data.strategy === 'egress') {
+    let nextPolicy = null;
+    const policyBackend = parsed.data.egress_policy?.backend;
+    const inferredConsumer =
+      parsed.data.strategy === 'runtime'
+        ? 'sandbox'
+        : parsed.data.strategy === 'denied'
+          ? null
+          : parsed.data.strategy === 'egress'
+            ? 'network'
+            : policyBackend === 'kortix_fetch'
+              ? 'http_broker'
+              : policyBackend === 'llm_gateway' || policyBackend === 'git_proxy'
+                ? policyBackend
+                : 'http_broker';
+    const nextConsumer =
+      parsed.data.consumer === undefined
+        ? inferredConsumer
+        : parsed.data.consumer;
+
+    if (parsed.data.strategy === 'runtime' && nextConsumer !== 'sandbox') {
+      return c.json({ error: 'runtime delivery requires the sandbox consumer' }, 400);
+    }
+    if (parsed.data.strategy === 'denied' && nextConsumer !== null) {
+      return c.json({ error: 'denied delivery cannot have a consumer' }, 400);
+    }
+    if (parsed.data.strategy === 'egress' && nextConsumer !== 'network') {
+      return c.json({ error: 'egress delivery requires the network consumer' }, 400);
+    }
+    if (
+      parsed.data.strategy === 'broker' &&
+      !['llm_gateway', 'git_proxy', 'http_broker', 'connector'].includes(
+        String(nextConsumer),
+      )
+    ) {
+      return c.json({ error: 'broker delivery requires a server consumer' }, 400);
+    }
+
+    const requiresNetworkPolicy =
+      parsed.data.strategy === 'egress' || nextConsumer === 'http_broker';
+    if (requiresNetworkPolicy) {
+      if (!parsed.data.egress_policy) {
+        return c.json(
+          {
+            error: `${parsed.data.strategy} delivery requires an outbound policy`,
+            code: 'secret_delivery_policy_required',
+          },
+          400,
+        );
+      }
+      const policy = parseEgressPolicy(parsed.data.egress_policy);
+      if (!policy.ok) {
+        return c.json(
+          { error: policy.error, code: 'secret_delivery_policy_invalid' },
+          400,
+        );
+      }
+      nextPolicy = policy.policy;
+    } else if (parsed.data.egress_policy) {
+      return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
+    }
+    if (parsed.data.strategy === 'egress') {
       return c.json(
         {
-          error: `${parsed.data.strategy} delivery is unavailable until its adapter is enabled`,
+          error: 'egress delivery is unavailable until its adapter is enabled',
+          code: 'secret_delivery_unavailable',
+        },
+        409,
+      );
+    }
+    if (
+      parsed.data.strategy === 'broker' &&
+      nextConsumer !== 'llm_gateway' &&
+      nextConsumer !== 'connector' &&
+      nextConsumer !== 'http_broker'
+    ) {
+      return c.json(
+        {
+          error: 'The selected broker backend is unavailable',
           code: 'secret_delivery_unavailable',
         },
         409,
@@ -699,9 +903,12 @@ projectsApp.openapi(
         secretId: projectSecrets.secretId,
         name: projectSecrets.name,
         strategy: projectSecrets.strategy,
+        consumer: projectSecrets.consumer,
         rotatedAt: projectSecrets.rotatedAt,
         updatedAt: projectSecrets.updatedAt,
         strategyLocked: projectSecrets.strategyLocked,
+        egressPolicy: projectSecrets.egressPolicy,
+        handlePrefix: projectSecrets.handlePrefix,
       })
       .from(projectSecrets)
       .where(
@@ -732,16 +939,52 @@ projectsApp.openapi(
         409,
       );
     }
+    if (!(parsed.data.strategy === 'broker' && nextConsumer === 'connector')) {
+      const connectors = await connectorSecretBindings(projectId, identifier);
+      if (connectors.length > 0) {
+        return c.json(
+          {
+            error: 'Remove connector bindings before changing this secret delivery policy',
+            code: 'secret_connector_binding_exists',
+            connectors,
+          },
+          409,
+        );
+      }
+    }
 
-    if (existing.strategy !== parsed.data.strategy) {
+    const nextHandlePrefix =
+      nextConsumer === 'http_broker' ? (parsed.data.handle_prefix ?? null) : null;
+    const deliveryChanged =
+      existing.strategy !== parsed.data.strategy ||
+      existing.consumer !== nextConsumer ||
+      JSON.stringify(existing.egressPolicy ?? null) !== JSON.stringify(nextPolicy) ||
+      existing.handlePrefix !== nextHandlePrefix;
+    if (deliveryChanged) {
+      const changedAt = new Date();
       const actorType =
         c.get('authType') === 'service_account' ? 'service_account' : 'human';
       await runAuditedTransaction(
         async (tx) => {
           await tx
             .update(projectSecrets)
-            .set({ strategy: parsed.data.strategy, updatedAt: new Date() })
+            .set({
+              strategy: parsed.data.strategy,
+              consumer: nextConsumer,
+              egressPolicy: nextPolicy,
+              handlePrefix: nextHandlePrefix,
+              updatedAt: changedAt,
+            })
             .where(eq(projectSecrets.secretId, existing.secretId));
+          await tx
+            .update(projectSessionSecretHandles)
+            .set({ status: 'revoked', revokedAt: changedAt })
+            .where(
+              and(
+                eq(projectSessionSecretHandles.secretId, existing.secretId),
+                eq(projectSessionSecretHandles.status, 'active'),
+              ),
+            );
         },
         () => ({
           accountId: loaded.row.accountId,
@@ -752,9 +995,17 @@ projectsApp.openapi(
           action: 'secret.strategy.changed',
           resourceType: 'project_secret',
           resourceId: existing.secretId,
-          before: { strategy: existing.strategy },
+          before: {
+            strategy: existing.strategy,
+            consumer: existing.consumer,
+            egress_policy: existing.egressPolicy ?? null,
+            handle_prefix: existing.handlePrefix ?? null,
+          },
           after: {
             strategy: parsed.data.strategy,
+            consumer: nextConsumer,
+            egress_policy: nextPolicy,
+            handle_prefix: nextHandlePrefix,
             requires_rotation: parsed.data.strategy !== 'runtime',
           },
           metadata: { identifier, name: existing.name },
@@ -777,8 +1028,8 @@ projectsApp.openapi(
 //
 // Connect a subscription-backed LLM provider (today: a ChatGPT Plus/Pro
 // account via the OpenAI Codex device grant) and save the resulting login as
-// the project's CODEX_AUTH_JSON secret — which sandboxes materialize into
-// OpenCode's auth.json on boot. No sandbox is required to connect.
+// the project's CODEX_AUTH_JSON secret. Only the LLM gateway can decrypt this
+// value. The sandbox receives neither the token nor an opaque handle.
 //
 // Two quick, NON-streaming calls so they survive any edge (a long-lived
 // streaming response gets reset by Cloudflare) and any replica:
@@ -810,15 +1061,17 @@ const OAUTH_POLL_INTERVAL_MS = 3000;
 // member/group secret sharing was retired (see projects/secrets.ts).
 async function writeCodexAuthSecret(input: {
   projectId: string;
+  accountId: string;
   userId: string;
   value: string;
   sharing?: ReturnType<typeof parseSharingIntent>;
 }) {
-  const { projectId, userId, value, sharing } = input;
+  const { projectId, accountId, userId, value, sharing } = input;
   const now = new Date();
+  let secretId: string;
 
   if (sharing?.mode === 'private') {
-    await db
+    const [written] = await db
       .insert(projectSecrets)
       .values({
         projectId,
@@ -827,6 +1080,10 @@ async function writeCodexAuthSecret(input: {
         valueEnc: encryptProjectSecret(projectId, value),
         ownerUserId: userId,
         active: true,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+        strategyLocked: true,
+        rotatedAt: now,
         createdBy: userId,
         updatedAt: now,
       })
@@ -836,17 +1093,30 @@ async function writeCodexAuthSecret(input: {
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
           active: true,
+          strategy: 'broker',
+          consumer: 'llm_gateway',
+          egressPolicy: null,
+          handlePrefix: null,
+          strategyLocked: true,
+          rotatedAt: now,
           updatedAt: now,
         },
-      });
+      })
+      .returning({ secretId: projectSecrets.secretId });
+    if (!written) throw new Error('Failed to store the private Codex credential');
+    secretId = written.secretId;
   } else {
-    await db
+    const [written] = await db
       .insert(projectSecrets)
       .values({
         projectId,
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+        strategyLocked: true,
+        rotatedAt: now,
         createdBy: userId,
         updatedAt: now,
       })
@@ -855,10 +1125,35 @@ async function writeCodexAuthSecret(input: {
         targetWhere: isNull(projectSecrets.ownerUserId),
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
+          strategy: 'broker',
+          consumer: 'llm_gateway',
+          egressPolicy: null,
+          handlePrefix: null,
+          strategyLocked: true,
+          rotatedAt: now,
           updatedAt: now,
         },
-      });
+      })
+      .returning({ secretId: projectSecrets.secretId });
+    if (!written) throw new Error('Failed to store the shared Codex credential');
+    secretId = written.secretId;
   }
+
+  await recordAuditEvent({
+    accountId,
+    projectId,
+    actorUserId: userId,
+    actorType: 'human',
+    source: 'api',
+    action: 'secret.oauth.connected',
+    resourceType: 'project_secret',
+    resourceId: secretId,
+    metadata: {
+      identifier: CODEX_AUTH_JSON_SECRET_NAME,
+      consumer: 'llm_gateway',
+      sharing: sharing?.mode === 'private' ? 'private' : 'project',
+    },
+  });
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
@@ -1022,7 +1317,13 @@ projectsApp.openapi(
   // Authorized — persist the auth.json as the project secret with the sharing
   // chosen at start time (sealed, tamper-proof, in the flow handle).
   const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
-  await writeCodexAuthSecret({ projectId, userId: loaded.userId, value: result.authJson, sharing });
+  await writeCodexAuthSecret({
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+    value: result.authJson,
+    sharing,
+  });
 
   return c.json({
     status: 'success',
@@ -1058,26 +1359,19 @@ projectsApp.openapi(
 
   const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
   for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
-    const [row] = await db
-      .select({ valueEnc: projectSecrets.valueEnc, updatedAt: projectSecrets.updatedAt })
-      .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, cfg.secretName),
-        isNull(projectSecrets.ownerUserId),
-      ))
-      .limit(1);
-    if (!row) continue;
-    let expiresInMs: number | null = null;
-    try {
-      expiresInMs = authExpiresInMs(decryptProjectSecret(projectId, row.valueEnc));
-    } catch {
-      // unreadable — leave unknown
-    }
+    const credential = await resolveProjectSecretForConsumer({
+      projectId,
+      accountId: loaded.row.accountId,
+      actorUserId: loaded.userId,
+      principalUserId: loaded.userId,
+      name: cfg.secretName,
+      consumer: 'llm_gateway',
+    });
+    if (!credential) continue;
     items.push({
       provider_id: providerId,
-      expires_in_ms: expiresInMs,
-      updated_at: (row.updatedAt ?? new Date()).toISOString(),
+      expires_in_ms: authExpiresInMs(credential.value),
+      updated_at: credential.updatedAt.toISOString(),
     });
   }
 
@@ -1110,9 +1404,28 @@ projectsApp.openapi(
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
 
-  await db
-    .delete(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)));
+  await runAuditedTransaction(
+    async (tx) => {
+      await tx
+        .delete(projectSecrets)
+        .where(
+          and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)),
+        );
+    },
+    () => ({
+      accountId: loaded.row.accountId,
+      projectId,
+      actorUserId: loaded.userId,
+      actorType: 'human',
+      source: 'api',
+      action: 'secret.oauth.disconnected',
+      resourceType: 'project_secret',
+      metadata: {
+        identifier: cfg.secretName,
+        consumer: 'llm_gateway',
+      },
+    }),
+  );
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(cfg.secretName) });
 
   return c.json({ ok: true });
@@ -1135,7 +1448,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -1153,6 +1466,12 @@ projectsApp.openapi(
   if (isSystemProjectSecretName(identifier)) {
     return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
   }
+  if (identifier.toUpperCase() === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json(
+      { error: `${CODEX_AUTH_JSON_SECRET_NAME} must be disconnected as an OAuth provider` },
+      400,
+    );
+  }
 
   const [existing] = await db
     .select({
@@ -1169,6 +1488,17 @@ projectsApp.openapi(
     .limit(1);
 
   if (existing) {
+    const connectors = await connectorSecretBindings(projectId, identifier);
+    if (connectors.length > 0) {
+      return c.json(
+        {
+          error: 'Remove connector bindings before deleting this secret',
+          code: 'secret_connector_binding_exists',
+          connectors,
+        },
+        409,
+      );
+    }
     const actorType =
       c.get('authType') === 'service_account'
         ? 'service_account'
@@ -1343,6 +1673,12 @@ projectsApp.openapi(
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
+  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json(
+      { error: `${CODEX_AUTH_JSON_SECRET_NAME} must be disconnected as an OAuth provider` },
+      400,
+    );
+  }
 
   await db
     .delete(projectSecrets)
@@ -1371,7 +1707,29 @@ projectsApp.openapi(
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.any(), 'Secrets re-pushed'),
+      200: json(
+        z.object({
+          ok: z.boolean(),
+          active_sandboxes: z.number().int().nonnegative(),
+          targeted: z.number().int().nonnegative(),
+          synced: z.number().int().nonnegative(),
+          failed: z.number().int().nonnegative(),
+          exported: z.number().int().nonnegative(),
+          results: z.array(z.object({
+            session_id: z.string(),
+            sandbox_id: z.string().nullable(),
+            status: z.enum(['synced', 'failed']),
+            scope: z.enum(['inherit', 'restricted', 'none']).nullable(),
+            revision: z.string().nullable(),
+            exported: z.number().int().nonnegative(),
+            managed: z.number().int().nonnegative().nullable(),
+            withheld: z.number().int().nonnegative().nullable(),
+            agent_env_written: z.boolean(),
+            reason: z.string().optional(),
+          })),
+        }),
+        'Secret delivery verification result',
+      ),
       ...errors(403, 404),
     },
   }),
@@ -1380,8 +1738,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-    await propagateProjectSecretsToActiveSandboxes(projectId);
-    return c.json({ ok: true, synced: true });
+    const result = await propagateProjectSecretsToActiveSandboxes(projectId);
+    return c.json(result);
   },
 );
 

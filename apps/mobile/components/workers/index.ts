@@ -8,6 +8,6 @@ export { WorkerCreationDrawer } from './WorkerCreationDrawer';
 export { WorkerConfigDrawer } from './WorkerConfigDrawer';
 export { InstructionsScreen } from './screens/InstructionsScreen';
 export { ToolsScreen } from './screens/ToolsScreen';
-export { IntegrationsScreen } from './screens/IntegrationsScreen';
+export { ConnectionsScreen } from './screens/ConnectionsScreen';
 export { TriggersScreen } from './screens/TriggersScreen';
 
