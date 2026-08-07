@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isCanvasImageDataOOMNoise,
   isClientRequestTimeoutMessage,
   isConnectionClosedNoise,
   isDocumentStateNotFoundNoise,
@@ -7725,6 +7726,212 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
       }),
       false,
       `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Canvas `getImageData` out-of-memory noise (BS b4b43847…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event (V8/Chrome wording).
+const CANVAS_GETIMAGEDATA_OOM_MESSAGE =
+  "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation"
+
+// A minified third-party canvas library chunk frame — the call site file from
+// the production event (`app:///_next/static/chunks/0fl4m2af7bsiq.js`). No
+// resolved first-party `apps/web/src/…` source, so the negative guard does NOT
+// fire. Represents the production event's frame shape.
+const CANVAS_OOM_PROD_CHUNK_FRAME = 'app:///_next/static/chunks/0fl4m2af7bsiq.js'
+
+// The two production stack frames (both minified third-party canvas library
+// chunk frames — NO resolved first-party `apps/web/src/…` source). The call
+// site function is `Image.<anonymous>` (the `addEventListener` callback the
+// third-party library registered).
+const CANVAS_OOM_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: CANVAS_OOM_PROD_CHUNK_FRAME, function: 'Image.<anonymous>' },
+  { filename: 'app:///_next/static/chunks/0fl4m2af7bsiq.js', function: '?' },
+]
+
+// The canonical capture-path forms: raw, `RangeError:` prefix, and stacked
+// `Unhandled promise rejection: RangeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const CANVAS_OOM_CAPTURE_FORMS = [
+  CANVAS_GETIMAGEDATA_OOM_MESSAGE,
+  `RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+  `Unhandled promise rejection: RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+]
+
+test('classifies every Canvas getImageData OOM capture form as noise (no first-party frame)', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    // Matcher-level: message alone (frameless — still noise because the message
+    // is the browser's canonical OOM wording and is specific enough).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message }),
+      true,
+      `expected "${message}" to be classified as Canvas getImageData OOM noise`,
+    )
+    // Matcher-level: with a minified chunk frame (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({
+        message,
+        frames: [{ filename: CANVAS_OOM_PROD_CHUNK_FRAME }],
+      }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    // Matcher-level: with a window.onerror filename (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the production Canvas getImageData OOM Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b4b43847…, release
+  // v0.12.4, request URL https://kortix.com/ (marketing homepage), mechanism
+  // auto.browser.browserapierrors.addEventListener (UNCAUGHT, handled:false),
+  // call site function Image.<anonymous>, call site file
+  // app:///_next/static/chunks/0fl4m2af7bsiq.js, 2 minified chunk frames.
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              mechanism: {
+                type: 'auto.browser.browserapierrors.addEventListener',
+                handled: false,
+              },
+              stacktrace: { frames: CANVAS_OOM_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless Canvas getImageData OOM Sentry event (no first-party frame to preserve)', () => {
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Canvas getImageData OOM via the runtime (window.onerror) gate', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a Canvas getImageData OOM whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code called
+  // `getImageData()` and the browser ran out of memory — a real first-party
+  // OOM regression, actionable to fix (e.g. shrink the canvas, guard the
+  // allocation, or drop the call on low-memory devices). This is the negative
+  // guard that distinguishes actionable first-party code regressions from the
+  // third-party-library noise class.
+  const realAppFrames: Array<Array<{ filename: unknown; function?: unknown }>> = [
+    [{ filename: 'app:///apps/web/src/features/marketing/hyper-logo.ts', function: 'samplePixels' }],
+    [{ filename: 'apps/web/src/lib/canvas/pixel-reader.ts', function: 'readRegion' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+      assert.equal(
+        isCanvasImageDataOOMNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/canvas/pixel-reader.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the exact OOM suffix (over-match guard)', () => {
+  // The `Out of memory at ImageData creation` suffix is part of the anchor —
+  // a different `getImageData` failure (e.g. a different DOM exception, or a
+  // different allocation reason) must keep reporting so the matcher does not
+  // over-match a real first-party canvas bug.
+  for (const message of [
+    // A different `getImageData` DOM exception (e.g. index out of range).
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Index is not in the allowed range.",
+    // A different OOM wording without the `ImageData creation` suffix.
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory.",
+    // A different Canvas 2D method entirely.
+    "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation",
+    // A near-worded first-party throw (no `Failed to execute` DOM prefix).
+    'Out of memory at ImageData creation',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-OOM RangeError (over-match guard on the RangeError type)', () => {
+  // The matcher anchors on the EXACT `getImageData` OOM message, NOT on the
+  // `RangeError` type. A generic `RangeError: Maximum call stack size
+  // exceeded.` (the iOS-WebKit stack-overflow class, handled by
+  // `isUnresolvableStackOverflowNoise`) or a first-party `RangeError` keeps
+  // reporting unless it matches the exact canvas OOM wording.
+  for (const message of [
+    'Maximum call stack size exceeded.',
+    'RangeError: Maximum call stack size exceeded.',
+    'Array length must be finite.',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
     )
   }
 })
