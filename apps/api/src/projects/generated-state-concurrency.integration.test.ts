@@ -77,7 +77,13 @@ async function seed(): Promise<void> {
       branchName: `worker-${index}`,
       agentName: 'worker',
       createdBy: USER_ID,
-      metadata: { spawned_by_session: COORDINATORS[index], task_liveness_binding_required: true },
+      status: 'queued' as const,
+      metadata: {
+        spawned_by_session: COORDINATORS[index],
+        task_liveness_binding_required: true,
+        task_liveness_binding_status: 'pending',
+        task_liveness_reservation_expires_at: '2099-01-01T00:00:00.000Z',
+      },
     })),
     {
       sessionId: 'ordinary-delegated-session',

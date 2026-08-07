@@ -631,7 +631,12 @@ mock.module('../shared/db', () => ({
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) {
+              // Reservation-slot queries select only sessionId. The default
+              // fixture is the coordinator itself, not an existing child.
+              if (fields && Object.keys(fields).length === 1 && 'sessionId' in fields) return [];
+              return sessionRow ? [sessionRow] : [];
+            }
             return [];
           },
         }),

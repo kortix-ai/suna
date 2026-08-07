@@ -80,6 +80,9 @@ mock.module('../../lib/sessions', () => ({
   },
 }));
 mock.module('../../routes/shared', () => ({
+  allocateRuntimeOnOpen: async () => {
+    throw new Error('allocateRuntimeOnOpen: not expected in continue-session tests');
+  },
   openSession: async () => {
     if (openSessionResult) return openSessionResult;
     throw new Error('openSession: not reached when the deletedAt guard trips');

@@ -51,6 +51,9 @@ mock.module('../../session-title-generate', () => ({
 }));
 
 mock.module('../../routes/shared', () => ({
+  allocateRuntimeOnOpen: async () => {
+    throw new Error('allocateRuntimeOnOpen: not expected in continue-session tests');
+  },
   openSession: async () => {
     events.push('open');
     return {
@@ -114,6 +117,9 @@ mock.module('../store', () => ({
   lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
   renewLifecycleCommandLease: async () => true,
   repairLegacyLifecycleMessageIds: async () => 0,
+  deferLifecycleCommand: async () => {
+    throw new Error('not expected in continue-session tests');
+  },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
   },

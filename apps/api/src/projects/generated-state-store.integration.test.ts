@@ -754,9 +754,11 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
 
     // PostgreSQL enforces that the coordinator claim cannot be shortened below
     // the immutable worker deadline.
-    await expect(database.update(projectTasks).set({
-      claimExpiresAt: new Date('2026-08-07T14:59:59.000Z'),
-    }).where(eq(projectTasks.taskId, task.taskId))).rejects.toThrow();
+    await expect((async () => {
+      await database.update(projectTasks).set({
+        claimExpiresAt: new Date('2026-08-07T14:59:59.000Z'),
+      }).where(eq(projectTasks.taskId, task.taskId));
+    })()).rejects.toThrow();
 
     await expect(registerProjectTaskWorker(database, {
       projectId: PROJECT_ID,
