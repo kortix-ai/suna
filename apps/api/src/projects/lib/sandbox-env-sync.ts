@@ -224,6 +224,11 @@ async function postEnvToDaemon(args: {
    * serves — the push landed, the config did not.
    */
   opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
+  /**
+   * Did applying the config interrupt a turn someone was waiting on?
+   * `null` = the box did not say (older daemon, or no reload happened).
+   */
+  opencodeTurnEnded: boolean | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -273,6 +278,7 @@ async function postEnvToDaemon(args: {
     agent_env_written?: unknown;
     opencode?: unknown;
     opencode_reload?: unknown;
+    opencode_turn_ended?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -297,6 +303,8 @@ async function postEnvToDaemon(args: {
       typeof body?.opencode_reload === 'string'
         ? (body.opencode_reload as 'disposed' | 'restarted' | 'kept-old')
         : null,
+    opencodeTurnEnded:
+      typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -658,7 +666,12 @@ export async function pushSessionAgentConfigToSandbox(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-}): Promise<{ applied: boolean; reason?: string; opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null }> {
+}): Promise<{
+  applied: boolean;
+  reason?: string;
+  opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  opencodeTurnEnded?: boolean | null;
+}> {
   try {
     const [session] = await db
       .select({
@@ -727,7 +740,11 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // `applied` means WE pushed it. Whether opencode actually took it is
     // `opencodeReload` — a declined swap leaves the old config running, and
     // reporting a bare `applied: true` for that is the lie this field prevents.
-    return { applied: true, opencodeReload: pushed.opencodeReload };
+    return {
+      applied: true,
+      opencodeReload: pushed.opencodeReload,
+      opencodeTurnEnded: pushed.opencodeTurnEnded,
+    };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);
