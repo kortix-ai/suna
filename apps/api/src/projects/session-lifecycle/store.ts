@@ -175,16 +175,29 @@ export async function repairLegacyLifecycleMessageIds(): Promise<number> {
 
 export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
-): Promise<void> {
+): Promise<{ commandId: string }> {
   const values = buildContinueSessionCommandValues(input);
   if (!input.idempotencyKey) {
-    await db.insert(sessionLifecycleCommands).values(values);
-    return;
+    const [created] = await db
+      .insert(sessionLifecycleCommands)
+      .values(values)
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    if (!created) throw new Error('continue-session command insert returned no row');
+    return created;
   }
-  await db
+  const [created] = await db
     .insert(sessionLifecycleCommands)
     .values(values)
-    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  if (created) return created;
+  const [existing] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+  if (!existing) throw new Error('continue-session command idempotency lookup returned no row');
+  return existing;
 }
 
 export async function claimCreateSessionCommand(

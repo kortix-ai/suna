@@ -12,6 +12,34 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `agi-kernel-objective-audit` claim
+
+Claimed scope:
+
+- Persist goal evaluation identity on the existing trigger and lifecycle path.
+- Bind metric observations to evaluations and derive deterministic health without changing Git-authored desired status.
+- Expose evaluation and health state through the authenticated API, public SDK, and CLI.
+- Add zero-downtime migrations, real PostgreSQL concurrency coverage, examples, packed-install proof, and documentation.
+
+The required `tdd` skill is unavailable in this session. This work used the required RED, GREEN, and REFACTOR sequence directly.
+
+Completed:
+
+- Goal pushes return a durable evaluation identity and delivery state.
+- Observation writes require that evaluation identity.
+- `project.goals.health(slug)` exposes deterministic metric health without inferring goal completion.
+- Public types, facade methods, examples, reference documentation, and surface snapshots are synchronized.
+
+Verification:
+
+- `pnpm --filter @kortix/sdk test`: 1,605 pass, 0 fail.
+- `pnpm --filter @kortix/sdk typecheck`: core and examples pass.
+- `pnpm --filter @kortix/sdk smoke:install`: packed SDKs install, import, and construct successfully.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-07 — session `worker-bound-ceilings` completion
 
 Added non-overridable task-worker platform ceilings. The SDK accepts smaller

@@ -34,8 +34,8 @@
 
 import {
   MANIFEST_FILENAME_YAML,
-  goalPushTriggerSlug,
   type ManifestFormat,
+  goalPushTriggerSlug,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
@@ -106,6 +106,8 @@ export interface GitTriggerSpec {
   agent: string;
   /** Server-owned provenance for a trigger synthesized from `goals[].push`. */
   platformMetaGoalPush?: true;
+  /** Server-owned goal identity for every trigger synthesized from `goals[].push`. */
+  goalSlug?: string;
   /**
    * Model for this trigger's runs (wire form `provider/model`), or null for
    * "Default" — resolve the chain at fire time (agent → project → account →
@@ -542,6 +544,7 @@ function goalSpecToTrigger(goal: GitGoalSpec): GitTriggerSpec {
     ...(goal.agent && goal.agent !== META_AGENT_NAME
       ? {}
       : { platformMetaGoalPush: true as const }),
+    goalSlug: goal.slug,
     model: null,
     enabled: true,
     promptTemplate: buildGoalPushPrompt(goal),

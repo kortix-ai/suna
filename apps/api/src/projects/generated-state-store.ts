@@ -1,6 +1,7 @@
 import type { Database } from '@kortix/db';
 import {
   accountTokens,
+  projectGoalEvaluations,
   projectGoalObservations,
   projectSessions,
   projects,
@@ -14,8 +15,18 @@ import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'driz
 import { normalizeOpenCodeMessageId } from './session-lifecycle/opencode-message-id';
 
 export type ProjectTask = typeof projectTasks.$inferSelect;
+export type ProjectGoalEvaluation = typeof projectGoalEvaluations.$inferSelect;
 export type ProjectGoalObservation = typeof projectGoalObservations.$inferSelect;
 export type ProjectTaskStatus = (typeof projectTaskStatusEnum.enumValues)[number];
+
+export class GoalObservationConflictError extends Error {
+  readonly code = 'GOAL_OBSERVATION_CONFLICT' as const;
+
+  constructor(evaluationId: string, metric: string) {
+    super(`goal metric ${metric} already has a different observation for evaluation ${evaluationId}`);
+    this.name = 'GoalObservationConflictError';
+  }
+}
 
 export class TaskWorkerReservationConflictError extends Error {
   readonly code = 'TASK_WORKER_RESERVATION_CONFLICT' as const;
@@ -1543,11 +1554,139 @@ export async function sweepTaskLivenessBounds(
   return finalized;
 }
 
+export async function createProjectGoalEvaluation(
+  database: Database,
+  input: {
+    projectId: string;
+    goalSlug: string;
+    triggerSlug: string;
+    source: 'cron' | 'manual';
+    idempotencyKey: string;
+    now: Date;
+  },
+): Promise<ProjectGoalEvaluation> {
+  assertValidDate(input.now, 'now');
+  const [created] = await database
+    .insert(projectGoalEvaluations)
+    .values({
+      projectId: input.projectId,
+      goalSlug: input.goalSlug,
+      triggerSlug: input.triggerSlug,
+      source: input.source,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: input.now,
+      updatedAt: input.now,
+    })
+    .onConflictDoNothing({ target: projectGoalEvaluations.idempotencyKey })
+    .returning();
+  const evaluation = created ?? (await database
+    .select()
+    .from(projectGoalEvaluations)
+    .where(eq(projectGoalEvaluations.idempotencyKey, input.idempotencyKey))
+    .limit(1))[0];
+  if (!evaluation) throw new Error('project goal evaluation insert returned no row');
+  if (
+    evaluation.projectId !== input.projectId ||
+    evaluation.goalSlug !== input.goalSlug ||
+    evaluation.triggerSlug !== input.triggerSlug ||
+    evaluation.source !== input.source
+  ) {
+    throw new Error('goal evaluation idempotency key conflicts with another push');
+  }
+  return evaluation;
+}
+
+export async function settleProjectGoalEvaluation(
+  database: Database,
+  input: {
+    evaluationId: string;
+    state: 'queued' | 'fired' | 'failed';
+    lifecycleCommandId?: string | null;
+    sessionId?: string | null;
+    now: Date;
+  },
+): Promise<ProjectGoalEvaluation> {
+  assertValidDate(input.now, 'now');
+  const [row] = await database
+    .update(projectGoalEvaluations)
+    .set({
+      state: input.state,
+      lifecycleCommandId: input.lifecycleCommandId ?? null,
+      sessionId: input.sessionId ?? null,
+      updatedAt: input.now,
+    })
+    .where(and(
+      eq(projectGoalEvaluations.evaluationId, input.evaluationId),
+      or(
+        sql`${projectGoalEvaluations.state} <> 'fired'`,
+        eq(projectGoalEvaluations.state, input.state),
+      ),
+    ))
+    .returning();
+  if (row) return row;
+  const [existing] = await database
+    .select()
+    .from(projectGoalEvaluations)
+    .where(eq(projectGoalEvaluations.evaluationId, input.evaluationId))
+    .limit(1);
+  if (!existing) throw new Error('project goal evaluation was not found');
+  return existing;
+}
+
+export interface ProjectGoalEvaluationHealthRow {
+  evaluationId: string;
+  state: 'queued' | 'fired' | 'failed';
+  observations: Record<string, number>;
+}
+
+export async function getProjectGoalEvaluationHealthRows(
+  database: Database,
+  input: { projectId: string; goalSlug: string },
+): Promise<ProjectGoalEvaluationHealthRow[]> {
+  const evaluations = await database
+    .select({ evaluation: projectGoalEvaluations, commandStatus: sessionLifecycleCommands.status })
+    .from(projectGoalEvaluations)
+    .leftJoin(
+      sessionLifecycleCommands,
+      eq(projectGoalEvaluations.lifecycleCommandId, sessionLifecycleCommands.commandId),
+    )
+    .where(and(
+      eq(projectGoalEvaluations.projectId, input.projectId),
+      eq(projectGoalEvaluations.goalSlug, input.goalSlug),
+    ))
+    .orderBy(desc(projectGoalEvaluations.createdAt), desc(projectGoalEvaluations.evaluationId));
+  if (evaluations.length === 0) return [];
+  const evaluationIds = evaluations.map(({ evaluation }) => evaluation.evaluationId);
+  const observations = await database
+    .select()
+    .from(projectGoalObservations)
+    .where(inArray(projectGoalObservations.evaluationId, evaluationIds))
+    .orderBy(asc(projectGoalObservations.createdAt), asc(projectGoalObservations.observationId));
+  const values = new Map<string, Record<string, number>>();
+  for (const observation of observations) {
+    if (!observation.evaluationId) continue;
+    const byMetric = values.get(observation.evaluationId) ?? {};
+    byMetric[observation.metric] = observation.value;
+    values.set(observation.evaluationId, byMetric);
+  }
+  return evaluations.map(({ evaluation, commandStatus }) => ({
+    evaluationId: evaluation.evaluationId,
+    state:
+      evaluation.state === 'queued' && commandStatus === 'succeeded'
+        ? 'fired'
+        : evaluation.state === 'queued' && (commandStatus === 'failed' || commandStatus === 'dead_lettered')
+          ? 'failed'
+          : evaluation.state as 'queued' | 'fired' | 'failed',
+    observations: values.get(evaluation.evaluationId) ?? {},
+  }));
+}
+
 export async function recordProjectGoalObservation(
   database: Database,
   input: {
     projectId: string;
     goalSlug: string;
+    evaluationId?: string | null;
     metric: string;
     value: number;
     source: string;
@@ -1558,19 +1697,47 @@ export async function recordProjectGoalObservation(
   if (!Number.isFinite(input.value)) throw new RangeError('value must be finite');
   assertValidDate(input.observedAt, 'observedAt');
 
-  const [observation] = await database
+  if (!input.evaluationId) throw new RangeError('evaluationId is required');
+  const [evaluation] = await database
+    .select({ projectId: projectGoalEvaluations.projectId, goalSlug: projectGoalEvaluations.goalSlug })
+    .from(projectGoalEvaluations)
+    .where(eq(projectGoalEvaluations.evaluationId, input.evaluationId))
+    .limit(1);
+  if (!evaluation || evaluation.projectId !== input.projectId || evaluation.goalSlug !== input.goalSlug) {
+    throw new RangeError('evaluationId must belong to this project goal');
+  }
+  const values = {
+    projectId: input.projectId,
+    goalSlug: input.goalSlug,
+    evaluationId: input.evaluationId,
+    metric: input.metric,
+    value: input.value,
+    source: input.source,
+    sessionId: input.sessionId ?? null,
+    observedAt: input.observedAt,
+  };
+  const [created] = await database
     .insert(projectGoalObservations)
-    .values({
-      projectId: input.projectId,
-      goalSlug: input.goalSlug,
-      metric: input.metric,
-      value: input.value,
-      source: input.source,
-      sessionId: input.sessionId ?? null,
-      observedAt: input.observedAt,
+    .values(values)
+    .onConflictDoNothing({
+      target: [projectGoalObservations.evaluationId, projectGoalObservations.metric],
     })
     .returning();
+  const observation = created ?? (await database
+    .select()
+    .from(projectGoalObservations)
+    .where(and(
+      eq(projectGoalObservations.evaluationId, input.evaluationId),
+      eq(projectGoalObservations.metric, input.metric),
+    ))
+    .limit(1))[0];
   if (!observation) throw new Error('project goal observation insert returned no row');
+  if (
+    observation.value !== input.value ||
+    observation.source !== input.source ||
+    observation.sessionId !== (input.sessionId ?? null) ||
+    observation.observedAt.getTime() !== input.observedAt.getTime()
+  ) throw new GoalObservationConflictError(input.evaluationId, input.metric);
   return observation;
 }
 

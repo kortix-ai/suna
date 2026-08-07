@@ -34,8 +34,28 @@ export interface ProjectGoalListing {
   errors: ProjectGoalParseError[];
 }
 
+export type ProjectGoalEvaluationState = 'queued' | 'fired' | 'failed';
+export type ProjectGoalHealthStatus = 'unmeasurable' | 'stalled' | 'measuring';
+
+export interface ProjectGoalMetricHealth {
+  metric: string;
+  status: ProjectGoalHealthStatus;
+  evaluation_id: string | null;
+  evaluation_state: ProjectGoalEvaluationState | null;
+  observation_value: number | null;
+}
+
+export interface ProjectGoalHealth {
+  goal_slug: string;
+  desired_status: ProjectGoalStatus;
+  health_status: ProjectGoalHealthStatus;
+  metrics: ProjectGoalMetricHealth[];
+}
+
 export interface ProjectGoalPushResponse {
   status: 'queued' | 'fired' | 'deduped';
+  evaluation_id: string;
+  evaluation_state: ProjectGoalEvaluationState;
   command_id?: string | null;
   session_id?: string | null;
   reason?: string | null;
@@ -46,6 +66,7 @@ export interface ProjectGoalObservation {
   observation_id: string;
   project_id: string;
   goal_slug: string;
+  evaluation_id: string | null;
   metric: string;
   value: number;
   source: string;
@@ -55,6 +76,8 @@ export interface ProjectGoalObservation {
 }
 
 export interface RecordProjectGoalObservationInput {
+  /** Evaluation returned by the goal push that produced this metric value. */
+  evaluation_id: string;
   metric: string;
   value: number;
   source: string;
@@ -80,6 +103,12 @@ export async function listProjectGoals(projectId: string) {
 
 export async function getProjectGoal(projectId: string, slug: string) {
   return unwrap(await backendApi.get<{ goal: ProjectGoal }>(goalPath(projectId, slug)));
+}
+
+export async function getProjectGoalHealth(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<{ health: ProjectGoalHealth }>(`${goalPath(projectId, slug)}/health`),
+  );
 }
 
 export async function pushProjectGoal(projectId: string, slug: string) {

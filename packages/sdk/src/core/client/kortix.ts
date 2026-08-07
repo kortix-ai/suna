@@ -501,6 +501,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         list: () => P.listProjectGoals(projectId),
         get: (...a: DropFirst<Parameters<typeof P.getProjectGoal>>) =>
           P.getProjectGoal(projectId, ...a),
+        health: (...a: DropFirst<Parameters<typeof P.getProjectGoalHealth>>) =>
+          P.getProjectGoalHealth(projectId, ...a),
         push: (...a: DropFirst<Parameters<typeof P.pushProjectGoal>>) =>
           P.pushProjectGoal(projectId, ...a),
         observations: {

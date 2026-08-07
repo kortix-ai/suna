@@ -316,8 +316,9 @@ create PostgreSQL time-series state. They do not edit the manifest.
 | --- | --- |
 | `list()` | Return `{ goals, errors }`, including per-entry manifest parse diagnostics. |
 | `get(slug)` | Return one authored goal. |
-| `push(slug)` | Request the goal's generated trigger. Returns `queued`, `fired`, or `deduped`. |
-| `observations.record(slug, input)` | Record `{ metric, value, source, session_id?, observed_at? }`. |
+| `health(slug)` | Return deterministic aggregate and per-metric health with evaluation identity. |
+| `push(slug)` | Request the goal's generated trigger. Returns `evaluation_id`, `evaluation_state`, and delivery state. |
+| `observations.record(slug, input)` | Record `{ evaluation_id, metric, value, source, session_id?, observed_at? }`. |
 | `observations.list(slug, options)` | List one metric by `{ metric, from?, to?, limit? }`. |
 
 `observed_at` defaults to now. Observation-list `to` defaults to now. Its
@@ -330,13 +331,22 @@ reviewed `kortix.yaml` declaration.
 ```ts
 const project = kortix.project(projectId);
 const { goals, errors } = await project.goals.list();
+const pushed = await project.goals.push('reduce-api-latency');
 const { observation } = await project.goals.observations.record('reduce-api-latency', {
+  evaluation_id: pushed.evaluation_id,
   metric: 'api_p95_ms',
   value: 184,
   source: 'prometheus:api-p95',
   session_id: sessionId,
 });
+const { health } = await project.goals.health('reduce-api-latency');
 ```
+
+Each declared metric is `unmeasurable` until an evaluation-bound observation
+exists. Three consecutive fired evaluations with the same finite value produce
+`stalled`. Other observed metrics produce `measuring`. The aggregate prioritizes
+`stalled`, then `unmeasurable`, then `measuring`. `desired_status` is copied from
+Git and never inferred from health.
 
 A `ProjectGoal` contains `slug`, `path`, `title`, `done_when`, `status`,
 `push_cron`, `timezone`, `agent`, and `metrics`. Status is `active`, `achieved`,

@@ -75,6 +75,7 @@ const OBSERVATION = {
   observation_id: "obs_1",
   project_id: "project_1",
   goal_slug: GOAL.slug,
+  evaluation_id: "22222222-2222-4222-8222-222222222222",
   metric: "p95_ms",
   value: 180,
   source: "prometheus",
@@ -112,9 +113,15 @@ function fakeSdkFactory() {
             list: () => record("goals.list", [], { goals: [GOAL], errors: [] }),
             get: (...args: unknown[]) =>
               record("goals.get", args, { goal: GOAL }),
+            health: (...args: unknown[]) =>
+              record("goals.health", args, {
+                health: { goal_slug: GOAL.slug, desired_status: "active", health_status: "measuring", metrics: [] },
+              }),
             push: (...args: unknown[]) =>
               record("goals.push", args, {
                 status: "fired",
+                evaluation_id: "22222222-2222-4222-8222-222222222222",
+                evaluation_state: "fired",
                 session_id: "session_1",
               }),
             observations: {
@@ -257,11 +264,18 @@ describe("goals command", () => {
     expect(stderr).toBe("");
     resetOutput();
 
+    code = await runGoals(commandArgs(["health", GOAL.slug]), {
+      kortixFromAuth: sdk,
+    });
+    expect(code).toBe(0);
+    expect(stdout).toContain("Health: measuring");
+    resetOutput();
+
     code = await runGoals(commandArgs(["push", GOAL.slug]), {
       kortixFromAuth: sdk,
     });
     expect(code).toBe(0);
-    expect(stdout).toContain("reduce-latency: fired session session_1");
+    expect(stdout).toContain("evaluation 22222222-2222-4222-8222-222222222222 (fired)");
     expect(stderr).toBe("");
     resetOutput();
 
@@ -269,6 +283,8 @@ describe("goals command", () => {
       commandArgs([
         "observe",
         GOAL.slug,
+        "--evaluation",
+        "22222222-2222-4222-8222-222222222222",
         "--metric",
         "p95_ms",
         "--value",
@@ -311,6 +327,7 @@ describe("goals command", () => {
     expect(calls).toEqual([
       { method: "goals.list", args: [], projectId: "project_1" },
       { method: "goals.get", args: [GOAL.slug], projectId: "project_1" },
+      { method: "goals.health", args: [GOAL.slug], projectId: "project_1" },
       { method: "goals.push", args: [GOAL.slug], projectId: "project_1" },
       {
         method: "goals.observations.record",
@@ -318,6 +335,7 @@ describe("goals command", () => {
         args: [
           GOAL.slug,
           {
+            evaluation_id: "22222222-2222-4222-8222-222222222222",
             metric: "p95_ms",
             value: -12.5,
             source: "prometheus",

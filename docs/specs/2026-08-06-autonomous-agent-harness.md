@@ -75,7 +75,7 @@ The storage question is answered by mutability and contention.
 | Agent behavior and grants | Agent Markdown plus `kortix.yaml` in git | Authored policy and behavior require review. |
 | Semantic memory, procedures, decisions, durable facts | Markdown, skills, and code in git | Durable organizational residue must survive every session and remain reviewable. |
 | Task, dependency, assignee, claim, claim expiry | PostgreSQL | Generated, high-rate, and contended. An atomic conditional update must produce one winner. |
-| Goal metric observation | PostgreSQL | Append-only time series written at machine rate and queried by range. |
+| Goal evaluation and metric observation | PostgreSQL | Each push has one durable identity. Append-only metric values bind to that identity and support deterministic health queries. |
 | Trigger execution, session command, approval, external effect, audit | PostgreSQL | Operational coordination and ledgers require leases, idempotency, and queries. |
 | Transcript and tool artifacts | Session store and artifact storage | Execution evidence. Not a substitute for durable organizational memory. |
 | Kernel variables, process state, scratch files | Sandbox memory/disk | Disposable working state. Loss MUST NOT lose a goal, task, observation, authority rule, or durable result. |
@@ -115,12 +115,24 @@ separate memory service.
 8. The control plane permits one idempotent no-progress continuation. It then escalates.
 9. Every continuation has time, token, cost, and iteration bounds.
 10. Meta cannot merge its own change request or push a protected default branch.
-11. A flat declared metric across three consecutive goal pushes is a stall.
-12. A goal with no observation for a declared metric is `unmeasurable`, not `on_track`.
+11. A flat declared metric across three consecutive fired goal evaluations is a stall.
+12. A declared metric missing from the latest fired evaluation is `unmeasurable`, not `on_track`.
 13. A sandbox or kernel restart cannot repeat an irreversible effect.
 14. The same session and principal identifiers join state, effect, and control records.
 
-### 6.1 Implemented task-worker liveness contract
+### 6.1 Implemented goal-evaluation contract
+
+Each manual or scheduled goal push creates one idempotent PostgreSQL evaluation.
+The existing trigger and lifecycle-command paths own its `queued`, `fired`, or
+`failed` delivery state. Metric observations require the returned evaluation
+identity. The health read ignores failed and incomplete deliveries. It reports a
+metric as `unmeasurable` without a finite value in the latest fired evaluation,
+`stalled` after three consecutive fired evaluations contain the same finite
+value, and `measuring` otherwise. The aggregate prioritizes `stalled`, then
+`unmeasurable`, then `measuring`. Health never writes or infers the Git-authored
+desired status.
+
+### 6.2 Implemented task-worker liveness contract
 
 PostgreSQL owns each coordinator-to-worker binding, immutable wall/token/cost/
 iteration contract, deadline, admitted-iteration counter, progress evidence,

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Database, accounts, createDb, projects } from '@kortix/db';
 import {
   accountTokens,
+  projectGoalEvaluations,
   projectGoalObservations,
   projectSessions,
   projectTaskNoProgressSettlements,
@@ -23,7 +24,9 @@ import {
   blockProjectTaskWorkerAdmission,
   admitProjectTaskWorkerIteration,
   claimProjectTask,
+  createProjectGoalEvaluation,
   createProjectTask,
+  getProjectGoalEvaluationHealthRows,
   getProjectTask,
   listProjectGoalObservations,
   recordProjectGoalObservation,
@@ -31,6 +34,7 @@ import {
   reconcileProjectTaskGitWrites,
   registerProjectTaskWorker,
   projectTaskWorkerIsBound,
+  settleProjectGoalEvaluation,
   settleProjectTaskGitWrite,
   settleProjectTaskNoProgress,
   settleProjectTaskWorkerAdmission,
@@ -1286,9 +1290,18 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       ['2026-08-07T12:01:00.000Z', 2],
     ] as const;
     for (const [observedAt, value] of observations) {
+      const evaluation = await createProjectGoalEvaluation(database, {
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        triggerSlug: 'kortix-goal-push-ship-kernel',
+        source: 'manual',
+        idempotencyKey: `observation-range-proof:${observedAt}`,
+        now: new Date(observedAt),
+      });
       await recordProjectGoalObservation(database, {
         projectId: PROJECT_ID,
         goalSlug: 'ship-kernel',
+        evaluationId: evaluation.evaluationId,
         metric: 'open_tasks',
         value,
         source: 'task-store',
@@ -1296,9 +1309,18 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         observedAt: new Date(observedAt),
       });
     }
+    const otherEvaluation = await createProjectGoalEvaluation(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      triggerSlug: 'kortix-goal-push-ship-kernel',
+      source: 'manual',
+      idempotencyKey: 'observation-range-proof:other',
+      now: new Date('2026-08-07T12:01:00.000Z'),
+    });
     await recordProjectGoalObservation(database, {
       projectId: PROJECT_ID,
       goalSlug: 'ship-kernel',
+      evaluationId: otherEvaluation.evaluationId,
       metric: 'other_metric',
       value: 999,
       source: 'task-store',
@@ -1322,6 +1344,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       recordProjectGoalObservation(database, {
         projectId: PROJECT_ID,
         goalSlug: 'ship-kernel',
+        evaluationId: otherEvaluation.evaluationId,
         metric: 'open_tasks',
         value: Number.POSITIVE_INFINITY,
         source: 'task-store',
@@ -1334,5 +1357,65 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       .from(projectGoalObservations)
       .where(eq(projectGoalObservations.projectId, PROJECT_ID));
     expect(persisted).toHaveLength(4);
+  });
+
+  test('goal evaluation creation and one metric observation are concurrent-idempotent', async () => {
+    const database = testDb();
+    const created = await Promise.all(Array.from({ length: 8 }, () =>
+      createProjectGoalEvaluation(database, {
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        triggerSlug: 'kortix-goal-push-ship-kernel',
+        source: 'cron',
+        idempotencyKey: 'trigger:cron:ship-kernel:2026-08-07T12:00:00Z',
+        now: new Date('2026-08-07T12:00:00.000Z'),
+      })));
+    expect(new Set(created.map((row) => row.evaluationId)).size).toBe(1);
+    expect(await database.select().from(projectGoalEvaluations)).toHaveLength(1);
+
+    const evaluationId = created[0]!.evaluationId;
+    const observations = await Promise.all(Array.from({ length: 8 }, () =>
+      recordProjectGoalObservation(database, {
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        evaluationId,
+        metric: 'open_tasks',
+        value: 3,
+        source: 'goal-evaluator',
+        observedAt: new Date('2026-08-07T12:01:00.000Z'),
+      })));
+    expect(new Set(observations.map((row) => row.observationId)).size).toBe(1);
+    await expect(recordProjectGoalObservation(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      evaluationId,
+      metric: 'open_tasks',
+      value: 4,
+      source: 'goal-evaluator',
+      observedAt: new Date('2026-08-07T12:01:00.000Z'),
+    })).rejects.toMatchObject({ code: 'GOAL_OBSERVATION_CONFLICT' });
+
+    const rows = await getProjectGoalEvaluationHealthRows(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+    });
+    expect(rows).toEqual([expect.objectContaining({
+      evaluationId,
+      state: 'queued',
+      observations: { open_tasks: 3 },
+    })]);
+
+    const fired = await settleProjectGoalEvaluation(database, {
+      evaluationId,
+      state: 'fired',
+      now: new Date('2026-08-07T12:02:00.000Z'),
+    });
+    expect(fired.state).toBe('fired');
+    const terminal = await settleProjectGoalEvaluation(database, {
+      evaluationId,
+      state: 'failed',
+      now: new Date('2026-08-07T12:03:00.000Z'),
+    });
+    expect(terminal.state).toBe('fired');
   });
 });

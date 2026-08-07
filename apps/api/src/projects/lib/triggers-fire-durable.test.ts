@@ -18,6 +18,8 @@ let sessionRows: Array<{ status: string; metadata: Record<string, unknown> }> = 
 let enqueueCalls: Array<Record<string, unknown>> = [];
 let drainCalls: Array<Record<string, unknown>> = [];
 let createCalls: Array<Record<string, unknown>> = [];
+let evaluationCreateCalls: Array<Record<string, unknown>> = [];
+let evaluationSettleCalls: Array<Record<string, unknown>> = [];
 
 mock.module('../../config', () => ({
   config: {},
@@ -42,6 +44,21 @@ mock.module('../../shared/db', () => ({
       }),
     }),
   },
+}));
+
+const realGeneratedStateStore = await import('../generated-state-store');
+mock.module('../generated-state-store', () => ({
+  ...realGeneratedStateStore,
+  createProjectGoalEvaluation: async (_database: unknown, input: Record<string, unknown>) => {
+    evaluationCreateCalls.push(input);
+    return { ...input, evaluationId: '11111111-1111-4111-8111-111111111111', state: 'queued' };
+  },
+  settleProjectGoalEvaluation: async (_database: unknown, input: Record<string, unknown>) => {
+    evaluationSettleCalls.push(input);
+    return { ...input };
+  },
+  reconcileProjectTaskGitWrites: async () => [],
+  sweepTaskLivenessBounds: async () => [],
 }));
 
 mock.module('../session-lifecycle', () => ({
@@ -84,6 +101,8 @@ beforeEach(() => {
   enqueueCalls = [];
   drainCalls = [];
   createCalls = [];
+  evaluationCreateCalls = [];
+  evaluationSettleCalls = [];
 });
 
 describe('fireGitTrigger — durable prompt delivery', () => {
@@ -176,6 +195,7 @@ describe('fireGitTrigger — durable prompt delivery', () => {
         slug: 'kortix-goal-push-grow-revenue',
         agent: 'meta',
         platformMetaGoalPush: true,
+        goalSlug: 'grow-revenue',
         sessionMode: 'reuse',
       } as never,
       project,
@@ -184,10 +204,30 @@ describe('fireGitTrigger — durable prompt delivery', () => {
       source: 'cron',
     });
 
+    expect(evaluationCreateCalls).toEqual([
+      expect.objectContaining({
+        projectId: 'proj-1',
+        goalSlug: 'grow-revenue',
+        source: 'cron',
+        idempotencyKey: expect.any(String),
+      }),
+    ]);
+    expect(evaluationSettleCalls).toEqual([
+      expect.objectContaining({
+        evaluationId: '11111111-1111-4111-8111-111111111111',
+        state: 'fired',
+        sessionId: 'sess-new',
+      }),
+    ]);
     expect(createCalls).toHaveLength(1);
     expect(createCalls[0]).toMatchObject({
       source: 'trigger:cron',
-      body: { agent_name: 'meta' },
+      body: {
+        agent_name: 'meta',
+        initial_prompt: expect.stringContaining(
+          'Goal evaluation id: 11111111-1111-4111-8111-111111111111',
+        ),
+      },
       platformMetaGoalPush: true,
       metadata: {
         trigger_kind: 'git',

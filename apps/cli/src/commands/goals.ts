@@ -18,11 +18,13 @@ Use observe to record a metric value. Use push to request a goal run.
 Subcommands:
   ls [--json]            List declared goals and parse errors.
   show <slug> [--json]   Show one goal.
+  health <slug> [--json] Show deterministic metric and evaluation health.
   push <slug> [--json]   Request an immediate run for one active goal.
   observe <slug>         Record one goal metric observation.
   observations <slug>    List durable observations for one metric.
 
 Observe options:
+  --evaluation <id>      Goal evaluation returned by push (required).
   --metric <name>        Metric declared by the goal (required).
   --value <number>       Finite metric value (required).
   --source <text>        Observation source, such as "prometheus" (required).
@@ -45,8 +47,9 @@ Global options:
 Examples:
   kortix goals ls
   kortix goals show reduce-latency --json
+  kortix goals health reduce-latency
   kortix goals push reduce-latency
-  kortix goals observe reduce-latency --metric p95_ms --value 180 --source prometheus
+  kortix goals observe reduce-latency --evaluation <push-evaluation-id> --metric p95_ms --value 180 --source prometheus
   kortix goals observations reduce-latency --metric p95_ms --limit 20
 `;
 
@@ -181,6 +184,20 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
+      case "health": {
+        const slug = requireSlug(rest, "health");
+        rejectExtraArgs(rest);
+        const project = await projectHandle(flags, sdkFactory);
+        if (!project) return 1;
+        try {
+          const response = await project.goals.health(slug);
+          if (flags.json) emitJson(response);
+          else renderGoalHealth(response.health);
+          return 0;
+        } catch (error) {
+          return surfaceApiError(error);
+        }
+      }
       case "push": {
         const slug = requireSlug(rest, "push");
         rejectExtraArgs(rest);
@@ -197,7 +214,7 @@ export async function runGoals(
                 : "";
             const reason = response.reason ? ` — ${response.reason}` : "";
             process.stdout.write(
-              `${status.ok(`${slug}: ${response.status}${target}${reason}`)}\n`,
+              `${status.ok(`${slug}: ${response.status}${target}; evaluation ${response.evaluation_id} (${response.evaluation_state})${reason}`)}\n`,
             );
           }
           return 0;
@@ -254,6 +271,7 @@ export async function runGoals(
       }
       case "observe": {
         const slug = requireSlug(rest, "observe");
+        const evaluationIdRaw = takeFlagValue(rest, ["--evaluation"]);
         const metric = requireText(
           takeFlagValue(rest, ["--metric"]),
           "--metric",
@@ -280,11 +298,13 @@ export async function runGoals(
             "--observed-at must be an ISO timestamp with a timezone",
           );
         }
+        const evaluationId = requireText(evaluationIdRaw, "--evaluation");
 
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
         try {
           const response = await project.goals.observations.record(slug, {
+            evaluation_id: evaluationId,
             metric,
             value,
             source,
@@ -322,6 +342,30 @@ function isIsoTimestamp(value: string): boolean {
       value,
     ) && Number.isFinite(Date.parse(value))
   );
+}
+
+function renderGoalHealth(health: {
+  goal_slug: string;
+  desired_status: string;
+  health_status: string;
+  metrics: Array<{
+    metric: string;
+    status: string;
+    evaluation_id: string | null;
+    evaluation_state: string | null;
+    observation_value: number | null;
+  }>;
+}): void {
+  process.stdout.write(`Goal: ${health.goal_slug}\n`);
+  process.stdout.write(`Desired status: ${health.desired_status}\n`);
+  process.stdout.write(`Health: ${health.health_status}\n`);
+  for (const metric of health.metrics) {
+    const value = metric.observation_value === null ? "unobserved" : String(metric.observation_value);
+    const evaluation = metric.evaluation_id
+      ? ` evaluation=${metric.evaluation_id} (${metric.evaluation_state})`
+      : "";
+    process.stdout.write(`  ${metric.metric}: ${metric.status} value=${value}${evaluation}\n`);
+  }
 }
 
 function renderObservations(observations: ProjectGoalObservation[]): void {

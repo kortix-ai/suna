@@ -351,6 +351,13 @@
       "when": 1786079955165,
       "tag": "20260807051915_task_git_write_confirmed_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786080954100,
+      "tag": "20260807053554_goal_objective_health_snapshot",
+      "breakpoints": true
     }
   ]
 }

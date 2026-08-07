@@ -26,6 +26,7 @@ import {
   projectTasks,
   projectTaskNoProgressSettlements,
   TASK_WORKER_PLATFORM_CEILINGS,
+  projectGoalEvaluations,
   projectGoalObservations,
   projectGroupGrants,
   projectGitConnections,
@@ -525,11 +526,26 @@ describe('generated project state tables', () => {
     )).toBe(true);
   });
 
-  test('goal observations expose the indexed metric time range', () => {
+  test('goal evaluations and observations expose durable push identity', () => {
+    expect(columnNames(projectGoalEvaluations)).toEqual([
+      'evaluation_id',
+      'project_id',
+      'goal_slug',
+      'trigger_slug',
+      'source',
+      'idempotency_key',
+      'state',
+      'lifecycle_command_id',
+      'session_id',
+      'created_at',
+      'updated_at',
+    ]);
+    expect(indexNames(projectGoalEvaluations)).toContain('idx_project_goal_evaluations_goal_created');
     expect(columnNames(projectGoalObservations)).toEqual([
       'observation_id',
       'project_id',
       'goal_slug',
+      'evaluation_id',
       'metric',
       'value',
       'source',
@@ -538,6 +554,7 @@ describe('generated project state tables', () => {
       'created_at',
     ]);
     expect(indexNames(projectGoalObservations)).toContain('idx_project_goal_observations_range');
+    expect(indexNames(projectGoalObservations)).toContain('idx_project_goal_observations_evaluation');
   });
 });
 

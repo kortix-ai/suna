@@ -12,15 +12,16 @@ import {
   type ProjectTask,
   claimProjectTask,
   createProjectTask,
+  getProjectGoalEvaluationHealthRows,
+  getProjectTask,
+  getProjectTaskWorkerBinding,
+  listProjectGoalObservations,
+  listProjectTasks,
+  projectTaskWorkerAdmissionState,
+  recordProjectGoalObservation,
   recordProjectTaskProgress,
   registerProjectTaskWorker,
   settleProjectTaskNoProgress,
-  getProjectTask,
-  getProjectTaskWorkerBinding,
-  projectTaskWorkerAdmissionState,
-  listProjectGoalObservations,
-  listProjectTasks,
-  recordProjectGoalObservation,
   transitionProjectTask,
 } from '../generated-state-store';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -30,7 +31,6 @@ import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
 import { drainSessionLifecycleQueue } from '../session-lifecycle/engine';
-import { WorkerContractSchema } from './goals-tasks-schemas';
 import {
   type GitGoalSpec,
   type LoadedGoals,
@@ -38,6 +38,7 @@ import {
   extractTriggers,
   readManifest,
 } from '../triggers';
+import { WorkerContractSchema } from './goals-tasks-schemas';
 import {
   GoalsTasksServiceError,
   MAX_TASK_LEASE_SECONDS,
@@ -45,6 +46,7 @@ import {
   blockTaskForProject,
   claimTaskForProject,
   completeTaskForProject,
+  deriveProjectGoalHealth,
   mapGeneratedStateError,
   resolveObservationSessionId,
 } from './goals-tasks-service';
@@ -96,12 +98,28 @@ const GoalsResponseSchema = z
   .object({ goals: z.array(GoalSchema), errors: z.array(GoalErrorSchema) })
   .strict();
 const GoalResponseSchema = z.object({ goal: GoalSchema }).strict();
+const GoalEvaluationStateSchema = z.enum(['queued', 'fired', 'failed']);
+const GoalHealthStatusSchema = z.enum(['unmeasurable', 'stalled', 'measuring']);
+const GoalHealthSchema = z.object({
+  goal_slug: z.string(),
+  desired_status: z.enum(['active', 'achieved', 'paused', 'abandoned']),
+  health_status: GoalHealthStatusSchema,
+  metrics: z.array(z.object({
+    metric: z.string(),
+    status: GoalHealthStatusSchema,
+    evaluation_id: z.string().uuid().nullable(),
+    evaluation_state: GoalEvaluationStateSchema.nullable(),
+    observation_value: z.number().finite().nullable(),
+  }).strict()),
+}).strict().openapi('ProjectGoalHealth');
+const GoalHealthResponseSchema = z.object({ health: GoalHealthSchema }).strict();
 
 const ObservationSchema = z
   .object({
     observation_id: z.string().uuid(),
     project_id: z.string().uuid(),
     goal_slug: z.string(),
+    evaluation_id: z.string().uuid().nullable(),
     metric: z.string(),
     value: z.number().finite(),
     source: z.string(),
@@ -115,6 +133,7 @@ const ObservationResponseSchema = z.object({ observation: ObservationSchema }).s
 const ObservationsResponseSchema = z.object({ observations: z.array(ObservationSchema) }).strict();
 const ObservationBodySchema = z
   .object({
+    evaluation_id: z.string().uuid(),
     metric: z.string().trim().min(1).max(128),
     value: z.number().finite(),
     source: z.string().trim().min(1).max(128),
@@ -290,6 +309,7 @@ function serializeObservation(row: ProjectGoalObservation) {
     observation_id: row.observationId,
     project_id: row.projectId,
     goal_slug: row.goalSlug,
+    evaluation_id: row.evaluationId,
     metric: row.metric,
     value: row.value,
     source: row.source,
@@ -461,6 +481,44 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'get',
+    path: '/{projectId}/goals/{slug}/health',
+    tags: ['goals'],
+    summary: 'Get deterministic goal metric health',
+    ...auth,
+    request: { params: GoalParamsSchema },
+    responses: {
+      200: json(GoalHealthResponseSchema, 'Goal health without inferred completion'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { projectId, slug } = c.req.valid('param');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
+    );
+    const goals = await loadGoals(loaded.row);
+    const goal = goals.specs.find((candidate) => candidate.slug === slug);
+    if (!goal) return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
+    const evaluations = await getProjectGoalEvaluationHealthRows(db, { projectId, goalSlug: slug });
+    const health = deriveProjectGoalHealth({
+      goalSlug: slug,
+      desiredStatus: goal.status,
+      metricNames: goal.metrics.map(({ name }) => name),
+      evaluations,
+    });
+    return c.json({ health });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'post',
     path: '/{projectId}/goals/{slug}/push',
     tags: ['goals'],
@@ -472,6 +530,8 @@ projectsApp.openapi(
         z
           .object({
             status: z.enum(['queued', 'fired', 'deduped']),
+            evaluation_id: z.string().uuid(),
+            evaluation_state: GoalEvaluationStateSchema,
             command_id: z.string().nullable(),
             session_id: z.string().nullable(),
             reason: z.string().nullable().optional(),
@@ -553,11 +613,16 @@ projectsApp.openapi(
     if (result.status === 'failed') {
       return c.json({ error: result.error ?? 'Failed to push goal' }, 500);
     }
+    if (!result.evaluationId || !result.evaluationState) {
+      return c.json({ error: 'Goal push returned no evaluation identity' }, 500);
+    }
     await markGitTriggerFired(projectId, triggerSlug, now, result.status);
     if (result.status === 'queued') {
       return c.json(
         {
           status: 'queued' as const,
+          evaluation_id: result.evaluationId,
+          evaluation_state: result.evaluationState,
           command_id: result.commandId ?? null,
           session_id: result.sessionId ?? null,
           reason: result.reason ?? null,
@@ -570,6 +635,8 @@ projectsApp.openapi(
     return c.json(
       {
         status,
+        evaluation_id: result.evaluationId,
+        evaluation_state: result.evaluationState,
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         deduped: result.deduped ?? false,
@@ -632,15 +699,27 @@ projectsApp.openapi(
         400,
       );
     }
-    const observation = await recordProjectGoalObservation(db, {
-      projectId,
-      goalSlug: slug,
-      metric: body.metric,
-      value: body.value,
-      source: body.source,
-      sessionId,
-      observedAt: body.observed_at ? new Date(body.observed_at) : new Date(),
-    });
+    const evaluationId = body.evaluation_id;
+    let observation: ProjectGoalObservation;
+    try {
+      observation = await recordProjectGoalObservation(db, {
+        projectId,
+        goalSlug: slug,
+        evaluationId,
+        metric: body.metric,
+        value: body.value,
+        source: body.source,
+        sessionId,
+        observedAt: body.observed_at ? new Date(body.observed_at) : new Date(),
+      });
+    } catch (error) {
+      if (error instanceof RangeError) {
+        return c.json({ error: error.message, code: 'evaluation_invalid' }, 400);
+      }
+      const conflict = mapGeneratedStateError(error);
+      if (conflict) return c.json({ error: conflict.error, code: conflict.code }, conflict.status);
+      throw error;
+    }
     return c.json({ observation: serializeObservation(observation) }, 201);
   },
 );

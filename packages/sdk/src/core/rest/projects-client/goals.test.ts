@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   getProjectGoal,
+  getProjectGoalHealth,
   listProjectGoalObservations,
   listProjectGoals,
   pushProjectGoal,
@@ -39,6 +40,11 @@ test('goal reads bind and encode project and goal identifiers', async () => {
   expect(last().url).toBe('http://test.local/projects/project%2Fone/goals/ship%20kernel');
 });
 
+test('goal health uses the authenticated goal endpoint', async () => {
+  await getProjectGoalHealth('project-1', 'ship-kernel');
+  expect(last().url).toBe('http://test.local/projects/project-1/goals/ship-kernel/health');
+});
+
 test('goal push uses the explicit goal endpoint', async () => {
   await pushProjectGoal('project-1', 'ship-kernel');
   expect(last()).toMatchObject({
@@ -50,6 +56,7 @@ test('goal push uses the explicit goal endpoint', async () => {
 
 test('goal observation writes evidence and builds a bounded range query', async () => {
   await recordProjectGoalObservation('project-1', 'ship-kernel', {
+    evaluation_id: '11111111-1111-4111-8111-111111111111',
     metric: 'passing_flows',
     value: 14,
     source: 'ke2e run 123',
@@ -60,6 +67,7 @@ test('goal observation writes evidence and builds a bounded range query', async 
     url: 'http://test.local/projects/project-1/goals/ship-kernel/observations',
     method: 'POST',
     body: {
+      evaluation_id: '11111111-1111-4111-8111-111111111111',
       metric: 'passing_flows',
       value: 14,
       source: 'ke2e run 123',

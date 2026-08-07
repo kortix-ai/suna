@@ -46,6 +46,7 @@ function triggerPayload(input: {
       last_scheduled_for: input.lastScheduledFor?.toISOString() ?? null,
     },
     trigger: { slug: input.spec.slug, type: input.spec.type, kind: 'git' },
+    ...(input.spec.goalSlug ? { goal: { slug: input.spec.goalSlug } } : {}),
   };
 }
 

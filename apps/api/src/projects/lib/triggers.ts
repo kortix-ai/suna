@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import type { TriggerList } from '@kortix/api-contract';
 import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
@@ -7,7 +8,9 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import {
+  createProjectGoalEvaluation,
   reconcileProjectTaskGitWrites,
+  settleProjectGoalEvaluation,
   sweepTaskLivenessBounds,
 } from '../generated-state-store';
 import { reconcileProjectTaskGitRemoteRef } from '../../git-proxy/task-write-reconcile';
@@ -894,18 +897,18 @@ async function enqueueTriggerPrompt(input: {
   source: 'cron' | 'webhook' | 'manual';
   triggerSlug: string;
   idempotencyKey?: string | null;
-}): Promise<'queued' | 'no-session' | 'failed'> {
+}): Promise<{ status: 'queued' | 'no-session' | 'failed'; commandId?: string }> {
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!session) return 'no-session';
-  if (session.status === 'failed') return 'failed';
+  if (!session) return { status: 'no-session' };
+  if (session.status === 'failed') return { status: 'failed' };
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
-  if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  if (typeof sessionMeta.deletedAt === 'string') return { status: 'no-session' };
 
-  await enqueueContinueSessionCommand({
+  const command = await enqueueContinueSessionCommand({
     source: `trigger:${input.source}`,
     projectId: input.project.projectId,
     accountId: input.project.accountId,
@@ -919,7 +922,7 @@ async function enqueueTriggerPrompt(input: {
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
-  return 'queued';
+  return { status: 'queued', commandId: command?.commandId };
 }
 
 /**
@@ -928,7 +931,18 @@ async function enqueueTriggerPrompt(input: {
  * in metadata so audits can still reconstruct the firing path.
  */
 
-export async function fireGitTrigger(input: {
+export interface GitTriggerFireResult {
+  status: 'fired' | 'queued' | 'failed';
+  sessionId?: string;
+  commandId?: string;
+  error?: string;
+  reason?: string;
+  deduped?: boolean;
+  evaluationId?: string;
+  evaluationState?: 'queued' | 'fired' | 'failed';
+}
+
+export interface FireGitTriggerInput {
   spec: GitTriggerSpec;
   project: ProjectRow;
   payload: Record<string, unknown>;
@@ -936,14 +950,64 @@ export async function fireGitTrigger(input: {
   source: 'cron' | 'webhook' | 'manual';
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
-}): Promise<{
-  status: 'fired' | 'queued' | 'failed';
-  sessionId?: string;
-  commandId?: string;
-  error?: string;
-  reason?: string;
-  deduped?: boolean;
-}> {
+}
+
+export async function fireGitTrigger(input: FireGitTriggerInput): Promise<GitTriggerFireResult> {
+  const rawGoal = input.payload.goal;
+  const payloadGoalSlug = rawGoal && typeof rawGoal === 'object' && typeof (rawGoal as { slug?: unknown }).slug === 'string'
+    ? (rawGoal as { slug: string }).slug
+    : null;
+  const goalSlug = input.spec.goalSlug ?? payloadGoalSlug;
+  const isGoalPush =
+    input.source !== 'webhook' &&
+    goalSlug !== null &&
+    input.spec.slug === goalPushTriggerSlug(goalSlug);
+  if (!isGoalPush) return deliverGitTrigger(input);
+
+  const now = new Date();
+  const idempotencyKey = input.idempotencyKey ?? `goal:manual:${randomUUID()}`;
+  const evaluation = await createProjectGoalEvaluation(db, {
+    projectId: input.project.projectId,
+    goalSlug,
+    triggerSlug: input.spec.slug,
+    source: input.source === 'cron' ? 'cron' : 'manual',
+    idempotencyKey,
+    now,
+  });
+  let result: GitTriggerFireResult;
+  try {
+    result = await deliverGitTrigger({
+      ...input,
+      idempotencyKey,
+      payload: {
+        ...input.payload,
+        evaluation: { id: evaluation.evaluationId },
+      },
+      renderedPrompt: `${input.renderedPrompt}\n\nGoal evaluation id: ${evaluation.evaluationId}. Record every metric observation against this exact evaluation.`,
+    });
+  } catch (error) {
+    await settleProjectGoalEvaluation(db, {
+      evaluationId: evaluation.evaluationId,
+      state: 'failed',
+      now: new Date(),
+    });
+    throw error;
+  }
+  const settled = await settleProjectGoalEvaluation(db, {
+    evaluationId: evaluation.evaluationId,
+    state: result.status,
+    lifecycleCommandId: result.commandId ?? null,
+    sessionId: result.sessionId ?? null,
+    now: new Date(),
+  });
+  return {
+    ...result,
+    evaluationId: evaluation.evaluationId,
+    evaluationState: settled.state as GitTriggerFireResult['evaluationState'],
+  };
+}
+
+async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTriggerFireResult> {
   const { spec, project, payload, renderedPrompt, source } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
@@ -968,9 +1032,10 @@ export async function fireGitTrigger(input: {
       triggerSlug: spec.slug,
       idempotencyKey: input.idempotencyKey ?? null,
     });
-    if (outcome === 'queued') {
+    if (outcome.status === 'queued') {
       return {
         status: 'queued',
+        commandId: outcome.commandId,
         sessionId: spec.pinnedSessionId,
         reason: 'prompt queued for delivery',
       };
@@ -1003,9 +1068,10 @@ export async function fireGitTrigger(input: {
         triggerSlug: spec.slug,
         idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'queued') {
+      if (outcome.status === 'queued') {
         return {
           status: 'queued',
+          commandId: outcome.commandId,
           sessionId: keyed.sessionId,
           reason: 'prompt queued for delivery',
         };
@@ -1027,12 +1093,13 @@ export async function fireGitTrigger(input: {
         triggerSlug: spec.slug,
         idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'queued') {
+      if (outcome.status === 'queued') {
         // The prompt is durably queued (drain retries until delivered or
         // dead-letters loudly) — treat as a successful fire so the scheduler
         // records last_fired_at and doesn't immediately create a dupe.
         return {
           status: 'queued',
+          commandId: outcome.commandId,
           sessionId: reusable.sessionId,
           reason: 'prompt queued for delivery',
         };

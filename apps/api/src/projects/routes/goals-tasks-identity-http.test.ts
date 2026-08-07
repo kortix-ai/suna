@@ -53,6 +53,7 @@ const recordObservation = mock(async (input: { sessionId?: string | null }) => (
   observationId: '55555555-5555-4555-8555-555555555555',
   projectId: PROJECT_ID,
   goalSlug: 'ship-kernel',
+  evaluationId: '66666666-6666-4666-8666-666666666666',
   metric: 'latency',
   value: 1,
   source: 'test',
@@ -66,10 +67,16 @@ mock.module('../generated-state-store', () => ({
   claimProjectTask: claimTask,
   transitionProjectTask: transitionTask,
   recordProjectGoalObservation: recordObservation,
+  getProjectGoalEvaluationHealthRows: async () => [
+    {
+      evaluationId: '66666666-6666-4666-8666-666666666666',
+      state: 'fired',
+      observations: { latency: 1 },
+    },
+  ],
   projectTaskWorkerAdmissionState: async () => workerState,
-  getProjectTaskWorkerBinding: async () => workerState === 'bound'
-    ? { taskId: TASK_ID, status: 'doing' as const }
-    : null,
+  getProjectTaskWorkerBinding: async () =>
+    workerState === 'bound' ? { taskId: TASK_ID, status: 'doing' as const } : null,
 }));
 
 mock.module('../../shared/db', () => ({
@@ -98,15 +105,45 @@ mock.module('../lib/access', () => ({
   resolveSessionOwnerIdentities: async () => new Map(),
 }));
 
+mock.module('../lib/git', () => ({
+  withProjectGitAuth: async <T>(row: T) => row,
+}));
+
 const realTriggers = await import('../triggers');
 mock.module('../triggers', () => ({
   ...realTriggers,
-  readManifest: async () => ({}),
-  extractGoals: () => ({ specs: [{
-    slug: 'ship-kernel', path: 'goals/ship-kernel.md', title: 'Ship kernel',
-    doneWhen: 'done', status: 'active', pushCron: null, timezone: 'UTC', agent: null,
-    metrics: [{ name: 'latency', direction: 'decrease', target: 1, unit: 'ms' }],
-  }], errors: [] }),
+  readManifest: async () => ({
+    schemaVersion: 2,
+    format: 'yaml' as const,
+    path: 'kortix.yaml',
+    raw: {
+      goals: [
+        {
+          slug: 'ship-kernel',
+          title: 'Ship kernel',
+          done_when: 'done',
+          status: 'active',
+          metrics: [{ name: 'latency', direction: 'decrease', target: 1, unit: 'ms' }],
+        },
+      ],
+    },
+  }),
+  extractGoals: () => ({
+    specs: [
+      {
+        slug: 'ship-kernel',
+        path: 'goals/ship-kernel.md',
+        title: 'Ship kernel',
+        doneWhen: 'done',
+        status: 'active',
+        pushCron: null,
+        timezone: 'UTC',
+        agent: null,
+        metrics: [{ name: 'latency', direction: 'decrease', target: 1, unit: 'ms' }],
+      },
+    ],
+    errors: [],
+  }),
   extractTriggers: () => ({ specs: [], errors: [] }),
 }));
 
@@ -142,6 +179,29 @@ beforeEach(() => {
   recordObservation.mockClear();
 });
 
+describe('goal health HTTP contract', () => {
+  test('returns authenticated health while preserving Git-authored desired status', async () => {
+    const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/health`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      health: {
+        goal_slug: 'ship-kernel',
+        desired_status: 'active',
+        health_status: 'measuring',
+        metrics: [
+          {
+            metric: 'latency',
+            status: 'measuring',
+            evaluation_id: '66666666-6666-4666-8666-666666666666',
+            evaluation_state: 'fired',
+            observation_value: 1,
+          },
+        ],
+      },
+    });
+  });
+});
+
 describe('task transition HTTP identity binding', () => {
   for (const suffix of ['claim', 'done', 'block'] as const) {
     test(`a project-session PAT cannot impersonate another session on ${suffix}`, async () => {
@@ -167,12 +227,18 @@ describe('task transition HTTP identity binding', () => {
   });
 });
 
-
 describe('goal observation HTTP identity binding', () => {
   test('a project-session principal cannot attribute an observation to another session', async () => {
     const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ metric: 'latency', value: 1, source: 'test', session_id: 'impersonated-session' }),
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        evaluation_id: '66666666-6666-4666-8666-666666666666',
+        metric: 'latency',
+        value: 1,
+        source: 'test',
+        session_id: 'impersonated-session',
+      }),
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
@@ -194,7 +260,9 @@ describe('worker task-control confinement', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        goal_slug: 'ship-kernel', title: 'Unauthorized coordination', origin: 'worker',
+        goal_slug: 'ship-kernel',
+        title: 'Unauthorized coordination',
+        origin: 'worker',
       }),
     });
     expect(response.status).toBe(403);
@@ -206,7 +274,12 @@ describe('worker task-control confinement', () => {
     const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ metric: 'latency', value: 1, source: 'test' }),
+      body: JSON.stringify({
+        evaluation_id: '66666666-6666-4666-8666-666666666666',
+        metric: 'latency',
+        value: 1,
+        source: 'test',
+      }),
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });

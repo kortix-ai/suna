@@ -91,6 +91,7 @@ test('project(id) exposes goal and task control-plane clients', async () => {
   expect(last().url).toBe('http://test.local/projects/PID123/goals');
 
   await project.goals.observations.record('ship-kernel', {
+    evaluation_id: '11111111-1111-4111-8111-111111111111',
     metric: 'rank',
     value: 1,
     source: 'search console',
@@ -1531,7 +1532,6 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
   // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
   expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });
-
 
 test('project tasks facade exposes worker liveness mutations', async () => {
   const tasks = kortix.project('PID123').tasks;

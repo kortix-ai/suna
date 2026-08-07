@@ -1,3 +1,67 @@
+export type GoalEvaluationState = 'queued' | 'fired' | 'failed';
+export type GoalMetricHealthStatus = 'unmeasurable' | 'stalled' | 'measuring';
+
+export interface GoalHealthEvaluation {
+  evaluationId: string;
+  state: GoalEvaluationState;
+  observations: Record<string, number>;
+}
+
+export interface ProjectGoalHealthResult {
+  goal_slug: string;
+  desired_status: 'active' | 'achieved' | 'paused' | 'abandoned';
+  health_status: GoalMetricHealthStatus;
+  metrics: Array<{
+    metric: string;
+    status: GoalMetricHealthStatus;
+    evaluation_id: string | null;
+    evaluation_state: GoalEvaluationState | null;
+    observation_value: number | null;
+  }>;
+}
+
+export function deriveProjectGoalHealth(input: {
+  goalSlug: string;
+  desiredStatus: ProjectGoalHealthResult['desired_status'];
+  metricNames: string[];
+  evaluations: GoalHealthEvaluation[];
+}): ProjectGoalHealthResult {
+  const latest = input.evaluations[0] ?? null;
+  const fired = input.evaluations.filter((evaluation) => evaluation.state === 'fired');
+  const metrics = input.metricNames.map((metric) => {
+    const latestFiredValue = fired[0]?.observations[metric];
+    let status: GoalMetricHealthStatus = Number.isFinite(latestFiredValue)
+      ? 'measuring'
+      : 'unmeasurable';
+    if (fired.length >= 3) {
+      const values = fired.slice(0, 3).map((evaluation) => evaluation.observations[metric]);
+      if (values.every(Number.isFinite) && values[0] === values[1] && values[1] === values[2]) {
+        status = 'stalled';
+      }
+    }
+    const latestValue = latest?.observations[metric];
+    return {
+      metric,
+      status,
+      evaluation_id: latest?.evaluationId ?? null,
+      evaluation_state: latest?.state ?? null,
+      observation_value:
+        typeof latestValue === 'number' && Number.isFinite(latestValue) ? latestValue : null,
+    };
+  });
+  const healthStatus: GoalMetricHealthStatus = metrics.some(({ status }) => status === 'stalled')
+    ? 'stalled'
+    : metrics.length === 0 || metrics.some(({ status }) => status === 'unmeasurable')
+      ? 'unmeasurable'
+      : 'measuring';
+  return {
+    goal_slug: input.goalSlug,
+    desired_status: input.desiredStatus,
+    health_status: healthStatus,
+    metrics,
+  };
+}
+
 export const MIN_TASK_LEASE_SECONDS = 30;
 export const MAX_TASK_LEASE_SECONDS = 86_400;
 
@@ -28,7 +92,8 @@ export function mapGeneratedStateError(
     code !== 'TASK_CLAIM_CONFLICT' &&
     code !== 'TASK_TRANSITION_CONFLICT' &&
     code !== 'TASK_LIVENESS_CONFLICT' &&
-    code !== 'TASK_GIT_WRITE_IN_FLIGHT'
+    code !== 'TASK_GIT_WRITE_IN_FLIGHT' &&
+    code !== 'GOAL_OBSERVATION_CONFLICT'
   )
     return null;
   return {

@@ -78,6 +78,7 @@ describe('goal manifest parsing and trigger desugaring', () => {
       type: 'cron',
       agent: META_AGENT_NAME,
       platformMetaGoalPush: true,
+      goalSlug: 'launch',
       enabled: true,
       cron: '0 0 9 * * *',
       timezone: 'Europe/Berlin',

@@ -1120,6 +1120,49 @@ export const projectTaskNoProgressSettlements = kortixSchema.table(
   ],
 );
 
+/** Durable identity and delivery state for one authored goal push. */
+export const projectGoalEvaluations = kortixSchema.table(
+  'project_goal_evaluations',
+  {
+    evaluationId: uuid('evaluation_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    triggerSlug: text('trigger_slug').notNull(),
+    source: varchar('source', { length: 16 }).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    state: varchar('state', { length: 16 }).default('queued').notNull(),
+    lifecycleCommandId: uuid('lifecycle_command_id'),
+    sessionId: text('session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_project_goal_evaluations_idempotency').on(table.idempotencyKey),
+    foreignKey({
+      name: 'project_goal_evaluations_lifecycle_command_fkey',
+      columns: [table.lifecycleCommandId],
+      foreignColumns: [sessionLifecycleCommands.commandId],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'project_goal_evaluations_session_fkey',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('set null'),
+    index('idx_project_goal_evaluations_goal_created').on(
+      table.projectId,
+      table.goalSlug,
+      table.createdAt,
+    ),
+    check('project_goal_evaluations_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_goal_evaluations_trigger_slug_nonempty', sql`btrim(${table.triggerSlug}) <> ''`),
+    check('project_goal_evaluations_idempotency_nonempty', sql`btrim(${table.idempotencyKey}) <> ''`),
+    check('project_goal_evaluations_source_valid', sql`${table.source} in ('cron', 'manual')`),
+    check('project_goal_evaluations_state_valid', sql`${table.state} in ('queued', 'fired', 'failed')`),
+  ],
+);
+
 /** Append-only observations used to evaluate one goal metric over time. */
 export const projectGoalObservations = kortixSchema.table(
   'project_goal_observations',
@@ -1129,6 +1172,7 @@ export const projectGoalObservations = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     goalSlug: text('goal_slug').notNull(),
+    evaluationId: uuid('evaluation_id'),
     metric: text('metric').notNull(),
     value: doublePrecision('value').notNull(),
     source: text('source').notNull(),
@@ -1138,10 +1182,20 @@ export const projectGoalObservations = kortixSchema.table(
   },
   (table) => [
     foreignKey({
+      name: 'project_goal_observations_evaluation_fkey',
+      columns: [table.evaluationId],
+      foreignColumns: [projectGoalEvaluations.evaluationId],
+    }),
+    foreignKey({
       name: 'project_goal_observations_session_fkey',
       columns: [table.sessionId],
       foreignColumns: [projectSessions.sessionId],
     }).onDelete('set null'),
+    uniqueIndex('idx_project_goal_observations_evaluation_metric').on(
+      table.evaluationId,
+      table.metric,
+    ),
+    index('idx_project_goal_observations_evaluation').on(table.evaluationId),
     index('idx_project_goal_observations_range').on(
       table.projectId,
       table.goalSlug,

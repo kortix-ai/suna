@@ -172,6 +172,7 @@ Use the project handle to drive the same control plane as the Kortix CLI:
 ```ts
 const project = kortix.project(projectId);
 const { goals } = await project.goals.list();
+const pushed = await project.goals.push(goals[0].slug);
 const { task } = await project.tasks.create({
   goal_slug: goals[0].slug,
   title: "Measure the current position",
@@ -184,6 +185,7 @@ await project.tasks.claim(task.task_id, {
   lease_seconds: 900,
 });
 await project.goals.observations.record(goals[0].slug, {
+  evaluation_id: pushed.evaluation_id,
   metric: "search_position",
   value: 4,
   source: "search-console://report/2026-08-06",
@@ -193,7 +195,15 @@ await project.tasks.complete(task.task_id, {
   session_id: workerSessionId,
   evidence: [{ ref: "search-console://report/2026-08-06" }],
 });
+const { health } = await project.goals.health(goals[0].slug);
+console.log(health.desired_status, health.health_status);
 ```
+
+Each push returns a durable `evaluation_id` and `evaluation_state`. Health is
+`unmeasurable` when a declared metric has no evaluation-bound observation. It is
+`stalled` after three consecutive fired evaluations carry the same finite value.
+All other observed metrics are `measuring`. Goal health never changes or infers
+the Git-authored desired status.
 
 A settled or idle worker session is not task completion. The worker must make an
 explicit terminal task transition with verifier evidence.
