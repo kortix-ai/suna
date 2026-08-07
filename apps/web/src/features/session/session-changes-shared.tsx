@@ -11,8 +11,8 @@ import { useCallback, useState } from 'react';
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useProjectSession } from '@kortix/sdk/react';
 import { useChatSendStore } from '@/stores/chat-send-store';
+import { useProjectSession } from '@kortix/sdk/react';
 
 /** git-status status → single-letter badge, using the canonical status tones. */
 export const CHANGE_STATUS_BADGE: Record<string, { letter: string; cls: string; label: string }> = {

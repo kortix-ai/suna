@@ -7,10 +7,10 @@ import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { useProjectSession } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useProjectSession } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
