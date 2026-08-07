@@ -17,6 +17,7 @@ const {
   idleGraceMs,
   isPreviewUseObservation,
   isSandboxAuthored,
+  isSessionAgentLoopMutationRequest,
   isTerminalTurnEnd,
   isTurnStartRequest,
   isWarmPoolBox,
@@ -276,11 +277,13 @@ describe('isSandboxAuthored — provenance is decided by the CREDENTIAL', () => 
 });
 
 describe('isTurnStartRequest', () => {
-  test('a prompt POST on the agent or opencode port starts a turn', () => {
+  test('legacy and pinned OpenCode POST routes start a turn', () => {
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/prompt_async')).toBe(true);
     expect(isTurnStartRequest(4096, 'POST', '/session/abc/message')).toBe(true);
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/command')).toBe(true);
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/summarize')).toBe(true);
+    expect(isTurnStartRequest(8000, 'POST', '/api/session/abc/prompt')).toBe(true);
+    expect(isTurnStartRequest(4096, 'POST', '/api/session/abc/compact')).toBe(true);
   });
 
   // Passive polling must never extend a box — that is the deleted lease, rebuilt.
@@ -301,5 +304,23 @@ describe('isTurnStartRequest', () => {
     expect(isTurnStartRequest(8000, 'POST', '/session/abc')).toBe(false);
     expect(isTurnStartRequest(8000, 'POST', '/session/abc/prompt_asyncx')).toBe(false);
     expect(isTurnStartRequest(8000, 'POST', '/health')).toBe(false);
+  });
+});
+
+describe('isSessionAgentLoopMutationRequest', () => {
+  test('matches known and unknown mutating routes on both OpenCode surfaces', () => {
+    expect(isSessionAgentLoopMutationRequest(8000, 'POST', '/session/abc/prompt_async')).toBe(true);
+    expect(isSessionAgentLoopMutationRequest(4096, 'POST', '/api/session/abc/prompt')).toBe(true);
+    expect(
+      isSessionAgentLoopMutationRequest(8000, 'DELETE', '/api/session/abc/future-route'),
+    ).toBe(true);
+    expect(isSessionAgentLoopMutationRequest(8000, 'POST', '/api/session')).toBe(true);
+    expect(isSessionAgentLoopMutationRequest(4096, 'DELETE', '/session/abc')).toBe(true);
+  });
+
+  test('does not match reads, non-session paths, or non-agent ports', () => {
+    expect(isSessionAgentLoopMutationRequest(8000, 'GET', '/api/session/abc/prompt')).toBe(false);
+    expect(isSessionAgentLoopMutationRequest(8000, 'POST', '/api/global/event')).toBe(false);
+    expect(isSessionAgentLoopMutationRequest(3000, 'POST', '/api/session/abc/prompt')).toBe(false);
   });
 });

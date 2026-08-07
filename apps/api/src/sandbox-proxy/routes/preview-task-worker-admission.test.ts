@@ -105,7 +105,11 @@ const access = {
 };
 const routes = ['prompt_async', 'message', 'command', 'summarize'] as const;
 
-async function turn(port: 8000 | 4096, route: string, sequence: number): Promise<Response> {
+async function agentLoopRequest(
+  port: 8000 | 4096,
+  path: string,
+  sequence: number,
+): Promise<Response> {
   const body = new TextEncoder().encode(
     JSON.stringify({ parts: [{ type: 'text', text: `turn-${sequence}` }] }),
   ).buffer as ArrayBuffer;
@@ -114,15 +118,19 @@ async function turn(port: 8000 | 4096, route: string, sequence: number): Promise
     port,
     access,
     'POST',
-    `/session/opencode-session-1/${route}`,
+    path,
     '',
     new Headers({
       'content-type': 'application/json',
-      'idempotency-key': `worker-gate-${port}-${route}-${sequence}`,
+      'idempotency-key': `worker-gate-${port}-${sequence}`,
     }),
     body,
     'http://localhost:3000',
   );
+}
+
+async function turn(port: 8000 | 4096, route: string, sequence: number): Promise<Response> {
+  return agentLoopRequest(port, `/session/opencode-session-1/${route}`, sequence);
 }
 
 beforeEach(() => {
@@ -163,6 +171,73 @@ describe('forwardToSandbox task-worker prompt admission', () => {
       });
     }
   }
+
+  for (const port of [8000, 4096] as const) {
+    for (const route of ['prompt', 'compact'] as const) {
+      test(`rejects marker-only child on pinned OpenCode POST :${port} ${route}`, async () => {
+        admissions = [{ state: 'spawned_unbound' }];
+
+        const response = await agentLoopRequest(
+          port,
+          `/api/session/opencode-session-1/${route}`,
+          10,
+        );
+
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          code: 'TASK_LIVENESS_WORKER_UNBOUND',
+        });
+        expect(admissionCalls).toBe(1);
+        expect(upstreamCalls).toBe(0);
+      });
+
+      test(`allows doing worker on pinned OpenCode POST :${port} ${route}`, async () => {
+        admissions = [{ state: 'bound', binding: { taskId: 'task-1', status: 'doing' } }];
+
+        const response = await agentLoopRequest(
+          port,
+          `/api/session/opencode-session-1/${route}`,
+          11,
+        );
+
+        expect(response.status).toBe(200);
+        expect(admissionCalls).toBe(2);
+        expect(upstreamCalls).toBeGreaterThan(0);
+      });
+    }
+  }
+
+  test('denies an unrecognized mutating agent-loop route for a doing worker', async () => {
+    admissions = [{ state: 'bound', binding: { taskId: 'task-1', status: 'doing' } }];
+
+    const response = await agentLoopRequest(
+      8000,
+      '/api/session/opencode-session-1/future-mutation',
+      12,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: 'TASK_WORKER_ROUTE_FORBIDDEN',
+      task_id: 'task-1',
+    });
+    expect(admissionCalls).toBe(1);
+    expect(upstreamCalls).toBe(0);
+  });
+
+  test('preserves an unrecognized mutating route for an ordinary session', async () => {
+    admissions = [{ state: 'not_worker' }];
+
+    const response = await agentLoopRequest(
+      8000,
+      '/api/session/opencode-session-1/future-mutation',
+      13,
+    );
+
+    expect(response.status).toBe(200);
+    expect(admissionCalls).toBe(1);
+    expect(upstreamCalls).toBeGreaterThan(0);
+  });
 
   test('rejects marker-only child on the in-box /proxy/4096 turn path', async () => {
     admissions = [{ state: 'spawned_unbound' }];

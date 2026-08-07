@@ -165,13 +165,11 @@ projectsApp.openapi(
   // Authorization is enforced by loadProjectForUser(... 'manage') above,
   // which routes through the IAM engine (project.write).
 
-  // Privilege-escalation guard: an agent-session token is itself a project
-  // account token carrying a (possibly narrow) AgentGrant. If it could mint a
-  // fresh project token, the new token would carry NO grant — letting a scoped
-  // agent issue an unscoped sibling and escape its own ceiling. Token minting
-  // is a human/manage operation; agents are denied outright.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+  // Privilege-escalation guard: every project session principal is denied,
+  // including legacy session PATs with no AgentGrant. Otherwise a session could
+  // mint an unbound sibling token and escape its session identity and ceiling.
+  if (isProjectSessionPrincipal(c)) {
+    return c.json({ error: 'Project session principals cannot mint project tokens' }, 403);
   }
 
   // One body field: `name`. Defaults to "cli · <project name>".
@@ -232,11 +230,10 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Authorization is enforced by loadProjectForUser(... 'manage') above.
-  // Token management is a human/manage operation: an agent-session token must
-  // not revoke project tokens (it could knock out its own siblings / the human
-  // CLI token as a DoS). Symmetric with the mint guard above.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+  // Token management is a human operation. A project session principal must not
+  // revoke sibling or human CLI tokens. This is symmetric with the mint guard.
+  if (isProjectSessionPrincipal(c)) {
+    return c.json({ error: 'Project session principals cannot manage project tokens' }, 403);
   }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);

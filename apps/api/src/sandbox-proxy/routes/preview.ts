@@ -27,6 +27,7 @@ import {
   extendSandboxDeadline,
   isPreviewUseObservation,
   isSandboxAuthored,
+  isSessionAgentLoopMutationRequest,
   isTurnStartRequest,
   observeTurnStart,
   previewGrantMs,
@@ -109,6 +110,7 @@ function jsonProxyError(body: Record<string, unknown>, status: number, origin?: 
 async function taskWorkerPromptRefusal(
   sessionId: string,
   origin: string,
+  routeAllowed: boolean,
 ): Promise<Response | null> {
   const admission = await projectTaskWorkerPromptAdmission(db, sessionId);
   if (admission.state === 'not_worker') return null;
@@ -122,14 +124,25 @@ async function taskWorkerPromptRefusal(
       origin,
     );
   }
-  if (admission.binding.status === 'doing') return null;
+  if (admission.binding.status !== 'doing') {
+    return jsonProxyError(
+      {
+        error: 'A terminal task worker cannot start another turn',
+        code: 'TASK_WORKER_CONFINED',
+        task_id: admission.binding.taskId,
+      },
+      409,
+      origin,
+    );
+  }
+  if (routeAllowed) return null;
   return jsonProxyError(
     {
-      error: 'A terminal task worker cannot start another turn',
-      code: 'TASK_WORKER_CONFINED',
+      error: 'Task workers cannot use this mutating agent-loop route',
+      code: 'TASK_WORKER_ROUTE_FORBIDDEN',
       task_id: admission.binding.taskId,
     },
-    409,
+    403,
     origin,
   );
 }
@@ -427,7 +440,11 @@ function requestedPromptAgent(
  */
 function isConnectorGatedTurn(port: number, method: string, path: string): boolean {
   if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(path.replace(/^\/proxy\/\d+(?=\/)/, ''));
+  const normalized = path.replace(/^\/proxy\/\d+(?=\/)/, '');
+  return ![
+    /^\/session\/[^/?#]+\/summarize(?:$|[/?#])/,
+    /^\/api\/session\/[^/?#]+\/compact(?:$|[/?#])/,
+  ].some((pattern) => pattern.test(normalized));
 }
 
 /**
@@ -891,9 +908,12 @@ export async function forwardToSandbox(
   }
   // A metadata-marked task child must not execute before its registration
   // commits. Bound workers remain prompt-capable only while their task is doing.
-  // Run this before wake, connector checks, title generation, env sync, and dedupe.
-  if (isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const refusal = await taskWorkerPromptRefusal(record.sessionId, origin);
+  // For workers, every session-scoped mutation is fail-closed against the known
+  // turn-start allowlist. Run this before wake, connector checks, title
+  // generation, env sync, and dedupe.
+  const turnStart = isTurnStartRequest(upstreamPort, method, remainingPath);
+  if (isSessionAgentLoopMutationRequest(upstreamPort, method, remainingPath)) {
+    const refusal = await taskWorkerPromptRefusal(record.sessionId, origin, turnStart);
     if (refusal) return refusal;
   }
 
@@ -1244,10 +1264,10 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
-        if (isTurnStartRequest(upstreamPort, method, remainingPath)) {
+        if (turnStart) {
           // Registration and task status can change during wake/env sync. This
           // final re-check is adjacent to the upstream prompt dispatch.
-          const refusal = await taskWorkerPromptRefusal(record.sessionId, origin);
+          const refusal = await taskWorkerPromptRefusal(record.sessionId, origin, true);
           if (refusal) {
             if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
             return refusal;

@@ -175,22 +175,48 @@ const OPENCODE_PORT = 4096;
 const AGENT_PORT = 8000;
 
 /**
- * `/command` and `/summarize` are here because both start a real, billable turn
- * — a classifier admitting only prompt_async/message would kill a box mid
- * command. Do NOT reuse `isLongTurnCompletionRequest` from
- * sandbox-proxy/preview-retry-budget.ts: it matches only `/message` (every real
- * client uses prompt_async), and widening it would change that module's proxy
- * attempt-timeout behaviour.
+ * The legacy OpenCode surface starts turns below `/session`. The pinned v2
+ * surface starts them below `/api/session`. Compact is also admitted because it
+ * executes the agent loop and consumes model capacity. Do NOT reuse
+ * `isLongTurnCompletionRequest` from sandbox-proxy/preview-retry-budget.ts. It
+ * controls proxy timeouts, not authorization, and intentionally matches fewer
+ * routes.
  */
-const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
+const TURN_START = [
+  /^\/session\/[^/?#]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/,
+  /^\/api\/session\/[^/?#]+\/(?:prompt|compact)(?:$|[/?#])/,
+] as const;
+const SESSION_AGENT_LOOP_MUTATION = /^\/(?:api\/)?session(?:$|[/?#])/;
+
+function normalizedAgentPath(port: number, path: string): string | null {
+  if (port !== AGENT_PORT && port !== OPENCODE_PORT) return null;
+  return path.replace(/^\/proxy\/\d+(?=\/)/, '');
+}
 
 /** Does this proxied request START a turn? Used by the proxy to observe a run
  *  beginning without trusting anything the sandbox says about itself. */
 export function isTurnStartRequest(port: number, method: string, path: string): boolean {
   if (method.toUpperCase() !== 'POST') return false;
-  if (port !== AGENT_PORT && port !== OPENCODE_PORT) return false;
-  const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
-  return TURN_START.test(p);
+  const normalized = normalizedAgentPath(port, path);
+  return normalized !== null && TURN_START.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Does this request mutate a session-scoped OpenCode agent-loop route?
+ *
+ * Task workers use this broader classifier as a fail-closed boundary. A worker
+ * may use only the explicit turn-start allowlist above. New mutating OpenCode
+ * routes cannot bypass worker admission merely because this API does not know
+ * their name yet. Read-only session routes remain unaffected.
+ */
+export function isSessionAgentLoopMutationRequest(
+  port: number,
+  method: string,
+  path: string,
+): boolean {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) return false;
+  const normalized = normalizedAgentPath(port, path);
+  return normalized !== null && SESSION_AGENT_LOOP_MUTATION.test(normalized);
 }
 
 /**

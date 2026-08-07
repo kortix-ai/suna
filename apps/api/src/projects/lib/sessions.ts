@@ -584,6 +584,7 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
 }> {
   const { project, userId, body } = input;
+  const requestMetadata = normalizeJsonObject(body.metadata);
   const projectId = project.projectId;
   const accountId = project.accountId;
   let callerIsMeta = false;
@@ -635,6 +636,20 @@ export async function createProjectSession(input: {
         },
       };
     }
+  }
+  const reservedMetadataKey = Object.keys(requestMetadata).find(
+    (key) => key === 'spawned_by_session' || key.startsWith('task_liveness_'),
+  );
+  if (reservedMetadataKey) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `metadata.${reservedMetadataKey} is server-owned`,
+          code: 'RESERVED_SESSION_METADATA',
+        },
+      },
+    };
   }
   const visibility = input.visibility ?? 'private';
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
@@ -1153,7 +1168,6 @@ export async function createProjectSession(input: {
   // would have used, instead of leaking the scaffolding into a project-visible
   // title when this create-time attempt fails.
   const explicitTitleSource = normalizeString(body.title_source ?? body.titleSource);
-  const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),

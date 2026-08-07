@@ -1052,6 +1052,66 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  for (const reservedKey of [
+    'spawned_by_session',
+    'task_liveness_binding_required',
+    'task_liveness_future_field',
+  ]) {
+    test(`rejects client-owned session metadata key ${reservedKey}`, async () => {
+      const app = createApp();
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'daytona',
+          base_ref: 'main',
+          metadata: { ordinary: true, [reservedKey]: 'forged' },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: 'RESERVED_SESSION_METADATA',
+        error: `metadata.${reservedKey} is server-owned`,
+      });
+      expect(lastSessionInsertValues).toBeNull();
+      expect(sandboxProvisionCalls).toBe(0);
+    });
+  }
+
+  test('session-bound PAT without an AgentGrant cannot mint a project CLI token', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/cli-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ name: 'forged sibling' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: 'Project session principals cannot mint project tokens',
+    });
+  });
+
+  test('session-bound PAT without an AgentGrant cannot revoke a project CLI token', async () => {
+    const app = createApp();
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/cli-token/00000000-0000-4000-a000-000000000999`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${SESSION_BOUND_PAT}` },
+      },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: 'Project session principals cannot manage project tokens',
+    });
+  });
+
   test('creates an omitted-agent session with the meta REST runtime', async () => {
     enableMetaAgent();
     const app = createApp();
