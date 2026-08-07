@@ -14,5 +14,6 @@ STAGING_API_ORIGIN = "https://staging-api.kortix.com"
 PROD_API_ORIGIN = "https://api.kortix.com"
 PREVIEW_API_ORIGIN = "https://dev-api.kortix.com"
 
-# EDGE_SECRET is a Worker secret. It must equal KORTIX_APPS_EDGE_SECRET on every
-# API environment. Set it with `wrangler secret put EDGE_SECRET`.
+# DEV_EDGE_SECRET, STAGING_EDGE_SECRET, PROD_EDGE_SECRET, and
+# PREVIEW_EDGE_SECRET are Worker secrets. Each value must equal
+# KORTIX_APPS_EDGE_SECRET in its API environment.

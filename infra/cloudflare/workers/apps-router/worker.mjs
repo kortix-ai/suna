@@ -14,6 +14,15 @@ function backendFor(hostname, env) {
   };
 }
 
+function edgeSecretFor(environment, env) {
+  return {
+    dev: env.DEV_EDGE_SECRET,
+    staging: env.STAGING_EDGE_SECRET,
+    prod: env.PROD_EDGE_SECRET,
+    preview: env.PREVIEW_EDGE_SECRET,
+  }[environment] || env.EDGE_SECRET;
+}
+
 async function hmac(secret, value) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -40,7 +49,8 @@ export default {
     if (!selected?.backend) {
       return Response.json({ error: 'Invalid Kortix App environment' }, { status: 404 });
     }
-    if (!env.EDGE_SECRET) {
+    const edgeSecret = edgeSecretFor(selected.environment, env);
+    if (!edgeSecret) {
       return Response.json({ error: 'Kortix Apps edge is not configured' }, { status: 503 });
     }
     const target = new URL(`${url.pathname}${url.search}`, selected.backend);
@@ -51,7 +61,7 @@ export default {
     headers.delete('x-kortix-app-signature');
     headers.set('x-kortix-app-host', url.hostname);
     headers.set('x-kortix-app-timestamp', timestamp);
-    headers.set('x-kortix-app-signature', await signAppRequest(request, timestamp, env.EDGE_SECRET));
+    headers.set('x-kortix-app-signature', await signAppRequest(request, timestamp, edgeSecret));
     headers.set('x-forwarded-host', url.host);
     headers.set('x-forwarded-proto', 'https');
 

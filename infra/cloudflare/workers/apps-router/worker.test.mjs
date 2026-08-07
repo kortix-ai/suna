@@ -5,7 +5,10 @@ const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
 const env = {
-  EDGE_SECRET: 'test-edge-secret-at-least-sixteen',
+  DEV_EDGE_SECRET: 'test-dev-edge-secret-at-least-sixteen',
+  STAGING_EDGE_SECRET: 'test-staging-edge-secret-at-least-sixteen',
+  PROD_EDGE_SECRET: 'test-prod-edge-secret-at-least-sixteen',
+  PREVIEW_EDGE_SECRET: 'test-preview-edge-secret-at-least-sixteen',
   DEV_API_ORIGIN: 'https://dev-api.kortix.com',
   STAGING_API_ORIGIN: 'https://staging-api.kortix.com',
   PROD_API_ORIGIN: 'https://api.kortix.com',
@@ -30,6 +33,10 @@ describe('Kortix Apps Cloudflare router', () => {
       'dev-hello-0123456789abcdef.apps.kortix.com',
     );
     expect(forwarded.headers.get('x-kortix-app-signature')).not.toBe('caller-controlled');
+    const timestamp = forwarded.headers.get('x-kortix-app-timestamp');
+    expect(forwarded.headers.get('x-kortix-app-signature')).toBe(
+      await signAppRequest(request, timestamp, env.DEV_EDGE_SECRET),
+    );
     expect(response.headers.get('x-kortix-app-environment')).toBe('dev');
   });
 
@@ -37,12 +44,12 @@ describe('Kortix Apps Cloudflare router', () => {
     const request = new Request('https://prod-app-0123456789abcdef.apps.kortix.com/api?q=1', {
       method: 'POST',
     });
-    const first = await signAppRequest(request, '1234', env.EDGE_SECRET);
-    expect(first).toBe(await signAppRequest(request, '1234', env.EDGE_SECRET));
+    const first = await signAppRequest(request, '1234', env.PROD_EDGE_SECRET);
+    expect(first).toBe(await signAppRequest(request, '1234', env.PROD_EDGE_SECRET));
     expect(first).not.toBe(await signAppRequest(
       new Request('https://prod-app-0123456789abcdef.apps.kortix.com/other?q=1', { method: 'POST' }),
       '1234',
-      env.EDGE_SECRET,
+      env.PROD_EDGE_SECRET,
     ));
   });
 
