@@ -92,10 +92,13 @@ export function ProjectHome({
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
+  // The sandbox TEMPLATE catalog, not live sandbox health (that is
+  // `useSandboxHealth`, its own key and its own polling). Changed only by this
+  // app's own mutations, which invalidate this key — see `FRESHNESS.sandboxes`.
   const sandboxesQuery = useQuery({
     queryKey: qk.project.sandboxes(projectId),
     queryFn: () => listProjectSandboxes(projectId),
-    ...contract('volatile'),
+    ...contract('config'),
     refetchOnWindowFocus: false,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];

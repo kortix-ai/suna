@@ -51,4 +51,29 @@ describe('freshness contracts', () => {
     expect(FRESHNESS.sessions).toBe('inventory');
     expect(FRESHNESS.messages).toBe('live');
   });
+
+  // Both started on `volatile` (5s) purely because "sandbox" and "gateway"
+  // SOUND time-sensitive. Neither is. Pinned here so a revert to `volatile`
+  // fails a test instead of quietly multiplying refetches on every project
+  // landing and every Customize -> Gateway open. Reasoning in the tier table.
+  test('sandboxes is the template catalog, not live health — config tier', () => {
+    // `listProjectSandboxes` and `listProjectSandboxTemplates` are the same
+    // GET /projects/:id/sandboxes returning the same SandboxTemplatesResponse.
+    // Two keys, so they must at least agree on freshness.
+    expect(FRESHNESS.sandboxes).toBe('config');
+    expect(FRESHNESS.sandboxTemplates).toBe(FRESHNESS.sandboxes);
+  });
+
+  test('gateway analytics accumulate from traffic, not from our mutations — inventory tier', () => {
+    expect(FRESHNESS.gateway).toBe('inventory');
+  });
+
+  // `volatile` has no claimant today. Kept because `FreshnessTier` is a
+  // published string-literal union and removing a member is breaking — but a
+  // future entity has to earn it against this bar, not inherit it by vibe.
+  test('volatile is still the sharpest tier, for whatever earns it next', () => {
+    expect(contract('volatile').staleTime).toBe(5_000);
+    const claimants = Object.entries(FRESHNESS).filter(([, tier]) => tier === 'volatile');
+    expect(claimants).toEqual([]);
+  });
 });

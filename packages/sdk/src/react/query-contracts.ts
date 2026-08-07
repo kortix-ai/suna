@@ -43,7 +43,17 @@ const TIERS: Record<FreshnessTier, { staleTime: number }> = {
   config: { staleTime: 60_000 },
   /** Can also change from another member or another tab. */
   inventory: { staleTime: 30_000 },
-  /** Genuinely time-sensitive; no mutation announces the change. */
+  /**
+   * Genuinely time-sensitive; no mutation announces the change, AND a
+   * 30-second-old value would actively mislead.
+   *
+   * UNCLAIMED as of the `sandboxes`/`gateway` review below. Kept because
+   * `FreshnessTier` is a published string-literal union and dropping a member
+   * is a breaking change — not because anything needs it. The first two
+   * entities put here got it for sounding urgent rather than being urgent, so
+   * the bar for the next claimant is the second clause: name the reader that
+   * is materially wrong at t+30s.
+   */
   volatile: { staleTime: 5_000 },
 };
 
@@ -80,10 +90,47 @@ export const FRESHNESS = {
   files: 'config',
   fileSource: 'config',
   branches: 'config',
-  sandboxes: 'volatile',
+  /**
+   * NOT live sandbox health — the sandbox TEMPLATE catalog.
+   * `listProjectSandboxes` is `GET /projects/:id/sandboxes` returning
+   * `SandboxTemplatesResponse` (`{ items, default_slug, provider_mode, … }`),
+   * byte-for-byte the same call `sandboxTemplates` below already makes. Live
+   * health is a different entity entirely — `getProjectSandboxHealth`,
+   * `GET /projects/:id/sandbox-health`, read by `project-sandbox-alert.tsx`
+   * under its own key with its own adaptive `refetchInterval` (8s while a
+   * build is active, 120s otherwise). Nothing on THIS key is time-sensitive.
+   *
+   * Was `volatile` (5s) on the strength of the word "sandbox". Its
+   * pre-migration window was 60s, every change to it arrives through this
+   * app's own mutations (`sandbox-template-form.tsx`, `sandbox-view.tsx` —
+   * all three invalidate this key), and `refetchOnMount: true` at 5s meant a
+   * refetch on essentially every project landing. `config` restores the
+   * original window and matches the twin below, which reads the same
+   * response.
+   */
+  sandboxes: 'config',
   sandboxTemplates: 'config',
   snapshots: 'config',
   modelPicker: 'config',
-  gateway: 'volatile',
+  /**
+   * Analytics aggregates over a `days` window — overview, series, breakdown,
+   * sessions, errors — plus budgets and keys.
+   *
+   * The aggregates accumulate from TRAFFIC (agent runs, other members),
+   * which no mutation of ours announces, so they cannot be `config`. But they
+   * are aggregates over days: a 5-second window buys nothing a 30-second one
+   * doesn't, and cost real requests — `refetchOnMount: true` at `volatile`
+   * refetched all five on every Customize -> Gateway open. `inventory` is
+   * both the honest description ("can also change from another member") and
+   * exactly their pre-migration 30s window.
+   *
+   * Budgets and keys ride the same tier at 30s against a pre-migration 15s.
+   * Safe: both are mutated only through this UI and both invalidate on
+   * success (`use-project-gateway.ts`), so staleTime only ever bounds an
+   * out-of-band change. `gatewayLogs` opts out entirely — it sets
+   * `refetchInterval: 10_000` and no contract, because a log tail genuinely
+   * is a tail.
+   */
+  gateway: 'inventory',
   triggers: 'config',
 } as const satisfies Record<string, FreshnessTier>;

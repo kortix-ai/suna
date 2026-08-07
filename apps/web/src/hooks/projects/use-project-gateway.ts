@@ -28,7 +28,7 @@ export function useGatewayOverview(projectId: string | undefined, days = 30) {
     queryKey: qk.project.gatewayOverview(projectId ?? '', days),
     queryFn: () => getGatewayOverview(projectId!, days),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -37,7 +37,7 @@ export function useGatewaySeries(projectId: string | undefined, days = 30) {
     queryKey: qk.project.gatewaySeries(projectId ?? '', days),
     queryFn: () => getGatewaySeries(projectId!, days),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -46,7 +46,7 @@ export function useGatewayBreakdown(projectId: string | undefined, days = 30) {
     queryKey: qk.project.gatewayBreakdown(projectId ?? '', days),
     queryFn: () => getGatewayBreakdown(projectId!, days),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -55,7 +55,7 @@ export function useGatewaySessions(projectId: string | undefined, days = 30) {
     queryKey: qk.project.gatewaySessions(projectId ?? '', days),
     queryFn: () => getGatewaySessions(projectId!, days),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -64,7 +64,7 @@ export function useGatewayErrors(projectId: string | undefined, days = 30) {
     queryKey: qk.project.gatewayErrors(projectId ?? '', days),
     queryFn: () => getGatewayErrors(projectId!, days),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -90,7 +90,7 @@ export function useGatewayBudgets(projectId: string | undefined) {
     queryKey: qk.project.gatewayBudgets(projectId ?? ''),
     queryFn: () => getGatewayBudgets(projectId!),
     enabled: !!projectId,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
@@ -117,7 +117,7 @@ export function useGatewayKeys(projectId: string | undefined, enabled = true) {
     queryKey: qk.project.gatewayKeys(projectId ?? ''),
     queryFn: () => getGatewayKeys(projectId!),
     enabled: !!projectId && enabled,
-    ...contract('volatile'),
+    ...contract('inventory'),
   });
 }
 
