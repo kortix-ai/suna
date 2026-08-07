@@ -26,6 +26,8 @@ export interface UsageEvent extends TokenCounts {
   billingMode: BillingMode;
   streaming: boolean;
   requestId: string;
+  // Present when this event settles a durable bound-worker request fence.
+  livenessAdmissionId?: string;
   // Present when the pre-dispatch billing gate took an atomic admission hold
   // against the wallet for this request (see AuthedPrincipal.billingHold).
   // The host's recordUsage hook reconciles this against `finalCost` (top up

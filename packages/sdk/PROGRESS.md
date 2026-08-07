@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `agi-kernel-settlement-ledger` completion
+
+Added durable no-progress settlement replay and aligned the task worker
+`max_iterations` contract with PostgreSQL `integer` (1..2,147,483,647). No
+published name changed. The package version remains unchanged.
+
+RED:
+
+- The SDK boundary test sent `max_iterations=2,147,483,648` instead of rejecting it.
+- The database schema test failed because the settlement ledger table did not exist.
+- The CLI boundary test accepted `--max-iterations 2147483648`.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: 1600 pass, 0 fail, 6570 assertions.
+- `pnpm --filter @kortix/sdk smoke:install`: packed ESM import and construction passed.
+- Focused SDK task tests: 5 pass, 0 fail.
+- Real PostgreSQL generated-state integration: 14 pass, 0 fail, 98 assertions.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-07 — session `agi-kernel-liveness-policy` claim
 
 Claimed scope:

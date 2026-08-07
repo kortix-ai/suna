@@ -1,6 +1,7 @@
 import { parseSharingIntent } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
+import { isMetaAgentName } from '@kortix/shared';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
@@ -15,6 +16,7 @@ import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isV
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
+import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { SecretConsumerSchema, UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
@@ -22,6 +24,7 @@ import {
   connectors,
   projectSecrets,
   projectSessionSecretHandles,
+  projectSessions,
   projects,
   sessionSandboxes,
 } from '@kortix/db';
@@ -29,7 +32,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
-import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, deriveKortixApiRoot, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
@@ -266,6 +269,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const authType = (c as any).get('authType') as string | undefined;
   const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
+  const authorization = c.req.header('Authorization') as string | undefined;
+  const callerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
+  let callerIsMeta = isMetaAgentName(getAgentGrant(c)?.agent);
 
   let projectRow: typeof projects.$inferSelect | null = null;
 
@@ -275,6 +281,18 @@ projectsApp.openapi(
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const callerSessionId = (c as any).get('sessionId') as string | undefined;
+    if (callerSessionId) {
+      const [session] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(and(
+          eq(projectSessions.sessionId, callerSessionId),
+          eq(projectSessions.projectId, projectId),
+        ))
+        .limit(1);
+      callerIsMeta = callerIsMeta || (!!session && isMetaAgentName(session.agentName));
+    }
     projectRow = loaded.row;
   } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
     const accountId = (c as any).get('accountId') as string | undefined;
@@ -283,7 +301,10 @@ projectsApp.openapi(
       return c.json({ error: 'clone credentials require a sandbox token' }, 403);
     }
     const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+      })
       .from(sessionSandboxes)
       .where(and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -295,6 +316,18 @@ projectsApp.openapi(
     if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
     }
+    const [session] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(and(
+        eq(projectSessions.sessionId, sandbox.sessionId),
+        eq(projectSessions.projectId, projectId),
+      ))
+      .limit(1);
+    if (!session) {
+      return c.json({ error: 'sandbox session identity is unavailable' }, 403);
+    }
+    callerIsMeta = isMetaAgentName(session.agentName);
     const [row] = await db
       .select()
       .from(projects)
@@ -309,6 +342,22 @@ projectsApp.openapi(
     return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
   }
   if (!projectRow) return c.json({ error: 'Not found' }, 404);
+
+  if (callerIsMeta) {
+    if (!callerToken) {
+      return c.json({ error: 'runtime proxy credential is unavailable' }, 403);
+    }
+    return c.json({
+      repo_url: `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`,
+      auth: {
+        username: 'x-access-token',
+        token: callerToken,
+        type: 'basic',
+      },
+      source: 'kortix_git_proxy',
+      expires_at: null,
+    });
+  }
 
   const gitAuth = await resolveProjectGitAuth(projectRow);
   const upstream = await resolveProjectUpstream(projectRow, 'write');

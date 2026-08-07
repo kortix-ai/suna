@@ -288,6 +288,27 @@
       "when": 1786062396765,
       "tag": "20260807002636_fast_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786065518403,
+      "tag": "20260807011838_add_task_no_progress_settlement_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786066257284,
+      "tag": "20260807013057_flaky_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786066664067,
+      "tag": "20260807013744_usage_event_idempotency",
+      "breakpoints": true
     }
   ]
 }

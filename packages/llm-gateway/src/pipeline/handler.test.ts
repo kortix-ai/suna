@@ -1996,6 +1996,59 @@ describe("gateway.chatCompletions — BILLING-CORRECTNESS: atomic admission-hold
   });
 });
 
+describe("gateway.chatCompletions — durable liveness admission settlement", () => {
+  test("passes the request id to admission and releases an admitted fence on a pre-dispatch error", async () => {
+    let admittedRequestId = "";
+    const { hooks, usage } = makeHooks({
+      assertBudget: async (_principal, requestId) => {
+        admittedRequestId = requestId;
+        return { livenessAdmissionId: requestId };
+      },
+      resolveUpstream: async () => [],
+    });
+
+    const res = await createGateway(hooks, {}, {}).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(400);
+    await flush();
+    expect(admittedRequestId).toMatch(/^req_/);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({
+      requestId: admittedRequestId,
+      livenessAdmissionId: admittedRequestId,
+      promptTokens: 0,
+      completionTokens: 0,
+      finalCost: 0,
+    });
+  });
+
+  test("settles an admitted fence when a successful stream reports zero usage", async () => {
+    const { hooks, usage } = makeHooks({
+      assertBudget: async (_principal, requestId) => ({ livenessAdmissionId: requestId }),
+      resolveUpstream: async () => [managed],
+    });
+    const fetchImpl: FetchImpl = async () => new Response(
+      'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n' +
+      'data: [DONE]\n\n',
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+
+    const res = await createGateway(hooks, {}, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+    await new Response(res.body).text();
+    await flush();
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0].livenessAdmissionId).toBe(usage[0].requestId);
+    expect(usage[0].promptTokens).toBe(0);
+  });
+});
+
 describe("gateway.chatCompletions — request size guard", () => {
   test("a body over maxRequestBytes is rejected with 413 before any upstream dispatch", async () => {
     const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });

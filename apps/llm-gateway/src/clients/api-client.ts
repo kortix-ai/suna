@@ -39,7 +39,7 @@ export interface ApiPingResult {
 
 export interface ApiClient {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
-  authorize: (token: string) => Promise<AuthorizeResult>;
+  authorize: (token: string, requestId: string) => Promise<AuthorizeResult>;
   resolveRoute: (
     principal: AuthedPrincipal,
     input: ModelRouteInput,
@@ -98,8 +98,8 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       );
       return result.principal ?? null;
     },
-    authorize: async (token) => {
-      return post<AuthorizeResult>('/internal/gateway/authorize', { token });
+    authorize: async (token, requestId) => {
+      return post<AuthorizeResult>('/internal/gateway/authorize', { token, requestId });
     },
     resolveRoute: async (principal, input) => {
       const result = await post<{ route: ModelRoutePlan | null }>(

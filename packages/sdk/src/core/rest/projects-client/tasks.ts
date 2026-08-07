@@ -94,6 +94,7 @@ export interface ProjectTaskWorkerContract {
   max_wall_seconds: number;
   max_tokens: number;
   max_cost_usd: number;
+  /** PostgreSQL integer. Inclusive range: 1 through 2,147,483,647. */
   max_iterations: number;
 }
 
@@ -204,6 +205,10 @@ export async function registerProjectTaskWorker(
   taskId: string,
   input: RegisterProjectTaskWorkerInput,
 ) {
+  if (!Number.isInteger(input.contract.max_iterations) ||
+      input.contract.max_iterations < 1 || input.contract.max_iterations > 2_147_483_647) {
+    throw new RangeError('max_iterations must be between 1 and 2147483647');
+  }
   return unwrap(await backendApi.post<RegisterProjectTaskWorkerResponse>(
     `${taskPath(projectId, taskId)}/worker`, input,
   ));

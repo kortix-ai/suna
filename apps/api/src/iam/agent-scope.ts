@@ -49,6 +49,24 @@ const META_AGENT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
   'project.gitops.merge',
 ]);
 
+const META_AGENT_EXACT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
+  ...META_AGENT_DENIED_ACTIONS,
+  'project.gitops.push',
+]);
+
+/**
+ * True only when the grant contains this exact action.
+ *
+ * Raw credential and repository-write gates must use this function. The CR
+ * aliases intentionally preserve the higher-level change-request workflow, but
+ * they must never authorize a provider token export or a direct push.
+ */
+export function agentMayPerformExact(grant: AgentGrant | null, action: string): boolean {
+  if (!grant) return true;
+  if (isMetaAgentName(grant.agent) && META_AGENT_EXACT_DENIED_ACTIONS.has(action)) return false;
+  return grant.kortixCli === 'all' || grant.kortixCli.includes(action);
+}
+
 /** True if the agent-session grant permits `action` (or there is no grant). */
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
@@ -59,6 +77,15 @@ export function agentMayPerform(grant: AgentGrant | null, action: string): boole
   if (grant.kortixCli.includes(action)) return true;
   const alias = AGENT_ACTION_ALIASES[action];
   return alias ? grant.kortixCli.includes(alias) : false;
+}
+
+/** Throw 403 unless the agent grant contains the exact action. */
+export function assertAgentScopeExact(c: Context, action: string): void {
+  const grant = getAgentGrant(c);
+  if (agentMayPerformExact(grant, action)) return;
+  throw new HTTPException(403, {
+    message: `Agent "${grant?.agent ?? 'unknown'}" is not explicitly granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
+  });
 }
 
 /**
@@ -118,6 +145,6 @@ export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerform(grant, action)) return;
   throw new HTTPException(403, {
-    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
+    message: `Agent "${grant?.agent ?? 'unknown'}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
   });
 }

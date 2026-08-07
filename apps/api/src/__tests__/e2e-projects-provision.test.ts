@@ -120,6 +120,9 @@ mock.module('../middleware/auth', () => ({
     const auth = getTestAuth();
     c.set('userId', auth.userId);
     c.set('userEmail', auth.userEmail);
+    if (auth.authType) c.set('authType', auth.authType);
+    if (auth.sessionId) c.set('sessionId', auth.sessionId);
+    if (auth.agentGrant) c.set('agentGrant', auth.agentGrant);
     await next();
   },
 }));
@@ -446,6 +449,27 @@ describe('POST /v1/projects/provision (managed git)', () => {
       reason: 'caller_opted_out',
     });
     expect(body.seeded).toBe(false);
+  });
+
+  test('never returns a provision push token to a project session principal', async () => {
+    (globalThis as any)[TEST_AUTH_KEY] = {
+      userId: USER_ID,
+      userEmail: 'agent@example.test',
+      authType: 'pat',
+      sessionId: '00000000-0000-4000-a000-000000000301',
+      agentGrant: { agent: 'meta', connectors: 'all', kortixCli: 'all', env: 'all' },
+    };
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Session Project' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.push_token).toBeNull();
+    expect(body.git_username).toBeNull();
   });
 
   test('does not report an active project when the seed pushed but left no default branch', async () => {

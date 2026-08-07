@@ -9,7 +9,7 @@
  *   (daemon misconfigured — never silently bypass).
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createHmac } from 'crypto'
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -115,6 +115,63 @@ function gitOutput(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv
       GIT_TERMINAL_PROMPT: '0',
     },
   }).trim()
+}
+
+function startGitSmartHttpServer(projectRoot: string) {
+  const calls: Array<{ path: string; service: string | null; authorization: string | null }> = []
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url)
+      const service = url.searchParams.get('service')
+      calls.push({
+        path: url.pathname,
+        service,
+        authorization: req.headers.get('authorization'),
+      })
+      if (service === 'git-receive-pack' || url.pathname.endsWith('/git-receive-pack')) {
+        return new Response('meta push denied', { status: 403 })
+      }
+      const input = Buffer.from(await req.arrayBuffer())
+      const result = spawnSync('git', ['http-backend'], {
+        input,
+        env: {
+          ...process.env,
+          GIT_PROJECT_ROOT: projectRoot,
+          GIT_HTTP_EXPORT_ALL: '1',
+          PATH_INFO: url.pathname,
+          QUERY_STRING: url.search.slice(1),
+          REQUEST_METHOD: req.method,
+          CONTENT_TYPE: req.headers.get('content-type') ?? '',
+          CONTENT_LENGTH: String(input.length),
+          REMOTE_ADDR: '127.0.0.1',
+        },
+      })
+      if (result.status !== 0) {
+        return new Response(result.stderr?.toString() || 'git http-backend failed', { status: 500 })
+      }
+      const output = Buffer.from(result.stdout)
+      const separator = output.indexOf(Buffer.from('\r\n\r\n'))
+      if (separator < 0) return new Response('invalid git CGI response', { status: 500 })
+      const rawHeaders = output.subarray(0, separator).toString('utf8')
+      const headers = new Headers()
+      let status = 200
+      for (const line of rawHeaders.split('\r\n')) {
+        const colon = line.indexOf(':')
+        if (colon < 0) continue
+        const name = line.slice(0, colon)
+        const value = line.slice(colon + 1).trim()
+        if (name.toLowerCase() === 'status') status = Number.parseInt(value, 10)
+        else headers.append(name, value)
+      }
+      return new Response(output.subarray(separator + 4), { status, headers })
+    },
+  })
+  return {
+    url: `http://127.0.0.1:${server.port}/remote.git`,
+    calls,
+    stop: () => server.stop(true),
+  }
 }
 
 describe('daemon proxy auth gate', () => {
@@ -234,6 +291,65 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('uses the clone-credential repo_url for clone, origin, fetch auth, and denied push', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-meta-git-proxy-'))
+    const originalFetch = globalThis.fetch
+    const remote = join(root, 'remote.git')
+    const seed = join(root, 'seed')
+    const target = join(root, 'workspace')
+    git(['init', '--bare', remote])
+    mkdirSync(seed)
+    git(['init'], seed)
+    git(['checkout', '-b', 'main'], seed)
+    writeFileSync(join(seed, 'README.md'), 'through proxy\n')
+    git(['add', 'README.md'], seed)
+    git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
+    git(['remote', 'add', 'origin', remote], seed)
+    git(['push', '-u', 'origin', 'main'], seed)
+    const proxy = startGitSmartHttpServer(root)
+    try {
+      globalThis.fetch = (async () => Response.json({
+        repo_url: proxy.url,
+        auth: { username: 'x-access-token', token: TEST_TOKEN, type: 'basic' },
+        source: 'kortix_git_proxy',
+      })) as unknown as typeof fetch
+      const cfg = baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1',
+        projectTarget: target,
+        repoUrl: 'https://provider.invalid/acme/private.git',
+        defaultBranch: 'main',
+      })
+
+      await materializeRepo(cfg)
+
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('through proxy\n')
+      expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(proxy.url)
+      const cloneAuth = proxy.calls.find((call) => call.authorization)?.authorization
+      expect(cloneAuth?.toLowerCase().startsWith('basic ')).toBe(true)
+      expect(Buffer.from(cloneAuth!.split(' ', 2)[1]!, 'base64').toString('utf8')).toBe(
+        `x-access-token:${TEST_TOKEN}`,
+      )
+
+      const push = Bun.spawn([
+        'git',
+        ...buildGitAuthArgs(proxy.url, TEST_TOKEN),
+        '-C', target, 'push', 'origin', 'HEAD:refs/heads/meta-must-not-push',
+      ], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      })
+      expect(await push.exited).not.toBe(0)
+      expect(proxy.calls.some((call) => call.service === 'git-receive-pack')).toBe(true)
+    } finally {
+      globalThis.fetch = originalFetch
+      proxy.stop()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   it('materializes inside a writable target when its parent is read-only', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-readonly-parent-'))
     const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
@@ -308,7 +424,7 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('uses a baked git checkout without fetching clone credentials', async () => {
+  it('resolves clone credentials before using a baked git checkout', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-baked-checkout-'))
     const originalFetch = globalThis.fetch
     const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
@@ -350,9 +466,9 @@ describe('daemon proxy auth gate', () => {
     baseSha: undefined,
       }))
 
-      // Baked checkout means no clone-credential fetch should happen.
+      // Resolve the API-selected repository URL even when the checkout is already baked.
       const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
-      expect(credRequests).toHaveLength(0)
+      expect(credRequests).toHaveLength(1)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-branch')
       expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(remote)

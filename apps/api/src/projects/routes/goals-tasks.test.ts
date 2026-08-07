@@ -69,6 +69,7 @@ describe('goals/tasks service boundaries', () => {
     const dependencies = {
       sessionBelongsToProject: async () => true,
       claimTask: async () => ({ taskId: TASK_ID }),
+      loadTaskEvidence: async () => null,
       transitionTask: async () => ({ taskId: TASK_ID }),
     };
     const identity = {
@@ -117,6 +118,7 @@ describe('goals/tasks service boundaries', () => {
       completeTaskForProject(
         {
           sessionBelongsToProject: async () => true,
+          loadTaskEvidence: async () => null,
           transitionTask: async () => {
             transitionCalls += 1;
             return { taskId: TASK_ID };
@@ -169,5 +171,20 @@ describe('goal observation session attribution', () => {
       { sessionBelongsToProject: async () => false },
       { projectId: PROJECT_ID, requestedSessionId: 'foreign-session' },
     )).rejects.toMatchObject({ status: 400, code: 'session_not_in_project' });
+  });
+});
+
+
+describe('worker contract API integer boundaries', () => {
+  test('accepts the PostgreSQL integer maximum and rejects the next safe JavaScript integer', async () => {
+    const { WorkerContractSchema } = await import('./goals-tasks-schemas');
+    const contract = {
+      max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5,
+      max_iterations: 2_147_483_647,
+    };
+    expect(WorkerContractSchema.safeParse(contract).success).toBe(true);
+    expect(WorkerContractSchema.safeParse({
+      ...contract, max_iterations: 2_147_483_648,
+    }).success).toBe(false);
   });
 });

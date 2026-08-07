@@ -9,6 +9,7 @@ import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
 import {
   agentMayPerform,
+  agentMayPerformExact,
   agentMayUseConnector,
   agentMayUseEnv,
   assertAgentScope,
@@ -258,6 +259,19 @@ describe('agentMayPerform — kortix_cli gate', () => {
     // merge pair is independent — cr.open does NOT unlock merge
     expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
     expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
+  });
+  test('raw push authorization never aliases project.cr.open', () => {
+    const meta = { agent: 'meta', kortixCli: ['project.cr.open'], connectors: [] };
+    expect(agentMayPerform(meta, 'project.cr.open')).toBe(true);
+    expect(agentMayPerformExact(meta, 'project.gitops.push')).toBe(false);
+
+    const releaseBot = { agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerformExact(releaseBot, 'project.gitops.push')).toBe(true);
+  });
+  test('raw push authorization denies stale unrestricted meta grants', () => {
+    const staleMeta = { agent: 'meta', kortixCli: 'all' as const, connectors: [] };
+    expect(agentMayPerform(staleMeta, 'project.cr.open')).toBe(true);
+    expect(agentMayPerformExact(staleMeta, 'project.gitops.push')).toBe(false);
   });
   test('cr.merge ≡ gitops.merge alias', () => {
     const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };

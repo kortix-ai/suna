@@ -83,6 +83,7 @@ import {
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditEvent } from './session-audit';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import { getProjectTaskWorkerBinding } from '../generated-state-store';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
@@ -579,9 +580,57 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
 }> {
   const { project, userId, body } = input;
-  const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
   const accountId = project.accountId;
+  let callerIsMeta = false;
+  if (input.callerSessionId) {
+    const [caller] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, input.callerSessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
+  }
+  // A child created by the reserved coordinator becomes a bounded task worker.
+  // Its first prompt must be queued atomically by task-worker registration,
+  // never delivered during sandbox boot before the worker contract exists.
+  // Ordinary agent delegation retains its existing initial_prompt behavior.
+  if (
+    callerIsMeta &&
+    (Object.prototype.hasOwnProperty.call(body, 'initial_prompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'initialPrompt'))
+  ) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'A spawned session cannot include initial_prompt; register the worker task to deliver its first prompt atomically',
+          code: 'SPAWN_INITIAL_PROMPT_FORBIDDEN',
+        },
+      },
+    };
+  }
+  if (input.callerSessionId) {
+    const binding = await getProjectTaskWorkerBinding(db, input.callerSessionId);
+    if (binding) {
+      return {
+        error: {
+          status: 403,
+          body: {
+            error: 'Bound task workers cannot create child sessions',
+            code: 'TASK_WORKER_CONFINED',
+            task_id: binding.taskId,
+          },
+        },
+      };
+    }
+  }
+  const visibility = input.visibility ?? 'private';
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -722,20 +771,6 @@ export async function createProjectSession(input: {
   // to the project default (the observed failure was meta "spawning a worker"
   // and getting another coordinator), and an explicit meta request is
   // rejected.
-  let callerIsMeta = false;
-  if (metaAgentEnabled && input.callerSessionId) {
-    const [caller] = await db
-      .select({ agentName: projectSessions.agentName })
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.sessionId, input.callerSessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
-      )
-      .limit(1);
-    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
-  }
   const agentName =
     metaAgentEnabled && !requestedAgent && !callerIsMeta
       ? META_AGENT_NAME
@@ -1128,6 +1163,9 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    // This server-owned marker fences reserved-meta workers at the gateway until
+    // task registration atomically commits their durable binding and prompt.
+    ...(callerIsMeta ? { task_liveness_binding_required: true } : {}),
     sandbox_slug: sandboxSlug,
   };
 

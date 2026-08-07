@@ -20,7 +20,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, assertAgentScopeExact } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -48,7 +48,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 404, 409),
     },
   }),
   async (c) => {
@@ -100,9 +100,11 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    if (result.error) return c.json(result.error.body as any, 409);
+    const start = result.start!;
     return c.json(
       {
-        ...result.start,
+        ...start,
         runtime_transport: 'rest' as const,
       },
       200,
@@ -128,7 +130,7 @@ projectsApp.openapi(
     },
     responses: {
       202: json(z.any(), 'OK'),
-      ...errors(400, 403, 404, 503),
+      ...errors(400, 403, 404, 409, 503),
     },
   }),
   async (c: any) => {
@@ -456,6 +458,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
     );
+    // Direct commit/push is not CR orchestration. Require the literal push leaf;
+    // project.cr.open must not authorize this repository-write path.
+    assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     // The capability check above is PROJECT-wide, and in Kortix-as-a-Backend the
     // sandbox's own token holds it — every KaaB session shares the wrapper's

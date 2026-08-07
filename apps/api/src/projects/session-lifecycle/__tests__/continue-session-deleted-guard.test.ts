@@ -28,9 +28,16 @@ const ACCOUNT_ID = 'acct-1';
 const PROJECT_ID = 'proj-1';
 
 let sessionRow: Record<string, unknown> | null = null;
+let workerBindingStatus: string | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
+
+mock.module('../../generated-state-store', () => ({
+  getProjectTaskWorkerBinding: async () => workerBindingStatus
+    ? { taskId: 'task-1', status: workerBindingStatus }
+    : null,
+}));
 
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
@@ -57,6 +64,7 @@ mock.module('../../../shared/db', () => ({
 }));
 
 mock.module('../../../sandbox-proxy/routes/preview', () => ({
+  preview: { routes: [] },
   forwardToSandbox: async () => {
     throw new Error('forwardToSandbox: not expected in this test');
   },
@@ -100,10 +108,11 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession, createSession, startSession } = await import('../engine');
 
 beforeEach(() => {
   sessionRow = null;
+  workerBindingStatus = null;
   updateCalls = [];
 });
 
@@ -121,6 +130,21 @@ describe('continueSession — deleted-mid-flight guard', () => {
     expect(result).toBe('no-session');
     // No project_sessions revival update was attempted — the guard trips
     // before the function ever reaches the stopped/completed revival branch.
+    expect(updateCalls).toEqual([]);
+  });
+
+  test('a terminal bounded worker is never revived by a queued continuation', async () => {
+    sessionRow = {
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      status: 'stopped',
+      metadata: {},
+    };
+    workerBindingStatus = 'done';
+
+    const result = await continueSession({ sessionId: SESSION_ID, text: 'escape' } as never);
+
+    expect(result).toBe('failed');
     expect(updateCalls).toEqual([]);
   });
 
@@ -142,5 +166,68 @@ describe('continueSession — deleted-mid-flight guard', () => {
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].table).toBe(projectSessions);
     expect(updateCalls[0].updates.status).toBe('running');
+  });
+});
+
+
+describe('createSession — bounded worker child confinement', () => {
+  test('a terminal bounded worker cannot create a child session', async () => {
+    workerBindingStatus = 'done';
+
+    const result = await createSession({
+      source: 'ui',
+      project: { projectId: PROJECT_ID, accountId: ACCOUNT_ID },
+      userId: 'user-1',
+      requestingPrincipalType: 'human',
+      body: { initial_prompt: 'spawn an unbounded child' },
+      callerSessionId: SESSION_ID,
+      queuePolicy: 'never',
+    } as never);
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      retryable: false,
+      error: {
+        status: 403,
+        body: { code: 'TASK_WORKER_CONFINED' },
+      },
+    });
+  });
+
+  test('an active bounded worker cannot delegate outside its registered contract', async () => {
+    workerBindingStatus = 'doing';
+
+    const result = await createSession({
+      source: 'ui',
+      project: { projectId: PROJECT_ID, accountId: ACCOUNT_ID },
+      userId: 'user-1',
+      requestingPrincipalType: 'human',
+      body: { initial_prompt: 'spawn an unbounded child' },
+      callerSessionId: SESSION_ID,
+      queuePolicy: 'never',
+    } as never);
+
+    expect(result.error?.body.code).toBe('TASK_WORKER_CONFINED');
+  });
+});
+
+
+describe('startSession — terminal worker confinement', () => {
+  test('the unified start substrate rejects terminal worker revival before openSession', async () => {
+    workerBindingStatus = 'blocked';
+
+    const result = await startSession({
+      source: 'ui',
+      loaded: { row: { projectId: PROJECT_ID, accountId: ACCOUNT_ID }, userId: 'user-1' },
+      visible: { row: sessionRow ?? {} },
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+    } as never);
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      retryable: false,
+      error: { status: 409, body: { code: 'TASK_WORKER_CONFINED' } },
+    });
   });
 });

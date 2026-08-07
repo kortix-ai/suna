@@ -438,7 +438,7 @@ v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `ski
 connector's `authorization_strategy` decides whether the authorization
 is project-owned or member-owned.
 
-`kortix_cli` grants come from a fixed set of project-scoped actions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped actions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
+`kortix_cli` grants come from a fixed set of project-scoped actions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.goal.*`, `project.task.*`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped actions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 
 ## When config changes take effect
 

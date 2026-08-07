@@ -10,7 +10,7 @@ const PROJECT_ID = 'proj-1';
 const EXTERNAL_ID = 'sandbox-1';
 const events: string[] = [];
 
-mock.module('../../../config', () => ({ config: { KORTIX_URL: 'https://api.test' } }));
+mock.module('../../../config', () => ({ config: { KORTIX_URL: 'https://api.test' }, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({
   db: {
@@ -83,6 +83,9 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     events.push('prompt');
     return new Response(null, { status: 204 });
   },
+  preview: async () => {
+    throw new Error('not expected');
+  },
 }));
 
 mock.module('../../lib/sessions', () => ({
@@ -96,7 +99,16 @@ mock.module('../actor', () => ({
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+mock.module('../stop', () => ({
+  stopSession: async () => {
+    throw new Error('not expected');
+  },
+}));
 mock.module('../store', () => ({
+  LIFECYCLE_COMMAND_HEARTBEAT_MS: 60_000,
+  lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
+  renewLifecycleCommandLease: async () => true,
+  repairLegacyLifecycleMessageIds: async () => 0,
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
   },

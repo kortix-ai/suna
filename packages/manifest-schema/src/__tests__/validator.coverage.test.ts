@@ -466,6 +466,10 @@ describe('exported constants', () => {
 
   test('GRANTABLE_KORTIX_CLI_ACTIONS includes project actions but not billing or channel.*', () => {
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.read');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.goal.read');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.goal.write');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.task.read');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.task.write');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.connector.write');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('billing.read');
     // channel.* was removed from the catalog — never wired to any route.

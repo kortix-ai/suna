@@ -4,6 +4,7 @@ import * as realProviders from '../../../platform/providers';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
 
 let sandboxRow: Record<string, unknown> | null = null;
+let projectSessionRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
 let pausedCompute: string[] = [];
@@ -51,7 +52,11 @@ mock.module('../../../shared/db', () => ({
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
-          limit: async () => (table === sessionSandboxes && sandboxRow ? [sandboxRow] : []),
+          limit: async () => {
+            if (table === sessionSandboxes && sandboxRow) return [sandboxRow];
+            if (table === projectSessions && projectSessionRow) return [projectSessionRow];
+            return [];
+          },
         }),
       }),
     }),
@@ -101,6 +106,7 @@ const baseInput = {
 
 beforeEach(() => {
   sandboxRow = null;
+  projectSessionRow = null;
   stopCalls = [];
   stopError = null;
   pausedCompute = [];
@@ -116,11 +122,55 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual([]);
   });
 
-  test('409s when the sandbox is not currently active', async () => {
+  test('does not consume a stop before the provisioning sandbox row exists', async () => {
+    projectSessionRow = { status: 'provisioning' };
+
+    const result = await stopSession(baseInput);
+
+    expect(result).toMatchObject({
+      status: 409,
+      body: { status: 'provisioning', retryable: true },
+    });
+    expect(updateCalls).toContainEqual({
+      table: projectSessions,
+      updates: expect.objectContaining({ status: 'stopped' }),
+      inTransaction: false,
+    });
+  });
+
+  test('409s when the sandbox is already stopped', async () => {
     sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'stopped', metadata: {} };
     const result = await stopSession(baseInput);
-    expect(result.status).toBe(409);
+    expect(result).toMatchObject({ status: 409, body: { status: 'stopped' } });
     expect(stopCalls).toEqual([]);
+  });
+
+  test('fences a provisioning session as stopped but reports a retryable nonterminal conflict', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: null, provider: 'daytona', status: 'provisioning', metadata: {} };
+
+    const result = await stopSession(baseInput);
+
+    expect(result).toMatchObject({
+      status: 409,
+      body: { status: 'provisioning', retryable: true },
+    });
+    expect(stopCalls).toEqual([]);
+    expect(updateCalls).toContainEqual({
+      table: projectSessions,
+      updates: expect.objectContaining({ status: 'stopped' }),
+      inTransaction: false,
+    });
+  });
+
+  test('reconciles a failed provision with no external runtime as stopped', async () => {
+    sandboxRow = { sandboxId: 'sess-1', externalId: null, provider: 'daytona', status: 'error', metadata: {} };
+
+    const result = await stopSession(baseInput);
+
+    expect(result).toMatchObject({ status: 200, body: { status: 'stopped' } });
+    expect(stopCalls).toEqual([]);
+    expect(updateCalls.some((call) => call.table === sessionSandboxes && call.updates.status === 'stopped')).toBe(true);
+    expect(updateCalls.some((call) => call.table === projectSessions && call.updates.status === 'stopped')).toBe(true);
   });
 
   test('400s for an unsupported/unallowed provider', async () => {

@@ -148,9 +148,15 @@ project-trigger scheduler sweeps active bounded workers for wall, token, cost,
 compute, and iteration exhaustion. It does not add a workflow engine or another
 scheduler.
 
-Token and cost limits can overshoot by one provider request because actual
-usage exists only after the provider responds. Iteration limits do not have this
-overshoot. The post-usage finalizer and leader sweep block all later work.
+A durable PostgreSQL admission fence permits one in-flight provider request per
+bounded worker. Gateway completion and pre-dispatch error paths settle the fence
+with the matching request ID. A crashed gateway cannot strand the fence forever:
+its lease expires at the immutable worker wall deadline, and the recurring sweep
+then blocks the task and releases its sessions. Token and cost limits can still
+overshoot by the usage of that one admitted provider request because actual usage
+exists only after the provider responds. Concurrent requests cannot multiply the
+overshoot. Iteration admission remains exact because its counter increments in
+the same atomic update that acquires the fence.
 
 `queued` and `drained` describe local lifecycle-command handling only.
 `drained` does not prove remote prompt delivery. An empty newly created worker

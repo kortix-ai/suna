@@ -24,6 +24,7 @@ import {
   projectSessions,
   projectSessionConnectorBindings,
   projectTasks,
+  projectTaskNoProgressSettlements,
   projectGoalObservations,
   projectGroupGrants,
   projectGitConnections,
@@ -411,6 +412,9 @@ describe('generated project state tables', () => {
       'liveness_started_at',
       'liveness_deadline_at',
       'liveness_iterations_admitted',
+      'liveness_admission_id',
+      'liveness_admission_expires_at',
+      'liveness_last_swept_at',
       'no_progress_settlements',
       'continuation_consumed_at',
       'last_progress_at',
@@ -427,6 +431,34 @@ describe('generated project state tables', () => {
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_blocked_by');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_deadline');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_worker');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_sweep');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_claim_session');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_liveness_coordinator');
+  });
+
+  test('no-progress settlements durably key every original result by task and settlement', () => {
+    expect(columnNames(projectTaskNoProgressSettlements)).toEqual([
+      'project_id',
+      'task_id',
+      'settlement_id',
+      'claim_session_id',
+      'worker_session_id',
+      'action',
+      'command_id',
+      'task_snapshot',
+      'measured_usage',
+      'created_at',
+    ]);
+    const config = getTableConfig(projectTaskNoProgressSettlements);
+    expect(config.primaryKeys).toHaveLength(1);
+    expect(config.primaryKeys[0]?.columns.map((column) => column.name)).toEqual([
+      'task_id',
+      'settlement_id',
+    ]);
+    expect(config.foreignKeys.some((foreignKey) =>
+      foreignKey.getName() === 'project_task_no_progress_settlements_task_fkey' &&
+      foreignKey.onDelete === 'cascade'
+    )).toBe(true);
   });
 
   test('goal observations expose the indexed metric time range', () => {
@@ -583,5 +615,22 @@ describe('accountSsoProviders table', () => {
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);
+  });
+});
+
+
+describe('usage_events idempotency', () => {
+  test('stores a nullable key with one unique per-account index', () => {
+    const config = getTableConfig(usageEvents);
+    expect(config.columns.find((column) => column.name === 'idempotency_key')?.notNull).toBe(false);
+    const index = config.indexes.find(
+      (candidate) => candidate.config.name === 'idx_usage_events_account_idempotency',
+    );
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.columns.map((column: any) => column.name)).toEqual([
+      'account_id',
+      'idempotency_key',
+    ]);
+    expect(index?.config.where).toBeDefined();
   });
 });

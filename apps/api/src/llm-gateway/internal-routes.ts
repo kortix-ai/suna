@@ -49,7 +49,7 @@ export function createInternalGatewayRoutes() {
   // Combined gate (auth + billing + budget) — lets the standalone gateway fold
   // three sequential RPCs into one on the chat-completions hot path.
   app.post('/authorize', async (c) => {
-    const { token } = await c.req.json();
+    const { token, requestId } = await c.req.json();
     if (typeof token !== 'string' || !token) {
       return c.json({
         ok: false,
@@ -58,7 +58,10 @@ export function createInternalGatewayRoutes() {
         message: 'Invalid token',
       });
     }
-    return c.json(await authorizeRequest(token));
+    if (typeof requestId !== 'string' || !requestId) {
+      return c.json({ error: 'requestId is required' }, 400);
+    }
+    return c.json(await authorizeRequest(token, requestId));
   });
 
   app.post('/resolve-upstream', async (c) => {

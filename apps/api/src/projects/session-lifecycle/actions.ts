@@ -25,6 +25,7 @@ import {
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { prepareInPlaceRestartMetadata } from './readiness-clocks';
+import { getProjectTaskWorkerBinding } from '../generated-state-store';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -155,6 +156,17 @@ export async function restartSession(input: {
   sessionId: string;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { loaded, session, projectId, sessionId } = input;
+  const workerBinding = await getProjectTaskWorkerBinding(db, sessionId);
+  if (workerBinding && workerBinding.status !== 'doing') {
+    return {
+      status: 409,
+      body: {
+        error: 'A terminal task worker cannot be restarted',
+        code: 'TASK_WORKER_CONFINED',
+        task_id: workerBinding.taskId,
+      },
+    };
+  }
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
     return {

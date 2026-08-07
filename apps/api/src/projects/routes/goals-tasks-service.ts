@@ -28,7 +28,8 @@ export function mapGeneratedStateError(
     code !== 'TASK_CLAIM_CONFLICT' &&
     code !== 'TASK_TRANSITION_CONFLICT' &&
     code !== 'TASK_LIVENESS_CONFLICT'
-  ) return null;
+  )
+    return null;
   return {
     status: 409,
     code: code.toLowerCase(),
@@ -93,12 +94,25 @@ export async function claimTaskForProject<T>(
 export async function completeTaskForProject<T>(
   dependencies: {
     sessionBelongsToProject: (projectId: string, sessionId: string) => Promise<boolean>;
+    loadTaskEvidence(input: { projectId: string; taskId: string }): Promise<{
+      livenessCoordinatorSessionId: string | null;
+      livenessWorkerSessionId: string | null;
+      lastProgressRef: string | null;
+    } | null>;
     transitionTask(input: {
       projectId: string;
       taskId: string;
       status: 'done';
       expectedClaimSessionId: string;
-      result: { evidence: TaskEvidence[] };
+      result: {
+        evidence: TaskEvidence[];
+        verifier?: {
+          coordinator_session_id: string;
+          worker_session_id: string;
+          progress_ref: string;
+          verified_at: string;
+        };
+      };
       now: Date;
     }): Promise<T | null>;
   },
@@ -127,13 +141,53 @@ export async function completeTaskForProject<T>(
   }
   assertSessionIdentity(input);
   await assertProjectSession(dependencies, input);
+  const evidenceState = await dependencies.loadTaskEvidence({
+    projectId: input.projectId,
+    taskId: input.taskId,
+  });
+  if (!evidenceState) {
+    throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+  }
+  const progressRef = evidenceState.lastProgressRef?.trim() ?? '';
+  const citesRecordedProgress = input.evidence.some(
+    (evidence) => evidence.ref.trim() === progressRef,
+  );
+  const workerSessionId = evidenceState.livenessWorkerSessionId;
+  const hasLivenessBinding =
+    workerSessionId !== null || evidenceState.livenessCoordinatorSessionId !== null;
+  if (
+    hasLivenessBinding &&
+    (evidenceState.livenessCoordinatorSessionId !== input.sessionId ||
+      !workerSessionId ||
+      workerSessionId === input.sessionId ||
+      !progressRef ||
+      !citesRecordedProgress)
+  ) {
+    throw new GoalsTasksServiceError(
+      400,
+      'verified_progress_required',
+      'a liveness-bound task requires evidence citing server-recorded progress from its distinct worker',
+    );
+  }
+  const verifier =
+    workerSessionId && hasLivenessBinding
+      ? {
+          coordinator_session_id: input.sessionId,
+          worker_session_id: workerSessionId,
+          progress_ref: progressRef,
+          verified_at: input.now.toISOString(),
+        }
+      : undefined;
   try {
     const task = await dependencies.transitionTask({
       projectId: input.projectId,
       taskId: input.taskId,
       status: 'done',
       expectedClaimSessionId: input.sessionId,
-      result: { evidence: input.evidence },
+      result: {
+        evidence: input.evidence,
+        ...(verifier ? { verifier } : {}),
+      },
       now: input.now,
     });
     if (!task) throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
@@ -212,13 +266,21 @@ export async function resolveObservationSessionId(
       );
     }
     if (!(await dependencies.sessionBelongsToProject(input.projectId, authenticated))) {
-      throw new GoalsTasksServiceError(400, 'session_not_in_project', 'authenticated session must belong to this project');
+      throw new GoalsTasksServiceError(
+        400,
+        'session_not_in_project',
+        'authenticated session must belong to this project',
+      );
     }
     return authenticated;
   }
   if (input.requestedSessionId == null) return null;
   if (!(await dependencies.sessionBelongsToProject(input.projectId, input.requestedSessionId))) {
-    throw new GoalsTasksServiceError(400, 'session_not_in_project', 'session_id must belong to this project');
+    throw new GoalsTasksServiceError(
+      400,
+      'session_not_in_project',
+      'session_id must belong to this project',
+    );
   }
   return input.requestedSessionId;
 }

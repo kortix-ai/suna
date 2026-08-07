@@ -1,5 +1,6 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+import { assertAgentScopeExact, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -816,6 +817,10 @@ projectsApp.openapi(
       ? null
       : resolved.auth?.token ?? null;
   }
+  // Project/session principals already carry a Kortix token for the scoped git
+  // proxy. Never return a provider write credential to them, including stale
+  // session tokens whose current agent grant is absent.
+  if (isProjectSessionPrincipal(c)) exportablePushToken = null;
   const writeUpstream = internalPushToken
     ? backend.buildUpstream(connRef, internalPushToken, 'write')
     : null;
@@ -1005,6 +1010,10 @@ projectsApp.openapi(
   // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
   // can withhold it, and the agent fold requires it in the token's grant.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+  // The CR-open alias is intentionally valid for CR orchestration. This raw
+  // provider-token export requires the literal push grant and denies meta even
+  // for stale unrestricted tokens.
+  assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);

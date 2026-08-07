@@ -336,7 +336,7 @@ Tasks are generated PostgreSQL state. They do not edit `kortix.yaml`.
 
 `tasks new --status` accepts `backlog`, `todo`, `doing`, `review`, or `cancelled`. It defaults to `backlog`. The meta agent creates ready work with `--status todo`.
 | `kortix tasks claim <id> --session <id> [--lease-seconds <30..86400>] [--json]` | Atomically claim ready work and set its status to `doing`. All dependencies must be `done`. The lease defaults to 900 seconds. |
-| `kortix tasks done <id> --session <id> --evidence <ref> [--summary <text>] [--json]` | Complete a claimed task with one cited evidence reference. |
+| `kortix tasks done <id> --session <id> --evidence <ref> [--summary <text>] [--json]` | Complete a claimed task with explicit evidence. A liveness-bound task must cite its server-recorded progress ref. |
 | `kortix tasks block <id> --session <id> --reason <text> [--json]` | Block a claimed task and record the blocker. |
 
 `ls` accepts `--goal <slug>`, one `--status <status>`, and `--limit <1..1000>`.

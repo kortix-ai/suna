@@ -363,11 +363,16 @@ is checked again after recording the response. The existing project-trigger
 scheduler leader sweeps all bounded active workers for wall, token, cost, and
 iteration exhaustion. No scheduler or workflow engine was added.
 
-Iteration admission is exact. Token and cost limits can overshoot by at most one
-provider request because the current request's actual usage is known only after
-the response. The post-usage finalizer catches that overshoot and blocks future
-dispatch. Sandbox compute cost can grow without an LLM request; the leader sweep
-loads the server compute ledger and finalizes it.
+A durable PostgreSQL admission fence permits one in-flight provider request per
+bounded worker. Every gateway completion and pre-dispatch error settles the
+matching request ID. A crashed gateway leaves a lease only until the immutable
+worker wall deadline; the recurring sweep then blocks the task and releases its
+sessions. Token and cost limits can still overshoot by the usage of that one
+admitted provider request because current-request usage is known only after the
+response. Concurrent requests cannot multiply the overshoot. Iteration admission
+remains exact because its counter increments with fence acquisition. Sandbox
+compute cost can grow without an LLM request; the leader sweep loads the server
+compute ledger and finalizes it.
 
 The `/worker` response reports only local API delivery state: `drained` means
 the immediate local drain succeeded, while `queued` means the durable outbox

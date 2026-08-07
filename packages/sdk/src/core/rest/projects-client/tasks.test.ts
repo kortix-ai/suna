@@ -140,3 +140,26 @@ test('worker registration, progress, and no-progress use separate durable contra
     },
   });
 });
+
+
+test('worker registration bounds max_iterations to the PostgreSQL integer contract', async () => {
+  const input = {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    prompt: 'Execute the bounded task.',
+    contract: {
+      max_wall_seconds: 900,
+      max_tokens: 50_000,
+      max_cost_usd: 2.5,
+      max_iterations: 2_147_483_647,
+    },
+  };
+  await registerProjectTaskWorker('project-1', 'task-1', input);
+  expect(last().body).toEqual(input);
+
+  await expect(registerProjectTaskWorker('project-1', 'task-1', {
+    ...input,
+    contract: { ...input.contract, max_iterations: 2_147_483_648 },
+  })).rejects.toThrow('max_iterations must be between 1 and 2147483647');
+  expect(calls).toHaveLength(1);
+});

@@ -57,8 +57,10 @@ with completion.
      after actual usage recording.
    - Use the existing singleton project-trigger scheduler to sweep wall,
      token, cost, iteration, and compute growth. Do not add a scheduler.
-   - Accept one-request token/cost overshoot because actual provider usage is
-     unavailable pre-dispatch. Block all later dispatch and finalize after usage.
+   - Fence each bounded worker to one durable in-flight gateway request. Settle
+     every completion/error by request ID. Expire a crashed request at the worker
+     wall deadline. Accept only that request's token/cost overshoot because actual
+     provider usage is unavailable pre-dispatch. Keep iteration admission exact.
    - Permit one idempotent no-progress continuation. Then atomically block,
      release, queue server-owned worker stop, and wake the coordinator through
      the lifecycle outbox.

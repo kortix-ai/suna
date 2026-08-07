@@ -864,6 +864,11 @@ export const projectTasks = kortixSchema.table(
     livenessStartedAt: timestamp('liveness_started_at', { withTimezone: true }),
     livenessDeadlineAt: timestamp('liveness_deadline_at', { withTimezone: true }),
     livenessIterationsAdmitted: integer('liveness_iterations_admitted').default(0).notNull(),
+    /** Durable single-request gateway fence. Cleared only by its matching request. */
+    livenessAdmissionId: text('liveness_admission_id'),
+    livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
+    /** Rotation cursor for starvation-free recurring bounded-worker sweeps. */
+    livenessLastSweptAt: timestamp('liveness_last_swept_at', { withTimezone: true }),
     noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
     continuationConsumedAt: timestamp('continuation_consumed_at', { withTimezone: true }),
     lastProgressAt: timestamp('last_progress_at', { withTimezone: true }),
@@ -896,6 +901,15 @@ export const projectTasks = kortixSchema.table(
     index('idx_project_tasks_liveness_deadline')
       .on(table.status, table.livenessDeadlineAt)
       .where(sql`${table.livenessWorkerSessionId} is not null`),
+    index('idx_project_tasks_liveness_sweep')
+      .on(table.status, table.livenessLastSweptAt, table.taskId)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_active_claim_session')
+      .on(table.claimSessionId)
+      .where(sql`${table.status} = 'doing' and ${table.claimSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_active_liveness_coordinator')
+      .on(table.livenessCoordinatorSessionId)
+      .where(sql`${table.status} = 'doing' and ${table.livenessCoordinatorSessionId} is not null`),
     uniqueIndex('idx_project_tasks_liveness_worker')
       .on(table.livenessWorkerSessionId)
       .where(sql`${table.livenessWorkerSessionId} is not null`),
@@ -932,6 +946,14 @@ export const projectTasks = kortixSchema.table(
       sql`num_nonnulls(${table.livenessWorkerSessionId}, ${table.livenessCoordinatorSessionId}, ${table.livenessWorkerContract}, ${table.livenessStartedAt}, ${table.livenessDeadlineAt}) in (0, 5)`,
     ),
     check(
+      'project_tasks_liveness_admission_complete',
+      sql`num_nonnulls(${table.livenessAdmissionId}, ${table.livenessAdmissionExpiresAt}) in (0, 2)`,
+    ),
+    check(
+      'project_tasks_liveness_admission_within_deadline',
+      sql`${table.livenessAdmissionExpiresAt} is null or ${table.livenessAdmissionExpiresAt} <= ${table.livenessDeadlineAt}`,
+    ),
+    check(
       'project_tasks_liveness_deadline_after_start',
       sql`${table.livenessDeadlineAt} is null or ${table.livenessDeadlineAt} > ${table.livenessStartedAt}`,
     ),
@@ -957,11 +979,64 @@ export const projectTasks = kortixSchema.table(
         and (${table.livenessWorkerContract}->>'max_tokens')::numeric > 0
         and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric > 0
         and (${table.livenessWorkerContract}->>'max_iterations')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric <= 2147483647
       )`,
     ),
     check(
       'project_tasks_last_no_progress_action_valid',
       sql`${table.lastNoProgressAction} is null or ${table.lastNoProgressAction} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
+  ],
+);
+
+/**
+ * Append-only ledger for every accepted no-progress settlement.
+ *
+ * The task snapshot and measured usage are the original API result. They let a
+ * retry of any earlier settlement return byte-equivalent state after the live
+ * task has advanced. Deleting the owning task cascades its settlement history.
+ */
+export const projectTaskNoProgressSettlements = kortixSchema.table(
+  'project_task_no_progress_settlements',
+  {
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    settlementId: text('settlement_id').notNull(),
+    claimSessionId: text('claim_session_id').notNull(),
+    workerSessionId: text('worker_session_id').notNull(),
+    action: text('action').notNull(),
+    commandId: uuid('command_id').notNull(),
+    taskSnapshot: jsonb('task_snapshot').$type<Record<string, unknown>>().notNull(),
+    measuredUsage: jsonb('measured_usage').$type<{
+      total_cost: number;
+      input_tokens: number;
+      output_tokens: number;
+      cached_tokens: number;
+      cache_write_tokens: number;
+      total_tokens: number;
+      request_count: number;
+    }>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.settlementId] }),
+    foreignKey({
+      name: 'project_task_no_progress_settlements_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_no_progress_settlements_project').on(table.projectId),
+    check(
+      'project_task_no_progress_settlements_id_nonempty',
+      sql`btrim(${table.settlementId}) <> ''`,
+    ),
+    check(
+      'project_task_no_progress_settlements_action_valid',
+      sql`${table.action} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
+    check(
+      'project_task_no_progress_settlements_snapshots_objects',
+      sql`jsonb_typeof(${table.taskSnapshot}) = 'object' and jsonb_typeof(${table.measuredUsage}) = 'object'`,
     ),
   ],
 );
@@ -2663,6 +2738,8 @@ export const usageEvents = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
     sessionId: text('session_id'),
+    /** Server-owned dedupe key. Gateway usage uses `llm-gateway:<requestId>`. */
+    idempotencyKey: text('idempotency_key'),
     /**
      * Kortix-as-a-Backend attribution: which of the wrapper's END-USERS this
      * spend belongs to. A server-derived COPY of project_sessions.origin_ref,
@@ -2697,6 +2774,9 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    uniqueIndex('idx_usage_events_account_idempotency')
+      .on(table.accountId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
     // Per-end-user metering: "spend for origin_ref X in a window", and the
     // group_by=origin_ref rollup. Partial — the vast majority of rows are
     // non-backend spend with a NULL origin_ref and never match this predicate.

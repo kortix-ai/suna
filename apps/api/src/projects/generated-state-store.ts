@@ -3,11 +3,13 @@ import {
   projectGoalObservations,
   projectSessions,
   projects,
+  projectTaskNoProgressSettlements,
   type projectTaskStatusEnum,
   projectTasks,
   sessionLifecycleCommands,
 } from '@kortix/db/schema';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { normalizeOpenCodeMessageId } from './session-lifecycle/opencode-message-id';
 
 export type ProjectTask = typeof projectTasks.$inferSelect;
 export type ProjectGoalObservation = typeof projectGoalObservations.$inferSelect;
@@ -165,55 +167,91 @@ export async function claimProjectTask(
   const claimExpiresAt = new Date(input.now.getTime() + input.leaseMs);
   assertValidDate(claimExpiresAt, 'claim expiry');
 
-  const [claimed] = await database
-    .update(projectTasks)
-    .set({
-      status: 'doing',
-      claimSessionId: input.sessionId,
-      claimedAt: input.now,
-      claimExpiresAt,
-      updatedAt: input.now,
-    })
-    .where(
-      and(
-        eq(projectTasks.projectId, input.projectId),
-        eq(projectTasks.taskId, input.taskId),
-        inArray(projectTasks.status, ['backlog', 'todo', 'doing']),
-        or(
-          isNull(projectTasks.claimSessionId),
-          and(
-            lte(projectTasks.claimExpiresAt, input.now),
-            sql`not (${projectTasks.status} = 'doing' and ${projectTasks.livenessWorkerSessionId} is not null)`,
-          ),
-        ),
-        sql`exists (
-          select 1
-          from ${projectSessions} as claimant_session
-          where claimant_session.session_id = ${input.sessionId}
-            and claimant_session.project_id = ${projectTasks.projectId}
-            and (
-              ${projectTasks.assigneeAgent} is null
-              or claimant_session.agent_name = ${projectTasks.assigneeAgent}
-            )
-            and (
-              ${projectTasks.assigneeUserId} is null
-              or claimant_session.created_by = ${projectTasks.assigneeUserId}
-            )
-        )`,
-        sql`not exists (
-          select 1
-          from unnest(${projectTasks.blockedBy}) as blocker(task_id)
-          left join ${projectTasks} as dependency
-            on dependency.project_id = ${projectTasks.projectId}
-           and dependency.task_id = blocker.task_id
-          where dependency.status is distinct from 'done'::kortix.project_task_status
-        )`,
-      ),
-    )
-    .returning();
+  try {
+    return await database.transaction(async (tx) => {
+      // The session row is the PostgreSQL mutex for coordinator ownership.
+      // It serializes claims on different task rows made by the same session.
+      await tx.execute(sql`select session_id from ${projectSessions}
+        where project_id = ${input.projectId} and session_id = ${input.sessionId}
+        for update`);
 
-  if (!claimed) throw new TaskClaimConflictError(input.projectId, input.taskId);
-  return claimed;
+      // An unbound expired claim no longer owns coordinator capacity. Clear it
+      // under the same session mutex before attempting the next claim.
+      await tx.update(projectTasks).set({
+        claimSessionId: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        updatedAt: input.now,
+      }).where(and(
+        eq(projectTasks.projectId, input.projectId),
+        eq(projectTasks.claimSessionId, input.sessionId),
+        lte(projectTasks.claimExpiresAt, input.now),
+        isNull(projectTasks.livenessWorkerSessionId),
+      ));
+
+      const [claimed] = await tx
+        .update(projectTasks)
+        .set({
+          status: 'doing',
+          claimSessionId: input.sessionId,
+          claimedAt: input.now,
+          claimExpiresAt,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(projectTasks.projectId, input.projectId),
+            eq(projectTasks.taskId, input.taskId),
+            inArray(projectTasks.status, ['backlog', 'todo', 'doing']),
+            or(
+              isNull(projectTasks.claimSessionId),
+              and(
+                lte(projectTasks.claimExpiresAt, input.now),
+                sql`not (${projectTasks.status} = 'doing' and ${projectTasks.livenessWorkerSessionId} is not null)`,
+              ),
+            ),
+            sql`not exists (
+              select 1 from ${projectTasks} as active_claim
+              where active_claim.project_id = ${projectTasks.projectId}
+                and active_claim.claim_session_id = ${input.sessionId}
+                and active_claim.status = 'doing'::kortix.project_task_status
+                and active_claim.task_id <> ${projectTasks.taskId}
+            )`,
+            sql`exists (
+              select 1
+              from ${projectSessions} as claimant_session
+              where claimant_session.session_id = ${input.sessionId}
+                and claimant_session.project_id = ${projectTasks.projectId}
+                and (
+                  ${projectTasks.assigneeAgent} is null
+                  or claimant_session.agent_name = ${projectTasks.assigneeAgent}
+                )
+                and (
+                  ${projectTasks.assigneeUserId} is null
+                  or claimant_session.created_by = ${projectTasks.assigneeUserId}
+                )
+            )`,
+            sql`not exists (
+              select 1
+              from unnest(${projectTasks.blockedBy}) as blocker(task_id)
+              left join ${projectTasks} as dependency
+                on dependency.project_id = ${projectTasks.projectId}
+               and dependency.task_id = blocker.task_id
+              where dependency.status is distinct from 'done'::kortix.project_task_status
+            )`,
+          ),
+        )
+        .returning();
+
+      if (!claimed) throw new TaskClaimConflictError(input.projectId, input.taskId);
+      return claimed;
+    });
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === '23505') {
+      throw new TaskClaimConflictError(input.projectId, input.taskId);
+    }
+    throw error;
+  }
 }
 
 export class TaskTransitionConflictError extends Error {
@@ -258,23 +296,50 @@ export async function transitionProjectTask(
   assertValidDate(input.now, 'now');
   const clearsClaim = input.status === 'done' || input.status === 'blocked';
 
-  const [transitioned] = await database
-    .update(projectTasks)
-    .set({
-      status: input.status,
-      ...(input.result === undefined ? {} : { result: input.result }),
-      ...(clearsClaim ? { claimSessionId: null, claimedAt: null, claimExpiresAt: null } : {}),
-      updatedAt: input.now,
-    })
-    .where(
-      and(
-        eq(projectTasks.projectId, input.projectId),
-        eq(projectTasks.taskId, input.taskId),
-        eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
-        gt(projectTasks.claimExpiresAt, input.now),
-      ),
-    )
-    .returning();
+  const transitioned = await database.transaction(async (tx) => {
+    const [row] = await tx
+      .update(projectTasks)
+      .set({
+        status: input.status,
+        ...(input.result === undefined ? {} : { result: input.result }),
+        ...(clearsClaim ? { claimSessionId: null, claimedAt: null, claimExpiresAt: null } : {}),
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(projectTasks.projectId, input.projectId),
+          eq(projectTasks.taskId, input.taskId),
+          eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
+          gt(projectTasks.claimExpiresAt, input.now),
+        ),
+      )
+      .returning();
+    if (!row || !clearsClaim || !row.livenessWorkerSessionId) return row;
+
+    const [project] = await tx
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, input.projectId))
+      .limit(1);
+    if (!project) throw new Error(`project ${input.projectId} disappeared during task transition`);
+    await tx
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'stop_session',
+        source: 'cli',
+        status: 'queued',
+        projectId: input.projectId,
+        accountId: project.accountId,
+        sessionId: row.livenessWorkerSessionId,
+        idempotencyKey: `task-stop:${row.taskId}:${row.livenessWorkerSessionId}`,
+        payload: { reason: 'task_terminal' },
+        result: {},
+        availableAt: input.now,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    return row;
+  });
   if (transitioned) return transitioned;
 
   const current = await getProjectTask(database, input);
@@ -340,7 +405,7 @@ export async function registerProjectTaskWorker(
   assertValidDate(input.now, 'now');
   const deadline = new Date(input.now.getTime() + input.contract.max_wall_seconds * 1_000);
   const idempotencyKey = `task-worker:${input.taskId}:${input.workerSessionId}`;
-  const messageId = `task-worker-${input.taskId}-${input.workerSessionId}`;
+  const messageId = normalizeOpenCodeMessageId(`task-worker-${input.taskId}-${input.workerSessionId}`);
 
   return database.transaction(async (tx) => {
     const [bound] = await tx
@@ -369,6 +434,7 @@ export async function registerProjectTaskWorker(
               and worker.session_id <> ${input.claimSessionId}
               and worker.metadata->>'spawned_by_session' = ${input.claimSessionId}
               and coalesce(worker.metadata->>'deletedAt', '') = ''
+              and worker.status in ('queued', 'branching', 'provisioning', 'running')
           )`,
         ),
       )
@@ -427,7 +493,10 @@ export async function registerProjectTaskWorker(
         .where(eq(sessionLifecycleCommands.commandId, command.commandId))
         .limit(1);
       const payload = (persisted?.payload ?? {}) as Record<string, unknown>;
-      if (payload.text !== input.prompt || payload.messageId !== messageId) {
+      const persistedMessageId = typeof payload.messageId === 'string'
+        ? normalizeOpenCodeMessageId(payload.messageId)
+        : payload.messageId;
+      if (payload.text !== input.prompt || persistedMessageId !== messageId) {
         throw new TaskLivenessConflictError(input.projectId, input.taskId, 'registered worker prompt is immutable');
       }
     }
@@ -462,6 +531,45 @@ export async function recordProjectTaskProgress(
   return task;
 }
 
+const PROJECT_TASK_DATE_KEYS = [
+  'claimedAt',
+  'claimExpiresAt',
+  'livenessStartedAt',
+  'livenessDeadlineAt',
+  'livenessAdmissionExpiresAt',
+  'livenessLastSweptAt',
+  'continuationConsumedAt',
+  'lastProgressAt',
+  'escalatedAt',
+  'createdAt',
+  'updatedAt',
+] as const;
+
+function serializeProjectTaskSnapshot(task: ProjectTask): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(task)) as Record<string, unknown>;
+}
+
+function hydrateProjectTaskSnapshot(snapshot: Record<string, unknown>): ProjectTask {
+  const task = { ...snapshot } as unknown as ProjectTask;
+  for (const key of PROJECT_TASK_DATE_KEYS) {
+    const value = snapshot[key];
+    (task as unknown as Record<string, unknown>)[key] =
+      typeof value === 'string' ? new Date(value) : null;
+  }
+  return task;
+}
+
+function settlementResultFromLedger(
+  settlement: typeof projectTaskNoProgressSettlements.$inferSelect,
+): ProjectTaskNoProgressResult {
+  return {
+    task: hydrateProjectTaskSnapshot(settlement.taskSnapshot),
+    action: settlement.action as ProjectTaskNoProgressResult['action'],
+    commandId: settlement.commandId,
+    measuredUsage: settlement.measuredUsage,
+  };
+}
+
 function exceededWorkerBounds(task: ProjectTask, usage: ProjectTaskMeasuredUsage, now: Date): string | null {
   const contract = task.livenessWorkerContract;
   if (!contract || !task.livenessDeadlineAt) return 'worker contract is unavailable';
@@ -470,6 +578,13 @@ function exceededWorkerBounds(task: ProjectTask, usage: ProjectTaskMeasuredUsage
   if (usage.total_cost >= contract.max_cost_usd) return 'max_cost_usd exceeded';
   if (task.livenessIterationsAdmitted >= contract.max_iterations) return 'max_iterations exceeded';
   return null;
+}
+
+export interface ProjectTaskNoProgressResult {
+  task: ProjectTask;
+  action: 'continuation_queued' | 'blocked_escalation_queued';
+  commandId: string;
+  measuredUsage: ProjectTaskMeasuredUsage;
 }
 
 /**
@@ -491,10 +606,36 @@ export async function settleProjectTaskNoProgress(
     measuredUsage: ProjectTaskMeasuredUsage;
     now: Date;
   },
-): Promise<{ task: ProjectTask; action: 'continuation_queued' | 'blocked_escalation_queued'; commandId: string }> {
+): Promise<ProjectTaskNoProgressResult> {
   return database.transaction(async (tx) => {
+    const loadSettlement = async () => (await tx.select()
+      .from(projectTaskNoProgressSettlements)
+      .where(and(
+        eq(projectTaskNoProgressSettlements.projectId, input.projectId),
+        eq(projectTaskNoProgressSettlements.taskId, input.taskId),
+        eq(projectTaskNoProgressSettlements.settlementId, input.settlementId),
+      ))
+      .limit(1))[0];
+    const replay = await loadSettlement();
+    if (replay) {
+      if (replay.claimSessionId !== input.claimSessionId || replay.workerSessionId !== input.workerSessionId) {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'settlement belongs to another worker binding');
+      }
+      return settlementResultFromLedger(replay);
+    }
+
     await tx.execute(sql`select task_id from ${projectTasks}
       where project_id = ${input.projectId} and task_id = ${input.taskId} for update`);
+    const concurrentReplay = await loadSettlement();
+    if (concurrentReplay) {
+      if (
+        concurrentReplay.claimSessionId !== input.claimSessionId ||
+        concurrentReplay.workerSessionId !== input.workerSessionId
+      ) {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'settlement belongs to another worker binding');
+      }
+      return settlementResultFromLedger(concurrentReplay);
+    }
     const task = (await tx.select().from(projectTasks).where(and(
       eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId),
     )).limit(1))[0];
@@ -504,13 +645,6 @@ export async function settleProjectTaskNoProgress(
       task.livenessWorkerSessionId !== input.workerSessionId
     ) {
       throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task has no matching worker binding');
-    }
-    if (task.lastNoProgressSettlementId === input.settlementId && task.lastNoProgressAction && task.lastNoProgressCommandId) {
-      return {
-        task,
-        action: task.lastNoProgressAction as 'continuation_queued' | 'blocked_escalation_queued',
-        commandId: task.lastNoProgressCommandId,
-      };
     }
     if (task.status !== 'doing' || task.claimSessionId !== input.claimSessionId ||
         task.livenessWorkerSessionId !== input.workerSessionId || !task.claimExpiresAt || task.claimExpiresAt <= input.now) {
@@ -531,7 +665,7 @@ export async function settleProjectTaskNoProgress(
       commandType: 'continue_session', source: 'cli', status: 'queued',
       projectId: input.projectId, accountId: input.accountId, actorUserId: input.actorUserId,
       sessionId: targetSessionId, idempotencyKey,
-      payload: { text, messageId: idempotencyKey }, result: {}, availableAt: input.now, updatedAt: input.now,
+      payload: { text, messageId: normalizeOpenCodeMessageId(idempotencyKey) }, result: {}, availableAt: input.now, updatedAt: input.now,
     }).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
       .returning({ commandId: sessionLifecycleCommands.commandId });
     const persistedCommand = command ?? (await tx.select({ commandId: sessionLifecycleCommands.commandId })
@@ -566,7 +700,20 @@ export async function settleProjectTaskNoProgress(
       updatedAt: input.now,
     }).where(and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId))).returning();
     if (!updated) throw new Error('locked task disappeared during liveness settlement');
-    return { task: updated, action, commandId: persistedCommand.commandId };
+    const [settlement] = await tx.insert(projectTaskNoProgressSettlements).values({
+      projectId: input.projectId,
+      taskId: input.taskId,
+      settlementId: input.settlementId,
+      claimSessionId: input.claimSessionId,
+      workerSessionId: input.workerSessionId,
+      action,
+      commandId: persistedCommand.commandId,
+      taskSnapshot: serializeProjectTaskSnapshot(updated),
+      measuredUsage: input.measuredUsage,
+      createdAt: input.now,
+    }).returning();
+    if (!settlement) throw new Error('liveness settlement ledger insert returned no row');
+    return settlementResultFromLedger(settlement);
   });
 }
 
@@ -579,46 +726,130 @@ export class TaskLivenessLimitExceededError extends Error {
   }
 }
 
+export type ProjectTaskWorkerAdmissionState = 'bound' | 'spawned_unbound' | 'not_worker';
+
+export class TaskLivenessWorkerUnboundError extends Error {
+  readonly code = 'TASK_LIVENESS_WORKER_UNBOUND' as const;
+  constructor(readonly workerSessionId: string) {
+    super(`spawned worker session ${workerSessionId} is not registered to a bounded task`);
+    this.name = 'TaskLivenessWorkerUnboundError';
+  }
+}
+
+/**
+ * Classify a session and its committed task binding in one PostgreSQL snapshot.
+ * A spawned child fails closed until registerProjectTaskWorker commits.
+ */
+export async function projectTaskWorkerAdmissionState(
+  database: Database,
+  workerSessionId: string,
+): Promise<ProjectTaskWorkerAdmissionState> {
+  const [row] = await database
+    .select({
+      metadata: projectSessions.metadata,
+      taskId: projectTasks.taskId,
+    })
+    .from(projectSessions)
+    .leftJoin(projectTasks, eq(projectTasks.livenessWorkerSessionId, projectSessions.sessionId))
+    .where(eq(projectSessions.sessionId, workerSessionId))
+    .limit(1);
+  if (!row) return 'not_worker';
+  if (row.taskId) return 'bound';
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  return metadata.task_liveness_binding_required === true
+    ? 'spawned_unbound'
+    : 'not_worker';
+}
+
+export interface ProjectTaskWorkerBinding {
+  taskId: string;
+  status: ProjectTaskStatus;
+}
+
+/** The worker identity remains bound after its task becomes terminal. */
+export async function getProjectTaskWorkerBinding(
+  database: Database,
+  workerSessionId: string,
+): Promise<ProjectTaskWorkerBinding | null> {
+  const [row] = await database
+    .select({ taskId: projectTasks.taskId, status: projectTasks.status })
+    .from(projectTasks)
+    .where(eq(projectTasks.livenessWorkerSessionId, workerSessionId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function projectTaskWorkerIsBound(
   database: Database,
   workerSessionId: string,
 ): Promise<boolean> {
-  const [row] = await database.select({ taskId: projectTasks.taskId }).from(projectTasks).where(and(
-    eq(projectTasks.livenessWorkerSessionId, workerSessionId),
-    eq(projectTasks.status, 'doing'),
-  )).limit(1);
-  return Boolean(row);
+  return Boolean(await getProjectTaskWorkerBinding(database, workerSessionId));
 }
 
-/** Atomically admit one gateway request against the persisted iteration cap. */
+export const TASK_LIVENESS_ADMISSION_LEASE_POLICY = 'worker_deadline' as const;
+
+export class TaskLivenessRequestInFlightError extends Error {
+  readonly code = 'TASK_LIVENESS_REQUEST_IN_FLIGHT' as const;
+  constructor(readonly taskId: string, readonly admissionExpiresAt: Date) {
+    super(`task ${taskId} already has an in-flight gateway request until ${admissionExpiresAt.toISOString()}`);
+    this.name = 'TaskLivenessRequestInFlightError';
+  }
+}
+
+/**
+ * Atomically acquire the durable request fence and increment iteration usage.
+ * The fence expires at the immutable worker wall deadline. A gateway crash can
+ * therefore delay the worker only until its bounded task must stop anyway.
+ */
 export async function admitProjectTaskWorkerIteration(
   database: Database,
-  input: { workerSessionId: string; usage: ProjectTaskMeasuredUsage; now: Date },
-): Promise<{ taskId: string; admitted: boolean } | null> {
+  input: {
+    workerSessionId: string;
+    requestId: string;
+    usage: ProjectTaskMeasuredUsage;
+    now: Date;
+  },
+): Promise<{ taskId: string; admitted: true; admissionId: string; admissionExpiresAt: Date } | null> {
   const [row] = await database.select({ task: projectTasks, accountId: projects.accountId })
     .from(projectTasks)
     .innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
-    .where(and(
-      eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
-      eq(projectTasks.status, 'doing'),
-    )).limit(1);
+    .where(eq(projectTasks.livenessWorkerSessionId, input.workerSessionId))
+    .limit(1);
   if (!row) return null;
   const active = row.task;
+  if (active.status !== 'doing') throw new TaskLivenessLimitExceededError(active.taskId);
   const contract = active.livenessWorkerContract;
-  if (!contract) throw new TaskLivenessLimitExceededError(active.taskId);
+  if (!contract || !active.livenessDeadlineAt) {
+    throw new TaskLivenessLimitExceededError(active.taskId);
+  }
+  const admissionExpiresAt = active.livenessDeadlineAt;
   const [admitted] = await database.update(projectTasks).set({
     livenessIterationsAdmitted: sql`${projectTasks.livenessIterationsAdmitted} + 1`,
+    livenessAdmissionId: input.requestId,
+    livenessAdmissionExpiresAt: admissionExpiresAt,
     updatedAt: input.now,
   }).where(and(
     eq(projectTasks.taskId, active.taskId),
     eq(projectTasks.status, 'doing'),
     gt(projectTasks.livenessDeadlineAt, input.now),
+    or(
+      isNull(projectTasks.livenessAdmissionId),
+      lte(projectTasks.livenessAdmissionExpiresAt, input.now),
+    ),
     sql`${projectTasks.livenessIterationsAdmitted} < (${projectTasks.livenessWorkerContract}->>'max_iterations')::integer`,
     sql`${input.usage.total_tokens} < (${projectTasks.livenessWorkerContract}->>'max_tokens')::numeric`,
     sql`${input.usage.total_cost} < (${projectTasks.livenessWorkerContract}->>'max_cost_usd')::numeric`,
   )).returning({ taskId: projectTasks.taskId });
   if (!admitted) {
     const fresh = await getProjectTask(database, { projectId: active.projectId, taskId: active.taskId });
+    if (
+      fresh?.status === 'doing' &&
+      fresh.livenessAdmissionId &&
+      fresh.livenessAdmissionExpiresAt &&
+      fresh.livenessAdmissionExpiresAt > input.now
+    ) {
+      throw new TaskLivenessRequestInFlightError(active.taskId, fresh.livenessAdmissionExpiresAt);
+    }
     if (fresh?.status === 'doing') {
       const reason = exceededWorkerBounds(fresh, input.usage, input.now) ?? 'worker admission bound exhausted';
       await finalizeTaskLiveness(database, fresh, {
@@ -630,14 +861,95 @@ export async function admitProjectTaskWorkerIteration(
     }
     throw new TaskLivenessLimitExceededError(active.taskId);
   }
-  return { taskId: admitted.taskId, admitted: true };
+  return {
+    taskId: admitted.taskId,
+    admitted: true,
+    admissionId: input.requestId,
+    admissionExpiresAt,
+  };
+}
+
+/** Fail closed when gateway accounting cannot durably settle this request. */
+export async function blockProjectTaskWorkerAdmission(
+  database: Database,
+  input: { workerSessionId: string; admissionId: string; reason: string; now: Date },
+): Promise<boolean> {
+  const [row] = await database.select({ task: projectTasks, accountId: projects.accountId })
+    .from(projectTasks)
+    .innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
+    .where(and(
+      eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+      eq(projectTasks.livenessAdmissionId, input.admissionId),
+      eq(projectTasks.status, 'doing'),
+    ))
+    .limit(1);
+  if (!row) return false;
+  return finalizeTaskLiveness(database, row.task, {
+    accountId: row.accountId,
+    reason: input.reason,
+    now: input.now,
+    expectedAdmissionId: input.admissionId,
+  });
+}
+
+/**
+ * Settle only the request that owns the durable fence. A late completion from
+ * an expired/replaced request cannot clear a newer request's fence.
+ */
+export async function settleProjectTaskWorkerAdmission(
+  database: Database,
+  input: {
+    workerSessionId: string;
+    admissionId: string;
+    usage: ProjectTaskMeasuredUsage;
+    now: Date;
+  },
+): Promise<boolean> {
+  const [row] = await database.select({ task: projectTasks, accountId: projects.accountId })
+    .from(projectTasks)
+    .innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
+    .where(and(
+      eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+      eq(projectTasks.livenessAdmissionId, input.admissionId),
+      eq(projectTasks.status, 'doing'),
+    ))
+    .limit(1);
+  if (!row) return false;
+
+  const reason = exceededWorkerBounds(row.task, input.usage, input.now);
+  if (reason) {
+    return finalizeTaskLiveness(database, row.task, {
+      accountId: row.accountId,
+      reason,
+      usage: input.usage,
+      now: input.now,
+      expectedAdmissionId: input.admissionId,
+    });
+  }
+
+  const [released] = await database.update(projectTasks).set({
+    livenessAdmissionId: null,
+    livenessAdmissionExpiresAt: null,
+    updatedAt: input.now,
+  }).where(and(
+    eq(projectTasks.taskId, row.task.taskId),
+    eq(projectTasks.status, 'doing'),
+    eq(projectTasks.livenessAdmissionId, input.admissionId),
+  )).returning({ taskId: projectTasks.taskId });
+  return Boolean(released);
 }
 
 
 async function finalizeTaskLiveness(
   database: Database,
   task: ProjectTask,
-  input: { accountId: string; reason: string; usage?: ProjectTaskMeasuredUsage; now: Date },
+  input: {
+    accountId: string;
+    reason: string;
+    usage?: ProjectTaskMeasuredUsage;
+    now: Date;
+    expectedAdmissionId?: string;
+  },
 ): Promise<boolean> {
   if (!task.livenessWorkerSessionId || !task.livenessCoordinatorSessionId) return false;
   return database.transaction(async (tx) => {
@@ -649,8 +961,16 @@ async function finalizeTaskLiveness(
       claimSessionId: null,
       claimedAt: null,
       claimExpiresAt: null,
+      livenessAdmissionId: null,
+      livenessAdmissionExpiresAt: null,
       updatedAt: input.now,
-    }).where(and(eq(projectTasks.taskId, task.taskId), eq(projectTasks.status, 'doing'))).returning();
+    }).where(and(
+      eq(projectTasks.taskId, task.taskId),
+      eq(projectTasks.status, 'doing'),
+      ...(input.expectedAdmissionId
+        ? [eq(projectTasks.livenessAdmissionId, input.expectedAdmissionId)]
+        : []),
+    )).returning();
     if (!blocked) return false;
     await tx.insert(sessionLifecycleCommands).values([
       {
@@ -667,7 +987,7 @@ async function finalizeTaskLiveness(
         idempotencyKey: `task-bound-escalate:${task.taskId}`,
         payload: {
           text: `Task ${task.taskId} is blocked: ${input.reason}. Escalate through the existing review, question, or channel path.`,
-          messageId: `task-bound-escalate:${task.taskId}`,
+          messageId: normalizeOpenCodeMessageId(`task-bound-escalate:${task.taskId}`),
         },
         result: {}, availableAt: input.now, updatedAt: input.now,
       },
@@ -701,22 +1021,54 @@ export async function sweepTaskLivenessBounds(
     .where(and(
       eq(projectTasks.status, 'doing'),
       sql`${projectTasks.livenessWorkerSessionId} is not null`,
-    )).limit(limit);
+    ))
+    // Overdue wall bounds always lead the batch. Other active workers rotate by
+    // their persisted last-swept cursor, so a recurring limited batch reaches
+    // every row even when earlier rows remain healthy or their ledger read fails.
+    .orderBy(
+      asc(sql`case when ${projectTasks.livenessDeadlineAt} <= ${now.toISOString()}::timestamptz then 0 else 1 end`),
+      asc(sql`coalesce(${projectTasks.livenessLastSweptAt}, ${projectTasks.livenessStartedAt})`),
+      asc(projectTasks.taskId),
+    )
+    .limit(limit);
   let finalized = 0;
   for (const row of rows) {
-    const workerSessionId = row.task.livenessWorkerSessionId!;
-    const usage = loadUsage ? await loadUsage({ accountId: row.accountId, sessionId: workerSessionId }) : undefined;
-    const reason = usage
-      ? exceededWorkerBounds(row.task, usage, now)
-      : row.task.livenessDeadlineAt && row.task.livenessDeadlineAt <= now
+    const workerSessionId = row.task.livenessWorkerSessionId;
+    // The SQL predicate excludes NULL. Keep the runtime guard because the
+    // database row type remains nullable and corrupted legacy rows must not abort the sweep.
+    if (!workerSessionId) continue;
+    try {
+      const wallReason = row.task.livenessDeadlineAt && row.task.livenessDeadlineAt <= now
         ? 'max_wall_seconds exceeded'
         : null;
-    if (reason && await finalizeTaskLiveness(database, row.task, {
-      accountId: row.accountId,
-      reason,
-      usage,
-      now,
-    })) finalized += 1;
+      const usage = !wallReason && loadUsage
+        ? await loadUsage({ accountId: row.accountId, sessionId: workerSessionId })
+        : undefined;
+      const reason = wallReason ?? (usage ? exceededWorkerBounds(row.task, usage, now) : null);
+      if (reason && await finalizeTaskLiveness(database, row.task, {
+        accountId: row.accountId,
+        reason,
+        usage,
+        now,
+      })) finalized += 1;
+    } catch (error) {
+      console.error('[task-liveness] sweep row failed:', {
+        taskId: row.task.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      try {
+        await database.update(projectTasks).set({ livenessLastSweptAt: now }).where(and(
+          eq(projectTasks.taskId, row.task.taskId),
+          eq(projectTasks.status, 'doing'),
+        ));
+      } catch (error) {
+        console.error('[task-liveness] sweep cursor update failed:', {
+          taskId: row.task.taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
   return finalized;
 }

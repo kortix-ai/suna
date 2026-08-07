@@ -28,6 +28,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
 import { drainSessionLifecycleQueue } from '../session-lifecycle/engine';
+import { WorkerContractSchema } from './goals-tasks-schemas';
 import {
   type GitGoalSpec,
   type LoadedGoals,
@@ -153,7 +154,7 @@ const TaskSchema = z
         max_wall_seconds: z.number().int().positive().max(MAX_TASK_LEASE_SECONDS),
         max_tokens: z.number().int().positive().safe(),
         max_cost_usd: z.number().positive().finite(),
-        max_iterations: z.number().int().positive().safe(),
+        max_iterations: z.number().int().positive().max(2_147_483_647),
       })
       .strict()
       .nullable(),
@@ -238,14 +239,6 @@ const BlockTaskBodySchema = z
   })
   .strict();
 
-const WorkerContractSchema = z
-  .object({
-    max_wall_seconds: z.number().int().positive().max(MAX_TASK_LEASE_SECONDS),
-    max_tokens: z.number().int().positive().safe(),
-    max_cost_usd: z.number().positive().finite(),
-    max_iterations: z.number().int().positive().safe(),
-  })
-  .strict();
 const RegisterWorkerBodySchema = z
   .object({
     session_id: z.string().trim().min(1).max(256),
@@ -891,6 +884,7 @@ projectsApp.openapi(
       const task = await completeTaskForProject(
         {
           sessionBelongsToProject,
+          loadTaskEvidence: (input) => getProjectTask(db, input),
           transitionTask: (input) => transitionProjectTask(db, input),
         },
         {
@@ -1108,7 +1102,7 @@ projectsApp.openapi(
       });
       return c.json({
         task: serializeTask(result.task), action: result.action,
-        command_id: result.commandId, measured_usage: measuredUsage,
+        command_id: result.commandId, measured_usage: result.measuredUsage,
       });
     } catch (error) {
       return serviceErrorResponse(c, error);

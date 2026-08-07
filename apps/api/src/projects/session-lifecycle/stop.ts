@@ -1,7 +1,7 @@
 import { config, type SandboxProviderName } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { isAlreadyNotRunning } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
@@ -33,12 +33,83 @@ export async function stopSession(input: {
     .limit(1);
 
   if (!sandbox) {
+    const [session] = await db
+      .select({ status: projectSessions.status })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+          eq(projectSessions.accountId, accountId),
+        ),
+      )
+      .limit(1);
+    if (session && ['queued', 'branching', 'provisioning'].includes(session.status)) {
+      await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectSessions.sessionId, sessionId),
+            eq(projectSessions.projectId, projectId),
+            eq(projectSessions.accountId, accountId),
+          ),
+        );
+      return {
+        status: 409,
+        body: {
+          error: 'Session is still provisioning',
+          status: 'provisioning',
+          retryable: true,
+        },
+      };
+    }
     return { status: 404, body: { error: 'Session sandbox not found' } };
   }
-  if (sandbox.status !== 'active') {
+  if (sandbox.status === 'archived') {
+    return { status: 404, body: { error: 'Session sandbox not found' } };
+  }
+  if (sandbox.status === 'stopped') {
     return {
       status: 409,
-      body: { error: 'Session is not running', status: sandbox.status },
+      body: { error: 'Session is not running', status: 'stopped' },
+    };
+  }
+  if (sandbox.status === 'error' && !sandbox.externalId) {
+    // Provisioning failed before a provider runtime existed. Reconcile the
+    // logical rows to the same stopped terminal state as a provider-confirmed
+    // stop; there is no external process left to stop.
+    const now = new Date();
+    await applyStoppedState({
+      sandboxId: sandbox.sandboxId,
+      sessionId,
+      externalId: null,
+      metadata: { stoppedAt: now.toISOString(), stoppedBy: userId, stopReason: 'manual' },
+      now,
+    });
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  }
+  if (sandbox.status === 'provisioning' && !sandbox.externalId) {
+    // Fence the logical session before returning. The provisioning controller
+    // checks this server-owned state before publishing its provider result. The
+    // durable stop command remains queued until the sandbox row becomes stopped.
+    await db
+      .update(projectSessions)
+      .set({ status: 'stopped', updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+          eq(projectSessions.accountId, accountId),
+        ),
+      );
+    return {
+      status: 409,
+      body: {
+        error: 'Session is still provisioning',
+        status: 'provisioning',
+        retryable: true,
+      },
     };
   }
   if (

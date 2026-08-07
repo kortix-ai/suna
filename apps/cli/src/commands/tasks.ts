@@ -166,10 +166,13 @@ function parseInteger(
   return value;
 }
 
-function requirePositiveInteger(raw: string | undefined, flag: string): number {
+function requirePositiveInteger(raw: string | undefined, flag: string, max?: number): number {
   const value = parseInteger(raw, flag);
   if (value === undefined || value <= 0) {
     throw new Error(`${flag} must be a positive integer`);
+  }
+  if (max !== undefined && value > max) {
+    throw new Error(`${flag} must be between 1 and ${max}`);
   }
   return value;
 }
@@ -447,7 +450,11 @@ export async function runTasks(
         const maxWallSeconds = requirePositiveInteger(takeNumericFlag(rest, "--max-wall-seconds"), "--max-wall-seconds");
         const maxTokens = requirePositiveInteger(takeNumericFlag(rest, "--max-tokens"), "--max-tokens");
         const maxCostUsd = requirePositiveNumber(takeNumericFlag(rest, "--max-cost-usd"), "--max-cost-usd");
-        const maxIterations = requirePositiveInteger(takeNumericFlag(rest, "--max-iterations"), "--max-iterations");
+        const maxIterations = requirePositiveInteger(
+          takeNumericFlag(rest, "--max-iterations"),
+          "--max-iterations",
+          2_147_483_647,
+        );
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;

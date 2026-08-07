@@ -24,6 +24,7 @@ const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
+const META_SESSION_PAT = 'kortix_pat_meta_session';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
@@ -191,6 +192,23 @@ mock.module('../middleware/auth', () => ({
       c.set('accountId', ACCOUNT_ID);
       c.set('tokenProjectId', PROJECT_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${META_SESSION_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
+      c.set('agentGrant', {
+        agent: 'meta',
+        connectors: 'all',
+        kortixCli: 'all',
+        env: 'all',
+      });
       await next();
       return;
     }
@@ -989,7 +1007,7 @@ describe('project session API contract', () => {
     };
   }
 
-  test('ignores forged goal-trigger metadata when the meta feature flag is off', async () => {
+  test('rejects forged server-owned goal provenance before session persistence', async () => {
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1007,11 +1025,9 @@ describe('project session API contract', () => {
       }),
     });
 
-    expect(response.status).toBe(201);
-    const created = await response.json();
-    expect(created.metadata?.sandbox_slug).not.toBe('meta');
-    await flushUntil(() => sandboxProvisionCalls === 1);
-    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_META_AGENT');
+    expect(response.status).toBe(400);
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('creates an omitted-agent session with the meta REST runtime', async () => {
@@ -1065,6 +1081,56 @@ describe('project session API contract', () => {
     expect(created.agent_name).toBe('kortix');
     expect(created.metadata?.sandbox_slug).not.toBe('meta');
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.metadata?.task_liveness_binding_required).toBe(true);
+  });
+
+  test('a non-meta session caller may still create a prompted child', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'kortix',
+        initial_prompt: 'Handle this delegated task',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata).toMatchObject({
+      spawned_by_session: SESSION_ID,
+      initial_prompt: 'Handle this delegated task',
+    });
+    expect(created.metadata.task_liveness_binding_required).toBeUndefined();
+  });
+
+  test('a session-scoped coordinator cannot deliver an initial prompt before worker binding', async () => {
+    enableMetaAgent();
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'kortix',
+        initial_prompt: 'Run before task registration',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'SPAWN_INITIAL_PROMPT_FORBIDDEN' });
+    expect(lastSessionInsertValues).toBeNull();
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('a meta session cannot spawn another meta coordinator', async () => {
@@ -1338,6 +1404,22 @@ describe('project session API contract', () => {
         type: 'basic',
       },
     });
+
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    for (const token of [PROJECT_SANDBOX_TOKEN, META_SESSION_PAT]) {
+      const metaCloneRes = await app.request(
+        `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      expect(metaCloneRes.status).toBe(200);
+      const metaCredential = await metaCloneRes.json();
+      expect(metaCredential).toMatchObject({
+        repo_url: `https://api.test.kortix.local/v1/git/${PROJECT_ID}.git`,
+        source: 'kortix_git_proxy',
+        auth: { username: 'x-access-token', token, type: 'basic' },
+      });
+      expect(JSON.stringify(metaCredential)).not.toContain('gitlab-project-token');
+    }
   });
 
   test('derives session origin from the caller token without session attribution fields', async () => {

@@ -673,6 +673,15 @@ describe("tasks command", () => {
         "--max-tokens must be a positive integer",
       ],
       [
+        [
+          "worker", TASK.task_id, "--session", "coordinator-session",
+          "--worker-session", "worker-session", "--prompt", "work",
+          "--max-wall-seconds", "900", "--max-tokens", "50000",
+          "--max-cost-usd", "2.5", "--max-iterations", "2147483648",
+        ],
+        "--max-iterations must be between 1 and 2147483647",
+      ],
+      [
         ["done", TASK.task_id, "--session", "session_1"],
         "--evidence is required",
       ],

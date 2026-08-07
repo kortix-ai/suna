@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let accountTier = 'per_seat';
 let billingCalls = 0;
 let livenessBound = false;
+let spawnedUnbound = false;
 let livenessReject = false;
 let usageLoadCalls = 0;
 let admissionCalls = 0;
 let livenessUnexpected = false;
 let finalizerThrow = false;
+let usageEventThrow = false;
+let settledAdmissions: Array<{ workerSessionId: string; admissionId: string }> = [];
+let blockedAdmissions: Array<{ workerSessionId: string; admissionId: string; reason: string }> = [];
+let requestAwareUsageInputs: unknown[] = [];
 let creditGrantCalls = 0;
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
@@ -90,35 +95,60 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-mock.module('../shared/usage-events', () => ({ recordUsageEvent: async () => 'usage-event-1' }));
+mock.module('../shared/usage-events', () => ({
+  recordUsageEvent: async () => {
+    if (usageEventThrow) throw new Error('usage ledger unavailable');
+    return 'usage-event-1';
+  },
+}));
 mock.module('../billing/services/credits', () => ({
   deductForLlmUsage: async () => {},
   grantCredits: async () => { creditGrantCalls += 1; },
 }));
 
 mock.module('../shared/db', () => ({ db: {} }));
+const zeroUsage = () => ({
+  total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
+  cache_write_tokens: 0, total_tokens: 0, request_count: 0,
+});
+const loadMockUsage = async () => {
+  usageLoadCalls += 1;
+  return zeroUsage();
+};
 mock.module('../shared/session-costs', () => ({
-  getSessionResourceUsage: async () => {
+  getSessionResourceUsage: loadMockUsage,
+  getSessionResourceUsageIncludingCurrentRequest: async (input: unknown) => {
     usageLoadCalls += 1;
-    return {
-      total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
-      cache_write_tokens: 0, total_tokens: 0, request_count: 0,
-    };
+    requestAwareUsageInputs.push(input);
+    return zeroUsage();
   },
 }));
 class MockTaskLivenessLimitExceededError extends Error {}
+class MockTaskLivenessRequestInFlightError extends Error {}
+class MockTaskLivenessWorkerUnboundError extends Error {}
 mock.module('../projects/generated-state-store', () => ({
   TaskLivenessLimitExceededError: MockTaskLivenessLimitExceededError,
-  projectTaskWorkerIsBound: async () => livenessBound,
-  admitProjectTaskWorkerIteration: async () => {
+  TaskLivenessRequestInFlightError: MockTaskLivenessRequestInFlightError,
+  TaskLivenessWorkerUnboundError: MockTaskLivenessWorkerUnboundError,
+  projectTaskWorkerAdmissionState: async () =>
+    spawnedUnbound ? 'spawned_unbound' : livenessBound ? 'bound' : 'not_worker',
+  admitProjectTaskWorkerIteration: async (_db: unknown, input: { requestId: string }) => {
     admissionCalls += 1;
     if (livenessUnexpected) throw new Error('database unavailable');
     if (livenessReject) throw new MockTaskLivenessLimitExceededError('exhausted');
-    return { taskId: 'task-1', admitted: true };
+    return { taskId: 'task-1', admitted: true, admissionId: input.requestId };
   },
-  finalizeProjectTaskLivenessIfExceeded: async () => {
+  blockProjectTaskWorkerAdmission: async (
+    _db: unknown,
+    input: { workerSessionId: string; admissionId: string; reason: string },
+  ) => {
+    blockedAdmissions.push(input);
+    return true;
+  },
+  settleProjectTaskWorkerAdmission: async (_db: unknown, input: { workerSessionId: string; admissionId: string }) => {
     if (finalizerThrow) throw new Error('finalizer unavailable');
-    return false;
+    settledAdmissions.push(input);
+    return { settled: true };
   },
 }));
 
@@ -131,11 +161,16 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     billingCalls = 0;
     billingThrow = null;
     livenessBound = false;
+    spawnedUnbound = false;
     livenessReject = false;
     usageLoadCalls = 0;
     admissionCalls = 0;
     livenessUnexpected = false;
     finalizerThrow = false;
+    usageEventThrow = false;
+    settledAdmissions = [];
+    blockedAdmissions = [];
+    requestAwareUsageInputs = [];
     creditGrantCalls = 0;
   });
 
@@ -208,11 +243,16 @@ describe('authorizeRequest — task worker liveness admission', () => {
     accountTier = 'per_seat';
     billingThrow = null;
     livenessBound = false;
+    spawnedUnbound = false;
     livenessReject = false;
     usageLoadCalls = 0;
     admissionCalls = 0;
     livenessUnexpected = false;
     finalizerThrow = false;
+    usageEventThrow = false;
+    settledAdmissions = [];
+    blockedAdmissions = [];
+    requestAwareUsageInputs = [];
     creditGrantCalls = 0;
   });
 
@@ -223,10 +263,23 @@ describe('authorizeRequest — task worker liveness admission', () => {
     expect(admissionCalls).toBe(0);
   });
 
+  test('a spawned child fails closed until its task binding commits', async () => {
+    spawnedUnbound = true;
+    const result = await authorizeRequest('worker', 'req-unbound');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(409);
+      expect(result.errorCode).toBe('task_liveness_worker_unbound');
+    }
+    expect(usageLoadCalls).toBe(0);
+    expect(admissionCalls).toBe(0);
+  });
+
   test('a bounded worker is admitted through the atomic iteration CAS', async () => {
     livenessBound = true;
-    const result = await authorizeRequest('worker');
+    const result = await authorizeRequest('worker', 'req-test');
     expect(result.ok).toBe(true);
+    if (result.ok) expect(result.principal.livenessAdmissionId).toBe('req-test');
     expect(usageLoadCalls).toBe(1);
     expect(admissionCalls).toBe(1);
   });
@@ -243,16 +296,19 @@ describe('authorizeRequest — task worker liveness admission', () => {
 
 describe('gateway liveness parity and billing safety', () => {
   beforeEach(() => {
-    accountTier = 'per_seat'; billingThrow = null; livenessBound = true;
+    accountTier = 'per_seat'; billingThrow = null; livenessBound = true; spawnedUnbound = false;
     livenessReject = false; livenessUnexpected = false; finalizerThrow = false;
+    usageEventThrow = false; settledAdmissions = []; blockedAdmissions = [];
+    requestAwareUsageInputs = [];
     usageLoadCalls = 0; admissionCalls = 0; creditGrantCalls = 0;
   });
 
   test('the in-process budget hook performs the same worker admission CAS', async () => {
     const hooks = createInProcessGatewayHooks();
-    await hooks.assertBudget!({
+    const admission = await hooks.assertBudget!({
       accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
-    });
+    }, 'req-in-process');
+    expect(admission).toEqual({ livenessAdmissionId: 'req-in-process' });
     expect(admissionCalls).toBe(1);
   });
 
@@ -266,11 +322,58 @@ describe('gateway liveness parity and billing safety', () => {
     }
   });
 
+  test('usage settlement releases the matching durable liveness admission', async () => {
+    await recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
+      provider: '', model: 'unknown', requestId: 'req-release', livenessAdmissionId: 'req-release', streaming: false,
+      promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0, finalCost: 0, billingMode: 'none',
+    });
+    expect(settledAdmissions).toHaveLength(1);
+    expect(settledAdmissions[0]).toMatchObject({ workerSessionId: 'worker-session', admissionId: 'req-release' });
+    expect(requestAwareUsageInputs).toHaveLength(1);
+    expect(requestAwareUsageInputs[0]).toMatchObject({
+      current: { requestId: 'req-release', requestCount: 0 },
+    });
+  });
+
+  test('a bound worker blocks durably when its synchronous usage ledger write fails', async () => {
+    usageEventThrow = true;
+    await expect(recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
+      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-ledger-fail',
+      livenessAdmissionId: 'req-ledger-fail', streaming: false,
+      promptTokens: 10, completionTokens: 5, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0.002, finalCost: 0.003, billingMode: 'none',
+    })).rejects.toThrow('usage ledger unavailable');
+
+    expect(settledAdmissions).toHaveLength(0);
+    expect(requestAwareUsageInputs).toHaveLength(0);
+    expect(blockedAdmissions).toHaveLength(1);
+    expect(blockedAdmissions[0]).toMatchObject({
+      workerSessionId: 'worker-session',
+      admissionId: 'req-ledger-fail',
+      reason: 'accounting unavailable: usage ledger write failed',
+    });
+  });
+
+  test('a non-bound usage ledger failure keeps the existing error and creates no task block', async () => {
+    usageEventThrow = true;
+    await expect(recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1',
+      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-non-bound', streaming: false,
+      promptTokens: 1, completionTokens: 1, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0.001, finalCost: 0.001, billingMode: 'none',
+    })).rejects.toThrow('usage ledger unavailable');
+    expect(blockedAdmissions).toHaveLength(0);
+    expect(settledAdmissions).toHaveLength(0);
+  });
+
   test('a finalizer failure cannot skip billing-hold reconciliation', async () => {
     finalizerThrow = true;
     await recordGatewayUsage({
       accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
-      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-1', streaming: false,
+      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-1', livenessAdmissionId: 'req-1', streaming: false,
       promptTokens: 1, completionTokens: 1, cachedTokens: 0, cacheWriteTokens: 0,
       upstreamCost: 0.001, finalCost: 0.001, billingMode: 'credits', billingHoldUsd: 0.01,
     });

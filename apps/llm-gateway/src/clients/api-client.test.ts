@@ -156,12 +156,15 @@ describe('ApiClient', () => {
 
   test('authorize returns the combined gate result (ok)', async () => {
     let seenPath: string | undefined;
-    const c = client(async (url) => {
+    let seenBody: unknown;
+    const c = client(async (url, init) => {
       seenPath = new URL(url).pathname;
+      seenBody = JSON.parse(String(init?.body));
       return jsonResponse({ ok: true, principal });
     });
-    const result = await c.authorize('tok');
+    const result = await c.authorize('tok', 'req_test');
     expect(seenPath).toBe('/internal/gateway/authorize');
+    expect(seenBody).toEqual({ token: 'tok', requestId: 'req_test' });
     expect(result).toEqual({ ok: true, principal });
   });
 
@@ -169,7 +172,7 @@ describe('ApiClient', () => {
     const c = client(async () =>
       jsonResponse({ ok: false, status: 402, errorCode: 'budget_exceeded', message: 'exhausted' }),
     );
-    const result = await c.authorize('tok');
+    const result = await c.authorize('tok', 'req_denied');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(402);

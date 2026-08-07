@@ -560,13 +560,22 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // repairLegacyLifecycleMessageIds() targets only continue_session
+              // rows in PostgreSQL. This in-memory mock cannot evaluate the
+              // Drizzle WHERE AST, so it must not apply that payload rewrite to
+              // a queued create_session command.
+              if (!Object.prototype.hasOwnProperty.call(setValues, 'payload')) {
+                lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              }
               return lifecycleCommandRows;
             }
             return [];
           },
           then: (resolve: (rows: any[]) => unknown) => {
-            if (table === sessionLifecycleCommands) {
+            if (
+              table === sessionLifecycleCommands &&
+              !Object.prototype.hasOwnProperty.call(setValues, 'payload')
+            ) {
               lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
             }
             return resolve([]);

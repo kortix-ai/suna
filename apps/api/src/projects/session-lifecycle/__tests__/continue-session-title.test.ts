@@ -44,6 +44,9 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
   forwardToSandbox: async () => {
     throw new Error('forwardToSandbox: not expected in this test');
   },
+  preview: async () => {
+    throw new Error('preview: not expected in this test');
+  },
 }));
 mock.module('../../lib/sessions', () => ({
   createProjectSession: async () => {
@@ -61,7 +64,16 @@ mock.module('../actor', () => ({
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+mock.module('../stop', () => ({
+  stopSession: async () => {
+    throw new Error('not expected in this test');
+  },
+}));
 mock.module('../store', () => ({
+  LIFECYCLE_COMMAND_HEARTBEAT_MS: 60_000,
+  lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
+  renewLifecycleCommandLease: async () => true,
+  repairLegacyLifecycleMessageIds: async () => 0,
   claimCreateSessionCommand: async () => {
     throw new Error('not expected in this test');
   },
