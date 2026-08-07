@@ -74,7 +74,7 @@ export interface RunProjectArchiveClient {
  * hazard for sibling suites (see ensure-first-project.provision.test.ts /
  * use-create-workspace.test.ts, which use this same injected-client shape).
  *
- * Ported verbatim from the deleted `/projects` list page's archive handler
+ * Ported from the deleted `/projects` list page's archive handler
  * (`app/(app)/projects/page.tsx`, pre-Task-21): "Archiving the LAST project
  * must leave the account empty. Without this the auto-provision door would
  * see zero active projects and immediately recreate one, undoing the delete
@@ -86,17 +86,43 @@ export interface RunProjectArchiveClient {
  *
  * `onSuppress` only runs after `client.archiveProject` resolves — a failed
  * archive must not suppress auto-provision for a project that still exists.
+ *
+ * `remainingProjectCountBeforeArchive` is `number | null`, NOT the deleted
+ * page's plain number: that page's count and its Archive button read the
+ * SAME query, so the button could not render before the count existed. Here
+ * the count is a separate, dependent query (`accountProjectsQuery`) that can
+ * still be loading or errored when Archive is clicked. `null` means "count
+ * unknown" and deliberately does NOT suppress — failing closed, because the
+ * cost of skipping a suppression is one unwanted auto-create, while the cost
+ * of a FALSE suppression (from an unrelated `?? 0`) is `/projects/start`
+ * refusing to auto-create for the next empty account this tab visits, with
+ * nothing left to clear the flag until this same terminal screen is reached
+ * again for an account where it actually applies.
  */
 export async function runProjectArchive(
   projectId: string,
-  remainingProjectCountBeforeArchive: number,
+  remainingProjectCountBeforeArchive: number | null,
   client: RunProjectArchiveClient,
   onSuppress: () => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
-  if (remainingProjectCountBeforeArchive <= 1) {
+  if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
     onSuppress();
   }
+}
+
+/**
+ * `accountProjectsQuery.data` -> the count `runProjectArchive` needs, kept as
+ * its own exported step so the exact mapping is pinned independently of
+ * TanStack Query. The bug this guards against lived in a bare
+ * `accountProjectsQuery.data?.length ?? 0` at the call site: `undefined`
+ * (still loading, OR the query errored — react-query leaves `data`
+ * `undefined` in both) silently became `0`, which reads as "zero projects
+ * remain" and fires a false suppression. `undefined` must map to `null`
+ * ("unknown"), never to `0` ("confirmed empty").
+ */
+export function accountProjectCountForArchive(data: unknown[] | undefined): number | null {
+  return data ? data.length : null;
 }
 
 export function SettingsView({ projectId }: { projectId: string }) {
@@ -137,7 +163,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
     mutationFn: () =>
       runProjectArchive(
         projectId,
-        accountProjectsQuery.data?.length ?? 0,
+        accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
         suppressAutoProjectAfterDelete,
       ),

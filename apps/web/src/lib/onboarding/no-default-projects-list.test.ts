@@ -32,10 +32,6 @@ const NAV_PATTERNS = [
 
 const ALLOWED = new Map<string, string>([
   [
-    'app/(app)/projects/start/page.tsx',
-    'Terminal case only: no project exists AND none may be created (member without PROJECT_CREATE, or the account the user just emptied). The list is the surface that explains that state.',
-  ],
-  [
     'features/layout/user-menu.tsx',
     'Explicit "Projects" menu item — the user asking for the list by name.',
   ],

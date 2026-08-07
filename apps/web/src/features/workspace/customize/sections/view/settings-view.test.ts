@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { runProjectArchive, type RunProjectArchiveClient } from './settings-view';
+import {
+  accountProjectCountForArchive,
+  runProjectArchive,
+  type RunProjectArchiveClient,
+} from './settings-view';
 
 /**
  * `runProjectArchive` is the archive mutation's real side effects, extracted
@@ -46,6 +50,38 @@ describe('runProjectArchive', () => {
       suppressCalls += 1;
     });
     expect(suppressCalls).toBe(0);
+  });
+
+  test('does NOT suppress when the count is unknown (null) — fails closed', async () => {
+    // The count comes from a DEPENDENT query (accountProjectsQuery) that can
+    // still be loading, or can have errored, when Archive is clicked — unlike
+    // the deleted list page, whose count and Archive button read the same
+    // query. `null` means "don't know", and the safe direction is to NOT
+    // suppress: one unwanted auto-create costs far less than a false
+    // suppression, which blocks auto-create for the next empty account this
+    // tab visits with nothing left to clear it.
+    let suppressCalls = 0;
+    await runProjectArchive('p1', null, client(), () => {
+      suppressCalls += 1;
+    });
+    expect(suppressCalls).toBe(0);
+  });
+
+  test('null and 0 are NOT the same input — only 0 suppresses', async () => {
+    // Pins the exact bug this guards against: the component used to read
+    // `accountProjectsQuery.data?.length ?? 0`, which silently turned
+    // "not loaded yet" into "zero projects remain" and suppressed by
+    // accident. This proves the two inputs now take different branches.
+    const results: Record<string, number> = {};
+    for (const count of [null, 0] as const) {
+      let suppressCalls = 0;
+      await runProjectArchive('p1', count, client(), () => {
+        suppressCalls += 1;
+      });
+      results[String(count)] = suppressCalls;
+    }
+    expect(results.null).toBe(0);
+    expect(results['0']).toBe(1);
   });
 
   test('does NOT suppress when the archive call itself fails', async () => {
@@ -96,5 +132,34 @@ describe('runProjectArchive', () => {
       () => events.push('suppressed'),
     );
     expect(events).toEqual(['archived', 'suppressed']);
+  });
+});
+
+/**
+ * `accountProjectCountForArchive` is the exact expression the component
+ * passes to `runProjectArchive` (`SettingsView`'s `archiveMutation`), pulled
+ * out so the real `accountProjectsQuery.data` -> count wiring is under test,
+ * not just `runProjectArchive` called with an explicitly-chosen count. This
+ * is the fix for the false-positive-suppression bug: the old inline
+ * `accountProjectsQuery.data?.length ?? 0` could not distinguish "still
+ * loading" / "errored" from "confirmed zero projects".
+ */
+describe('accountProjectCountForArchive', () => {
+  test('undefined data (loading OR errored — react-query leaves both undefined) maps to null, not 0', () => {
+    expect(accountProjectCountForArchive(undefined)).toBeNull();
+  });
+
+  test('a loaded list of one project maps to 1', () => {
+    expect(accountProjectCountForArchive([{ project_id: 'p1' }])).toBe(1);
+  });
+
+  test('a genuinely empty loaded list maps to 0, not null', () => {
+    // Zero-length is a real, confirmed answer — distinct from "unknown" even
+    // though `[]` is falsy-adjacent territory for naive checks.
+    expect(accountProjectCountForArchive([])).toBe(0);
+  });
+
+  test('several loaded projects maps to their count', () => {
+    expect(accountProjectCountForArchive([{ p: 1 }, { p: 2 }, { p: 3 }])).toBe(3);
   });
 });
