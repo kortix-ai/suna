@@ -16,7 +16,7 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { sql, eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { projects, connectors, connectionCredentials } from '@kortix/db';
+import { connectors, connectionCredentials } from '@kortix/db';
 
 const CONN_SHARED_ALREADY = 'bbbbbbbb-1111-4000-8000-000000000001';
 const CONN_PER_USER_WITH_SHARED = 'bbbbbbbb-1111-4000-8000-000000000002';

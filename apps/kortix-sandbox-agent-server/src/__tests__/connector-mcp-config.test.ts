@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildConnectorMcpConfigContent, buildOpencodeConfigContent } from '../opencode'
+import { buildOpencodeConfigContent } from '../opencode'
 
 const ENV = { KORTIX_CLI_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
