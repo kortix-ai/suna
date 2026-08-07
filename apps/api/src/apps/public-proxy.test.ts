@@ -95,6 +95,37 @@ describe('Apps public edge', () => {
     expect(revoked?.status).toBe(401);
   });
 
+  test('exchanges local access links into an iframe-compatible partitioned cookie', async () => {
+    const app = {
+      appId: '11111111-1111-4111-8111-111111111111',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      createdBy: '33333333-3333-4333-8333-333333333333',
+      name: 'Local private App',
+      accessMode: 'private',
+      accessPasswordHash: null,
+      accessRevision: 4,
+    };
+    const token = createAppAccessToken({
+      appId: app.appId,
+      kind: 'kortix',
+      userId: app.createdBy,
+      revision: app.accessRevision,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const url = new URL(`http://aaaaaaaaaaaaaaaa.apps.localhost:8008/?__kortix_access=${token}`);
+    const response = await authorizeAppRequest(
+      new Request(url),
+      url,
+      app,
+      async () => true,
+    );
+
+    expect(response?.status).toBe(303);
+    expect(response?.headers.get('set-cookie')).toStartWith('kortix_app_access=');
+    expect(response?.headers.get('set-cookie')).toContain('; Secure;');
+    expect(response?.headers.get('set-cookie')).toContain('; SameSite=None; Partitioned');
+  });
+
   test('preserves the requested deep path through the password form', async () => {
     const request = new Request(
       'https://dev-password-aaaaaaaaaaaaaaaa.apps.kortix.com/reports/weekly?team=core',
@@ -338,6 +369,39 @@ describe('Apps public edge', () => {
     expect(html).toContain('<title>Building Storefront</title>');
     expect(html).toContain('Building your App');
     expect(html).toContain('http-equiv="refresh" content="3"');
+  });
+
+  test('renders every lifecycle state without stale unavailable copy', async () => {
+    const cases = [
+      ['waiting', 'Waiting for first deployment', 202, true],
+      ['queued', 'Deployment queued', 202, true],
+      ['validating', 'Validating your App', 202, true],
+      ['building', 'Building your App', 202, true],
+      ['provisioning', 'Provisioning your App', 202, true],
+      ['checking', 'Checking readiness', 202, true],
+      ['ready', 'Activating your App', 202, true],
+      ['starting', 'Starting Storefront', 202, true],
+      ['budget', 'App paused', 402, false],
+      ['failed', 'Deployment failed', 503, false],
+      ['cancelled', 'Deployment cancelled', 503, false],
+    ] as const;
+
+    for (const [status, heading, httpStatus, refreshes] of cases) {
+      const response = appPublicStatusResponse(
+        new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
+          headers: { accept: 'text/html' },
+        }),
+        { name: 'Storefront' },
+        { status },
+      );
+      expect(response.status).toBe(httpStatus);
+      const html = await response.text();
+      expect(html).toContain(heading);
+      expect(html.includes('http-equiv="refresh"')).toBe(refreshes);
+      expect(html).not.toContain('temporarily unavailable');
+      expect(html).not.toContain('app_stopped');
+      expect(html).not.toContain('App not found');
+    }
   });
 
   test('returns machine-readable state to non-browser callers', async () => {

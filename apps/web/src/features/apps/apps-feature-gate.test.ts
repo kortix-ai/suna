@@ -29,4 +29,13 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
+  expect(view).toContain('className="max-w-5xl"');
+});
+
+test('a suspended App preview issues the request that wakes its active deployment', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(view).toContain('if (!app.active_deployment_id || !url)');
+  expect(view).not.toContain("if (!app.active_deployment_id || !url || app.desired_state === 'stopped')");
+  expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
 });

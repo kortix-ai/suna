@@ -295,6 +295,7 @@ export async function authorizeAppRequest(
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response | null> {
   if (app.accessMode === 'public') return null;
+  const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
   const secret = appAccessSecret();
   const queryToken = url.searchParams.get('__kortix_access');
   if (queryToken && (request.method === 'GET' || request.method === 'HEAD')) {
@@ -310,11 +311,14 @@ export async function authorizeAppRequest(
       url.searchParams.delete('__kortix_access');
       return new Response(null, {
         status: 303,
-        headers: { location: `${url.pathname}${url.search}`, 'set-cookie': appAccessCookie(session) },
+        headers: {
+          location: `${url.pathname}${url.search}`,
+          'set-cookie': appAccessCookie(session, 8 * 60 * 60, localHttp),
+        },
       });
     }
   }
-  const browserToken = cookieValue(request, appAccessCookieName());
+  const browserToken = cookieValue(request, appAccessCookieName(localHttp));
   if (
     browserToken &&
     await accessTokenAuthorizesRequest(
@@ -336,7 +340,13 @@ export async function authorizeAppRequest(
         expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
       }, secret);
       const location = safeAppReturnTo(String(form?.get('return_to') ?? '/'));
-      return new Response(null, { status: 303, headers: { location, 'set-cookie': appAccessCookie(session) } });
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location,
+          'set-cookie': appAccessCookie(session, 8 * 60 * 60, localHttp),
+        },
+      });
     }
     return appAccessResponse(
       request,
@@ -684,6 +694,11 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
   const coldStart = appRuntimeNeedsWake(state.runtime);
+  if (coldStart) {
+    await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
+      console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
+    });
+  }
   let runtime;
   try {
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
@@ -691,12 +706,6 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     if (error instanceof AppBudgetExceededError) return appPublicBudgetResponse(request, state.app);
     return appPublicUnavailableResponse(request, state.app);
   }
-  if (coldStart) {
-    await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
-      console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
-    });
-  }
-
   const now = new Date();
   const leaseUntil = new Date(now.getTime() + ACTIVITY_LEASE_MS);
   await Promise.all([

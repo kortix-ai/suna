@@ -64,9 +64,10 @@ Subcommands:
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
-  stop <id|slug>                    Suspend now. The next public request wakes it.
+  stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <deployment>   Move traffic to a ready deployment.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
+  access-link <id|slug>             Create a short-lived authenticated browser URL.
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
 Global options:
@@ -238,6 +239,8 @@ export async function runApps(argv: string[]): Promise<number> {
         return await rollbackCommand(rest, common.options, common.json);
       case 'access':
         return await accessCommand(rest, common.options, common.json);
+      case 'access-link':
+        return await accessLinkCommand(rest, common.options, common.json);
       case 'delete':
       case 'rm':
       case 'remove':
@@ -725,7 +728,7 @@ async function accessCommand(rest: string[], options: ContextOptions, json: bool
   const ctx = await context(options);
   if (!ctx) return 1;
   const result = await scoped(ctx, async () => {
-    const app = await resolveApp(ctx.apps, target);
+    let app = await resolveApp(ctx.apps, target);
     const access = mode
       ? await ctx.apps.access.update(app.app_id, {
           mode,
@@ -734,6 +737,7 @@ async function accessCommand(rest: string[], options: ContextOptions, json: bool
           ...(groupIds ? { group_ids: groupIds } : {}),
         })
       : await ctx.apps.access.get(app.app_id);
+    if (mode) app = await ctx.apps.get(app.app_id);
     return { app, access };
   });
   if (json) emitJson(result);
@@ -742,6 +746,29 @@ async function accessCommand(rest: string[], options: ContextOptions, json: bool
     if (result.access.member_ids.length) process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
     if (result.access.group_ids.length) process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
     process.stdout.write('\n');
+  }
+  return 0;
+}
+
+async function accessLinkCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('access-link needs an App id or slug');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const result = await scoped(ctx, async () => {
+    const app = await resolveApp(ctx.apps, target);
+    const accessSession = await ctx.apps.access.session(app.app_id);
+    return { app, access_session: accessSession };
+  });
+  if (json) emitJson(result);
+  else {
+    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n`);
+    process.stdout.write(`  ${result.access_session.url}\n`);
+    process.stdout.write(`  ${C.dim}expires ${result.access_session.expires_at}${C.reset}\n\n`);
   }
   return 0;
 }

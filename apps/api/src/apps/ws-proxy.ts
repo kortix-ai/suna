@@ -92,12 +92,12 @@ export async function prepareAppWsUpgrade(
   try {
     const hosting = dependencies.createHosting();
     const coldStart = appRuntimeNeedsWake(loaded.runtime);
-    const runtime = await dependencies.ensureAppRuntimeRunning(loaded, hosting);
     if (coldStart) {
       await dependencies.enqueueCurrentAppRuntime(loaded.app, loaded.deployment).catch((error) => {
         console.warn(`[apps] runtime refresh queue failed for ${loaded.app.appId}:`, error);
       });
     }
+    const runtime = await dependencies.ensureAppRuntimeRunning(loaded, hosting);
     await dependencies.stampActivity(runtime.runtimeId, loaded.app.idleTimeoutSeconds);
     const ingress = await hosting.ingress(
       runtime.provider as SandboxProviderName,

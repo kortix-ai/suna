@@ -152,6 +152,16 @@ Kortix-authenticated users open a five-minute exchange URL. It creates an
 eight-hour, secure, host-only cookie for that App hostname. A policy update
 revokes existing cookies.
 
+Create an authenticated browser link through the CLI:
+
+```sh
+kortix apps access-link storefront --json
+```
+
+The response contains `access_session.url` and `access_session.expires_at`.
+Treat the exchange URL as a secret. Its first request sets the App-host cookie
+and redirects to the same path without the token.
+
 ## Archive rules
 
 Directory deployments read these files, in order:
@@ -195,10 +205,10 @@ An idle stop preserves the runtime. The next request starts the sandbox, waits
 for readiness, and then proxies the request. Concurrent wake requests share one
 database lease.
 
-`kortix apps stop <app>` suspends compute immediately. The next public request
+`kortix apps stop <app>` suspends compute immediately. The next authorized request
 resumes the active runtime, waits for readiness, and then returns the App
 response for that same request. `kortix apps start <app>` warms the active
-runtime before a public request arrives.
+runtime before an authorized request arrives.
 
 Every request extends the activity lease and idle deadline. Streaming responses
 renew the lease until the response ends. WebSocket connections renew it while

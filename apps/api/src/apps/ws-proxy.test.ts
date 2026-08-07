@@ -124,20 +124,27 @@ describe('Apps WebSocket edge contract', () => {
     if (!result.ok) throw new Error(result.message);
     expect(result.data.url).toBe('wss://runtime.example.test/base/socket?channel=events');
     expect(result.data.headers.authorization).toBe('Bearer runtime');
-    expect(events).toEqual(['authorize', 'wake', 'refresh', 'activity', 'ingress']);
+    expect(events).toEqual(['authorize', 'refresh', 'wake', 'activity', 'ingress']);
   });
 
   test('returns the retryable starting state when the runtime is not ready', async () => {
+    const events: string[] = [];
     const result = await prepareAppWsUpgrade(
       new Request(REQUEST_URL),
       new URL(REQUEST_URL),
       dependencies({
+        enqueueCurrentAppRuntime: async () => {
+          events.push('refresh');
+          return true;
+        },
         ensureAppRuntimeRunning: async () => {
+          events.push('wake');
           throw new Error('provider is resuming');
         },
       }),
     );
 
     expect(result).toEqual({ ok: false, status: 202, message: 'App is starting' });
+    expect(events).toEqual(['refresh', 'wake']);
   });
 });

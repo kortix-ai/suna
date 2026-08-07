@@ -34,8 +34,8 @@ interface AppAccessTokenPayload {
   exp: number;
 }
 
-export function appAccessCookieName(): string {
-  return '__Host-kortix_app_access';
+export function appAccessCookieName(localHttp = false): string {
+  return localHttp ? 'kortix_app_access' : '__Host-kortix_app_access';
 }
 
 export function appAccessSecret(): string {
@@ -267,8 +267,15 @@ export function appAccessSessionUrl(
   return { url: target.toString(), expiresAt };
 }
 
-export function appAccessCookie(token: string, maxAgeSeconds = 8 * 60 * 60): string {
-  return `${appAccessCookieName()}=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; Secure; SameSite=Lax`;
+export function appAccessCookie(
+  token: string,
+  maxAgeSeconds = 8 * 60 * 60,
+  localHttp = false,
+): string {
+  const policy = localHttp
+    ? 'Secure; SameSite=None; Partitioned'
+    : 'Secure; SameSite=Lax';
+  return `${appAccessCookieName(localHttp)}=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; ${policy}`;
 }
 
 export function cookieValue(request: Request, name: string): string | null {

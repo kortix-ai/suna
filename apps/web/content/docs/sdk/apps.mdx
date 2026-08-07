@@ -16,7 +16,7 @@ Apps is experimental and off by default. The Apps navigation remains visible for
 - Deploy server-rendered Next.js and arbitrary services with a Dockerfile and an explicit command and port.
 - Deploy an existing public image as `oci_image` with an explicit command and port.
 
-`kortix apps deploy` blocks by default until the stable URL is ready. Use `--no-wait` only when another process owns status tracking. A request to a suspended App resumes its sandbox, waits for readiness, and proxies that same request. Browser navigation shows a branded page while the App is queued, validating, building, provisioning, checking, or starting. Machine clients receive `202 app_starting` with `Retry-After: 3` during a transient cold start. The public URL does not expose `app_stopped` or an unavailable cold-start state.
+`kortix apps deploy` blocks by default until the stable URL is ready. Use `--no-wait` only when another process owns status tracking. An authorized request to a suspended App resumes its sandbox, waits for readiness, and proxies that same request. Browser navigation shows a branded page while the App is queued, validating, building, provisioning, checking, or starting. Machine clients receive `202 app_starting` with `Retry-After: 3` during a transient cold start. The stable URL does not expose `app_stopped` or an unavailable cold-start state.
 
 New Apps are private. Choose one access mode:
 
@@ -70,7 +70,7 @@ await apps.deployments.create(app.app_id, {
 
 Use `apps.access.get`, `apps.access.update`, `apps.access.session`, `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle. `apps.stop` suspends compute immediately. The next request resumes the App. `apps.start` warms it before traffic arrives.
 
-`kortix apps access <app>` reads a policy. Add `--mode`, `--password`, `--members`, or `--groups` to update it. `kortix apps deploy` accepts the equivalent `--access`, `--password`, `--members`, and `--groups` flags.
+`kortix apps access <app>` reads a policy. Add `--mode`, `--password`, `--members`, or `--groups` to update it. `kortix apps access-link <app> --json` creates a five-minute authenticated browser URL without changing the policy. Treat that URL as a secret. `kortix apps deploy` accepts the equivalent `--access`, `--password`, `--members`, and `--groups` flags.
 
 Each cold start compares the active deployment's `runtime_version` with the current Kortix App runtime. An old deployment continues serving while Kortix asynchronously builds one immutable replacement with the latest `kortix-appd` and Caddy binaries. One PostgreSQL advisory lock prevents duplicate refreshes.
 

@@ -89,17 +89,13 @@ function AppPreview({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  if (!app.active_deployment_id || !url || app.desired_state === 'stopped') {
+  if (!app.active_deployment_id || !url) {
     return (
       <div
         className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
         data-testid="app-preview-empty"
       >
-        {accessError
-          ? 'You do not have access to preview this App.'
-          : app.desired_state === 'stopped'
-            ? 'Suspended. Open the App or use Wake App to resume it.'
-            : 'Deploy to see a live preview.'}
+        {accessError ? 'You do not have access to preview this App.' : 'Deploy to see a live preview.'}
       </div>
     );
   }
@@ -169,6 +165,7 @@ export function AppsView({ projectId }: { projectId: string }) {
       title="Apps"
       description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/sdk/apps"
+      className="max-w-5xl"
       action={
         <Badge size="sm" variant="beta">
           Experimental
@@ -515,7 +512,9 @@ function AppAccessModal({
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
           <ModalTitle>App access</ModalTitle>
-          <ModalDescription>Choose who can open {app.name}. New Apps are private.</ModalDescription>
+          <ModalDescription>
+            Choose who can open {app.name}. Apps are private by default.
+          </ModalDescription>
         </ModalHeader>
         {access.policy.isLoading ? (
           <ModalBody>

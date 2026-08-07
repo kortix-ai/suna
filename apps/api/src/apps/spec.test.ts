@@ -41,7 +41,16 @@ describe('normalizeAppBuild', () => {
   test('loads a user Dockerfile and validates its dynamic runtime contract', async () => {
     const source = await mkdtemp(join(tmpdir(), 'kortix-app-spec-'));
     cleanup.push(source);
-    await writeFile(join(source, 'Dockerfile'), 'FROM node:22-alpine\nCOPY . /app');
+    await writeFile(
+      join(source, 'Dockerfile'),
+      [
+        'FROM node:22-alpine AS build',
+        'WORKDIR /source',
+        'FROM node:22-alpine',
+        'WORKDIR /app',
+        'COPY . /app',
+      ].join('\n'),
+    );
     const build = await normalizeAppBuild(
       { kind: 'dockerfile', command: ['node', '/app/server.js'], port: 3000 },
       source,
@@ -49,6 +58,7 @@ describe('normalizeAppBuild', () => {
     expect(build.dockerfile).toContain('FROM node:22-alpine');
     expect(build.runtimeSpec).toMatchObject({
       command: ['node', '/app/server.js'],
+      workdir: '/app',
       target_port: 3000,
       restart_limit: 3,
     });

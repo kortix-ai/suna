@@ -53,6 +53,19 @@ var daemonProcessAlive = func(pid int) bool {
 	return pid > 0 && syscall.Kill(pid, 0) == nil
 }
 
+var daemonProcessMatchesExecutable = func(pid int) bool {
+	currentPath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	current, err := os.Stat(currentPath)
+	if err != nil {
+		return false
+	}
+	process, err := os.Stat(fmt.Sprintf("/proc/%d/exe", pid))
+	return err == nil && os.SameFile(current, process)
+}
+
 func daemonize(pidPath, logPath string) error {
 	lock, err := os.OpenFile(daemonLockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -66,7 +79,7 @@ func daemonize(pidPath, logPath string) error {
 
 	if raw, readErr := os.ReadFile(pidPath); readErr == nil {
 		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(raw)))
-		if parseErr == nil && daemonProcessAlive(pid) {
+		if parseErr == nil && daemonProcessAlive(pid) && daemonProcessMatchesExecutable(pid) {
 			return nil
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {

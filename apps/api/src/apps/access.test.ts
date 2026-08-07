@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  appAccessCookie,
   appAccessCookieName,
   appAccessDecision,
   createAppAccessToken,
@@ -49,5 +50,15 @@ describe('Kortix App access', () => {
 
   test('uses a host-only secure browser cookie', () => {
     expect(appAccessCookieName()).toBe('__Host-kortix_app_access');
+    expect(appAccessCookie('token')).toContain('; Secure;');
+  });
+
+  test('uses a partitioned cookie for an Apps iframe on the trustworthy apps.localhost origin', () => {
+    expect(appAccessCookieName(true)).toBe('kortix_app_access');
+    const cookie = appAccessCookie('token', 60, true);
+    expect(cookie).toStartWith('kortix_app_access=token;');
+    expect(cookie).toContain('; HttpOnly;');
+    expect(cookie).toContain('; Secure;');
+    expect(cookie).toContain('; SameSite=None; Partitioned');
   });
 });

@@ -20,9 +20,12 @@ import { resolveAppRuntimeEnvironment } from './environment';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { assertAppBudgetAvailable } from './budget';
+import { appRuntimeArtifactDigest } from './runtime-artifacts';
+import { appDeploymentFailureDisposition } from './deployment-failures';
 
 export const APP_RUNTIME_VERSION =
-  process.env.KORTIX_APP_RUNTIME_VERSION || `${SANDBOX_VERSION}:appd-v1`;
+  process.env.KORTIX_APP_RUNTIME_VERSION
+  || `${SANDBOX_VERSION}:appd-${appRuntimeArtifactDigest().slice(0, 16)}`;
 const LEASE_MS = 2 * 60_000;
 const HEARTBEAT_MS = 30_000;
 const MAX_ATTEMPTS = 3;
@@ -501,8 +504,12 @@ export async function driveAppDeployment(
       });
     });
   } catch (error) {
-    const permanent = error instanceof PermanentAppDeploymentError;
     const message = error instanceof Error ? error.message : String(error);
+    const disposition = appDeploymentFailureDisposition(message);
+    const permanent = error instanceof PermanentAppDeploymentError || disposition.permanent;
+    const errorCode = error instanceof PermanentAppDeploymentError
+      ? error.code
+      : disposition.code;
     const attempt = claimed.attemptCount;
     if (runtimeId) {
       await db
@@ -520,7 +527,7 @@ export async function driveAppDeployment(
       .update(appDeployments)
       .set({
         status: terminal ? 'failed' : 'queued',
-        errorCode: permanent ? error.code : 'deployment_failed',
+        errorCode,
         error: message.slice(0, 8_000),
         failedAt: terminal ? new Date() : null,
         nextAttemptAt: terminal ? null : new Date(Date.now() + retryDelayMs(attempt)),
