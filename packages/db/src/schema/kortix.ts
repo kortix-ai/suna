@@ -3004,6 +3004,13 @@ export const appDeployments = kortixSchema.table(
     readyAt: timestamp('ready_at', { withTimezone: true }),
     failedAt: timestamp('failed_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
+    sourceSessionId: text('source_session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    actorType: varchar('actor_type', { length: 24 })
+      .$type<'human' | 'agent' | 'service_account' | 'system'>()
+      .default('human')
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -3017,6 +3024,10 @@ export const appDeployments = kortixSchema.table(
       sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
     ),
     check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check(
+      'app_deployments_actor_type_check',
+      sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
+    ),
     check('app_deployments_version_check', sql`${table.version} > 0`),
     uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
     index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),

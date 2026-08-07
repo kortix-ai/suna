@@ -203,6 +203,12 @@ export const qk = {
 
     secrets: (id: string) => [...qk.project.scope(id), 'secrets'] as const,
 
+    /** Stable App inventory for `GET /projects/:id/apps`. */
+    apps: (id: string) => [...qk.project.scope(id), 'apps'] as const,
+    /** Immutable deployment history for one App. */
+    appDeployments: (id: string, appId: string) =>
+      [...qk.project.apps(id), appId, 'deployments'] as const,
+
     /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by
      *  `useProjectTriggers` (`use-project-triggers.ts`), the Customize

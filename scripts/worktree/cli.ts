@@ -440,7 +440,7 @@ async function cmdCreate(a: Args) {
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
-  else { await cmdStart({ cmd: 'start', name, flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
+  else { await cmdStart({ cmd: 'start', name, names: [name], flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
 }
 
 async function cmdStart(a: Args) {

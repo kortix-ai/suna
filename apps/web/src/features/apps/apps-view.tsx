@@ -14,10 +14,14 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import {
+  CLIPBOARD_IFRAME_ALLOW,
+  INTERACTIVE_PREVIEW_IFRAME_SANDBOX,
+} from '@/lib/security/iframe-sandbox';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import type { App, AppDeployment } from '@kortix/sdk';
-import { useAppDeployments, useProjectApps } from '@kortix/sdk/react';
+import { updateExperimentalFeature, type App, type AppDeployment } from '@kortix/sdk';
+import { qk, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
   CaretDownIcon,
@@ -28,8 +32,8 @@ import {
   TerminalWindowIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { notFound } from 'next/navigation';
 
 function deploymentTone(
   status: AppDeployment['status'],
@@ -51,21 +55,81 @@ function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
+function AppPreview({ app }: { app: App }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (!app.active_deployment_id) {
+    return (
+      <div
+        className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
+        data-testid="app-preview-empty"
+      >
+        Deploy to see a live preview.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-muted/20 relative aspect-video overflow-hidden border-b">
+      <iframe
+        key={app.active_deployment_id}
+        src={app.url}
+        title={`${app.name} live preview`}
+        loading="lazy"
+        allow={CLIPBOARD_IFRAME_ALLOW}
+        sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+        className="bg-background absolute inset-0 size-full border-0"
+        data-testid="app-live-preview"
+        onLoad={() => {
+          setLoaded(true);
+          setFailed(false);
+        }}
+        onError={() => {
+          setLoaded(false);
+          setFailed(true);
+        }}
+      />
+      {!loaded ? (
+        <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            {failed ? null : <Loading className="size-4 shrink-0" />}
+            <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AppsView({ projectId }: { projectId: string }) {
   const appsGate = useAppsFeatureEnabled(projectId);
   const apps = useProjectApps(appsGate.enabled ? projectId : null);
+  const queryClient = useQueryClient();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
-  if (!appsGate.isLoading && !appsGate.enabled) notFound();
+  const enableApps = useMutation({
+    mutationFn: () => updateExperimentalFeature(projectId, 'apps', true),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      successToast('Apps enabled for this project');
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to enable Apps'),
+  });
 
   return (
     <CustomizeSectionWrapper
       title="Apps"
       description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/sdk/apps"
+      action={
+        <Badge size="sm" variant="beta">
+          Experimental
+        </Badge>
+      }
       showSidebarToggleButton
     >
-      {appsGate.isLoading || apps.isLoading ? (
+      {appsGate.isLoading ? (
         <ul className="space-y-2">
           {Array.from({ length: 3 }).map((_, index) => (
             <li
@@ -74,6 +138,45 @@ export function AppsView({ projectId }: { projectId: string }) {
             >
               <Skeleton className="size-9 shrink-0 rounded-sm" />
               <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-1/3 rounded-sm" />
+                <Skeleton className="h-3 w-2/3 rounded-sm" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : !appsGate.enabled ? (
+        <div className="bg-popover rounded-md border px-4 py-5">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-foreground text-sm font-medium">Enable Apps for this project</p>
+              <p className="text-muted-foreground max-w-xl text-xs text-pretty">
+                Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable
+                URLs. Each App wakes on its next request and suspends after its idle timeout.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              disabled={!canWrite || enableApps.isPending}
+              onClick={() => enableApps.mutate()}
+            >
+              {enableApps.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              Enable Apps
+            </Button>
+          </div>
+          {!canWrite ? (
+            <p className="text-muted-foreground mt-3 text-xs">
+              A project manager must enable this experimental feature.
+            </p>
+          ) : null}
+        </div>
+      ) : apps.isLoading ? (
+        <ul className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <li key={index} className="bg-popover overflow-hidden rounded-md border">
+              <Skeleton className="aspect-video w-full rounded-none" />
+              <div className="space-y-2 px-4 py-3">
                 <Skeleton className="h-3.5 w-1/3 rounded-sm" />
                 <Skeleton className="h-3 w-2/3 rounded-sm" />
               </div>
@@ -92,7 +195,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           }
         />
       ) : apps.data?.length ? (
-        <ul className="space-y-2">
+        <ul className="grid gap-4 md:grid-cols-2">
           {apps.data.map((app) => (
             <AppRow key={app.app_id} projectId={projectId} app={app} canWrite={canWrite} />
           ))}
@@ -105,24 +208,26 @@ export function AppsView({ projectId }: { projectId: string }) {
         />
       )}
 
-      <InfoBanner
-        tone="neutral"
-        icon={TerminalWindowIcon}
-        title="Deploy from a terminal"
-        action={
-          <Hint label="Copy deploy command">
-            <CopyButton code="kortix apps deploy ." size="md" />
-          </Hint>
-        }
-      >
-        <span className="text-muted-foreground block text-xs">
-          Run this in a linked project. A v2 <code className="text-foreground">kortix.yaml</code>{' '}
-          can define build, resources, environment, and secret mappings.
-        </span>
-        <code className="text-foreground mt-2 block overflow-x-auto font-mono text-xs">
-          kortix apps deploy .
-        </code>
-      </InfoBanner>
+      {appsGate.enabled ? (
+        <InfoBanner
+          tone="neutral"
+          icon={TerminalWindowIcon}
+          title="Deploy from a terminal"
+          action={
+            <Hint label="Copy deploy command">
+              <CopyButton code="kortix apps deploy ." size="md" />
+            </Hint>
+          }
+        >
+          <span className="text-muted-foreground block text-xs text-pretty">
+            Run this in a linked project. A v2 <code className="text-foreground">kortix.yaml</code>{' '}
+            can define build, resources, environment, and secret mappings.
+          </span>
+          <code className="text-foreground mt-2 block overflow-x-auto font-mono text-xs">
+            kortix apps deploy .
+          </code>
+        </InfoBanner>
+      ) : null}
 
     </CustomizeSectionWrapper>
   );
@@ -149,7 +254,8 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
 
   return (
     <li aria-label={`${app.name} App`} className="bg-popover overflow-hidden rounded-md border">
-      <div className="flex items-center gap-3 px-4 py-3">
+      <AppPreview key={app.active_deployment_id ?? app.app_id} app={app} />
+      <div className="flex items-start gap-3 px-4 py-3">
         <div
           className={cn(
             'flex size-9 shrink-0 items-center justify-center rounded-sm',
@@ -185,9 +291,9 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
             · {app.idle_timeout_seconds}s idle
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Hint label="Open App">
-            <Button asChild size="icon" variant="ghost" className="size-8">
+            <Button asChild size="icon" variant="ghost" className="size-10">
               <a href={app.url} target="_blank" rel="noopener noreferrer" aria-label="Open App">
                 <ArrowSquareOutIcon className="size-4" />
               </a>
@@ -197,13 +303,13 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
             <CopyButton code={appCommand(app)} size="lg" />
           </Hint>
           {canWrite ? (
-            <Hint label={app.desired_state === 'running' ? 'Stop App' : 'Start App'}>
+            <Hint label={app.desired_state === 'running' ? 'Suspend App' : 'Wake App'}>
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8"
+                className="size-10"
                 disabled={busy || !app.active_deployment_id}
-                aria-label={app.desired_state === 'running' ? 'Stop App' : 'Start App'}
+                aria-label={app.desired_state === 'running' ? 'Suspend App' : 'Wake App'}
                 onClick={() => lifecycle(app.desired_state === 'running' ? 'stop' : 'start')}
               >
                 {busy ? (
@@ -220,7 +326,7 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
             <Button
               size="icon"
               variant="ghost"
-              className="size-8"
+              className="size-10"
               aria-label="Show versions"
               aria-expanded={expanded}
               onClick={() => setExpanded((value) => !value)}
@@ -234,7 +340,7 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
       </div>
 
       {expanded ? (
-        <div className="bg-muted/20 border-border/70 border-t px-4 py-3 pl-16">
+        <div className="bg-muted/20 border-border/70 border-t px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-foreground text-xs font-medium">Versions</p>
             {canWrite ? (

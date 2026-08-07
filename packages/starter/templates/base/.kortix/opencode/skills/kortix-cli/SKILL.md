@@ -45,6 +45,7 @@ kortix secrets request <NAME>                   # mint a link for a human to ent
 kortix sessions status                          # every agent on the project + what it's doing now
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
+kortix apps deploy . --slug <slug>               # deploy and block until the stable URL is ready
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 ```
 

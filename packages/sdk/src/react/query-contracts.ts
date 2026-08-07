@@ -80,6 +80,8 @@ export const FRESHNESS = {
   connectors: 'config',
   connectorConfig: 'config',
   secrets: 'config',
+  apps: 'inventory',
+  appDeployments: 'inventory',
   policies: 'config',
   executorPolicies: 'config',
   access: 'inventory',

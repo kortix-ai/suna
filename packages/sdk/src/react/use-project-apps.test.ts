@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { qk } from './query-keys';
 
-let invalidated: unknown[][] = [];
+let invalidated: (readonly unknown[])[] = [];
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
   useMutation: (config: Record<string, unknown>) => config,
   useQueryClient: () => ({
-    invalidateQueries: (options: { queryKey: unknown[] }) => invalidated.push(options.queryKey),
+    invalidateQueries: (options: { queryKey: readonly unknown[] }) =>
+      invalidated.push(options.queryKey),
   }),
 }));
 
@@ -39,15 +41,15 @@ describe('Kortix Apps React Query bindings', () => {
     deployments.rollback.onSuccess();
 
     expect(invalidated).toEqual([
-      ['project-apps', 'project-1'],
-      ['project-apps', 'project-1'],
-      ['project-apps', 'project-1'],
-      ['project-apps', 'project-1'],
-      ['project-apps', 'project-1'],
-      ['project-apps', 'project-1'],
-      ['app-deployments', 'project-1', 'app-1'],
-      ['project-apps', 'project-1'],
-      ['app-deployments', 'project-1', 'app-1'],
+      qk.project.apps('project-1'),
+      qk.project.apps('project-1'),
+      qk.project.apps('project-1'),
+      qk.project.apps('project-1'),
+      qk.project.apps('project-1'),
+      qk.project.apps('project-1'),
+      qk.project.appDeployments('project-1', 'app-1'),
+      qk.project.apps('project-1'),
+      qk.project.appDeployments('project-1', 'app-1'),
     ]);
   });
 });

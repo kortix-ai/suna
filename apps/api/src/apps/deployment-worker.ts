@@ -502,6 +502,31 @@ const workerState = globalThis as unknown as {
   __kortixAppsWorkerTimer?: ReturnType<typeof setInterval> | null;
 };
 let workerRunning = false;
+let workerKickScheduled = false;
+let workerRerunRequested = false;
+
+function reportWorkerError(error: unknown): void {
+  logger.error('[apps] deployment worker tick failed', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function scheduleTriggeredTick(): void {
+  if (workerRunning || workerKickScheduled) return;
+  workerKickScheduled = true;
+  queueMicrotask(() => {
+    workerKickScheduled = false;
+    workerRerunRequested = false;
+    void runAppDeploymentTick().catch(reportWorkerError);
+  });
+}
+
+/** Queue a deployment tick without waiting for the periodic worker interval. */
+export function triggerAppDeploymentWorker(): void {
+  if (process.env.KORTIX_APPS_WORKER_ENABLED === 'false') return;
+  workerRerunRequested = true;
+  scheduleTriggeredTick();
+}
 
 export async function runAppDeploymentTick(): Promise<{ processed: number }> {
   if (workerRunning) return { processed: 0 };
@@ -519,6 +544,7 @@ export async function runAppDeploymentTick(): Promise<{ processed: number }> {
     return { processed };
   } finally {
     workerRunning = false;
+    if (workerRerunRequested) scheduleTriggeredTick();
   }
 }
 
@@ -526,17 +552,9 @@ export function startAppDeploymentWorker(): void {
   if (process.env.KORTIX_APPS_WORKER_ENABLED === 'false') return;
   stopAppDeploymentWorker();
   const interval = Math.max(1_000, Number(process.env.KORTIX_APPS_WORKER_INTERVAL_MS) || 5_000);
-  void runAppDeploymentTick().catch((error) =>
-    logger.error('[apps] deployment worker initial tick failed', {
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
+  triggerAppDeploymentWorker();
   workerState.__kortixAppsWorkerTimer = setInterval(() => {
-    void runAppDeploymentTick().catch((error) =>
-      logger.error('[apps] deployment worker tick failed', {
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    triggerAppDeploymentWorker();
   }, interval);
 }
 

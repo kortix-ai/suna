@@ -158,6 +158,12 @@ func (s appSpec) readinessPath() string {
 	return s.ReadinessPath
 }
 
+// Readiness must cover the complete public path. Probing the user process
+// directly can publish ready before Caddy accepts traffic after a cold start.
+func (s appSpec) readinessURL() string {
+	return fmt.Sprintf("http://127.0.0.1:%d%s", ingressPort, s.readinessPath())
+}
+
 func (s appSpec) restartLimit() int {
 	return s.RestartLimit
 }
@@ -270,6 +276,21 @@ func childEnvironment(parent []string) []string {
 		}
 	}
 	return out
+}
+
+func caddyEnvironment(parent []string) []string {
+	env := childEnvironment(parent)
+	out := make([]string, 0, len(env)+2)
+	for _, item := range env {
+		if strings.HasPrefix(item, "XDG_CONFIG_HOME=") || strings.HasPrefix(item, "XDG_DATA_HOME=") {
+			continue
+		}
+		out = append(out, item)
+	}
+	return append(out,
+		"XDG_CONFIG_HOME=/tmp/kortix-caddy-config",
+		"XDG_DATA_HOME=/tmp/kortix-caddy-data",
+	)
 }
 
 type runtimeState struct {
@@ -418,11 +439,7 @@ func serveControl(ctx context.Context, token string, state *runtimeState) *http.
 }
 
 func waitReady(ctx context.Context, spec appSpec, state *runtimeState) {
-	port := spec.TargetPort
-	if spec.StaticRoot != "" {
-		port = ingressPort
-	}
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, spec.readinessPath())
+	url := spec.readinessURL()
 	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -490,7 +507,7 @@ func run(ctx context.Context, spec appSpec, token string) error {
 	}
 
 	caddyCmd := caddyCommand(caddyPath)
-	caddyCmd.Env = childEnvironment(os.Environ())
+	caddyCmd.Env = caddyEnvironment(os.Environ())
 	caddyCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	caddy, err := startLogged(caddyCmd, "caddy", state.logs)
 	if err != nil {

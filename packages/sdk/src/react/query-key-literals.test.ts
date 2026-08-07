@@ -97,26 +97,6 @@ const ALLOWED_SUFFIXES = [
   // because this scan is syntactic and cannot tell a Set of strings from a
   // query key.
   'manager',
-  // Arrived from `main` in the merge that brought the Apps surface
-  // (`use-project-apps.ts`'s `projectAppsKey`). Exempted, NOT migrated, and
-  // the distinction matters: this is the guard doing its job on incoming
-  // code, not a family anyone decided to leave behind.
-  //
-  // `qk` has no Apps member and none of the existing members fit —
-  // `listApps` is `GET /projects/:id/apps` and `listAppDeployments` is a
-  // different endpoint with a different shape, so folding either onto a
-  // near-miss member is exactly the last-write-wins bug this factory exists
-  // to prevent. Closing it properly means ADDING `qk.project.apps(id)` and
-  // `qk.project.appDeployments(id, appId)` with tier decisions, under this
-  // package's TDD + PROGRESS.md-claim rules. That is its own task, not
-  // something to smuggle into a merge resolution.
-  //
-  // `projectAppsKey` is already in `public-surface.snapshot.json`, so the
-  // migration must keep the exported name and delegate it to `qk`, never
-  // remove it. Note `appDeploymentsKey` roots at `'app-deployments'` and so
-  // does not trip this scan at all — it needs the same treatment despite
-  // being invisible here.
-  'apps',
 ];
 
 const ALLOWED_FAMILIES = new Set(ALLOWED_SUFFIXES.map((suffix) => `project-${suffix}`));

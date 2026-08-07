@@ -157,6 +157,10 @@ export interface AppDeployment {
   failed_at: string | null;
   /** User whose deployment request resolved personal project-secret overrides. */
   created_by: string;
+  /** Originating Kortix project session when an agent created this deployment. */
+  source_session_id: string | null;
+  /** Immutable caller class recorded when the deployment was created. */
+  actor_type: 'human' | 'agent' | 'service_account' | 'system';
   created_at: string;
   updated_at: string;
 }

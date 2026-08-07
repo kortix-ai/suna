@@ -48,8 +48,14 @@ beforeEach(() => {
 const last = () => calls.at(-1)!;
 
 test('AppDeployment exposes the immutable deploying actor', () => {
-  const deployment = { created_by: 'user-1' } as AppDeployment;
+  const deployment = {
+    created_by: 'user-1',
+    source_session_id: 'session-1',
+    actor_type: 'agent',
+  } as AppDeployment;
   expect(deployment.created_by).toBe('user-1');
+  expect(deployment.source_session_id).toBe('session-1');
+  expect(deployment.actor_type).toBe('agent');
 });
 
 test('Apps CRUD uses the project-scoped API contract', async () => {

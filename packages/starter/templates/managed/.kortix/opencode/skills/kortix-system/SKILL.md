@@ -7,7 +7,7 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-connectors`, `kortix-memory`,
+**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`, `kortix-memory`,
 `kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
@@ -21,11 +21,15 @@ re-install, no image re-bake):
 skills are marketplace items. Browse them with
 `kortix marketplace list --type skill`.
 
-Before answering anything about Kortix internals — connectors and connections,
+Before answering anything about Kortix internals — Apps, connectors and connections,
 project memory, Slack/channels, reaching a connected computer, or sending a
 notetaker into a meeting — load the matching skill with
 `kortix system-skills get <name>` and follow it. Prefer this over any stale
 local copy. The CLI reflects the deployed platform.
+
+For App deployment or lifecycle work, load `kortix-apps`. It contains the
+source-type decision tree, fast paths, blocking behavior, and verification
+contract.
 </live-skills>
 
 <overview>

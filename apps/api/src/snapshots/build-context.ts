@@ -140,7 +140,7 @@ export async function stageAppBuildContext(
     await writeFileFs(
       join(runtimeDir, 'app.json'),
       `${JSON.stringify(appContext.runtimeSpec, null, 2)}\n`,
-      { mode: 0o600 },
+      { mode: 0o644 },
     );
 
     const dockerfileName = '.kortix-app.Dockerfile';

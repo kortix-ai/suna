@@ -61,7 +61,7 @@ async function cleanup(): Promise<void> {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
 }
 
-async function seedStoppedRuntime() {
+async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running') {
   const db = testDb();
   await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'App lifecycle race test' });
   await db.insert(projects).values({
@@ -69,6 +69,7 @@ async function seedStoppedRuntime() {
     accountId: ACCOUNT_ID,
     name: 'App lifecycle race test',
     repoUrl: 'https://example.test/app-lifecycle-race.git',
+    metadata: { experimental: { apps: true } },
   });
   await db.insert(apps).values({
     appId: APP_ID,
@@ -77,7 +78,7 @@ async function seedStoppedRuntime() {
     slug: 'app-lifecycle-race',
     name: 'App lifecycle race',
     routeKey: ROUTE_KEY,
-    desiredState: 'running',
+    desiredState,
     idleTimeoutSeconds: 300,
     monthlyBudgetUsd: '5.00',
   });
@@ -159,6 +160,25 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(runtime?.status).toBe('running');
     expect(runtime?.wakeLeaseOwner).toBeNull();
     expect(runtime?.wakeLeaseUntil).toBeNull();
+  });
+
+  test('a public request reactivates an explicitly stopped App and wakes its runtime', async () => {
+    const loaded = await seedStoppedRuntime('stopped');
+    let ensureCalls = 0;
+    const hosting = {
+      ensureRunning: async () => {
+        ensureCalls += 1;
+      },
+      waitUntilReady: async () => readyStatus(),
+      stop: async () => {},
+    } as unknown as AppHostingProvider;
+
+    const runtime = await ensureAppRuntimeRunning(loaded, hosting);
+
+    expect(runtime.status).toBe('running');
+    expect(ensureCalls).toBe(1);
+    const [app] = await testDb().select().from(apps).where(eq(apps.appId, APP_ID));
+    expect(app?.desiredState).toBe('running');
   });
 
   test('a manual stop during provider readiness wins and cannot be overwritten by the wake owner', async () => {

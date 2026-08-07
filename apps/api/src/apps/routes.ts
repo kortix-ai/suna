@@ -15,11 +15,13 @@ import { config, type SandboxProviderName } from '../config';
 import { getProvider } from '../platform/providers';
 import { db } from '../shared/db';
 import { createAppArtifactUploadUrl, MAX_ARCHIVE_BYTES } from './artifacts';
-import { APP_RUNTIME_VERSION } from './deployment-worker';
+import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-worker';
 import { AppHostingProvider } from './hosting';
+import { deploymentEventsAsLogs } from './logs';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
+import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { resolveExperimentalFeature } from '../experimental/features';
 
@@ -167,9 +169,18 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     ready_at: row.readyAt?.toISOString() ?? null,
     failed_at: row.failedAt?.toISOString() ?? null,
     created_by: row.createdBy,
+    source_session_id: row.sourceSessionId,
+    actor_type: row.actorType,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' | 'system' {
+  if (callerKortixSessionId(c)) return 'agent';
+  if (c.get('authType') === 'service_account') return 'service_account';
+  if (c.get('authType') === 'apiKey') return 'system';
+  return 'human';
 }
 
 async function authorizedProject(c: any, projectId: string, write = false) {
@@ -418,6 +429,8 @@ projectsApp.openapi(
         appId, artifactId: artifact.artifactId, version, status: 'queued',
         sourceKind: source.kind, hostingProvider: body.provider ?? null,
         createdBy: loaded.userId,
+        sourceSessionId: callerKortixSessionId(c),
+        actorType: appDeploymentActorType(c),
         runtimeVersion: APP_RUNTIME_VERSION,
         buildSpec: {
           source,
@@ -428,6 +441,7 @@ projectsApp.openapi(
       }).returning();
       return row!;
     });
+    triggerAppDeploymentWorker();
     return c.json(serializeDeployment(deployment), 202);
   },
 );
@@ -477,26 +491,38 @@ projectsApp.openapi(
     const { projectId, appId, deploymentId } = c.req.param();
     if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
     if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
-    const [runtime] = await db.select().from(appRuntimes).innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
-      .where(and(eq(appRuntimes.deploymentId, deploymentId), eq(appDeployments.appId, appId))).orderBy(desc(appRuntimes.createdAt)).limit(1);
-    if (!runtime) return c.json({ error: 'Deployment has no runtime' }, 409);
-    const row = runtime.app_runtimes;
+    const [deployment] = await db.select().from(appDeployments).where(and(
+      eq(appDeployments.deploymentId, deploymentId),
+      eq(appDeployments.appId, appId),
+    )).limit(1);
+    if (!deployment) return c.json({ error: 'Not found' }, 404);
+    const eventFallback = async () => {
+      const events = await db.select({
+        type: appDeploymentEvents.type,
+        message: appDeploymentEvents.message,
+        createdAt: appDeploymentEvents.createdAt,
+      }).from(appDeploymentEvents)
+        .where(eq(appDeploymentEvents.deploymentId, deploymentId))
+        .orderBy(appDeploymentEvents.createdAt);
+      return deploymentEventsAsLogs(
+        events,
+        Number(c.req.query('after')) || 0,
+        Number(c.req.query('limit')) || 200,
+      );
+    };
+    const [row] = await db.select().from(appRuntimes)
+      .where(eq(appRuntimes.deploymentId, deploymentId))
+      .orderBy(desc(appRuntimes.createdAt)).limit(1);
+    if (!row) return c.json(await eventFallback());
     if (row.status === 'stopped' || row.status === 'error' || row.status === 'deleted') {
-      return c.json({
-        error: 'App runtime is not running',
-        code: 'app_runtime_not_running',
-        runtime_status: row.status,
-      }, 409);
+      return c.json(await eventFallback());
     }
     try {
       const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
       return c.json(logs);
     } catch (error) {
       console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
-      return c.json({
-        error: 'App runtime logs are temporarily unavailable',
-        code: 'app_runtime_unavailable',
-      }, 503);
+      return c.json(await eventFallback());
     }
   },
 );

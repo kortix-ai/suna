@@ -12,6 +12,15 @@ describe('App deployment actor attribution', () => {
   test('persists the deploying caller on each immutable deployment', () => {
     expect(ROUTES).toContain('createdBy: loaded.userId');
     expect(ROUTES).toContain('created_by: row.createdBy');
+    expect(ROUTES).toContain('sourceSessionId: callerKortixSessionId(c)');
+    expect(ROUTES).toContain('actorType: appDeploymentActorType(c)');
+    expect(ROUTES).toContain('source_session_id: row.sourceSessionId');
+    expect(ROUTES).toContain('actor_type: row.actorType');
+  });
+
+  test('kicks the worker immediately after the deployment transaction commits', () => {
+    expect(ROUTES).toContain('triggerAppDeploymentWorker();');
+    expect(WORKER).toContain('export function triggerAppDeploymentWorker(): void');
   });
 
   test('resolves personal secret overrides for the deploying caller', () => {

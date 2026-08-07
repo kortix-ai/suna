@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
 import {
@@ -22,6 +22,30 @@ const password = "E2eAppsUi123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
+async function dismissOnboarding(page: Page): Promise<void> {
+  await page.waitForTimeout(2_000);
+  for (let step = 0; step < 12; step += 1) {
+    const onboarding = page.getByRole("dialog").last();
+    if (!(await onboarding.isVisible().catch(() => false))) break;
+    const skip = onboarding
+      .getByRole("button", { name: /^(Skip|Not now|Maybe later)/i })
+      .last();
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+    } else {
+      const primary = onboarding
+        .getByRole("button", {
+          name: /^(Continue|Done|Open project|Start building|Get started)$/i,
+        })
+        .last();
+      if (!(await primary.isVisible().catch(() => false))) break;
+      await primary.click();
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+}
+
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
@@ -38,7 +62,7 @@ interface AppResponse {
 }
 
 test.describe("18 — Kortix Apps UI", () => {
-  test("creates and manages Apps through the SDK-backed page in both themes", async ({
+  test("shows experimental Apps, enables it in place, and renders a read-only deployment index", async ({
     context,
     page,
   }, testInfo) => {
@@ -53,6 +77,7 @@ test.describe("18 — Kortix Apps UI", () => {
     let projectId: string | null = null;
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
+    const appsCreateRequests: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("response", (response) => {
       if (
@@ -63,6 +88,14 @@ test.describe("18 — Kortix Apps UI", () => {
         appsServerErrors.push(
           `${response.status()} ${response.request().method()} ${response.url()}`,
         );
+      }
+    });
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        request.url().endsWith(`/v1/projects/${projectId}/apps`)
+      ) {
+        appsCreateRequests.push(request.url());
       }
     });
 
@@ -87,6 +120,73 @@ test.describe("18 — Kortix Apps UI", () => {
       });
       projectId = project.id;
 
+      await api<Record<string, unknown>>(
+        session.access_token,
+        "POST",
+        `/projects/${project.id}/apps`,
+        { slug: `blocked-${runId}`, name: "Blocked App" },
+        404,
+      );
+
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await installBrowserSessionDirect(
+        page,
+        session,
+        `/projects/${project.id}`,
+        authOptions,
+      );
+      await selectAccountForUi(page, account!.account_id);
+
+      await page.goto(`/projects/${project.id}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page.getByRole("link", { name: "Apps" })).toBeVisible();
+      await dismissOnboarding(page);
+
+      const disabledAppRequests: string[] = [];
+      const recordDisabledRequest = (request: {
+        method(): string;
+        url(): string;
+      }) => {
+        if (
+          request.method() === "GET" &&
+          request.url().endsWith(`/v1/projects/${project.id}/apps`)
+        ) {
+          disabledAppRequests.push(request.url());
+        }
+      };
+      page.on("request", recordDisabledRequest);
+      await page.goto(`/projects/${project.id}/apps`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(
+        page.getByRole("heading", { name: "Apps", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("main").getByText("Experimental", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Enable Apps" })).toBeVisible();
+      expect(disabledAppRequests).toEqual([]);
+      page.off("request", recordDisabledRequest);
+
+      const enabledRequest = page.waitForRequest(
+        (request) =>
+          request.method() === "PATCH" &&
+          request.url().endsWith(`/v1/projects/${project.id}/experimental`),
+      );
+      const enabledResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          response.url().endsWith(`/v1/projects/${project.id}/experimental`),
+      );
+      await page.getByRole("button", { name: "Enable Apps" }).click();
+      expect((await enabledRequest).postDataJSON()).toEqual({
+        feature: "apps",
+        enabled: true,
+      });
+      expect((await enabledResponse).status()).toBe(200);
+      await expect(page.getByText("No Apps deployed", { exact: true })).toBeVisible();
+
       const seeded = await api<AppResponse>(
         session.access_token,
         "POST",
@@ -94,16 +194,15 @@ test.describe("18 — Kortix Apps UI", () => {
         { slug: `seed-${runId}`, name: "Seed App" },
         201,
       );
-      expect(seeded.url).toContain(".apps.localhost:");
-
-      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-      await installBrowserSessionDirect(
-        page,
-        session,
-        "/projects",
-        authOptions,
-      );
-      await selectAccountForUi(page, account!.account_id);
+      const seededUrl = new URL(seeded.url);
+      if (env.target === "local") {
+        expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
+      } else {
+        const environmentPrefix = env.target === "prod" ? "prod" : env.target;
+        expect(seededUrl.hostname).toMatch(
+          new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
+        );
+      }
 
       const listResponse = page.waitForResponse(
         (response) =>
@@ -115,28 +214,8 @@ test.describe("18 — Kortix Apps UI", () => {
       });
       expect((await listResponse).status()).toBe(200);
 
-      // First-run onboarding mounts after the project route has already loaded.
-      await page.waitForTimeout(2_000);
-      for (let step = 0; step < 12; step += 1) {
-        const onboarding = page.getByRole("dialog").last();
-        if (!(await onboarding.isVisible().catch(() => false))) break;
-        const skip = onboarding
-          .getByRole("button", { name: /^(Skip|Not now|Maybe later)/i })
-          .last();
-        if (await skip.isVisible().catch(() => false)) {
-          await skip.click();
-        } else {
-          const primary = onboarding
-            .getByRole("button", {
-              name: /^(Continue|Done|Open project|Start building|Get started)$/i,
-            })
-            .last();
-          if (!(await primary.isVisible().catch(() => false))) break;
-          await primary.click();
-        }
-        await page.waitForTimeout(250);
-      }
-      await expect(page.getByRole("dialog")).toHaveCount(0);
+      // First-run onboarding can remount after the feature mutation.
+      await dismissOnboarding(page);
 
       await expect(
         page.getByRole("heading", { name: "Apps", exact: true }),
@@ -146,65 +225,46 @@ test.describe("18 — Kortix Apps UI", () => {
         page.getByText("Deploy from a terminal", { exact: true }),
       ).toBeVisible();
       await expect(
+        page.getByRole("main").getByText("Experimental", { exact: true }),
+      ).toBeVisible();
+      await expect(
         page.getByText("kortix apps deploy .", { exact: true }),
       ).toBeVisible();
-
-      await page.getByRole("button", { name: "New App" }).click();
-      const modal = page.getByRole("dialog", { name: "Create App" });
-      await expect(modal).toBeVisible();
-      await modal.getByLabel("Name").fill("UI Created App");
-      const createdSlug = `ui-${runId}`;
-      await modal.getByLabel("Slug").fill(createdSlug);
-
-      const createRequest = page.waitForRequest(
-        (request) =>
-          request.method() === "POST" &&
-          request.url().endsWith(`/v1/projects/${project.id}/apps`),
+      await expect(page.getByRole("button", { name: "New App" })).toHaveCount(
+        0,
       );
-      const createResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" &&
-          response.url().endsWith(`/v1/projects/${project.id}/apps`),
-      );
-      await modal.getByRole("button", { name: "Create App" }).click();
-      expect((await createRequest).postDataJSON()).toEqual({
-        name: "UI Created App",
-        slug: createdSlug,
-      });
-      const createdHttpResponse = await createResponse;
-      expect(createdHttpResponse.status()).toBe(201);
-      const created = (await createdHttpResponse.json()) as AppResponse;
-      await expect(modal).toHaveCount(0);
-
-      const createdRow = page.getByRole("listitem", {
-        name: "UI Created App App",
-      });
-      await expect(createdRow).toBeVisible();
       await expect(
-        createdRow.getByText(created.url, { exact: true }),
+        page.getByRole("dialog", { name: "Create App" }),
+      ).toHaveCount(0);
+
+      const seededRow = page.getByRole("listitem", {
+        name: "Seed App App",
+      });
+      await expect(seededRow).toBeVisible();
+      await expect(
+        seededRow.getByText(seeded.url, { exact: true }),
       ).toBeVisible();
       await expect(
-        createdRow.getByRole("button", { name: "Stop App" }),
+        seededRow.getByRole("button", { name: "Suspend App" }),
       ).toBeDisabled();
+      await expect(seededRow.getByText("Deploy to see a live preview.")).toBeVisible();
 
-      const copy = createdRow.getByRole("button", { name: "Copy code" });
+      const copy = seededRow.getByRole("button", { name: "Copy code" });
       await copy.click();
       await expect(
-        createdRow.getByRole("button", { name: "Copied" }),
+        seededRow.getByRole("button", { name: "Copied" }),
       ).toBeVisible();
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-        .toBe(`kortix apps deploy . --app ${created.app_id}`);
+        .toBe(`kortix apps deploy . --app ${seeded.app_id}`);
 
-      await createdRow.getByRole("button", { name: "Show versions" }).click();
-      await expect(createdRow.getByText("No deployments yet.")).toBeVisible();
+      await seededRow.getByRole("button", { name: "Show versions" }).click();
+      await expect(seededRow.getByText("No deployments yet.")).toBeVisible();
 
       await page.evaluate(() => localStorage.setItem("theme", "light"));
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.locator("html")).toHaveClass(/light/);
-      await expect(
-        page.getByText("UI Created App", { exact: true }),
-      ).toBeVisible();
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath("apps-light.png"),
         fullPage: true,
@@ -213,9 +273,7 @@ test.describe("18 — Kortix Apps UI", () => {
       await page.evaluate(() => localStorage.setItem("theme", "dark"));
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.locator("html")).toHaveClass(/dark/);
-      await expect(
-        page.getByText("UI Created App", { exact: true }),
-      ).toBeVisible();
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath("apps-dark.png"),
         fullPage: true,
@@ -225,10 +283,10 @@ test.describe("18 — Kortix Apps UI", () => {
       await expect(
         page.getByRole("heading", { name: "Apps", exact: true }),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "New App" })).toBeVisible();
-      await expect(
-        page.getByText("UI Created App", { exact: true }),
-      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "New App" })).toHaveCount(
+        0,
+      );
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -241,6 +299,7 @@ test.describe("18 — Kortix Apps UI", () => {
 
       expect(pageErrors).toEqual([]);
       expect(appsServerErrors).toEqual([]);
+      expect(appsCreateRequests).toEqual([]);
     } finally {
       if (projectId)
         await deleteDatabaseProject(env, projectId).catch(() => {});

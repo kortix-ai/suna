@@ -12,14 +12,16 @@ import {
   stopApp,
   updateApp,
 } from '../core/rest/projects-client';
+import { contract } from './query-contracts';
+import { qk } from './query-keys';
 
 export const projectAppsKey = (projectId: string | null | undefined) =>
-  ['project-apps', projectId] as const;
+  qk.project.apps(projectId ?? '');
 
 export const appDeploymentsKey = (
   projectId: string | null | undefined,
   appId: string | null | undefined,
-) => ['app-deployments', projectId, appId] as const;
+) => qk.project.appDeployments(projectId ?? '', appId ?? '');
 
 /** Project App inventory and lifecycle mutations. */
 export function useProjectApps(projectId: string | null | undefined) {
@@ -29,6 +31,7 @@ export function useProjectApps(projectId: string | null | undefined) {
     queryKey,
     queryFn: () => listApps(projectId as string),
     enabled: !!projectId,
+    ...contract('inventory'),
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
@@ -69,6 +72,7 @@ export function useAppDeployments(
     queryKey,
     queryFn: () => listAppDeployments(projectId as string, appId as string),
     enabled: !!projectId && !!appId,
+    ...contract('inventory'),
     refetchInterval: 5_000,
   });
   const invalidate = () => {

@@ -5,7 +5,20 @@ description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable
 
 Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
 
-Apps is experimental and off by default. Enable **Apps** for the selected project under Project Settings → Experimental. The API returns `404`, and the CLI and web surfaces stay hidden, while the feature is disabled.
+Apps is experimental and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. API and CLI execution return `404` until a project manager enables **Apps** for that project.
+
+## Choose the fastest source path
+
+- Deploy plain HTML, CSS, JavaScript, or a prebuilt SPA as `static`.
+- Build Vite locally and deploy `dist/` as `static` for the lowest latency.
+- Deploy Vite, React, or another package source as `bundle` when Kortix must run the install and build commands.
+- Export Next.js with `output: 'export'` and deploy `out/` as `static` when the App needs no server runtime.
+- Deploy server-rendered Next.js and arbitrary services with a Dockerfile and an explicit command and port.
+- Deploy an existing public image as `oci_image` with an explicit command and port.
+
+`kortix apps deploy` blocks by default until the stable URL is ready. Use `--no-wait` only when another process owns status tracking. A public request resumes a suspended runtime and returns the App after readiness. The Apps UI renders live previews and public deployment pages show queued, validating, building, provisioning, checking, failed, and unavailable states.
+
+Every immutable deployment records `created_by`, `actor_type`, and its originating `source_session_id` when an agent deployed it.
 
 ```ts
 const apps = kortix.project(projectId).apps;

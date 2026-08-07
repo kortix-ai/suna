@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 
-test('Apps discovery and direct access use the project experimental gate', () => {
+test('Apps stays discoverable while execution remains behind the project experimental gate', () => {
   const nav = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
@@ -12,9 +12,13 @@ test('Apps discovery and direct access use the project experimental gate', () =>
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(nav).toContain('useAppsFeatureEnabled');
-  expect(menu).toContain("requiresExperimental: 'apps'");
+  expect(nav).not.toContain('useAppsFeatureEnabled');
+  expect(nav).toContain('Experimental');
+  expect(menu).not.toContain("requiresExperimental: 'apps'");
   expect(view).toContain('useAppsFeatureEnabled');
+  expect(view).toContain("updateExperimentalFeature(projectId, 'apps', true)");
+  expect(view).toContain('Enable Apps');
+  expect(view).toContain('Experimental');
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {
@@ -24,4 +28,5 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('New App');
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
+  expect(view).toContain('<iframe');
 });

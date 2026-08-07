@@ -77,6 +77,8 @@ describe('qk.project', () => {
       qk.project.groupGrants(id),
       qk.project.resourceGrants(id),
       qk.project.secrets(id),
+      qk.project.apps(id),
+      qk.project.appDeployments(id, 'app_1'),
       qk.project.triggers(id),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
@@ -266,6 +268,14 @@ describe('qk.project', () => {
     expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
     expect(startsWith(qk.project.triggers(id), qk.project.secrets(id))).toBe(false);
     expect(startsWith(qk.project.secrets(id), qk.project.triggers(id))).toBe(false);
+  });
+
+  test('App deployment history nests under its App inventory without colliding with it', () => {
+    expect(startsWith(qk.project.appDeployments(id, 'app_1'), qk.project.apps(id))).toBe(true);
+    expect(qk.project.appDeployments(id, 'app_1')).not.toEqual(qk.project.apps(id) as never);
+    expect(qk.project.appDeployments(id, 'app_1')).not.toEqual(
+      qk.project.appDeployments(id, 'app_2') as never,
+    );
   });
 
   test('different projects never collide', () => {

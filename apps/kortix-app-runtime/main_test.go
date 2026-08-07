@@ -115,6 +115,18 @@ func TestStaticCaddyConfigSupportsSPAWithoutProxy(t *testing.T) {
 	}
 }
 
+func TestReadinessChecksPublicIngressForStaticAndDynamicApps(t *testing.T) {
+	for _, spec := range []appSpec{
+		{StaticRoot: "/srv", ReadinessPath: "/health"},
+		{Command: []string{"server"}, TargetPort: 3000, ReadinessPath: "/health"},
+	} {
+		want := "http://127.0.0.1:8080/health"
+		if got := spec.readinessURL(); got != want {
+			t.Fatalf("readiness URL = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestLogRingIsBoundedAndCursorBased(t *testing.T) {
 	ring := newLogRing(3)
 	for _, line := range []string{"one", "two", "three", "four"} {
@@ -151,6 +163,18 @@ func TestChildEnvironmentRemovesControlSecrets(t *testing.T) {
 	}
 	if !strings.Contains(joined, "PUBLIC_VALUE=yes") {
 		t.Fatalf("public environment missing: %s", joined)
+	}
+}
+
+func TestCaddyEnvironmentUsesWritableTemporaryState(t *testing.T) {
+	env := strings.Join(caddyEnvironment([]string{"HOME=/root", "PATH=/bin"}), "\n")
+	for _, required := range []string{
+		"XDG_CONFIG_HOME=/tmp/kortix-caddy-config",
+		"XDG_DATA_HOME=/tmp/kortix-caddy-data",
+	} {
+		if !strings.Contains(env, required) {
+			t.Fatalf("Caddy environment missing %q: %s", required, env)
+		}
 	}
 }
 

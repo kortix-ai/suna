@@ -62,7 +62,7 @@ Subcommands:
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
-  stop <id|slug>                    Stop the App and block cold wake.
+  stop <id|slug>                    Suspend now. The next public request wakes it.
   rollback <id|slug> <deployment>   Move traffic to a ready deployment.
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
@@ -494,9 +494,11 @@ async function waitForDeployment(
 ): Promise<AppDeployment> {
   const deadline = Date.now() + waitSeconds * 1000;
   let current = deployment;
+  let polls = 0;
   while (!['ready', 'failed', 'cancelled'].includes(current.status)) {
     if (Date.now() >= deadline) throw new Error(`Deployment did not finish within ${waitSeconds} seconds`);
-    await Bun.sleep(2000);
+    await Bun.sleep(polls < 40 ? 500 : polls < 100 ? 1_000 : 2_000);
+    polls += 1;
     current = (await apps.deployments.get(appId, deployment.deployment_id)).deployment;
   }
   if (current.status !== 'ready') {

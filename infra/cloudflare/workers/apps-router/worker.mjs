@@ -1,4 +1,28 @@
 const ENVIRONMENTS = new Set(['dev', 'staging', 'prod', 'preview']);
+const APP_FRAME_ANCESTORS =
+  "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*";
+
+function withoutFrameAncestors(value) {
+  return value
+    .split(';')
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !/^frame-ancestors(?:\s|$)/i.test(directive));
+}
+
+function embeddableAppHeaders(upstreamHeaders) {
+  const headers = new Headers(upstreamHeaders);
+  headers.delete('x-frame-options');
+  const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
+  headers.set('content-security-policy', [...enforced, APP_FRAME_ANCESTORS].join('; '));
+  const reportOnlyKey = 'content-security-policy-report-only';
+  const reportOnly = headers.get(reportOnlyKey);
+  if (reportOnly && /frame-ancestors/i.test(reportOnly)) {
+    const remaining = withoutFrameAncestors(reportOnly);
+    if (remaining.length) headers.set(reportOnlyKey, remaining.join('; '));
+    else headers.delete(reportOnlyKey);
+  }
+  return headers;
+}
 
 function backendFor(hostname, env) {
   const environment = hostname.split('-', 1)[0];
@@ -82,7 +106,11 @@ export default {
     // Cloudflare attaches the accepted socket to this non-standard property.
     // Constructing a new Response would drop it and break WebSocket upgrades.
     if (response.status === 101 || response.webSocket) return response;
-    const output = new Response(response.body, response);
+    const output = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: embeddableAppHeaders(response.headers),
+    });
     output.headers.set('x-kortix-app-environment', selected.environment);
     return output;
   },

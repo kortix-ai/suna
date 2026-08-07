@@ -14,6 +14,9 @@ func TestBuildPinsPatchedCaddyRelease(t *testing.T) {
 	if !strings.Contains(string(buildScript), `cd "${runtime_dir}/caddy"`) {
 		t.Fatal("build.sh must build Caddy from the pinned local module")
 	}
+	if strings.Count(string(buildScript), "-buildvcs=false") != 2 {
+		t.Fatal("build.sh must disable VCS stamping for both nested Go modules")
+	}
 
 	caddyModule, err := os.ReadFile("caddy/go.mod")
 	if err != nil {
