@@ -13,6 +13,7 @@ import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -244,6 +245,7 @@ export async function allocateRuntimeOnOpen(
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
+  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
 
   allocateSessionRuntime({
     sessionId,
@@ -272,6 +274,10 @@ export async function allocateRuntimeOnOpen(
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
+    beforeActive: rehydrate
+      ? (externalId) =>
+          rehydrateSessionChat({ sessionId, externalId, provider: providerName, spec: rehydrate })
+      : undefined,
   });
 }
 
