@@ -16,7 +16,7 @@ import {
 } from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
-import { formatFlowProgress } from "./progress";
+import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows } from "./lanes";
 import { mapWithConcurrency } from "./concurrency";
 import { ke2eRetryDelayMs } from "./client";
@@ -154,7 +154,7 @@ async function runOneFlow(
       if (!retryable || attempt >= maxAttempts) break;
       log.warn(
         `retry ${f.id} after attempt ${attempt}/${maxAttempts}: ` +
-          `${(err as Error)?.message ?? String(err)}`,
+          `${redactSensitiveLogText((err as Error)?.message ?? String(err))}`,
       );
       await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
     }
@@ -258,7 +258,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         completed += 1;
         log.fail(
           `[${completed}/${flows.length}] ERROR ${flow.id} — ` +
-            `${(error as Error)?.message ?? String(error)}`,
+            `${redactSensitiveLogText((error as Error)?.message ?? String(error))}`,
         );
         throw error;
       }
