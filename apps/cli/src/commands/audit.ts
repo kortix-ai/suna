@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs';
+import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
 import { loadAuth } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
@@ -18,34 +19,7 @@ import { C, help, pad, status } from '../style.ts';
 //     route with a different gate — a non-Enterprise account still sees its
 //     pending approvals there, never a 402.
 
-interface AuditEvent {
-  event_id: string;
-  occurred_at: string;
-  project_id: string | null;
-  session_id: string | null;
-  actor_user_id: string | null;
-  actor_type: 'human' | 'agent' | 'service_account' | 'system' | null;
-  source: string | null;
-  outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
-  action: string;
-  resource_type: string | null;
-  resource_id: string | null;
-  http_status: number | null;
-  duration_ms: number | null;
-  request_id: string | null;
-  trace_id: string | null;
-  correlation_id: string | null;
-  before: unknown;
-  after: unknown;
-  ip: string | null;
-  user_agent: string | null;
-  metadata: unknown;
-}
-
-interface AuditPage {
-  events: AuditEvent[];
-  next_cursor: string | null;
-}
+type AuditPage = AuditEventList;
 
 const HELP = help`Usage: kortix audit <subcommand> [options]
 
@@ -56,9 +30,11 @@ and approval events. The account trail requires the Enterprise plan.
 Subcommands:
   ls [filters] [--json]           List audit events, newest first.
   export [filters] [--out <f>]    Export matching events as CSV or JSONL.
-  session <session-id> [--json]   One session's agent-action log.
+  project <project-id> [--json]   One project's canonical audit log.
+  session <session-id> --project <project-id> [--json]
+                                   One session's canonical ordered timeline.
 
-Filters (ls, export):
+Filters (ls, export, project):
   --since <when>       Only events at or after this point. ISO-8601, or a
                        relative span like 30m, 24h, 7d, 2w.
   --until <when>       Only events at or before this point.
@@ -68,7 +44,9 @@ Filters (ls, export):
   --outcome <o>        success | failure | denied | pending
   --project <id>       Only this project.
   --session <id>       Only this session.
-  --source <s>         Originating surface, e.g. "api", "cli".
+  --source <s>         Trusted execution source or reported client surface,
+                       e.g. "agent", "opencode", "cli", "web".
+  --phase <p>          Lifecycle phase, e.g. pending, completed, failed.
   --resource-type <t>  Only this resource type.
   --request-id <id>    One request.
   --correlation-id <id>  One correlated chain of events.
@@ -77,7 +55,7 @@ Filters (ls, export):
 Options:
   --limit <n>          Events per page (default 50, server max 200).
   --cursor <c>         Resume from a previous page's next_cursor.
-  --all                Follow cursors and print every match (max 10000).
+  --all                Follow cursors until every matching event is returned.
   --format <f>         export: csv (default) | jsonl.
   --out <file>         export: write to a file instead of stdout.
   --account <id>       Operate on this account (default: active account).
@@ -89,7 +67,7 @@ Examples:
   kortix audit ls --outcome denied --since 7d
   kortix audit ls --action iam. --json
   kortix audit ls --project <project-id> --all
-  kortix audit session <session-id>
+  kortix audit session <session-id> --project <project-id>
   kortix audit export --since 30d --format jsonl --out audit.jsonl
 `;
 
@@ -135,6 +113,7 @@ export function buildAuditQuery(
     ['project_id', flags.project],
     ['session_id', flags.session],
     ['source', flags.source],
+    ['phase', flags.phase],
     ['outcome', flags.outcome],
     ['resource_type', flags.resourceType],
     ['request_id', flags.requestId],
@@ -149,7 +128,8 @@ export function buildAuditQuery(
     const iso = resolveInstant(raw, now);
     // Refuse rather than silently dropping the bound: a filter that quietly
     // does not apply makes an audit read look complete when it is not.
-    if (!iso) return { error: `--${key} "${raw}" is not an ISO-8601 instant or a span like 24h/7d.` };
+    if (!iso)
+      return { error: `--${key} "${raw}" is not an ISO-8601 instant or a span like 24h/7d.` };
     search.set(key, iso);
   }
   return { search };
@@ -158,6 +138,7 @@ export function buildAuditQuery(
 interface AuditContext {
   client: ApiClient;
   accountId: string;
+  auth: NonNullable<ReturnType<typeof loadAuth>>;
 }
 
 function resolveAccountContext(accountArg?: string): AuditContext | null {
@@ -173,7 +154,7 @@ function resolveAccountContext(accountArg?: string): AuditContext | null {
     );
     return null;
   }
-  return { client: clientFromAuth(auth, { accountId }), accountId };
+  return { client: clientFromAuth(auth, { accountId }), accountId, auth };
 }
 
 /**
@@ -273,7 +254,27 @@ export async function exportBodyText(body: unknown): Promise<string> {
   return JSON.stringify(body);
 }
 
-const MAX_FOLLOW_EVENTS = 10_000;
+async function collectAuditPages(
+  fetchPage: (cursor: string | null) => Promise<AuditPage>,
+  initialCursor: string | null,
+  followAll: boolean,
+): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
+  const events: AuditEvent[] = [];
+  let cursor = initialCursor;
+  const seen = new Set<string>();
+  if (cursor) seen.add(cursor);
+  for (;;) {
+    const page = await fetchPage(cursor);
+    events.push(...page.events);
+    const nextCursor = page.next_cursor;
+    if (!followAll || !nextCursor) return { events, nextCursor };
+    if (seen.has(nextCursor)) {
+      throw new Error('audit pagination returned a repeated continuation cursor');
+    }
+    seen.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
 
 export async function runAudit(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
@@ -293,6 +294,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.project = takeFlagValue(rest, ['--project']);
     f.session = takeFlagValue(rest, ['--session']);
     f.source = takeFlagValue(rest, ['--source']);
+    f.phase = takeFlagValue(rest, ['--phase']);
     f.outcome = takeFlagValue(rest, ['--outcome']);
     f.resourceType = takeFlagValue(rest, ['--resource-type']);
     f.requestId = takeFlagValue(rest, ['--request-id']);
@@ -329,37 +331,73 @@ export async function runAudit(argv: string[]): Promise<number> {
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
 
-        const collected: AuditEvent[] = [];
-        let cursor: string | null = f.cursor ?? null;
-        let truncated = false;
-        for (;;) {
-          if (cursor) search.set('cursor', cursor);
-          const page: AuditPage = await ctx.client.get<AuditPage>(`${base}?${search.toString()}`);
-          collected.push(...page.events);
-          cursor = page.next_cursor;
-          if (!all || !cursor) break;
-          if (collected.length >= MAX_FOLLOW_EVENTS) {
-            truncated = true;
-            break;
-          }
-        }
+        const collected = await collectAuditPages(
+          async (cursor) => {
+            if (cursor) search.set('cursor', cursor);
+            else search.delete('cursor');
+            return ctx.client.get<AuditPage>(`${base}?${search.toString()}`);
+          },
+          f.cursor ?? null,
+          all,
+        );
 
         if (json) {
-          // `next_cursor` is part of the contract even under --all, so a script
-          // can tell a complete read from a capped one.
-          emitJson({ events: collected, next_cursor: truncated ? cursor : all ? null : cursor });
+          emitJson({
+            events: collected.events,
+            next_cursor: all ? null : collected.nextCursor,
+          });
           return 0;
         }
-        printEvents(collected);
-        const count = `${collected.length} event${collected.length === 1 ? '' : 's'}`;
+        printEvents(collected.events);
+        const count = `${collected.events.length} event${collected.events.length === 1 ? '' : 's'}`;
         process.stdout.write(`\n  ${C.dim}${count}${C.reset}`);
-        if (truncated) {
+        if (collected.nextCursor && !all) {
           process.stdout.write(
-            `  ${C.yellow}capped at ${MAX_FOLLOW_EVENTS}; narrow with --since or --action${C.reset}`,
+            `  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
           );
-        } else if (cursor && !all) {
-          process.stdout.write(`  ${C.dim}more available — use --all, or --cursor ${cursor}${C.reset}`);
         }
+        process.stdout.write('\n\n');
+        return 0;
+      }
+
+      case 'project': {
+        const projectId = positional[0] ?? f.project;
+        if (!projectId) {
+          process.stderr.write(`${status.err('Missing a project id.')}` + '\n');
+          return 2;
+        }
+        const built = buildAuditQuery({ ...f, project: undefined });
+        if ('error' in built) {
+          process.stderr.write(`${status.err(built.error)}\n`);
+          return 2;
+        }
+        const { search } = built;
+        if (f.limit) search.set('limit', f.limit);
+        if (f.cursor) search.set('cursor', f.cursor);
+        const collected = await collectAuditPages(
+          async (cursor) => {
+            if (cursor) search.set('cursor', cursor);
+            else search.delete('cursor');
+            return ctx.client.get<AuditPage>(
+              `/projects/${encodeURIComponent(projectId)}/audit?${search.toString()}`,
+            );
+          },
+          f.cursor ?? null,
+          all,
+        );
+        if (json) {
+          emitJson({
+            events: collected.events,
+            next_cursor: all ? null : collected.nextCursor,
+          });
+          return 0;
+        }
+        printEvents(collected.events);
+        process.stdout.write(
+          `\n  ${C.dim}${collected.events.length} event${collected.events.length === 1 ? '' : 's'}${C.reset}`,
+        );
+        if (collected.nextCursor && !all)
+          process.stdout.write(`  ${C.dim}more available — use --all${C.reset}`);
         process.stdout.write('\n\n');
         return 0;
       }
@@ -376,9 +414,54 @@ export async function runAudit(argv: string[]): Promise<number> {
           return 2;
         }
         const { search } = built;
-        search.set('format', format);
-        const body = await ctx.client.get<unknown>(`${base}/export?${search.toString()}`);
-        const text = await exportBodyText(body);
+        let cursor = f.cursor ?? undefined;
+        const chunks: string[] = [];
+        let firstPage = true;
+        for (;;) {
+          const page = await downloadAccountAudit(
+            ctx.accountId,
+            {
+              format,
+              action: search.get('action') ?? undefined,
+              actor: search.get('actor') ?? undefined,
+              project_id: search.get('project_id') ?? undefined,
+              session_id: search.get('session_id') ?? undefined,
+              actor_type: search.get('actor_type') as
+                | 'human'
+                | 'agent'
+                | 'service_account'
+                | 'system'
+                | undefined,
+              source: search.get('source') ?? undefined,
+              phase: search.get('phase') ?? undefined,
+              outcome: search.get('outcome') as
+                | 'success'
+                | 'failure'
+                | 'denied'
+                | 'pending'
+                | undefined,
+              request_id: search.get('request_id') ?? undefined,
+              correlation_id: search.get('correlation_id') ?? undefined,
+              resource_type: search.get('resource_type') ?? undefined,
+              since: search.get('since') ?? undefined,
+              until: search.get('until') ?? undefined,
+              q: search.get('q') ?? undefined,
+              cursor,
+              limit: f.limit ? Number(f.limit) : undefined,
+            },
+            { backendUrl: ctx.auth.api_base, accessToken: ctx.auth.token },
+          );
+          let chunk = await page.blob.text();
+          if (format === 'csv' && !firstPage) chunk = chunk.replace(/^[^\r\n]*(?:\r?\n|$)/, '');
+          if (chunk) chunks.push(chunk.replace(/\s+$/, ''));
+          firstPage = false;
+          if (page.complete) break;
+          if (!page.nextCursor || page.nextCursor === cursor) {
+            throw new Error('audit export returned an invalid continuation cursor');
+          }
+          cursor = page.nextCursor;
+        }
+        const text = chunks.filter(Boolean).join('\n');
         if (f.out) {
           writeFileSync(f.out, text);
           const lines = text.split('\n').filter(Boolean).length;
@@ -404,21 +487,39 @@ export async function runAudit(argv: string[]): Promise<number> {
           );
           return 2;
         }
-        const query = f.limit ? `?limit=${encodeURIComponent(f.limit)}` : '';
-        const result = await ctx.client.get<unknown>(
-          `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
+        const sessionSearch = new URLSearchParams();
+        if (f.limit) sessionSearch.set('limit', f.limit);
+        if (f.cursor) sessionSearch.set('cursor', f.cursor);
+        const collected = await collectAuditPages(
+          async (cursor) => {
+            if (cursor) sessionSearch.set('cursor', cursor);
+            else sessionSearch.delete('cursor');
+            const query = sessionSearch.size ? `?${sessionSearch.toString()}` : '';
+            return ctx.client.get<AuditPage>(
+              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
+            );
+          },
+          f.cursor ?? null,
+          all,
         );
-        if (json) return emitJson(result), 0;
-        const events = Array.isArray((result as { events?: unknown })?.events)
-          ? ((result as { events: AuditEvent[] }).events ?? [])
-          : [];
+        if (json) {
+          emitJson({
+            events: collected.events,
+            next_cursor: all ? null : collected.nextCursor,
+          });
+          return 0;
+        }
+        const events = collected.events;
         if (events.length === 0) {
-          // The shape here is owned by the session route, not the account one.
-          // Print what came back rather than asserting a table over it.
-          emitJson(result);
+          printEvents(events);
           return 0;
         }
         printEvents(events);
+        if (collected.nextCursor && !all) {
+          process.stdout.write(
+            `\n  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
+          );
+        }
         process.stdout.write('\n');
         return 0;
       }

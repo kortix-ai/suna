@@ -592,26 +592,35 @@ hard-lock an agent regardless of who runs it.
 
 ## 9. Audit & compliance
 
-Recording is always on, on every tier: every state-changing API request is logged, plus
-named events for every security-relevant action — logins (`auth.login.success|fail`),
+Recording is always on, on every tier. The canonical log includes authenticated API
+reads and writes, plus named events for every security-relevant action — logins (`auth.login.success|fail`),
 IAM changes (`iam.role.*`, `iam.policy.*`, `iam.group.*`, `iam.sso.*`,
 `iam.scim.token.*`, `iam.service_account.*`), SCIM operations (`scim.user.*`,
-`scim.group.*`), grant expiries, session revocations. Events carry actor, action,
-resource, before/after, IP, user agent, and metadata.
+`scim.group.*`), grant expiries, session revocations, session lifecycle, OpenCode
+messages and tools, connectors, triggers, providers, LLM usage, voice turns, and
+computer tunnel operations. Events carry project and session scope, actor and
+initiator identity, action phase, correlation identifiers, redacted summaries,
+digests, and a per-session integrity chain.
 
 **Reading it** (needs `audit.read` + the `auditAccess` entitlement):
 
-- **UI:** `/accounts/{id}?tab=audit` — quick filters (IAM only, group changes, project
-  access, super-admin grants, 24 h/7 d/30 d) and one-click **CSV / JSONL export**
-  (10,000 rows per pull; page with `since`).
+- **UI:** `/accounts/{id}?tab=audit` — filters for project, session, actor, source,
+  phase, result, resource, action, and time. CSV and JSONL exports automatically
+  continue across 10,000-row API pages.
 - **API:** `GET /v1/accounts/{id}/audit?action=iam.&since=…&cursor=…` and
-  `GET /v1/accounts/{id}/audit/export?format=csv|jsonl`.
+  `GET /v1/accounts/{id}/audit/export?format=csv|jsonl`. Project and session
+  views use `GET /v1/projects/{projectId}/audit` and
+  `GET /v1/projects/{projectId}/sessions/{sessionId}/audit`.
+- **CLI:** `kortix audit ls`, `kortix audit project <project-id>`,
+  `kortix audit session <session-id> --project <project-id>`, and
+  `kortix audit export --format csv|jsonl --out <file>`.
 
 **Streaming to a SIEM:** `/accounts/{id}?tab=settings` → **Observability** → *Add
 webhook* (name, HTTPS URL, optional action prefix such as `iam.`). You get a `whsec_…`
 secret once, plus an immediate test delivery. Every delivery is signed —
 verify `X-Kortix-Signature: sha256=HMAC-SHA256(secret, raw_body)`; idempotency and
-webhook-id headers included. Failures stamp `last_error` on the webhook row. On
+webhook-id headers included. Deliveries use a durable retry ledger, terminal
+dead-letter state, and manual replay. On
 downgrade, delivery stops per-event, but you can always list and delete leftover hooks.
 
 ---

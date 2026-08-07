@@ -53,7 +53,6 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
-import { recordAuditEvent } from '../shared/audit';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { connectorAttachmentStore } from './attachments';
 import { hideSupersededSlack } from './channel-rules';
@@ -114,7 +113,6 @@ import { resolveShareSubject } from './share';
 import { getConnectorCatalogDetail, listConnectorCatalog } from './connector-catalog';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import type { ActionBinding, Risk } from './types';
-import { executionAuditEvent } from './call-audit';
 
 /** Which policy scope decided an action — surfaced so the editor can say so. */
 type EffectiveSource = EffectiveResolveResult['source'];
@@ -523,11 +521,6 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         })
         .returning({ id: connectorCalls.executionId });
       if (!row?.id) return null;
-      try {
-        await recordAuditEvent(executionAuditEvent(rec, row.id));
-      } catch (error) {
-        console.error('[connector] Failed to record central audit event:', error);
-      }
       return row.id;
     },
     consumeApprovedExecution: consumeApprovedExecution,

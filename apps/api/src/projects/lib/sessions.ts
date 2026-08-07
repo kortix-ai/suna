@@ -85,7 +85,7 @@ import {
   titleSourceForCreate,
 } from '../session-title-generate';
 import { canOverride, resolveSessionOrigin } from './session-origin';
-import { sessionCreatedAuditEvent } from './session-audit';
+import { sessionCreatedAuditAttribution } from './session-audit';
 import {
   resolveSessionSandboxSlug,
   workspaceModeAllowsFullRepository,
@@ -1133,6 +1133,27 @@ export async function createProjectSession(input: {
   // would have used, instead of leaking the scaffolding into a project-visible
   // title when this create-time attempt fails.
   const explicitTitleSource = normalizeString(body.title_source ?? body.titleSource);
+  const invocationSource =
+    typeof (input.metadata as Record<string, unknown> | undefined)?.source === 'string'
+      ? ((input.metadata as Record<string, unknown>).source as string)
+      : null;
+  const auditAttribution = sessionCreatedAuditAttribution({
+    accountId,
+    projectId,
+    sessionId,
+    actorUserId: userId,
+    requestingPrincipalType: input.requestingPrincipalType,
+    inSession: input.inSession,
+    origin,
+    invocationSource,
+    clientReportedSource: input.request?.clientReportedSource ?? null,
+    callerSessionId: input.callerSessionId,
+    agentName,
+    visibility,
+    sandboxProvider: providerName,
+    connectorBindingCount: validatedConnectorBindings.bindings.length,
+    secretAllowlistCount: secretsAllowlist?.length ?? 0,
+  });
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
@@ -1151,6 +1172,14 @@ export async function createProjectSession(input: {
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
     workspace_mode: workspaceMode,
     sandbox_slug: sandboxSlug,
+    audit_v2: {
+      actor_type: auditAttribution.actorType,
+      authoritative_source: auditAttribution.authoritativeSource,
+      client_reported_source: auditAttribution.clientReportedSource,
+      initiator_actor_type: auditAttribution.initiatorActorType,
+      initiator_actor_id: auditAttribution.initiatorActorId,
+      delegation_depth: auditAttribution.delegationDepth,
+    },
   };
 
   let sessionRow: ProjectSessionRow | null = null;
@@ -1243,31 +1272,6 @@ export async function createProjectSession(input: {
   }
 
   setContextField('sessionId', sessionId);
-
-  try {
-    await recordAuditEvent(
-      sessionCreatedAuditEvent({
-        accountId,
-        projectId,
-        sessionId,
-        actorUserId: userId,
-        requestingPrincipalType: input.requestingPrincipalType,
-        inSession: input.inSession,
-        origin,
-        invocationSource:
-          typeof (input.metadata as Record<string, unknown> | undefined)?.source === 'string'
-            ? ((input.metadata as Record<string, unknown>).source as string)
-            : null,
-        agentName,
-        visibility,
-        sandboxProvider: providerName,
-        connectorBindingCount: validatedConnectorBindings.bindings.length,
-        secretAllowlistCount: secretsAllowlist?.length ?? 0,
-      }),
-    );
-  } catch (error) {
-    console.error('[projects] Failed to record session creation audit event:', error);
-  }
 
   // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
   // inside the box — it never crosses the API again, so this is the only moment

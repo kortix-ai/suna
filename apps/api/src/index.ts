@@ -114,6 +114,11 @@ import { authRouter } from './auth';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditApiRequest } from './shared/audit';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+import {
+  startAuditReconciliationWorker,
+  stopAuditReconciliationWorker,
+} from './shared/audit-reconciliation-worker';
 import { opsApp } from './ops';
 import { adminApp } from './admin';
 
@@ -1328,6 +1333,8 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
+  startAuditWebhookWorker();
+  startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1343,6 +1350,8 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
+  await stopAuditWebhookWorker();
+  await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }

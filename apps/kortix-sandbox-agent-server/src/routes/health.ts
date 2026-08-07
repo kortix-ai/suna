@@ -52,6 +52,8 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
+  /** Fatal local persistence failure in the OpenCode audit relay. */
+  auditRelayError?: string | null
 }
 
 /**
@@ -101,15 +103,17 @@ export function createHealthRouter(
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+    const auditRelayError = bootState.auditRelayError ?? null
     const runtimeReady =
       repoReady &&
       !bootState.repoMaterializationError &&
       !initialSessionError &&
+      !auditRelayError &&
       opencodeState === 'ok' &&
       initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError
+      : bootState.repoMaterializationError || initialSessionError || auditRelayError
         ? 'error'
         : opencodeState
 
@@ -152,7 +156,7 @@ export function createHealthRouter(
             ),
           }
         : {}),
-      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

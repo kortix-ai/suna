@@ -30,6 +30,7 @@ import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import {
@@ -387,6 +388,49 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const auditRelay = createAuditRelay(
+    async (events) => {
+      const ctx = sandboxRelayContext(auditRelayToken(process.env))
+      if (!ctx) throw new Error('audit relay context is unavailable')
+      const response = await fetch(
+        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+          body: JSON.stringify({ events }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      )
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+      }
+    },
+    {
+      spoolPath:
+        process.env.KORTIX_AUDIT_SPOOL_PATH || '/var/run/kortix/opencode-audit-spool.json',
+    },
+  )
+  const flushAuditRelay = () => {
+    void auditRelay.stop().catch((error) =>
+      logger.warn('[opencode-events] audit relay shutdown flush failed', {
+        err: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+  process.once('SIGTERM', flushAuditRelay)
+  process.once('SIGINT', flushAuditRelay)
+  const onEvent = (event: { type?: string; properties?: unknown }) => {
+    try {
+      auditRelay.enqueue(event)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      bootState.auditRelayError = message
+      logger.error('[opencode-events] audit relay persistence failed; runtime is unhealthy', {
+        err: message,
+      })
+    }
+  }
   const onQuestionAsked = (req: QuestionRequest) => {
     void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
@@ -414,7 +458,7 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -1236,18 +1280,21 @@ type SandboxRelayContext = {
 // The control-plane callback context for every project session. The sandbox
 // credential can call the sandbox-identity turn-stream route. This callback is
 // safe for web, CLI, Slack, Teams, and email sessions.
-function sandboxRelayContext(): SandboxRelayContext | null {
+function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
   // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (
-    process.env.KORTIX_CLI_TOKEN ||
-    process.env.KORTIX_SANDBOX_TOKEN ||
-    process.env.KORTIX_TOKEN ||
-    ''
-  ).trim()
+  const token =
+    tokenOverride !== undefined
+      ? (tokenOverride ?? '')
+      : (
+          process.env.KORTIX_CLI_TOKEN ||
+          process.env.KORTIX_SANDBOX_TOKEN ||
+          process.env.KORTIX_TOKEN ||
+          ''
+        ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {

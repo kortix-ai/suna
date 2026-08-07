@@ -198,6 +198,71 @@ GREEN:
 
 ---
 
+### 2026-08-07 — session `audit-v2` claim
+
+No **Now** task claimed. This is the user-directed centralized audit v2 implementation.
+
+Claimed SDK scope:
+
+- Extend the account audit contract with canonical execution, causation, sequencing,
+  source-ledger, redaction, and integrity fields.
+- Replace the connector-only session audit response with the canonical ordered
+  session timeline while preserving existing published names.
+- Add strict cursor and time-bound validation plus resumable, uncapped export.
+- Expose the same project, session, actor, source, action, phase, and outcome filters
+  through the framework-free SDK and the Kortix CLI.
+- Keep every existing published export compatible. Do not edit the package version.
+
+The required `tdd` skill is unavailable in this session. This work uses the same
+RED, GREEN, and REFACTOR sequence directly.
+
+Required gates are focused RED/GREEN tests, SDK typecheck, the complete SDK suite,
+packed-install smoke, API and database tests, real local HTTP and CLI verification,
+browser verification, merge, Deploy Dev, deployed SHA proof, and deployed API/CLI/UI
+verification.
+
+Completed the additive centralized audit v2 SDK contract.
+
+Scope:
+
+- Account, project, and session audit reads share one canonical event envelope.
+- Account, project, session, actor, source, action, phase, outcome, and time filters
+  are available through the framework-free SDK and the Kortix CLI.
+- Session reads preserve resolved connector actions when callers omit canonical
+  events.
+- Export is resumable and uses an immutable event lookup to preserve PostgreSQL
+  microseconds across JavaScript cursors.
+- Existing published names remain compatible. The package version remains `0.3.0`
+  and matches `origin/main`.
+
+RED then GREEN:
+
+- The pagination test first failed because `buildAuditCursorCondition` was absent.
+  It then passed against migrated PostgreSQL at `2 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1754 pass`, `0 fail`, `6905 expect()` calls
+  across `138` files after rebasing onto `origin/main`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed tarballs installed and
+  imported successfully.
+- API integration: `441 pass`, `0 fail` across `32` files.
+- API unit: `5919 pass`, `67 skip`, `0 fail` across `562` files.
+- Database: `209 pass`, `6 gated skip`, `0 fail` across `21` files.
+- Audit webhook and reconciliation: `6 pass`, `0 fail` across `3` files.
+- CLI: `758 pass`, `0 fail`; SDK-boundary violations: `0`.
+- Web: `4898 pass`, `0 fail`; touched-file ESLint: exit `0`.
+- Real local CLI and HTTP acceptance verified account, project, session, resumable
+  export, OpenCode ingestion, computer phases, webhook delivery and replay,
+  reconstruction, hash-chain integrity, and persisted-secret absence.
+
+Browser verification remains an overall release acceptance item. It does not
+change the framework-free SDK package judgment.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-07 — session `client-cache-unification` — guard hardening + 4 review follow-ups
 
 Closes the regression-prevention gap the fix-wave entry below left open, plus

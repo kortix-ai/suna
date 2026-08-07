@@ -70,6 +70,7 @@ interface AuditFilterState {
   projectId: string;
   sessionId: string;
   source: string;
+  phase: string;
   outcome: Outcome | '';
   resourceType: string;
   q: string;
@@ -84,6 +85,7 @@ const EMPTY_FILTER: AuditFilterState = {
   projectId: '',
   sessionId: '',
   source: '',
+  phase: '',
   outcome: '',
   resourceType: '',
   q: '',
@@ -123,19 +125,22 @@ const RESOURCE_TYPES = [
 
 const SOURCES = [
   { label: 'Any source', value: '' },
-  { label: 'Web', value: 'web' },
-  { label: 'CLI', value: 'cli' },
-  { label: 'SDK', value: 'sdk' },
+  { label: 'Human', value: 'human' },
+  { label: 'API key', value: 'api_key' },
   { label: 'Agent', value: 'agent' },
-  { label: 'Connector', value: 'connector' },
+  { label: 'OpenCode', value: 'opencode' },
+  { label: 'LLM gateway', value: 'llm_gateway' },
+  { label: 'Provider', value: 'provider' },
   { label: 'Automation', value: 'automation' },
-  { label: 'Slack', value: 'slack' },
-  { label: 'Teams', value: 'teams' },
-  { label: 'Email', value: 'email' },
-  { label: 'Computer', value: 'computer' },
+  { label: 'Voice', value: 'voice' },
+  { label: 'Tunnel', value: 'tunnel' },
   { label: 'API', value: 'api' },
-  { label: 'System', value: 'system' },
+  { label: 'CLI client', value: 'cli' },
+  { label: 'Web client', value: 'web' },
+  { label: 'Mobile client', value: 'mobile' },
 ];
+
+const PHASES = ['pending', 'queued', 'running', 'completed', 'succeeded', 'failed', 'denied'];
 
 const KIND_DOT_TOKEN: Record<HumanizedAuditAction['kind'], string> = {
   create: 'bg-kortix-green',
@@ -227,6 +232,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.projectId,
     filter.sessionId,
     filter.source,
+    filter.phase,
     filter.outcome,
     filter.resourceType,
     filter.q,
@@ -246,6 +252,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         project_id: filter.projectId || undefined,
         session_id: filter.sessionId || undefined,
         source: filter.source || undefined,
+        phase: filter.phase || undefined,
         outcome: filter.outcome || undefined,
         resource_type: filter.resourceType || undefined,
         q: filter.q || undefined,
@@ -271,41 +278,57 @@ export function AuditTab({ accountId }: { accountId: string }) {
         errorToast('Not signed in');
         return;
       }
-      const result = await downloadAccountAudit(
-        accountId,
-        {
-          format,
-          action: filter.action || undefined,
-          actor: filter.actor || undefined,
-          actor_type: filter.actorType || undefined,
-          project_id: filter.projectId || undefined,
-          session_id: filter.sessionId || undefined,
-          source: filter.source || undefined,
-          outcome: filter.outcome || undefined,
-          resource_type: filter.resourceType || undefined,
-          q: filter.q || undefined,
-          since: filter.since || undefined,
-          until: filter.until || undefined,
-        },
-        {
-          backendUrl: getEnv().BACKEND_URL ?? '',
-          accessToken: token,
-        },
-      );
+      const chunks: string[] = [];
+      let cursor: string | undefined;
+      let rowCount = 0;
+      let firstPage = true;
+      let filename: string | null = null;
+      for (;;) {
+        const result = await downloadAccountAudit(
+          accountId,
+          {
+            format,
+            action: filter.action || undefined,
+            actor: filter.actor || undefined,
+            actor_type: filter.actorType || undefined,
+            project_id: filter.projectId || undefined,
+            session_id: filter.sessionId || undefined,
+            source: filter.source || undefined,
+            phase: filter.phase || undefined,
+            outcome: filter.outcome || undefined,
+            resource_type: filter.resourceType || undefined,
+            q: filter.q || undefined,
+            since: filter.since || undefined,
+            until: filter.until || undefined,
+            cursor,
+          },
+          { backendUrl: getEnv().BACKEND_URL ?? '', accessToken: token },
+        );
+        filename ??= result.filename;
+        rowCount += Number(result.rowCount ?? 0);
+        let chunk = await result.blob.text();
+        if (format === 'csv' && !firstPage) chunk = chunk.replace(/^[^\r\n]*(?:\r?\n|$)/, '');
+        if (chunk) chunks.push(chunk.replace(/\s+$/, ''));
+        firstPage = false;
+        if (result.complete) break;
+        if (!result.nextCursor || result.nextCursor === cursor) {
+          throw new Error('Export returned an invalid continuation cursor');
+        }
+        cursor = result.nextCursor;
+      }
 
-      const downloadUrl = URL.createObjectURL(result.blob);
+      const blob = new Blob([chunks.join('\n')], {
+        type: format === 'csv' ? 'text/csv' : 'application/x-ndjson',
+      });
+      const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = result.filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
+      link.download = filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(downloadUrl);
-      successToast(
-        result.capped
-          ? `Exported ${result.rowCount ?? '?'} events. Add filters to export older events.`
-          : `Exported ${result.rowCount ?? '?'} events`,
-      );
+      successToast(`Exported ${rowCount} events`);
     } catch (error) {
       errorToast((error as Error).message || 'Export failed');
     } finally {
@@ -642,6 +665,30 @@ function AdvancedFilters({
             </Select>
           </FilterField>
 
+          <FilterField label="Phase">
+            <Select
+              value={filter.phase || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  phase: value === 'all' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any phase</SelectItem>
+                {PHASES.map((phase) => (
+                  <SelectItem key={phase} value={phase}>
+                    {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
           <FilterField label="Resource">
             <Select
               value={filter.resourceType || 'all'}
@@ -791,9 +838,14 @@ function AuditRow({
                 {event.actor_type.replace('_', ' ')}
               </Badge>
             ) : null}
-            {event.source ? (
+            {event.authoritative_source || event.source ? (
               <Badge variant="outline" size="xs" className="capitalize">
-                {event.source.replace('_', ' ')}
+                {(event.authoritative_source ?? event.source ?? '').replace('_', ' ')}
+              </Badge>
+            ) : null}
+            {event.client_reported_source ? (
+              <Badge variant="muted" size="xs" className="capitalize">
+                client: {event.client_reported_source.replace('_', ' ')}
               </Badge>
             ) : null}
           </div>
@@ -837,11 +889,23 @@ function AuditRow({
 
               <div className="border-border bg-background grid overflow-hidden rounded-md border sm:grid-cols-2 lg:grid-cols-4">
                 <Detail label="Event ID" value={event.event_id} />
+                <Detail
+                  label="Session sequence"
+                  value={event.session_sequence != null ? String(event.session_sequence) : null}
+                />
+                <Detail label="Phase" value={event.phase ?? null} />
+                <Detail label="Source ledger" value={event.source_ledger ?? null} />
                 <Detail label="Request ID" value={event.request_id} />
                 <Detail label="Trace ID" value={event.trace_id} />
                 <Detail label="Correlation ID" value={event.correlation_id} />
+                <Detail label="Causation ID" value={event.causation_id ?? null} />
                 <Detail label="Project ID" value={event.project_id} />
                 <Detail label="Session ID" value={event.session_id} />
+                <Detail label="OpenCode session" value={event.opencode_session_id ?? null} />
+                <Detail label="Turn ID" value={event.turn_id ?? null} />
+                <Detail label="Message ID" value={event.message_id ?? null} />
+                <Detail label="Tool call ID" value={event.tool_call_id ?? null} />
+                <Detail label="Execution ID" value={event.execution_id ?? null} />
                 <Detail
                   label="Duration"
                   value={event.duration_ms != null ? `${event.duration_ms} ms` : null}
@@ -853,6 +917,19 @@ function AuditRow({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <JsonPane label="Before" data={event.before} />
                   <JsonPane label="After" data={event.after} />
+                </div>
+              ) : null}
+              {event.input_summary || event.output_summary ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <JsonPane label="Redacted input summary" data={event.input_summary} />
+                  <JsonPane label="Redacted output summary" data={event.output_summary} />
+                </div>
+              ) : null}
+              {event.input_sha256 || event.output_sha256 || event.integrity_hash ? (
+                <div className="border-border bg-background grid overflow-hidden rounded-md border sm:grid-cols-3">
+                  <Detail label="Input SHA-256" value={event.input_sha256 ?? null} />
+                  <Detail label="Output SHA-256" value={event.output_sha256 ?? null} />
+                  <Detail label="Integrity hash" value={event.integrity_hash ?? null} />
                 </div>
               ) : null}
               {event.metadata && Object.keys(event.metadata).length > 0 ? (

@@ -286,6 +286,19 @@ describe('approvals inbox + resolution', () => {
     expect(auditBody.audit_access).toBe(true);
     const entry = auditBody.actions.find((action) => action.execution_id === execId);
     expect(entry?.resolved_by).toBe(humanUserId);
+
+    const approvalsOnly = await authGet(
+      `/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit?include_events=false&limit=1`,
+    );
+    expect(approvalsOnly.status).toBe(200);
+    const approvalsOnlyBody = (await approvalsOnly.json()) as {
+      events: unknown[];
+      next_cursor: string | null;
+      actions: Array<{ execution_id: string }>;
+    };
+    expect(approvalsOnlyBody.events).toEqual([]);
+    expect(approvalsOnlyBody.next_cursor).toBeNull();
+    expect(approvalsOnlyBody.actions.some((action) => action.execution_id === execId)).toBe(true);
   });
 
   test('unentitled account: audit degrades to pending-only (never a 402 — the approval control plane)', async () => {

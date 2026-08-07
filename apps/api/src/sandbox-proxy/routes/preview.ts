@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
-import { getTraceHeaders } from '../../lib/request-context';
+import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
@@ -113,6 +113,22 @@ function errorMessage(error: unknown, fallback: string): string {
 // load is hundreds of requests and the extend is monotone, so collapsing them
 // loses nothing.
 const previewUseThrottle = createExtendThrottle(60_000);
+
+/**
+ * Bind the provider-facing sandbox identifier to its canonical Kortix scope.
+ * The request audit middleware runs after the proxy handler returns and reads
+ * this request-local context. Without this binding, `/v1/p/...` activity is
+ * present only in the account log and disappears from project/session history.
+ */
+export function bindSandboxRequestContext(
+  record: { accountId: string; projectId: string; sessionId: string },
+  sandboxId: string,
+): void {
+  setContextField('accountId', record.accountId);
+  setContextField('projectId', record.projectId);
+  setContextField('sessionId', record.sessionId);
+  setContextField('sandboxId', sandboxId);
+}
 
 const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
   /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
@@ -782,6 +798,7 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
+  bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
   if (

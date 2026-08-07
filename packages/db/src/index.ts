@@ -27,6 +27,7 @@ export {
   accountMembersRelations,
   accountGithubInstallationsRelations,
   auditEvents,
+  auditSessionSequences,
   usageEvents,
   gatewayRequestLogs,
   gatewayApiKeys,
@@ -170,6 +171,7 @@ export {
   scimTokens,
   // Audit webhooks
   auditWebhooks,
+  auditWebhookDeliveries,
   // SAML SSO
   accountSsoProviders,
   accountSsoGroupMappings,

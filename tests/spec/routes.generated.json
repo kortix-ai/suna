@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 554,
+  "count": 559,
   "routes": [
     {
       "method": "GET",
@@ -187,6 +187,10 @@
       "path": "/v1/accounts/:accountId/audit/export"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/audit/reconcile"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/audit/webhooks"
     },
@@ -201,6 +205,14 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
     },
     {
       "method": "GET",
@@ -1216,6 +1228,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/audit"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/branches"
     },
     {
@@ -1769,6 +1785,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/audit/events"
     },
     {
       "method": "POST",

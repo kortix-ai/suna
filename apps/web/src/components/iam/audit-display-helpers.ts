@@ -78,8 +78,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /metrics': 'Viewed system metrics',
   'GET /v1/accounts/:accountId/audit': 'Viewed audit log',
   'GET /v1/accounts/:accountId/audit/export': 'Exported audit log',
+  'POST /v1/accounts/:accountId/audit/reconcile': 'Reconciled audit log',
   'GET /v1/accounts/:accountId/audit/webhooks': 'Listed audit webhooks',
   'POST /v1/accounts/:accountId/audit/webhooks': 'Created audit webhook',
+  'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries':
+    'Listed audit webhook deliveries',
+  'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay':
+    'Replayed audit webhook delivery',
   'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Updated audit webhook',
   'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Deleted audit webhook',
   'GET /v1/accounts/:accountId/iam/mfa-required': 'Viewed MFA requirement',
@@ -91,7 +96,9 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/accounts/me': 'Viewed current account',
   'GET /v1/accounts/:accountId/iam/enterprise-demo': 'Viewed Enterprise preview',
   'PUT /v1/accounts/:accountId/iam/enterprise-demo': 'Updated Enterprise preview',
+  'GET /v1/projects/:projectId/audit': 'Viewed project audit log',
   'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
+  'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
   'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
@@ -108,10 +115,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
   'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
   'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
-  'PUT /v1/projects/:projectId/connections/:connectionId/activate':
-    'Activated connector',
-  'PUT /v1/projects/:projectId/connections/:connectionId/default':
-    'Set default connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/activate': 'Activated connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/default': 'Set default connector',
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
   'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',

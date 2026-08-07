@@ -9,6 +9,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
 import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
@@ -43,6 +44,7 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
+  clientReportedSource?: string | null;
 };
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -280,6 +282,7 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: clientIp(c),
     userAgent: c.req.header('user-agent') || null,
+    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
