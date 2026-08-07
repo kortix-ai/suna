@@ -1,7 +1,6 @@
 import { parseSharingIntent } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
-import { isMetaAgentName } from '@kortix/shared';
+import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
@@ -246,9 +245,9 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/:projectId/git/clone-credential
-// Runtime-only clone credential fetch. A session sandbox calls this endpoint
-// with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
-// just-in-time. Browser sessions must not receive raw Git tokens.
+// Clone credential fetch. Runtime principals receive only their existing Kortix
+// token plus the scoped Git proxy URL. Human project PAT callers retain the
+// legacy upstream credential response. Browser sessions cannot call this route.
 
 projectsApp.openapi(
   createRoute({
@@ -271,8 +270,7 @@ projectsApp.openapi(
   const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
   const authorization = c.req.header('Authorization') as string | undefined;
   const callerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
-  let callerIsMeta = isMetaAgentName(getAgentGrant(c)?.agent);
-
+  let runtimePrincipal = isProjectSessionPrincipal(c);
   let projectRow: typeof projects.$inferSelect | null = null;
 
   if (authType === 'pat') {
@@ -281,30 +279,16 @@ projectsApp.openapi(
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const callerSessionId = (c as any).get('sessionId') as string | undefined;
-    if (callerSessionId) {
-      const [session] = await db
-        .select({ agentName: projectSessions.agentName })
-        .from(projectSessions)
-        .where(and(
-          eq(projectSessions.sessionId, callerSessionId),
-          eq(projectSessions.projectId, projectId),
-        ))
-        .limit(1);
-      callerIsMeta = callerIsMeta || (!!session && isMetaAgentName(session.agentName));
-    }
     projectRow = loaded.row;
   } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    runtimePrincipal = true;
     const accountId = (c as any).get('accountId') as string | undefined;
     const sandboxId = (c as any).get('sandboxId') as string | undefined;
     if (!accountId || !sandboxId) {
       return c.json({ error: 'clone credentials require a sandbox token' }, 403);
     }
     const [sandbox] = await db
-      .select({
-        sandboxId: sessionSandboxes.sandboxId,
-        sessionId: sessionSandboxes.sessionId,
-      })
+      .select({ sandboxId: sessionSandboxes.sandboxId })
       .from(sessionSandboxes)
       .where(and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -316,18 +300,6 @@ projectsApp.openapi(
     if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
     }
-    const [session] = await db
-      .select({ agentName: projectSessions.agentName })
-      .from(projectSessions)
-      .where(and(
-        eq(projectSessions.sessionId, sandbox.sessionId),
-        eq(projectSessions.projectId, projectId),
-      ))
-      .limit(1);
-    if (!session) {
-      return c.json({ error: 'sandbox session identity is unavailable' }, 403);
-    }
-    callerIsMeta = isMetaAgentName(session.agentName);
     const [row] = await db
       .select()
       .from(projects)
@@ -343,7 +315,10 @@ projectsApp.openapi(
   }
   if (!projectRow) return c.json({ error: 'Not found' }, 404);
 
-  if (callerIsMeta) {
+  // A runtime receives only its existing Kortix bearer and the scoped proxy
+  // origin. The provider/upstream credential stays inside the API process.
+  // Human project PAT callers retain the legacy upstream response below.
+  if (runtimePrincipal) {
     if (!callerToken) {
       return c.json({ error: 'runtime proxy credential is unavailable' }, 403);
     }

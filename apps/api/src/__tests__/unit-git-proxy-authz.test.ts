@@ -22,6 +22,8 @@ let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
 let sandboxRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
+let workerAdmissionState: 'bound' | 'spawned_unbound' | 'not_worker' = 'not_worker';
+let workerBinding: { taskId: string; status: string } | null = null;
 let authorizeCalls: Array<{
   userId: string;
   accountId: string;
@@ -74,6 +76,13 @@ mock.module('../iam/dispatcher', () => ({
   },
 }));
 
+const realGeneratedStateStore = await import('../projects/generated-state-store');
+mock.module('../projects/generated-state-store', () => ({
+  ...realGeneratedStateStore,
+  projectTaskWorkerAdmissionState: async () => workerAdmissionState,
+  getProjectTaskWorkerBinding: async () => workerBinding,
+}));
+
 const { authorizeGitProxy } = await import('../projects/lib/git');
 
 beforeEach(() => {
@@ -82,6 +91,8 @@ beforeEach(() => {
   apiKeyResult = { isValid: false };
   sandboxRow = { sandboxId: 'sandbox-1', agentName: 'worker' };
   authorizeAllowed = false;
+  workerAdmissionState = 'not_worker';
+  workerBinding = null;
   authorizeCalls = [];
 });
 
@@ -99,6 +110,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
       userId: 'user-1',
       tokenId: 'tok-meta',
       projectId: PROJECT_ID,
+      sessionId: 'session-1',
       agentGrant: { agent: 'meta', kortixCli: 'all', connectors: [], env: [] },
     };
 
@@ -117,8 +129,95 @@ describe('authorizeGitProxy — CLI PAT', () => {
       userId: 'user-1',
       tokenId: 'tok-agent',
       projectId: PROJECT_ID,
+      sessionId: 'session-1',
       agentGrant: { agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] },
     };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+  });
+
+  test('an owning-account session PAT without push in its immutable grant is denied', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-no-push',
+      projectId: PROJECT_ID,
+      sessionId: 'session-1',
+      agentGrant: { agent: 'reader', kortixCli: ['project.gitops.read'], connectors: [] },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(authorizeCalls).toHaveLength(0);
+  });
+
+  test('the CR-open alias does not authorize raw receive-pack', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-cr-only',
+      projectId: PROJECT_ID,
+      sessionId: 'session-1',
+      agentGrant: { agent: 'cr-bot', kortixCli: ['project.cr.open'], connectors: [] },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+  });
+
+  test('an unbound spawned worker cannot push despite an explicit grant', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-unbound',
+      projectId: PROJECT_ID,
+      sessionId: 'session-1',
+      agentGrant: { agent: 'worker', kortixCli: ['project.gitops.push'], connectors: [] },
+    };
+    workerAdmissionState = 'spawned_unbound';
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+  });
+
+  test('a terminal task worker cannot push during its stop delay', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-terminal',
+      projectId: PROJECT_ID,
+      sessionId: 'session-1',
+      agentGrant: { agent: 'worker', kortixCli: ['project.gitops.push'], connectors: [] },
+    };
+    workerAdmissionState = 'bound';
+    workerBinding = { taskId: 'task-1', status: 'done' };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+  });
+
+  test('a doing task worker with an explicit push grant can push', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-doing',
+      projectId: PROJECT_ID,
+      sessionId: 'session-1',
+      agentGrant: { agent: 'worker', kortixCli: ['project.gitops.push'], connectors: [] },
+    };
+    workerAdmissionState = 'bound';
+    workerBinding = { taskId: 'task-1', status: 'doing' };
 
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
 
@@ -233,7 +332,7 @@ describe('authorizeGitProxy — account API key', () => {
     expect(read.ok).toBe(true);
   });
 
-  test('an ordinary project-agent sandbox token keeps write access', async () => {
+  test('an ordinary project-agent sandbox token can read but cannot write', async () => {
     patResult = { isValid: false };
     apiKeyResult = {
       isValid: true,
@@ -242,9 +341,11 @@ describe('authorizeGitProxy — account API key', () => {
       sandboxId: 'sandbox-1',
     };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const write = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const read = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
 
-    expect(res.ok).toBe(true);
+    expect(write).toMatchObject({ ok: false, status: 403 });
+    expect(read.ok).toBe(true);
   });
 
   test('a non-Kortix credential is 401', async () => {

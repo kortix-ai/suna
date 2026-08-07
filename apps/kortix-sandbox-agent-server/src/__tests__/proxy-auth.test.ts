@@ -191,6 +191,7 @@ describe('daemon proxy auth gate', () => {
     } as NodeJS.ProcessEnv)
 
     expect(cfg.sandboxToken).toBe(TEST_TOKEN)
+    expect(cfg.sessionToken).toBe('legacy-project-pat-that-must-not-shadow')
     expect('apiToken' in cfg).toBe(false)
   })
 
@@ -201,6 +202,7 @@ describe('daemon proxy auth gate', () => {
     } as NodeJS.ProcessEnv)
 
     expect(cfg.sandboxToken).toBe(TEST_TOKEN)
+    expect(cfg.sessionToken).toBe('project-pat-that-must-not-shadow')
   })
 
   it('scopes git auth headers to the project repo host', () => {

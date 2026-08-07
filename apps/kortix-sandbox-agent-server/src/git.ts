@@ -235,15 +235,17 @@ export function __clearCloneTokenCacheForTests(): void {
 
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
-  // Universal proxy origin: when the repo is served by the Kortix git proxy
-  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
-  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
-  // the real upstream + host credential server-side. No clone-credential round
-  // trip, and a real GitHub token never enters the sandbox.
+  // Universal proxy origin: the session PAT carries the immutable agent grant
+  // used to authorize receive-pack. The sandbox token is a read-only fallback
+  // for boot-time clone/fetch when session token minting failed.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return { username: 'x-access-token', token: cfg.sandboxToken, repoUrl: cfg.repoUrl }
+    return {
+      username: 'x-access-token',
+      token: cfg.sessionToken ?? cfg.sandboxToken,
+      repoUrl: cfg.repoUrl,
+    }
   }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
+  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}\0${cfg.sessionToken ?? ''}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
@@ -287,9 +289,16 @@ async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | un
             auth?: { username?: string | null; token?: string | null } | null
           }
         | null
-      const token = body?.auth?.token?.trim()
+      const responseToken = body?.auth?.token?.trim()
       const username = body?.auth?.username?.trim() || 'x-access-token'
       const repoUrl = body?.repo_url?.trim() || undefined
+      // clone-credential returns the caller's sandbox token. Once it directs us
+      // to the Kortix proxy, prefer the session PAT so receive-pack can enforce
+      // the immutable agent grant. Neither response path contains an upstream
+      // provider credential.
+      const token = repoUrl && /\/v1\/git\//.test(repoUrl)
+        ? (cfg.sessionToken ?? responseToken)
+        : responseToken
       const value = token ? { username, token, repoUrl } : undefined
       cachedCloneToken = { key: cacheKey, value }
       return value

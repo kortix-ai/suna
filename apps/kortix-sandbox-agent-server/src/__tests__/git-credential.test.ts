@@ -61,7 +61,7 @@ function startCloneCredentialServer(opts: {
         return Response.json({ error: 'bad token' }, { status: 401 })
       }
       return Response.json({
-        repo_url: 'https://git.example.test/repo-abc',
+        repo_url: 'https://api.example.test/v1/git/proj-1.git',
         auth: opts.pushToken
           ? { username: opts.username ?? 'x-access-token', token: opts.pushToken, type: 'basic' }
           : null,
@@ -81,16 +81,17 @@ afterEach(() => {
 })
 
 describe('git credential helper', () => {
-  it('resolves a push-capable credential from the control plane', async () => {
+  it('uses the session PAT at the proxy without exposing the response credential', async () => {
     const srv = startCloneCredentialServer({
       expectToken: 'kortix_sb_secret',
-      pushToken: 'push-token-123',
+      pushToken: 'raw-provider-token-must-not-escape',
     })
     try {
-      const cfg = baseConfig({ apiUrl: srv.url })
+      const cfg = baseConfig({ apiUrl: srv.url, sessionToken: 'kortix_pat_session' })
       const out = await resolveGitCredentialOutput(cfg)
-      expect(out).toBe('username=x-access-token\npassword=push-token-123\n')
-      // It authenticated with the sandbox KORTIX_TOKEN, not anything else.
+      expect(out).toBe('username=x-access-token\npassword=kortix_pat_session\n')
+      expect(out).not.toContain('raw-provider-token-must-not-escape')
+      // clone-credential authentication remains the daemon's sandbox identity.
       expect(srv.calls.at(-1)?.auth).toBe('Bearer kortix_sb_secret')
       expect(srv.calls.at(-1)?.path).toBe('/v1/projects/proj-1/git/clone-credential')
     } finally {
@@ -98,15 +99,14 @@ describe('git credential helper', () => {
     }
   })
 
-  it('uses the provider-selected username for Code Storage credentials', async () => {
+  it('falls back to the read-only sandbox token when no session PAT exists', async () => {
     const srv = startCloneCredentialServer({
       expectToken: 'kortix_sb_secret',
-      pushToken: 'code-storage-jwt',
-      username: 't',
+      pushToken: 'kortix_sb_secret',
     })
     try {
       const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: srv.url }))
-      expect(out).toBe('username=t\npassword=code-storage-jwt\n')
+      expect(out).toBe('username=x-access-token\npassword=kortix_sb_secret\n')
     } finally {
       srv.stop()
     }

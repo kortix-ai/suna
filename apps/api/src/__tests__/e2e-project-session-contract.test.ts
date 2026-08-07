@@ -1391,35 +1391,33 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://gitlab.com/acme/private-project.git',
-      source: 'project_credential',
-      auth: {
-        username: 'x-access-token',
-        token: 'gitlab-project-token',
-        type: 'basic',
-      },
-    });
-
-    sessionRow = { ...sessionRow!, agentName: 'meta' };
-    for (const token of [PROJECT_SANDBOX_TOKEN, META_SESSION_PAT]) {
-      const metaCloneRes = await app.request(
+    // Every runtime principal receives only its existing Kortix token and the
+    // proxy origin. The raw GitLab credential never crosses into the sandbox.
+    for (const token of [PROJECT_SANDBOX_TOKEN, SESSION_AGENT_PAT, META_SESSION_PAT]) {
+      const cloneRes = await app.request(
         `/v1/projects/${PROJECT_ID}/git/clone-credential`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      expect(metaCloneRes.status).toBe(200);
-      const metaCredential = await metaCloneRes.json();
-      expect(metaCredential).toMatchObject({
+      expect(cloneRes.status).toBe(200);
+      const credential = await cloneRes.json();
+      expect(credential).toMatchObject({
         repo_url: `https://api.test.kortix.local/v1/git/${PROJECT_ID}.git`,
         source: 'kortix_git_proxy',
         auth: { username: 'x-access-token', token, type: 'basic' },
       });
-      expect(JSON.stringify(metaCredential)).not.toContain('gitlab-project-token');
+      expect(JSON.stringify(credential)).not.toContain('gitlab-project-token');
     }
+
+    // A non-session project PAT retains the legacy upstream response.
+    const humanPatRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${PROJECT_RUNTIME_PAT}` },
+    });
+    expect(humanPatRes.status).toBe(200);
+    expect(await humanPatRes.json()).toMatchObject({
+      repo_url: 'https://gitlab.com/acme/private-project.git',
+      source: 'project_credential',
+      auth: { token: 'gitlab-project-token' },
+    });
   });
 
   test('derives session origin from the caller token without session attribution fields', async () => {
@@ -1735,15 +1733,17 @@ describe('project session API contract', () => {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.example.test/legacy-private-project',
-      source: 'project_credential',
+    const cloneCredential = await cloneRes.json();
+    expect(cloneCredential).toMatchObject({
+      repo_url: `https://api.test.kortix.local/v1/git/${PROJECT_ID}.git`,
+      source: 'kortix_git_proxy',
       auth: {
         username: 'x-access-token',
-        token: 'legacy-git-token',
+        token: PROJECT_SANDBOX_TOKEN,
         type: 'basic',
       },
     });
+    expect(JSON.stringify(cloneCredential)).not.toContain('legacy-git-token');
   });
 
   test('rejects reserved platform secret names', async () => {

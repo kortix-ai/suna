@@ -50,6 +50,7 @@ const Schema = z.object({
   // the legacy alias (resolved with a fallback below).
   KORTIX_SANDBOX_TOKEN: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
+  KORTIX_CLI_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
   // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
@@ -98,6 +99,9 @@ export type Config = {
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
+  /** Session PAT used for Git proxy authentication. Unlike sandboxToken, this
+   *  carries the immutable agent grant required for receive-pack. */
+  sessionToken?: string
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
@@ -124,6 +128,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
     KORTIX_SANDBOX_TOKEN: env.KORTIX_SANDBOX_TOKEN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
+    KORTIX_CLI_TOKEN: env.KORTIX_CLI_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
@@ -150,6 +155,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Canonical name wins; fall back to the legacy alias so daemons running in
     // older-API sandboxes (which only inject KORTIX_TOKEN) still resolve it.
     sandboxToken: parsed.KORTIX_SANDBOX_TOKEN ?? parsed.KORTIX_TOKEN,
+    sessionToken: parsed.KORTIX_CLI_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,

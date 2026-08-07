@@ -457,7 +457,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       userEmail: 'agent@example.test',
       authType: 'pat',
       sessionId: '00000000-0000-4000-a000-000000000301',
-      agentGrant: { agent: 'meta', connectors: 'all', kortixCli: 'all', env: 'all' },
+      agentGrant: { agent: 'worker', connectors: [], kortixCli: ['project.cr.open'], env: [] },
     };
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
@@ -470,6 +470,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     const body = await res.json();
     expect(body.push_token).toBeNull();
     expect(body.git_username).toBeNull();
+    expect(JSON.stringify(body)).not.toContain(PUSH_TOKEN);
   });
 
   test('does not report an active project when the seed pushed but left no default branch', async () => {

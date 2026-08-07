@@ -12,8 +12,7 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -22,9 +21,11 @@ import { ttlMemo } from '../../shared/ttl-memo';
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { agentMayPerformExact } from '../../iam/agent-scope';
 import { authorize } from '../../iam/dispatcher';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import { getProjectTaskWorkerBinding, projectTaskWorkerAdmissionState } from '../generated-state-store';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
@@ -623,17 +624,14 @@ export type GitProxyAuth =
  * Authorize a Kortix git-proxy request: a bare credential (extracted from the
  * git Basic/Bearer header) + the target project + the operation scope.
  *
- * The owning account is the trust boundary:
- *  - sandbox runtime token → must be scoped to an active sandbox of THIS
- *    project (read + write, except the reserved meta coordinator is read-only);
+ * The owning account is the trust boundary for human credentials. Runtime
+ * credentials have additional constraints:
+ *  - sandbox runtime token → active sandbox of this project; read-only;
+ *  - session PAT → exact immutable `project.gitops.push` grant for write,
+ *    plus live task-worker admission; no account-owner or CR-open bypass;
  *  - account API key (kortix_…) → the account must own the project;
- *  - CLI PAT (kortix_pat_…) → the account owns the project, OR the token's user
- *    holds `project.gitops.push` / `.read` on it; a project-scoped PAT must
- *    match this project either way.
- *
- * Account ownership alone grants write, which is safe since only account
- * members can mint these tokens. (Finer per-project role gating for THAT case
- * lands with M2.)
+ *  - human CLI PAT (kortix_pat_…) → the account owns the project, OR the token's
+ *    user holds `project.gitops.push` / `.read`; project scope must match.
  *
  * The per-project fallback exists because token-account equality was too strict
  * to be the only rule: a PAT is bound to ONE account, so anybody in two
@@ -689,11 +687,21 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
-    // The reserved coordinator has no checkout and must delegate repository
-    // changes. Deny receive-pack by principal, not only by its current grant,
-    // so a stale pre-hardening token cannot push the default branch directly.
-    if (scope === 'write' && isMetaAgentName(result.agentGrant?.agent)) {
-      return { ok: false, status: 403, message: 'the meta agent cannot push repository changes' };
+    if (scope === 'write' && result.sessionId) {
+      // A session PAT is the only runtime principal allowed to push. Its
+      // immutable token grant must authorize the exact raw-push leaf. Do not
+      // use the CR-open alias and do not let owning-account equality bypass it.
+      if (!result.agentGrant || !agentMayPerformExact(result.agentGrant, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)) {
+        return { ok: false, status: 403, message: 'session token is not explicitly authorized to push' };
+      }
+      const admissionState = await projectTaskWorkerAdmissionState(db, result.sessionId);
+      if (admissionState === 'spawned_unbound') {
+        return { ok: false, status: 403, message: 'spawned worker is not bound to a task' };
+      }
+      const workerBinding = await getProjectTaskWorkerBinding(db, result.sessionId);
+      if (workerBinding && workerBinding.status !== 'doing') {
+        return { ok: false, status: 403, message: 'terminal task workers cannot push' };
+      }
     }
     if (result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
@@ -715,12 +723,8 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
       }
       const [sandbox] = await db
-        .select({
-          sandboxId: sessionSandboxes.sandboxId,
-          agentName: projectSessions.agentName,
-        })
+        .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
-        .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
         .where(and(
           eq(sessionSandboxes.sandboxId, result.sandboxId),
           eq(sessionSandboxes.projectId, projectId),
@@ -731,8 +735,11 @@ export async function authorizeGitProxy(
       if (!sandbox) {
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
-      if (scope === 'write' && isMetaAgentName(sandbox.agentName)) {
-        return { ok: false, status: 403, message: 'the meta agent cannot push repository changes' };
+      // The sandbox credential has no immutable agent grant. It can clone and
+      // fetch, but receive-pack must use the session PAT so the exact grant and
+      // task-worker liveness fences above can be enforced.
+      if (scope === 'write') {
+        return { ok: false, status: 403, message: 'sandbox tokens are read-only; use the session token to push' };
       }
       return { ok: true, project };
     }
