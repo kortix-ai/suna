@@ -15,7 +15,10 @@ import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
-import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import {
+  allocateSessionRuntime,
+  allocateSessionRuntimeAndWaitForKickoff,
+} from '../lib/session-runtime-allocator';
 import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
@@ -232,7 +235,9 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
+  options: { awaitKickoff?: boolean } = {},
 ): Promise<void> {
+  if (session.metadata?.task_liveness_binding_status === 'pending') return;
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason(providerName)) return;
@@ -245,7 +250,10 @@ export async function allocateRuntimeOnOpen(
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
-  allocateSessionRuntime({
+  const allocate = options.awaitKickoff
+    ? allocateSessionRuntimeAndWaitForKickoff
+    : allocateSessionRuntime;
+  await allocate({
     sessionId,
     accountId: loaded.row.accountId,
     projectId,
@@ -593,6 +601,19 @@ export async function openSession(args: {
 }): Promise<SessionStartResult> {
   const { loaded, visible, projectId, sessionId } = args;
   const accountId = visible.row.accountId;
+
+  // A reserved task worker has durable identity but no runtime authority. Only
+  // the registration transaction can flip this marker and enqueue provisioning.
+  if (visible.row.metadata?.task_liveness_binding_status === 'pending') {
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'pending_task_binding',
+    };
+  }
 
   let [row] = await db
     .select()

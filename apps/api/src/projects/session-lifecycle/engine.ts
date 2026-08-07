@@ -3,6 +3,7 @@ import {
   projectSessions,
   projects,
   serviceAccounts,
+  sessionLifecycleCommands,
 } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import { bindChatThread } from "../../channels/slack/binding";
@@ -26,7 +27,7 @@ import {
 } from "./idempotency-conflicts";
 import { createProjectSession } from "../lib/sessions";
 import { syncSandboxEnvForPrompt } from "../lib/sandbox-env-sync";
-import { openSession } from "../routes/shared";
+import { allocateRuntimeOnOpen, openSession } from "../routes/shared";
 import { generateSessionTitleFromFirstPrompt } from "../session-title-generate";
 import { resolveProjectAutomationActor } from "./actor";
 import { awaitTerminalStage } from "./await-stage";
@@ -40,6 +41,7 @@ import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  deferLifecycleCommand,
   enqueueContinueSessionCommand,
   lifecycleCommandClaim,
   markCommandFailed,
@@ -664,6 +666,11 @@ export async function drainSessionLifecycleQueue(
   for (const row of rows) {
     const { claim, stop } = startLifecycleCommandHeartbeat(row);
     try {
+      if (row.commandType === "provision_session") {
+        const outcome = await executeQueuedProvision(row, claim);
+        if (outcome !== "stale") out[outcome] += 1;
+        continue;
+      }
       if (row.commandType === "continue_session") {
         const outcome = await executeQueuedContinue(row, claim);
         if (outcome !== "stale") out[outcome] += 1;
@@ -748,6 +755,113 @@ export async function drainSessionLifecycleQueue(
   return out;
 }
 
+async function executeQueuedProvision(
+  row: SessionLifecycleCommandRow,
+  claim: LifecycleCommandClaim,
+): Promise<"succeeded" | "queued" | "failed" | "stale"> {
+  if (!row.sessionId) {
+    const applied = await markCommandFailed(
+      row.commandId,
+      "provision_session command missing sessionId",
+      { retryable: false, attempts: row.attempts, claim },
+    );
+    return applied ? "failed" : "stale";
+  }
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const taskId = typeof payload.taskId === "string" ? payload.taskId : null;
+  const [session] = await db
+    .select()
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, row.projectId),
+        eq(projectSessions.sessionId, row.sessionId),
+      ),
+    )
+    .limit(1);
+  const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
+  const binding = await getProjectTaskWorkerBinding(db, row.sessionId);
+  if (
+    !session ||
+    !taskId ||
+    metadata.task_liveness_binding_status !== "bound" ||
+    metadata.task_liveness_bound_task_id !== taskId ||
+    binding?.taskId !== taskId ||
+    binding.status !== "doing"
+  ) {
+    const applied = await markCommandFailed(
+      row.commandId,
+      "task worker reservation has no matching live binding",
+      { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+    );
+    return applied ? "failed" : "stale";
+  }
+
+  if (session.status === "queued") {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, row.projectId))
+      .limit(1);
+    if (!project) {
+      const applied = await markCommandFailed(row.commandId, "Project not found", {
+        retryable: false,
+        attempts: row.attempts,
+        sessionId: row.sessionId,
+        claim,
+      });
+      return applied ? "failed" : "stale";
+    }
+    const userId = session.createdBy ?? row.actorUserId ??
+      (await resolveProjectAutomationActor(row.accountId));
+    if (!userId) {
+      const applied = await markCommandFailed(row.commandId, "No session owner available", {
+        retryable: false,
+        attempts: row.attempts,
+        sessionId: row.sessionId,
+        claim,
+      });
+      return applied ? "failed" : "stale";
+    }
+    try {
+      await allocateRuntimeOnOpen(
+        { row: project, userId },
+        session,
+        row.projectId,
+        row.sessionId,
+        { awaitKickoff: true },
+      );
+    } catch (error) {
+      const applied = await markCommandFailed(
+        row.commandId,
+        error instanceof Error ? error.message : String(error),
+        {
+          retryable: true,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          claim,
+        },
+      );
+      return applied ? "queued" : "stale";
+    }
+  } else if (!['provisioning', 'running'].includes(session.status)) {
+    const applied = await markCommandFailed(
+      row.commandId,
+      `task worker reservation is ${session.status}`,
+      { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+    );
+    return applied ? "failed" : "stale";
+  }
+
+  const applied = await markCommandSucceeded(
+    row.commandId,
+    { status: "provisioning_started", task_id: taskId },
+    row.sessionId,
+    claim,
+  );
+  return applied ? "succeeded" : "stale";
+}
+
 /**
  * Drain one queued `continue_session` command — the durable face of "deliver
  * this follow-up into the session" (today: the approval-resume backstop). The
@@ -823,6 +937,36 @@ async function executeQueuedContinue(
       { retryable: false, attempts: row.attempts, claim },
     );
     return applied ? "failed" : "stale";
+  }
+
+  // A task-worker prompt depends on the provisioning outbox row. Ordering by
+  // timestamp is insufficient because another drainer can claim both rows.
+  if (row.idempotencyKey?.startsWith("task-worker:")) {
+    const provisionKey = row.idempotencyKey.replace(
+      /^task-worker:/,
+      "task-worker-provision:",
+    );
+    const [provision] = await db
+      .select({ status: sessionLifecycleCommands.status })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, provisionKey))
+      .limit(1);
+    if (!provision || ["failed", "dead_lettered"].includes(provision.status)) {
+      const applied = await markCommandFailed(
+        row.commandId,
+        "task worker provisioning did not succeed",
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+      );
+      return applied ? "failed" : "stale";
+    }
+    if (provision.status !== "succeeded") {
+      const applied = await deferLifecycleCommand(
+        row.commandId,
+        claim,
+        "waiting_for_task_worker_provisioning",
+      );
+      return applied ? "queued" : "stale";
+    }
   }
 
   if (payload.executionId) {

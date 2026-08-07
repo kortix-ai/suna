@@ -996,14 +996,21 @@ projectsApp.openapi(
       });
       let state: 'queued' | 'drained' = 'queued';
       try {
+        // Registration committed both rows. Drain the runtime allocation first;
+        // only then may the prompt command begin its readiness wait.
+        await drainSessionLifecycleQueue({
+          idempotencyKey: `task-worker-provision:${taskId}:${body.worker_session_id}`,
+          limit: 1,
+        });
         const drained = await drainSessionLifecycleQueue({
           idempotencyKey: `task-worker:${taskId}:${body.worker_session_id}`,
           limit: 1,
         });
         if (drained.succeeded > 0) state = 'drained';
       } catch (error) {
-        console.warn('[task-liveness] immediate initial prompt drain failed; outbox will retry', {
+        console.warn('[task-liveness] immediate worker provisioning/prompt drain failed; outbox will retry', {
           projectId, taskId, commandId: result.commandId,
+          provisionCommandId: result.provisionCommandId,
           error: error instanceof Error ? error.message : String(error),
         });
       }

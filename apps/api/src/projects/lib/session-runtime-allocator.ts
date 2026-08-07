@@ -40,10 +40,20 @@ export interface AllocateSessionRuntimeInput {
  * for that exact id.
  */
 export function allocateSessionRuntime(input: AllocateSessionRuntimeInput): void {
-  void allocateSessionRuntimeAsync(input);
+  void allocateSessionRuntimeAsync(input, false);
 }
 
-async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): Promise<void> {
+/** Wait until the durable sandbox row exists before acknowledging an outbox command. */
+export function allocateSessionRuntimeAndWaitForKickoff(
+  input: AllocateSessionRuntimeInput,
+): Promise<void> {
+  return allocateSessionRuntimeAsync(input, true);
+}
+
+async function allocateSessionRuntimeAsync(
+  input: AllocateSessionRuntimeInput,
+  rethrowFailure: boolean,
+): Promise<void> {
   const tl = new ProvisionTimeline(input.sessionId, 'session-create');
   try {
     const gitProjectPromise = input.resolveGitProject().then((project) => {
@@ -123,6 +133,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
     } catch (markErr) {
       console.error(`[projects] Failed to mark session ${input.sessionId} failed:`, markErr);
     }
+    if (rethrowFailure) throw err;
   }
 }
 

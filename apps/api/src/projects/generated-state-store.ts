@@ -7,6 +7,7 @@ import {
   type projectTaskStatusEnum,
   projectTasks,
   sessionLifecycleCommands,
+  sessionSandboxes,
 } from '@kortix/db/schema';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { normalizeOpenCodeMessageId } from './session-lifecycle/opencode-message-id';
@@ -14,6 +15,48 @@ import { normalizeOpenCodeMessageId } from './session-lifecycle/opencode-message
 export type ProjectTask = typeof projectTasks.$inferSelect;
 export type ProjectGoalObservation = typeof projectGoalObservations.$inferSelect;
 export type ProjectTaskStatus = (typeof projectTaskStatusEnum.enumValues)[number];
+
+export class TaskWorkerReservationConflictError extends Error {
+  readonly code = 'TASK_WORKER_RESERVATION_CONFLICT' as const;
+  constructor(readonly projectId: string, readonly coordinatorSessionId: string) {
+    super('the coordinator already has an active task worker reservation');
+    this.name = 'TaskWorkerReservationConflictError';
+  }
+}
+
+/**
+ * Serialize reservation creation per coordinator and reject a second active
+ * child. Call this inside the same transaction that inserts project_sessions.
+ */
+export async function assertTaskWorkerReservationSlot(
+  database: Database,
+  input: { projectId: string; coordinatorSessionId: string; now: Date },
+): Promise<void> {
+  assertValidDate(input.now, 'now');
+  const lockKey = `task-worker-reservation:${input.projectId}:${input.coordinatorSessionId}`;
+  await database.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+  const [existing] = await database
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.projectId, input.projectId),
+      inArray(projectSessions.status, ['queued', 'branching', 'provisioning', 'running']),
+      sql`${projectSessions.metadata}->>'spawned_by_session' = ${input.coordinatorSessionId}`,
+      sql`${projectSessions.metadata}->>'task_liveness_binding_required' = 'true'`,
+      sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+      sql`(
+        ${projectSessions.metadata}->>'task_liveness_binding_status' = 'bound'
+        or (
+          ${projectSessions.metadata}->>'task_liveness_binding_status' = 'pending'
+          and (${projectSessions.metadata}->>'task_liveness_reservation_expires_at')::timestamptz > ${input.now.toISOString()}
+        )
+      )`,
+    ))
+    .limit(1);
+  if (existing) {
+    throw new TaskWorkerReservationConflictError(input.projectId, input.coordinatorSessionId);
+  }
+}
 
 export interface CreateProjectTaskInput {
   projectId: string;
@@ -230,6 +273,12 @@ export async function claimProjectTask(
                   ${projectTasks.assigneeUserId} is null
                   or claimant_session.created_by = ${projectTasks.assigneeUserId}
                 )
+                and coalesce(claimant_session.metadata->>'spawned_by_session', '') = ''
+                and coalesce(claimant_session.metadata->>'deletedAt', '') = ''
+                and not exists (
+                  select 1 from ${projectTasks} worker_binding
+                  where worker_binding.liveness_worker_session_id = claimant_session.session_id
+                )
             )`,
             sql`not exists (
               select 1
@@ -387,7 +436,10 @@ function sameWorkerContract(left: unknown, right: ProjectTaskWorkerContract): bo
     value.max_iterations === right.max_iterations;
 }
 
-/** Atomically bind one immutable worker contract and enqueue its initial prompt. */
+/**
+ * Atomically bind one immutable worker contract, authorize its reservation, and
+ * enqueue runtime provisioning before its initial prompt.
+ */
 export async function registerProjectTaskWorker(
   database: Database,
   input: {
@@ -401,10 +453,16 @@ export async function registerProjectTaskWorker(
     contract: ProjectTaskWorkerContract;
     now: Date;
   },
-): Promise<{ task: ProjectTask; commandId: string; existing: boolean }> {
+): Promise<{
+  task: ProjectTask;
+  commandId: string;
+  provisionCommandId: string;
+  existing: boolean;
+}> {
   assertValidDate(input.now, 'now');
   const deadline = new Date(input.now.getTime() + input.contract.max_wall_seconds * 1_000);
-  const idempotencyKey = `task-worker:${input.taskId}:${input.workerSessionId}`;
+  const promptIdempotencyKey = `task-worker:${input.taskId}:${input.workerSessionId}`;
+  const provisionIdempotencyKey = `task-worker-provision:${input.taskId}:${input.workerSessionId}`;
   const messageId = normalizeOpenCodeMessageId(`task-worker-${input.taskId}-${input.workerSessionId}`);
 
   return database.transaction(async (tx) => {
@@ -416,6 +474,8 @@ export async function registerProjectTaskWorker(
         livenessWorkerContract: input.contract,
         livenessStartedAt: input.now,
         livenessDeadlineAt: deadline,
+        // The coordinator claim remains valid for the complete immutable worker
+        // contract. This also satisfies project_tasks_claim_covers_liveness.
         claimExpiresAt: deadline,
         updatedAt: input.now,
       })
@@ -428,13 +488,27 @@ export async function registerProjectTaskWorker(
           gt(projectTasks.claimExpiresAt, input.now),
           isNull(projectTasks.livenessWorkerSessionId),
           sql`exists (
+            select 1 from ${projectSessions} coordinator
+            where coordinator.project_id = ${projectTasks.projectId}
+              and coordinator.session_id = ${input.claimSessionId}
+              and coalesce(coordinator.metadata->>'spawned_by_session', '') = ''
+              and coalesce(coordinator.metadata->>'deletedAt', '') = ''
+          )`,
+          sql`exists (
             select 1 from ${projectSessions} worker
             where worker.project_id = ${projectTasks.projectId}
               and worker.session_id = ${input.workerSessionId}
               and worker.session_id <> ${input.claimSessionId}
               and worker.metadata->>'spawned_by_session' = ${input.claimSessionId}
+              and worker.metadata->>'task_liveness_binding_required' = 'true'
+              and worker.metadata->>'task_liveness_binding_status' = 'pending'
+              and (worker.metadata->>'task_liveness_reservation_expires_at')::timestamptz > ${input.now.toISOString()}
               and coalesce(worker.metadata->>'deletedAt', '') = ''
-              and worker.status in ('queued', 'branching', 'provisioning', 'running')
+              and worker.status = 'queued'
+              and not exists (
+                select 1 from ${sessionSandboxes} reserved_runtime
+                where reserved_runtime.session_id = worker.session_id
+              )
           )`,
         ),
       )
@@ -463,7 +537,72 @@ export async function registerProjectTaskWorker(
       }
     }
 
-    const [inserted] = await tx
+    if (!existing) {
+      const [authorized] = await tx
+        .update(projectSessions)
+        .set({
+          metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(
+            'task_liveness_binding_status', 'bound',
+            'task_liveness_bound_task_id', ${input.taskId},
+            'task_liveness_bound_at', ${input.now.toISOString()}
+          )`,
+          updatedAt: input.now,
+        })
+        .where(and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.sessionId, input.workerSessionId),
+          eq(projectSessions.status, 'queued'),
+          sql`${projectSessions.metadata}->>'task_liveness_binding_status' = 'pending'`,
+          sql`${projectSessions.metadata}->>'spawned_by_session' = ${input.claimSessionId}`,
+        ))
+        .returning({ sessionId: projectSessions.sessionId });
+      if (!authorized) {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'worker reservation is no longer pending');
+      }
+    } else {
+      const [authorized] = await tx
+        .select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.sessionId, input.workerSessionId),
+        ))
+        .limit(1);
+      const metadata = (authorized?.metadata ?? {}) as Record<string, unknown>;
+      if (
+        metadata.task_liveness_binding_status !== 'bound' ||
+        metadata.task_liveness_bound_task_id !== input.taskId
+      ) {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'worker reservation binding is immutable');
+      }
+    }
+
+    const [insertedProvision] = await tx
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'provision_session',
+        source: 'cli',
+        status: 'queued',
+        projectId: input.projectId,
+        accountId: input.accountId,
+        actorUserId: input.actorUserId,
+        sessionId: input.workerSessionId,
+        idempotencyKey: provisionIdempotencyKey,
+        payload: { taskId: input.taskId, reservation: true },
+        result: {},
+        availableAt: input.now,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    const provisionCommand = insertedProvision ?? (await tx
+      .select({ commandId: sessionLifecycleCommands.commandId })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, provisionIdempotencyKey))
+      .limit(1))[0];
+    if (!provisionCommand) throw new Error('task worker provision command conflicted but could not be loaded');
+
+    const [insertedPrompt] = await tx
       .insert(sessionLifecycleCommands)
       .values({
         commandType: 'continue_session',
@@ -473,24 +612,26 @@ export async function registerProjectTaskWorker(
         accountId: input.accountId,
         actorUserId: input.actorUserId,
         sessionId: input.workerSessionId,
-        idempotencyKey,
+        idempotencyKey: promptIdempotencyKey,
         payload: { text: input.prompt, messageId },
         result: {},
-        availableAt: input.now,
+        // Stable ordering lets a normal batch drain kick provisioning before it
+        // starts the readiness wait for the first prompt.
+        availableAt: new Date(input.now.getTime() + 1),
         updatedAt: input.now,
       })
       .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
       .returning({ commandId: sessionLifecycleCommands.commandId });
-    const command = inserted ?? (await tx
+    const promptCommand = insertedPrompt ?? (await tx
       .select({ commandId: sessionLifecycleCommands.commandId })
       .from(sessionLifecycleCommands)
-      .where(eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey))
+      .where(eq(sessionLifecycleCommands.idempotencyKey, promptIdempotencyKey))
       .limit(1))[0];
-    if (!command) throw new Error('task worker prompt command conflicted but could not be loaded');
+    if (!promptCommand) throw new Error('task worker prompt command conflicted but could not be loaded');
     if (existing) {
       const [persisted] = await tx.select({ payload: sessionLifecycleCommands.payload })
         .from(sessionLifecycleCommands)
-        .where(eq(sessionLifecycleCommands.commandId, command.commandId))
+        .where(eq(sessionLifecycleCommands.commandId, promptCommand.commandId))
         .limit(1);
       const payload = (persisted?.payload ?? {}) as Record<string, unknown>;
       const persistedMessageId = typeof payload.messageId === 'string'
@@ -500,7 +641,12 @@ export async function registerProjectTaskWorker(
         throw new TaskLivenessConflictError(input.projectId, input.taskId, 'registered worker prompt is immutable');
       }
     }
-    return { task, commandId: command.commandId, existing };
+    return {
+      task,
+      commandId: promptCommand.commandId,
+      provisionCommandId: provisionCommand.commandId,
+      existing,
+    };
   });
 }
 

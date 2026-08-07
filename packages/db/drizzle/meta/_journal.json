@@ -316,6 +316,13 @@
       "when": 1786072778266,
       "tag": "20260807031938_add_task_worker_platform_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786073087440,
+      "tag": "20260807032447_claim_covers_liveness",
+      "breakpoints": true
     }
   ]
 }

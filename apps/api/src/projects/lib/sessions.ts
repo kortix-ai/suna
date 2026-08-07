@@ -83,7 +83,11 @@ import {
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditEvent } from './session-audit';
 import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
-import { getProjectTaskWorkerBinding } from '../generated-state-store';
+import {
+  assertTaskWorkerReservationSlot,
+  getProjectTaskWorkerBinding,
+  TaskWorkerReservationConflictError,
+} from '../generated-state-store';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
@@ -603,13 +607,15 @@ export async function createProjectSession(input: {
   if (
     callerIsMeta &&
     (Object.prototype.hasOwnProperty.call(body, 'initial_prompt') ||
-      Object.prototype.hasOwnProperty.call(body, 'initialPrompt'))
+      Object.prototype.hasOwnProperty.call(body, 'initialPrompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'pending_prompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'pendingPrompt'))
   ) {
     return {
       error: {
         status: 400,
         body: {
-          error: 'A spawned session cannot include initial_prompt; register the worker task to deliver its first prompt atomically',
+          error: 'A spawned session cannot include an initial or pending prompt; register the worker task to deliver its first prompt atomically',
           code: 'SPAWN_INITIAL_PROMPT_FORBIDDEN',
         },
       },
@@ -1163,15 +1169,29 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
-    // This server-owned marker fences reserved-meta workers at the gateway until
-    // task registration atomically commits their durable binding and prompt.
-    ...(callerIsMeta ? { task_liveness_binding_required: true } : {}),
+    // A reserved-meta child is durable identity only. It has no runtime until
+    // task registration atomically binds its immutable contract and outbox.
+    ...(callerIsMeta
+      ? {
+          task_liveness_binding_required: true,
+          task_liveness_binding_status: 'pending',
+          task_liveness_reserved_at: new Date().toISOString(),
+          task_liveness_reservation_expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        }
+      : {}),
     sandbox_slug: sandboxSlug,
   };
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
     sessionRow = await db.transaction(async (tx) => {
+      if (callerIsMeta && input.callerSessionId) {
+        await assertTaskWorkerReservationSlot(tx as unknown as typeof db, {
+          projectId,
+          coordinatorSessionId: input.callerSessionId,
+          now: new Date(),
+        });
+      }
       const [row] = await tx
       .insert(projectSessions)
       .values({
@@ -1185,7 +1205,8 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
-        status: 'provisioning',
+        // Reserved-meta children consume no runtime before task binding.
+        status: callerIsMeta ? 'queued' : 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).
         createdBy: userId,
@@ -1237,6 +1258,17 @@ export async function createProjectSession(input: {
       return row;
     });
   } catch (error) {
+    if (error instanceof TaskWorkerReservationConflictError) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: error.message,
+            code: error.code,
+          },
+        },
+      };
+    }
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
     // but the target DB's type is missing fails here with 22P02, not upstream —
@@ -1284,6 +1316,10 @@ export async function createProjectSession(input: {
   } catch (error) {
     console.error('[projects] Failed to record session creation audit event:', error);
   }
+
+  // The reservation is now durable. Registration owns the only transition
+  // that can enqueue its runtime allocation and first prompt.
+  if (callerIsMeta) return { row: sessionRow, headers: responseHeaders };
 
   // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
   // inside the box — it never crosses the API again, so this is the only moment

@@ -969,6 +969,10 @@ export const projectTasks = kortixSchema.table(
       sql`${table.livenessDeadlineAt} is null or ${table.livenessDeadlineAt} > ${table.livenessStartedAt}`,
     ),
     check(
+      'project_tasks_claim_covers_liveness',
+      sql`${table.livenessDeadlineAt} is null or ${table.claimExpiresAt} >= ${table.livenessDeadlineAt}`,
+    ),
+    check(
       'project_tasks_liveness_worker_not_claimant',
       sql`${table.livenessWorkerSessionId} is null or ${table.livenessWorkerSessionId} <> ${table.claimSessionId}`,
     ),

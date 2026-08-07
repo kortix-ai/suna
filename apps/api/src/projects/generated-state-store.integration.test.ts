@@ -6,6 +6,7 @@ import {
   projectTaskNoProgressSettlements,
   projectTasks,
   sessionLifecycleCommands,
+  sessionSandboxes,
 } from '@kortix/db/schema';
 import { eq } from 'drizzle-orm';
 import {
@@ -84,19 +85,29 @@ async function seed() {
       branchName: 'generated-state-b',
       agentName: 'reviewer',
       createdBy: USER_B,
-      metadata: { spawned_by_session: SESSION_A },
     },
     {
       sessionId: SESSION_C, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
       branchName: 'generated-state-c', agentName: 'reviewer', createdBy: USER_B,
-      metadata: { spawned_by_session: SESSION_A },
     },
     {
       sessionId: SESSION_D, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
       branchName: 'generated-state-d', agentName: 'reviewer', createdBy: USER_B,
-      metadata: { spawned_by_session: SESSION_A },
     },
   ]);
+}
+
+async function reserveWorker(sessionId: string) {
+  await testDb().update(projectSessions).set({
+    status: 'queued',
+    metadata: {
+      spawned_by_session: SESSION_A,
+      task_liveness_binding_required: true,
+      task_liveness_binding_status: 'pending',
+      task_liveness_reserved_at: '2026-08-07T13:59:00.000Z',
+      task_liveness_reservation_expires_at: '2099-01-01T00:00:00.000Z',
+    },
+  }).where(eq(projectSessions.sessionId, sessionId));
 }
 
 describeWithDb('generated task and goal-observation state — real PostgreSQL', () => {
@@ -562,8 +573,40 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(unchanged?.claimExpiresAt?.toISOString()).toBe('2026-08-07T13:01:00.000Z');
   });
 
+  test('spawned reservations cannot claim coordinator authority', async () => {
+    const database = testDb();
+    await reserveWorker(SESSION_B);
+    const { task } = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Coordinator-only claim',
+      origin: 'confinement-proof',
+    });
+    await expect(claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      sessionId: SESSION_B,
+      now: new Date('2026-08-07T13:30:00.000Z'),
+      leaseMs: 60_000,
+    })).rejects.toBeInstanceOf(TaskClaimConflictError);
+    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }))
+      .toMatchObject({ status: 'backlog', claimSessionId: null });
+  });
+
   test('worker registration and one continuation survive retries and process restarts', async () => {
     const database = testDb();
+    await Promise.all([reserveWorker(SESSION_B), reserveWorker(SESSION_C), reserveWorker(SESSION_D)]);
+    // Three durable child reservations exist, but no runtime or lifecycle work
+    // exists before one is atomically bound.
+    expect(await database.select().from(sessionSandboxes)
+      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
+    expect(await database.select().from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID))).toHaveLength(0);
+    const reservations = await database.select().from(projectSessions);
+    expect(reservations.filter((row) =>
+      (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_status === 'pending'
+    )).toHaveLength(3);
+
     const { task } = await createProjectTask(database, {
       projectId: PROJECT_ID,
       goalSlug: 'ship-kernel',
@@ -597,6 +640,30 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
     expect(registered.existing).toBe(false);
     expect(registered.task.claimExpiresAt?.toISOString()).toBe('2026-08-07T15:00:00.000Z');
+    expect(registered.task.livenessDeadlineAt?.toISOString()).toBe('2026-08-07T15:00:00.000Z');
+    expect(await database.select().from(sessionSandboxes)
+      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
+    const registrationCommands = (await database.select().from(sessionLifecycleCommands))
+      .filter((row) => row.sessionId === SESSION_B)
+      .sort((left, right) => left.availableAt.getTime() - right.availableAt.getTime());
+    expect(registrationCommands.map((row) => row.commandType)).toEqual([
+      'provision_session',
+      'continue_session',
+    ]);
+    expect(registrationCommands.map((row) => row.idempotencyKey)).toEqual([
+      `task-worker-provision:${task.taskId}:${SESSION_B}`,
+      `task-worker:${task.taskId}:${SESSION_B}`,
+    ]);
+    expect(registrationCommands[0].availableAt.getTime())
+      .toBeLessThan(registrationCommands[1].availableAt.getTime());
+    const [boundReservation] = await database.select().from(projectSessions)
+      .where(eq(projectSessions.sessionId, SESSION_B));
+    expect(boundReservation.status).toBe('queued');
+    expect(boundReservation.metadata).toMatchObject({
+      task_liveness_binding_status: 'bound',
+      task_liveness_bound_task_id: task.taskId,
+    });
+
     const retry = await registerProjectTaskWorker(database, {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
@@ -610,6 +677,31 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
     expect(retry.existing).toBe(true);
     expect(retry.commandId).toBe(registered.commandId);
+    expect(retry.provisionCommandId).toBe(registered.provisionCommandId);
+    const parallelRetries = await Promise.all(Array.from({ length: 4 }, () =>
+      registerProjectTaskWorker(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        actorUserId: null,
+        prompt: 'Do the bounded task.',
+        contract,
+        now: new Date('2026-08-07T14:00:01.500Z'),
+      })));
+    expect(new Set(parallelRetries.map((result) => result.commandId))).toEqual(new Set([registered.commandId]));
+    expect(new Set(parallelRetries.map((result) => result.provisionCommandId)))
+      .toEqual(new Set([registered.provisionCommandId]));
+    expect((await database.select().from(sessionLifecycleCommands))
+      .filter((row) => row.sessionId === SESSION_B)).toHaveLength(2);
+
+    // PostgreSQL enforces that the coordinator claim cannot be shortened below
+    // the immutable worker deadline.
+    await expect(database.update(projectTasks).set({
+      claimExpiresAt: new Date('2026-08-07T14:59:59.000Z'),
+    }).where(eq(projectTasks.taskId, task.taskId))).rejects.toThrow();
+
     await expect(registerProjectTaskWorker(database, {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
@@ -745,6 +837,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
 
   test('worker registration rejects stopped sessions before queuing an initial prompt', async () => {
     const database = testDb();
+    await reserveWorker(SESSION_B);
     const { task } = await createProjectTask(database, {
       projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: 'Stopped worker', origin: 'stopped-worker-proof',
     });
@@ -768,6 +861,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
 
   test('terminal task transitions retain the worker binding, queue its stop, and reject later admission', async () => {
     const database = testDb();
+    await reserveWorker(SESSION_B);
     const { task } = await createProjectTask(database, {
       projectId: PROJECT_ID,
       goalSlug: 'ship-kernel',
@@ -809,6 +903,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
 
   test('iteration admission and usage sweeps atomically finalize exhausted workers', async () => {
     const database = testDb();
+    await reserveWorker(SESSION_B);
     const now = new Date('2026-08-07T16:00:00.000Z');
     const usage = {
       total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
@@ -817,6 +912,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     async function boundedTask(origin: string, workerSessionId: string, contract: {
       max_wall_seconds: number; max_tokens: number; max_cost_usd: number; max_iterations: number;
     }) {
+      await reserveWorker(workerSessionId);
       const { task } = await createProjectTask(database, {
         projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: origin, origin,
       });

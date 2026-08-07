@@ -313,6 +313,28 @@ export async function markCommandQueued(
   return rows.length > 0;
 }
 
+/** Requeue a claimed command behind a durable prerequisite without spending its retry budget. */
+export async function deferLifecycleCommand(
+  commandId: string,
+  claim: LifecycleCommandClaim,
+  reason: string,
+  availableAt = new Date(Date.now() + 2_000),
+): Promise<boolean> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: "queued",
+      result: { reason },
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(claimedCommandWhere(commandId, claim))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return rows.length > 0;
+}
+
 export async function markCommandSucceeded(
   commandId: string,
   result: Record<string, unknown>,
