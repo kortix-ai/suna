@@ -94,6 +94,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
+  // The park-and-restore pair (`r4.ts`): a parked session's `question` tool
+  // survives past its sandbox (`lib/pending-questions.ts`); GET reads the one
+  // still waiting on a human, POST answers it as a follow-up turn. Reads
+  // naturally beside `turn-question`'s "Submitted session question" below —
+  // submitted, then viewed, then answered.
+  'GET /v1/projects/:projectId/sessions/:sessionId/question': 'Viewed open session question',
+  'POST /v1/projects/:projectId/sessions/:sessionId/question': 'Answered session question',
   'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
     'Committed and pushed session changes',
   'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
@@ -121,6 +128,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
+  // Same underlying create as bare `POST /v1/projects/provision` (both run
+  // `runProvision` in `apps/api/src/projects/provision-core.ts` — see that
+  // route's own doc comment) — this is just the phased-progress transport for
+  // it, not a different action. `provision` itself has no override here (the
+  // generic fallback already reads correctly as "Provisioned project"); this
+  // entry pins the SAME text so the two never drift apart in the log.
+  'POST /v1/projects/provision-stream': 'Provisioned project',
   'POST /v1/projects/suna-migration/start': 'Started project migration',
   'POST /v1/executor/call': 'Ran connector action',
   'POST /v1/executor/projects/:projectId/call': 'Ran project connector action',
