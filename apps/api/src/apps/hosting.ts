@@ -123,7 +123,8 @@ export class AppHostingProvider {
 
   async createRuntime(input: StartAppRuntimeInput): Promise<AppRuntimeHandle> {
     const token = appControlToken(input.runtimeId, this.dependencies.controlSecret);
-    const result = await this.dependencies.runtimeProvider(input.provider).create({
+    const provider = this.dependencies.runtimeProvider(input.provider);
+    const result = await provider.create({
       accountId: input.accountId,
       userId: input.userId,
       name: input.name,
@@ -134,6 +135,12 @@ export class AppHostingProvider {
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
     });
+    try {
+      await provider.ensureAppRuntimeStarted(result.externalId);
+    } catch (error) {
+      await provider.remove(result.externalId).catch(() => {});
+      throw error;
+    }
     return {
       ...result,
       provider: input.provider,
@@ -143,11 +150,15 @@ export class AppHostingProvider {
   }
 
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {
-    await this.dependencies.runtimeProvider(provider).start(externalId);
+    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    await runtimeProvider.start(externalId);
+    await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }
 
   async ensureRunning(provider: SandboxProviderName, externalId: string): Promise<void> {
-    await this.dependencies.runtimeProvider(provider).ensureRunning(externalId);
+    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    await runtimeProvider.ensureRunning(externalId);
+    await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }
 
   async stop(provider: SandboxProviderName, externalId: string): Promise<void> {

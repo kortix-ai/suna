@@ -37,6 +37,10 @@ export interface ResolvedAppHost {
   local: boolean;
 }
 
+export interface ResolvedAppRequest extends ResolvedAppHost {
+  publicHost: string;
+}
+
 export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   const local = /^([a-f0-9]{16})\.apps\.localhost$/.exec(host);
@@ -50,6 +54,14 @@ export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const match = /^(dev|staging|prod|preview)-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-([a-f0-9]{16})$/.exec(label);
   if (!match || match[1] !== config.INTERNAL_KORTIX_ENV) return null;
   return { routeKey: match[2]!, local: false };
+}
+
+export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
+  const publicHost = (request.headers.get(EDGE_HOST_HEADER) || url.hostname)
+    .toLowerCase()
+    .replace(/\.$/, '');
+  const matched = resolveAppHost(publicHost);
+  return matched ? { ...matched, publicHost } : null;
 }
 
 function edgeSecret(): string {
@@ -74,14 +86,19 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function verifyAppEdgeRequest(request: Request, url: URL, local: boolean): boolean {
+export function verifyAppEdgeRequest(
+  request: Request,
+  url: URL,
+  local: boolean,
+  publicHost = url.hostname,
+): boolean {
   if (local && (process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE !== 'false')) return true;
   if (process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE === 'true') return true;
   const host = request.headers.get(EDGE_HOST_HEADER);
   const timestamp = request.headers.get(EDGE_TIMESTAMP_HEADER);
   const signature = request.headers.get(EDGE_SIGNATURE_HEADER);
   if (!host || !timestamp || !signature) return false;
-  if (host.toLowerCase() !== url.hostname.toLowerCase()) return false;
+  if (host.toLowerCase() !== publicHost.toLowerCase()) return false;
   const time = Number(timestamp);
   if (!Number.isFinite(time) || Math.abs(Date.now() - time) > EDGE_MAX_SKEW_MS) return false;
   return safeEqual(
@@ -267,9 +284,9 @@ export function appUpstreamHeaders(request: Request, providerHeaders: Record<str
 
 export async function handleAppPublicRequest(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
-  const matched = resolveAppHost(url.hostname);
+  const matched = resolveAppRequest(request, url);
   if (!matched) return null;
-  if (!verifyAppEdgeRequest(request, url, matched.local)) {
+  if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
     return Response.json({ error: 'Invalid App edge signature' }, { status: 403 });
   }
   const loaded = await loadPublicApp(matched.routeKey);
@@ -302,7 +319,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   try {
     upstream = await fetch(upstreamUrl, {
       method: request.method,
-      headers: appUpstreamHeaders(request, ingress.headers, url.host),
+      headers: appUpstreamHeaders(request, ingress.headers, matched.publicHost),
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
       redirect: 'manual',
       duplex: 'half',

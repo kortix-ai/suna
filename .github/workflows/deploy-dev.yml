@@ -353,7 +353,7 @@ jobs:
           printf '%s' "$STAGING_EDGE_SECRET" | npx --yes wrangler@4.34.0 secret put STAGING_EDGE_SECRET
           printf '%s' "$PROD_EDGE_SECRET" | npx --yes wrangler@4.34.0 secret put PROD_EDGE_SECRET
           printf '%s' "$PREVIEW_EDGE_SECRET" | npx --yes wrangler@4.34.0 secret put PREVIEW_EDGE_SECRET
-          npx --yes wrangler@4.34.0 secret list --json | jq -e 'map(.name) | sort == ["DEV_EDGE_SECRET", "PREVIEW_EDGE_SECRET", "PROD_EDGE_SECRET", "STAGING_EDGE_SECRET"]'
+          npx --yes wrangler@4.34.0 secret list --format json | jq -e 'map(.name) | sort == ["DEV_EDGE_SECRET", "PREVIEW_EDGE_SECRET", "PROD_EDGE_SECRET", "STAGING_EDGE_SECRET"]'
 
   # ── Move the self-host `:dev` channel tag onto the image that just deployed ─
   # `kortix self-host init/update --tag dev` (or `--channel dev` once that

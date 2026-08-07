@@ -336,6 +336,10 @@ export class LocalDockerProvider implements SandboxProvider {
     };
   }
 
+  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
+    // Docker starts the image ENTRYPOINT on create and container restart.
+  }
+
   async start(externalId: string): Promise<void> {
     const docker = getDockerClient();
     await assertDockerReachable(docker);

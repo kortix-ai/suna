@@ -266,6 +266,11 @@ export class PlatinumProvider implements SandboxProvider {
     };
   }
 
+  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
+    // Platinum honors the image ENTRYPOINT on create and resumes its process
+    // tree on wake. appd is therefore already running.
+  }
+
   async start(externalId: string): Promise<void> {
     await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
   }

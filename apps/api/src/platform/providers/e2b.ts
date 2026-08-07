@@ -294,6 +294,10 @@ export class E2BProvider implements SandboxProvider {
     }
   }
 
+  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
+    // E2B honors the image ENTRYPOINT and resumes the existing process tree.
+  }
+
   async start(externalId: string): Promise<void> {
     const inFlight = startOperations.get(externalId);
     if (inFlight) return inFlight;

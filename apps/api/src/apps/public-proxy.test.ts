@@ -9,6 +9,7 @@ const {
   appEdgeSignature,
   appUpstreamHeaders,
   resolveAppHost,
+  resolveAppRequest,
   verifyAppEdgeRequest,
 } = await import('./public-proxy');
 
@@ -40,6 +41,34 @@ describe('Apps public edge', () => {
     });
     expect(verifyAppEdgeRequest(request, new URL(request.url), false)).toBe(true);
     expect(verifyAppEdgeRequest(request, new URL(`https://${host}/api/other`), false)).toBe(false);
+  });
+
+  test('resolves and verifies the signed public host after the Worker forwards to the API host', () => {
+    const timestamp = String(Date.now());
+    const publicHost = 'dev-hello-aaaaaaaaaaaaaaaa.apps.kortix.com';
+    const secret = 'edge-secret-at-least-sixteen';
+    process.env.KORTIX_APPS_EDGE_SECRET = secret;
+    const signature = appEdgeSignature(timestamp, publicHost, 'GET', '/assets/app.js?q=1', secret);
+    const request = new Request('https://dev-api.kortix.com/assets/app.js?q=1', {
+      headers: {
+        'x-kortix-app-host': publicHost,
+        'x-kortix-app-timestamp': timestamp,
+        'x-kortix-app-signature': signature,
+      },
+    });
+
+    const resolved = resolveAppRequest(request, new URL(request.url));
+    expect(resolved).toEqual({
+      routeKey: 'aaaaaaaaaaaaaaaa',
+      local: false,
+      publicHost,
+    });
+    expect(verifyAppEdgeRequest(
+      request,
+      new URL(request.url),
+      false,
+      resolved!.publicHost,
+    )).toBe(true);
   });
 
   test('allows direct local development without Cloudflare headers', () => {

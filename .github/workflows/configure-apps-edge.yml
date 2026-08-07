@@ -1,0 +1,138 @@
+name: Configure Kortix Apps Edge
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: configure-kortix-apps-edge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    name: Configure and verify Apps edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      APPS_DNS_NAME: '*.apps.kortix.com'
+      APPS_DNS_TARGET: '192.0.2.1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Cloudflare configuration
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is not configured."
+              exit 1
+            fi
+          done
+
+      - name: Verify Worker route and secret bindings
+        working-directory: infra/cloudflare/workers/apps-router
+        run: |
+          set -euo pipefail
+          routes="$({
+            curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/workers/routes"
+          })"
+          jq -e '
+            .success == true and
+            any(.result[]; .pattern == "*.apps.kortix.com/*" and .script == "kortix-apps-router")
+          ' <<<"$routes"
+
+          secrets="$(npx --yes wrangler@4.34.0 secret list --format json)"
+          jq -e '
+            map(.name) | sort ==
+            ["DEV_EDGE_SECRET", "PREVIEW_EDGE_SECRET", "PROD_EDGE_SECRET", "STAGING_EDGE_SECRET"]
+          ' <<<"$secrets"
+
+      - name: Create or verify proxied wildcard DNS
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records"
+          records="$({
+            curl --fail-with-body --silent --show-error --get \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data-urlencode "name=$APPS_DNS_NAME" \
+              "$api"
+          })"
+          jq -e '.success == true' <<<"$records"
+          count="$(jq '.result | length' <<<"$records")"
+
+          if [ "$count" = 0 ]; then
+            body="$(jq -n \
+              --arg name "$APPS_DNS_NAME" \
+              --arg content "$APPS_DNS_TARGET" \
+              '{type:"A", name:$name, content:$content, ttl:1, proxied:true, comment:"Kortix Apps Worker ingress"}')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data "$body" \
+                "$api"
+            })"
+            jq -e '
+              .success == true and
+              .result.type == "A" and
+              .result.name == "*.apps.kortix.com" and
+              .result.content == "192.0.2.1" and
+              .result.proxied == true
+            ' <<<"$created"
+            exit 0
+          fi
+
+          if [ "$count" != 1 ]; then
+            echo "::error::Expected at most one $APPS_DNS_NAME record; found $count."
+            exit 1
+          fi
+          jq -e \
+            --arg name "$APPS_DNS_NAME" \
+            --arg content "$APPS_DNS_TARGET" '
+              .result[0].type == "A" and
+              .result[0].name == $name and
+              .result[0].content == $content and
+              .result[0].proxied == true
+            ' <<<"$records"
+
+      - name: Verify public DNS and TLS routing
+        run: |
+          set -euo pipefail
+          host="dev-edge-probe-invalid.apps.kortix.com"
+          for attempt in $(seq 1 30); do
+            answer="$({
+              curl --silent --show-error --get \
+                --header 'accept: application/dns-json' \
+                --data-urlencode "name=$host" \
+                --data-urlencode 'type=A' \
+                'https://cloudflare-dns.com/dns-query'
+            })"
+            if jq -e 'any(.Answer[]?; .type == 1)' <<<"$answer" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "::error::$host did not resolve after 5 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          status="$({
+            curl --silent --show-error \
+              --dump-header "$headers" \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              "https://$host/"
+          })"
+          test "$status" = 404
+          grep -Eiq '^x-kortix-app-environment: dev\r?$' "$headers"
+          jq -e '.error == "App not found"' "$body"

@@ -14,6 +14,7 @@ const secret = 'test-secret-at-least-sixteen-characters';
 function dependencies() {
   const builds: any[] = [];
   const creates: any[] = [];
+  const appRuntimeStarts: string[] = [];
   const ingressCalls: any[] = [];
   const fetchCalls: any[] = [];
   const snapshot = {
@@ -33,6 +34,8 @@ function dependencies() {
       };
     },
     start: async () => {},
+    ensureRunning: async () => {},
+    ensureAppRuntimeStarted: async (externalId: string) => { appRuntimeStarts.push(externalId); },
     stop: async () => {},
     remove: async () => {},
   } as unknown as SandboxProvider;
@@ -51,7 +54,7 @@ function dependencies() {
     fetch: fetch as typeof globalThis.fetch,
     sleep: async () => {},
   });
-  return { hosting, builds, creates, ingressCalls, fetchCalls };
+  return { hosting, builds, creates, appRuntimeStarts, ingressCalls, fetchCalls };
 }
 
 describe('AppHostingProvider', () => {
@@ -88,7 +91,7 @@ describe('AppHostingProvider', () => {
   });
 
   test('creates an App workload with only the derived appd token', async () => {
-    const { hosting, creates } = dependencies();
+    const { hosting, creates, appRuntimeStarts } = dependencies();
     const result = await hosting.createRuntime({
       provider: 'daytona',
       runtimeId: 'runtime-1',
@@ -110,6 +113,16 @@ describe('AppHostingProvider', () => {
     expect(result.controlTokenHash).toBe(
       appControlTokenHash(appControlToken('runtime-1', secret)),
     );
+    expect(appRuntimeStarts).toEqual(['box-1']);
+  });
+
+  test('restarts the App runtime daemon after provider start and cold wake', async () => {
+    const { hosting, appRuntimeStarts } = dependencies();
+
+    await hosting.start('daytona', 'box-1');
+    await hosting.ensureRunning('daytona', 'box-1');
+
+    expect(appRuntimeStarts).toEqual(['box-1', 'box-1']);
   });
 
   test('polls authenticated appd status until the runtime is ready', async () => {

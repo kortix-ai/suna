@@ -196,6 +196,13 @@ export interface SandboxProvider {
 
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   /**
+   * Ensure the Kortix App supervisor is running after create or resume.
+   * Providers that honor the image ENTRYPOINT implement this as a no-op.
+   * Providers that replace ENTRYPOINT must start `/kortix/bin/kortix-appd`
+   * through their native process API. The operation must be idempotent.
+   */
+  ensureAppRuntimeStarted(externalId: string): Promise<void>;
+  /**
    * FIX-A: boot a sandbox from an EXACT provider template id (not a name). The
    * boot path uses this to honor a project's activated
    * `active_sandbox_external_template_id` pin, so the running sandbox is the

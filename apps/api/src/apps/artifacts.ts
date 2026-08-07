@@ -6,7 +6,10 @@ import * as tar from 'tar';
 import { getSupabase } from '../shared/supabase';
 
 export const APP_ARTIFACT_BUCKET = 'app-artifacts';
-export const MAX_ARCHIVE_BYTES = 250 * 1024 * 1024;
+// Managed Supabase Storage rejects bucket limits above the project's global
+// fileSizeLimit. Kortix cloud currently exposes the standard 50 MiB tier.
+// OCI deployments bypass this source-archive limit.
+export const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 export const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024;
 export const MAX_ARCHIVE_FILES = 100_000;
 export const MAX_ARCHIVE_PATH_BYTES = 1024;

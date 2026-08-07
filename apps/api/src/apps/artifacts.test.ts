@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
 import {
+  MAX_ARCHIVE_BYTES,
   appArtifactObjectPath,
   extractAppArchive,
   inspectAppArchive,
@@ -17,6 +18,10 @@ afterEach(async () => {
 });
 
 describe('App artifacts', () => {
+  test('keeps source archives within the managed Supabase Storage limit', () => {
+    expect(MAX_ARCHIVE_BYTES).toBe(50 * 1024 * 1024);
+  });
+
   test('uses account, project, and artifact identity in the private object path', () => {
     expect(appArtifactObjectPath('account-1', 'project-1', 'artifact-1')).toBe(
       'account-1/project-1/artifact-1/source.tar.gz',

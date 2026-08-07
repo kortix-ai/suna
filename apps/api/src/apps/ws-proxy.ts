@@ -8,7 +8,7 @@ import {
   appUpstreamHeaders,
   ensureAppRuntimeRunning,
   loadPublicApp,
-  resolveAppHost,
+  resolveAppRequest,
   verifyAppEdgeRequest,
 } from './public-proxy';
 
@@ -55,9 +55,9 @@ export async function prepareAppWsUpgrade(
   request: Request,
   url: URL,
 ): Promise<{ ok: true; data: AppWsData } | { ok: false; status: number; message: string }> {
-  const matched = resolveAppHost(url.hostname);
+  const matched = resolveAppRequest(request, url);
   if (!matched) return { ok: false, status: 404, message: 'not an App hostname' };
-  if (!verifyAppEdgeRequest(request, url, matched.local)) {
+  if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
     return { ok: false, status: 403, message: 'Invalid App edge signature' };
   }
   const loaded = await loadPublicApp(matched.routeKey);
@@ -71,7 +71,7 @@ export async function prepareAppWsUpgrade(
       runtime.externalId,
       'websocket',
     );
-    const headers = appUpstreamHeaders(request, ingress.headers, url.host);
+    const headers = appUpstreamHeaders(request, ingress.headers, matched.publicHost);
     const headerObject = Object.fromEntries(headers.entries());
     return {
       ok: true,

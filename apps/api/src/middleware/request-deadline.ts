@@ -58,7 +58,7 @@ const EXEMPT_PREFIXES = [
   '/v1/router',   // LLM gateway — streamed chat completions
   '/v1/llm',      // LLM chat completions (streamed; p99 >10s is normal)
   '/v1/llm-gateway', // reverse proxy to the standalone gateway (streamed SSE)
-  '/v1/connector', // connector proxy — forwards to arbitrary upstream APIs
+  '/v1/connectors', // connector calls + git/provider sync — arbitrary upstream latency
   '/v1/webhooks', // inbound webhooks (Slack, …) — callers retry, don't truncate
   '/v1/billing/webhooks',   // Stripe webhook processing (observed >60s, legit)
   '/v1/billing/revenuecat', // RevenueCat sync — batch reconcile, legit-long

@@ -289,6 +289,40 @@ export class DaytonaProvider implements SandboxProvider {
     };
   }
 
+  /**
+   * Daytona runs its own `/usr/local/bin/daytona` entrypoint and does not run
+   * the image ENTRYPOINT. Start appd through the toolbox after every create or
+   * wake. The PID-file check makes concurrent and repeated calls idempotent.
+   */
+  async ensureAppRuntimeStarted(externalId: string): Promise<void> {
+    const daytona = getDaytona();
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId}) for App bootstrap`,
+    );
+    const command = [
+      'pid_file=/tmp/kortix-appd.pid',
+      'if [ -r "$pid_file" ]; then',
+      '  IFS= read -r appd_pid < "$pid_file" || true',
+      '  if [ -n "${appd_pid:-}" ] && kill -0 "$appd_pid" 2>/dev/null; then exit 0; fi',
+      'fi',
+      "trap '' HUP",
+      '/kortix/bin/kortix-appd >>/tmp/kortix-appd-bootstrap.log 2>&1 </dev/null &',
+      'echo "$!" > "$pid_file"',
+    ].join('\n');
+    const result = await withTimeout(
+      sandbox.process.executeCommand(command, undefined, undefined, 15),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona App bootstrap(${externalId})`,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Daytona App bootstrap failed for ${externalId}: exit ${result.exitCode}: ${result.result.slice(0, 500)}`,
+      );
+    }
+  }
+
   async start(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();

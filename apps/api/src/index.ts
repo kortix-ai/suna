@@ -89,7 +89,7 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { handleAppPublicRequest, resolveAppHost } from './apps/public-proxy';
+import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
@@ -1432,7 +1432,7 @@ export default {
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
     const host = req.headers.get('host') || '';
-    if (resolveAppHost(url.hostname)) {
+    if (resolveAppRequest(req, url)) {
       server.timeout(req, 0);
       if (isWsUpgrade) {
         const prepared = await prepareAppWsUpgrade(req, url);
