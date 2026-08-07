@@ -1060,6 +1060,16 @@ export type Opencode = {
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
+  /**
+   * The port opencode is listening on RIGHT NOW.
+   *
+   * It moves: a verified reload boots the replacement on the idle half of the
+   * port pair and promotes it, so the live port alternates. Anything outside
+   * this process that needs to reach opencode directly — the API's PTY
+   * WebSocket proxy is the live case, since the daemon cannot carry a WS — has
+   * to ask rather than assume 4096.
+   */
+  getActivePort(): number
   getBinaryPath(): string | null
   getState(): OpencodeState
   markReady(): void
@@ -1781,6 +1791,10 @@ export function createOpencodeSupervisor(
 
     getPid() {
       return child?.pid ?? null
+    },
+
+    getActivePort() {
+      return activePort
     },
 
     getInternalUrl() {
