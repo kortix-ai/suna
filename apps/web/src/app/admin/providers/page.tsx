@@ -208,7 +208,6 @@ function StatStrip({
 }
 
 export default function ProvidersPage() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
@@ -352,9 +351,7 @@ export default function ProvidersPage() {
       <SectionHeader
         icon={Boxes}
         title={'Sandbox Providers'}
-        description={tI18nHardcoded.raw(
-          'autoAppAdminProvidersPageJsxAttrDescriptionBalanceNewSandboxese2321356',
-        )}
+        description={'Balance new sandboxes across providers by weight.'}
         actions={
           <Button
             variant="outline"
@@ -406,9 +403,7 @@ export default function ProvidersPage() {
                 {'Split distribution'}
               </h2>
               <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-                {tI18nHardcoded.raw(
-                  'autoAppAdminProvidersPageJsxTextWeightedRandomSelectionFor79233150',
-                )}
+                {'Weighted-random selection for new sandboxes across the available providers. All-zero falls back to the default'}
                 {dist ? ` (${dist.default})` : ''}
                 {'. An explicit per-request provider always wins.'}
               </p>
@@ -482,9 +477,7 @@ export default function ProvidersPage() {
                 <Switch
                   checked={fbEnabled}
                   onCheckedChange={setFbEnabled}
-                  aria-label={tI18nHardcoded.raw(
-                    'autoAppAdminProvidersPageJsxAttrAriaLabelEnableProvider03f7516e',
-                  )}
+                  aria-label={'Enable provider failover'}
                 />
               )}
             </div>
@@ -502,9 +495,7 @@ export default function ProvidersPage() {
           <PageSearchBar
             value={search}
             onChange={setSearch}
-            placeholder={tI18nHardcoded.raw(
-              'autoAppAdminProvidersPageJsxAttrPlaceholderSearchByProviderfff85aa6',
-            )}
+            placeholder={'Search by provider, status, session, account, or external ID…'}
           />
 
           {listQ.isLoading ? (
@@ -603,9 +594,7 @@ export default function ProvidersPage() {
                                 }}
                               >
                                 <ArrowRightLeft className="mr-2 h-4 w-4" />
-                                {tI18nHardcoded.raw(
-                                  'autoAppAdminProvidersPageJsxTextMigrateToAnotherProviderfa54a4d1',
-                                )}
+                                {'Migrate to another provider…'}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -623,9 +612,7 @@ export default function ProvidersPage() {
         <TabsContent value="analytics" className="space-y-6">
           <div className="flex items-center justify-between gap-2">
             <p className="text-muted-foreground text-sm">
-              {tI18nHardcoded.raw(
-                'autoAppAdminProvidersPageJsxTextHowEachProviderPerforms7c271b33',
-              )}
+              {'How each provider performs — provisioning latency, success rate, and where the time goes.'}
             </p>
             <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
               <SelectTrigger className="h-9 w-[130px] rounded-2xl">
@@ -657,12 +644,8 @@ export default function ProvidersPage() {
             <div className="border-border/60 bg-card rounded-2xl border">
               <EmptyState
                 icon={IconInbox}
-                title={tI18nHardcoded.raw(
-                  'autoAppAdminProvidersPageJsxAttrTitleNoProvisioningData0e187a0c',
-                )}
-                description={tI18nHardcoded.raw(
-                  'autoAppAdminProvidersPageJsxAttrDescriptionProvisionAFewd8d1edb6',
-                )}
+                title={'No provisioning data yet'}
+                description={'Provision a few sandboxes and their timing + outcome will show up here.'}
               />
             </div>
           ) : (
@@ -751,9 +734,7 @@ export default function ProvidersPage() {
                 <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-5">
                   <div>
                     <h3 className="text-sm font-semibold tracking-tight">
-                      {tI18nHardcoded.raw(
-                        'autoAppAdminProvidersPageJsxTextProvisioningLatencyP50a33d0bb6',
-                      )}
+                      {'Provisioning latency (p50)'}
                     </h3>
                     <p className="text-muted-foreground text-xs">
                       {'Median time to a ready sandbox, per provider per day.'}
@@ -805,14 +786,10 @@ export default function ProvidersPage() {
                 <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-5">
                   <div>
                     <h3 className="text-sm font-semibold tracking-tight">
-                      {tI18nHardcoded.raw(
-                        'autoAppAdminProvidersPageJsxTextProvisionVolume8594b4cd',
-                      )}
+                      {'Provision volume'}
                     </h3>
                     <p className="text-muted-foreground text-xs">
-                      {tI18nHardcoded.raw(
-                        'autoAppAdminProvidersPageJsxTextSandboxesProvisionedPerProvider9ae876ed',
-                      )}
+                      {'Sandboxes provisioned per provider per day.'}
                     </p>
                   </div>
                   <ChartContainer config={chartConfig} className="h-[260px] w-full">
@@ -856,9 +833,7 @@ export default function ProvidersPage() {
                     {'Where the time goes'}
                   </h3>
                   <p className="text-muted-foreground text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoAppAdminProvidersPageJsxTextAverageDurationOfEach9758b564',
-                    )}
+                    {'Average duration of each provisioning phase (successful provisions), per provider.'}
                   </p>
                 </div>
                 <ChartContainer config={phaseConfig} className="h-[220px] w-full">
@@ -980,9 +955,7 @@ export default function ProvidersPage() {
             <Select value={target} onValueChange={setTarget}>
               <SelectTrigger>
                 <SelectValue
-                  placeholder={tI18nHardcoded.raw(
-                    'autoAppAdminProvidersPageJsxAttrPlaceholderChooseAProvider325ba36e',
-                  )}
+                  placeholder={'Choose a provider'}
                 />
               </SelectTrigger>
               <SelectContent>
