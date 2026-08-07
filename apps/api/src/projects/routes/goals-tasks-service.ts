@@ -24,7 +24,11 @@ export function mapGeneratedStateError(
     typeof error === 'object' && error !== null && 'code' in error
       ? String((error as { code: unknown }).code)
       : '';
-  if (code !== 'TASK_CLAIM_CONFLICT' && code !== 'TASK_TRANSITION_CONFLICT') return null;
+  if (
+    code !== 'TASK_CLAIM_CONFLICT' &&
+    code !== 'TASK_TRANSITION_CONFLICT' &&
+    code !== 'TASK_LIVENESS_CONFLICT'
+  ) return null;
   return {
     status: 409,
     code: code.toLowerCase(),
@@ -186,6 +190,37 @@ export async function blockTaskForProject<T>(
     if (conflict) throw new GoalsTasksServiceError(409, conflict.code, conflict.error);
     throw error;
   }
+}
+
+export async function resolveObservationSessionId(
+  dependencies: {
+    sessionBelongsToProject(projectId: string, sessionId: string): Promise<boolean>;
+  },
+  input: {
+    projectId: string;
+    requestedSessionId?: string | null;
+    authenticatedSessionId?: string | null;
+  },
+): Promise<string | null> {
+  const authenticated = input.authenticatedSessionId ?? null;
+  if (authenticated) {
+    if (input.requestedSessionId != null && input.requestedSessionId !== authenticated) {
+      throw new GoalsTasksServiceError(
+        403,
+        'session_identity_mismatch',
+        'A project session can record observations only as its own session_id',
+      );
+    }
+    if (!(await dependencies.sessionBelongsToProject(input.projectId, authenticated))) {
+      throw new GoalsTasksServiceError(400, 'session_not_in_project', 'authenticated session must belong to this project');
+    }
+    return authenticated;
+  }
+  if (input.requestedSessionId == null) return null;
+  if (!(await dependencies.sessionBelongsToProject(input.projectId, input.requestedSessionId))) {
+    throw new GoalsTasksServiceError(400, 'session_not_in_project', 'session_id must belong to this project');
+  }
+  return input.requestedSessionId;
 }
 
 function assertSessionIdentity(input: {

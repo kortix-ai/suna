@@ -30,7 +30,7 @@ mock.module('./git', () => ({
   }),
 }));
 
-const { loadManifestForEdit } = await import('./triggers');
+const { loadManifestForEdit, runTaskLivenessSweep } = await import('./triggers');
 const { serializeManifest } = await import('../triggers');
 const { DEFAULT_AGENT_SENTINEL, extractAgents, resolveGovernedAgentGrant, loadProjectAgents } =
   await import('../agents');
@@ -171,5 +171,37 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.format).toBe('toml');
     expect(manifest.raw.agents).toBeUndefined();
+  });
+});
+
+
+describe('task liveness sweep overlap guard', () => {
+  test('skips an overlapping leader sweep and resets after completion', async () => {
+    let release!: (value: number) => void;
+    const firstSweep = new Promise<number>((resolve) => {
+      release = resolve;
+    });
+    let secondCalls = 0;
+
+    const first = runTaskLivenessSweep(true, () => firstSweep);
+    const overlapping = await runTaskLivenessSweep(true, async () => {
+      secondCalls += 1;
+      return 2;
+    });
+
+    expect(overlapping).toBeNull();
+    expect(secondCalls).toBe(0);
+    release(1);
+    expect(await first).toBe(1);
+    expect(await runTaskLivenessSweep(true, async () => 3)).toBe(3);
+  });
+
+  test('resets after a failed leader sweep', async () => {
+    await expect(
+      runTaskLivenessSweep(true, async () => {
+        throw new Error('usage aggregation unavailable');
+      }),
+    ).rejects.toThrow('usage aggregation unavailable');
+    expect(await runTaskLivenessSweep(true, async () => 4)).toBe(4);
   });
 });

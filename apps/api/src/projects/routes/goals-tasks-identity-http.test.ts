@@ -25,6 +25,21 @@ function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
     claimSessionId: status === 'doing' ? 'authenticated-session' : null,
     claimedAt: status === 'doing' ? now : null,
     claimExpiresAt: status === 'doing' ? new Date('2026-08-07T12:15:00.000Z') : null,
+    livenessWorkerSessionId: null,
+    livenessCoordinatorSessionId: null,
+    livenessWorkerContract: null,
+    livenessStartedAt: null,
+    livenessDeadlineAt: null,
+    livenessIterationsAdmitted: 0,
+    noProgressSettlements: 0,
+    continuationConsumedAt: null,
+    lastProgressAt: null,
+    lastProgressRef: null,
+    lastNoProgressSettlementId: null,
+    lastNoProgressAction: null,
+    lastNoProgressCommandId: null,
+    escalatedAt: null,
+    livenessBlocker: null,
     result: {},
     createdAt: now,
     updatedAt: now,
@@ -33,11 +48,23 @@ function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
 
 const claimTask = mock(async () => task('doing'));
 const transitionTask = mock(async (input: { status: 'done' | 'blocked' }) => task(input.status));
+const recordObservation = mock(async (input: { sessionId?: string | null }) => ({
+  observationId: '55555555-5555-4555-8555-555555555555',
+  projectId: PROJECT_ID,
+  goalSlug: 'ship-kernel',
+  metric: 'latency',
+  value: 1,
+  source: 'test',
+  sessionId: input.sessionId ?? null,
+  observedAt: new Date('2026-08-07T12:00:00.000Z'),
+  createdAt: new Date('2026-08-07T12:00:00.000Z'),
+}));
 const realStore = await import('../generated-state-store');
 mock.module('../generated-state-store', () => ({
   ...realStore,
   claimProjectTask: claimTask,
   transitionProjectTask: transitionTask,
+  recordProjectGoalObservation: recordObservation,
 }));
 
 mock.module('../../shared/db', () => ({
@@ -51,7 +78,9 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId: USER_ID,
     row: {
@@ -61,6 +90,19 @@ mock.module('../lib/access', () => ({
     },
   }),
   assertProjectCapability: async () => {},
+  resolveSessionOwnerIdentities: async () => new Map(),
+}));
+
+const realTriggers = await import('../triggers');
+mock.module('../triggers', () => ({
+  ...realTriggers,
+  readManifest: async () => ({}),
+  extractGoals: () => ({ specs: [{
+    slug: 'ship-kernel', path: 'goals/ship-kernel.md', title: 'Ship kernel',
+    doneWhen: 'done', status: 'active', pushCron: null, timezone: 'UTC', agent: null,
+    metrics: [{ name: 'latency', direction: 'decrease', target: 1, unit: 'ms' }],
+  }], errors: [] }),
+  extractTriggers: () => ({ specs: [], errors: [] }),
 }));
 
 const { projectsApp } = await import('../lib/app');
@@ -91,6 +133,7 @@ beforeEach(() => {
   authenticatedSessionId = 'authenticated-session';
   claimTask.mockClear();
   transitionTask.mockClear();
+  recordObservation.mockClear();
 });
 
 describe('task transition HTTP identity binding', () => {
@@ -115,5 +158,17 @@ describe('task transition HTTP identity binding', () => {
     const response = await post('claim', 'existing-session');
     expect(response.status).toBe(200);
     expect(claimTask).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('goal observation HTTP identity binding', () => {
+  test('a project-session principal cannot attribute an observation to another session', async () => {
+    const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ metric: 'latency', value: 1, source: 'test', session_id: 'impersonated-session' }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
   });
 });

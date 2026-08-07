@@ -452,6 +452,39 @@ async function loadSessionTotals(
   return { llm: llmRows[0], compute: computeRows[0] };
 }
 
+export interface SessionResourceUsage {
+  total_cost: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  /** Conservative total: input + output + cached-read + cache-write tokens. */
+  total_tokens: number;
+  /** Server-owned gateway request count; used as the enforceable iteration proxy. */
+  request_count: number;
+}
+
+/** Lean all-time resource totals for server-side worker-bound enforcement. */
+export async function getSessionResourceUsage(input: {
+  accountId: string;
+  sessionId: string;
+}): Promise<SessionResourceUsage> {
+  const totals = await loadSessionTotals(input.accountId, input.sessionId);
+  const inputTokens = numberValue(totals.llm?.inputTokens);
+  const outputTokens = numberValue(totals.llm?.outputTokens);
+  const cachedTokens = numberValue(totals.llm?.cachedTokens);
+  const cacheWriteTokens = numberValue(totals.llm?.cacheWriteTokens);
+  return {
+    total_cost: sumCosts(numberValue(totals.llm?.llmCost), numberValue(totals.compute?.computeCost)),
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cached_tokens: cachedTokens,
+    cache_write_tokens: cacheWriteTokens,
+    total_tokens: inputTokens + outputTokens + cachedTokens + cacheWriteTokens,
+    request_count: numberValue(totals.llm?.requestCount),
+  };
+}
+
 async function loadReconciliation(
   accountId: string,
   window: CostWindow,

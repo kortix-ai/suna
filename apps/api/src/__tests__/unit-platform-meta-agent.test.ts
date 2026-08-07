@@ -60,7 +60,7 @@ describe('platform meta agent', () => {
           description: 'Starts specialized Kortix sessions and coordinates their work.',
           mode: 'primary',
           prompt:
-            'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+            'Follow /workspace/AGENTS.md. Coordinate through the Kortix CLI. You are the only coordinator. Claim each task, spawn one specialized worker, then register its immutable bounds and initial prompt with `kortix tasks worker` before waiting. A `queued` worker state or empty new session means prompt delivery is pending, not no-progress. Record evidence with `kortix tasks progress`. Submit each idle settlement once with a unique `kortix tasks no-progress --settlement-id`; the server permits one continuation, then blocks and escalates. Never ask a worker to spawn another session.',
         },
       },
     });
@@ -73,9 +73,18 @@ describe('platform meta agent', () => {
   });
 
   test('denies merge authority by construction while retaining other project actions', () => {
-    const expectedActions = Object.values(PROJECT_ACTIONS).filter(
-      (action) => action !== 'project.cr.merge' && action !== 'project.gitops.merge',
-    );
+    const expectedActions = [
+      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_READ,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+      PROJECT_ACTIONS.PROJECT_CR_OPEN,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+      PROJECT_ACTIONS.PROJECT_FILE_READ,
+      PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+    ];
 
     expect(platformMetaAgentGrant()).toEqual({
       agent: 'meta',
@@ -84,6 +93,8 @@ describe('platform meta agent', () => {
       env: [],
     });
     expect(platformMetaAgentGrant().kortixCli).not.toBe('all');
+    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_WRITE);
+    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     expect(
       addPlatformMetaAgent({
         agents: [],

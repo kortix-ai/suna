@@ -6,6 +6,8 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { sweepTaskLivenessBounds } from '../generated-state-store';
+import { getSessionResourceUsage } from '../../shared/session-costs';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
@@ -170,6 +172,7 @@ export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
+export let taskLivenessSweepRunning = false;
 
 // In-memory heartbeat for the trigger scheduler, surfaced at /health so an
 // operator can tell at a glance whether the leader's sweep is alive and what
@@ -1254,6 +1257,20 @@ export async function drainTriggerExecutionQueue(
   }
 }
 
+export async function runTaskLivenessSweep(
+  leader = isLeader(),
+  sweep: () => Promise<number> = () =>
+    sweepTaskLivenessBounds(db, new Date(), 100, getSessionResourceUsage),
+): Promise<number | null> {
+  if (!leader || taskLivenessSweepRunning) return null;
+  taskLivenessSweepRunning = true;
+  try {
+    return await sweep();
+  } finally {
+    taskLivenessSweepRunning = false;
+  }
+}
+
 export function startProjectTriggerScheduler(): void {
   if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
@@ -1272,6 +1289,16 @@ export function startProjectTriggerScheduler(): void {
         },
       );
     }
+
+    runTaskLivenessSweep()
+      .then((finalized) => {
+        if (finalized && finalized > 0) {
+          console.log('[task-liveness] deadline sweep finalized tasks', { finalized });
+        }
+      })
+      .catch((error) => {
+        console.error('[task-liveness] deadline sweep failed:', error);
+      });
 
     drainSessionLifecycleQueue({ limit: 10 })
       .then((result) => {

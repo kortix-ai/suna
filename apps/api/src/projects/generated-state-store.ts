@@ -2,6 +2,7 @@ import type { Database } from '@kortix/db';
 import {
   projectGoalObservations,
   projectSessions,
+  projects,
   type projectTaskStatusEnum,
   projectTasks,
   sessionLifecycleCommands,
@@ -567,6 +568,157 @@ export async function settleProjectTaskNoProgress(
     if (!updated) throw new Error('locked task disappeared during liveness settlement');
     return { task: updated, action, commandId: persistedCommand.commandId };
   });
+}
+
+
+export class TaskLivenessLimitExceededError extends Error {
+  readonly code = 'TASK_LIVENESS_LIMIT_EXCEEDED' as const;
+  constructor(readonly taskId: string) {
+    super(`worker bounds exhausted for task ${taskId}`);
+    this.name = 'TaskLivenessLimitExceededError';
+  }
+}
+
+export async function projectTaskWorkerIsBound(
+  database: Database,
+  workerSessionId: string,
+): Promise<boolean> {
+  const [row] = await database.select({ taskId: projectTasks.taskId }).from(projectTasks).where(and(
+    eq(projectTasks.livenessWorkerSessionId, workerSessionId),
+    eq(projectTasks.status, 'doing'),
+  )).limit(1);
+  return Boolean(row);
+}
+
+/** Atomically admit one gateway request against the persisted iteration cap. */
+export async function admitProjectTaskWorkerIteration(
+  database: Database,
+  input: { workerSessionId: string; usage: ProjectTaskMeasuredUsage; now: Date },
+): Promise<{ taskId: string; admitted: boolean } | null> {
+  const [row] = await database.select({ task: projectTasks, accountId: projects.accountId })
+    .from(projectTasks)
+    .innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
+    .where(and(
+      eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+      eq(projectTasks.status, 'doing'),
+    )).limit(1);
+  if (!row) return null;
+  const active = row.task;
+  const contract = active.livenessWorkerContract;
+  if (!contract) throw new TaskLivenessLimitExceededError(active.taskId);
+  const [admitted] = await database.update(projectTasks).set({
+    livenessIterationsAdmitted: sql`${projectTasks.livenessIterationsAdmitted} + 1`,
+    updatedAt: input.now,
+  }).where(and(
+    eq(projectTasks.taskId, active.taskId),
+    eq(projectTasks.status, 'doing'),
+    gt(projectTasks.livenessDeadlineAt, input.now),
+    sql`${projectTasks.livenessIterationsAdmitted} < (${projectTasks.livenessWorkerContract}->>'max_iterations')::integer`,
+    sql`${input.usage.total_tokens} < (${projectTasks.livenessWorkerContract}->>'max_tokens')::numeric`,
+    sql`${input.usage.total_cost} < (${projectTasks.livenessWorkerContract}->>'max_cost_usd')::numeric`,
+  )).returning({ taskId: projectTasks.taskId });
+  if (!admitted) {
+    const fresh = await getProjectTask(database, { projectId: active.projectId, taskId: active.taskId });
+    if (fresh?.status === 'doing') {
+      const reason = exceededWorkerBounds(fresh, input.usage, input.now) ?? 'worker admission bound exhausted';
+      await finalizeTaskLiveness(database, fresh, {
+        accountId: row.accountId,
+        reason,
+        usage: input.usage,
+        now: input.now,
+      });
+    }
+    throw new TaskLivenessLimitExceededError(active.taskId);
+  }
+  return { taskId: admitted.taskId, admitted: true };
+}
+
+
+async function finalizeTaskLiveness(
+  database: Database,
+  task: ProjectTask,
+  input: { accountId: string; reason: string; usage?: ProjectTaskMeasuredUsage; now: Date },
+): Promise<boolean> {
+  if (!task.livenessWorkerSessionId || !task.livenessCoordinatorSessionId) return false;
+  return database.transaction(async (tx) => {
+    const [blocked] = await tx.update(projectTasks).set({
+      status: 'blocked',
+      escalatedAt: input.now,
+      livenessBlocker: input.reason,
+      result: { ...task.result, liveness: { blocker: input.reason, measured_usage: input.usage ?? null } },
+      claimSessionId: null,
+      claimedAt: null,
+      claimExpiresAt: null,
+      updatedAt: input.now,
+    }).where(and(eq(projectTasks.taskId, task.taskId), eq(projectTasks.status, 'doing'))).returning();
+    if (!blocked) return false;
+    await tx.insert(sessionLifecycleCommands).values([
+      {
+        commandType: 'stop_session', source: 'cli', status: 'queued' as const,
+        projectId: task.projectId, accountId: input.accountId,
+        sessionId: task.livenessWorkerSessionId,
+        idempotencyKey: `task-stop:${task.taskId}:${task.livenessWorkerSessionId}`,
+        payload: { reason: 'task_liveness_exhausted' }, result: {}, availableAt: input.now, updatedAt: input.now,
+      },
+      {
+        commandType: 'continue_session', source: 'cli', status: 'queued' as const,
+        projectId: task.projectId, accountId: input.accountId,
+        sessionId: task.livenessCoordinatorSessionId,
+        idempotencyKey: `task-bound-escalate:${task.taskId}`,
+        payload: {
+          text: `Task ${task.taskId} is blocked: ${input.reason}. Escalate through the existing review, question, or channel path.`,
+          messageId: `task-bound-escalate:${task.taskId}`,
+        },
+        result: {}, availableAt: input.now, updatedAt: input.now,
+      },
+    ]).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    return true;
+  });
+}
+
+export async function finalizeProjectTaskLivenessIfExceeded(
+  database: Database,
+  input: { workerSessionId: string; usage: ProjectTaskMeasuredUsage; now: Date },
+): Promise<boolean> {
+  const [row] = await database.select({ task: projectTasks, accountId: projects.accountId })
+    .from(projectTasks).innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
+    .where(and(eq(projectTasks.livenessWorkerSessionId, input.workerSessionId), eq(projectTasks.status, 'doing')))
+    .limit(1);
+  if (!row) return false;
+  const reason = exceededWorkerBounds(row.task, input.usage, input.now);
+  if (!reason) return false;
+  return finalizeTaskLiveness(database, row.task, { accountId: row.accountId, reason, usage: input.usage, now: input.now });
+}
+
+export async function sweepTaskLivenessBounds(
+  database: Database,
+  now = new Date(),
+  limit = 100,
+  loadUsage?: (input: { accountId: string; sessionId: string }) => Promise<ProjectTaskMeasuredUsage>,
+): Promise<number> {
+  const rows = await database.select({ task: projectTasks, accountId: projects.accountId })
+    .from(projectTasks).innerJoin(projects, eq(projects.projectId, projectTasks.projectId))
+    .where(and(
+      eq(projectTasks.status, 'doing'),
+      sql`${projectTasks.livenessWorkerSessionId} is not null`,
+    )).limit(limit);
+  let finalized = 0;
+  for (const row of rows) {
+    const workerSessionId = row.task.livenessWorkerSessionId!;
+    const usage = loadUsage ? await loadUsage({ accountId: row.accountId, sessionId: workerSessionId }) : undefined;
+    const reason = usage
+      ? exceededWorkerBounds(row.task, usage, now)
+      : row.task.livenessDeadlineAt && row.task.livenessDeadlineAt <= now
+        ? 'max_wall_seconds exceeded'
+        : null;
+    if (reason && await finalizeTaskLiveness(database, row.task, {
+      accountId: row.accountId,
+      reason,
+      usage,
+      now,
+    })) finalized += 1;
+  }
+  return finalized;
 }
 
 export async function recordProjectGoalObservation(

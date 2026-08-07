@@ -6,11 +6,15 @@ import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { getSessionResourceUsage } from '../../shared/session-costs';
 import {
   type ProjectGoalObservation,
   type ProjectTask,
   claimProjectTask,
   createProjectTask,
+  recordProjectTaskProgress,
+  registerProjectTaskWorker,
+  settleProjectTaskNoProgress,
   getProjectTask,
   listProjectGoalObservations,
   listProjectTasks,
@@ -23,6 +27,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
+import { drainSessionLifecycleQueue } from '../session-lifecycle/engine';
 import {
   type GitGoalSpec,
   type LoadedGoals,
@@ -37,6 +42,8 @@ import {
   blockTaskForProject,
   claimTaskForProject,
   completeTaskForProject,
+  mapGeneratedStateError,
+  resolveObservationSessionId,
 } from './goals-tasks-service';
 
 const SlugSchema = z
@@ -139,6 +146,29 @@ const TaskSchema = z
     claim_session_id: z.string().nullable(),
     claimed_at: z.string().datetime({ offset: true }).nullable(),
     claim_expires_at: z.string().datetime({ offset: true }).nullable(),
+    liveness_worker_session_id: z.string().nullable(),
+    liveness_coordinator_session_id: z.string().nullable(),
+    liveness_worker_contract: z
+      .object({
+        max_wall_seconds: z.number().int().positive().max(MAX_TASK_LEASE_SECONDS),
+        max_tokens: z.number().int().positive().safe(),
+        max_cost_usd: z.number().positive().finite(),
+        max_iterations: z.number().int().positive().safe(),
+      })
+      .strict()
+      .nullable(),
+    liveness_started_at: z.string().datetime({ offset: true }).nullable(),
+    liveness_deadline_at: z.string().datetime({ offset: true }).nullable(),
+    liveness_iterations_admitted: z.number().int().nonnegative(),
+    no_progress_settlements: z.number().int().min(0).max(2),
+    continuation_consumed_at: z.string().datetime({ offset: true }).nullable(),
+    last_progress_at: z.string().datetime({ offset: true }).nullable(),
+    last_progress_ref: z.string().nullable(),
+    last_no_progress_settlement_id: z.string().nullable(),
+    last_no_progress_action: z.enum(['continuation_queued', 'blocked_escalation_queued']).nullable(),
+    last_no_progress_command_id: z.string().uuid().nullable(),
+    escalated_at: z.string().datetime({ offset: true }).nullable(),
+    liveness_blocker: z.string().nullable(),
     result: z.record(z.any()),
     created_at: z.string().datetime({ offset: true }),
     updated_at: z.string().datetime({ offset: true }),
@@ -193,7 +223,6 @@ const ClaimTaskBodySchema = z
 const EvidenceSchema = z
   .object({
     ref: z.string().trim().min(1).max(2_048),
-    summary: z.string().trim().min(1).max(10_000).optional(),
   })
   .strict();
 const DoneTaskBodySchema = z
@@ -208,6 +237,43 @@ const BlockTaskBodySchema = z
     session_id: z.string().trim().min(1).max(256),
   })
   .strict();
+
+const WorkerContractSchema = z
+  .object({
+    max_wall_seconds: z.number().int().positive().max(MAX_TASK_LEASE_SECONDS),
+    max_tokens: z.number().int().positive().safe(),
+    max_cost_usd: z.number().positive().finite(),
+    max_iterations: z.number().int().positive().safe(),
+  })
+  .strict();
+const RegisterWorkerBodySchema = z
+  .object({
+    session_id: z.string().trim().min(1).max(256),
+    worker_session_id: z.string().trim().min(1).max(256),
+    prompt: z.string().trim().min(1).max(100_000),
+    contract: WorkerContractSchema,
+  })
+  .strict();
+const ProgressBodySchema = z
+  .object({
+    session_id: z.string().trim().min(1).max(256),
+    worker_session_id: z.string().trim().min(1).max(256),
+    ref: z.string().trim().min(1).max(2_048),
+  })
+  .strict();
+const NoProgressBodySchema = z
+  .object({
+    session_id: z.string().trim().min(1).max(256),
+    worker_session_id: z.string().trim().min(1).max(256),
+    settlement_id: z.string().trim().min(1).max(256),
+    reason: z.string().trim().min(1).max(100_000),
+  })
+  .strict();
+const MeasuredUsageSchema = z.object({
+  total_cost: z.number(), input_tokens: z.number(), output_tokens: z.number(),
+  cached_tokens: z.number(), cache_write_tokens: z.number(), total_tokens: z.number(),
+  request_count: z.number(),
+}).strict();
 
 function serializeGoal(goal: GitGoalSpec) {
   return {
@@ -264,6 +330,21 @@ function serializeTask(row: ProjectTask) {
     claim_session_id: row.claimSessionId,
     claimed_at: row.claimedAt ? iso(row.claimedAt) : null,
     claim_expires_at: row.claimExpiresAt ? iso(row.claimExpiresAt) : null,
+    liveness_worker_session_id: row.livenessWorkerSessionId,
+    liveness_coordinator_session_id: row.livenessCoordinatorSessionId,
+    liveness_worker_contract: row.livenessWorkerContract,
+    liveness_started_at: row.livenessStartedAt ? iso(row.livenessStartedAt) : null,
+    liveness_deadline_at: row.livenessDeadlineAt ? iso(row.livenessDeadlineAt) : null,
+    liveness_iterations_admitted: row.livenessIterationsAdmitted,
+    no_progress_settlements: row.noProgressSettlements,
+    continuation_consumed_at: row.continuationConsumedAt ? iso(row.continuationConsumedAt) : null,
+    last_progress_at: row.lastProgressAt ? iso(row.lastProgressAt) : null,
+    last_progress_ref: row.lastProgressRef,
+    last_no_progress_settlement_id: row.lastNoProgressSettlementId,
+    last_no_progress_action: row.lastNoProgressAction as 'continuation_queued' | 'blocked_escalation_queued' | null,
+    last_no_progress_command_id: row.lastNoProgressCommandId,
+    escalated_at: row.escalatedAt ? iso(row.escalatedAt) : null,
+    liveness_blocker: row.livenessBlocker,
     result: row.result,
     created_at: iso(row.createdAt),
     updated_at: iso(row.updatedAt),
@@ -300,8 +381,12 @@ async function sessionBelongsToProject(projectId: string, sessionId: string): Pr
 }
 
 function serviceErrorResponse(c: Context, error: unknown) {
-  if (!(error instanceof GoalsTasksServiceError)) throw error;
-  return c.json({ error: error.message, code: error.code }, error.status);
+  if (error instanceof GoalsTasksServiceError) {
+    return c.json({ error: error.message, code: error.code }, error.status);
+  }
+  const mapped = mapGeneratedStateError(error);
+  if (mapped) return c.json({ error: mapped.error, code: mapped.code }, mapped.status);
+  throw error;
 }
 
 // Goals are authored declarations from the default-branch manifest. Runtime
@@ -328,7 +413,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
     );
     const goals = await loadGoals(loaded.row);
     return c.json({ goals: goals.specs.map(serializeGoal), errors: goals.errors });
@@ -357,7 +442,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
     );
     const goals = await loadGoals(loaded.row);
     const goal = goals.specs.find((candidate) => candidate.slug === slug);
@@ -497,7 +582,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(ObservationResponseSchema, 'Recorded observation'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c) => {
@@ -510,9 +595,22 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_GOAL_WRITE,
     );
 
+    let sessionId: string | null;
+    try {
+      sessionId = await resolveObservationSessionId(
+        { sessionBelongsToProject },
+        {
+          projectId,
+          requestedSessionId: body.session_id,
+          authenticatedSessionId: callerKortixSessionId(c),
+        },
+      );
+    } catch (error) {
+      return serviceErrorResponse(c, error);
+    }
     const goals = await loadGoals(loaded.row);
     const goal = goals.specs.find((candidate) => candidate.slug === slug);
     if (!goal) return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
@@ -522,19 +620,13 @@ projectsApp.openapi(
         400,
       );
     }
-    if (body.session_id && !(await sessionBelongsToProject(projectId, body.session_id))) {
-      return c.json(
-        { error: 'session_id must belong to this project', code: 'session_not_in_project' },
-        400,
-      );
-    }
     const observation = await recordProjectGoalObservation(db, {
       projectId,
       goalSlug: slug,
       metric: body.metric,
       value: body.value,
       source: body.source,
-      sessionId: body.session_id ?? null,
+      sessionId,
       observedAt: body.observed_at ? new Date(body.observed_at) : new Date(),
     });
     return c.json({ observation: serializeObservation(observation) }, 201);
@@ -564,7 +656,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
     );
     const goals = await loadGoals(loaded.row);
     const goal = goals.specs.find((candidate) => candidate.slug === slug);
@@ -616,7 +708,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_TASK_READ,
     );
     const statuses = query.status
       ? Array.isArray(query.status)
@@ -660,7 +752,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
     const goals = await loadGoals(loaded.row);
     if (!goals.specs.some((goal) => goal.slug === body.goal_slug)) {
@@ -709,7 +801,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_TASK_READ,
     );
     const task = await getProjectTask(db, { projectId, taskId });
     if (!task) return c.json({ error: 'Task not found' }, 404);
@@ -743,7 +835,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
     try {
       const task = await claimTaskForProject(
@@ -793,7 +885,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
     try {
       const task = await completeTaskForProject(
@@ -843,7 +935,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
     try {
       const task = await blockTaskForProject(
@@ -861,6 +953,163 @@ projectsApp.openapi(
         },
       );
       return c.json({ task: serializeTask(task) });
+    } catch (error) {
+      return serviceErrorResponse(c, error);
+    }
+  },
+);
+
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/tasks/{taskId}/worker',
+    tags: ['tasks'],
+    summary: 'Bind one bounded worker and durably queue its initial prompt',
+    ...auth,
+    request: {
+      params: TaskParamsSchema,
+      body: { content: { 'application/json': { schema: RegisterWorkerBodySchema } } },
+    },
+    responses: {
+      202: json(z.object({
+        task: TaskSchema,
+        worker: z.object({
+          session_id: z.string(), command_id: z.string().uuid(), state: z.enum(['queued', 'drained']),
+        }).strict(),
+        contract: WorkerContractSchema,
+      }).strict(), 'Worker binding and durable initial prompt'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c) => {
+    const { projectId, taskId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const authenticatedSessionId = callerKortixSessionId(c);
+    if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
+      return c.json({ error: 'A project session can register workers only for its own claim', code: 'session_identity_mismatch' }, 403);
+    }
+    if (!(await sessionBelongsToProject(projectId, body.session_id)) ||
+        !(await sessionBelongsToProject(projectId, body.worker_session_id))) {
+      return c.json({ error: 'Both sessions must belong to this project', code: 'session_not_in_project' }, 400);
+    }
+    try {
+      const result = await registerProjectTaskWorker(db, {
+        projectId,
+        accountId: loaded.row.accountId,
+        taskId,
+        claimSessionId: body.session_id,
+        workerSessionId: body.worker_session_id,
+        actorUserId: loaded.userId,
+        prompt: body.prompt,
+        contract: body.contract,
+        now: new Date(),
+      });
+      let state: 'queued' | 'drained' = 'queued';
+      try {
+        const drained = await drainSessionLifecycleQueue({
+          idempotencyKey: `task-worker:${taskId}:${body.worker_session_id}`,
+          limit: 1,
+        });
+        if (drained.succeeded > 0) state = 'drained';
+      } catch (error) {
+        console.warn('[task-liveness] immediate initial prompt drain failed; outbox will retry', {
+          projectId, taskId, commandId: result.commandId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return c.json({
+        task: serializeTask(result.task),
+        worker: { session_id: body.worker_session_id, command_id: result.commandId, state },
+        contract: body.contract,
+      }, 202);
+    } catch (error) {
+      return serviceErrorResponse(c, error);
+    }
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/tasks/{taskId}/progress',
+    tags: ['tasks'],
+    summary: 'Record authenticated semantic worker progress',
+    ...auth,
+    request: { params: TaskParamsSchema, body: { content: { 'application/json': { schema: ProgressBodySchema } } } },
+    responses: {
+      200: json(z.object({ task: TaskSchema, action: z.literal('recorded') }).strict(), 'Progress recorded'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c) => {
+    const { projectId, taskId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const authenticatedSessionId = callerKortixSessionId(c);
+    if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
+      return c.json({ error: 'A project session can record progress only for its own claim', code: 'session_identity_mismatch' }, 403);
+    }
+    try {
+      const task = await recordProjectTaskProgress(db, {
+        projectId, taskId, claimSessionId: body.session_id,
+        workerSessionId: body.worker_session_id, ref: body.ref, now: new Date(),
+      });
+      return c.json({ task: serializeTask(task), action: 'recorded' as const });
+    } catch (error) {
+      return serviceErrorResponse(c, error);
+    }
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/tasks/{taskId}/no-progress',
+    tags: ['tasks'],
+    summary: 'Atomically continue once, then block and escalate',
+    ...auth,
+    request: { params: TaskParamsSchema, body: { content: { 'application/json': { schema: NoProgressBodySchema } } } },
+    responses: {
+      200: json(z.object({
+        task: TaskSchema,
+        action: z.enum(['continuation_queued', 'blocked_escalation_queued']),
+        command_id: z.string().uuid(),
+        measured_usage: MeasuredUsageSchema,
+      }).strict(), 'Durable liveness decision'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c) => {
+    const { projectId, taskId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const authenticatedSessionId = callerKortixSessionId(c);
+    if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
+      return c.json({ error: 'A project session can settle only its own claim', code: 'session_identity_mismatch' }, 403);
+    }
+    try {
+      const measuredUsage = await getSessionResourceUsage({
+        accountId: loaded.row.accountId,
+        sessionId: body.worker_session_id,
+      });
+      const result = await settleProjectTaskNoProgress(db, {
+        projectId, accountId: loaded.row.accountId, taskId,
+        claimSessionId: body.session_id, workerSessionId: body.worker_session_id,
+        actorUserId: loaded.userId, settlementId: body.settlement_id,
+        reason: body.reason, measuredUsage, now: new Date(),
+      });
+      return c.json({
+        task: serializeTask(result.task), action: result.action,
+        command_id: result.commandId, measured_usage: measuredUsage,
+      });
     } catch (error) {
       return serviceErrorResponse(c, error);
     }

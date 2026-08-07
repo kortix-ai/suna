@@ -11,13 +11,17 @@ import {
   TaskClaimConflictError,
   TaskTransitionConflictError,
   TaskLivenessConflictError,
+  TaskLivenessLimitExceededError,
+  admitProjectTaskWorkerIteration,
   claimProjectTask,
   createProjectTask,
   getProjectTask,
   listProjectGoalObservations,
   recordProjectGoalObservation,
+  recordProjectTaskProgress,
   registerProjectTaskWorker,
   settleProjectTaskNoProgress,
+  sweepTaskLivenessBounds,
   transitionProjectTask,
 } from './generated-state-store';
 
@@ -33,6 +37,8 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a701';
 const PROJECT_ID = '00000000-0000-4000-a000-00000000a702';
 const SESSION_A = 'generated-state-session-a';
 const SESSION_B = 'generated-state-session-b';
+const SESSION_C = 'generated-state-session-c';
+const SESSION_D = 'generated-state-session-d';
 const USER_A = '00000000-0000-4000-a000-00000000a703';
 const USER_B = '00000000-0000-4000-a000-00000000a704';
 
@@ -75,6 +81,16 @@ async function seed() {
       branchName: 'generated-state-b',
       agentName: 'reviewer',
       createdBy: USER_B,
+      metadata: { spawned_by_session: SESSION_A },
+    },
+    {
+      sessionId: SESSION_C, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
+      branchName: 'generated-state-c', agentName: 'reviewer', createdBy: USER_B,
+      metadata: { spawned_by_session: SESSION_A },
+    },
+    {
+      sessionId: SESSION_D, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
+      branchName: 'generated-state-d', agentName: 'reviewer', createdBy: USER_B,
       metadata: { spawned_by_session: SESSION_A },
     },
   ]);
@@ -605,6 +621,25 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       total_tokens: 200,
       request_count: 1,
     };
+    await expect(admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_B,
+      usage,
+      now: new Date('2026-08-07T14:00:30.000Z'),
+    })).resolves.toMatchObject({ taskId: task.taskId, admitted: true });
+
+    const progressed = await recordProjectTaskProgress(database, {
+      projectId: PROJECT_ID, taskId: task.taskId, claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B, ref: 'commit:abc123',
+      now: new Date('2026-08-07T14:00:40.000Z'),
+    });
+    expect(progressed.lastProgressRef).toBe('commit:abc123');
+    expect(progressed.lastProgressAt?.toISOString()).toBe('2026-08-07T14:00:40.000Z');
+    await expect(recordProjectTaskProgress(database, {
+      projectId: PROJECT_ID, taskId: task.taskId, claimSessionId: SESSION_A,
+      workerSessionId: SESSION_C, ref: 'commit:impersonated',
+      now: new Date('2026-08-07T14:00:41.000Z'),
+    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+
     const first = await settleProjectTaskNoProgress(database, {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
@@ -667,6 +702,68 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-no-progress:${task.taskId}`))).toHaveLength(1);
     expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-escalate:${task.taskId}`))).toHaveLength(1);
     expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-stop:${task.taskId}`))).toHaveLength(1);
+  });
+
+  test('iteration admission and usage sweeps atomically finalize exhausted workers', async () => {
+    const database = testDb();
+    const now = new Date('2026-08-07T16:00:00.000Z');
+    const usage = {
+      total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
+      cache_write_tokens: 0, total_tokens: 0, request_count: 0,
+    };
+    async function boundedTask(origin: string, workerSessionId: string, contract: {
+      max_wall_seconds: number; max_tokens: number; max_cost_usd: number; max_iterations: number;
+    }) {
+      const { task } = await createProjectTask(database, {
+        projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: origin, origin,
+      });
+      await claimProjectTask(database, {
+        projectId: PROJECT_ID, taskId: task.taskId, sessionId: SESSION_A, now, leaseMs: 60_000,
+      });
+      await registerProjectTaskWorker(database, {
+        projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: task.taskId,
+        claimSessionId: SESSION_A, workerSessionId, actorUserId: null,
+        prompt: `Execute ${origin}`, contract, now,
+      });
+      return task;
+    }
+
+    const exhausted = await boundedTask('iteration-exhaustion', SESSION_B, {
+      max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1,
+    });
+    await admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_B, usage, now });
+    await expect(admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_B, usage, now: new Date(now.getTime() + 1_000),
+    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    const exhaustedReadBack = await getProjectTask(database, { projectId: PROJECT_ID, taskId: exhausted.taskId });
+    expect(exhaustedReadBack).toMatchObject({ status: 'blocked', claimSessionId: null });
+    let commands = await database.select().from(sessionLifecycleCommands);
+    expect(commands.filter((row) => row.idempotencyKey === `task-stop:${exhausted.taskId}:${SESSION_B}`)).toHaveLength(1);
+    expect(commands.filter((row) => row.idempotencyKey === `task-bound-escalate:${exhausted.taskId}`)).toHaveLength(1);
+
+    const concurrent = await boundedTask('concurrent-iteration-exhaustion', SESSION_C, {
+      max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1,
+    });
+    const admissions = await Promise.allSettled([
+      admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_C, usage, now }),
+      admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_C, usage, now }),
+    ]);
+    expect(admissions.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(admissions.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: concurrent.taskId }))
+      .toMatchObject({ status: 'blocked', livenessIterationsAdmitted: 1 });
+
+    const swept = await boundedTask('usage-sweep-exhaustion', SESSION_D, {
+      max_wall_seconds: 3_600, max_tokens: 100, max_cost_usd: 10, max_iterations: 10,
+    });
+    const finalized = await sweepTaskLivenessBounds(database, new Date(now.getTime() + 1_000), 100, async () => ({
+      ...usage, total_tokens: 101,
+    }));
+    expect(finalized).toBe(1);
+    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: swept.taskId }))
+      .toMatchObject({ status: 'blocked', livenessBlocker: 'max_tokens exceeded' });
+    commands = await database.select().from(sessionLifecycleCommands);
+    expect(commands.filter((row) => row.idempotencyKey === `task-stop:${swept.taskId}:${SESSION_D}`)).toHaveLength(1);
   });
 
   test('goal observations reject non-finite values and query one metric range in time order', async () => {

@@ -5,9 +5,11 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import type { ProjectConfigSummary } from '../git/types';
 
 const PLATFORM_META_AGENT_ACTIONS = [
-  // Five nouns only: project/tasks/goals, CR, session, file, and Git state.
   PROJECT_ACTIONS.PROJECT_READ,
-  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_GOAL_READ,
+  PROJECT_ACTIONS.PROJECT_GOAL_WRITE,
+  PROJECT_ACTIONS.PROJECT_TASK_READ,
+  PROJECT_ACTIONS.PROJECT_TASK_WRITE,
   PROJECT_ACTIONS.PROJECT_CR_OPEN,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_START,
@@ -69,7 +71,7 @@ export function buildPlatformMetaOpenCodeConfig(): string {
         description: 'Starts specialized Kortix sessions and coordinates their work.',
         mode: 'primary',
         prompt:
-          'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+          'Follow /workspace/AGENTS.md. Coordinate through the Kortix CLI. You are the only coordinator. Claim each task, spawn one specialized worker, then register its immutable bounds and initial prompt with `kortix tasks worker` before waiting. A `queued` worker state or empty new session means prompt delivery is pending, not no-progress. Record evidence with `kortix tasks progress`. Submit each idle settlement once with a unique `kortix tasks no-progress --settlement-id`; the server permits one continuation, then blocks and escalates. Never ask a worker to spawn another session.',
       },
     },
   });

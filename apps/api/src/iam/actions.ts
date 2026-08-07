@@ -79,6 +79,11 @@ export const PROJECT_ACTIONS = {
   PROJECT_SESSION_STOP: 'project.session.stop',
   PROJECT_SESSION_BINDINGS_WRITE: 'project.session.bindings.write',
 
+  PROJECT_GOAL_READ: 'project.goal.read',
+  PROJECT_GOAL_WRITE: 'project.goal.write',
+  PROJECT_TASK_READ: 'project.task.read',
+  PROJECT_TASK_WRITE: 'project.task.write',
+
   PROJECT_MEMBERS_READ: 'project.members.read',
   PROJECT_MEMBERS_MANAGE: 'project.members.manage',
 

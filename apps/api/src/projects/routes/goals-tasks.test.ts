@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
   claimTaskForProject,
   completeTaskForProject,
   mapGeneratedStateError,
+  resolveObservationSessionId,
 } from './goals-tasks-service';
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
@@ -28,6 +29,9 @@ describe('goals/tasks route wiring', () => {
       '/{projectId}/tasks/{taskId}/claim',
       '/{projectId}/tasks/{taskId}/done',
       '/{projectId}/tasks/{taskId}/block',
+      '/{projectId}/tasks/{taskId}/worker',
+      '/{projectId}/tasks/{taskId}/progress',
+      '/{projectId}/tasks/{taskId}/no-progress',
     ]) {
       expect(route).toContain(`path: '${path}'`);
     }
@@ -139,5 +143,31 @@ describe('goals/tasks service boundaries', () => {
       });
     }
     expect(mapGeneratedStateError(new Error('other'))).toBeNull();
+  });
+});
+
+
+describe('goal observation session attribution', () => {
+  test('project-session principals default to themselves and cannot cite another session', async () => {
+    const belongs = mock(async () => true);
+    await expect(resolveObservationSessionId(
+      { sessionBelongsToProject: belongs },
+      { projectId: PROJECT_ID, authenticatedSessionId: 'session-a' },
+    )).resolves.toBe('session-a');
+    await expect(resolveObservationSessionId(
+      { sessionBelongsToProject: belongs },
+      { projectId: PROJECT_ID, authenticatedSessionId: 'session-a', requestedSessionId: 'session-b' },
+    )).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+  });
+
+  test('human callers can cite only an existing project worker session', async () => {
+    await expect(resolveObservationSessionId(
+      { sessionBelongsToProject: async () => true },
+      { projectId: PROJECT_ID, requestedSessionId: 'worker-session' },
+    )).resolves.toBe('worker-session');
+    await expect(resolveObservationSessionId(
+      { sessionBelongsToProject: async () => false },
+      { projectId: PROJECT_ID, requestedSessionId: 'foreign-session' },
+    )).rejects.toMatchObject({ status: 400, code: 'session_not_in_project' });
   });
 });

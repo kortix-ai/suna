@@ -29,6 +29,14 @@ import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveGatewayRoute } from './routing';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import {
+  admitProjectTaskWorkerIteration,
+  finalizeProjectTaskLivenessIfExceeded,
+  projectTaskWorkerIsBound,
+  TaskLivenessLimitExceededError,
+} from '../projects/generated-state-store';
+import { getSessionResourceUsage } from '../shared/session-costs';
+import { db } from '../shared/db';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -127,6 +135,19 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
   if (exceeded) throw new Error(message ?? 'Budget exceeded');
 }
 
+async function admitTaskLiveness(principal: AuthedPrincipal): Promise<void> {
+  if (!principal.sessionId || !await projectTaskWorkerIsBound(db, principal.sessionId)) return;
+  const usage = await getSessionResourceUsage({
+    accountId: principal.accountId,
+    sessionId: principal.sessionId,
+  });
+  await admitProjectTaskWorkerIteration(db, {
+    workerSessionId: principal.sessionId,
+    usage,
+    now: new Date(),
+  });
+}
+
 /**
  * The combined pre-dispatch gate — authenticate + billing + budget in one call.
  * Backs the /internal/gateway/authorize RPC so the standalone gateway folds three
@@ -166,6 +187,26 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
       status: 402,
       errorCode: 'budget_exceeded',
       message: message ?? 'Budget exceeded',
+      principal,
+    };
+  }
+  try {
+    await admitTaskLiveness(principal);
+  } catch (error) {
+    if (error instanceof TaskLivenessLimitExceededError) {
+      return {
+        ok: false,
+        status: 402,
+        errorCode: 'task_liveness_exhausted',
+        message: error.message,
+        principal,
+      };
+    }
+    return {
+      ok: false,
+      status: 402,
+      errorCode: 'task_liveness_unavailable',
+      message: 'Task liveness admission is temporarily unavailable.',
       principal,
     };
   }
@@ -262,6 +303,22 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           billingMode: event.billingMode,
         },
       });
+
+  try {
+    if (event.sessionId && await projectTaskWorkerIsBound(db, event.sessionId)) {
+      const usage = await getSessionResourceUsage({
+        accountId: event.accountId,
+        sessionId: event.sessionId,
+      });
+      await finalizeProjectTaskLivenessIfExceeded(db, {
+        workerSessionId: event.sessionId,
+        usage,
+        now: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error('[task-liveness] post-usage finalization failed:', error);
+  }
 
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
 
@@ -407,7 +464,10 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     resolveRoute: resolveGatewayRoute,
     resolveUpstream: resolveCandidates,
     assertBillingActive: assertLlmBillingActive,
-    assertBudget: assertGatewayBudget,
+    assertBudget: async (principal) => {
+      await assertGatewayBudget(principal);
+      await admitTaskLiveness(principal);
+    },
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
     listModels: async (principal) =>

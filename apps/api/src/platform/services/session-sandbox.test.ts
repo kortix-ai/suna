@@ -381,7 +381,10 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     if (!Array.isArray(kortixCli)) throw new Error('meta grant must be an action allowlist');
     expect(kortixCli).toEqual([
       'project.read',
-      'project.write',
+      'project.goal.read',
+      'project.goal.write',
+      'project.task.read',
+      'project.task.write',
       'project.cr.open',
       'project.session.read',
       'project.session.start',
@@ -389,6 +392,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       'project.gitops.read',
     ]);
     for (const forbidden of [
+      'project.write',
       'project.delete',
       'project.cr.merge',
       'project.session.stop',

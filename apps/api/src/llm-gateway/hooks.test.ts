@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let accountTier = 'per_seat';
 let billingCalls = 0;
+let livenessBound = false;
+let livenessReject = false;
+let usageLoadCalls = 0;
+let admissionCalls = 0;
+let livenessUnexpected = false;
+let finalizerThrow = false;
+let creditGrantCalls = 0;
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -46,8 +53,11 @@ mock.module('../billing/services/yolo-tokens', () => ({
 
 mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async (token: string) =>
-    token === 'good'
-      ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null }
+    ['good', 'worker', 'nonworker'].includes(token)
+      ? {
+          isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: 'project-1',
+          sessionId: token === 'good' ? null : `${token}-session`,
+        }
       : { isValid: false },
 }));
 
@@ -80,7 +90,39 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest } = await import('./hooks');
+mock.module('../shared/usage-events', () => ({ recordUsageEvent: async () => 'usage-event-1' }));
+mock.module('../billing/services/credits', () => ({
+  deductForLlmUsage: async () => {},
+  grantCredits: async () => { creditGrantCalls += 1; },
+}));
+
+mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../shared/session-costs', () => ({
+  getSessionResourceUsage: async () => {
+    usageLoadCalls += 1;
+    return {
+      total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
+      cache_write_tokens: 0, total_tokens: 0, request_count: 0,
+    };
+  },
+}));
+class MockTaskLivenessLimitExceededError extends Error {}
+mock.module('../projects/generated-state-store', () => ({
+  TaskLivenessLimitExceededError: MockTaskLivenessLimitExceededError,
+  projectTaskWorkerIsBound: async () => livenessBound,
+  admitProjectTaskWorkerIteration: async () => {
+    admissionCalls += 1;
+    if (livenessUnexpected) throw new Error('database unavailable');
+    if (livenessReject) throw new MockTaskLivenessLimitExceededError('exhausted');
+    return { taskId: 'task-1', admitted: true };
+  },
+  finalizeProjectTaskLivenessIfExceeded: async () => {
+    if (finalizerThrow) throw new Error('finalizer unavailable');
+    return false;
+  },
+}));
+
+const { authorizeRequest, createInProcessGatewayHooks, recordGatewayUsage } = await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
@@ -88,6 +130,13 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     accountTier = 'per_seat';
     billingCalls = 0;
     billingThrow = null;
+    livenessBound = false;
+    livenessReject = false;
+    usageLoadCalls = 0;
+    admissionCalls = 0;
+    livenessUnexpected = false;
+    finalizerThrow = false;
+    creditGrantCalls = 0;
   });
 
   test('insufficient_credits survives the RPC boundary', async () => {
@@ -150,5 +199,81 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
       expect(result.principal.freeModelsOnly).toBe(false);
       expect(result.principal.billingHold).toEqual({ amountUsd: 0.01 });
     }
+  });
+});
+
+
+describe('authorizeRequest — task worker liveness admission', () => {
+  beforeEach(() => {
+    accountTier = 'per_seat';
+    billingThrow = null;
+    livenessBound = false;
+    livenessReject = false;
+    usageLoadCalls = 0;
+    admissionCalls = 0;
+    livenessUnexpected = false;
+    finalizerThrow = false;
+    creditGrantCalls = 0;
+  });
+
+  test('a non-worker session skips the aggregate usage query', async () => {
+    const result = await authorizeRequest('nonworker');
+    expect(result.ok).toBe(true);
+    expect(usageLoadCalls).toBe(0);
+    expect(admissionCalls).toBe(0);
+  });
+
+  test('a bounded worker is admitted through the atomic iteration CAS', async () => {
+    livenessBound = true;
+    const result = await authorizeRequest('worker');
+    expect(result.ok).toBe(true);
+    expect(usageLoadCalls).toBe(1);
+    expect(admissionCalls).toBe(1);
+  });
+
+  test('an exhausted worker is rejected before provider dispatch', async () => {
+    livenessBound = true;
+    livenessReject = true;
+    const result = await authorizeRequest('worker');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errorCode).toBe('task_liveness_exhausted');
+  });
+});
+
+
+describe('gateway liveness parity and billing safety', () => {
+  beforeEach(() => {
+    accountTier = 'per_seat'; billingThrow = null; livenessBound = true;
+    livenessReject = false; livenessUnexpected = false; finalizerThrow = false;
+    usageLoadCalls = 0; admissionCalls = 0; creditGrantCalls = 0;
+  });
+
+  test('the in-process budget hook performs the same worker admission CAS', async () => {
+    const hooks = createInProcessGatewayHooks();
+    await hooks.assertBudget!({
+      accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
+    });
+    expect(admissionCalls).toBe(1);
+  });
+
+  test('an unexpected liveness admission error returns a denial with the held principal', async () => {
+    livenessUnexpected = true;
+    const result = await authorizeRequest('worker');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorCode).toBe('task_liveness_unavailable');
+      expect(result.principal?.billingHold).toEqual({ amountUsd: 0.01 });
+    }
+  });
+
+  test('a finalizer failure cannot skip billing-hold reconciliation', async () => {
+    finalizerThrow = true;
+    await recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
+      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-1', streaming: false,
+      promptTokens: 1, completionTokens: 1, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0.001, finalCost: 0.001, billingMode: 'credits', billingHoldUsd: 0.01,
+    });
+    expect(creditGrantCalls).toBe(1);
   });
 });
