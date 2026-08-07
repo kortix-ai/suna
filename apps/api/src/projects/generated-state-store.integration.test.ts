@@ -14,6 +14,8 @@ import {
   TaskTransitionConflictError,
   TaskLivenessConflictError,
   TaskLivenessLimitExceededError,
+  TaskWorkerReservationConflictError,
+  assertTaskWorkerReservationSlot,
   admitProjectTaskWorkerIteration,
   claimProjectTask,
   createProjectTask,
@@ -571,6 +573,50 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(unchanged?.status).toBe('doing');
     expect(unchanged?.claimSessionId).toBe(SESSION_A);
     expect(unchanged?.claimExpiresAt?.toISOString()).toBe('2026-08-07T13:01:00.000Z');
+  });
+
+  test('parallel reservation creation serializes to one non-provisioned child', async () => {
+    const database = testDb();
+    const now = new Date('2026-08-07T13:00:00.000Z');
+    const childIds = ['parallel-reservation-a', 'parallel-reservation-b'];
+    const attempts = await Promise.allSettled(childIds.map((sessionId) =>
+      database.transaction(async (tx) => {
+        await assertTaskWorkerReservationSlot(tx as unknown as Database, {
+          projectId: PROJECT_ID,
+          coordinatorSessionId: SESSION_A,
+          now,
+        });
+        await tx.insert(projectSessions).values({
+          sessionId,
+          accountId: ACCOUNT_ID,
+          projectId: PROJECT_ID,
+          branchName: sessionId,
+          agentName: 'reviewer',
+          createdBy: USER_B,
+          status: 'queued',
+          metadata: {
+            spawned_by_session: SESSION_A,
+            task_liveness_binding_required: true,
+            task_liveness_binding_status: 'pending',
+            task_liveness_reserved_at: now.toISOString(),
+            task_liveness_reservation_expires_at: new Date(now.getTime() + 300_000).toISOString(),
+          },
+        });
+      })));
+    expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = attempts.find((result) => result.status === 'rejected');
+    expect(rejected?.status === 'rejected' ? rejected.reason : null)
+      .toBeInstanceOf(TaskWorkerReservationConflictError);
+
+    const rows = await database.select().from(projectSessions)
+      .where(eq(projectSessions.projectId, PROJECT_ID));
+    expect(rows.filter((row) =>
+      (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_required === true
+    )).toHaveLength(1);
+    expect(await database.select().from(sessionSandboxes)
+      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
+    expect(await database.select().from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID))).toHaveLength(0);
   });
 
   test('spawned reservations cannot claim coordinator authority', async () => {
