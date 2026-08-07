@@ -89,6 +89,31 @@ and legacy email-installation fields.
 
 ---
 
+### 2026-08-07 — session `kortix-apps` claim
+
+No **Now** task claimed. This is the user-directed Kortix Apps implementation.
+
+Claimed SDK scope:
+
+- Add the framework-free Apps REST contract and public types.
+- Expose the canonical project surface at `kortix.project(projectId).apps`.
+- Support artifact upload, deployment creation, inspection, logs, rollback,
+  start, stop, and removal through the existing `getToken` seam.
+- Keep provider selection server-side and preserve every published SDK name.
+- Add the SDK documentation, executable example, and public-surface snapshots.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required final gates are `typecheck`, the complete SDK test suite, and the
+packed-install smoke test.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-08-06 — session `sdk-connectors-unified` completion
 
 Consolidated the Connector data plane into `@kortix/sdk`. The canonical
