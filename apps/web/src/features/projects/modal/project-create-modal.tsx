@@ -134,7 +134,8 @@ interface ProjectCreateModalProps {
   onOpenChange: (open: boolean) => void;
   accountId: string | null;
   /** Clone a `registry:project` marketplace item instead of the blank
-   *  starter — set from `/projects?clone=<item-id>` (marketplace "Clone"). */
+   *  starter — set from the removed projects-index `clone=<item-id>` query
+   *  param (marketplace "Clone"), now `/new?clone=<item-id>`. */
   sourceItemId?: string | null;
 }
 
@@ -557,7 +558,7 @@ export const ProjectCreateModal = ({
     }
 
     setIsConnectingGitHub(true);
-    rememberGitHubSetupReturn('/projects?new=1');
+    rememberGitHubSetupReturn('/new');
     router.push(`/github/setup?account_id=${encodeURIComponent(effectiveAccountId)}`);
   }
 

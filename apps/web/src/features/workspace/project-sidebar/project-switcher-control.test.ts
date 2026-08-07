@@ -28,7 +28,14 @@ describe('merged brand/switcher control', () => {
   test('the mark keeps its link to the project home', () => {
     expect(control).toContain('<Kortix');
     expect(control).toContain('href={homeHref}');
-    expect(source).toContain("activeProjectId ? `/projects/${activeProjectId}` : '/projects'");
+    expect(source).toContain('activeProjectId ? `/projects/${activeProjectId}` : appHome');
+  });
+
+  // Off a project route the mark must never dead-end on the removed
+  // `/projects` index — it takes you back into the app instead.
+  test('off a project route the mark goes home, never to the removed list', () => {
+    expect(source).toContain("import { useAppHome } from '@/lib/onboarding/use-app-home'");
+    expect(source).not.toContain(": '/projects'");
   });
 
   test('the name opens the switcher menu', () => {

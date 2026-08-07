@@ -37,6 +37,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
@@ -445,9 +446,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Button>
             {user ? (
-              <Button asChild>
-                <Link href="/projects">Projects</Link>
-              </Button>
+              <Button onClick={() => router.push(latestProjectPath(user.id))}>Projects</Button>
             ) : (
               <Button
                 onClick={() => {
@@ -619,10 +618,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 transition={{ delay: 0.3, duration: 0.3 }}
               >
                 {user ? (
-                  <Button asChild size="xl" className="w-full text-lg">
-                    <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
-                      Projects
-                    </Link>
+                  <Button
+                    size="xl"
+                    className="w-full text-lg"
+                    onClick={() => {
+                      setIsDrawerOpen(false);
+                      router.push(latestProjectPath(user.id));
+                    }}
+                  >
+                    Projects
                   </Button>
                 ) : (
                   <Button asChild size="xl" className="w-full text-lg">

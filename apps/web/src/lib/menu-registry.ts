@@ -20,6 +20,7 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { ExperimentalFeatureKey } from '@kortix/sdk';
 import {
@@ -342,7 +343,10 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects',
+    // Static registry entry — no user id to resolve the latest project with,
+    // so this is the id-free landing door, never the removed `/projects`
+    // list.
+    href: PROJECT_LANDING_PATH,
     keywords: 'projects list all workspaces switch',
   },
   {

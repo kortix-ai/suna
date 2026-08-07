@@ -35,6 +35,7 @@ import {
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -755,7 +756,12 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      router.push('/projects');
+      // The landing door, NOT `latestProjectPath`: the last-project cookie
+      // names a project in the account just left, which still passes the
+      // ownership check (it's scoped by user, not account) and would open
+      // the wrong account's workspace. Same rule `account-switcher.tsx`
+      // follows after creating an account.
+      router.push(PROJECT_LANDING_PATH);
       close();
     },
     [setSelectedAccountId, router, close],

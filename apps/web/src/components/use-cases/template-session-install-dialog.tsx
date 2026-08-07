@@ -136,7 +136,7 @@ export function TemplateSessionInstallDialog({
                   Create a project first, then come back to set this up.
                 </p>
                 <Button asChild size="sm" variant="outline" className="mt-3">
-                  <Link href="/projects">Go to projects</Link>
+                  <Link href="/new">Create a project</Link>
                 </Button>
               </div>
             ) : (

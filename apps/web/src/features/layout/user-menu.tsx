@@ -54,7 +54,6 @@ import {
   CreditCardIcon as CreditCard,
   DownloadSimple,
   HeadsetIcon,
-  HouseIcon,
   LifebuoyIcon,
   SignOutIcon as LogOut,
   PaperPlaneTiltIcon,
@@ -310,11 +309,6 @@ export function UserMenu({
             <DropdownMenuSeparator />
           </>
         )}
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))} size="sm">
-          <HouseIcon />
-          Home
-        </DropdownMenuItem>
 
         {/* Personal settings sits high: it is the item people come here for. The
             account row above goes to the account page — a different

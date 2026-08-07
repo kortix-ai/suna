@@ -46,6 +46,7 @@ import {
   filterWorkspaceGroups,
   groupWorkspacesByAccount,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
@@ -69,6 +70,7 @@ export function WorkspaceSwitcher({
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
+  const appHome = useAppHome();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const endSwitch = useProjectSwitchStore((s) => s.endSwitch);
@@ -221,10 +223,12 @@ export function WorkspaceSwitcher({
     <EntityAvatar icon={FolderGit2} size="xs" />
   );
 
-  // Where the mark goes. Off a project route the switcher is genuinely the
-  // "all projects" entry, and so is its mark.
-  const homeHref = activeProjectId ? `/projects/${activeProjectId}` : '/projects';
-  const homeLabel = activeProjectId ? 'Project home' : 'All projects';
+  // Where the mark goes. Off a project route it takes you back into the app —
+  // the latest project you had open, same "take me into the app" destination
+  // as every other implicit entry point. Never `/projects`: that's a redirect
+  // now, and the mark would dead-end the moment it fired.
+  const homeHref = activeProjectId ? `/projects/${activeProjectId}` : appHome;
+  const homeLabel = activeProjectId ? 'Project home' : 'Home';
 
   const trigger =
     variant === 'header' ? (

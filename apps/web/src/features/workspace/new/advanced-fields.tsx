@@ -56,8 +56,8 @@ const SOURCE_LABELS: Record<RepositorySource, string> = {
  * (`rememberGitHubSetupReturn` before navigating, `consumeGitHubSetupReturn`
  * on return — `project-create-modal.tsx:126-131,:561`) has no equivalent
  * here, a plain `<Link>` loses the in-progress form state on navigation, and
- * its fallback destination `/projects?new=1` is a route a later task in this
- * plan deletes. The full GitHub-source form on `/new` is its own follow-up.
+ * the modal that round trip lives in is itself deleted by a later task in
+ * this plan. The full GitHub-source form on `/new` is its own follow-up.
  *
  * Rendered as plain text inside the existing field group, not a second
  * bordered surface: `InfoBanner`'s neutral tone is itself a bordered

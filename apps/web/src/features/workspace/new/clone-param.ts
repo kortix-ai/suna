@@ -1,6 +1,7 @@
 /**
  * `/new?clone=<itemId>` — seed the new workspace from a `registry:project`
- * marketplace item instead of the blank starter. Replaces `/projects?clone=`.
+ * marketplace item instead of the blank starter. Replaces the removed
+ * projects-index list's `clone=` query param.
  *
  * The value is passed straight through to `source_item_id`, which the API
  * type-checks against the catalogue BEFORE creating anything upstream
