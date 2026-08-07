@@ -111,16 +111,28 @@ export function ProjectSwitcher({
     ...contract('inventory'),
   });
 
-  // One source for the project name. The two-source fallback that used to
-  // live here (list entry, falling back to the detail entry) read the LIST
-  // first, so a rename that invalidated only the list made this label
+  // One SOURCE for the project name — `useProjectName`, i.e. the project
+  // detail entry. The two-source fallback that used to live here read the
+  // LIST first, so a rename that invalidated only the list made this label
   // disagree with the project home title for a full gcTime. Do not
   // reintroduce a fallback to another source — see `useProjectName`'s doc
   // comment.
-  const activeProjectName = useProjectName(activeProjectId ?? undefined) ?? null;
+  //
+  // The list still supplies a PLACEHOLDER, which is a different thing: coming
+  // from /projects the list is warm and the detail is cold, so a detail-only
+  // label showed a skeleton for a name that was on screen one route earlier.
+  // `resolveSwitcherLabel` consults it only while the detail has produced
+  // nothing — see its doc comment for the invariant. Passed raw, NOT `?? null`:
+  // `undefined` is what distinguishes "no detail yet" from "detail says blank".
+  const activeProjectName = useProjectName(activeProjectId ?? undefined);
+  const listProjectName = useMemo(
+    () => projectsQuery.data?.find((p) => p.project_id === activeProjectId)?.name,
+    [projectsQuery.data, activeProjectId],
+  );
   const { label: switcherLabel, pending: labelPending } = resolveSwitcherLabel({
     activeProjectId,
     activeProjectName,
+    placeholderProjectName: listProjectName,
   });
 
   useEffect(() => {
