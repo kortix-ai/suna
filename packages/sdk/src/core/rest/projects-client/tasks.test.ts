@@ -142,24 +142,43 @@ test('worker registration, progress, and no-progress use separate durable contra
 });
 
 
-test('worker registration bounds max_iterations to the PostgreSQL integer contract', async () => {
+test('worker registration accepts the exact platform ceilings', async () => {
   const input = {
     session_id: 'coordinator-session',
     worker_session_id: 'worker-session',
     prompt: 'Execute the bounded task.',
     contract: {
-      max_wall_seconds: 900,
-      max_tokens: 50_000,
-      max_cost_usd: 2.5,
-      max_iterations: 2_147_483_647,
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000_000,
+      max_cost_usd: 25,
+      max_iterations: 128,
     },
   };
   await registerProjectTaskWorker('project-1', 'task-1', input);
   expect(last().body).toEqual(input);
+});
 
+test.each([
+  ['max_wall_seconds', 3_601, 'max_wall_seconds must be between 1 and 3600'],
+  ['max_tokens', 1_000_001, 'max_tokens must be between 1 and 1000000'],
+  ['max_cost_usd', 25.000_001, 'max_cost_usd must be between 0 (exclusive) and 25'],
+  ['max_iterations', 129, 'max_iterations must be between 1 and 128'],
+] as const)('worker registration rejects %s above the platform ceiling', async (
+  field,
+  value,
+  message,
+) => {
   await expect(registerProjectTaskWorker('project-1', 'task-1', {
-    ...input,
-    contract: { ...input.contract, max_iterations: 2_147_483_648 },
-  })).rejects.toThrow('max_iterations must be between 1 and 2147483647');
-  expect(calls).toHaveLength(1);
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    prompt: 'Execute the bounded task.',
+    contract: {
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000_000,
+      max_cost_usd: 25,
+      max_iterations: 128,
+      [field]: value,
+    },
+  })).rejects.toThrow(message);
+  expect(calls).toHaveLength(0);
 });

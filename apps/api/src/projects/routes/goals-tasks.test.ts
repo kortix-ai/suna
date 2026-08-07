@@ -175,16 +175,26 @@ describe('goal observation session attribution', () => {
 });
 
 
-describe('worker contract API integer boundaries', () => {
-  test('accepts the PostgreSQL integer maximum and rejects the next safe JavaScript integer', async () => {
-    const { WorkerContractSchema } = await import('./goals-tasks-schemas');
-    const contract = {
-      max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5,
-      max_iterations: 2_147_483_647,
-    };
-    expect(WorkerContractSchema.safeParse(contract).success).toBe(true);
+describe('worker contract platform ceilings', () => {
+  test('accepts every exact platform maximum', async () => {
+    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } =
+      await import('./goals-tasks-schemas');
+
+    expect(WorkerContractSchema.safeParse(WORKER_CONTRACT_PLATFORM_CEILINGS).success).toBe(true);
+  });
+
+  test.each([
+    ['max_wall_seconds', 3_601],
+    ['max_tokens', 1_000_001],
+    ['max_cost_usd', 25.000_001],
+    ['max_iterations', 129],
+  ] as const)('rejects %s above the platform maximum', async (field, value) => {
+    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } =
+      await import('./goals-tasks-schemas');
+
     expect(WorkerContractSchema.safeParse({
-      ...contract, max_iterations: 2_147_483_648,
+      ...WORKER_CONTRACT_PLATFORM_CEILINGS,
+      [field]: value,
     }).success).toBe(false);
   });
 });

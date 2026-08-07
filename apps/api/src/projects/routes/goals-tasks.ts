@@ -149,15 +149,7 @@ const TaskSchema = z
     claim_expires_at: z.string().datetime({ offset: true }).nullable(),
     liveness_worker_session_id: z.string().nullable(),
     liveness_coordinator_session_id: z.string().nullable(),
-    liveness_worker_contract: z
-      .object({
-        max_wall_seconds: z.number().int().positive().max(MAX_TASK_LEASE_SECONDS),
-        max_tokens: z.number().int().positive().safe(),
-        max_cost_usd: z.number().positive().finite(),
-        max_iterations: z.number().int().positive().max(2_147_483_647),
-      })
-      .strict()
-      .nullable(),
+    liveness_worker_contract: WorkerContractSchema.nullable(),
     liveness_started_at: z.string().datetime({ offset: true }).nullable(),
     liveness_deadline_at: z.string().datetime({ offset: true }).nullable(),
     liveness_iterations_admitted: z.number().int().nonnegative(),

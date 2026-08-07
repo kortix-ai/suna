@@ -141,6 +141,10 @@ distinct settlement atomically blocks and releases the task, queues a
 server-owned worker stop, and wakes the coordinator. Restarts cannot reset this
 policy because every decision is stored and compare-and-set in PostgreSQL.
 
+The server and PostgreSQL cap caller-selected contracts at 3,600 wall seconds,
+1,000,000 tokens, USD 25, and 128 iterations. Meta can only narrow these
+platform ceilings. It cannot expand them through request metadata.
+
 The LLM gateway enforces bounds after billing and project budget checks. It
 writes each completed managed request synchronously to `usage_events` with a
 server-owned, per-account idempotency key. Admission, settlement, `/no-progress`,

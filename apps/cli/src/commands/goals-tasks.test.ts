@@ -155,7 +155,7 @@ function fakeSdkFactory() {
               record("tasks.registerWorker", args, {
                 task: { ...TASK, status: "doing" },
                 worker: { session_id: "worker-session", command_id: "command-1", state: "queued" },
-                contract: { max_wall_seconds: 900, max_tokens: 50000, max_cost_usd: 2.5, max_iterations: 8 },
+                contract: { max_wall_seconds: 3600, max_tokens: 1000000, max_cost_usd: 25, max_iterations: 128 },
               }),
             recordProgress: (...args: unknown[]) =>
               record("tasks.recordProgress", args, { task: { ...TASK, status: "doing" }, action: "recorded" }),
@@ -530,8 +530,8 @@ describe("tasks command", () => {
       commandArgs([
         "worker", TASK.task_id, "--session", "coordinator-session",
         "--worker-session", "worker-session", "--prompt", "Implement and verify",
-        "--max-wall-seconds", "900", "--max-tokens", "50000",
-        "--max-cost-usd", "2.5", "--max-iterations", "8",
+        "--max-wall-seconds", "3600", "--max-tokens", "1000000",
+        "--max-cost-usd", "25", "--max-iterations", "128",
       ]), { kortixFromAuth: sdk },
     );
     expect(code).toBe(0);
@@ -612,7 +612,7 @@ describe("tasks command", () => {
         args: [TASK.task_id, {
           session_id: "coordinator-session", worker_session_id: "worker-session",
           prompt: "Implement and verify",
-          contract: { max_wall_seconds: 900, max_tokens: 50000, max_cost_usd: 2.5, max_iterations: 8 },
+          contract: { max_wall_seconds: 3600, max_tokens: 1000000, max_cost_usd: 25, max_iterations: 128 },
         }],
       },
       {
@@ -676,10 +676,37 @@ describe("tasks command", () => {
         [
           "worker", TASK.task_id, "--session", "coordinator-session",
           "--worker-session", "worker-session", "--prompt", "work",
-          "--max-wall-seconds", "900", "--max-tokens", "50000",
-          "--max-cost-usd", "2.5", "--max-iterations", "2147483648",
+          "--max-wall-seconds", "3601", "--max-tokens", "50000",
+          "--max-cost-usd", "2.5", "--max-iterations", "8",
         ],
-        "--max-iterations must be between 1 and 2147483647",
+        "--max-wall-seconds must be between 1 and 3600",
+      ],
+      [
+        [
+          "worker", TASK.task_id, "--session", "coordinator-session",
+          "--worker-session", "worker-session", "--prompt", "work",
+          "--max-wall-seconds", "900", "--max-tokens", "1000001",
+          "--max-cost-usd", "2.5", "--max-iterations", "8",
+        ],
+        "--max-tokens must be between 1 and 1000000",
+      ],
+      [
+        [
+          "worker", TASK.task_id, "--session", "coordinator-session",
+          "--worker-session", "worker-session", "--prompt", "work",
+          "--max-wall-seconds", "900", "--max-tokens", "50000",
+          "--max-cost-usd", "25.000001", "--max-iterations", "8",
+        ],
+        "--max-cost-usd must be between 0 (exclusive) and 25",
+      ],
+      [
+        [
+          "worker", TASK.task_id, "--session", "coordinator-session",
+          "--worker-session", "worker-session", "--prompt", "work",
+          "--max-wall-seconds", "900", "--max-tokens", "50000",
+          "--max-cost-usd", "2.5", "--max-iterations", "129",
+        ],
+        "--max-iterations must be between 1 and 128",
       ],
       [
         ["done", TASK.task_id, "--session", "session_1"],

@@ -820,6 +820,17 @@ export const projectSessions = kortixSchema.table(
 );
 
 /**
+ * Non-overridable platform ceilings for caller-selected task worker bounds.
+ * Coordinators can choose smaller values. They cannot widen platform authority.
+ */
+export const TASK_WORKER_PLATFORM_CEILINGS = {
+  max_wall_seconds: 3_600,
+  max_tokens: 1_000_000,
+  max_cost_usd: 25,
+  max_iterations: 128,
+} as const;
+
+/**
  * Durable generated task state. A task UUID is globally unique, while every
  * lookup and relationship remains project-scoped. `parent_id` models structure
  * only; dependency semantics live exclusively in `blocked_by`.
@@ -980,6 +991,15 @@ export const projectTasks = kortixSchema.table(
         and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric > 0
         and (${table.livenessWorkerContract}->>'max_iterations')::numeric > 0
         and (${table.livenessWorkerContract}->>'max_iterations')::numeric <= 2147483647
+      )`,
+    ),
+    check(
+      'project_tasks_liveness_contract_platform_ceiling',
+      sql`${table.livenessWorkerContract} is null or (
+        (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_wall_seconds))}
+        and (${table.livenessWorkerContract}->>'max_tokens')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_tokens))}
+        and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_cost_usd))}
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_iterations))}
       )`,
     ),
     check(

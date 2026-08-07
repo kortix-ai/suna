@@ -12,6 +12,29 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `worker-bound-ceilings` completion
+
+Added non-overridable task-worker platform ceilings. The SDK accepts smaller
+positive caller bounds and rejects values above 3,600 wall seconds, 1,000,000
+tokens, USD 25, or 128 iterations before transport. No published name changed.
+The package version remains unchanged.
+
+RED:
+
+- Focused SDK tests produced 5 passes and 4 failures. Every above-ceiling
+  contract reached the mocked HTTP transport.
+
+GREEN:
+
+- Focused task client tests: 9 pass, 0 fail, 18 assertions.
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: 1,604 pass, 0 fail, 6,576 assertions.
+- `pnpm --filter @kortix/sdk smoke:install`: packed ESM import and construction passed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-07 — session `agi-kernel-settlement-ledger` completion
 
 Added durable no-progress settlement replay and aligned the task worker

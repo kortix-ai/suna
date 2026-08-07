@@ -24,6 +24,13 @@ const TASK_STATUSES: readonly ProjectTaskStatus[] = [
   "cancelled",
 ];
 
+const TASK_WORKER_PLATFORM_CEILINGS = {
+  max_wall_seconds: 3_600,
+  max_tokens: 1_000_000,
+  max_cost_usd: 25,
+  max_iterations: 128,
+} as const;
+
 const CREATABLE_TASK_STATUSES: readonly CreatableProjectTaskStatus[] = [
   "backlog",
   "todo",
@@ -69,7 +76,8 @@ Transition options:
   done:  --session <id> --evidence <ref> [--summary <text>]
   block: --session <id> --reason <text>
   worker: --session <claim-id> --worker-session <id> --prompt <text>
-          --max-wall-seconds <n> --max-tokens <n> --max-cost-usd <n> --max-iterations <n>
+          --max-wall-seconds <1..3600> --max-tokens <1..1000000>
+          --max-cost-usd <0..25> --max-iterations <1..128>
   progress: --session <claim-id> --worker-session <id> --ref <evidence-ref>
   no-progress: --session <claim-id> --worker-session <id> --settlement-id <id> --reason <text>
 
@@ -177,11 +185,18 @@ function requirePositiveInteger(raw: string | undefined, flag: string, max?: num
   return value;
 }
 
-function requirePositiveNumber(raw: string | undefined, flag: string): number {
+function requirePositiveNumber(
+  raw: string | undefined,
+  flag: string,
+  max?: number,
+): number {
   if (raw === undefined) throw new Error(`${flag} is required`);
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${flag} must be a positive finite number`);
+  }
+  if (max !== undefined && value > max) {
+    throw new Error(`${flag} must be between 0 (exclusive) and ${max}`);
   }
   return value;
 }
@@ -447,13 +462,25 @@ export async function runTasks(
         const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
         const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
         const prompt = requireText(takeFlagValue(rest, ["--prompt"]), "--prompt");
-        const maxWallSeconds = requirePositiveInteger(takeNumericFlag(rest, "--max-wall-seconds"), "--max-wall-seconds");
-        const maxTokens = requirePositiveInteger(takeNumericFlag(rest, "--max-tokens"), "--max-tokens");
-        const maxCostUsd = requirePositiveNumber(takeNumericFlag(rest, "--max-cost-usd"), "--max-cost-usd");
+        const maxWallSeconds = requirePositiveInteger(
+          takeNumericFlag(rest, "--max-wall-seconds"),
+          "--max-wall-seconds",
+          TASK_WORKER_PLATFORM_CEILINGS.max_wall_seconds,
+        );
+        const maxTokens = requirePositiveInteger(
+          takeNumericFlag(rest, "--max-tokens"),
+          "--max-tokens",
+          TASK_WORKER_PLATFORM_CEILINGS.max_tokens,
+        );
+        const maxCostUsd = requirePositiveNumber(
+          takeNumericFlag(rest, "--max-cost-usd"),
+          "--max-cost-usd",
+          TASK_WORKER_PLATFORM_CEILINGS.max_cost_usd,
+        );
         const maxIterations = requirePositiveInteger(
           takeNumericFlag(rest, "--max-iterations"),
           "--max-iterations",
-          2_147_483_647,
+          TASK_WORKER_PLATFORM_CEILINGS.max_iterations,
         );
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);

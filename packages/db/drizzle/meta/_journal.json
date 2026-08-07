@@ -309,6 +309,13 @@
       "when": 1786066664067,
       "tag": "20260807013744_usage_event_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786072778266,
+      "tag": "20260807031938_add_task_worker_platform_ceiling",
+      "breakpoints": true
     }
   ]
 }

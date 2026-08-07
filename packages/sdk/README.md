@@ -216,6 +216,11 @@ const registration = await project.tasks.registerWorker(task.task_id, {
 });
 console.log(registration.worker.state); // "drained" or "queued"
 
+The platform ceilings are `max_wall_seconds <= 3,600`, `max_tokens <= 1,000,000`,
+`max_cost_usd <= 25`, and `max_iterations <= 128`. A coordinator, including
+meta, can select smaller positive bounds. It cannot widen these server-owned
+ceilings.
+
 await project.tasks.recordProgress(task.task_id, {
   session_id: coordinatorSessionId,
   worker_session_id: workerSessionId,

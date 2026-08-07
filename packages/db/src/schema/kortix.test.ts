@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { getTableConfig } from 'drizzle-orm/pg-core';
+import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
 import {
   kortixSchema,
   sandboxStatusEnum,
@@ -25,6 +25,7 @@ import {
   projectSessionConnectorBindings,
   projectTasks,
   projectTaskNoProgressSettlements,
+  TASK_WORKER_PLATFORM_CEILINGS,
   projectGoalObservations,
   projectGroupGrants,
   projectGitConnections,
@@ -434,6 +435,25 @@ describe('generated project state tables', () => {
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_sweep');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_claim_session');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_liveness_coordinator');
+  });
+
+  test('worker contracts cannot exceed server-owned platform ceilings', () => {
+    expect(TASK_WORKER_PLATFORM_CEILINGS).toEqual({
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000_000,
+      max_cost_usd: 25,
+      max_iterations: 128,
+    });
+
+    const ceiling = getTableConfig(projectTasks).checks.find(
+      (candidate) => candidate.name === 'project_tasks_liveness_contract_platform_ceiling',
+    );
+    expect(ceiling).toBeDefined();
+    const sql = new PgDialect().sqlToQuery(ceiling!.value).sql;
+    expect(sql).toContain(`->>'max_wall_seconds')::numeric <= 3600`);
+    expect(sql).toContain(`->>'max_tokens')::numeric <= 1000000`);
+    expect(sql).toContain(`->>'max_cost_usd')::numeric <= 25`);
+    expect(sql).toContain(`->>'max_iterations')::numeric <= 128`);
   });
 
   test('no-progress settlements durably key every original result by task and settlement', () => {

@@ -199,16 +199,37 @@ export async function blockProjectTask(
 }
 
 
+const WORKER_CONTRACT_PLATFORM_CEILINGS = {
+  max_wall_seconds: 3_600,
+  max_tokens: 1_000_000,
+  max_cost_usd: 25,
+  max_iterations: 128,
+} as const;
+
+function assertWorkerContractWithinPlatformCeilings(contract: ProjectTaskWorkerContract): void {
+  for (const field of ['max_wall_seconds', 'max_tokens', 'max_iterations'] as const) {
+    const value = contract[field];
+    const maximum = WORKER_CONTRACT_PLATFORM_CEILINGS[field];
+    if (!Number.isInteger(value) || value < 1 || value > maximum) {
+      throw new RangeError(`${field} must be between 1 and ${maximum}`);
+    }
+  }
+  if (!Number.isFinite(contract.max_cost_usd) ||
+      contract.max_cost_usd <= 0 ||
+      contract.max_cost_usd > WORKER_CONTRACT_PLATFORM_CEILINGS.max_cost_usd) {
+    throw new RangeError(
+      `max_cost_usd must be between 0 (exclusive) and ${WORKER_CONTRACT_PLATFORM_CEILINGS.max_cost_usd}`,
+    );
+  }
+}
+
 /** Register immutable worker bounds and enqueue its initial prompt atomically. */
 export async function registerProjectTaskWorker(
   projectId: string,
   taskId: string,
   input: RegisterProjectTaskWorkerInput,
 ) {
-  if (!Number.isInteger(input.contract.max_iterations) ||
-      input.contract.max_iterations < 1 || input.contract.max_iterations > 2_147_483_647) {
-    throw new RangeError('max_iterations must be between 1 and 2147483647');
-  }
+  assertWorkerContractWithinPlatformCeilings(input.contract);
   return unwrap(await backendApi.post<RegisterProjectTaskWorkerResponse>(
     `${taskPath(projectId, taskId)}/worker`, input,
   ));
