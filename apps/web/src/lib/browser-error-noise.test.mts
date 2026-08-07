@@ -23,6 +23,7 @@ import {
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isModelNotServableNoise,
+  isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
@@ -7092,6 +7093,289 @@ test('does NOT suppress a message that only mentions the non-Error rejection wor
       }),
       false,
       `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Supabase gotrue OTP-expired-link `Object Not Found Matching Id:…,
+// MethodName:update, ParamCount:…` non-Error promise rejection noise (Better
+// Stack pattern
+// e9a720020c921fbf82323125c20714fd7455e803295cf13aa624440de6d35e8e, Kortix
+// Frontend prod, application_id 2346967, `UnhandledRejection`). A user landed
+// on an expired/invalid OTP email link and the Supabase auth client's
+// session-update from the expired OTP token rejected with a bare STRING
+// `Object Not Found Matching Id:2, MethodName:update, ParamCount:4` (gotrue's
+// "no row found" wording for the session-update RPC — the `Id:2` /
+// `ParamCount:4` integers vary per call). Because the rejected value is a
+// bare string (NOT an Error instance), Sentry 10.x's GlobalHandlers
+// `onunhandledrejection` integration cannot extract a `.message`/`.stack` from
+// it: it synthesizes the canonical "Non-Error promise rejection captured with
+// value: Object Not Found Matching Id:2, MethodName:update, ParamCount:4"
+// (the rejection value inlined after `value: `) with NO stacktrace frames at
+// all. 116 occurrences, 0 identified users (anonymous), first 2026-06-02 /
+// recurring, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (`handled:false` — UNCAUGHT, never reached a React error boundary),
+// `synthetic:true`, release `160f0b286f0ad5c53debc343d5e055241694e24d`
+// (v0.12.4 prod), request URL
+// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// description=Email+link+is+invalid+or+has+expired` (the auth error page — the
+// OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
+// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// auth client initializing), then a navigation to the same `#error=otp_expired`
+// URL, then marketing-site fetches (`/api/github-stars`,
+// `/_vercel/insights/view`, `/api/maintenance`). Stack trace: NONE — the raw
+// exception payload is `{"values":[{"type":"UnhandledRejection","value":
+// "Non-Error promise rejection captured with value: Object Not Found Matching
+// Id:2, MethodName:update, ParamCount:4","mechanism":{"type":"auto.browser.
+// global_handlers.onunhandledrejection","handled":false}}]}` with NO
+// `stacktrace` key, NO frames, NO `call_site_file`/`call_site_function`,
+// NO `call_stack_hash`.
+//
+// SIBLING of the bare-`undefined` non-Error rejection class
+// (`isNonErrorUndefinedRejectionNoise`, PR #5200, pattern `5cfc90e5…`) and
+// the Supabase `TOKEN_EXPIRED` rejection class (`isSupabaseTokenExpiredNoise`,
+// pattern `63b0cde7…`): all three are frameless non-Error promise rejections
+// captured by Sentry's GlobalHandlers `onunhandledrejection` integration as a
+// synthetic message with NO frames. The `undefined` matcher rejects with the
+// primitive `undefined`; the `TOKEN_EXPIRED` matcher rejects with a
+// `{ code, message, status }` object (Sentry emits "Object captured as
+// promise rejection with keys: …"); THIS matcher rejects with a bare STRING
+// (Sentry emits "Non-Error promise rejection captured with value: <string>").
+// The three message prefixes are disjoint, so the matchers do not shadow each
+// other.
+//
+// The matcher anchors on the STABLE prefix `/^Non-Error promise rejection
+// captured with value: Object Not Found Matching/` (the `Id:…, MethodName:…,
+// ParamCount:…` suffix varies per gotrue call) and requires the frameless
+// shape as a positive guard with a negative guard preserving any first-party
+// `apps/web/src/…` frame.
+// ---------------------------------------------------------------------------
+
+// The exact synthetic message from the production event.
+const NON_ERROR_OBJECT_NOT_FOUND_REJECTION =
+  'Non-Error promise rejection captured with value: Object Not Found Matching Id:2, MethodName:update, ParamCount:4'
+
+test('classifies the OTP-expired Object-Not-Found non-Error promise rejection noise', () => {
+  // Exact production shape: the canonical message, NO frames (the rejection
+  // carried no stack — it was a bare-string non-Error rejection).
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the OTP-expired Object-Not-Found rejection Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `UnhandledRejection`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
+  // unhandledrejection — never reached a React error boundary), NO
+  // stacktrace frames, request URL the auth error page
+  // (`/#error=access_denied&error_code=otp_expired`).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
+      },
+      exception: {
+        values: [
+          {
+            value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the OTP-expired Object-Not-Found noise when frames are absent entirely (no stacktrace key)', () => {
+  // The production event has no frames at all — Sentry omits the stacktrace
+  // key entirely when there is nothing to serialize (the raw payload has no
+  // `stacktrace` key). The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired',
+      },
+      exception: {
+        values: [{ value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION }],
+      },
+    }),
+    true,
+  )
+})
+
+test('matches the variable Id/MethodName/ParamCount gotrue suffix (the integers vary per call)', () => {
+  // The production suffix is `Id:2, MethodName:update, ParamCount:4`, but the
+  // gotrue RPC's internal ids/counts vary per call — a sibling occurrence
+  // might be `Id:7, MethodName:update, ParamCount:2`. The matcher anchors on
+  // the STABLE prefix, so every variant of this OTP-expired session-update
+  // rejection is dropped.
+  for (const message of [
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:7, MethodName:update, ParamCount:2',
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:0, MethodName:update, ParamCount:1',
+    'Non-Error promise rejection captured with value: Object Not Found Matching Id:999, MethodName:update, ParamCount:12',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      true,
+      `expected variant "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      true,
+      `expected Sentry event for variant "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress the OTP-expired rejection when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code rejected a promise
+  // with the bare-string gotrue value → actionable; the negative guard MUST
+  // preserve it so the call site can be found + fixed. This is the whole
+  // reason the matcher is frame-aware (the prefix is also a real first-party
+  // `Promise.reject('Object Not Found Matching…')` signature).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/auth/supabase-client.ts', function: 'updateSession' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/auth/otp-callback.ts', function: 'handleOtp' },
+    ],
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+        frames,
+      }),
+      false,
+      `expected first-party OTP-expired rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party OTP-expired rejection from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the OTP-expired rejection when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // rejection is attributable — a real first-party or third-party
+  // `Promise.reject('Object Not Found Matching…')` with a stack we can trace.
+  // Keep reporting; only the frameless capture (the production noise pattern)
+  // is dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://supa.kortix.com/auth/v1/user', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+        frames,
+      }),
+      false,
+      `expected attributable OTP-expired rejection from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT shadow the sibling undefined-rejection matcher (different value)', () => {
+  // The bare-`undefined` non-Error rejection class (PR #5200) emits
+  // "Non-Error promise rejection captured with value: undefined" — a
+  // DIFFERENT value than `Object Not Found Matching…`. The two matchers are
+  // disjoint; this matcher must return false for the undefined value (it has
+  // its own dedicated matcher), and vice versa.
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: 'Non-Error promise rejection captured with value: undefined',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    isNonErrorUndefinedRejectionNoise({
+      message: NON_ERROR_OBJECT_NOT_FOUND_REJECTION,
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT shadow the sibling Supabase TOKEN_EXPIRED object-rejection matcher (different message prefix)', () => {
+  // The Supabase `TOKEN_EXPIRED` rejection class rejects with a
+  // `{ code, message, status }` OBJECT, so Sentry emits the disjoint
+  // "Object captured as promise rejection with keys: code, message, status"
+  // message (handled by `isSupabaseTokenExpiredNoise`). THIS matcher anchors
+  // on the "Non-Error promise rejection captured with value: Object Not
+  // Found Matching" prefix, so it must NOT match the object-rejection message.
+  assert.equal(
+    isNonErrorObjectNotFoundRejectionNoise({
+      message: 'Object captured as promise rejection with keys: code, message, status',
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-matching message (prefix-only / near-miss wording)', () => {
+  // The matcher anchors on the canonical prefix; a different wording that
+  // merely mentions parts of it must not be matched.
+  for (const message of [
+    'Object Not Found Matching Id:2, MethodName:update, ParamCount:4',
+    'Non-Error promise rejection captured with value: undefined',
+    'Non-Error promise rejection captured with value: some other string',
+    'Non-Error promise rejection captured with value: Object Not Found',
+    'Non-Error promise rejection',
+    'Object Not Found Matching',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different message', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class
+  // — keep reporting it via this matcher. (The bare-`undefined` / OperationError
+  // / TOKEN_EXPIRED classes have their own dedicated matchers + tests; not
+  // re-tested here.)
+  for (const message of [
+    'Something else entirely',
+    'UnhandledRejection: a different value',
+  ]) {
+    assert.equal(
+      isNonErrorObjectNotFoundRejectionNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for frameless "${message}" to keep reporting`,
     )
   }
 })

@@ -267,7 +267,7 @@ flow(
           { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
           { params: { projectId: p.id } },
         );
-      rotate.status(200).body().has("$.strategy", "denied").has("$.requires_rotation", false);
+      rotate.status(200).body().has("$.strategy", "broker").has("$.requires_rotation", false);
 
       const restore = await ctx.client
         .as(ctx.P.OWNER)

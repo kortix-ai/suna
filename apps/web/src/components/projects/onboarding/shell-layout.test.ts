@@ -32,18 +32,17 @@ describe('onboarding shell', () => {
 
   test('renders the inset panel frame only from the md breakpoint', () => {
     expect(shell).toContain('fixed inset-0');
-    expect(shell).toContain('!inset-0');
-    expect(shell).toContain('md:!inset-2');
-    expect(shell).toContain('!rounded-none');
-    expect(shell).toContain('md:!rounded-md');
-    expect(shell).toContain('!border-0');
-    expect(shell).toContain('md:!border');
-    expect(shell).toContain('!min-h-[100dvh]');
+    expect(shell).toContain('inset-0!');
+    expect(shell).toContain('md:inset-2!');
+    expect(shell).toContain('rounded-none!');
+    expect(shell).toContain('md:rounded-md!');
+    expect(shell).toContain('border-0!');
+    expect(shell).toContain('md:border!');
+    expect(shell).toContain('min-h-dvh!');
   });
 
-  test('keeps every desktop step title on one fixed top baseline', () => {
-    expect(shell).toContain('items-start justify-center');
-    expect(shell).not.toContain('md:items-center');
+  test('centres every step in the fixed decision lane', () => {
+    expect(shell).toContain('items-center justify-center');
     expect(shell).toContain('max-w-[520px] pt-8');
     expect(shell).toContain('pb-[max(2rem,env(safe-area-inset-bottom))]');
   });
