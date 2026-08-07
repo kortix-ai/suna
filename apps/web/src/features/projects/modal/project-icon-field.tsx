@@ -47,7 +47,8 @@ const SWAP_REDUCED = {
  * `icon` / `icon_glyph` was NOT just written, so modelling the value as one
  * field rather than two is what makes it impossible for a host to construct a
  * state (and therefore a request) that sets both, or that clears one without
- * the other reflecting it. `ProjectCreateModal` and `EditProjectModal` hold
+ * the other reflecting it. `NewWorkspacePage` (`/new`, create) and
+ * `GeneralProjectCard` (workspace Settings, edit — `settings-view.tsx`) hold
  * exactly this type as their icon state and pass it straight through.
  */
 export type ProjectIconValue = { emoji: string } | { glyph: GlyphSelection } | null;
@@ -66,9 +67,11 @@ function resolveGlyphFace(glyph: GlyphSelection | null) {
   return GlyphComponent ? { GlyphComponent, name: glyph.name, color: glyph.color } : null;
 }
 
-/** Icon trigger for the project create and edit modals. Sits beside the name
- *  input and opens the Emoji/Icon picker in a popover. Controlled: the modal
- *  owns the icon so it can send it with its payload and reset it on close. */
+/** Icon trigger for `/new`'s create form and workspace Settings' edit
+ *  section. Sits beside the name input and opens the Emoji/Icon picker in a
+ *  popover. Controlled: the host owns the icon so it can send it with its
+ *  payload (create) or diff it against the stored project (edit), and reset
+ *  it on close/cancel. */
 export function ProjectIconField({
   value,
   onChange,
@@ -95,9 +98,9 @@ export function ProjectIconField({
    * field offers a remove control at all — so "can this field clear?" is a host
    * decision expressed in the type, not a runtime flag.
    *
-   * The create modal deliberately does not pass it: there is nothing saved to
-   * undo there, and the trigger already stays live so you reopen it and switch.
-   * The edit modal does, because an existing project's icon IS saved, and
+   * `/new` deliberately does not pass it: there is nothing saved to undo
+   * there, and the trigger already stays live so you reopen it and switch.
+   * Workspace Settings does, because an existing project's icon IS saved, and
    * without this there would be no way to ever take one back off.
    */
   onClear?: () => void;
@@ -132,8 +135,9 @@ export function ProjectIconField({
     // and button.tsx adds disabled:pointer-events-none).
     //
     // `modal` is what makes the picker scrollable with a wheel or trackpad.
-    // This field renders inside the create-project Modal, which is a Radix
-    // Dialog, and Radix wraps the dialog's OVERLAY in react-remove-scroll with
+    // In workspace Settings this field renders inside `CustomizeSectionWrapper`
+    // -> `customize-panel.tsx`'s `Modal`, a Radix Dialog, and Radix wraps the
+    // dialog's OVERLAY in react-remove-scroll with
     // `shards: [contentRef]` (react-dialog dist/index.mjs:110). That side-car
     // installs a non-passive `wheel` listener on `document` and calls
     // preventDefault() on every wheel whose target is neither inside the
@@ -159,11 +163,17 @@ export function ProjectIconField({
     // 370px tall against a 253px content box, so portalling inside severed
     // 240.31px of the picker, including the point the wheel was aimed at.
     // `modal` leaves the popover's geometry byte-identical to before.
+    //
+    // On `/new` this field has no Dialog ancestor at all, so the bug above
+    // cannot occur there — `modal` is simply inert in that host, not wrong.
     <Popover open={open && !disabled} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
-          // The field renders inside the create modal's <form>. Without this a
-          // click would submit it.
+          // On `/new` the field renders inside that page's <form>, where a
+          // missing `type="button"` would submit it on click. Workspace
+          // Settings has no surrounding <form>, so this is a no-op there —
+          // still correct to keep, since a shared control should not assume
+          // which host it is in.
           type="button"
           // `outline`, not `secondary-outline`: the design system prescribes
           // outline for an icon-only button, and secondary-outline's

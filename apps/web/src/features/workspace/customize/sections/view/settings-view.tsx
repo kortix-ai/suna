@@ -21,6 +21,7 @@ import {
   FieldLabel,
   FieldTitle,
 } from '@/components/ui/field';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -35,6 +36,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Github } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  buildProjectEditPatch,
+  type ProjectEditDraft,
+  type ProjectEditSubject,
+} from '@/features/projects/modal/project-edit-patch';
+import { ProjectIconField, type ProjectIconValue } from '@/features/projects/modal/project-icon-field';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -53,6 +60,7 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
+  type ProjectInput,
   type SandboxProviderName,
 } from '@kortix/sdk';
 import { refreshProjectProviderState } from '@kortix/sdk/react';
@@ -773,6 +781,43 @@ function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
   return null;
 }
 
+/**
+ * The field's union, seeded from the project's two independent stored
+ * columns. Glyph wins if — despite the server invariant — a stale row
+ * somehow carries both, matching `EntityAvatar`'s own glyph > emoji
+ * precedence rather than inventing a different tiebreak here. Ported from
+ * the deleted `EditProjectModal`, which needed the identical seed.
+ */
+function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): ProjectIconValue {
+  if (glyph) return { glyph };
+  if (icon) return { emoji: icon };
+  return null;
+}
+
+/**
+ * What `GeneralProjectCard`'s combined name+icon autosave sends to
+ * `updateProject`, or `null` when there is nothing to send — pulled out so
+ * this exact wiring is under test without mounting the component or mocking
+ * `@kortix/sdk` (same DI shape `runProjectArchive` above uses, and for the
+ * same reason: `mock.module('@kortix/sdk', ...)` is process-wide in this
+ * monorepo and a hazard for sibling suites).
+ *
+ * Thin wrapper over `buildProjectEditPatch` (`project-edit-patch.ts`), which
+ * already owns the union-diffing rules — including the invariant this field
+ * exists to prove: `icon` and `icon_glyph` are never both present in the same
+ * patch, because the API deletes whichever one a write does NOT name. This
+ * function only pins what THIS card feeds that shared diff: the live project
+ * as `subject`, the name input plus the icon field's current value as
+ * `draft`.
+ */
+export function buildProjectSavePatch(
+  subject: ProjectEditSubject,
+  draft: ProjectEditDraft,
+): Partial<ProjectInput> | null {
+  const edit = buildProjectEditPatch(subject, draft);
+  return edit.status === 'ready' ? edit.patch : null;
+}
+
 function GeneralProjectCard({
   project,
   canManage,
@@ -783,17 +828,18 @@ function GeneralProjectCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
+  const [icon, setIcon] = useState<ProjectIconValue>(() =>
+    toIconValue(project.icon, project.icon_glyph),
+  );
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
 
   useEffect(() => {
     setName(project.name);
-  }, [project.name]);
+    setIcon(toIconValue(project.icon, project.icon_glyph));
+  }, [project.name, project.icon, project.icon_glyph]);
 
   const mutation = useMutation({
-    mutationFn: (nextName: string) =>
-      updateProject(project.project_id, {
-        name: nextName,
-      }),
+    mutationFn: (patch: Partial<ProjectInput>) => updateProject(project.project_id, patch),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -803,14 +849,34 @@ function GeneralProjectCard({
 
   const { mutate, isPending } = mutation;
 
+  // One effect for both fields, same shape as `RepositoryCard`'s combined
+  // branch+manifest save below. Name still only fires once its debounce
+  // settles; the icon field is a discrete pick (not continuous typing), so
+  // it saves the moment `icon` changes — no artificial delay, matching
+  // `ExperimentalFeatureRow`'s switch. `buildProjectSavePatch` computes the
+  // diff against the LIVE project on every run, so an icon pick made mid-name
+  // -edit (before the debounce settles) sends only the icon key, never a
+  // half-typed name.
   useEffect(() => {
     if (!canManage || isPending) return;
 
-    const trimmed = debouncedName.trim();
-    if (!trimmed || trimmed === project.name) return;
+    const patch = buildProjectSavePatch(
+      { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
+      { name: debouncedName, icon },
+    );
+    if (!patch) return;
 
-    mutate(trimmed);
-  }, [debouncedName, canManage, project.name, isPending, mutate]);
+    mutate(patch);
+  }, [
+    debouncedName,
+    icon,
+    canManage,
+    project.name,
+    project.icon,
+    project.icon_glyph,
+    isPending,
+    mutate,
+  ]);
 
   const saving = isDebouncing || isPending;
 
@@ -824,14 +890,32 @@ function GeneralProjectCard({
           </FieldLabel>
           {saving ? <SaveStatus /> : null}
         </div>
-        <Input
-          id="project-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!canManage || isPending}
-          maxLength={120}
-          variant="popover"
-        />
+        {/* Icon trigger as a peer of the name input, not a field of its own —
+            same row treatment the deleted create/edit modals and `/new` use
+            for the identical pairing (`items-start`: both controls are 9
+            units tall today, and it stays correct if the input ever grows a
+            second line). `onClear` IS passed here — unlike `/new`'s create
+            surface, this project's icon is already saved, so removing it is
+            a real, undoable-only-by-picking-again action. */}
+        <div className="flex items-start gap-2">
+          <ProjectIconField
+            value={icon}
+            onChange={(emoji) => setIcon({ emoji })}
+            onGlyphChange={(glyph) => setIcon({ glyph })}
+            onClear={() => setIcon(null)}
+            disabled={!canManage || isPending}
+          />
+          <div className="min-w-0 flex-1">
+            <Input
+              id="project-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!canManage || isPending}
+              maxLength={120}
+              variant="popover"
+            />
+          </div>
+        </div>
       </Field>
     </section>
   );

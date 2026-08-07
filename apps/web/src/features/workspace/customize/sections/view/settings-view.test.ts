@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   accountProjectCountForArchive,
+  buildProjectSavePatch,
   runProjectArchive,
   type RunProjectArchiveClient,
 } from './settings-view';
@@ -161,5 +162,101 @@ describe('accountProjectCountForArchive', () => {
 
   test('several loaded projects maps to their count', () => {
     expect(accountProjectCountForArchive([{ p: 1 }, { p: 2 }, { p: 3 }])).toBe(3);
+  });
+});
+
+/**
+ * `buildProjectSavePatch` is `GeneralProjectCard`'s combined name+icon
+ * autosave effect, extracted the same way `runProjectArchive` is above: a
+ * plain function this test can call directly, instead of mounting the
+ * component or reaching for `mock.module('@kortix/sdk', ...)`. It is the
+ * exact value the effect passes to `mutate` — i.e. exactly what
+ * `updateProject(project.project_id, patch)` receives — so these pin the
+ * capability the create/edit-modal deletion (Task 23) moved into workspace
+ * Settings: an existing project's icon is editable, and emoji/glyph stay
+ * mutually exclusive in the request the same way `project-edit-patch.test.ts`
+ * already proves for the shared diff underneath.
+ */
+describe('buildProjectSavePatch', () => {
+  const PLAIN = { name: 'Atlas', icon: null, icon_glyph: null };
+  const ICONED = { name: 'Atlas', icon: '🚀', icon_glyph: null };
+  const GLYPHED = { name: 'Atlas', icon: null, icon_glyph: { name: 'Rocket', color: 'blue' } };
+
+  test('picking a first emoji reaches updateProject as `icon`, with no `icon_glyph` key', () => {
+    const patch = buildProjectSavePatch(PLAIN, { name: 'Atlas', icon: { emoji: '🎯' } });
+
+    expect(patch).toEqual({ icon: '🎯' });
+    expect(patch && 'icon_glyph' in patch).toBe(false);
+  });
+
+  test('picking a first glyph reaches updateProject as `icon_glyph`, with no `icon` key', () => {
+    const patch = buildProjectSavePatch(PLAIN, {
+      name: 'Atlas',
+      icon: { glyph: { name: 'Rocket', color: 'blue' } },
+    });
+
+    expect(patch).toEqual({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+    expect(patch && 'icon' in patch).toBe(false);
+  });
+
+  test('switching an emoji project to a glyph sends `icon_glyph`, and NEVER `icon: null`', () => {
+    // The server invariant this whole feature protects: writing `icon_glyph`
+    // already deletes the stored emoji server-side, so a patch that ALSO
+    // carried `icon: null` would be a redundant extra write at best.
+    const patch = buildProjectSavePatch(ICONED, {
+      name: 'Atlas',
+      icon: { glyph: { name: 'Rocket', color: 'blue' } },
+    });
+
+    expect(patch).toEqual({ icon_glyph: { name: 'Rocket', color: 'blue' } });
+    expect(patch && 'icon' in patch).toBe(false);
+  });
+
+  test('switching a glyph project to an emoji sends `icon`, and NEVER `icon_glyph: null`', () => {
+    const patch = buildProjectSavePatch(GLYPHED, { name: 'Atlas', icon: { emoji: '🚀' } });
+
+    expect(patch).toEqual({ icon: '🚀' });
+    expect(patch && 'icon_glyph' in patch).toBe(false);
+  });
+
+  test('removing an emoji sends an explicit `icon: null`, never `icon_glyph`', () => {
+    const patch = buildProjectSavePatch(ICONED, { name: 'Atlas', icon: null });
+
+    expect(patch).toEqual({ icon: null });
+    expect(patch && 'icon_glyph' in patch).toBe(false);
+  });
+
+  test('removing a glyph sends an explicit `icon_glyph: null`, never `icon`', () => {
+    const patch = buildProjectSavePatch(GLYPHED, { name: 'Atlas', icon: null });
+
+    expect(patch).toEqual({ icon_glyph: null });
+    expect(patch && 'icon' in patch).toBe(false);
+  });
+
+  test('an untouched draft sends nothing — the effect must not call updateProject', () => {
+    expect(buildProjectSavePatch(ICONED, { name: 'Atlas', icon: { emoji: '🚀' } })).toBeNull();
+    expect(buildProjectSavePatch(PLAIN, { name: 'Atlas', icon: null })).toBeNull();
+  });
+
+  test('a rename alone carries no icon key at all', () => {
+    const patch = buildProjectSavePatch(ICONED, { name: 'Atlas 2', icon: { emoji: '🚀' } });
+
+    expect(patch).toEqual({ name: 'Atlas 2' });
+    expect(patch && 'icon' in patch).toBe(false);
+  });
+
+  test('a rename and an icon change travel together in one patch', () => {
+    const patch = buildProjectSavePatch(ICONED, { name: 'Atlas 2', icon: { emoji: '🎯' } });
+
+    expect(patch).toEqual({ name: 'Atlas 2', icon: '🎯' });
+  });
+
+  test('emptying the name sends nothing, even when the icon also changed', () => {
+    // Matches the modal-era contract in `project-edit-patch.ts`: a project
+    // must have a name, so an empty name blocks the whole save rather than
+    // silently saving the icon and dropping the name change.
+    expect(
+      buildProjectSavePatch(ICONED, { name: '   ', icon: { emoji: '🎯' } }),
+    ).toBeNull();
   });
 });
