@@ -78,6 +78,8 @@ describe('qk.project', () => {
       qk.project.resourceGrants(id),
       qk.project.secrets(id),
       qk.project.apps(id),
+      qk.project.appAccess(id, 'app_1'),
+      qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
       qk.project.triggers(id),
       qk.project.files(id),
@@ -275,6 +277,17 @@ describe('qk.project', () => {
     expect(qk.project.appDeployments(id, 'app_1')).not.toEqual(qk.project.apps(id) as never);
     expect(qk.project.appDeployments(id, 'app_1')).not.toEqual(
       qk.project.appDeployments(id, 'app_2') as never,
+    );
+  });
+
+  test('App access sessions nest under policy state without sharing its cache entry', () => {
+    expect(startsWith(qk.project.appAccess(id, 'app_1'), qk.project.apps(id))).toBe(true);
+    expect(startsWith(
+      qk.project.appAccessSession(id, 'app_1'),
+      qk.project.appAccess(id, 'app_1'),
+    )).toBe(true);
+    expect(qk.project.appAccessSession(id, 'app_1')).not.toEqual(
+      qk.project.appAccess(id, 'app_1') as never,
     );
   });
 

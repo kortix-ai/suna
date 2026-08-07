@@ -7,6 +7,7 @@ import type {
   App,
   AppDeployment,
   AppHostingProvider,
+  AppAccessMode,
   AppSource,
   ProjectHandle,
 } from '@kortix/sdk';
@@ -14,8 +15,6 @@ import ignore from 'ignore';
 import * as tar from 'tar';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { hasEnvTokenHost } from '../api/config.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -25,7 +24,6 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadLocalManifest } from '../manifest.ts';
-import { loadLink, resolveProjectId } from '../project-link.ts';
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
@@ -57,6 +55,10 @@ Subcommands:
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
     --provider <name>               daytona, platinum, or e2b.
+    --access <mode>                 private (default), project, restricted, public, or password.
+    --password <value>              Required for new password-protected Apps.
+    --members <ids>                 Comma-separated member ids for restricted access.
+    --groups <ids>                  Comma-separated group ids for restricted access.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   show <id|slug>                    Show an App and its deployments. --json.
@@ -64,6 +66,7 @@ Subcommands:
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next public request wakes it.
   rollback <id|slug> <deployment>   Move traffic to a ready deployment.
+  access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
 Global options:
@@ -169,22 +172,6 @@ async function context(options: ContextOptions): Promise<{
   };
 }
 
-/** Read-only landing-page discovery. Missing auth, project, or flag stays dark. */
-export async function selectedProjectAppsEnabled(): Promise<boolean> {
-  const projectId = resolveProjectId();
-  if (!projectId) return false;
-  const linkedHost = hasEnvTokenHost() ? undefined : loadLink()?.host;
-  const auth = linkedHost ? loadAuthForHost(linkedHost) : loadAuth();
-  if (!auth?.token) return false;
-  try {
-    const kortix = kortixFromAuth(auth);
-    const project = await withKortixScope(auth, () => kortix.project(projectId).get());
-    return project.experimental?.apps === true;
-  } catch {
-    return false;
-  }
-}
-
 async function scoped<T>(ctx: NonNullable<Awaited<ReturnType<typeof context>>>, fn: () => Promise<T>) {
   return withKortixScope(ctx.auth, fn);
 }
@@ -223,12 +210,6 @@ function takeCommon(rest: string[]) {
 
 export async function runApps(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    const helpArgs = argv.slice(1);
-    const helpContext = await context({
-      projectArg: takeFlagValue(helpArgs, ['--project']),
-      hostArg: takeFlagValue(helpArgs, ['--host']),
-    });
-    if (!helpContext) return 2;
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
   }
@@ -255,6 +236,8 @@ export async function runApps(argv: string[]): Promise<number> {
         return await stateCommand(subcommand, rest, common.options, common.json);
       case 'rollback':
         return await rollbackCommand(rest, common.options, common.json);
+      case 'access':
+        return await accessCommand(rest, common.options, common.json);
       case 'delete':
       case 'rm':
       case 'remove':
@@ -323,12 +306,25 @@ interface DeployFlags {
   waitSeconds: number;
   includeNodeModules: boolean;
   manifestApp?: string;
+  accessMode?: AppAccessMode;
+  password?: string;
+  memberIds?: string[];
+  groupIds?: string[];
+}
+
+function csv(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
 }
 
 function deployFlags(rest: string[]): DeployFlags {
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
   if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
     throw new Error('--provider must be daytona, platinum, or e2b');
+  }
+  const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
+  if (accessMode && !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)) {
+    throw new Error('--access must be private, project, restricted, public, or password');
   }
   const spa = takeFlagBool(rest, ['--spa']);
   const noSpa = takeFlagBool(rest, ['--no-spa']);
@@ -357,6 +353,10 @@ function deployFlags(rest: string[]): DeployFlags {
     waitSeconds,
     includeNodeModules: takeFlagBool(rest, ['--include-node-modules']),
     manifestApp: takeFlagValue(rest, ['--manifest-app']),
+    accessMode,
+    password: takeFlagValue(rest, ['--password']),
+    memberIds: csv(takeFlagValue(rest, ['--members'])),
+    groupIds: csv(takeFlagValue(rest, ['--groups'])),
   };
 }
 
@@ -570,6 +570,16 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       app = await ctx.apps.create({ slug, name: flags.name ?? slug });
     }
 
+    if (flags.accessMode) {
+      await ctx.apps.access.update(app.app_id, {
+        mode: flags.accessMode,
+        ...(flags.password ? { password: flags.password } : {}),
+        ...(flags.memberIds ? { member_ids: flags.memberIds } : {}),
+        ...(flags.groupIds ? { group_ids: flags.groupIds } : {}),
+      });
+      app = await ctx.apps.get(app.app_id);
+    }
+
     let artifactId: string;
     let source: AppSource;
     let cleanup: (() => Promise<void>) | undefined;
@@ -698,6 +708,41 @@ async function rollbackCommand(rest: string[], options: ContextOptions, json: bo
   });
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
+  return 0;
+}
+
+async function accessCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('access needs an App id or slug');
+  rest.splice(rest.indexOf(target), 1);
+  const mode = takeFlagValue(rest, ['--mode']) as AppAccessMode | undefined;
+  if (mode && !['private', 'project', 'restricted', 'public', 'password'].includes(mode)) {
+    throw new Error('--mode must be private, project, restricted, public, or password');
+  }
+  const password = takeFlagValue(rest, ['--password']);
+  const memberIds = csv(takeFlagValue(rest, ['--members']));
+  const groupIds = csv(takeFlagValue(rest, ['--groups']));
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const result = await scoped(ctx, async () => {
+    const app = await resolveApp(ctx.apps, target);
+    const access = mode
+      ? await ctx.apps.access.update(app.app_id, {
+          mode,
+          ...(password ? { password } : {}),
+          ...(memberIds ? { member_ids: memberIds } : {}),
+          ...(groupIds ? { group_ids: groupIds } : {}),
+        })
+      : await ctx.apps.access.get(app.app_id);
+    return { app, access };
+  });
+  if (json) emitJson(result);
+  else {
+    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n`);
+    if (result.access.member_ids.length) process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
+    if (result.access.group_ids.length) process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
+    process.stdout.write('\n');
+  }
   return 0;
 }
 

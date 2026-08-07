@@ -9,9 +9,10 @@ import {
   type Database,
   projects,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { AppHostingProvider, AppdStatus } from './hosting';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
+import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -98,15 +99,25 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
     status: 'ready',
     sourceKind: 'oci_image',
     hostingType: 'sandbox',
-    hostingProvider: 'daytona',
+    hostingProvider: 'platinum',
     runtimeVersion: 'test',
     createdBy: PROJECT_ID,
+    buildSpec: {
+      source: {
+        kind: 'oci_image',
+        image: 'docker.io/library/nginx:alpine',
+        command: ['nginx', '-g', 'daemon off;'],
+        port: 80,
+      },
+      environment: { NODE_ENV: 'production' },
+      secrets: { API_TOKEN: 'app-token' },
+    },
   });
   await db.insert(appRuntimes).values({
     runtimeId: RUNTIME_ID,
     deploymentId: DEPLOYMENT_ID,
     accountId: ACCOUNT_ID,
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: 'app-lifecycle-race-runtime',
     status: 'stopped',
     controlTokenHash: '0'.repeat(64),
@@ -218,8 +229,11 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
 
     const error = await wake;
     expect(error).toBeInstanceOf(Response);
-    expect((error as Response).status).toBe(503);
-    expect(await (error as Response).json()).toEqual({ error: 'App is stopped', code: 'app_stopped' });
+    expect((error as Response).status).toBe(409);
+    expect(await (error as Response).json()).toEqual({
+      error: 'App start was superseded by a newer lifecycle request',
+      code: 'app_start_superseded',
+    });
     expect(stopCalls).toBe(1);
 
     const [runtime] = await testDb().select().from(appRuntimes)
@@ -227,5 +241,49 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(runtime?.status).toBe('stopped');
     expect(runtime?.wakeLeaseOwner).toBeNull();
     expect(runtime?.wakeLeaseUntil).toBeNull();
+  });
+
+  test('concurrent cold starts queue one current-daemon deployment and preserve immutable provenance', async () => {
+    const loaded = await seedStoppedRuntime();
+    const previousWorkerEnabled = process.env.KORTIX_APPS_WORKER_ENABLED;
+    process.env.KORTIX_APPS_WORKER_ENABLED = 'false';
+    let queued: boolean[];
+    try {
+      queued = await Promise.all([
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+      ]);
+    } finally {
+      if (previousWorkerEnabled === undefined) delete process.env.KORTIX_APPS_WORKER_ENABLED;
+      else process.env.KORTIX_APPS_WORKER_ENABLED = previousWorkerEnabled;
+    }
+
+    expect(queued.filter(Boolean)).toHaveLength(1);
+    const replacements = await testDb().select().from(appDeployments).where(and(
+      eq(appDeployments.appId, APP_ID),
+      eq(appDeployments.runtimeVersion, APP_RUNTIME_VERSION),
+    ));
+    expect(replacements).toHaveLength(1);
+    expect(replacements[0]).toMatchObject({
+      version: 2,
+      status: 'queued',
+      sourceKind: 'oci_image',
+      hostingProvider: 'platinum',
+      actorType: 'system',
+      buildSpec: {
+        source: {
+          kind: 'oci_image',
+          image: 'docker.io/library/nginx:alpine',
+          command: ['nginx', '-g', 'daemon off;'],
+          port: 80,
+        },
+        environment: { NODE_ENV: 'production' },
+        secrets: { API_TOKEN: 'app-token' },
+      },
+      sourceSessionId: null,
+      artifactId: ARTIFACT_ID,
+    });
+    expect(replacements[0]!.buildSpec).toEqual(loaded.deployment.buildSpec);
   });
 });

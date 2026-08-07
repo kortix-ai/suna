@@ -24,6 +24,7 @@ const CONN_PER_USER_NO_SHARED = 'bbbbbbbb-1111-4000-8000-000000000003';
 const CONNECTOR_IDS = [CONN_SHARED_ALREADY, CONN_PER_USER_WITH_SHARED, CONN_PER_USER_NO_SHARED];
 
 const CONSTRAINT_NAME = 'connectors_credential_mode_shared_only';
+const LEGACY_CREDENTIAL_INDEX = 'idx_connection_credentials_legacy_connector_unique';
 
 let projectId = '';
 let accountId = '';
@@ -59,6 +60,14 @@ async function restoreCheckConstraint(): Promise<void> {
   `));
 }
 
+async function restoreLegacyCredentialIndex(): Promise<void> {
+  await db.execute(sql.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ${LEGACY_CREDENTIAL_INDEX}
+      ON kortix.connection_credentials (connector_id)
+      WHERE connection_id IS NULL
+  `));
+}
+
 beforeAll(async () => {
   const rows = (await db.execute(
     sql`select project_id, account_id from kortix.projects limit 1`,
@@ -72,9 +81,18 @@ beforeAll(async () => {
   accountId = proj.account_id;
   memberUserId = accountId; // any real uuid works as the "member" for this fixture
 
+  // Fixed UUIDs make the migration assertions readable. Remove remnants from
+  // an interrupted prior run before seeding so the real-DB suite is repeatable.
+  await db.delete(connectionCredentials).where(inArray(connectionCredentials.connectorId, CONNECTOR_IDS));
+  await db.delete(connectors).where(inArray(connectors.connectorId, CONNECTOR_IDS));
+
   // Transiently drop the CHECK constraint so we can seed `per_user` fixture rows
   // (the pre-migration state) — restored by the last test / afterAll below.
   await db.execute(sql.raw(`ALTER TABLE kortix.connectors DROP CONSTRAINT IF EXISTS ${CONSTRAINT_NAME}`));
+  // The later connection-identity cutover permits one legacy credential per
+  // connector. Drop that newer index while recreating the older migration's
+  // input shape, then restore it after the fixture rows are deleted.
+  await db.execute(sql.raw(`DROP INDEX IF EXISTS kortix.${LEGACY_CREDENTIAL_INDEX}`));
 
   await db.insert(connectors).values([
     {
@@ -115,12 +133,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!seeded) return;
   await db.delete(connectionCredentials).where(inArray(connectionCredentials.connectorId, CONNECTOR_IDS));
   await db.delete(connectors).where(inArray(connectors.connectorId, CONNECTOR_IDS));
   // Defensive: guarantee the constraint is back even if an assertion above threw
   // before the dedicated test restored it.
   await restoreCheckConstraint();
+  await restoreLegacyCredentialIndex();
 });
 
 describe('per_user → shared credential-mode migration', () => {

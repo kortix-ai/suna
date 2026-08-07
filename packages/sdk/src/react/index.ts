@@ -98,6 +98,7 @@ export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-
 export {
   useProjectApps,
   useAppDeployments,
+  useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
 } from './use-project-apps';

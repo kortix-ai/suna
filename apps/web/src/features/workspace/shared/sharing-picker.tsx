@@ -138,7 +138,7 @@ export function SharingPicker({
  * listGroups, keyed off the account the project belongs to (derived from the
  * access response, so no extra prop plumbing).
  */
-function SubjectPicker({
+export function SubjectPicker({
   projectId,
   memberIds,
   groupIds,

@@ -8,9 +8,20 @@ import {
 } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { assertAppBudgetAvailable } from './budget';
+import { AppBudgetExceededError, assertAppBudgetAvailable } from './budget';
 import { AppHostingProvider } from './hosting';
 import { resolveExperimentalFeature } from '../experimental/features';
+import { enqueueCurrentAppRuntime } from './deployment-worker';
+import {
+  appAccessCookie,
+  appAccessCookieName,
+  appAccessibleToUser,
+  appAccessSecret,
+  cookieValue,
+  createAppAccessToken,
+  verifyAppAccessToken,
+  type AppAccessMode,
+} from './access';
 
 const EDGE_HOST_HEADER = 'x-kortix-app-host';
 const EDGE_TIMESTAMP_HEADER = 'x-kortix-app-timestamp';
@@ -21,11 +32,11 @@ const ACTIVITY_LEASE_MS = 60_000;
 const APP_FRAME_ANCESTORS =
   "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*";
 
-function appStoppedResponse(): Response {
-  return new Response(JSON.stringify({ error: 'App is stopped', code: 'app_stopped' }), {
-    status: 503,
-    headers: { 'content-type': 'application/json', 'retry-after': '60' },
-  });
+function appWakeSupersededResponse(): Response {
+  return Response.json({
+    error: 'App start was superseded by a newer lifecycle request',
+    code: 'app_start_superseded',
+  }, { status: 409 });
 }
 
 type PublicDeploymentStatus =
@@ -38,13 +49,14 @@ type PublicDeploymentStatus =
   | 'failed'
   | 'cancelled';
 
-type PublicAppStatus = PublicDeploymentStatus | 'waiting' | 'unavailable';
+type PublicAppStatus = PublicDeploymentStatus | 'waiting' | 'starting' | 'budget';
 
 const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   title: string;
   message: string;
   code: string;
   progress: boolean;
+  httpStatus?: number;
 }> = {
   waiting: {
     title: 'Waiting for first deployment',
@@ -88,6 +100,19 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
     code: 'app_deployment_activating',
     progress: true,
   },
+  starting: {
+    title: 'Starting your App',
+    message: 'Kortix is resuming the serverless runtime. This page will continue automatically.',
+    code: 'app_starting',
+    progress: true,
+  },
+  budget: {
+    title: 'App paused',
+    message: 'This App reached its monthly compute limit. The owner can increase the limit in Kortix Apps.',
+    code: 'app_budget_exceeded',
+    progress: false,
+    httpStatus: 402,
+  },
   failed: {
     title: 'Deployment failed',
     message: 'Open Kortix Apps or run kortix apps logs to inspect the deployment.',
@@ -100,12 +125,6 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
     code: 'app_deployment_cancelled',
     progress: false,
   },
-  unavailable: {
-    title: 'App temporarily unavailable',
-    message: 'Kortix could not start this App. Retry shortly.',
-    code: 'app_unavailable',
-    progress: false,
-  },
 };
 
 function appBrowserNavigation(request: Request): boolean {
@@ -115,7 +134,7 @@ function appBrowserNavigation(request: Request): boolean {
 }
 
 function publicDeploymentStatus(deployment: { status: string } | null): {
-  status: PublicDeploymentStatus | 'unavailable';
+  status: PublicDeploymentStatus | 'starting';
 } | null {
   if (!deployment) return null;
   if (
@@ -130,7 +149,7 @@ function publicDeploymentStatus(deployment: { status: string } | null): {
   ) {
     return { status: deployment.status };
   }
-  return { status: 'unavailable' };
+  return { status: 'starting' };
 }
 
 function escapeHtml(value: string): string {
@@ -146,7 +165,7 @@ export function appPublicStatusResponse(
 ): Response {
   const status = deployment?.status ?? 'waiting';
   const copy = PUBLIC_STATUS_COPY[status];
-  const httpStatus = copy.progress ? 202 : 503;
+  const httpStatus = copy.httpStatus ?? (copy.progress ? 202 : 503);
   const headers = new Headers({
     'cache-control': 'no-store',
     'content-security-policy':
@@ -160,6 +179,8 @@ export function appPublicStatusResponse(
     return Response.json({
       error: status === 'waiting'
         ? 'App is waiting for its first deployment'
+        : status === 'budget'
+          ? 'App compute budget reached'
         : `App deployment is ${status === 'checking' ? 'checking readiness' : status}`,
       code: copy.code,
       status,
@@ -170,12 +191,15 @@ export function appPublicStatusResponse(
   const refresh = copy.progress ? '<meta http-equiv="refresh" content="3">' : '';
   const documentTitle = status === 'building'
     ? `Building ${name}`
+    : status === 'starting'
+      ? `Starting ${name}`
     : `${escapeHtml(copy.title)} · ${name}`;
+  const heading = status === 'starting' ? `Starting ${name}` : escapeHtml(copy.title);
   headers.set('content-type', 'text/html; charset=utf-8');
   return new Response(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${refresh}<title>${documentTitle}</title>
 <style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:650}.glyph{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:currentColor}.glyph:after{content:"K";color:light-dark(#fff,#191918);font-size:12px}.state{display:flex;align-items:center;gap:9px;color:light-dark(#666662,#aaa9a3);font-size:12px}.dot{width:8px;height:8px;border-radius:999px;background:${copy.progress ? '#e6a522' : '#d74a4a'}${copy.progress ? ';animation:pulse 1.4s ease-in-out infinite' : ''}}h1{margin:12px 0 6px;font-size:20px;line-height:1.25;letter-spacing:-.02em}p{margin:0;color:light-dark(#666662,#aaa9a3)}code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@media(prefers-reduced-motion:reduce){.dot{animation:none}}</style></head>
-<body><main class="card"><div class="mark"><span class="glyph"></span>Kortix Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${escapeHtml(copy.title)}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
+<body><main class="card"><div class="mark"><span class="glyph"></span>Kortix Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${heading}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
     status: httpStatus,
     headers,
   });
@@ -185,15 +209,143 @@ export function appPublicUnavailableResponse(
   request = new Request('https://apps.kortix.com/'),
   app: { name: string } = { name: 'App' },
 ): Response {
+  return appPublicStatusResponse(request, app, { status: 'starting' });
+}
+
+export function appPublicBudgetResponse(
+  request: Request,
+  app: { name: string },
+): Response {
+  return appPublicStatusResponse(request, app, { status: 'budget' });
+}
+
+function accessTokenMatchesMode(
+  token: ReturnType<typeof verifyAppAccessToken>,
+  app: { accessMode: string; accessRevision: number },
+): boolean {
+  if (!token || token.revision !== app.accessRevision) return false;
+  return app.accessMode === 'password' ? token.kind === 'password' : token.kind === 'kortix';
+}
+
+type AppAccessRow = {
+  appId: string;
+  accountId: string;
+  projectId: string;
+  name: string;
+  accessMode: string;
+  accessPasswordHash: string | null;
+  accessRevision: number;
+  createdBy: string | null;
+  updatedAt: Date;
+};
+
+type AppUserAccessVerifier = (app: AppAccessRow, userId: string) => Promise<boolean>;
+
+async function accessTokenAuthorizesRequest(
+  token: ReturnType<typeof verifyAppAccessToken>,
+  app: AppAccessRow,
+  verifyUserAccess: AppUserAccessVerifier,
+): Promise<boolean> {
+  if (!accessTokenMatchesMode(token, app)) return false;
+  if (token!.kind === 'password') return true;
+  return Boolean(token!.userId && await verifyUserAccess(app, token!.userId));
+}
+
+function safeAppReturnTo(value: string): string {
+  return value.startsWith('/') && !value.startsWith('//') ? value : '/';
+}
+
+function appAccessResponse(
+  request: Request,
+  app: { appId: string; projectId: string; name: string; accessMode: string },
+  invalidPassword = false,
+  returnTo = safeAppReturnTo(new URL(request.url).pathname + new URL(request.url).search),
+): Response {
+  const mode = app.accessMode as AppAccessMode;
   if (!appBrowserNavigation(request)) {
     return Response.json(
-      { error: 'App is temporarily unavailable', code: 'app_unavailable' },
-      { status: 503, headers: { 'retry-after': '5' } },
+      { error: 'App authentication required', code: 'app_auth_required', access_mode: mode },
+      { status: 401, headers: { 'cache-control': 'no-store' } },
     );
   }
-  const response = appPublicStatusResponse(request, app, { status: 'unavailable' });
-  response.headers.set('retry-after', '5');
-  return response;
+  const name = escapeHtml(app.name);
+  const isPassword = mode === 'password';
+  const action = isPassword
+    ? `<form method="post" action="/_kortix/access/password"><label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="current-password"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><button type="submit">Open App</button>${invalidPassword ? '<p class="error" role="alert">The password is incorrect.</p>' : ''}</form>`
+    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
+  const message = isPassword
+    ? 'Enter the password configured by the App owner.'
+    : 'Sign in with a Kortix account that can access this App.';
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Access ${name}</title><style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{margin-bottom:28px;font-weight:650}h1{margin:0 0 6px;font-size:20px;letter-spacing:-.02em}p{margin:0 0 20px;color:light-dark(#666662,#aaa9a3)}form{display:grid;gap:10px}label{font-size:12px;font-weight:600}input{width:100%;height:42px;padding:0 12px;border:1px solid light-dark(#c9c9c3,#3a3a37);border-radius:8px;background:transparent;color:inherit}button,.button{display:flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border:0;border-radius:999px;background:light-dark(#171716,#f4f4f1);color:light-dark(#fff,#171716);font:inherit;font-weight:600;text-decoration:none;cursor:pointer}.error{margin:0;color:#d74a4a;font-size:12px}</style></head><body><main class="card"><div class="mark">Kortix Apps</div><h1>${name}</h1><p>${escapeHtml(message)}</p>${action}</main></body></html>`, {
+    status: 401,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; ${APP_FRAME_ANCESTORS}`,
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
+export async function authorizeAppRequest(
+  request: Request,
+  url: URL,
+  app: AppAccessRow,
+  verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
+): Promise<Response | null> {
+  if (app.accessMode === 'public') return null;
+  const secret = appAccessSecret();
+  const queryToken = url.searchParams.get('__kortix_access');
+  if (queryToken && (request.method === 'GET' || request.method === 'HEAD')) {
+    const verified = verifyAppAccessToken(queryToken, app.appId, secret);
+    if (await accessTokenAuthorizesRequest(verified, app, verifyUserAccess)) {
+      const session = createAppAccessToken({
+        appId: app.appId,
+        kind: verified!.kind,
+        userId: verified!.userId,
+        revision: app.accessRevision,
+        expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
+      }, secret);
+      url.searchParams.delete('__kortix_access');
+      return new Response(null, {
+        status: 303,
+        headers: { location: `${url.pathname}${url.search}`, 'set-cookie': appAccessCookie(session) },
+      });
+    }
+  }
+  const browserToken = cookieValue(request, appAccessCookieName());
+  if (
+    browserToken &&
+    await accessTokenAuthorizesRequest(
+      verifyAppAccessToken(browserToken, app.appId, secret),
+      app,
+      verifyUserAccess,
+    )
+  ) {
+    return null;
+  }
+  if (app.accessMode === 'password' && request.method === 'POST' && url.pathname === '/_kortix/access/password') {
+    const form = await request.formData().catch(() => null);
+    const password = String(form?.get('password') ?? '');
+    if (app.accessPasswordHash && await Bun.password.verify(password, app.accessPasswordHash)) {
+      const session = createAppAccessToken({
+        appId: app.appId,
+        kind: 'password',
+        revision: app.accessRevision,
+        expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
+      }, secret);
+      const location = safeAppReturnTo(String(form?.get('return_to') ?? '/'));
+      return new Response(null, { status: 303, headers: { location, 'set-cookie': appAccessCookie(session) } });
+    }
+    return appAccessResponse(
+      request,
+      app,
+      true,
+      safeAppReturnTo(String(form?.get('return_to') ?? '/')),
+    );
+  }
+  return appAccessResponse(request, app);
 }
 
 export interface ResolvedAppHost {
@@ -323,7 +475,7 @@ async function waitForWake(runtimeId: string, deadline: number) {
       runtime.status === 'stopped' &&
       (!runtime.wakeLeaseUntil || runtime.wakeLeaseUntil.getTime() <= Date.now())
     ) {
-      throw appStoppedResponse();
+      throw new Error('App wake lease ended before readiness');
     }
     if (runtime.status === 'error' || runtime.status === 'deleted') {
       throw new Error(`App runtime cannot wake from ${runtime.status}`);
@@ -352,7 +504,7 @@ export async function ensureAppRuntimeRunning(
       .set({ desiredState: 'running', updatedAt: new Date() })
       .where(and(eq(apps.appId, app.appId), isNull(apps.deletedAt)))
       .returning();
-    if (!reactivated) throw appStoppedResponse();
+    if (!reactivated) throw new Error('App no longer exists');
     app = reactivated;
   }
   if (!appRuntimeNeedsWake(loaded.runtime)) return loaded.runtime;
@@ -409,7 +561,7 @@ export async function ensureAppRuntimeRunning(
           eq(appRuntimes.wakeLeaseOwner, owner),
         ));
       await pauseComputeSession(leased.runtimeId, stoppedAt);
-      throw appStoppedResponse();
+      throw appWakeSupersededResponse();
     }
 
     const readyAt = new Date();
@@ -446,13 +598,23 @@ export async function ensureAppRuntimeRunning(
     });
     return running;
   } catch (error) {
+    const stoppedAt = new Date();
     await db
       .update(appRuntimes)
-      .set({ status: 'error', wakeLeaseOwner: null, wakeLeaseUntil: null, updatedAt: new Date() })
+      .set({
+        status: 'stopped',
+        stoppedAt,
+        activityLeaseUntil: null,
+        idleDeadlineAt: null,
+        wakeLeaseOwner: null,
+        wakeLeaseUntil: null,
+        updatedAt: stoppedAt,
+      })
       .where(and(
         eq(appRuntimes.runtimeId, loaded.runtime.runtimeId),
         eq(appRuntimes.wakeLeaseOwner, owner),
       ));
+    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch(() => {});
     throw error;
   }
 }
@@ -509,6 +671,8 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   }
   const state = await loadPublicAppState(matched.routeKey);
   if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
+  const accessResponse = await authorizeAppRequest(request, url, state.app);
+  if (accessResponse) return accessResponse;
   if (
     !state.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
@@ -519,12 +683,18 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
+  const coldStart = appRuntimeNeedsWake(state.runtime);
   let runtime;
   try {
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
   } catch (error) {
-    if (error instanceof Response) return error;
+    if (error instanceof AppBudgetExceededError) return appPublicBudgetResponse(request, state.app);
     return appPublicUnavailableResponse(request, state.app);
+  }
+  if (coldStart) {
+    await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
+      console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
+    });
   }
 
   const now = new Date();

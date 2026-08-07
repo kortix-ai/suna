@@ -6,17 +6,166 @@ process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'true';
 
 const {
   appPublicUnavailableResponse,
+  appPublicBudgetResponse,
   appPublicResponseHeaders,
   appPublicStatusResponse,
   appRuntimeNeedsWake,
   appEdgeSignature,
   appUpstreamHeaders,
+  authorizeAppRequest,
   resolveAppHost,
   resolveAppRequest,
   verifyAppEdgeRequest,
 } = await import('./public-proxy');
+const { createAppAccessToken } = await import('./access');
 
 describe('Apps public edge', () => {
+  test('public Apps bypass browser authentication', async () => {
+    const request = new Request('https://dev-public-aaaaaaaaaaaaaaaa.apps.kortix.com/asset.js');
+    const response = await authorizeAppRequest(request, new URL(request.url), {
+      appId: '11111111-1111-4111-8111-111111111111',
+      accountId: '99999999-9999-4999-8999-999999999999',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      name: 'Public App',
+      accessMode: 'public',
+      accessPasswordHash: null,
+      accessRevision: 1,
+      createdBy: null,
+      updatedAt: new Date(),
+    });
+
+    expect(response).toBeNull();
+  });
+
+  test('requires Kortix access by default and exchanges a scoped link into a host-only cookie', async () => {
+    const app = {
+      appId: '11111111-1111-4111-8111-111111111111',
+      accountId: '99999999-9999-4999-8999-999999999999',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      name: 'Private App',
+      accessMode: 'private',
+      accessPasswordHash: null,
+      accessRevision: 7,
+      createdBy: '33333333-3333-4333-8333-333333333333',
+      updatedAt: new Date('2026-08-07T19:00:00.000Z'),
+    };
+    const denied = await authorizeAppRequest(
+      new Request('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
+        headers: { accept: 'text/html' },
+      }),
+      new URL('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/'),
+      app,
+    );
+    expect(denied?.status).toBe(401);
+    expect(await denied?.text()).toContain('Continue with Kortix');
+
+    const token = createAppAccessToken({
+      appId: app.appId,
+      kind: 'kortix',
+      userId: '33333333-3333-4333-8333-333333333333',
+      revision: app.accessRevision,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const url = new URL(`https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/path?__kortix_access=${token}`);
+    const exchanged = await authorizeAppRequest(new Request(url), url, app, async () => true);
+    expect(exchanged?.status).toBe(303);
+    expect(exchanged?.headers.get('location')).toBe('/path');
+    expect(exchanged?.headers.get('set-cookie')).toContain('__Host-kortix_app_access=');
+    expect(exchanged?.headers.get('set-cookie')).not.toContain('Domain=');
+
+    const cookie = exchanged!.headers.get('set-cookie')!.split(';', 1)[0]!;
+    const asset = await authorizeAppRequest(
+      new Request('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/assets/app.js', {
+        headers: { cookie },
+      }),
+      new URL('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/assets/app.js'),
+      { ...app, updatedAt: new Date('2026-08-07T19:01:00.000Z') },
+      async () => true,
+    );
+    expect(asset).toBeNull();
+
+    const revoked = await authorizeAppRequest(
+      new Request('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/assets/app.js', {
+        headers: { cookie },
+      }),
+      new URL('https://dev-private-aaaaaaaaaaaaaaaa.apps.kortix.com/assets/app.js'),
+      { ...app, accessRevision: 8 },
+      async () => true,
+    );
+    expect(revoked?.status).toBe(401);
+  });
+
+  test('preserves the requested deep path through the password form', async () => {
+    const request = new Request(
+      'https://dev-password-aaaaaaaaaaaaaaaa.apps.kortix.com/reports/weekly?team=core',
+      { headers: { accept: 'text/html' } },
+    );
+    const response = await authorizeAppRequest(request, new URL(request.url), {
+      appId: '44444444-4444-4444-8444-444444444444',
+      accountId: '99999999-9999-4999-8999-999999999999',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      name: 'Password App',
+      accessMode: 'password',
+      accessPasswordHash: 'unused',
+      accessRevision: 3,
+      createdBy: null,
+      updatedAt: new Date(),
+    });
+
+    expect(response?.status).toBe(401);
+    expect(await response?.text()).toContain(
+      'name="return_to" value="/reports/weekly?team=core"',
+    );
+  });
+
+  test('verifies an App password and never stores it in the browser cookie', async () => {
+    const password = 'correct-horse-battery-staple';
+    const request = new Request('https://dev-password-aaaaaaaaaaaaaaaa.apps.kortix.com/_kortix/access/password', {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password, return_to: '/dashboard' }),
+    });
+    const response = await authorizeAppRequest(request, new URL(request.url), {
+      appId: '44444444-4444-4444-8444-444444444444',
+      accountId: '99999999-9999-4999-8999-999999999999',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      name: 'Password App',
+      accessMode: 'password',
+      accessPasswordHash: await Bun.password.hash(password, { algorithm: 'argon2id' }),
+      accessRevision: 2,
+      createdBy: null,
+      updatedAt: new Date(),
+    });
+    expect(response?.status).toBe(303);
+    expect(response?.headers.get('location')).toBe('/dashboard');
+    expect(response?.headers.get('set-cookie')).not.toContain(password);
+  });
+
+  test('rejects an incorrect App password without setting a cookie', async () => {
+    const password = 'correct-horse-battery-staple';
+    const request = new Request('https://dev-password-aaaaaaaaaaaaaaaa.apps.kortix.com/_kortix/access/password', {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: 'incorrect-password', return_to: '/reports' }),
+    });
+    const response = await authorizeAppRequest(request, new URL(request.url), {
+      appId: '44444444-4444-4444-8444-444444444444',
+      accountId: '99999999-9999-4999-8999-999999999999',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      name: 'Password App',
+      accessMode: 'password',
+      accessPasswordHash: await Bun.password.hash(password, { algorithm: 'argon2id' }),
+      accessRevision: 2,
+      createdBy: null,
+      updatedAt: new Date(),
+    });
+
+    expect(response?.status).toBe(401);
+    expect(response?.headers.get('set-cookie')).toBeNull();
+    const html = await response?.text();
+    expect(html).toContain('The password is incorrect.');
+    expect(html).toContain('name="return_to" value="/reports"');
+  });
   test('revalidates a running row after its Kortix idle deadline passes', () => {
     const now = new Date('2026-08-07T10:30:00.000Z');
     expect(appRuntimeNeedsWake({
@@ -101,18 +250,45 @@ describe('Apps public edge', () => {
     expect(headers.get('accept-encoding')).toBe('identity');
   });
 
-  test('hides owner billing and provider details from public callers', async () => {
+  test('returns a machine-readable starting state without owner or provider details', async () => {
     const response = appPublicUnavailableResponse();
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get('retry-after')).toBe('5');
+    expect(response.status).toBe(202);
+    expect(response.headers.get('retry-after')).toBe('3');
     expect(await response.json()).toEqual({
-      error: 'App is temporarily unavailable',
-      code: 'app_unavailable',
+      error: 'App deployment is starting',
+      code: 'app_starting',
+      status: 'starting',
     });
   });
 
-  test('renders a branded unavailable page for browser requests', async () => {
+  test('renders a stable budget state without exposing account billing details', async () => {
+    const browser = appPublicBudgetResponse(
+      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
+        headers: { accept: 'text/html' },
+      }),
+      { name: 'Storefront' },
+    );
+    expect(browser.status).toBe(402);
+    expect(browser.headers.get('retry-after')).toBeNull();
+    const html = await browser.text();
+    expect(html).toContain('App paused');
+    expect(html).toContain('monthly compute limit');
+    expect(html).not.toContain('http-equiv="refresh"');
+
+    const machine = appPublicBudgetResponse(
+      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/'),
+      { name: 'Storefront' },
+    );
+    expect(machine.status).toBe(402);
+    expect(await machine.json()).toEqual({
+      error: 'App compute budget reached',
+      code: 'app_budget_exceeded',
+      status: 'budget',
+    });
+  });
+
+  test('renders an auto-refreshing boot page instead of unavailable JSON for browser requests', async () => {
     const response = appPublicUnavailableResponse(
       new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
         headers: { accept: 'text/html' },
@@ -120,12 +296,14 @@ describe('Apps public edge', () => {
       { name: 'Storefront' },
     );
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get('retry-after')).toBe('5');
+    expect(response.status).toBe(202);
+    expect(response.headers.get('retry-after')).toBe('3');
     expect(response.headers.get('content-type')).toContain('text/html');
     const html = await response.text();
-    expect(html).toContain('App temporarily unavailable');
-    expect(html).toContain('Storefront');
+    expect(html).toContain('Starting Storefront');
+    expect(html).not.toContain('temporarily unavailable');
+    expect(html).not.toContain('app_unavailable');
+    expect(html).toContain('http-equiv="refresh"');
   });
 
   test('allows Apps to render inside Kortix while preserving the rest of the upstream CSP', () => {

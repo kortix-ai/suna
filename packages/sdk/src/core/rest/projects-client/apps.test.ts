@@ -3,10 +3,12 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createApp,
+  createAppAccessSession,
   createAppDeployment,
   deleteApp,
   finalizeAppArtifact,
   getApp,
+  getAppAccess,
   getAppDeployment,
   getAppDeploymentLogs,
   listAppDeployments,
@@ -16,9 +18,12 @@ import {
   startApp,
   stopApp,
   updateApp,
+  updateAppAccess,
   uploadAppArtifactArchive,
   type AppDeployment,
+  type AppAccessMode,
   type AppHostingProvider,
+  type UpdateAppAccessInput,
 } from './apps';
 
 type Equal<A, B> =
@@ -69,6 +74,23 @@ test('AppDeployment exposes the immutable deploying actor', () => {
   expect(deployment.actor_type).toBe('agent');
 });
 
+test('Apps hosting excludes the retired same-machine provider', () => {
+  // @ts-expect-error local-docker is not a supported Apps hosting provider.
+  const provider: AppHostingProvider = 'local-docker';
+  expect(provider as string).toBe('local-docker');
+});
+
+test('Apps publishes default-private access modes and grant inputs', () => {
+  const modes: AppAccessMode[] = ['private', 'project', 'restricted', 'public', 'password'];
+  const input: UpdateAppAccessInput = {
+    mode: 'restricted',
+    member_ids: ['11111111-1111-4111-8111-111111111111'],
+    group_ids: [],
+  };
+  expect(modes).toHaveLength(5);
+  expect(input.mode).toBe('restricted');
+});
+
 test('Apps CRUD uses the project-scoped API contract', async () => {
   const app = {
     app_id: 'app-1',
@@ -77,6 +99,8 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
     slug: 'demo',
     name: 'Demo',
     url: 'https://demo.apps.kortix.com',
+    access_mode: 'private' as const,
+    access_revision: 1,
     desired_state: 'running' as const,
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
@@ -112,6 +136,44 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
 
   await deleteApp('project-1', 'app-1');
   expect(last().method).toBe('DELETE');
+});
+
+test('App access reads, updates, and creates a browser exchange URL through project-scoped REST routes', async () => {
+  const policy = {
+    mode: 'restricted' as const,
+    revision: 4,
+    member_ids: ['11111111-1111-4111-8111-111111111111'],
+    group_ids: [],
+    password_configured: false,
+  };
+  const session = {
+    url: 'https://dev-demo-aaaaaaaaaaaaaaaa.apps.kortix.com/?__kortix_access=token',
+    expires_at: '2026-08-07T20:05:00.000Z',
+  };
+  responses.push({ body: policy }, { body: { ...policy, revision: 5 } }, { body: session });
+
+  expect(await getAppAccess('project-1', 'app-1')).toEqual(policy);
+  expect(last()).toMatchObject({
+    method: 'GET',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access',
+  });
+
+  expect(await updateAppAccess('project-1', 'app-1', {
+    mode: 'restricted',
+    member_ids: policy.member_ids,
+  })).toEqual({ ...policy, revision: 5 });
+  expect(last()).toMatchObject({
+    method: 'PATCH',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access',
+    body: { mode: 'restricted', member_ids: policy.member_ids },
+  });
+
+  expect(await createAppAccessSession('project-1', 'app-1')).toEqual(session);
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access-session',
+    body: {},
+  });
 });
 
 test('artifact registration, finalization, and deployment preserve the wire spec', async () => {

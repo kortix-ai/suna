@@ -3,14 +3,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createApp,
+  createAppAccessSession,
   createAppDeployment,
   deleteApp,
+  getAppAccess,
   listAppDeployments,
   listApps,
   rollbackApp,
   startApp,
   stopApp,
   updateApp,
+  updateAppAccess,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -92,4 +95,40 @@ export function useAppDeployments(
   });
 
   return { ...query, deploy, rollback };
+}
+
+/** App access policy plus a short-lived URL that exchanges into a host-only cookie. */
+export function useAppAccess(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.project.appAccess(projectId ?? '', appId ?? '');
+  const sessionQueryKey = qk.project.appAccessSession(projectId ?? '', appId ?? '');
+  const policy = useQuery({
+    queryKey,
+    queryFn: () => getAppAccess(projectId as string, appId as string),
+    enabled: !!projectId && !!appId,
+    ...contract('config'),
+  });
+  const session = useQuery({
+    queryKey: sessionQueryKey,
+    queryFn: () => createAppAccessSession(projectId as string, appId as string),
+    enabled: !!projectId && !!appId,
+    staleTime: 4 * 60_000,
+    gcTime: 5 * 60_000,
+    retry: false,
+  });
+  const update = useMutation({
+    mutationFn: (input: Parameters<typeof updateAppAccess>[2]) =>
+      updateAppAccess(projectId as string, appId as string, input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey }),
+        queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: qk.project.apps(projectId ?? '') }),
+      ]);
+    },
+  });
+  return { policy, session, update };
 }

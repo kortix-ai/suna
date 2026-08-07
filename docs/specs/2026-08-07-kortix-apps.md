@@ -6,8 +6,8 @@ Status: implementation contract
 
 ## Problem
 
-Kortix can run long-lived project sessions in Daytona, Platinum, E2B, and local
-Docker sandboxes. It does not expose a durable application deployment product.
+Kortix can run long-lived project sessions in Daytona, Platinum, and E2B
+sandboxes. It does not expose a durable application deployment product.
 Users need one command and one SDK surface that deploys a static directory,
 Docker build context, or OCI image to a stable Kortix URL.
 
@@ -147,6 +147,9 @@ use direct host routing when `KORTIX_APPS_ALLOW_LOCAL_EDGE=true`.
 - `slug varchar(63) not null`
 - `name text not null`
 - `route_key varchar(20) unique not null`
+- `access_mode private|project|restricted|public|password not null default private`
+- `access_password_hash text null`
+- `access_revision int not null default 1`
 - `desired_state running|stopped not null`
 - `active_deployment_id uuid null`
 - `cpu_cores int not null`
@@ -159,6 +162,16 @@ use direct host routing when `KORTIX_APPS_ALLOW_LOCAL_EDGE=true`.
 - `created_at`, `updated_at`, `deleted_at`
 
 Unique live index: `(project_id, slug) WHERE deleted_at IS NULL`.
+
+### `app_access_grants`
+
+- `grant_id uuid primary key`
+- `app_id uuid not null`
+- `principal_type member|group not null`
+- `principal_id uuid not null`
+- `created_at timestamptz not null`
+
+Unique index: `(app_id, principal_type, principal_id)`.
 
 ### `app_artifacts`
 
@@ -198,6 +211,9 @@ Unique live index: `(project_id, slug) WHERE deleted_at IS NULL`.
 - `lease_owner text null`
 - `lease_expires_at timestamptz null`
 - `started_at`, `ready_at`, `failed_at`, `created_at`, `updated_at`
+- `created_by uuid not null`
+- `source_session_id text null`
+- `actor_type human|agent|service_account|system not null`
 
 Unique index: `(app_id, version)`.
 
@@ -281,7 +297,7 @@ A failed deployment never changes the active pointer.
 ## Cold request state machine
 
 1. Resolve the App by route key.
-2. Reject deleted or manually stopped Apps.
+2. Authorize the request before starting compute.
 3. Resolve the active deployment and live runtime.
 4. If running, proxy immediately.
 5. If stopped, acquire a DB wake lease.
@@ -291,14 +307,43 @@ A failed deployment never changes the active pointer.
 9. Mark the runtime running.
 10. Proxy the original request.
 
-Provider starts are idempotent. A wake lease expires after 90 seconds.
+Provider starts are idempotent. A wake lease expires after 120 seconds.
 
 The API maintains an activity lease while an HTTP stream or WebSocket remains
 open. The idle reaper stops only runtimes whose idle deadline and activity lease
 have both expired.
 
-Manual stop sets `apps.desired_state=stopped` before stopping the runtime.
-Public traffic cannot reverse that state.
+Manual stop sets `apps.desired_state=stopped` before stopping the runtime. The
+next authorized public request atomically restores `desired_state=running`,
+waits for readiness, and proxies that same request. `start` remains a proactive
+warm operation.
+
+Browser requests receive branded HTML for waiting, queued, validating,
+building, provisioning, checking, starting, failed, cancelled, and budget
+states. Transient machine requests receive HTTP `202`, `Retry-After: 3`, and
+`code=app_starting`. Cold starts never expose `app_stopped`, `app_unavailable`,
+or a temporary-unavailable page.
+
+After a cold start, the API compares the active deployment's `runtime_version`
+with the current App runtime. A PostgreSQL advisory lock queues at most one
+immutable replacement. The old deployment continues serving until the new
+`kortix-appd` and Caddy deployment reaches readiness.
+
+## Access control
+
+New Apps use `private` access. Supported modes are:
+
+- `private`: only `created_by`.
+- `project`: every current project reader.
+- `restricted`: project members and groups in `app_access_grants`.
+- `public`: no authentication.
+- `password`: a user-supplied password stored only as an Argon2id hash.
+
+Kortix-authenticated users request a five-minute App exchange URL. The App host
+exchanges it for an eight-hour `__Host-kortix_app_access` cookie with
+`HttpOnly`, `Secure`, and `SameSite=Lax`. The cookie has no `Domain` attribute.
+Each policy update increments `access_revision`, which revokes existing App
+cookies. The API never returns the password hash.
 
 ## Billing and abuse controls
 
@@ -308,9 +353,10 @@ Apps reuse `sandbox_compute_sessions`. The table gains `workload_type` and
 The lifecycle opens a compute session after provider start and closes it after
 provider stop. Billing uses the persisted deployment resource specification.
 
-Wake checks the account entitlement and the App monthly budget. A public caller
-receives a generic unavailable response when the owner cannot fund a wake. The
-authenticated App API returns the exact billing error.
+Wake checks the account entitlement and the App monthly budget. A browser sees
+a stable branded `402` budget page without account details. A machine client
+receives `402 app_budget_exceeded`. The authenticated App API returns the exact
+spent and budget values.
 
 The Cloudflare layer applies per-IP request limits. The API applies per-App wake
 and concurrent-request limits. One runtime bounds provider compute cost even
@@ -325,6 +371,9 @@ Authenticated project routes:
 - `GET /v1/projects/:projectId/apps/:appId`
 - `PATCH /v1/projects/:projectId/apps/:appId`
 - `DELETE /v1/projects/:projectId/apps/:appId`
+- `GET /v1/projects/:projectId/apps/:appId/access`
+- `PATCH /v1/projects/:projectId/apps/:appId/access`
+- `POST /v1/projects/:projectId/apps/:appId/access-session`
 - `POST /v1/projects/:projectId/apps/artifacts/uploads`
 - `POST /v1/projects/:projectId/apps/artifacts/:artifactId/complete`
 - `POST /v1/projects/:projectId/apps/:appId/deployments`
@@ -352,6 +401,10 @@ transport.
 The SDK supports browser `Blob` uploads and `Uint8Array` uploads. Directory
 packing remains a CLI concern.
 
+Use `apps.access.get`, `apps.access.update`, and `apps.access.session` for access.
+Use `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`,
+`apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle.
+
 ## CLI
 
 Commands:
@@ -366,11 +419,14 @@ kortix apps logs <slug-or-id> [--follow] [--build]
 kortix apps rollback <slug-or-id> <version>
 kortix apps start <slug-or-id>
 kortix apps stop <slug-or-id>
+kortix apps access <slug-or-id> [--mode <mode>] [--password <value>] [--members <ids>] [--groups <ids>]
 kortix apps open <slug-or-id>
 kortix apps rm <slug-or-id>
 ```
 
-Deploy waits by default. `--no-wait` returns after queueing.
+Deploy waits by default. `--no-wait` returns after queueing. Deploy accepts
+`--access`, `--password`, `--members`, and `--groups`. Passwords are CLI input
+only. They never belong in `kortix.yaml`.
 
 The packer applies `.gitignore`, `.dockerignore`, and `.kortixignore`. It always
 excludes `.git`, `.env*`, `node_modules`, and existing archive output.
@@ -412,9 +468,13 @@ The project sidebar lists Apps under Services. The page shows hostname, active
 version, deployment state, runtime state, resource size, last request, and
 monthly compute.
 
-The detail view includes Overview, Deployments, Logs, and Settings. It supports
-static archive upload, OCI deployment, rollback, start, stop, redeploy, and
-delete.
+The UI is an inventory for CLI- and SDK-created Apps. It has no Create App
+control. Each card shows a protected live preview, lifecycle state, access mode,
+deployment history, rollback, start, stop, access settings, and deletion.
+
+The internal Browser opens `*.apps.kortix.com` and `*.apps.localhost` directly.
+It does not send these URLs through the generic sandbox proxy because the App
+host owns authorization and uses a host-only cookie.
 
 The UI imports Apps operations from `@kortix/sdk`. It contains no raw Kortix API
 fetches.
@@ -434,12 +494,16 @@ The release is incomplete until these black-box cases pass:
 9. Idle timeout stops the runtime.
 10. The next request wakes the same runtime.
 11. An open SSE or WebSocket prevents idle stop.
-12. Manual stop blocks automatic wake.
+12. Manual stop suspends compute and the next authorized request wakes it.
 13. Rollback restores the previous deployment.
 14. Runtime and build logs are visible through API, SDK, CLI, and UI.
 15. Compute billing opens and closes exactly once per runtime interval.
 16. The App budget blocks an unfunded wake.
-17. Daytona, Platinum, and E2B satisfy provider contract tests.
+17. Daytona, Platinum, and E2B satisfy provider contract tests. Live acceptance uses Platinum and Daytona.
 18. The real CLI exits zero and prints the live URL.
 19. The deployed Dev hostname has a valid certificate and serves the App.
 20. The Dev API health version contains the merged commit SHA.
+21. New Apps are private and each access mode enforces its documented subject.
+22. A policy revision revokes an old cookie without breaking asset requests.
+23. The internal Browser preserves direct App-host navigation and cookies.
+24. A cold start queues at most one current-daemon replacement.

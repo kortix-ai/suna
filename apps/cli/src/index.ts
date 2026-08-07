@@ -3,7 +3,7 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
-import { runApps, selectedProjectAppsEnabled } from './commands/apps.ts';
+import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -221,7 +221,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'apps',
             args: '<subcommand>',
-            blurb: 'Deploy and operate serverless Apps with stable Kortix URLs',
+            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
           },
           {
             name: 'marketplace',
@@ -292,9 +292,8 @@ function tierBand(label: string): string {
   return `  ${C.faded}${label} ${'─'.repeat(dashes)}${C.reset}`;
 }
 
-function renderHelp(appsEnabled = false): string {
-  const visibleCommands = (commands: readonly Command[]) =>
-    commands.filter((command) => command.name !== 'apps' || appsEnabled);
+function renderHelp(): string {
+  const visibleCommands = (commands: readonly Command[]) => commands;
   const allCommands = TIERS.flatMap((t) =>
     t.sections.flatMap((s) => visibleCommands(s.commands)),
   );
@@ -349,7 +348,7 @@ async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
   }
-  process.stdout.write(renderHelp(await selectedProjectAppsEnabled()));
+  process.stdout.write(renderHelp());
 }
 
 /** Can we actually ask a question here? `resolveUpdateStatus` already rules out

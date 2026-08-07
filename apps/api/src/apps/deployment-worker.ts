@@ -9,9 +9,9 @@ import {
   appRuntimes,
   apps,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../config';
+import { config, SANDBOX_VERSION, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { listResolvedProjectSecrets } from '../projects/secrets';
@@ -21,7 +21,8 @@ import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { assertAppBudgetAvailable } from './budget';
 
-export const APP_RUNTIME_VERSION = '1';
+export const APP_RUNTIME_VERSION =
+  process.env.KORTIX_APP_RUNTIME_VERSION || `${SANDBOX_VERSION}:appd-v1`;
 const LEASE_MS = 2 * 60_000;
 const HEARTBEAT_MS = 30_000;
 const MAX_ATTEMPTS = 3;
@@ -34,6 +35,53 @@ const LIVE_DEPLOYMENT_STATUSES = [
 ] as const;
 
 type ClaimedDeployment = typeof appDeployments.$inferSelect;
+
+/**
+ * Queue one immutable rebuild when a cold runtime uses an older App supervisor.
+ * The current deployment keeps serving while the replacement builds. The normal
+ * activation transaction moves traffic only after the replacement is ready.
+ */
+export async function enqueueCurrentAppRuntime(
+  app: typeof apps.$inferSelect,
+  deployment: typeof appDeployments.$inferSelect,
+): Promise<boolean> {
+  if (deployment.runtimeVersion === APP_RUNTIME_VERSION) return false;
+  const inserted = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${app.appId}))`);
+    const [existing] = await tx.select({ deploymentId: appDeployments.deploymentId })
+      .from(appDeployments)
+      .where(and(
+        eq(appDeployments.appId, app.appId),
+        eq(appDeployments.runtimeVersion, APP_RUNTIME_VERSION),
+        inArray(appDeployments.status, ['queued', 'validating', 'building', 'provisioning', 'checking']),
+      ))
+      .limit(1);
+    if (existing) return false;
+    const [latest] = await tx.select({ version: appDeployments.version })
+      .from(appDeployments)
+      .where(eq(appDeployments.appId, app.appId))
+      .orderBy(desc(appDeployments.version))
+      .limit(1);
+    await tx.insert(appDeployments).values({
+      appId: app.appId,
+      artifactId: deployment.artifactId,
+      version: (latest?.version ?? 0) + 1,
+      status: 'queued',
+      sourceKind: deployment.sourceKind,
+      hostingType: deployment.hostingType,
+      hostingProvider: deployment.hostingProvider,
+      runtimeSpec: {},
+      buildSpec: deployment.buildSpec,
+      runtimeVersion: APP_RUNTIME_VERSION,
+      createdBy: deployment.createdBy,
+      sourceSessionId: null,
+      actorType: 'system',
+    });
+    return true;
+  });
+  if (inserted) triggerAppDeploymentWorker();
+  return inserted;
+}
 
 class PermanentAppDeploymentError extends Error {
   constructor(message: string, readonly code: string) {
@@ -337,7 +385,7 @@ export async function driveAppDeployment(
     await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
       sourceKind: normalized.sourceKind,
       runtimeSpec: normalized.runtimeSpec,
-      buildSpec: { source, normalized: normalized.buildSpec },
+      buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
       providerBuildId: snapshotName,
     });
     await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {

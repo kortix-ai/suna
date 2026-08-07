@@ -302,6 +302,13 @@
       "when": 1786129586815,
       "tag": "20260807190626_trial_and_entitlement_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786137170442,
+      "tag": "20260807211250_add_app_access_control_rebase",
+      "breakpoints": true
     }
   ]
 }

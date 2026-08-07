@@ -16,7 +16,17 @@ Apps is experimental and off by default. The Apps navigation remains visible for
 - Deploy server-rendered Next.js and arbitrary services with a Dockerfile and an explicit command and port.
 - Deploy an existing public image as `oci_image` with an explicit command and port.
 
-`kortix apps deploy` blocks by default until the stable URL is ready. Use `--no-wait` only when another process owns status tracking. A public request resumes a suspended runtime and returns the App after readiness. The Apps UI renders live previews and public deployment pages show queued, validating, building, provisioning, checking, failed, and unavailable states.
+`kortix apps deploy` blocks by default until the stable URL is ready. Use `--no-wait` only when another process owns status tracking. A request to a suspended App resumes its sandbox, waits for readiness, and proxies that same request. Browser navigation shows a branded page while the App is queued, validating, building, provisioning, checking, or starting. Machine clients receive `202 app_starting` with `Retry-After: 3` during a transient cold start. The public URL does not expose `app_stopped` or an unavailable cold-start state.
+
+New Apps are private. Choose one access mode:
+
+- `private`: only the creator.
+- `project`: every member who can read the project.
+- `restricted`: selected project members and groups.
+- `public`: no authentication.
+- `password`: anyone with the App password.
+
+Kortix access uses a five-minute exchange URL and an eight-hour, host-only, secure cookie. Changing an access policy increments its revision and revokes existing App cookies. Passwords are Argon2id hashes. The API and SDK never return a password or hash. Do not put a password in `kortix.yaml`.
 
 Every immutable deployment records `created_by`, `actor_type`, and its originating `source_session_id` when an agent deployed it.
 
@@ -29,6 +39,14 @@ const deployment = await apps.deployments.create(app.app_id, {
   source: { kind: 'static', spa: true },
 });
 console.log(app.url, deployment.status);
+
+await apps.access.update(app.app_id, {
+  mode: 'restricted',
+  member_ids: [memberId],
+  group_ids: [groupId],
+});
+const preview = await apps.access.session(app.app_id);
+window.open(preview.url);
 ```
 
 For OCI images, register the immutable image reference and declare the process command and public target port:
@@ -50,4 +68,12 @@ await apps.deployments.create(app.app_id, {
 });
 ```
 
-Use `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle. Hosting provider selection remains a server policy unless an operator explicitly supplies the optional deployment preference.
+Use `apps.access.get`, `apps.access.update`, `apps.access.session`, `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle. `apps.stop` suspends compute immediately. The next request resumes the App. `apps.start` warms it before traffic arrives.
+
+`kortix apps access <app>` reads a policy. Add `--mode`, `--password`, `--members`, or `--groups` to update it. `kortix apps deploy` accepts the equivalent `--access`, `--password`, `--members`, and `--groups` flags.
+
+Each cold start compares the active deployment's `runtime_version` with the current Kortix App runtime. An old deployment continues serving while Kortix asynchronously builds one immutable replacement with the latest `kortix-appd` and Caddy binaries. One PostgreSQL advisory lock prevents duplicate refreshes.
+
+The Kortix Browser opens `*.apps.kortix.com` and `*.apps.localhost` directly. Direct navigation preserves the host-only access cookie and avoids the generic sandbox proxy.
+
+Hosting provider selection remains a server policy unless an operator supplies the optional deployment preference. Managed acceptance covers Platinum and Daytona. E2B implements the same provider contract.

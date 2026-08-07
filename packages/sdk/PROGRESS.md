@@ -129,6 +129,35 @@ delegate to `qk`. The SDK package version and public export names are unchanged.
 
 **SDK package shippable to production: YES.**
 
+### 2026-08-07 — session `apps-remove-local-docker` claim
+
+Scope:
+
+- Remove `local-docker` from the public Apps hosting provider type.
+- Keep Daytona, Platinum, and E2B as supported Apps hosting providers.
+- Remove the repository-wide same-machine sandbox provider implementation and wiring.
+
+The required `tdd` skill is unavailable in this session. The work uses the same
+RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- The public `AppHostingProvider` type accepted `local-docker` before the change.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1716 pass`, `0 fail`, and `6817 expect()`
+  calls across `135` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed SDK and
+  compatibility adapter imported and constructed in Node ESM.
+- The provider rejection has a compile-time `@ts-expect-error` assertion.
+- No published export name changed. The SDK package version remains release-managed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ---
 
 ### 2026-08-07 — session `client-cache-unification` — guard hardening + 4 review follow-ups

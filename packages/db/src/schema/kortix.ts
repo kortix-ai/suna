@@ -2934,6 +2934,9 @@ export const apps = kortixSchema.table(
     slug: varchar('slug', { length: 63 }).notNull(),
     name: text('name').notNull(),
     routeKey: varchar('route_key', { length: 20 }).notNull().unique(),
+    accessMode: varchar('access_mode', { length: 16 }).default('private').notNull(),
+    accessPasswordHash: text('access_password_hash'),
+    accessRevision: integer('access_revision').default(1).notNull(),
     desiredState: varchar('desired_state', { length: 16 }).default('running').notNull(),
     activeDeploymentId: uuid('active_deployment_id'),
     cpuCores: integer('cpu_cores').default(1).notNull(),
@@ -2951,6 +2954,11 @@ export const apps = kortixSchema.table(
   },
   (table) => [
     check('apps_desired_state_check', sql`${table.desiredState} IN ('running', 'stopped')`),
+    check(
+      'apps_access_mode_check',
+      sql`${table.accessMode} IN ('private', 'project', 'restricted', 'public', 'password')`,
+    ),
+    check('apps_access_revision_check', sql`${table.accessRevision} > 0`),
     check('apps_cpu_check', sql`${table.cpuCores} BETWEEN 1 AND 64`),
     check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
     check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
@@ -2961,6 +2969,28 @@ export const apps = kortixSchema.table(
       .where(sql`${table.deletedAt} IS NULL`),
     index('apps_account_idx').on(table.accountId),
     index('apps_route_key_idx').on(table.routeKey),
+  ],
+);
+
+/** Member and group allow-list for an App with restricted access. */
+export const appAccessGrants = kortixSchema.table(
+  'app_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    appId: uuid('app_id')
+      .notNull()
+      .references(() => apps.appId, { onDelete: 'cascade' }),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('app_access_grants_app_idx').on(table.appId),
+    uniqueIndex('app_access_grants_unique').on(
+      table.appId,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 

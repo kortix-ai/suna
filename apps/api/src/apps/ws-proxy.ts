@@ -4,8 +4,12 @@ import { type SandboxProviderName } from '../config';
 import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
 import { AppHostingProvider } from './hosting';
+import { enqueueCurrentAppRuntime } from './deployment-worker';
+import { AppBudgetExceededError } from './budget';
 import {
+  appRuntimeNeedsWake,
   appUpstreamHeaders,
+  authorizeAppRequest,
   ensureAppRuntimeRunning,
   loadPublicApp,
   resolveAppRequest,
@@ -51,21 +55,50 @@ async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Pro
   ]);
 }
 
+export interface AppWsUpgradeDependencies {
+  loadPublicApp: typeof loadPublicApp;
+  authorizeAppRequest: typeof authorizeAppRequest;
+  createHosting: () => AppHostingProvider;
+  ensureAppRuntimeRunning: typeof ensureAppRuntimeRunning;
+  enqueueCurrentAppRuntime: typeof enqueueCurrentAppRuntime;
+  stampActivity: typeof stampActivity;
+}
+
+const DEFAULT_WS_UPGRADE_DEPENDENCIES: AppWsUpgradeDependencies = {
+  loadPublicApp,
+  authorizeAppRequest,
+  createHosting: () => new AppHostingProvider(),
+  ensureAppRuntimeRunning,
+  enqueueCurrentAppRuntime,
+  stampActivity,
+};
+
 export async function prepareAppWsUpgrade(
   request: Request,
   url: URL,
+  dependencies: AppWsUpgradeDependencies = DEFAULT_WS_UPGRADE_DEPENDENCIES,
 ): Promise<{ ok: true; data: AppWsData } | { ok: false; status: number; message: string }> {
   const matched = resolveAppRequest(request, url);
   if (!matched) return { ok: false, status: 404, message: 'not an App hostname' };
   if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
     return { ok: false, status: 403, message: 'Invalid App edge signature' };
   }
-  const loaded = await loadPublicApp(matched.routeKey);
+  const loaded = await dependencies.loadPublicApp(matched.routeKey);
   if (!loaded) return { ok: false, status: 404, message: 'App not found' };
+  const accessResponse = await dependencies.authorizeAppRequest(request, url, loaded.app);
+  if (accessResponse) {
+    return { ok: false, status: accessResponse.status, message: 'App authentication required' };
+  }
   try {
-    const hosting = new AppHostingProvider();
-    const runtime = await ensureAppRuntimeRunning(loaded, hosting);
-    await stampActivity(runtime.runtimeId, loaded.app.idleTimeoutSeconds);
+    const hosting = dependencies.createHosting();
+    const coldStart = appRuntimeNeedsWake(loaded.runtime);
+    const runtime = await dependencies.ensureAppRuntimeRunning(loaded, hosting);
+    if (coldStart) {
+      await dependencies.enqueueCurrentAppRuntime(loaded.app, loaded.deployment).catch((error) => {
+        console.warn(`[apps] runtime refresh queue failed for ${loaded.app.appId}:`, error);
+      });
+    }
+    await dependencies.stampActivity(runtime.runtimeId, loaded.app.idleTimeoutSeconds);
     const ingress = await hosting.ingress(
       runtime.provider as SandboxProviderName,
       runtime.externalId,
@@ -84,8 +117,10 @@ export async function prepareAppWsUpgrade(
       },
     };
   } catch (error) {
-    if (error instanceof Response) return { ok: false, status: error.status, message: 'App is stopped' };
-    return { ok: false, status: 503, message: 'App is temporarily unavailable' };
+    if (error instanceof AppBudgetExceededError) {
+      return { ok: false, status: 402, message: 'App compute budget exceeded' };
+    }
+    return { ok: false, status: 202, message: 'App is starting' };
   }
 }
 

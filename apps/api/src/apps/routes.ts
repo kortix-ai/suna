@@ -20,10 +20,19 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
+import { AppBudgetExceededError } from './budget';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { resolveExperimentalFeature } from '../experimental/features';
+import {
+  appAccessibleToUser,
+  appAccessSessionUrl,
+  persistAppAccessPolicy,
+  serializeAppAccessPolicy,
+  validateAppAccessPrincipals,
+  type AppAccessMode,
+} from './access';
 
 const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
@@ -124,6 +133,8 @@ function serializeApp(row: typeof apps.$inferSelect) {
     slug: row.slug,
     name: row.name,
     url: appPublicUrl(row),
+    access_mode: row.accessMode as AppAccessMode,
+    access_revision: row.accessRevision,
     desired_state: row.desiredState,
     active_deployment_id: row.activeDeploymentId,
     machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
@@ -219,6 +230,102 @@ projectsApp.openapi(
       .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
       .orderBy(desc(apps.createdAt));
     return c.json({ apps: rows.map(serializeApp) });
+  },
+);
+
+const AppAccessSchema = z.object({
+  mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
+  revision: z.number().int().positive(),
+  member_ids: z.array(z.string().uuid()).max(100).default([]),
+  group_ids: z.array(z.string().uuid()).max(100).default([]),
+  password_configured: z.boolean(),
+});
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const row = await scopedApp(projectId, appId);
+    return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'patch', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
+    request: {
+      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: z.object({
+        mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
+        member_ids: z.array(z.string().uuid()).max(100).optional(),
+        group_ids: z.array(z.string().uuid()).max(100).optional(),
+        password: z.string().min(8).max(256).optional(),
+      }) } } },
+    },
+    responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId, true);
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const current = await scopedApp(projectId, appId);
+    if (!current) return c.json({ error: 'Not found' }, 404);
+    const body = c.req.valid('json');
+    if (body.mode === 'password' && !body.password && !current.accessPasswordHash) {
+      return c.json({ error: 'password is required when password access is enabled' }, 400);
+    }
+    const memberIds: string[] = [...new Set<string>((body.member_ids ?? []) as string[])];
+    const groupIds: string[] = [...new Set<string>((body.group_ids ?? []) as string[])];
+    if (body.mode === 'restricted' && memberIds.length + groupIds.length === 0) {
+      return c.json({ error: 'restricted access requires at least one member or group' }, 400);
+    }
+    if (body.mode === 'restricted') {
+      const validation = await validateAppAccessPrincipals(loaded.row.accountId, {
+        memberIds,
+        groupIds,
+      });
+      if (!validation.ok) {
+        return c.json({
+          error: `${validation.principalType} not found in this account`,
+          principal_id: validation.principalId,
+        }, 404);
+      }
+    }
+    const row = await persistAppAccessPolicy(current, {
+      mode: body.mode,
+      memberIds,
+      groupIds,
+      password: body.password,
+    });
+    return c.json(await serializeAppAccessPolicy(row));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
+    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    responses: { 200: json(z.object({ url: z.string().url(), expires_at: z.string() }), 'App access session'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const { projectId, appId } = c.req.param();
+    const loaded = await authorizedProject(c, projectId);
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const row = await scopedApp(projectId, appId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
+      return c.json({ error: 'App access denied' }, 403);
+    }
+    if (row.accessMode === 'public' || row.accessMode === 'password') {
+      return c.json({ url: appPublicUrl(row), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() });
+    }
+    const session = appAccessSessionUrl(appPublicUrl(row), row, loaded.userId);
+    return c.json({ url: session.url, expires_at: session.expiresAt.toISOString() });
   },
 );
 
@@ -569,7 +676,15 @@ for (const action of ['start', 'stop'] as const) {
           await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
             .where(eq(apps.appId, appId));
           if (error instanceof Response) {
-            return c.json(await error.json(), error.status as 402 | 503);
+            return c.json(await error.json(), error.status as 402 | 409 | 503);
+          }
+          if (error instanceof AppBudgetExceededError) {
+            return c.json({
+              error: error.message,
+              code: 'app_budget_exceeded',
+              spent_usd: error.spentUsd,
+              budget_usd: error.budgetUsd,
+            }, 402);
           }
           return c.json({
             error: 'App start failed',
@@ -612,7 +727,15 @@ projectsApp.openapi(
     } catch (error) {
       await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
         .where(eq(apps.appId, appId));
-      if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 503);
+      if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
+      if (error instanceof AppBudgetExceededError) {
+        return c.json({
+          error: error.message,
+          code: 'app_budget_exceeded',
+          spent_usd: error.spentUsd,
+          budget_usd: error.budgetUsd,
+        }, 402);
+      }
       return c.json({
         error: 'Rollback runtime failed to start',
         detail: error instanceof Error ? error.message : String(error),

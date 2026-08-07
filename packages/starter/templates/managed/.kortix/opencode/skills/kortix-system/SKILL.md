@@ -203,11 +203,17 @@ An **App** is a project-scoped, serverless deployment with one stable Kortix
 URL. A deployment is immutable. A failed deployment never replaces the active
 version. The control plane starts the App sandbox on the first public request,
 keeps it running while requests arrive, and stops it after the configured idle
-timeout. Manual `stop` blocks cold wake until `start` is called.
+timeout. `stop` suspends compute immediately. The next public request resumes
+the App and returns the original request after readiness.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
 project under Project Settings → Experimental before using the CLI or SDK. The
-CLI does not list its Apps commands until the selected project enables it.
+CLI labels Apps as experimental. App operations remain gated by the selected
+project feature.
+
+New Apps are private. Use `kortix apps access <app>` to select creator-only,
+whole-project, restricted member/group, public, or password access. Never store
+an App password in `kortix.yaml`.
 
 Use the CLI from the source directory:
 
@@ -216,6 +222,7 @@ kortix apps deploy .                         # auto-detect static, bundle, or Do
 kortix apps deploy ./dist --type static
 kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
+kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
 kortix apps ls --json
 ```
 

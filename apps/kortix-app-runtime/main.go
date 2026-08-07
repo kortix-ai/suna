@@ -482,6 +482,12 @@ func startApp(spec appSpec, state *runtimeState) (*childProcess, error) {
 	return child, nil
 }
 
+func startReadinessWatch(ctx context.Context, spec appSpec, state *runtimeState) context.CancelFunc {
+	readyCtx, cancel := context.WithCancel(ctx)
+	go waitReady(readyCtx, spec, state)
+	return cancel
+}
+
 func run(ctx context.Context, spec appSpec, token string) error {
 	if err := spec.validate(); err != nil {
 		return err
@@ -516,9 +522,8 @@ func run(ctx context.Context, spec appSpec, token string) error {
 	}
 	defer os.Remove(caddyPath)
 
-	readyCtx, cancelReady := context.WithCancel(ctx)
-	go waitReady(readyCtx, spec, state)
-	defer cancelReady()
+	cancelReady := startReadinessWatch(ctx, spec, state)
+	defer func() { cancelReady() }()
 
 	for {
 		var appExited <-chan error
@@ -573,8 +578,7 @@ func run(ctx context.Context, spec appSpec, token string) error {
 				state.setStatus("failed")
 				return err
 			}
-			readyCtx, cancelReady = context.WithCancel(ctx)
-			go waitReady(readyCtx, spec, state)
+			cancelReady = startReadinessWatch(ctx, spec, state)
 		}
 	}
 }

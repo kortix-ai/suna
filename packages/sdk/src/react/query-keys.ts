@@ -205,6 +205,11 @@ export const qk = {
 
     /** Stable App inventory for `GET /projects/:id/apps`. */
     apps: (id: string) => [...qk.project.scope(id), 'apps'] as const,
+    /** Access policy and short-lived browser session for one App. */
+    appAccess: (id: string, appId: string) => [...qk.project.apps(id), appId, 'access'] as const,
+    /** Short-lived browser exchange URL for one App. */
+    appAccessSession: (id: string, appId: string) =>
+      [...qk.project.appAccess(id, appId), 'session'] as const,
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
