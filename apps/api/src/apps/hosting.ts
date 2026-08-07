@@ -40,7 +40,6 @@ export interface StartAppRuntimeInput {
   name: string;
   snapshotName: string;
   machine: AppMachineSpec;
-  autoStopMinutes: number;
   envVars?: Record<string, string>;
 }
 
@@ -129,7 +128,6 @@ export class AppHostingProvider {
       userId: input.userId,
       name: input.name,
       snapshot: input.snapshotName,
-      autoStopInterval: input.autoStopMinutes,
       workloadType: 'app',
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],

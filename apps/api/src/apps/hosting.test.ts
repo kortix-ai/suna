@@ -100,8 +100,10 @@ describe('AppHostingProvider', () => {
       name: 'app-hello-v1',
       snapshotName: 'kortix-app-deployment-1',
       machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 },
+      // An obsolete caller must not be able to shrink the provider safety
+      // backstop below the control-plane idle deadline.
       autoStopMinutes: 5,
-    });
+    } as any);
 
     expect(creates[0]).toMatchObject({
       workloadType: 'app',
@@ -109,6 +111,7 @@ describe('AppHostingProvider', () => {
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { KORTIX_APPD_TOKEN: appControlToken('runtime-1', secret) },
     });
+    expect(creates[0].autoStopInterval).toBeUndefined();
     expect(creates[0].envVars.KORTIX_SANDBOX_TOKEN).toBeUndefined();
     expect(result.controlTokenHash).toBe(
       appControlTokenHash(appControlToken('runtime-1', secret)),

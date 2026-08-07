@@ -251,6 +251,43 @@ export function compileAgentConfig(
   };
 }
 
+/** Compile one selected v2 agent for a restricted session environment. */
+export function compileSelectedAgentConfig(
+  manifest: Record<string, unknown>,
+  agentName: string,
+  runtime: RuntimeV2 = 'opencode',
+  agentMdFiles: Record<string, string> = {},
+): OpencodeConfig {
+  if (manifestSchemaVersion(manifest) !== 2) {
+    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2.');
+  }
+  if (runtime !== 'opencode') {
+    throw new CompileAgentConfigError(
+      `Unsupported compiler runtime "${runtime}" — only "opencode" is implemented today.`,
+    );
+  }
+
+  const v2 = manifest as unknown as ManifestV2;
+  const rawAgents =
+    v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents)
+      ? v2.agents
+      : {};
+  const block = rawAgents[agentName];
+  if (!block) {
+    throw new CompileAgentConfigError(`Agent "${agentName}" is not declared.`, agentName);
+  }
+  if (block.enabled === false) {
+    throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
+  }
+
+  const mdPath = agentMarkdownPath(manifest, agentName);
+  const compiledAgent = compileAgentBlock(agentName, block, mdPath, agentMdFiles[mdPath]);
+  return {
+    ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
+    agent: { [agentName]: compiledAgent },
+  };
+}
+
 /**
  * Compile one agent: parse its `.md` (if supplied), copy every recognized
  * behavioral frontmatter field through unchanged, then overlay Kortix
@@ -471,4 +508,42 @@ export async function resolveCompiledAgentConfigForSession(
     );
     return null;
   }
+}
+
+/** Resolve one selected agent for a restricted session. Every failure is fatal. */
+export async function resolveSelectedAgentConfigForSession(
+  project: GitBackedProject,
+  agentName: string,
+  baseRef?: string | null,
+): Promise<string> {
+  const ref = baseRef?.trim() || project.defaultBranch;
+  const candidates = manifestCandidatePaths(project.manifestPath).map(
+    (candidate) => candidate.path,
+  );
+  const found = await readManifestFromRepo(project, candidates, ref);
+  if (!found) {
+    throw new CompileAgentConfigError(
+      `Project ${project.projectId} has no manifest for selected-agent compilation.`,
+      agentName,
+    );
+  }
+
+  const format = manifestFormatForPath(found.path);
+  const raw = parseManifestText(found.content, format);
+  if (manifestSchemaVersion(raw) !== 2) {
+    throw new CompileAgentConfigError(
+      `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
+      agentName,
+    );
+  }
+
+  const path = agentMarkdownPath(raw, agentName);
+  const agentMdFiles: Record<string, string> = {};
+  try {
+    agentMdFiles[path] = await readRepoFile(project, path, ref);
+  } catch (err) {
+    if (!isRepoFileNotFoundError(err)) throw err;
+  }
+
+  return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }

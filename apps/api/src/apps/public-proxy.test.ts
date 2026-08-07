@@ -6,6 +6,7 @@ process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'true';
 
 const {
   appPublicUnavailableResponse,
+  appRuntimeNeedsWake,
   appEdgeSignature,
   appUpstreamHeaders,
   resolveAppHost,
@@ -14,6 +15,19 @@ const {
 } = await import('./public-proxy');
 
 describe('Apps public edge', () => {
+  test('revalidates a running row after its Kortix idle deadline passes', () => {
+    const now = new Date('2026-08-07T10:30:00.000Z');
+    expect(appRuntimeNeedsWake({
+      status: 'running',
+      idleDeadlineAt: new Date('2026-08-07T10:29:59.000Z'),
+    }, now)).toBe(true);
+    expect(appRuntimeNeedsWake({
+      status: 'running',
+      idleDeadlineAt: new Date('2026-08-07T10:30:01.000Z'),
+    }, now)).toBe(false);
+    expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now)).toBe(true);
+  });
+
   test('resolves local and environment-scoped production hostnames', () => {
     expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({
       routeKey: 'aaaaaaaaaaaaaaaa', local: true,

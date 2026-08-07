@@ -12,6 +12,7 @@
  *     (added as a header in resolveEndpoint, same effective auth as Daytona).
  */
 
+import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -359,7 +360,11 @@ export class PlatinumProvider implements SandboxProvider {
     const ptyWebsocket =
       request.transport === 'websocket' && classifyPtyWebSocketPath(request.path) !== null;
     return {
-      effectivePort: request.port === 4096 || ptyWebsocket ? AGENT_PORT : request.port,
+      // Either half of the opencode pair rewrites to the agent bridge —
+      // Platinum cannot expose opencode's port directly. After a verified
+      // reload the live half may be the standby, and matching only 4096 would
+      // send it upstream unrewritten (see shared/opencode-ports).
+      effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',

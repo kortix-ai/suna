@@ -5,7 +5,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../../platform/providers';
@@ -46,6 +46,44 @@ const EMPTY_REASON_COUNTS = (): Record<ComputeCloseReason, number> => ({
   'window-past-max': 0,
 });
 
+function appRuntimeBillingStatus(status: string | null): string | null {
+  if (status === 'running') return 'active';
+  if (status === 'provisioning' || status === 'starting') return 'provisioning';
+  return status;
+}
+
+/**
+ * Every compute window belongs to exactly one runtime model. Session windows
+ * join through `session_sandboxes`; App windows join through `app_runtime_id`.
+ * Keeping both joins in one bounded query preserves oldest-first sweep order.
+ */
+export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
+  return db
+    .select({
+      computeId: sandboxComputeSessions.id,
+      sandboxId: sandboxComputeSessions.sandboxId,
+      workloadType: sandboxComputeSessions.workloadType,
+      startedAt: sandboxComputeSessions.startedAt,
+      computeMetadata: sandboxComputeSessions.metadata,
+      sbStatus: sessionSandboxes.status,
+      sbUpdatedAt: sessionSandboxes.updatedAt,
+      sbMetadata: sessionSandboxes.metadata,
+      sessionProvider: sessionSandboxes.provider,
+      sessionExternalId: sessionSandboxes.externalId,
+      appStatus: appRuntimes.status,
+      appUpdatedAt: appRuntimes.updatedAt,
+      appMetadata: appRuntimes.metadata,
+      appProvider: appRuntimes.provider,
+      appExternalId: appRuntimes.externalId,
+    })
+    .from(sandboxComputeSessions)
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
+    .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
+    .where(eq(sandboxComputeSessions.state, 'active'))
+    .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
+    .limit(limit);
+}
+
 /**
  * The single authority that guarantees "no compute row stays open unless its
  * sandbox is provably alive".
@@ -67,26 +105,7 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
   const unresolvedCeilingMs = computeUnresolvedCeilingMs();
   const maxWindowMs = computeMaxWindowMs();
 
-  // Join the metering row to its sandbox to recover provider + externalId.
-  const rows = await db
-    .select({
-      computeId: sandboxComputeSessions.id,
-      sandboxId: sandboxComputeSessions.sandboxId,
-      startedAt: sandboxComputeSessions.startedAt,
-      computeMetadata: sandboxComputeSessions.metadata,
-      sbStatus: sessionSandboxes.status,
-      sbUpdatedAt: sessionSandboxes.updatedAt,
-      sbMetadata: sessionSandboxes.metadata,
-      provider: sessionSandboxes.provider,
-      externalId: sessionSandboxes.externalId,
-    })
-    .from(sandboxComputeSessions)
-    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
-    .where(eq(sandboxComputeSessions.state, 'active'))
-    // Oldest-open first: the longest-running leak is the most expensive one, and
-    // an unordered LIMIT is how a 34-day-old row stayed invisible for 34 days.
-    .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
-    .limit(REAP_BATCH_SIZE);
+  const rows = await selectOpenComputeInvariantCandidates();
 
   const result: OrphanComputeResult = {
     checked: rows.length,
@@ -99,18 +118,27 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
+        const isApp = row.workloadType === 'app';
+        const runtimeStatus = isApp
+          ? appRuntimeBillingStatus(row.appStatus)
+          : row.sbStatus;
+        const runtimeUpdatedAt = isApp ? row.appUpdatedAt : row.sbUpdatedAt;
+        const runtimeMetadata = (isApp ? row.appMetadata : row.sbMetadata) as
+          | Record<string, unknown>
+          | null;
+        const provider = isApp ? row.appProvider : row.sessionProvider;
+        const externalId = isApp ? row.appExternalId : row.sessionExternalId;
         const startedAt = parseTimestamp(row.startedAt) ?? now;
         const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
-        const sbMetadata = (row.sbMetadata ?? null) as Record<string, unknown> | null;
         const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
         const unresolvedSince = parseTimestamp(computeMetadata.unresolvedSince);
         const lastAliveAt = lastAliveAtOf({ metadata: computeMetadata, startedAt: row.startedAt });
         const livenessGraceMs = computeLivenessGraceMs();
 
         const base = {
-          sandboxStatus: (row.sbStatus as string | null) ?? null,
-          hasProviderTarget: !!row.externalId && !!row.provider,
-          runtimeStartFailed: hasFailedRuntimeStart(sbMetadata),
+          sandboxStatus: runtimeStatus ?? null,
+          hasProviderTarget: !!externalId && !!provider,
+          runtimeStartFailed: hasFailedRuntimeStart(runtimeMetadata),
           beyondLivenessCeiling: isBeyondLivenessCeiling({ now, lastAliveAt, graceMs: livenessGraceMs }),
           openForMs,
           unresolvedCeilingMs,
@@ -128,8 +156,8 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
 
         let providerStatus: SandboxStatus | null = null;
         if (!decision.reason && decision.needsProviderStatus) {
-          providerStatus = await getProvider(row.provider as ProviderName)
-            .getStatus(row.externalId as string)
+          providerStatus = await getProvider(provider as ProviderName)
+            .getStatus(externalId as string)
             .catch(() => null);
           // 'unknown' is the STEADY state for a box deleted out from under us
           // (44 of 66 open prod rows answered unknown), so track how long it has
@@ -157,9 +185,9 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
           reason: decision.reason,
           now,
           startedAt,
-          sandboxUpdatedAt: parseTimestamp(row.sbUpdatedAt),
+          sandboxUpdatedAt: parseTimestamp(runtimeUpdatedAt),
           unresolvedSince,
-          runtimeWakeFailedAt: parseTimestamp(sbMetadata?.runtimeWakeFailedAt),
+          runtimeWakeFailedAt: parseTimestamp(runtimeMetadata?.runtimeWakeFailedAt),
           lastAliveAt,
           livenessGraceMs,
           maxWindowMs,
@@ -172,7 +200,8 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
           reason: decision.reason,
           open_for_hours: Number((openForMs / 3_600_000).toFixed(2)),
           billed_through: windowEnd.toISOString(),
-          sandbox_status: row.sbStatus ?? null,
+          workload_type: row.workloadType,
+          sandbox_status: runtimeStatus ?? null,
           provider_status: providerStatus,
         });
       } catch (err) {
@@ -208,9 +237,18 @@ export async function countBillingInvariantViolations(): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
+    .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
     .where(and(
       eq(sandboxComputeSessions.state, 'active'),
-      sql`(${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active')`,
+      sql`(
+        (${sandboxComputeSessions.workloadType} = 'app' AND (
+          ${appRuntimes.runtimeId} IS NULL OR
+          ${appRuntimes.status} NOT IN ('provisioning', 'starting', 'running')
+        )) OR
+        (${sandboxComputeSessions.workloadType} <> 'app' AND (
+          ${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active'
+        ))
+      )`,
     ));
   return Number(row?.n ?? 0);
 }
@@ -234,10 +272,14 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(sandboxComputeSessions)
-    .innerJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
+    .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
     .where(and(
       eq(sandboxComputeSessions.state, 'active'),
-      eq(sessionSandboxes.status, 'active'),
+      sql`(
+        (${sandboxComputeSessions.workloadType} = 'app' AND ${appRuntimes.status} = 'running') OR
+        (${sandboxComputeSessions.workloadType} <> 'app' AND ${sessionSandboxes.status} = 'active')
+      )`,
       sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
     ));
   return Number(row?.n ?? 0);

@@ -393,7 +393,6 @@ export async function driveAppDeployment(
           memoryGb: context.app.memoryGb,
           diskGb: context.app.diskGb,
         },
-        autoStopMinutes: Math.max(2, Math.ceil(context.app.idleTimeoutSeconds / 60)),
         envVars: runtimeEnvironment.env,
       });
       runtimeExternalId = handle.externalId;

@@ -2231,7 +2231,12 @@ projectsApp.openapi(
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({ projectId, accountId: loaded.row.accountId, baseRef }),
+      latestAgentConfigEtag({
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        baseRef,
+      }),
     ]);
     return c.json({
       base_ref: baseRef,

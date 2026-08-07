@@ -10,7 +10,10 @@ import { revokeSessionConnectorTokens } from '../../repositories/account-tokens'
 import { withProjectGitAuth } from '../lib/git';
 import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import {
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
@@ -230,6 +233,7 @@ export async function restartSession(input: {
           // meta agent config, so the daemon clones the project over the meta
           // workspace and wipes /workspace/AGENTS.md.
           platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
     });

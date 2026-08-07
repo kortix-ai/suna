@@ -21,6 +21,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace,
     projectTarget: workspace,

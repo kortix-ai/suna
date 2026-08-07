@@ -1,4 +1,6 @@
 import { agentConfigEtag } from './compile-agent-config';
+import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
+import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -11,6 +13,8 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** Project file delivery mode selected by the session's agent. */
+  workspaceMode?: WorkspaceModeV2 | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -18,16 +22,25 @@ export interface SessionRuntimeEnvInput {
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
+  const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
+  const projectGitEnv: Record<string, string> =
+    allowsFullRepository
+      ? {
+          KORTIX_REPO_URL: input.repoUrl,
+          KORTIX_DEFAULT_BRANCH: input.baseRef,
+          KORTIX_BASE_REF: input.baseRef,
+          KORTIX_BRANCH_NAME: input.sessionId,
+        }
+      : {};
   return {
-    KORTIX_REPO_URL: input.repoUrl,
-    KORTIX_DEFAULT_BRANCH: input.baseRef,
-    KORTIX_BASE_REF: input.baseRef,
-    KORTIX_BRANCH_NAME: input.sessionId,
+    ...projectGitEnv,
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: input.apiUrl,
+    KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
+    ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),

@@ -155,6 +155,14 @@ async function waitForWake(runtimeId: string, deadline: number) {
   throw new Error('App cold start timed out');
 }
 
+export function appRuntimeNeedsWake(
+  runtime: Pick<typeof appRuntimes.$inferSelect, 'status' | 'idleDeadlineAt'>,
+  now = new Date(),
+): boolean {
+  if (runtime.status !== 'running') return true;
+  return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
+}
+
 export async function ensureAppRuntimeRunning(
   loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
   hosting: AppHostingProvider,
@@ -162,7 +170,7 @@ export async function ensureAppRuntimeRunning(
   if (loaded.app.desiredState !== 'running') {
     throw appStoppedResponse();
   }
-  if (loaded.runtime.status === 'running') return loaded.runtime;
+  if (!appRuntimeNeedsWake(loaded.runtime)) return loaded.runtime;
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }

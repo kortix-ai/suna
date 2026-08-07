@@ -20,6 +20,7 @@ const OTHER_ACCOUNT = 'acct-other';
 let projectRow: Record<string, unknown> | null = null;
 let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
+let sandboxRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
 let authorizeCalls: Array<{
   userId: string;
@@ -30,11 +31,17 @@ let authorizeCalls: Array<{
 
 mock.module('../shared/db', () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({ limit: async () => (projectRow ? [projectRow] : []) }),
-      }),
-    }),
+    select: (fields?: Record<string, unknown>) => {
+      const rows = fields?.sessionMetadata
+        ? () => (sandboxRow ? [sandboxRow] : [])
+        : () => (projectRow ? [projectRow] : []);
+      return {
+        from: () => ({
+          innerJoin: () => ({ where: () => ({ limit: async () => rows() }) }),
+          where: () => ({ limit: async () => rows() }),
+        }),
+      };
+    },
   },
   hasDatabase: true,
 }));
@@ -74,6 +81,7 @@ beforeEach(() => {
   projectRow = { projectId: PROJECT_ID, accountId: OWNER_ACCOUNT, status: 'active' };
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
+  sandboxRow = null;
   authorizeAllowed = false;
   authorizeCalls = [];
 });
@@ -83,6 +91,29 @@ describe('authorizeGitProxy — CLI PAT', () => {
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
     expect(res.ok).toBe(true);
     expect(authorizeCalls).toHaveLength(0);
+  });
+
+  test('a session PAT for a runtime workspace is denied before account ownership can allow it', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-1',
+      projectId: PROJECT_ID,
+      sessionId: 'sandbox-1',
+    };
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'runtime' },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+
+    expect(res).toMatchObject({
+      ok: false,
+      status: 403,
+      message: 'session workspace does not allow repository access',
+    });
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {
@@ -179,5 +210,51 @@ describe('authorizeGitProxy — account API key', () => {
   test('a non-Kortix credential is 401', async () => {
     const res = await authorizeGitProxy('ghp_something', PROJECT_ID, 'read');
     expect(res).toMatchObject({ ok: false, status: 401 });
+  });
+});
+
+describe('authorizeGitProxy — sandbox token', () => {
+  beforeEach(() => {
+    patResult = { isValid: false };
+    apiKeyResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      type: 'sandbox',
+      sandboxId: 'sandbox-1',
+    };
+  });
+
+  test('runtime sessions cannot read Git objects', async () => {
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'runtime' },
+    };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+
+    expect(res).toMatchObject({
+      ok: false,
+      status: 403,
+      message: 'sandbox workspace does not allow Git access',
+    });
+  });
+
+  test('branch sessions retain Git access', async () => {
+    sandboxRow = {
+      sandboxId: 'sandbox-1',
+      sessionMetadata: { workspace_mode: 'branch' },
+    };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+
+    expect(res.ok).toBe(true);
+  });
+
+  test('legacy sessions without a workspace mode retain Git access', async () => {
+    sandboxRow = { sandboxId: 'sandbox-1', sessionMetadata: {} };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+
+    expect(res.ok).toBe(true);
   });
 });

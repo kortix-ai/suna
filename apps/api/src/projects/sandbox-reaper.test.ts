@@ -969,13 +969,19 @@ describe('reconcileOrphanComputeSessions', () => {
   const openRow = (over: Partial<any> = {}) => ({
     computeId: 'cs-1',
     sandboxId: 'sb-1',
+    workloadType: 'session',
     startedAt: new Date(NOW3.getTime() - 2 * HOUR).toISOString(),
     computeMetadata: { lastAliveAt: NOW3.toISOString() },
     sbStatus: 'active',
     sbUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
     sbMetadata: {},
-    provider: 'daytona',
-    externalId: 'ext-1',
+    sessionProvider: 'daytona',
+    sessionExternalId: 'ext-1',
+    appStatus: null,
+    appUpdatedAt: null,
+    appMetadata: null,
+    appProvider: null,
+    appExternalId: null,
     ...over,
   });
 
@@ -987,6 +993,49 @@ describe('reconcileOrphanComputeSessions', () => {
 
     expect(r.closed).toBe(0);
     expect(pausedCompute).toEqual([]);
+  });
+
+  test('a healthy running App runtime keeps billing through its App join', async () => {
+    computeRows = [openRow({
+      workloadType: 'app',
+      sbStatus: null,
+      sessionProvider: null,
+      sessionExternalId: null,
+      appStatus: 'running',
+      appUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
+      appMetadata: {},
+      appProvider: 'daytona',
+      appExternalId: 'app-ext-1',
+    })];
+    statusByExternal['app-ext-1'] = 'running';
+
+    const r = await reconcileOrphanComputeSessions(NOW3);
+
+    expect(r.closed).toBe(0);
+    expect(statusCalls).toEqual(['app-ext-1']);
+    expect(pausedCompute).toEqual([]);
+  });
+
+  test('a stopped App runtime closes its compute window without a provider call', async () => {
+    const stoppedAt = new Date(NOW3.getTime() - HOUR);
+    computeRows = [openRow({
+      workloadType: 'app',
+      sbStatus: null,
+      sessionProvider: null,
+      sessionExternalId: null,
+      appStatus: 'stopped',
+      appUpdatedAt: stoppedAt.toISOString(),
+      appMetadata: {},
+      appProvider: 'daytona',
+      appExternalId: 'app-ext-1',
+    })];
+
+    const r = await reconcileOrphanComputeSessions(NOW3);
+
+    expect(r.closed).toBe(1);
+    expect(r.byReason['sandbox-not-active']).toBe(1);
+    expect(statusCalls).toEqual([]);
+    expect(pausedComputeWindows[0].windowEnd?.getTime()).toBe(stoppedAt.getTime());
   });
 
   // The 17 prod rows: 5,587 sandbox-hours billed on boxes our own DB said were
@@ -1048,7 +1097,7 @@ describe('reconcileOrphanComputeSessions', () => {
   });
 
   test('an open row with no sandbox row behind it is closed', async () => {
-    computeRows = [openRow({ sbStatus: null, provider: null, externalId: null })];
+    computeRows = [openRow({ sbStatus: null, sessionProvider: null, sessionExternalId: null })];
 
     const r = await reconcileOrphanComputeSessions(NOW3);
 

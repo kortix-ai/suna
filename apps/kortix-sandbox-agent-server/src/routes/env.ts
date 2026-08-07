@@ -174,6 +174,8 @@ export function createEnvRouter(
         reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
         const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        // null when no reload was needed at all; otherwise how it was applied.
+        let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
 
@@ -220,6 +222,11 @@ export function createEnvRouter(
           const projectSecretsMoved = result.changedNames.length > 0
           const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
           const how = await opencode.reloadConfig({ mustRespawn })
+          // 'kept-old' means the verified swap declined: the new opencode never
+          // came up, so the running one was left serving. The config did NOT
+          // take, and the caller has to be told — logging it here and returning
+          // ok:true would report a reload that silently did nothing.
+          reloadOutcome = how
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
@@ -253,6 +260,10 @@ export function createEnvRouter(
           opencode_env_names: opencodeEnvNames,
           opencode: opencode.getState(),
           opencode_pid: opencode.getPid(),
+          // 'disposed' | 'restarted' | 'kept-old' | null (no reload needed).
+          // 'kept-old' is the verified swap declining a config that would not
+          // boot — a successful safety outcome, and a FAILED reload.
+          opencode_reload: reloadOutcome,
         })
       } catch (err) {
         const message = (err as Error).message || 'env sync failed'

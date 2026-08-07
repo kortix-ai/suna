@@ -18,9 +18,14 @@ import { sanitizeSandboxEnv } from './sandbox-env-names';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import {
+  workspaceModeAllowsFullRepository,
+  workspaceModeFromSessionMetadata,
+} from './session-sandbox-metadata';
 
 /**
  * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
@@ -212,6 +217,13 @@ async function postEnvToDaemon(args: {
   managed: number | null;
   withheld: number | null;
   agentEnvWritten: boolean;
+  /**
+   * How the daemon applied the config, or null when it did not say (an older
+   * daemon, or no reload was needed). 'kept-old' is the verified swap
+   * declining: the new opencode never came up and the previous one still
+   * serves — the push landed, the config did not.
+   */
+  opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -260,6 +272,7 @@ async function postEnvToDaemon(args: {
     withheld?: unknown;
     agent_env_written?: unknown;
     opencode?: unknown;
+    opencode_reload?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -276,6 +289,14 @@ async function postEnvToDaemon(args: {
   }
   return {
     opencodeState: typeof body?.opencode === 'string' ? body.opencode : null,
+    // How the daemon applied the config. 'kept-old' means the verified swap
+    // declined: the new opencode never came up, so the running one still
+    // serves and the change did NOT take. An older daemon omits the field
+    // entirely — null, meaning "could not tell", never "it worked".
+    opencodeReload:
+      typeof body?.opencode_reload === 'string'
+        ? (body.opencode_reload as 'disposed' | 'restarted' | 'kept-old')
+        : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -637,18 +658,32 @@ export async function pushSessionAgentConfigToSandbox(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-}): Promise<{ applied: boolean; reason?: string }> {
+}): Promise<{ applied: boolean; reason?: string; opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null }> {
   try {
-    const compiled = await resolveCompiledAgentConfigForSession(
-      {
-        projectId: input.projectId,
-        repoUrl: input.repoUrl,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      },
-      input.baseRef,
-    );
+    const [session] = await db
+      .select({
+        agentName: projectSessions.agentName,
+        metadata: projectSessions.metadata,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, input.sessionId))
+      .limit(1);
+    const gitProject = {
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    const compiled =
+      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+      session?.agentName
+        ? await resolveSelectedAgentConfigForSession(
+            gitProject,
+            session.agentName,
+            input.baseRef,
+          )
+        : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef);
     // `null` is a v1 project or an unreadable manifest. Pushing an empty value
     // would DELETE the agent config the box is running — a v1 project has none
     // to begin with, and for a transient read failure that would be a silent
@@ -675,7 +710,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
-    await postEnvToDaemon({
+    const pushed = await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,
       serviceKey,
@@ -689,7 +724,10 @@ export async function pushSessionAgentConfigToSandbox(input: {
       // Restarts opencode so it rebuilds its config against the new agents.
       refreshModels: true,
     });
-    return { applied: true };
+    // `applied` means WE pushed it. Whether opencode actually took it is
+    // `opencodeReload` — a declined swap leaves the old config running, and
+    // reporting a bare `applied: true` for that is the lie this field prevents.
+    return { applied: true, opencodeReload: pushed.opencodeReload };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);

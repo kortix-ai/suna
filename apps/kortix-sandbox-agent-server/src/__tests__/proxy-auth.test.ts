@@ -29,6 +29,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -68,6 +69,13 @@ function fakeOpencode(
     reloadConfig: async () => {
       hooks.restart?.()
       return 'restarted' as const
+    },
+    // The refresh route now performs a VERIFIED swap: boot the new opencode,
+    // prove it serves, then retire the old one. Lands on the same hook so a
+    // test counting "was opencode replaced" keeps counting exactly that.
+    reloadVerified: async () => {
+      hooks.restart?.()
+      return { outcome: 'swapped' as const, port: 4097, pid: null }
     },
   } as unknown as Opencode
 }

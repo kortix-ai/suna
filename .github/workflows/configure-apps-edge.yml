@@ -14,12 +14,15 @@ jobs:
   configure:
     name: Configure and verify Apps edge
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # Account: Workers Scripts Write. kortix.com zone: DNS Write,
+      # Workers Routes Write, SSL and Certificates Write, and Zone Read.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
       APPS_DNS_NAME: '*.apps.kortix.com'
       APPS_DNS_TARGET: '192.0.2.1'
+      APPS_CERT_HOST: '*.apps.kortix.com'
     steps:
       - uses: actions/checkout@v7
 
@@ -102,10 +105,92 @@ jobs:
               .result[0].proxied == true
             ' <<<"$records"
 
+      - name: Create or verify nested wildcard certificate
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/ssl/certificate_packs"
+          auth=(--header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+          list_packs() {
+            curl --fail-with-body --silent --show-error "${auth[@]}" "$api"
+          }
+
+          packs="$(list_packs)"
+          jq -e '.success == true' <<<"$packs"
+          pack_id="$(jq -r --arg host "$APPS_CERT_HOST" '
+            [.result[]
+              | select(.type == "advanced")
+              | select((.hosts // []) | index($host))
+              | select(.status != "expired" and .status != "deleted" and .status != "pending_deletion")
+            ][0].id // empty
+          ' <<<"$packs")"
+
+          if [ -n "$pack_id" ]; then
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            if [ "$status" = validation_timed_out ]; then
+              restarted="$({
+                curl --fail-with-body --silent --show-error \
+                  --request PATCH \
+                  "${auth[@]}" \
+                  --header 'Content-Type: application/json' \
+                  --data '{"cloudflare_branding":false}' \
+                  "$api/$pack_id"
+              })"
+              jq -e '.success == true' <<<"$restarted"
+            fi
+          else
+            order="$(jq -n '{
+              type: "advanced",
+              hosts: ["kortix.com", "apps.kortix.com", "*.apps.kortix.com"],
+              validation_method: "txt",
+              validity_days: 90,
+              certificate_authority: "lets_encrypt",
+              cloudflare_branding: false
+            }')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                "${auth[@]}" \
+                --header 'Content-Type: application/json' \
+                --data "$order" \
+                "$api/order"
+            })"
+            jq -e '.success == true' <<<"$created"
+            pack_id="$(jq -er '.result.id' <<<"$created")"
+          fi
+
+          for attempt in $(seq 1 90); do
+            packs="$(list_packs)"
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            case "$status" in
+              active)
+                jq -e --arg id "$pack_id" --arg host "$APPS_CERT_HOST" '
+                  any(.result[];
+                    .id == $id and
+                    .status == "active" and
+                    ((.hosts // []) | index($host))
+                  )
+                ' <<<"$packs"
+                exit 0
+                ;;
+              validation_timed_out|expired|deleted)
+                echo "::error::Certificate pack $pack_id reached terminal status $status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" = 90 ]; then
+              echo "::error::Certificate pack $pack_id stayed in status $status for 15 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
       - name: Verify public DNS and TLS routing
         run: |
           set -euo pipefail
-          host="dev-edge-probe-invalid.apps.kortix.com"
+          # Keep the probe syntactically valid so the API host parser reaches
+          # the signed Apps route before returning the expected missing App.
+          host="dev-edge-probe-invalid-0000000000000000.apps.kortix.com"
           for attempt in $(seq 1 30); do
             answer="$({
               curl --silent --show-error --get \
@@ -133,6 +218,9 @@ jobs:
               --write-out '%{http_code}' \
               "https://$host/"
           })"
+          echo "HTTP status: $status"
+          grep -Ei '^x-kortix-app-environment:' "$headers" || true
+          jq -c . "$body" || true
           test "$status" = 404
-          grep -Eiq '^x-kortix-app-environment: dev\r?$' "$headers"
+          tr -d '\r' < "$headers" | grep -Eiq '^x-kortix-app-environment: dev$'
           jq -e '.error == "App not found"' "$body"
