@@ -640,7 +640,7 @@
  *   accent-blue    #0099ff     #0099ff
  */
 :root {
-  --background: oklch(1 0 0); /* canvas */
+  --background: oklch(0.995 0 0); /* canvas */
   --pane: oklch(1 0 0); /* #ffffff */
   --foreground: oklch(0 0 0); /* ink */
   --card: oklch(0.9672 0 0); /* surface-1 */

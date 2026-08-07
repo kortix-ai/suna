@@ -6706,3 +6706,67 @@ composes are tested directly.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
+
+Additive, host-driven. `apps/web`'s connectors catalogue was rebuilt to paginate
+by scroll, and its foot states "Showing 192 of 2,713 connectors". Discover
+already publishes `total` on every page; Pipedream did not, so the Easy Connect
+source — the one **most** projects get, since `connectors_api_discover` defaults
+false — could only ever quote what it had already fetched. A page that says
+"192" under a catalogue of 2,713 reads as a catalogue of 192.
+
+Pipedream's `/apps` response carries `page_info.total_count` and the API was
+discarding it. Change is one optional field, end to end:
+
+- `apps/api/src/connectors/pipedream.ts` — `listApps` returns
+  `total: data.page_info?.total_count`; `listApps` and `browsePipedreamApps`
+  signatures widened. The route is a passthrough (`c.json(result)`), so nothing
+  there changed.
+- `packages/sdk/.../projects-client/connectors.ts` — `total?: number` on
+  `listPipedreamApps`'s response type.
+
+**Optional, not required.** An API build older than this one omits the field;
+callers fall back to their loaded count rather than quoting a total they cannot
+back up. Per the safe/breaking table, an added optional field is additive.
+
+It is an upper bound, not an exact figure, and the code says so: Pipedream counts
+before `isPipedreamOAuthApp` filters utility apps out of each page. Still far
+closer to the truth than the loaded count.
+
+RED, then GREEN. Two tests added to `connectors.test.ts` (`surfaces the catalogue
+total the API reports`, `tolerates an API build that reports no total`). Both were
+watched failing first — the failure is a **typecheck** failure, not a runtime one,
+because the SDK function is a pass-through and `bun test` never sees the type:
+
+```
+src/core/rest/projects-client/connectors.test.ts(523,17): error TS2339: Property 'total' does not exist on type '{ apps: PipedreamApp[]; nextCursor?: string | undefined; hasMore: boolean; }'.
+src/core/rest/projects-client/connectors.test.ts(531,17): error TS2339: Property 'total' does not exist on type '{ apps: PipedreamApp[]; nextCursor?: string | undefined; hasMore: boolean; }'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1584 pass`, `2 skip`, `3 fail`,
+  `6451 expect()` across `124` files. **The 3 failures are pre-existing and
+  unrelated** — `fetchCostExportCsv …`, `catalog uses the project-scoped route …`,
+  `attachment upload sends raw bytes …`. Verified by `git stash` → same 3 failures,
+  `1582 pass`. This change moved the count `1582 → 1584` and the failures not at
+  all. Not fixed here: they are outside this task, and burying them under an
+  unrelated change is worse than reporting them.
+- `pnpm --filter @kortix/sdk run smoke:install`: **FAILS**, pre-existing.
+  `src/index.ts(136,11): error TS18046: 'error' is of type 'unknown'` inside the
+  throwaway smoke project, with `WARN Local package.json exists, but node_modules
+  missing`. Identical failure on a stashed tree, so it is the harness in this
+  worktree, not the tarball.
+
+**Not covered by a test:** that the live Pipedream `/apps` response actually
+carries `page_info.total_count` for this deployment's project. The field is read
+optionally and every consumer falls back, so the failure mode is the old
+behaviour rather than a break.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES** — for this change. The 3 red tests
+and the red `smoke:install` predate it and are unrelated; they are someone's open
+work, and this change neither causes nor clears them.

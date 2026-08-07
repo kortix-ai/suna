@@ -113,7 +113,7 @@ class PipedreamProvider {
     return (data.data || []).map((a) => ({ id: a.id, app: a.app.name_slug, appName: a.app.name }));
   }
 
-  async listApps(query?: string, limit = 48, cursor?: string): Promise<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }> {
+  async listApps(query?: string, limit = 48, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     params.set('limit', String(limit));
@@ -131,7 +131,18 @@ class PipedreamProvider {
       .filter(isPipedreamOAuthApp);
     // hasMore is driven by Pipedream's cursor, NOT apps.length — filtering out
     // utility apps would otherwise shrink a page below `limit` and stop paging early.
-    return { apps, nextCursor: data.page_info?.end_cursor, hasMore: !!data.page_info?.end_cursor };
+    //
+    // `total` is Pipedream's count for the whole query, so the browse UI can say
+    // "192 of 2,713" instead of implying the catalogue is one page long. It is an
+    // upper bound rather than an exact figure: `isPipedreamOAuthApp` drops utility
+    // apps from each page, and Pipedream counts before that filter. Quoting it is
+    // still far closer to the truth than quoting the loaded count.
+    return {
+      apps,
+      total: data.page_info?.total_count,
+      nextCursor: data.page_info?.end_cursor,
+      hasMore: !!data.page_info?.end_cursor,
+    };
   }
 
   async listActions(app: string, limit = 100): Promise<PipedreamActionLike[]> {
@@ -345,7 +356,7 @@ export interface PipedreamApp {
 }
 
 /** Browse the Pipedream app catalogue (search + paginate) for the "connect an app" UI. */
-export async function browsePipedreamApps(query?: string, cursor?: string): Promise<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }> {
+export async function browsePipedreamApps(query?: string, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
   return getProvider().listApps(query, 48, cursor);
 }
 

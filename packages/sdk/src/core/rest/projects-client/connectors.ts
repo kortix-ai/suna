@@ -932,6 +932,11 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   return unwrap(
     await backendApi.get<{
       apps: PipedreamApp[];
+      /** The catalogue's size for this query, across every page. Optional
+       *  because API builds before it was forwarded omit it — callers fall
+       *  back to what they have loaded rather than quoting a total they cannot
+       *  back up. */
+      total?: number;
       nextCursor?: string;
       hasMore: boolean;
     }>(`/connectors/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`),

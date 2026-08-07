@@ -52,7 +52,11 @@ describe('CatalogCard leading slot', () => {
 
     for (const name of callers) {
       const source = readFileSync(join(ROOT, name), 'utf8');
-      const cards = source.match(/<CatalogCard/g) ?? [];
+      // `<CatalogCard` alone also matches `<CatalogCardSkeleton`, which is a
+      // different component with no slots at all — a file rendering both was
+      // counted as two cards with one tile and failed for nothing. The
+      // delimiter class is what separates the two names.
+      const cards = source.match(/<CatalogCard[\s/>]/g) ?? [];
       const leadings = source.match(/leading=/g) ?? [];
       // Either every card in the file carries a tile, or none does. A file
       // where only some cards pass `leading` renders a ragged grid with the
