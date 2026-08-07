@@ -19,6 +19,7 @@ import {
 } from '../generated-state-store';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
@@ -754,6 +755,7 @@ projectsApp.openapi(
           projectId,
           taskId,
           sessionId: body.session_id,
+          authenticatedSessionId: callerKortixSessionId(c),
           leaseSeconds: body.lease_seconds,
           now: new Date(),
         },
@@ -804,6 +806,7 @@ projectsApp.openapi(
           taskId,
           evidence: body.evidence,
           sessionId: body.session_id,
+          authenticatedSessionId: callerKortixSessionId(c),
           now: new Date(),
         },
       );
@@ -853,6 +856,7 @@ projectsApp.openapi(
           taskId,
           blocker: body.blocker,
           sessionId: body.session_id,
+          authenticatedSessionId: callerKortixSessionId(c),
           now: new Date(),
         },
       );

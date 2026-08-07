@@ -85,11 +85,14 @@ describe('META_AGENT_GUIDE control loop', () => {
   });
 
   test('keeps terminal task transitions under the coordinator claim session', () => {
-    expect(META_AGENT_GUIDE).toContain('The coordinator claim session owns task transitions.');
-    expect(META_AGENT_GUIDE).toContain('The worker has a different session ID and must not call');
     expect(META_AGENT_GUIDE).toContain(
-      '`kortix tasks done` or `kortix tasks block` for the coordinator claim.',
+      'Only the coordinator session holding a live, unexpired claim can transition the task.',
     );
+    expect(META_AGENT_GUIDE).toContain('Reclaim an expired');
+    expect(META_AGENT_GUIDE).toContain('lease before transition.');
+    expect(META_AGENT_GUIDE).toContain('The worker has a different session ID and must not call');
+    expect(META_AGENT_GUIDE).toContain('`kortix tasks done` or');
+    expect(META_AGENT_GUIDE).toContain('`kortix tasks block` for the coordinator claim.');
     expect(META_AGENT_GUIDE).toContain(
       'kortix tasks done "$TASK_ID" --session "$COORDINATOR_SESSION_ID"',
     );

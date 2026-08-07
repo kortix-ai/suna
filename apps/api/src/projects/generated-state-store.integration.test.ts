@@ -25,6 +25,8 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a701';
 const PROJECT_ID = '00000000-0000-4000-a000-00000000a702';
 const SESSION_A = 'generated-state-session-a';
 const SESSION_B = 'generated-state-session-b';
+const USER_A = '00000000-0000-4000-a000-00000000a703';
+const USER_B = '00000000-0000-4000-a000-00000000a704';
 
 let integrationDb: Database | null = null;
 function testDb(): Database {
@@ -55,12 +57,16 @@ async function seed() {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       branchName: 'generated-state-a',
+      agentName: 'builder',
+      createdBy: USER_A,
     },
     {
       sessionId: SESSION_B,
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       branchName: 'generated-state-b',
+      agentName: 'reviewer',
+      createdBy: USER_B,
     },
   ]);
 }
@@ -204,6 +210,66 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(reclaimed.status).toBe('doing');
     expect(reclaimed.claimSessionId).toBe(SESSION_B);
     expect(reclaimed.claimExpiresAt?.toISOString()).toBe('2026-08-07T10:01:15.000Z');
+  });
+
+  test('the atomic claim enforces the referenced session agent and user assignees', async () => {
+    const database = testDb();
+    const agentAssigned = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Builder-only task',
+      origin: 'assignment-proof',
+      assigneeAgent: 'builder',
+    });
+    const userAssigned = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'User-only task',
+      origin: 'assignment-proof',
+      assigneeUserId: USER_A,
+    });
+    const unassigned = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Open task',
+      origin: 'assignment-proof',
+    });
+    const now = new Date('2026-08-07T10:15:00.000Z');
+
+    for (const assigned of [agentAssigned, userAssigned]) {
+      await expect(
+        claimProjectTask(database, {
+          projectId: PROJECT_ID,
+          taskId: assigned.task.taskId,
+          sessionId: SESSION_B,
+          now,
+          leaseMs: 30_000,
+        }),
+      ).rejects.toBeInstanceOf(TaskClaimConflictError);
+      expect(
+        await database.query.projectTasks.findFirst({
+          where: eq(projectTasks.taskId, assigned.task.taskId),
+        }),
+      ).toMatchObject({ status: 'backlog', claimSessionId: null });
+
+      const claimed = await claimProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: assigned.task.taskId,
+        sessionId: SESSION_A,
+        now,
+        leaseMs: 30_000,
+      });
+      expect(claimed.claimSessionId).toBe(SESSION_A);
+    }
+
+    const openClaim = await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: unassigned.task.taskId,
+      sessionId: SESSION_B,
+      now,
+      leaseMs: 30_000,
+    });
+    expect(openClaim.claimSessionId).toBe(SESSION_B);
   });
 
   test('claims only ready work, waits for dependencies, and never reclaims terminal tasks', async () => {
@@ -369,6 +435,61 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       blocker: 'Waiting for reviewer input',
     });
     expect(blocked?.updatedAt.toISOString()).toBe('2026-08-07T12:30:02.000Z');
+  });
+
+  test('terminal transitions require the supplied session to hold a live unexpired claim', async () => {
+    const database = testDb();
+    const neverClaimed = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Never claimed',
+      origin: 'transition-proof',
+    });
+    const expired = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Expired claim',
+      origin: 'transition-proof',
+    });
+    await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: expired.task.taskId,
+      sessionId: SESSION_A,
+      now: new Date('2026-08-07T12:45:00.000Z'),
+      leaseMs: 30_000,
+    });
+
+    await expect(
+      transitionProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: neverClaimed.task.taskId,
+        status: 'done',
+        expectedClaimSessionId: SESSION_A,
+        result: { evidence: [{ ref: 'invalid-never-claimed' }] },
+        now: new Date('2026-08-07T12:45:01.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskTransitionConflictError);
+    await expect(
+      transitionProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: expired.task.taskId,
+        status: 'blocked',
+        expectedClaimSessionId: SESSION_A,
+        result: { blocker: 'invalid-expired-claim' },
+        now: new Date('2026-08-07T12:45:30.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskTransitionConflictError);
+
+    expect(
+      await getProjectTask(database, { projectId: PROJECT_ID, taskId: neverClaimed.task.taskId }),
+    ).toMatchObject({ status: 'backlog', claimSessionId: null, result: {} });
+    expect(
+      await getProjectTask(database, { projectId: PROJECT_ID, taskId: expired.task.taskId }),
+    ).toMatchObject({
+      status: 'doing',
+      claimSessionId: SESSION_A,
+      result: {},
+    });
   });
 
   test('a transition cannot overwrite another session live claim', async () => {

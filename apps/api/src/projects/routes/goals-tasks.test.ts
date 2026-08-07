@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   type GoalsTasksServiceError,
+  blockTaskForProject,
   claimTaskForProject,
   completeTaskForProject,
   mapGeneratedStateError,
@@ -58,6 +59,52 @@ describe('goals/tasks service boundaries', () => {
       code: 'session_not_in_project',
     } satisfies Partial<GoalsTasksServiceError>);
     expect(claimCalls).toBe(0);
+  });
+
+  test('binds claim, done, and block session_id to an authenticated project session', async () => {
+    const dependencies = {
+      sessionBelongsToProject: async () => true,
+      claimTask: async () => ({ taskId: TASK_ID }),
+      transitionTask: async () => ({ taskId: TASK_ID }),
+    };
+    const identity = {
+      projectId: PROJECT_ID,
+      taskId: TASK_ID,
+      sessionId: 'impersonated-session',
+      authenticatedSessionId: 'authenticated-session',
+      now: new Date('2026-08-07T12:00:00.000Z'),
+    };
+
+    await expect(
+      claimTaskForProject(dependencies, { ...identity, leaseSeconds: 300 }),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+    await expect(
+      completeTaskForProject(dependencies, {
+        ...identity,
+        evidence: [{ ref: 'proof' }],
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+    await expect(
+      blockTaskForProject(dependencies, { ...identity, blocker: 'blocked' }),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+  });
+
+  test('allows an unbound human JWT or PAT to coordinate an existing project session', async () => {
+    const claim = await claimTaskForProject(
+      {
+        sessionBelongsToProject: async () => true,
+        claimTask: async (input) => input,
+      },
+      {
+        projectId: PROJECT_ID,
+        taskId: TASK_ID,
+        sessionId: 'coordinated-session',
+        authenticatedSessionId: null,
+        leaseSeconds: 300,
+        now: new Date('2026-08-07T12:00:00.000Z'),
+      },
+    );
+    expect(claim.sessionId).toBe('coordinated-session');
   });
 
   test('refuses done without cited evidence before calling the store', async () => {

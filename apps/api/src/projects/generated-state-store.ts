@@ -1,10 +1,11 @@
 import type { Database } from '@kortix/db';
 import {
   projectGoalObservations,
+  projectSessions,
   type projectTaskStatusEnum,
   projectTasks,
 } from '@kortix/db/schema';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 export type ProjectTask = typeof projectTasks.$inferSelect;
 export type ProjectGoalObservation = typeof projectGoalObservations.$inferSelect;
@@ -177,6 +178,20 @@ export async function claimProjectTask(
         eq(projectTasks.taskId, input.taskId),
         inArray(projectTasks.status, ['backlog', 'todo', 'doing']),
         or(isNull(projectTasks.claimSessionId), lte(projectTasks.claimExpiresAt, input.now)),
+        sql`exists (
+          select 1
+          from ${projectSessions} as claimant_session
+          where claimant_session.session_id = ${input.sessionId}
+            and claimant_session.project_id = ${projectTasks.projectId}
+            and (
+              ${projectTasks.assigneeAgent} is null
+              or claimant_session.agent_name = ${projectTasks.assigneeAgent}
+            )
+            and (
+              ${projectTasks.assigneeUserId} is null
+              or claimant_session.created_by = ${projectTasks.assigneeUserId}
+            )
+        )`,
         sql`not exists (
           select 1
           from unnest(${projectTasks.blockedBy}) as blocker(task_id)
@@ -197,17 +212,17 @@ export class TaskTransitionConflictError extends Error {
   readonly code = 'TASK_TRANSITION_CONFLICT' as const;
   readonly projectId: string;
   readonly taskId: string;
-  readonly claimSessionId: string;
-  readonly claimExpiresAt: Date;
+  readonly claimSessionId: string | null;
+  readonly claimExpiresAt: Date | null;
 
   constructor(input: {
     projectId: string;
     taskId: string;
-    claimSessionId: string;
-    claimExpiresAt: Date;
+    claimSessionId: string | null;
+    claimExpiresAt: Date | null;
   }) {
     super(
-      `task ${input.taskId} in project ${input.projectId} is claimed by session ${input.claimSessionId}`,
+      `session does not hold a live claim on task ${input.taskId} in project ${input.projectId}`,
     );
     this.name = 'TaskTransitionConflictError';
     this.projectId = input.projectId;
@@ -218,7 +233,7 @@ export class TaskTransitionConflictError extends Error {
 }
 
 /**
- * Atomically change task status without overwriting another session's live claim.
+ * Atomically change task status only when the supplied session owns a live claim.
  * Done and blocked transitions release the claim in the same UPDATE.
  */
 export async function transitionProjectTask(
@@ -227,20 +242,13 @@ export async function transitionProjectTask(
     projectId: string;
     taskId: string;
     status: ProjectTaskStatus;
-    expectedClaimSessionId?: string | null;
+    expectedClaimSessionId: string;
     result?: Record<string, unknown>;
     now: Date;
   },
 ): Promise<ProjectTask | null> {
   assertValidDate(input.now, 'now');
   const clearsClaim = input.status === 'done' || input.status === 'blocked';
-  const claimConditions = [
-    isNull(projectTasks.claimSessionId),
-    lte(projectTasks.claimExpiresAt, input.now),
-  ];
-  if (input.expectedClaimSessionId != null) {
-    claimConditions.push(eq(projectTasks.claimSessionId, input.expectedClaimSessionId));
-  }
 
   const [transitioned] = await database
     .update(projectTasks)
@@ -254,7 +262,8 @@ export async function transitionProjectTask(
       and(
         eq(projectTasks.projectId, input.projectId),
         eq(projectTasks.taskId, input.taskId),
-        or(...claimConditions),
+        eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
+        gt(projectTasks.claimExpiresAt, input.now),
       ),
     )
     .returning();
@@ -262,20 +271,12 @@ export async function transitionProjectTask(
 
   const current = await getProjectTask(database, input);
   if (!current) return null;
-  if (
-    current.claimSessionId != null &&
-    current.claimExpiresAt != null &&
-    current.claimExpiresAt > input.now &&
-    current.claimSessionId !== input.expectedClaimSessionId
-  ) {
-    throw new TaskTransitionConflictError({
-      projectId: input.projectId,
-      taskId: input.taskId,
-      claimSessionId: current.claimSessionId,
-      claimExpiresAt: current.claimExpiresAt,
-    });
-  }
-  return null;
+  throw new TaskTransitionConflictError({
+    projectId: input.projectId,
+    taskId: input.taskId,
+    claimSessionId: current.claimSessionId,
+    claimExpiresAt: current.claimExpiresAt,
+  });
 }
 
 export async function recordProjectGoalObservation(

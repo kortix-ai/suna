@@ -8,7 +8,7 @@ export interface TaskEvidence {
 
 export class GoalsTasksServiceError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409,
+    readonly status: 400 | 403 | 404 | 409,
     readonly code: string,
     message: string,
   ) {
@@ -47,6 +47,7 @@ export async function claimTaskForProject<T>(
     projectId: string;
     taskId: string;
     sessionId: string;
+    authenticatedSessionId?: string | null;
     leaseSeconds: number;
     now: Date;
   },
@@ -62,6 +63,7 @@ export async function claimTaskForProject<T>(
       `lease_seconds must be an integer between ${MIN_TASK_LEASE_SECONDS} and ${MAX_TASK_LEASE_SECONDS}`,
     );
   }
+  assertSessionIdentity(input);
   if (!(await dependencies.sessionBelongsToProject(input.projectId, input.sessionId))) {
     throw new GoalsTasksServiceError(
       400,
@@ -101,6 +103,7 @@ export async function completeTaskForProject<T>(
     taskId: string;
     evidence: TaskEvidence[];
     sessionId: string;
+    authenticatedSessionId?: string | null;
     now: Date;
   },
 ): Promise<T> {
@@ -118,6 +121,7 @@ export async function completeTaskForProject<T>(
       'evidence must be a non-empty array of cited refs',
     );
   }
+  assertSessionIdentity(input);
   await assertProjectSession(dependencies, input);
   try {
     const task = await dependencies.transitionTask({
@@ -155,6 +159,7 @@ export async function blockTaskForProject<T>(
     taskId: string;
     blocker: string;
     sessionId: string;
+    authenticatedSessionId?: string | null;
     now: Date;
   },
 ): Promise<T> {
@@ -162,6 +167,7 @@ export async function blockTaskForProject<T>(
   if (!blocker) {
     throw new GoalsTasksServiceError(400, 'blocker_required', 'blocker must be non-empty');
   }
+  assertSessionIdentity(input);
   await assertProjectSession(dependencies, input);
   try {
     const task = await dependencies.transitionTask({
@@ -179,6 +185,19 @@ export async function blockTaskForProject<T>(
     const conflict = mapGeneratedStateError(error);
     if (conflict) throw new GoalsTasksServiceError(409, conflict.code, conflict.error);
     throw error;
+  }
+}
+
+function assertSessionIdentity(input: {
+  sessionId: string;
+  authenticatedSessionId?: string | null;
+}): void {
+  if (input.authenticatedSessionId != null && input.authenticatedSessionId !== input.sessionId) {
+    throw new GoalsTasksServiceError(
+      403,
+      'session_identity_mismatch',
+      'A project session can coordinate tasks only as its own session_id',
+    );
   }
 }
 
