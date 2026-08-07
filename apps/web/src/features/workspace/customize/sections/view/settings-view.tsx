@@ -850,7 +850,7 @@ function GeneralProjectCard({
   const { mutate, isPending } = mutation;
 
   // One effect for both fields, same shape as `RepositoryCard`'s combined
-  // branch+manifest save below. Name still only fires once its debounce
+  // branch+manifest save above. Name still only fires once its debounce
   // settles; the icon field is a discrete pick (not continuous typing), so
   // it saves the moment `icon` changes — no artificial delay, matching
   // `ExperimentalFeatureRow`'s switch. `buildProjectSavePatch` computes the

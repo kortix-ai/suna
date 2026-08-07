@@ -228,7 +228,7 @@ export function WorkspaceSwitcher({
   // as every other implicit entry point. Never `/projects`: that's a redirect
   // now, and the mark would dead-end the moment it fired.
   const homeHref = activeProjectId ? `/projects/${activeProjectId}` : appHome;
-  const homeLabel = activeProjectId ? 'Project home' : 'Home';
+  const homeLabel = activeProjectId ? 'Workspace home' : 'Home';
 
   const trigger =
     variant === 'header' ? (
