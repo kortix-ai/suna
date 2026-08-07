@@ -308,6 +308,143 @@ adminApp.openapi(
   },
 );
 
+// ── All projects, across every account ───────────────────────────────────────
+// The fleet view the per-account list above cannot give you: "what is actually
+// being worked on right now", most-active first. Sorting on `lastSessionAt`
+// (the newest session's created_at) rather than `projects.updated_at` is
+// deliberate — `updated_at` moves for metadata writes that no human caused, so
+// it reports touched, not active. NULLS LAST keeps never-run projects out of
+// the top of the default view instead of ahead of it.
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/projects',
+    tags: ['admin'],
+    summary: 'List projects across all accounts (admin console)',
+    ...auth,
+    request: {
+      query: z.object({
+        search: z.string().optional(),
+        accountId: z.string().optional(),
+        status: z.string().optional(),
+        sortBy: z.string().optional(),
+        sortDir: z.string().optional(),
+        page: z.string().optional(),
+        limit: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Projects page'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const { db } = await import('../shared/db');
+    const { accounts, projects, projectSessions } = await import('@kortix/db');
+    const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
+    const { parseAdminProjectsListQuery } = await import('./projects-query');
+    const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
+
+    const { search, accountId, invalidAccountId, statusValues, sortBy, sortDir, page, limit, offset } =
+      parseAdminProjectsListQuery((k: string) => c.req.query(k));
+
+    // A malformed accountId narrows to nothing rather than widening to
+    // everything — an operator who mistypes an id must not be handed the fleet.
+    if (invalidAccountId) {
+      return c.json({ projects: [], total: 0, page, limit });
+    }
+
+    const ownerEmail = sql<string | null>`(
+      SELECT au.email FROM auth.users au
+      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      WHERE am.account_id = ${accounts.accountId}
+      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
+      LIMIT 1)`;
+    const sessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+    // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
+    // as a single value and matches nothing.
+    const activeStatuses = sql.join(
+      ACTIVE_SESSION_STATUSES.map((s) => sql`${s}`),
+      sql`, `,
+    );
+    const activeSessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps
+      WHERE ps.project_id = ${projects.projectId}
+        AND ps.status::text IN (${activeStatuses}))`;
+    const lastSessionAt = sql<string | null>`(
+      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+
+    const conds: any[] = [];
+    if (search) {
+      conds.push(
+        or(
+          ilike(projects.name, `%${search}%`),
+          ilike(accounts.name, `%${search}%`),
+          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
+                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+        ),
+      );
+    }
+    if (accountId) conds.push(eq(projects.accountId, accountId));
+    if (statusValues.length) conds.push(inArray(projects.status, statusValues));
+    const where = conds.length ? and(...conds) : undefined;
+
+    const dirSql = sortDir === 'asc' ? sql`asc` : sql`desc`;
+    const sortExpr =
+      sortBy === 'created' ? sql`${projects.createdAt}` : sortBy === 'sessions' ? sessionCount : lastSessionAt;
+    // `project_id` breaks ties so pagination cannot repeat or skip a row when
+    // many projects share a sort value (e.g. sessionCount 0).
+    const orderBy = sql`${sortExpr} ${dirSql} nulls last, ${projects.projectId} desc`;
+
+    const rows = await db
+      .select({
+        projectId: projects.projectId,
+        name: projects.name,
+        status: projects.status,
+        accountId: projects.accountId,
+        accountName: accounts.name,
+        ownerEmail,
+        createdAt: projects.createdAt,
+        sessionCount,
+        activeSessionCount,
+        lastSessionAt,
+      })
+      .from(projects)
+      .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
+      .where(where)
+      .orderBy(orderBy)
+      .limit(limit)
+      .offset(offset);
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(projects)
+      .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
+      .where(where);
+
+    const list = rows.map((r) => ({
+      projectId: r.projectId,
+      name: r.name,
+      status: r.status ?? null,
+      accountId: r.accountId,
+      accountName: r.accountName ?? null,
+      ownerEmail: r.ownerEmail ?? null,
+      createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
+      sessionCount: Number(r.sessionCount ?? 0),
+      activeSessionCount: Number(r.activeSessionCount ?? 0),
+      lastSessionAt: r.lastSessionAt ? new Date(r.lastSessionAt as any).toISOString() : null,
+    }));
+
+    return c.json({ projects: list, total: Number(total ?? 0), page, limit });
+  } catch (e: any) {
+    return c.json({ projects: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({

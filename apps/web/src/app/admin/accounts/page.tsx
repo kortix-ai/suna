@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import {
   ArrowDownIcon as ArrowDown,
@@ -24,6 +23,7 @@ import {
   UsersIcon as Users,
   XIcon as X,
 } from '@phosphor-icons/react';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -342,7 +342,10 @@ function activeFilterCount(f: AccountFilters): number {
 }
 
 export default function AdminAccountsPage() {
-  const [searchInput, setSearchInput] = useState('');
+  // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
+  // land on a filtered list instead of the whole fleet.
+  const urlSearchParams = useSearchParams();
+  const [searchInput, setSearchInput] = useState(urlSearchParams.get('search') ?? '');
   const search = useDebounce(searchInput);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<AccountFilters>(EMPTY_FILTERS);

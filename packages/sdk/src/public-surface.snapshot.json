@@ -919,6 +919,7 @@
     "useAdminFeedbackTimeSeries",
     "useAdminGrantCredits",
     "useAdminGrantTrial",
+    "useAdminProjects",
     "useAdminRatingTrends",
     "useAdminRevokeTrial",
     "useAdminSandboxAction",

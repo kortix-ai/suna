@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import { ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -14,15 +13,13 @@ import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { AdminSidebar } from './admin-sidebar';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
+// Only routes that exist under app/admin/*. (Analytics lands with the
+// activity-dashboard branch and re-adds its entry there.)
 const BREADCRUMBS: Record<string, string> = {
   '/admin': 'Overview',
   '/admin/accounts': 'Accounts',
-  '/admin/analytics': 'Analytics',
-  '/admin/feedback': 'Feedback',
-  '/admin/notifications': 'Notifications',
-  '/admin/ops': 'Operations',
-  '/admin/providers': 'Providers',
-  '/admin/stress-test': 'Stress test',
+  '/admin/projects': 'Projects',
+  '/admin/sandboxes': 'Sandboxes',
   '/admin/utils': 'Maintenance',
 };
 
@@ -33,7 +30,6 @@ export function AdminShell({
   children: React.ReactNode;
   initialOpen: boolean;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: adminRole, isLoading } = useAdminRole();
   const pathname = usePathname();
   const label =
@@ -57,18 +53,16 @@ export function AdminShell({
           </div>
           <div className="space-y-1">
             <h1 className="text-lg font-semibold tracking-tight">
-              {tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}
+              {'Admin access required'}
             </h1>
             <p className="text-muted-foreground text-sm">
-              {tHardcodedUi.raw(
-                'appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions',
-              )}
+              {'Your account doesn\'t have admin permissions. Return to the app and contact a workspace admin if this looks wrong.'}
             </p>
           </div>
           <Link
             href={PROJECT_LANDING_PATH}
             className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          >{tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}</Link>
+          >{'Back to projects'}</Link>
         </div>
       </div>
     );
