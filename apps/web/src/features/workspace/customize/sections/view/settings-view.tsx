@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Github } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
@@ -43,6 +44,7 @@ import {
   inviteRepoCollaborator,
   isManagedGithubProject,
   listProjectBranches,
+  listProjectsForAccount,
   listProjectTriggers,
   setProjectTriggersActivation,
   updateExperimentalFeature,
@@ -60,6 +62,42 @@ import {
   applySandboxProviderResult,
   pollSandboxProviderTransition,
 } from './sandbox-provider-result';
+
+export interface RunProjectArchiveClient {
+  archiveProject: (projectId: string) => Promise<unknown>;
+}
+
+/**
+ * The archive mutation's real side effects, pulled out of the component so
+ * this exact wiring can be pinned with a plain fake instead of
+ * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
+ * hazard for sibling suites (see ensure-first-project.provision.test.ts /
+ * use-create-workspace.test.ts, which use this same injected-client shape).
+ *
+ * Ported verbatim from the deleted `/projects` list page's archive handler
+ * (`app/(app)/projects/page.tsx`, pre-Task-21): "Archiving the LAST project
+ * must leave the account empty. Without this the auto-provision door would
+ * see zero active projects and immediately recreate one, undoing the delete
+ * the user just confirmed." Same condition (`<= 1`, evaluated against the
+ * project count from BEFORE this archive lands), same tab-scoped
+ * `sessionStorage` guard (`suppressAutoProjectAfterDelete`) — deliberately
+ * NOT `localStorage`: a later sign-in or a fresh tab must still auto-provision
+ * for an empty account like any other.
+ *
+ * `onSuppress` only runs after `client.archiveProject` resolves — a failed
+ * archive must not suppress auto-provision for a project that still exists.
+ */
+export async function runProjectArchive(
+  projectId: string,
+  remainingProjectCountBeforeArchive: number,
+  client: RunProjectArchiveClient,
+  onSuppress: () => void,
+): Promise<void> {
+  await client.archiveProject(projectId);
+  if (remainingProjectCountBeforeArchive <= 1) {
+    onSuppress();
+  }
+}
 
 export function SettingsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -81,8 +119,28 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   const canEdit = canManage || canWrite;
 
+  // Same ['projects', accountId] cache key the workspace switcher and /new
+  // already fetch with, so this is warm (no extra request) for the common
+  // case of opening Settings from a project the sidebar has already loaded.
+  // Read, not re-derived from `project`: this is the account's PROJECT
+  // COUNT before the archive commits, which `runProjectArchive` needs to
+  // decide whether this was the last one.
+  const accountId = project?.account_id;
+  const accountProjectsQuery = useQuery({
+    queryKey: ['projects', accountId],
+    queryFn: () => listProjectsForAccount(accountId as string),
+    enabled: !!accountId,
+    staleTime: 20_000,
+  });
+
   const archiveMutation = useMutation({
-    mutationFn: () => archiveProject(projectId),
+    mutationFn: () =>
+      runProjectArchive(
+        projectId,
+        accountProjectsQuery.data?.length ?? 0,
+        { archiveProject },
+        suppressAutoProjectAfterDelete,
+      ),
     onSuccess: () => {
       successToast('Project archived');
       queryClient.invalidateQueries({ queryKey: ['projects'] });
