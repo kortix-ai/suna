@@ -63,6 +63,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
   EnvelopeIcon as Mail,
   FolderSimpleIcon as MetaFolder,
@@ -908,6 +909,10 @@ const STATUS_DOT_STYLE: Record<
   done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
   stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
   failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
+  // `legacy` renders <ClockCounterClockwiseIcon /> instead and never reads
+  // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
+  // the history glyph says "restorable" without spending any color.
+  legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
 };
 
 function SessionStatusDot({
@@ -931,6 +936,12 @@ function SessionStatusDot({
           // Loading is the only spinner in this codebase. The previous
           // implementation spun an SVG with animate-spin, which the rule bans.
           <Loading className="text-kortix-yellow size-3.5" />
+        ) : display === 'legacy' ? (
+          <ClockCounterClockwiseIcon
+            className="size-3.5 shrink-0"
+            style={{ color: style.color }}
+            aria-hidden
+          />
         ) : (
           <svg
             height="16"

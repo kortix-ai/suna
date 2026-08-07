@@ -8,7 +8,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -523,6 +523,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // into the FAILURE card above and claim a session that merely stopped had
     // failed before it ever got a computer.
     if (dormantWithoutRuntime) {
+      // A migrated session's first open lands here by design: it has never had
+      // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
+      // and make the CTA the restore it actually performs.
+      if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
+        return (
+          <InlineSessionError
+            title="Legacy session"
+            message="This conversation was imported from Suna. Restore the session to load its chat history — its files are already in the project under legacy/."
+            detail={restart.errorMessage ?? undefined}
+            action={
+              <RestartSessionButton
+                restart={restart}
+                onRestart={handleRestart}
+                label="Restore session"
+                pendingLabel="Restoring…"
+              />
+            }
+          />
+        );
+      }
       return (
         <InlineSessionError
           title="This session is stopped"
@@ -644,9 +664,13 @@ function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) 
 function RestartSessionButton({
   restart,
   onRestart,
+  label = 'Restart session',
+  pendingLabel = 'Restarting…',
 }: {
   restart: { isPending: boolean };
   onRestart: () => void;
+  label?: string;
+  pendingLabel?: string;
 }) {
   return (
     <Button
@@ -662,7 +686,7 @@ function RestartSessionButton({
       ) : (
         <RotateCcw className="size-3.5 shrink-0" />
       )}
-      {restart.isPending ? 'Restarting…' : 'Restart session'}
+      {restart.isPending ? pendingLabel : label}
     </Button>
   );
 }

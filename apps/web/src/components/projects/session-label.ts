@@ -110,7 +110,8 @@ export type SessionDisplayStatus =
   | 'running'
   | 'done'
   | 'stopped'
-  | 'failed';
+  | 'failed'
+  | 'legacy';
 
 /** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
  *  not that the agent is working, and the payload carries no signal for that. */
@@ -121,7 +122,19 @@ export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string>
   done: 'Done',
   stopped: 'Stopped',
   failed: 'Failed',
+  legacy: 'Legacy import — open to restore',
 };
+
+/**
+ * A session created by the Suna account migration. Its chat history lives in
+ * the migrated archive and is loaded into the sandbox when the session is
+ * restored; the workspace files are already in the repo under `legacy/`.
+ * Stamped by the migration's db phase as `metadata.legacy_migration`.
+ */
+export function isLegacyMigratedSession(session: ProjectSession): boolean {
+  const meta = (session.metadata ?? {}) as Record<string, unknown>;
+  return Boolean(meta.legacy_migration);
+}
 
 /**
  * Resolve a session to its display status.
@@ -150,9 +163,12 @@ export function sessionDisplayStatus(
     case 'running':
       return 'running';
     case 'completed':
-      return 'done';
     case 'stopped':
-      return 'stopped';
+      // A dormant migrated session is not "done" — nothing ran and nothing
+      // finished; its chat is waiting to be restored. Live states above keep
+      // their normal paint once the session has actually been restored.
+      if (isLegacyMigratedSession(session)) return 'legacy';
+      return session.status === 'completed' ? 'done' : 'stopped';
     case 'failed':
       return 'failed';
     default:
@@ -173,7 +189,7 @@ export type SessionSourceFilter =
   | 'email'
   | 'schedule'
   | 'webhook';
-export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed';
+export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
   { value: 'mine', label: 'My chats' },
@@ -190,6 +206,7 @@ export const SESSION_STATUS_FILTERS: Array<{ value: SessionStatusFilter; label: 
   { value: 'done', label: 'Done' },
   { value: 'stopped', label: 'Stopped' },
   { value: 'failed', label: 'Failed' },
+  { value: 'legacy', label: 'Legacy' },
 ];
 
 /** Selected values are ORed. Empty = everything. */
