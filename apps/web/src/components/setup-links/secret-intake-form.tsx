@@ -6,20 +6,22 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
-  CheckIcon as Check,
-  KeyIcon as KeyRound,
-  ShieldCheckIcon as ShieldCheck,
+  CheckIcon,
+  ClockCountdownIcon,
+  KeyIcon,
+  LinkBreakIcon,
+  ShieldCheckIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { setupLinkApiBase } from './util';
+import { classifySetupLinkError, describeLinkExpiry, setupLinkApiBase } from './util';
 import {
   getSecretSetupLink,
   submitSecretSetupLink,
   type SecretSetupLinkInfo,
 } from '@kortix/sdk';
 
-type Phase = 'loading' | 'error' | 'ready' | 'submitting' | 'done';
+type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
 
 /**
  * Renders the fields an agent-minted secret link asks for, and submits the
@@ -39,6 +41,7 @@ export function SecretIntakeForm({
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<SecretSetupLinkInfo | null>(null);
+  const [expiresIn, setExpiresIn] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -49,9 +52,16 @@ export function SecretIntakeForm({
         const body = await getSecretSetupLink(token, { backendUrl: base });
         if (cancelled) return;
         setInfo(body);
+        setExpiresIn(describeLinkExpiry(body.expires_at, Date.now()));
         setPhase('ready');
       } catch (cause) {
-        if (!cancelled) {
+        if (cancelled) return;
+        const kind = classifySetupLinkError(cause);
+        if (kind === 'expired') {
+          setPhase('expired');
+        } else if (kind === 'invalid') {
+          setPhase('invalid');
+        } else {
           setError(
             cause instanceof Error
               ? cause.message
@@ -84,6 +94,10 @@ export function SecretIntakeForm({
       setPhase('done');
       onDone?.();
     } catch (cause) {
+      if (classifySetupLinkError(cause) === 'expired') {
+        setPhase('expired');
+        return;
+      }
       setError(cause instanceof Error ? cause.message : 'Could not save. Check your connection and try again.');
       setPhase('ready');
     }
@@ -92,8 +106,39 @@ export function SecretIntakeForm({
   if (phase === 'loading') {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loading className="h-4 w-4" />{' '}
+        <Loading className="size-4" />{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067')}
+      </div>
+    );
+  }
+
+  if (phase === 'expired') {
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
+          <ClockCountdownIcon weight="fill" className="text-kortix-orange size-5" />
+        </span>
+        <p className="text-foreground text-sm font-medium">This link has expired</p>
+        <p className="text-muted-foreground max-w-xs text-xs">
+          Secret links stop working after a set time so an old link cannot be misused. Ask the
+          agent that sent it for a fresh link — it can mint one in seconds — or reply in the
+          thread where you received this one.
+        </p>
+      </div>
+    );
+  }
+
+  if (phase === 'invalid') {
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <span className="bg-kortix-red/15 flex size-9 items-center justify-center rounded-sm">
+          <LinkBreakIcon weight="fill" className="text-kortix-red size-5" />
+        </span>
+        <p className="text-foreground text-sm font-medium">This link is not valid</p>
+        <p className="text-muted-foreground max-w-xs text-xs">
+          The link may have been cut off when it was copied. Open the complete URL, or ask the
+          agent that sent it for a new link.
+        </p>
       </div>
     );
   }
@@ -101,7 +146,7 @@ export function SecretIntakeForm({
   if (phase === 'error') {
     return (
       <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'This link is invalid or has expired.'}
+        {error || 'Could not reach Kortix. Check your connection and try again.'}
       </div>
     );
   }
@@ -109,9 +154,9 @@ export function SecretIntakeForm({
   if (phase === 'done') {
     return (
       <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
-          <Check className="h-5 w-5" />
-        </div>
+        <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
+          <CheckIcon weight="fill" className="text-kortix-green size-5" />
+        </span>
         <p className="text-foreground text-sm font-medium">
           {tI18nHardcoded.raw(
             'autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1',
@@ -155,16 +200,17 @@ export function SecretIntakeForm({
 
       <Button className="w-full" onClick={submit} disabled={submitting}>
         {submitting ? (
-          <Loading className="mr-2 h-4 w-4" />
+          <Loading className="mr-2 size-4 shrink-0" />
         ) : (
-          <KeyRound className="mr-2 h-4 w-4" />
+          <KeyIcon className="mr-2 size-4 shrink-0" />
         )}
         {submitting ? 'Saving…' : 'Save securely'}
       </Button>
 
       <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-[11px]">
-        <ShieldCheck className="h-3 w-3" />
+        <ShieldCheckIcon className="size-3" />
         {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88')}
+        {expiresIn ? ` Link expires in ${expiresIn}.` : ''}
       </p>
     </div>
   );
