@@ -32,6 +32,12 @@ let authorizeAllowed = true;
 let remintCalls: Array<{ requestedAgent: string | null }> = [];
 let envSyncCalls: Array<{ requestedAgent: string | null | undefined }> = [];
 
+// This file exercises an unrelated proxy contract with an ordinary session.
+mock.module('../../projects/task-worker-prompt-admission', () => ({
+  projectTaskWorkerPromptAdmission: async () => ({ state: 'not_worker' }),
+  taskWorkerPromptIsAllowed: () => true,
+}));
+
 mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,

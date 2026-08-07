@@ -29,11 +29,15 @@ const PROJECT_ID = 'proj-1';
 
 let sessionRow: Record<string, unknown> | null = null;
 let workerBindingStatus: string | null = null;
+let workerAdmissionState: 'not_worker' | 'spawned_unbound' | 'bound' = 'not_worker';
+let openSessionResult: Record<string, unknown> | null = null;
+let forwardCalls = 0;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../generated-state-store', () => ({
+  projectTaskWorkerAdmissionState: async () => workerAdmissionState,
   getProjectTaskWorkerBinding: async () => workerBindingStatus
     ? { taskId: 'task-1', status: workerBindingStatus }
     : null,
@@ -66,7 +70,8 @@ mock.module('../../../shared/db', () => ({
 mock.module('../../../sandbox-proxy/routes/preview', () => ({
   preview: { routes: [] },
   forwardToSandbox: async () => {
-    throw new Error('forwardToSandbox: not expected in this test');
+    forwardCalls += 1;
+    return new Response(null, { status: 204 });
   },
 }));
 mock.module('../../lib/sessions', () => ({
@@ -76,8 +81,12 @@ mock.module('../../lib/sessions', () => ({
 }));
 mock.module('../../routes/shared', () => ({
   openSession: async () => {
+    if (openSessionResult) return openSessionResult;
     throw new Error('openSession: not reached when the deletedAt guard trips');
   },
+}));
+mock.module('../../session-title-generate', () => ({
+  generateSessionTitleFromFirstPrompt: async () => {},
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => 'automation-user-1',
@@ -113,6 +122,9 @@ const { continueSession, createSession, startSession } = await import('../engine
 beforeEach(() => {
   sessionRow = null;
   workerBindingStatus = null;
+  workerAdmissionState = 'not_worker';
+  openSessionResult = null;
+  forwardCalls = 0;
   updateCalls = [];
 });
 
@@ -133,6 +145,43 @@ describe('continueSession — deleted-mid-flight guard', () => {
     expect(updateCalls).toEqual([]);
   });
 
+  test('a marker-only child cannot reach postPrompt before task binding commits', async () => {
+    sessionRow = {
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      status: 'running',
+      metadata: { task_liveness_binding_required: true },
+    };
+    workerAdmissionState = 'spawned_unbound';
+
+    const result = await continueSession({ sessionId: SESSION_ID, text: 'escape' } as never);
+
+    expect(result).toBe('failed');
+    expect(forwardCalls).toBe(0);
+    expect(updateCalls).toEqual([]);
+  });
+
+  test('a registered doing worker can reach postPrompt', async () => {
+    sessionRow = {
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      status: 'running',
+      metadata: { task_liveness_binding_required: true },
+    };
+    workerAdmissionState = 'bound';
+    workerBindingStatus = 'doing';
+    openSessionResult = {
+      stage: 'ready',
+      sandbox: { external_id: 'sandbox-1', provider: 'daytona' },
+      opencode_session_id: 'opencode-session-1',
+    };
+
+    const result = await continueSession({ sessionId: SESSION_ID, text: 'work' } as never);
+
+    expect(result).toBe('delivered');
+    expect(forwardCalls).toBe(1);
+  });
+
   test('a terminal bounded worker is never revived by a queued continuation', async () => {
     sessionRow = {
       accountId: ACCOUNT_ID,
@@ -140,6 +189,7 @@ describe('continueSession — deleted-mid-flight guard', () => {
       status: 'stopped',
       metadata: {},
     };
+    workerAdmissionState = 'bound';
     workerBindingStatus = 'done';
 
     const result = await continueSession({ sessionId: SESSION_ID, text: 'escape' } as never);

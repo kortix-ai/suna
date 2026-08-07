@@ -14,6 +14,10 @@ import { serviceKeyForExternalId } from "../../platform/service-key";
 import type { ProviderName } from "../../platform/providers";
 import { db } from "../../shared/db";
 import { getProjectTaskWorkerBinding } from "../generated-state-store";
+import {
+  projectTaskWorkerPromptAdmission,
+  taskWorkerPromptIsAllowed,
+} from "../task-worker-prompt-admission";
 import { connectorBindingPayloadConflicts } from "../lib/session-connector-bindings";
 import { secretsAllowlistPayloadConflicts } from "../secrets";
 import {
@@ -456,8 +460,8 @@ export async function continueSession(
     .limit(1);
 
   if (!session) return "no-session";
-  const workerBinding = await getProjectTaskWorkerBinding(db, sessionId);
-  if (workerBinding && workerBinding.status !== "doing") return "failed";
+  const workerAdmission = await projectTaskWorkerPromptAdmission(db, sessionId);
+  if (!taskWorkerPromptIsAllowed(workerAdmission)) return "failed";
   if (session.status === "failed") return "failed";
   // deleteSession() stamps metadata.deletedAt and leaves the row 'stopped' —
   // the same status a normal hibernate uses. Without this check a queued
@@ -610,15 +614,20 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, runtimeId) =>
-      postPrompt(
+    send: async (externalId, runtimeId) => {
+      // The task may become terminal, or an unbound child may race registration,
+      // while the sandbox wakes. Re-check at the final prompt-dispatch boundary.
+      const freshAdmission = await projectTaskWorkerPromptAdmission(db, sessionId);
+      if (!taskWorkerPromptIsAllowed(freshAdmission)) return false;
+      return postPrompt(
         externalId,
         runtimeId,
         text,
         userId,
         sessionId,
         command.messageId,
-      ),
+      );
+    },
   });
 }
 

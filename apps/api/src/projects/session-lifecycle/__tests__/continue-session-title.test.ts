@@ -14,6 +14,11 @@ let sessionRow: Record<string, unknown> | null = null;
 let titleCalls: Array<Record<string, unknown>> = [];
 let actor: string | null = 'automation-user-1';
 
+mock.module('../../task-worker-prompt-admission', () => ({
+  projectTaskWorkerPromptAdmission: async () => ({ state: 'not_worker' }),
+  taskWorkerPromptIsAllowed: () => true,
+}));
+
 mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({

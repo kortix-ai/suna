@@ -11,6 +11,7 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { projectTaskWorkerPromptAdmission } from '../../projects/task-worker-prompt-admission';
 import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
@@ -39,6 +40,7 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { db } from '../../shared/db';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -102,6 +104,34 @@ function jsonProxyError(body: Record<string, unknown>, status: number, origin?: 
     status,
     headers,
   });
+}
+
+async function taskWorkerPromptRefusal(
+  sessionId: string,
+  origin: string,
+): Promise<Response | null> {
+  const admission = await projectTaskWorkerPromptAdmission(db, sessionId);
+  if (admission.state === 'not_worker') return null;
+  if (admission.state === 'spawned_unbound') {
+    return jsonProxyError(
+      {
+        error: 'Spawned task worker is not bound to a task',
+        code: 'TASK_LIVENESS_WORKER_UNBOUND',
+      },
+      409,
+      origin,
+    );
+  }
+  if (admission.binding.status === 'doing') return null;
+  return jsonProxyError(
+    {
+      error: 'A terminal task worker cannot start another turn',
+      code: 'TASK_WORKER_CONFINED',
+      task_id: admission.binding.taskId,
+    },
+    409,
+    origin,
+  );
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -859,6 +889,14 @@ export async function forwardToSandbox(
       origin,
     );
   }
+  // A metadata-marked task child must not execute before its registration
+  // commits. Bound workers remain prompt-capable only while their task is doing.
+  // Run this before wake, connector checks, title generation, env sync, and dedupe.
+  if (isTurnStartRequest(upstreamPort, method, remainingPath)) {
+    const refusal = await taskWorkerPromptRefusal(record.sessionId, origin);
+    if (refusal) return refusal;
+  }
+
   // A turn whose required connectors cannot serve it is refused HERE — before the
   // sandbox is woken, before the dedupe claim, before the title is generated from
   // a prompt that will never run.
@@ -1206,6 +1244,15 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        if (isTurnStartRequest(upstreamPort, method, remainingPath)) {
+          // Registration and task status can change during wake/env sync. This
+          // final re-check is adjacent to the upstream prompt dispatch.
+          const refusal = await taskWorkerPromptRefusal(record.sessionId, origin);
+          if (refusal) {
+            if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+            return refusal;
+          }
+        }
         if (promptDelivery) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,

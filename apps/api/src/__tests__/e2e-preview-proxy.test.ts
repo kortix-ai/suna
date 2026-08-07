@@ -81,6 +81,13 @@ function sortPreferredSandboxRows(rows: any[]): any[] {
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
+// This file exercises an unrelated proxy contract with an ordinary session.
+mock.module('../projects/task-worker-prompt-admission', () => ({
+  projectTaskWorkerPromptAdmission: async () => ({ state: 'not_worker' }),
+  taskWorkerPromptIsAllowed: () => true,
+}));
+
+
 // Auth mock — bypass combinedAuth
 mock.module('../middleware/auth', () => ({
   combinedAuth: async (c: any, next: any) => {
