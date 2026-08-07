@@ -14,7 +14,7 @@
 
 import { create } from 'zustand';
 
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 
 /** Sub-tab to land on inside the LLM → Providers panel when deep-linking there.
  *  "Add provider" (catalog) is the primary surface, so it's the default. */
@@ -51,7 +51,10 @@ interface CustomizeState {
 
 export const useCustomizeStore = create<CustomizeState>((set) => ({
   open: false,
-  section: 'agents',
+  // Read from the registry rather than repeated here: this literal said
+  // 'agents' and kept the overlay opening on a section that no longer exists
+  // after Agents graduated to /projects/<id>/agent.
+  section: DEFAULT_CUSTOMIZE_SECTION,
   llmProvidersTab: 'catalog',
   membersTab: 'people',
   openCustomize: (section, opts) =>

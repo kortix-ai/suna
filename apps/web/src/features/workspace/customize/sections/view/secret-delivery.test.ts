@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  brokerConsumerForSecret,
   buildBrokerPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
@@ -8,6 +9,19 @@ import {
   secretDeliveryOptions,
   secretDeliveryPresentation,
 } from './secret-delivery';
+
+describe('brokerConsumerForSecret', () => {
+  test('keeps canonical consumers unchanged', () => {
+    expect(brokerConsumerForSecret('llm_gateway')).toBe('llm_gateway');
+    expect(brokerConsumerForSecret('connector')).toBe('connector');
+    expect(brokerConsumerForSecret('http_broker')).toBe('http_broker');
+  });
+
+  test('defaults unsupported consumers to the HTTPS broker', () => {
+    expect(brokerConsumerForSecret(null)).toBe('http_broker');
+    expect(brokerConsumerForSecret('sandbox')).toBe('http_broker');
+  });
+});
 
 describe('secretDeliveryPresentation', () => {
   test('states that runtime secrets are readable inside the sandbox', () => {
@@ -51,10 +65,6 @@ describe('secretDeliveryPresentation', () => {
     expect(secretDeliveryPresentation('broker', 'git_proxy')).toMatchObject({
       label: 'Git service',
       description: 'Used for repository access without entering the sandbox.',
-    });
-    expect(secretDeliveryPresentation('broker', 'executor')).toMatchObject({
-      label: 'Automation',
-      description: 'Used by server-side triggers and actions without entering the sandbox.',
     });
   });
 });

@@ -26,8 +26,11 @@ import { useQuery } from '@tanstack/react-query';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
+import {
+  CatalogEmptyNote,
+  CatalogNoMatch,
+} from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { CatalogEmptyNote, CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 import { filterSkills, type SkillScope } from './skill-scope';
@@ -113,10 +116,14 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // One control, two labels. The header has a title beside it and can be terse;
   // the empty state is the whole screen and has to name what it creates. Both
   // start the same configure thread, so they cannot drift apart.
+  // `size="sm"` is `h-8` — the same height as the search input beside it in the
+  // header group. The Button default is `h-9`, which left the pair 4px
+  // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
       <Button
         variant="secondary"
+        size="sm"
         onClick={() => configure.start(newConfigPrompt('skill'))}
         disabled={configure.pending}
       >
@@ -144,6 +151,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
+            size="sm"
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>

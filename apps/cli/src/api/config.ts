@@ -55,7 +55,7 @@ const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
 /** The global default project for a host — used by every project-scoped
- *  command (executor, connectors, sessions, …) when the cwd is not bound
+ *  command (connectors, sessions, …) when the cwd is not bound
  *  to a project via `.kortix/link.json`. Carries its account_id so the
  *  default always resolves under the right account. */
 export interface DefaultProjectRef {
@@ -189,9 +189,9 @@ export function deleteConfig(): void {
 
 /**
  * Resolve the active Host for the current invocation. Priority:
- *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted),
- *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the session-scoped
- *      executor PAT the platform injects into a sandbox. (The SANDBOX credential
+ *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted).
+ *      It carries the session-scoped PAT the platform injects into a sandbox.
+ *      (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
  *      authenticate against the project-scoped API routes the CLI calls.)
@@ -200,14 +200,14 @@ export function deleteConfig(): void {
  *   4. The `active` host in config.json
  */
 /**
- * True when the platform-injected sandbox token (KORTIX_CLI_TOKEN /
- * KORTIX_EXECUTOR_TOKEN) is present. `activeHost()` then resolves to a
+ * True when the platform-injected `KORTIX_CLI_TOKEN` is present.
+ * `activeHost()` then resolves to a
  * synthetic env host, which must outrank a `.kortix/link.json` host —
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
 function sandboxCliToken(): string | undefined {
-  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+  return sandboxEnvValue('KORTIX_CLI_TOKEN');
 }
 
 export function hasEnvTokenHost(): boolean {

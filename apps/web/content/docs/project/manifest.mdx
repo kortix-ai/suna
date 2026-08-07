@@ -104,7 +104,7 @@ triggers:
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no | sandbox image(s) and hardware |
 | `opencode.config_dir` | no | default `.kortix/opencode` |
 | `triggers` | no | list of cron and webhook triggers |
-| `connectors` | no | list of integration definitions |
+| `connectors` | no | list of connector definitions |
 | `policy.default_mode` | no | `allow_all` (default) or `risk`; project-wide connector approval mode |
 | `agents` | yes | name-to-block governance map; must not be empty |
 
@@ -252,7 +252,7 @@ connectors:
 | `slug` | yes | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors. |
 | `provider` | yes | `pipedream`, `mcp`, `openapi`, `postman`, `graphql`, `http`, or `channel`. |
 | `name` | no | Display name. Defaults to slug. |
-| `authorization_strategy` | no | `project` or `user`. Defaults to `project` when omitted. A project strategy uses active project authorizations. A user strategy uses only the acting member's authorization. |
+| `authorization_strategy` | no | `project` or `user`. Defaults to `project` when omitted. A project strategy uses active project connections. A user strategy uses only the acting member's connection. |
 | `enabled` | no | Defaults to `true`. |
 | `credential` | no | Only `shared` is supported. The retired `per_user` mode is a hard error. |
 | `sensitive` | no | Defaults to `false`. `true` makes `require_approval` the unmatched-action default, including reads. Explicit project and connector rules still resolve first. |
@@ -276,8 +276,8 @@ Provider-specific fields:
 
 `connectors.policies`: a list of `{match, action}` pairs. `match` is a glob over
 tool names. `action` is `always_run`, `require_approval`, or `block`. Policies
-belong to the connector profile. Every authorization under that connector
-profile uses the same policies.
+belong to the connector. Every connection under that connector uses the same
+policies.
 
 `policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `allow_all` (default; every unmatched tool runs) or `risk` (require approval for write and destructive unmatched calls). Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
 
@@ -311,7 +311,7 @@ agents:
 | *(map key)* | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Matches the `.md` filename it governs. |
 | `enabled` | `true` | `false` treats the agent as undeclared — the platform will not launch it. |
 | `connectors` | `none` | Which connector slugs this agent may call. `all` means every connector. |
-| `connectors_required` | `none` | Connector-profile slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_AUTHORIZATION_REQUIRED`. |
+| `connectors_required` | `none` | Connector slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_CONNECTION_REQUIRED`. |
 | `secrets` | `none` | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`. |
 | `kortix_cli` | `none` | Which Kortix CLI and API actions this agent may perform. `all` means everything the launching user can do — an agent can never exceed its launcher. |
 | `skills` | `none` | Which skills this agent may load. |
@@ -321,7 +321,7 @@ v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `ski
 
 `connectors_personal` remains a deprecated input alias for
 `connectors_required`. New manifests must use `connectors_required`. The
-connector profile's `authorization_strategy` decides whether the authorization
+connector's `authorization_strategy` decides whether the authorization
 is project-owned or member-owned.
 
 `kortix_cli` grants come from a fixed set of project-scoped actions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped actions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.

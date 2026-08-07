@@ -119,7 +119,11 @@ class FakeDocker {
           State: { Running: c.running, Status: c.running ? 'running' : 'exited' },
           Config: { Image: c.image },
           NetworkSettings: {
-            Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.hostPort) }] },
+            Ports: {
+              '7331/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.hostPort) }],
+              '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.hostPort) }],
+              '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(c.hostPort) }],
+            },
           },
         };
       },
@@ -155,6 +159,7 @@ const { getProvider } = await import('./index');
 let fakeDocker: FakeDocker;
 
 beforeEach(() => {
+  delete process.env.KORTIX_APPS_LOCAL;
   fakeDocker = new FakeDocker();
   __setDockerClientForTest(fakeDocker);
 });
@@ -306,6 +311,39 @@ describe('local-docker provider — create()', () => {
     expect(hostConfig.Memory).toBeGreaterThan(0);
   });
 
+  test('creates an App workload with appd auth, App ports, and requested machine limits', async () => {
+    const provider = new LocalDockerProvider();
+    const result = await provider.create(baseCreateOpts({
+      name: 'app-example',
+      workloadType: 'app',
+      envVars: { KORTIX_APPD_TOKEN: 'appd-token' },
+      resourceSpec: { cpuCores: 1, memoryGb: 2, diskGb: 10 },
+      publishedPorts: [7331, 8080],
+    }));
+
+    expect(result.baseUrl).toBe(`https://api.example.com/v1/p/${result.externalId}/8080`);
+    const call = fakeDocker.createContainerCalls[0]!;
+    expect(call.Labels).toMatchObject({ 'kortix.workload': 'app' });
+    expect(call.ExposedPorts).toEqual({ '7331/tcp': {}, '8080/tcp': {} });
+    const hostConfig = call.HostConfig as Record<string, unknown>;
+    expect(hostConfig.PortBindings).toEqual({
+      '7331/tcp': [{ HostIp: '127.0.0.1', HostPort: '0' }],
+      '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '0' }],
+    });
+    expect(hostConfig.NanoCpus).toBe(1_000_000_000);
+    expect(hostConfig.Memory).toBe(2 * 1024 * 1024 * 1024);
+    expect(call.Env).toContain('KORTIX_WORKLOAD_TYPE=app');
+    expect(call.Env).toContain('KORTIX_APPD_TOKEN=appd-token');
+  });
+
+  test('rejects an App workload without KORTIX_APPD_TOKEN', async () => {
+    const provider = new LocalDockerProvider();
+    await expect(provider.create(baseCreateOpts({
+      workloadType: 'app',
+      envVars: { KORTIX_SANDBOX_TOKEN: 'session-token-is-not-valid-for-apps' },
+    }))).rejects.toThrow(/KORTIX_APPD_TOKEN/);
+  });
+
   test('throws a clear error when opts.snapshot is missing (no shared fallback image, matches Daytona)', async () => {
     const provider = new LocalDockerProvider();
     await expect(provider.create(baseCreateOpts({ snapshot: undefined }))).rejects.toThrow(/opts\.snapshot/);
@@ -418,6 +456,21 @@ describe('local-docker provider — ingress / endpoint resolution', () => {
     const ingress = await provider.resolveIngress(externalId, { port: 3000 });
     expect(ingress.url).toBe(`http://kortix-sb-${externalId}:3000`);
     expect(ingress.effectivePort).toBe(3000);
+  });
+
+  test('resolveIngress() uses the published loopback port when the API runs on the host', async () => {
+    process.env.KORTIX_APPS_LOCAL = 'true';
+    const provider = new LocalDockerProvider();
+    const { externalId } = await provider.create(baseCreateOpts({
+      workloadType: 'app',
+      envVars: { KORTIX_APPD_TOKEN: 'appd-token' },
+      publishedPorts: [7331, 8080],
+    }));
+
+    const ingress = await provider.resolveIngress(externalId, { port: 8080 });
+
+    expect(ingress.url).toBe(`http://127.0.0.1:${32001}`);
+    expect(ingress.effectivePort).toBe(8080);
   });
 
   test('resolveEndpoint() targets the agent port and injects the sandbox service key as a bearer', async () => {

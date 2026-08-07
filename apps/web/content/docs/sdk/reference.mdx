@@ -20,6 +20,7 @@ const kortix = createKortix({ backendUrl, getToken });
 kortix.accounts; // account / team operations
 kortix.accountInvites; // invite accept/decline by token alone
 kortix.projects; // top-level project operations
+kortix.connectors; // Connector calls scoped by an agent-minted token
 kortix.project(id); // id-bound project handle
 kortix.session(pid, sid); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
@@ -55,7 +56,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
 `accounts.audit` is the enterprise reconstruction log. It combines authenticated
-API requests with semantic session, executor, approval, and computer events.
+API requests with semantic session, connector, approval, and computer events.
 
 | method | what |
 | --- | --- |
@@ -66,7 +67,7 @@ API requests with semantic session, executor, approval, and computer events.
 Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
 `request_id`, `trace_id`, and `correlation_id` when the action supplies them.
 The API does not store request bodies, prompts, secrets, credentials, or raw
-connector arguments in the centralized event. Executor events can include a
+connector arguments in the centralized event. Connector events can include a
 bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
@@ -187,7 +188,7 @@ await p.llmCatalog();
 
 #### `p.tokens` — project-scoped API keys
 
-Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
+Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |
@@ -242,19 +243,23 @@ agent, a skill, a secret) instead of the whole project.
 
 | method | what |
 | --- | --- |
+| `catalog()` · `tools()` | callable Connector catalog · flattened `<connector>.<action>` tools |
+| `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
+| `call(tool, args?)` | call one `<connector>.<action>` tool through the server-side gateway |
+| `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` authorization ownership |
+| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` connection ownership |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
-| `authorizations.list()` · `authorizations.reconcile(input)` | list · create/update connected accounts |
-| `authorizations.updateCredential(authorizationId, input)` | rotate an authorization credential |
-| `authorizations.revoke(authorizationId)` · `authorizations.activate(authorizationId)` | deny · restore an authorization live |
+| `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
+| `connections.updateCredential(connectionId, input)` | rotate a connection credential |
+| `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-integration catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |
@@ -267,13 +272,13 @@ returns OAuth apps only. Connect API-key apps directly instead.
 | --- | --- |
 | `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
 
-A connector profile defines the tool, provider app, authorization strategy, and
-policies. `authorizations` stores its connected accounts. A session can select
-one with `connector_bindings: { alias: { authorization_id } }`. Credentials
+A connector defines the tool, provider app, authorization strategy, and
+policies. `connections` stores its connected accounts. A session can select
+one with `connector_bindings: { alias: { connection_id } }`. Credentials
 stay encrypted and resolve per request.
 
-The deprecated `profiles` facade aliases `authorizations`. New code uses
-authorization terminology.
+`connections` is the only active authorization facade. The retired
+`authorizations` and `profiles` names are not part of the current SDK surface.
 
 #### `p.policies` — project policies
 
@@ -356,14 +361,14 @@ A change request (CR) is how a session's work merges into the default branch.
 The session handle is the heart of the runtime — see
 [Sessions](/docs/sdk/sessions).
 
-`create(input)` accepts `connector_bindings` keyed by connector-profile slug.
-Each value names an `authorization_id`. It also accepts `secrets` for
+`create(input)` accepts `connector_bindings` keyed by connector-connection slug.
+Each value names a `connection_id`. It also accepts `secrets` for
 backend-origin secret narrowing and `require_connectors` for mandatory
-connector profiles.
+connectors.
 
-#### `p.approvals` — the executor approval inbox
+#### `p.approvals` — the connector approval inbox
 
-Pending executor-gated actions awaiting a decision — backs the
+Pending connector-gated actions awaiting a decision — backs the
 permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
 
 | method | what |
@@ -392,7 +397,7 @@ fallback chain, each model attempted at most once; `fallbackOn` is
 
 #### `p.channels` — Slack / email / voice
 
-Integration surfaces that let an agent act as a Slack app, an email address,
+Connector surfaces that let an agent act as a Slack app, an email address,
 or join a realtime voice call.
 
 | method | what |

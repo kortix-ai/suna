@@ -22,7 +22,8 @@ export type ExperimentalFeatureKey =
   | 'voice'
   | 'llm_gateway'
   | 'review_center'
-  | 'meta_agent';
+  | 'meta_agent'
+  | 'apps';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -658,6 +659,43 @@ export async function updateTemplateWarmPool(
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+  );
+}
+
+/** Use case the account picked during guided project onboarding. */
+export type OnboardingUseCase =
+  | 'sales'
+  | 'support'
+  | 'marketing'
+  | 'engineering'
+  | 'finance_ops'
+  | 'hr_recruiting'
+  | 'other';
+
+/** Company size buckets. Mirrors the demo-qualifier scale so a user who both
+ *  onboards and books a demo is never offered two different scales. */
+export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '1000+';
+
+/** Every field optional — onboarding saves each answer as it is given, so a
+ *  partial profile is the normal case, not an error case. */
+export interface OnboardingProfile {
+  use_case?: OnboardingUseCase;
+  company_domain?: string;
+  company_size?: OnboardingCompanySize;
+}
+
+/**
+ * Persist guided-onboarding answers into `projects.metadata.onboarding`.
+ *
+ * Deliberately separate from {@link setProjectOnboardingComplete}: completion is
+ * a lifecycle flag at the top level of `metadata`, the profile is a nested
+ * object, and the two are written by different steps at different times. Sending
+ * `completed` from a survey save would end onboarding the moment the user
+ * answered the first question.
+ */
+export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
   );
 }
 

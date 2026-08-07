@@ -2,18 +2,18 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   AlarmIcon as AlarmClock,
   ArrowCircleUpIcon as ArrowUpCircle,
-  ChatsIcon as ChatMessages,
-  CubeIcon as Boxes,
-  GearSixIcon as LucideSettings,
-  GitForkIcon as GitFork,
-  KeyIcon as KeyRound,
-  MonitorIcon as Monitor,
-  RobotIcon as Bot,
-  ShippingContainerIcon as Container,
-  StorefrontIcon as Store,
-  TrayIcon as Inbox,
-  UsersThreeIcon as LucideUsersRound,
   WaveformIcon as AudioLines,
+  CubeIcon as Boxes,
+  ChatsIcon as ChatMessages,
+  CommandIcon as Command,
+  ShippingContainerIcon as Container,
+  GitForkIcon as GitFork,
+  TrayIcon as Inbox,
+  KeyIcon as KeyRound,
+  GearSixIcon as LucideSettings,
+  UsersThreeIcon as LucideUsersRound,
+  MonitorIcon as Monitor,
+  StorefrontIcon as Store,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { RailGroup, RailItem } from './type';
@@ -59,8 +59,13 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 
 const GROUPS: readonly RailGroup[] = [
   {
+    // Agents graduated to `/projects/<id>/agent` and is no longer an overlay
+    // section. Commands went the other way — its standalone page was deleted
+    // (#6169), so it is Build's one static item again. `customize-panel` drops
+    // groups whose items all filter out, so if this ever empties again an
+    // all-flags-off project renders no orphan header.
     label: 'Build',
-    items: [{ section: 'agents', label: 'Agents', icon: Bot }],
+    items: [{ section: 'commands', label: 'Commands', icon: Command }],
   },
   {
     label: 'Connect',

@@ -209,7 +209,7 @@ mock.module('../iam', () => ({
 
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,
-  // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
+  // Mirrors the REAL narrowing (connector/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
   // ignored callerSessionId entirely, so a test could pass one and prove
   // nothing; the WebSocket leg's isolation had no coverage at all.
@@ -872,6 +872,7 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });

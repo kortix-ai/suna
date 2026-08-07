@@ -89,11 +89,11 @@ connectors:
 connectors:
   - slug: internal-rest
     provider: openapi
-    spec: .kortix/executor/internal.openapi.json
+    spec: .kortix/connectors/internal.openapi.json
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
-      spec: '.kortix/executor/internal.openapi.json', authAuto: true, auth: { type: 'none' },
+      spec: '.kortix/connectors/internal.openapi.json', authAuto: true, auth: { type: 'none' },
     });
   });
 
@@ -200,7 +200,7 @@ connectors:
   - slug: internal-http
     provider: http
     base_url: https://api.internal
-    spec: .kortix/executor/internal.http.toml
+    spec: .kortix/connectors/internal.http.toml
     auth:
       type: custom
       in: query
@@ -212,7 +212,7 @@ connectors:
     expect(specs[0]).toMatchObject({
       provider: 'http',
       baseUrl: 'https://api.internal',
-      spec: '.kortix/executor/internal.http.toml',
+      spec: '.kortix/connectors/internal.http.toml',
       auth: { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_', secret: 'INTERNAL_API_TOKEN' },
     });
   });
@@ -331,7 +331,7 @@ connectors:
     });
   });
 
-  test('allows two connector profiles to reference one provider app', () => {
+  test('allows two connectors to reference one provider app', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:
   - slug: gmail-read

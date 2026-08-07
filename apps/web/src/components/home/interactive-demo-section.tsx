@@ -139,7 +139,7 @@ function Row({
   );
 }
 
-/** Real brand logo (favicon) on a neutral tile — used for Integrations + Models. */
+/** Real brand logo (favicon) on a neutral tile — used for Connectors + Models. */
 function BrandLogo({ domain, alt, size = 20 }: { domain: string; alt: string; size?: number }) {
   return (
     <span
@@ -221,7 +221,7 @@ function ConnectBadge({ connected }: { connected: boolean }) {
 function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
-    ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
+    ['Connectors', 'Connect the tools your agents use', Blocks, '1', 'connectors'],
     ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
     ['Skills', 'Reusable workflows every agent shares', HiMiniSparkles, '71', 'skills'],
     ['Channels', 'Run this project from Slack', MessageSquare, undefined, 'channels'],
@@ -482,9 +482,9 @@ function AgentsPage() {
   );
 }
 
-/* ─── Integrations (3,000+ via Pipedream) ───────────────────────────────── */
+/* ─── Connectors (3,000+ via Pipedream) ─────────────────────────────────── */
 
-const INTEGRATIONS: [string, string, boolean][] = [
+const CONNECTORS: [string, string, boolean][] = [
   ['github.com', 'GitHub', true],
   ['slack.com', 'Slack', true],
   ['gmail.com', 'Gmail', false],
@@ -513,11 +513,11 @@ const INTEGRATIONS: [string, string, boolean][] = [
 
 const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
-function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
+function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
-  const list = INTEGRATIONS.filter(
+  const list = CONNECTORS.filter(
     ([domain, name]) =>
       !query || name.toLowerCase().includes(query) || domain.toLowerCase().includes(query),
   );
@@ -525,7 +525,7 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h3 className="text-foreground text-lg font-semibold tracking-tight">Integrations</h3>
+          <h3 className="text-foreground text-lg font-semibold tracking-tight">Connectors</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
             {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxText3000Apps0dfb5b41')}
           </p>
@@ -1266,10 +1266,10 @@ const PAGES: Record<
     icon: <HiMiniSparkles weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <SkillsPage focusedSkill={extras.focusedSkill} />,
   },
-  integrations: {
-    label: 'Integrations',
+  connectors: {
+    label: 'Connectors',
     icon: <Blocks className="size-4" />,
-    render: (_nav, _convo, extras) => <IntegrationsPage connectedExtra={extras.connectors} />,
+    render: (_nav, _convo, extras) => <ConnectorsPage connectedExtra={extras.connectors} />,
   },
   models: {
     label: 'Models',

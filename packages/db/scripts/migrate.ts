@@ -23,7 +23,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import {
-  migrationLedgerRepairExecutorName,
+  migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
 
@@ -213,13 +213,13 @@ async function main() {
     const repaired = await repairMigrationLedger({
       databaseUrl,
       migrationsDir: MIGRATIONS_DIR,
-      applyExecutorMigration: async () => {
+      applyConnectorMigration: async () => {
         await runner({
           ...base,
           direction: 'up',
           count: 1,
           checkOrder: false,
-          file: migrationLedgerRepairExecutorName,
+          file: migrationLedgerRepairConnectorName,
         });
       },
     });

@@ -15,13 +15,13 @@ import {
   projects,
   tunnelConnections,
   tunnelPermissions,
-  executorConnectors,
-  executorConnectorActions,
+  connectors,
+  connectorActions,
 } from '@kortix/db';
-import { synthesizeComputerConnectors } from '../executor/computer-materialize';
-import { syncProjectConnectors } from '../executor/sync';
+import { synthesizeComputerConnectors } from '../connectors/computer-materialize';
+import { syncProjectConnectors } from '../connectors/sync';
 import { executeComputerCall, listAccountComputers } from '../tunnel/core/rpc-core';
-import { dbExecutorRouterDeps } from '../executor/db-deps';
+import { dbConnectorRouterDeps } from '../connectors/db-deps';
 
 let projectId = '';
 let accountId = '';
@@ -30,7 +30,7 @@ let originalMetadata: unknown = null;
 let seeded = false;
 
 beforeAll(async () => {
-  await db.execute(sql`alter type kortix.executor_connector_provider add value if not exists 'computer'`);
+  await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
   await db.execute(sql`
     alter table kortix.tunnel_connections
       add column if not exists relay_owner_id varchar(255),
@@ -81,7 +81,7 @@ afterAll(async () => {
   if (!seeded) return;
   // Drop the materialized connector + the seeded tunnel (cascades permissions /
   // requests), then restore the project's metadata.
-  await db.delete(executorConnectors).where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+  await db.delete(connectors).where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
   await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
   await db.update(projects).set({ metadata: originalMetadata as any }).where(eq(projects.projectId, projectId));
 });
@@ -121,15 +121,15 @@ describe('computer connector — real DB e2e', () => {
     }
     const [conn] = await db
       .select()
-      .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
     expect(conn).toBeTruthy();
     expect(conn!.providerType).toBe('computer');
 
     const actions = await db
       .select()
-      .from(executorConnectorActions)
-      .where(eq(executorConnectorActions.connectorId, conn!.connectorId));
+      .from(connectorActions)
+      .where(eq(connectorActions.connectorId, conn!.connectorId));
     expect(actions.length).toBeGreaterThan(5);
     expect(actions.some((a) => a.path === 'list_computers')).toBe(true);
     expect(actions.some((a) => a.path === 'fs.read')).toBe(true);
@@ -144,21 +144,21 @@ describe('computer connector — real DB e2e', () => {
     // The fix falls back to the materialized DB row.
     const [conn] = await db
       .select()
-      .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
     if (!conn) return; // sync skipped (git backend unreachable) — nothing materialized to read.
 
-    const policies = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'computer');
+    const policies = await dbConnectorRouterDeps.getConnectorPolicies!(projectId, 'computer');
     expect(policies).not.toBeNull(); // would have been null → 404 before the fix
     expect(Array.isArray(policies!.policies)).toBe(true);
 
-    const config = await dbExecutorRouterDeps.getConnectorConfig!(projectId, 'computer');
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(projectId, 'computer');
     expect(config).not.toBeNull();
     expect(config!.provider).toBe('computer');
     expect(config!.slug).toBe('computer');
 
     // A genuinely unknown slug must still be null → a true 404 (fallback doesn't mask it).
-    const missing = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'no-such-connector-xyz');
+    const missing = await dbConnectorRouterDeps.getConnectorPolicies!(projectId, 'no-such-connector-xyz');
     expect(missing).toBeNull();
   });
 

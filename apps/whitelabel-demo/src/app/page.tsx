@@ -90,7 +90,7 @@ function Dashboard({
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
           <div className="flex items-center gap-2">
             <BrandMark />
-            {/* The two integration shapes behave differently and the difference
+            {/* The two connector access modes behave differently and the difference
                 is otherwise invisible — which makes every other observation on
                 this page ambiguous. */}
             <ModeBadge wrapperMode={wrapperMode} />

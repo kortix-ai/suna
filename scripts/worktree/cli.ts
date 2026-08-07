@@ -6,7 +6,9 @@
  * guided wizard. Non-interactive (CI/scripts):
  *
  *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--db] [--no-start] [--yes]
- *   pnpm worktree start|stop|nuke|status <feat>
+ *   pnpm worktree start|stop|status <feat>
+ *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
+ *   pnpm worktree nuke            (TTY: pick from a list, then confirm each)
  *   pnpm worktree list · doctor
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
@@ -137,21 +139,21 @@ async function spin(label: string, cmd: string[]): Promise<void> {
   }
 }
 
-interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
+interface Args { cmd: string; name?: string; names: string[]; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
   const flags: Record<string, string | boolean> = {};
-  let name: string | undefined;
+  const names: string[] = [];
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const key = a.slice(2);
       const next = argv[i + 1];
       if (next && !next.startsWith('--')) { flags[key] = next; i++; } else flags[key] = true;
-    } else if (!name) name = a;
+    } else names.push(a);
   }
-  if (typeof flags.name === 'string') name = flags.name;
-  return { cmd, name, flags };
+  if (typeof flags.name === 'string') names.unshift(flags.name);
+  return { cmd, name: names[0], names, flags };
 }
 
 function usage(): never {
@@ -160,7 +162,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
@@ -250,7 +252,8 @@ async function promptCreate(): Promise<Args | null> {
   const isolatedDb = await clack.confirm({ message: 'Create a separate Supabase database for this worktree?', initialValue: false });
   if (cancelled(isolatedDb)) return null;
   const stripe = start ? await confirmStripe() : false;
-  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(isolatedDb ? { db: true } : {}), ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
+  const n = String(name);
+  return { cmd: 'create', name: n, names: [n], flags: { from: String(from), yes: true, ...(isolatedDb ? { db: true } : {}), ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
 }
 
 async function pickWorktree(action: string): Promise<string | null> {
@@ -266,6 +269,22 @@ async function pickWorktree(action: string): Promise<string | null> {
   });
   if (cancelled(sel)) return null;
   return String(sel);
+}
+
+async function pickWorktrees(action: string): Promise<string[] | null> {
+  const reg = loadRegistry();
+  const names = Object.keys(reg.slots);
+  if (!names.length) { clack.cancel('No worktrees yet — create one first.'); return null; }
+  const sel = await clack.multiselect({
+    message: `Which worktrees to ${pc.bold(action)}? ${pc.dim('(space to select, enter to confirm)')}`,
+    options: names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot).map((n) => {
+      const e = reg.slots[n];
+      return { value: n, label: `${dot(e.status === 'running')} ${n}`, hint: `slot ${e.slot} · ${e.status} · web ${e.ports.web}` };
+    }),
+    required: true,
+  });
+  if (cancelled(sel)) return null;
+  return (sel as string[]).map(String);
 }
 
 async function menu(): Promise<Args | null> {
@@ -285,14 +304,19 @@ async function menu(): Promise<Args | null> {
   if (cancelled(action)) return null;
   const cmd = String(action);
   if (cmd === 'create') return promptCreate();
-  if (['start', 'stop', 'nuke', 'status', 'pr'].includes(cmd)) {
+  if (cmd === 'nuke') {
+    const names = await pickWorktrees(cmd);
+    if (!names || !names.length) return null;
+    return { cmd, name: names[0], names, flags: { force: true } };
+  }
+  if (['start', 'stop', 'status', 'pr'].includes(cmd)) {
     const name = await pickWorktree(cmd);
     if (!name) return null;
-    const flags: Record<string, string | boolean> = cmd === 'nuke' ? { force: true } : {};
+    const flags: Record<string, string | boolean> = {};
     if (cmd === 'start' && await confirmStripe()) flags.stripe = true;
-    return { cmd, name, flags };
+    return { cmd, name, names: [name], flags };
   }
-  return { cmd, name: undefined, flags: {} };
+  return { cmd, name: undefined, names: [], flags: {} };
 }
 
 async function cmdCreate(a: Args) {
@@ -585,15 +609,15 @@ async function cmdStopAll() {
   sub('isolated-DB Supabase containers are left running — stop one with `pnpm worktree stop <n>`');
 }
 
-async function cmdNuke(a: Args) {
-  const name = need(a.name);
-  const reg = loadRegistry();
-  const e = reg.slots[name];
-  if (!e) die(`unknown worktree "${name}"`);
-  const pid = e!.projectId;
-  const dbMode = dbModeOf(e!);
+/**
+ * Tear down ONE worktree (stack, optional isolated Supabase, git worktree,
+ * branch, slot). The confirmation and multi-name loop live in `cmdNuke`.
+ */
+async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string | boolean>): Promise<void> {
+  const pid = e.projectId;
+  const dbMode = dbModeOf(e);
   step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
-  const stopped = await stopStack(e!);
+  const stopped = await stopStack(e);
   // A process whose cwd is still inside the checkout keeps the directory busy, so
   // an unverified kill here surfaces later as a confusing `git worktree remove` failure.
   if (stopped.survived.length) warn(`${plural(stopped.survived.length, 'process', 'processes')} survived (${stopped.survived.join(', ')}) — removal may fail`);
@@ -605,18 +629,52 @@ async function cmdNuke(a: Args) {
     sub('shared primary Supabase left untouched');
   }
   const root = repoRoot();
-  const force = a.flags.force ? ['--force'] : [];
-  if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
+  const force = flags.force ? ['--force'] : [];
+  if (existsSync(e.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e.path]); }
   sh(['git', '-C', root, 'worktree', 'prune']);
-  if (e!.branch) {
-    const del = sh(['git', '-C', root, 'branch', '-d', e!.branch]);
-    if (del.ok) sub(`deleted branch "${e!.branch}"`);
-    else if (a.flags.force) { sh(['git', '-C', root, 'branch', '-D', e!.branch]); sub(`force-deleted branch "${e!.branch}" (had unmerged commits)`); }
-    else sub(`kept branch "${e!.branch}" (unmerged commits) — \`git branch -D ${e!.branch}\` or \`nuke --force\` to drop it`);
+  if (e.branch) {
+    const del = sh(['git', '-C', root, 'branch', '-d', e.branch]);
+    if (del.ok) sub(`deleted branch "${e.branch}"`);
+    else if (flags.force) { sh(['git', '-C', root, 'branch', '-D', e.branch]); sub(`force-deleted branch "${e.branch}" (had unmerged commits)`); }
+    else sub(`kept branch "${e.branch}" (unmerged commits) — \`git branch -D ${e.branch}\` or \`nuke --force\` to drop it`);
   }
   try { rmSync(slotDir(name), { recursive: true, force: true }); } catch {}
   await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
-  ok(`removed "${name}" — slot ${e!.slot} freed.`);
+  ok(`removed "${name}" — slot ${e.slot} freed.`);
+}
+
+/**
+ * `nuke <n> [n…] [--force] [--yes]` — destructive, so every target is confirmed
+ * individually in a TTY (answer no to skip one, Ctrl+C/Esc to stop the rest).
+ * `--yes` or a non-TTY stdin keeps the old non-interactive behavior for scripts.
+ */
+async function cmdNuke(a: Args) {
+  const names = (a.names.length ? a.names : [need(a.name)]).map(sanitizeName);
+  const reg = loadRegistry();
+  const targets: { name: string; e: SlotEntry }[] = [];
+  let missed = false;
+  for (const n of names) {
+    const e = reg.slots[n];
+    if (!e) { warn(`unknown worktree "${n}" — skipped`); missed = true; continue; }
+    targets.push({ name: n, e });
+  }
+  if (!targets.length) die('nothing to nuke');
+  const confirm = !!process.stdin.isTTY && !!process.stdout.isTTY && !a.flags.yes;
+  if (confirm && targets.length > 1) {
+    sub(`${plural(targets.length, 'worktree', 'worktrees')} queued: ${targets.map((t) => t.name).join(', ')} — each one is confirmed before it is nuked.`);
+  }
+  for (const { name, e } of targets) {
+    if (confirm) {
+      const v = await clack.confirm({
+        message: `Nuke ${pc.bold(name)}? ${pc.dim(`slot ${e.slot} · ${dbLabel(dbModeOf(e))} · branch "${e.branch}" — stops its stack, removes ${e.path}`)}`,
+        initialValue: false,
+      });
+      if (clack.isCancel(v)) { clack.cancel('Cancelled — the remaining worktrees were left untouched.'); break; }
+      if (!v) { sub(`skipped "${name}"`); continue; }
+    }
+    await nukeOne(name, e, a.flags);
+  }
+  if (missed) process.exit(1);
 }
 
 /**
@@ -773,11 +831,18 @@ try {
     const r = await promptCreate();
     if (!r) process.exit(0);
     a = r;
-  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status', 'pr'].includes(a.cmd) && !a.name) {
+  } else if (tty && (a.cmd === 'nuke' || a.cmd === 'rm') && !a.names.length) {
+    clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
+    const names = await pickWorktrees(a.cmd);
+    if (!names || !names.length) process.exit(0);
+    a.names = names;
+    a.name = names[0];
+  } else if (tty && ['start', 'stop', 'status', 'pr'].includes(a.cmd) && !a.name) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
     const n = await pickWorktree(a.cmd);
     if (!n) process.exit(0);
     a.name = n;
+    a.names = [n];
     if (a.cmd === 'start' && !a.flags.stripe && await confirmStripe()) a.flags.stripe = true;
   }
 

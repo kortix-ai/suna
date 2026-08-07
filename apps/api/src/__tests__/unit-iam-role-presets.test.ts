@@ -26,13 +26,13 @@ describe('built-in role presets', () => {
     expect(BUILTIN_BY_ID.has('builtin:nope')).toBe(false);
   });
 
-  test('only manager-tier project presets can bind and manage connection profiles', () => {
+  test('only manager-tier project presets can bind and manage connections', () => {
     const manager = new Set(BUILTIN_BY_ID.get('builtin:manager')?.actions ?? []);
     const editor = new Set(BUILTIN_BY_ID.get('builtin:editor')?.actions ?? []);
     expect(manager.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(true);
-    expect(manager.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE)).toBe(true);
+    expect(manager.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(true);
     expect(editor.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(false);
-    expect(editor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE)).toBe(false);
+    expect(editor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(false);
   });
 
   test('User tier = read + run: has session start/stop + trigger.fire, NOT write/config', () => {

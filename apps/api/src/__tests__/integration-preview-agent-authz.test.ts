@@ -15,6 +15,7 @@ import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
+import * as realConnectorPreflight from '../projects/lib/prompt-connector-preflight';
 import * as realEnvSync from '../projects/lib/sandbox-env-sync';
 import * as realGrant from '../projects/lib/session-token-grant';
 import * as realSnapshot from '../projects/opencode-session-snapshot';
@@ -37,6 +38,10 @@ let upstreamCalls = 0;
 mock.module('../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
+}));
+mock.module('../projects/lib/prompt-connector-preflight', () => ({
+  ...realConnectorPreflight,
+  missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../shared/preview-ownership', () => ({
   ...realOwnership,

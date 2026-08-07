@@ -184,6 +184,7 @@ describe('reloadDetail', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
+    opencode_reload: null,
   } as const;
 
   test('claims the agent changed ONLY for "updated"', () => {
@@ -233,6 +234,7 @@ describe('reloadNeedsAttention', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
+    opencode_reload: null,
   } as const;
 
   test('the three success outcomes are NOT warnings', () => {

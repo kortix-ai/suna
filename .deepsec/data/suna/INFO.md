@@ -2,13 +2,13 @@
 
 ## What this codebase does
 
-Kortix is an open/self-hostable AI command center: company/project state lives in a git repo, sessions boot isolated cloud sandboxes, OpenCode runs inside each sandbox, and humans review agent change requests. This is a pnpm/Bun/TypeScript monorepo with a Hono API (`apps/api`), Next.js web app (`apps/web`), CLI/desktop/mobile apps, `@kortix/sdk` as the backend client source of truth, a sandbox agent server (`apps/kortix-sandbox-agent-server`), Supabase auth/DB, Stripe billing, Daytona/Platinum sandbox providers, Slack/Telegram/email/Meet webhooks, Executor connectors, and GitOps infra.
+Kortix is an open/self-hostable AI command center: company/project state lives in a git repo, sessions boot isolated cloud sandboxes, OpenCode runs inside each sandbox, and humans review agent change requests. This is a pnpm/Bun/TypeScript monorepo with a Hono API (`apps/api`), Next.js web app (`apps/web`), CLI/desktop/mobile apps, `@kortix/sdk` as the backend client source of truth, a sandbox agent server (`apps/kortix-sandbox-agent-server`), Supabase auth/DB, Stripe billing, Daytona/Platinum sandbox providers, Slack/Telegram/email/Meet webhooks, connectors and connections, and GitOps infra.
 
 ## Auth shape
 
 - API auth primitives are `apiKeyAuth`, `supabaseAuth`, and `combinedAuth` in `apps/api/src/middleware/auth.ts`. They set Hono context variables (`userId`, `accountId`, `authType`, `tokenProjectId`, `sessionId`, `iamTokenId`, `agentGrant`).
 - `supabaseAuth` accepts Supabase JWTs, CLI PATs (`kortix_pat_...`), service-account tokens, and a narrow sandbox-token exception for clone credentials / turn stream / questions / catalog.
-- `combinedAuth` is used for preview proxy, Executor admin, tunnel, secrets, providers and other mixed-token routes. It intentionally allows `?token=` only for `/v1/p/*` preview/WS and provision-stream flows.
+- `combinedAuth` is used for preview proxy, connector administration, tunnel, secrets, providers and other mixed-token routes. It intentionally allows `?token=` only for `/v1/p/*` preview/WS and provision-stream flows.
 - Project routes mount `projectsApp.use('/*', supabaseAuth)` first; per-resource authorization is via IAM helpers such as `authorize`, `assertAuthorized`, `assertProjectCapability`, `requireScope`, `resolveProjectAccount`, and `loadProjectForUser`.
 - Sandbox daemon proxy auth uses `X-Kortix-User-Context`, verified by `verifyKortixUserContext` with `KORTIX_TOKEN`; `/kortix/health` is the intentional unauthenticated liveness/control exception.
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import
  * list pulls `@pipedream/sdk/browser` (10M installed), `HighlightedCode`
  * (shiki, 3.8M), `PoliciesPanel`, `DiscoverCatalogue` and
- * `ConnectorProfileModal`. An ES module is all-or-nothing to the bundler, so
+ * `ConnectorConnectionModal`. An ES module is all-or-nothing to the bundler, so
  * ONE static `import` anywhere in this graph puts all of it in front of a page
  * whose first paint is a grid of cards.
  *
@@ -74,7 +74,8 @@ function resolveModule(specifier: string, fromFile: string): string | null {
 function staticSpecifiers(source: string): string[] {
   const withoutDynamic = source.replace(/\bimport\s*\(/g, 'DYNAMIC_IMPORT(');
   const out: string[] = [];
-  const pattern = /(?:^|\n)\s*(?:import|export)\b[\s\S]*?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g;
+  const pattern =
+    /(?:^|\n)\s*(?:import|export)\b[\s\S]*?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(withoutDynamic)) !== null) {
     const specifier = match[1] ?? match[2];

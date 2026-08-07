@@ -50,7 +50,7 @@ let continueCalls: Array<{
 }> = [];
 let createCalls: Array<any> = [];
 
-function expectExecutorEmailPrompt(prompt: string) {
+function expectConnectorEmailPrompt(prompt: string) {
   for (const tool of ['connectors', 'discover', 'describe', 'call']) {
     expect(prompt).toContain(`\`${tool}\``);
   }
@@ -235,7 +235,7 @@ describe('AgentMail credential resolution', () => {
 });
 
 describe('AgentMail provisioning idempotency', () => {
-  test('scopes inbox and webhook client ids to the project profile tuple', () => {
+  test('scopes inbox and webhook client ids to the project connection tuple', () => {
     const alpha = agentMailProvisioningClientIds('project-1', 'veyris_email_alpha');
     const alphaRetry = agentMailProvisioningClientIds('project-1', 'VEYRIS_EMAIL_ALPHA');
     const beta = agentMailProvisioningClientIds('project-1', 'veyris_email_beta');
@@ -332,7 +332,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ eventId: 'email:threadcreate:inb-1:thr-1' }],
       [
         {
-          profileId: 'profile-email-1',
+          connectionId: 'connection-email-1',
           metadata: { inbox_id: 'inb-1' },
           status: 'active',
         },
@@ -358,11 +358,11 @@ describe('dispatchAgentMailEvent', () => {
       }),
     ]);
     expect(createCalls[0].postCreate[1].text).toContain('Need help');
-    expectExecutorEmailPrompt(createCalls[0].postCreate[1].text);
+    expectConnectorEmailPrompt(createCalls[0].postCreate[1].text);
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe('inb-1');
-    expect(createCalls[0].extraEnvVars.KORTIX_EXECUTOR_MCP_ENABLED).toBe('1');
+    expect(createCalls[0].extraEnvVars.KORTIX_CONNECTORS_MCP_ENABLED).toBe('1');
     expect(createCalls[0].body.connector_bindings).toEqual({
-      email: { authorization_id: 'profile-email-1' },
+      email: { connection_id: 'connection-email-1' },
     });
     expect(createCalls[0].body.agent_name).toBe('veyris');
     expect(createCalls[0].body.initial_prompt).toBeUndefined();
@@ -398,7 +398,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ eventId: 'email:threadcreate:inb-1:thr-unwrapped' }],
       [
         {
-          profileId: 'profile-email-1',
+          connectionId: 'connection-email-1',
           metadata: { inbox_id: 'inb-1' },
           status: 'active',
         },
@@ -427,7 +427,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ sessionId: 'sess-1' }],
       [
         {
-          profileId: 'profile-email-1',
+          connectionId: 'connection-email-1',
           metadata: { inbox_id: 'inb-1' },
           status: 'active',
         },
@@ -435,7 +435,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ accountId: 'acc-1', connectorId: 'conn-email' }],
       [{ accountId: 'acc-1' }],
       [],
-      [{ profileId: 'profile-email-1' }],
+      [{ connectionId: 'connection-email-1' }],
     ];
 
     await dispatchAgentMailEvent(unauthenticatedEvent);
@@ -443,7 +443,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_EXECUTOR_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
   });
 
   test('known thread routes a new email into the existing session', async () => {
@@ -455,7 +455,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ sessionId: 'sess-1' }],
       [
         {
-          profileId: 'profile-email-1',
+          connectionId: 'connection-email-1',
           metadata: { inbox_id: 'inb-1' },
           status: 'active',
         },
@@ -463,7 +463,7 @@ describe('dispatchAgentMailEvent', () => {
       [{ accountId: 'acc-1', connectorId: 'conn-email' }],
       [{ accountId: 'acc-1' }],
       [],
-      [{ profileId: 'profile-email-1' }],
+      [{ connectionId: 'connection-email-1' }],
     ];
 
     await dispatchAgentMailEvent(event);
@@ -471,9 +471,9 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_EXECUTOR_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
     expect(continueCalls[0].text).toContain('Customer <customer@example.com>');
-    expectExecutorEmailPrompt(continueCalls[0].text);
+    expectConnectorEmailPrompt(continueCalls[0].text);
   });
 
   test('a rejected sender never claims the message or creates or continues a session', async () => {

@@ -67,6 +67,26 @@ sandbox:
 opencode:
   config_dir: .kortix/opencode
 
+# ─── Apps ─────────────────────────────────────────────────────────
+# Local, repeatable deployment defaults. `kortix apps deploy` remains the
+# explicit deployment action; merging this file does not auto-deploy.
+apps:
+  storefront:
+    path: web
+    type: bundle
+    output_dir: dist
+    readiness_path: /
+    idle_timeout_seconds: 300
+    monthly_budget_usd: 5
+    resources:
+      cpu: 1
+      memory_gb: 2
+      disk_gb: 10
+    env:
+      NODE_ENVIRONMENT: production
+    secrets:
+      DATABASE_URL: database-primary
+
 # ─── Triggers ─────────────────────────────────────────────────────
 # Each `triggers:` entry spawns a fresh session that runs `prompt`
 # as its initial message. Slugs must be lowercase URL-safe and
@@ -124,7 +144,7 @@ must name a declared, enabled agent.
 | ------------ | ----------------------------------------------------------------------------------------------- |
 | `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
 | `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
-| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).   |
+| `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
 | `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
 | `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
@@ -143,7 +163,7 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `project.read|write|delete`, `project.cr.open|merge`,
 `project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`,
-`project.connector.read|write|profiles.manage`
+`project.connector.read|write|connections.manage`
 (channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
 
 **Resolution at session start:** every agent must be declared under
@@ -183,6 +203,7 @@ self-describing at a glance.
 | Sandbox builder        | `sandbox:`                                                           |
 | Sandbox runtime        | v2 `opencode:`                                                   |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
+| Apps CLI               | `apps:` (local deployment defaults; deploy remains explicit)          |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |

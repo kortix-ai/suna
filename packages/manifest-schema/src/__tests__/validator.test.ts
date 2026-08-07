@@ -470,7 +470,7 @@ spec = "https://example.com/openapi.json"
   });
 
   // The platform itself writes an equivalent entry into kortix.yaml when a Slack
-  // channel is connected (executor/channel-manifest.ts); this exercises the same
+  // channel is connected (connector/channel-manifest.ts); this exercises the same
   // shape against the legacy v1 (kortix.toml) validator. The gate must accept it,
   // or it blocks merging a manifest the backend produced.
   test('a platform-written channel connector is valid', () => {
@@ -558,16 +558,58 @@ base_url = "https://example.com"
   });
 });
 
-describe('validateManifest — retired hosted apps section', () => {
-  test('rejects the removed section in both manifest versions', () => {
+describe('validateManifest — Kortix Apps', () => {
+  test('rejects the retired v1 section and accepts the provider-neutral v2 map', () => {
     expect(summarize('kortix_version = 1\n[[apps]]\nslug = "site"').errorPaths).toContain('apps');
     const v2 = validateManifest(
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site',
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  web:
+    path: .
+    type: dockerfile
+    dockerfile: Dockerfile
+    command: [bun, run, start]
+    port: 3000
+    readiness_path: /health
+    idle_timeout_seconds: 300
+    resources:
+      cpu: 1
+      memory_gb: 2
+      disk_gb: 10
+    env:
+      NODE_ENV: production
+    secrets:
+      DATABASE_URL: DATABASE_URL`,
       'yaml',
     );
-    expect(v2.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toContain(
-      'apps',
+    expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
+    const result = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  bad:
+    type: dockerfile
+    command: []
+    port: 8080
+    resources:
+      cpu: 0
+    secrets:
+      DATABASE_URL: ""`,
+      'yaml',
     );
+    const paths = result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path);
+    expect(paths).toContain('apps.bad.command');
+    expect(paths).toContain('apps.bad.port');
+    expect(paths).toContain('apps.bad.resources.cpu');
+    expect(paths).toContain('apps.bad.secrets.DATABASE_URL');
   });
 });
 

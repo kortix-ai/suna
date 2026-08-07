@@ -14,7 +14,7 @@
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../executor/share';
+import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../connectors/share';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';

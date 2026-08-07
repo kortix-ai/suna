@@ -224,7 +224,7 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
   const backend = raw.backend;
   if (
     backend !== undefined &&
-    !['llm_gateway', 'executor', 'git_proxy', 'kortix_fetch'].includes(String(backend))
+    !['llm_gateway', 'connector', 'git_proxy', 'kortix_fetch'].includes(String(backend))
   ) {
     return { ok: false, error: `unknown backend: ${String(backend)}` };
   }

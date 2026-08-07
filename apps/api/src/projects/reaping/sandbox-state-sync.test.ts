@@ -76,7 +76,7 @@ mock.module('../../billing/services/compute-metering', () => ({
 }));
 
 mock.module('../../repositories/account-tokens', () => ({
-  revokeSessionExecutorTokens: async (sessionId: string, accountId: string) => {
+  revokeSessionConnectorTokens: async (sessionId: string, accountId: string) => {
     revokedTokens.push({ sessionId, accountId });
     return 1;
   },
@@ -239,9 +239,9 @@ describe('reconcileSandboxStoppedByExternalId', () => {
 });
 
 describe('reconcileSandboxRemovedByExternalId', () => {
-  // A removed box can never be woken, so its executor token is a bearer
+  // A removed box can never be woken, so its connector token is a bearer
   // credential with no owner and nothing else ever expires it.
-  test('SECURITY: revokes the session executor tokens for a removed sandbox', async () => {
+  test('SECURITY: revokes the session connector tokens for a removed sandbox', async () => {
     selectedRows = [
       {
         sandboxId: 'sb-1',

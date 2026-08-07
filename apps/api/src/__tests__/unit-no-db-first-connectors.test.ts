@@ -6,7 +6,7 @@
  * reintroduce the "lands in the DB before it's in config" race.
  *
  * Allowed writers:
- *   - executor/sync.ts        — THE connector materializer (manifest → DB)
+ *   - connectors/sync.ts       — THE connector materializer (manifest → DB)
  *   - __tests__/*             — fixtures / seeds
  */
 import { describe, expect, test } from 'bun:test';
@@ -29,8 +29,8 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-// `.insert(<table>` with optional whitespace — matches `db.insert(executorConnectors`,
-// `tx.insert( executorConnectors`, etc.
+// `.insert(<table>` with optional whitespace — matches `db.insert(connectors`,
+// `tx.insert( connectors`, etc.
 const insertOf = (table: string) => new RegExp(`\\.insert\\(\\s*${table}\\b`);
 
 function offenders(table: string, allow: (rel: string) => boolean): string[] {
@@ -46,14 +46,14 @@ function offenders(table: string, allow: (rel: string) => boolean): string[] {
 }
 
 describe('config-first invariant (no DB-first creation)', () => {
-  test('executorConnectors is inserted ONLY by the toml→DB materializer', () => {
-    // executor/sync.ts is the single sanctioned writer.
-    expect(offenders('executorConnectors', (rel) => rel === 'executor/sync.ts')).toEqual([]);
+  test('connectors is inserted ONLY by the toml→DB materializer', () => {
+    // connectors/sync.ts is the single sanctioned writer.
+    expect(offenders('connectors', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
   });
 
   test('connector actions/policies are inserted ONLY by the materializer', () => {
-    expect(offenders('executorConnectorActions', (rel) => rel === 'executor/sync.ts')).toEqual([]);
-    expect(offenders('executorConnectorPolicies', (rel) => rel === 'executor/sync.ts')).toEqual([]);
+    expect(offenders('connectorActions', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
+    expect(offenders('connectorPolicies', (rel) => rel === 'connectors/sync.ts')).toEqual([]);
   });
 
   test('projectTriggers (legacy definition table) is never inserted — triggers are file-defined', () => {

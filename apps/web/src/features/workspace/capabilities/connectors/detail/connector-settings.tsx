@@ -1,6 +1,10 @@
 'use client';
 
-import { type AdminConnector, type ConnectorAuthorizationStrategy, deleteConnector } from '@kortix/sdk';
+import {
+  type AdminConnector,
+  type ConnectorAuthorizationStrategy,
+  deleteConnector,
+} from '@kortix/sdk';
 import { TrashIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -9,8 +13,8 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Label } from '@/components/ui/label';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { connectorAuthorizationStrategyIsEditable } from '@/features/workspace/customize/sections/connector-profile-form';
-import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-profile-modal';
+import { connectorAuthorizationStrategyIsEditable } from '@/features/workspace/customize/sections/connector-connection-form';
+import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 export interface ConnectorSettingsProps {
   projectId: string;

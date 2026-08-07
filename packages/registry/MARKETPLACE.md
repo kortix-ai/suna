@@ -68,7 +68,7 @@ layers, and the core belongs to the inner two.
 │ ┌─ Layer 2: STANDARD LIBRARY ─ first-party @kortix/* registry ─────────────┐ │
 │ │  official, curated, updatable: the Kortix-managed runtime skills + packs │ │
 │ │ ┌─ Layer 1: RUNTIME FLOOR ─ baked into the starter scaffold ───────────┐ │ │
-│ │ │  kortix-system, kortix-memory, executor/slack/computer, agent-browser │ │ │
+│ │ │  kortix-system, kortix-memory, connector/slack/computer, agent-browser │ │ │
 │ │ │  them with ZERO network. A project must boot before any registry.    │ │ │
 │ │ └──────────────────────────────────────────────────────────────────────┘ │ │
 │ └────────────────────────────────────────────────────────────────────────────┘ │
@@ -98,7 +98,7 @@ The current Kortix-managed set is intentionally small:
 
 - `kortix-system`
 - `kortix-memory`
-- `kortix-executor`
+- `kortix-connectors`
 - `kortix-slack`
 - `kortix-computer`
 
@@ -217,7 +217,7 @@ install**. Nothing is granted silently.
 "meta": {
   "capabilities": {
     "secrets":    ["OPENAI_API_KEY"],          // env it reads
-    "connectors": ["gmail", "slack"],          // integrations it calls
+    "connectors": ["gmail", "slack"],          // connectors it calls
     "network":    ["api.openai.com"],          // egress it expects (allowlist)
     "tools":      ["web_search"],              // tools it invokes
     "writes":     ["@skills/", "@memory/"]     // where it writes

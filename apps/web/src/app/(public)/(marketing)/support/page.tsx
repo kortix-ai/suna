@@ -101,7 +101,7 @@ function SupportPageContent() {
                   'appHomeSupportPage.line84JsxAttrQuestionCanKortixConnectToMyApps',
                 )}
                 answer={tHardcodedUi.raw(
-                  'appHomeSupportPage.line85JsxAttrAnswerYes3000IntegrationsViaOauthMcpServers',
+                  'appHomeSupportPage.line85JsxAttrAnswerYes3000ConnectorsViaOauthMcpServers',
                 )}
               />
               <FAQItem

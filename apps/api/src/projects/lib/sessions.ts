@@ -41,6 +41,7 @@ import {
   requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
+  workspaceFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { resolveSessionSecretGrant } from './secret-grant';
@@ -52,7 +53,12 @@ import {
   parseSessionSecretsAllowlist,
   secretKeyCollisionInAllowlist,
 } from '../secrets';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import {
+  resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
+} from './compile-agent-config';
+import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -70,7 +76,7 @@ import {
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
-  resolveRequiredConnectorProfiles,
+  resolveRequiredConnectorConnections,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
@@ -82,7 +88,10 @@ import {
 } from '../session-title-generate';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditEvent } from './session-audit';
-import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import {
+  resolveSessionSandboxSlug,
+  workspaceModeAllowsFullRepository,
+} from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
@@ -285,6 +294,7 @@ export async function buildSessionSandboxEnvVars(input: {
   manifestPath?: string;
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
+  workspaceMode?: WorkspaceModeV2 | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -307,20 +317,24 @@ export async function buildSessionSandboxEnvVars(input: {
     ? buildPlatformMetaOpenCodeConfig()
     : null;
   if (input.defaultBranch && !input.platformMetaAgent) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession(
-      {
-        projectId: input.projectId,
-        repoUrl: input.repoUrl,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      },
-      // Compile from the ref this session actually runs on. It used to compile
-      // from the default branch regardless, so a session started on a feature
-      // branch ran main's agents from its first turn — you could edit an agent,
-      // push, start a session on that branch, and see no change at all.
-      input.baseRef,
-    ).catch(() => null);
+    const gitProject = {
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    compiledAgentConfig =
+      !workspaceModeAllowsFullRepository(input.workspaceMode)
+        ? await resolveSelectedAgentConfigForSession(
+            gitProject,
+            input.agentName,
+            input.baseRef,
+          )
+          : await resolveCompiledAgentConfigForSession(
+              gitProject,
+              input.baseRef,
+            ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -376,7 +390,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // WHICH identifiers are eligible; this only picks the per-user override owner.
   const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
 
-  let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
+  let runtimeSecrets: {
+    env: Record<string, string>;
+    names: string[];
+    revision: string;
+    capabilitiesJson: string;
+  };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
@@ -404,7 +423,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
   // The Slack BOT TOKEN no longer belongs in the sandbox either: the `slack`
-  // shim now runs every Web API call through the Executor (server-side token)
+  // shim now runs every Web API call through the Connector (server-side token)
   // and its file ops through the server-side file proxy. Keeping it out means a
   // compromised/prompt-injected agent can't exfiltrate the raw bot token — only
   // make scoped, audited, policy-gated channel calls. (KORTIX-206 Phase C2.)
@@ -435,11 +454,10 @@ export async function buildSessionSandboxEnvVars(input: {
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
+    [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
     // Runtime-delivered provider keys may reach the sandbox for user code.
     // OpenCode must not receive them because it would bypass the gateway.
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
-    KORTIX_PROJECT_AUTO_CLONE: input.platformMetaAgent ? '0' : '1',
-    ...(input.platformMetaAgent ? { KORTIX_META_AGENT: '1' } : {}),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -473,7 +491,14 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
+      workspaceMode: input.workspaceMode,
     }),
+    // The platform coordinator uses API-level delegation and never receives a
+    // project checkout. Keep this override after buildSessionRuntimeEnv so the
+    // agent workspace mode cannot re-enable the daemon's automatic clone.
+    ...(input.platformMetaAgent
+      ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
+      : {}),
   };
 }
 
@@ -565,12 +590,12 @@ export async function createProjectSession(input: {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   /** The caller's own session when the credential is session-bound (the
-   *  executor PAT injected into a sandbox). Used only to stop meta→meta
+   *  connector PAT injected into a sandbox). Used only to stop meta→meta
    *  recursion — a meta coordinator must spawn project agents, not itself. */
   callerSessionId?: string | null;
   /** The request-time capability verdict for operator-managed (non-member)
-   * connection profiles. Personal profiles ignore this and remain owner-only. */
-  mayManageSystemConnectorProfiles?: boolean;
+   * connections. Personal connections ignore this and remain owner-only. */
+  mayManageSystemConnections?: boolean;
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
@@ -608,7 +633,7 @@ export async function createProjectSession(input: {
   // `inherit_unbound` is a benign binding modifier: when this session binds any
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
   // failing closed. It can only ever inherit the project default (never another
-  // owner's profile), so unlike secrets it is NOT origin-gated.
+  // owner's connection), so unlike secrets it is NOT origin-gated.
   //
   // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
   // connectors keeps the project-default fallback for the rest unless the caller
@@ -617,8 +642,8 @@ export async function createProjectSession(input: {
   // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
   // deliberately never flips this flag on a scope save. Before this, a caller
   // sending `connector_bindings: {...}` without `inherit_unbound` left it
-  // `false`, hiding EVERY unbound connector from `kortix executor connectors`
-  // / `kortix executor call` — the whole catalog went empty.
+  // `false`, hiding EVERY unbound connector from `kortix connectors ls`
+  // / `kortix connectors call` — the whole catalog went empty.
   let inheritUnbound = body.inherit_unbound !== false;
   const connectorBindingsConfigured = body.connector_bindings !== undefined;
   const requireConnectors: string[] = Array.isArray(body.require_connectors)
@@ -751,6 +776,18 @@ export async function createProjectSession(input: {
       },
     };
   }
+  const workspaceMode = workspaceFromLoadedAgents(agentName, loadedAgents) ?? 'branch';
+  if (workspaceMode === 'read') {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'workspace mode "read" requires restricted workspace artifacts',
+          code: 'WORKSPACE_MODE_UNAVAILABLE',
+        },
+      },
+    };
+  }
 
   const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
@@ -863,13 +900,13 @@ export async function createProjectSession(input: {
     projectId,
     actingUserId: userId,
     actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
-    mayManageSystemProfiles: input.mayManageSystemConnectorProfiles ?? false,
+    mayManageSystemConnections: input.mayManageSystemConnections ?? false,
     bindings: parsedConnectorBindings.bindings,
   });
   if (!validatedConnectorBindings.ok) {
     return {
       error: {
-        status: validatedConnectorBindings.code === 'CONNECTOR_PROFILE_NOT_FOUND' ? 404 : 409,
+        status: validatedConnectorBindings.code === 'CONNECTOR_CONNECTION_NOT_FOUND' ? 404 : 409,
         body: {
           error: validatedConnectorBindings.error,
           code: validatedConnectorBindings.code,
@@ -878,7 +915,7 @@ export async function createProjectSession(input: {
     };
   }
   if (effectiveRequireConnectors.length > 0) {
-    const required = await resolveRequiredConnectorProfiles({
+    const required = await resolveRequiredConnectorConnections({
       accountId,
       projectId,
       actingUserId: userId,
@@ -887,14 +924,14 @@ export async function createProjectSession(input: {
       explicitBindings: validatedConnectorBindings.bindings,
     });
     if (!required.ok) {
-      if (required.code === 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE') {
+      if (required.code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE') {
         return {
           error: {
             status: 409,
             body: {
-              error: `Required connector profile ${required.aliases
+              error: `Required ${required.aliases.length === 1 ? 'connection' : 'connections'} ${required.aliases
                 .map((alias) => `"${alias}"`)
-                .join(', ')} is unavailable`,
+                .join(', ')} ${required.aliases.length === 1 ? 'is' : 'are'} unavailable`,
               code: required.code,
               // The prose names the aliases too, but a client that wants to list
               // them (or diff them across retries) must not have to parse it.
@@ -908,8 +945,8 @@ export async function createProjectSession(input: {
           status: 409,
           body: {
             code: required.code,
-            message: 'Connect the required connector profiles before starting this session.',
-            connector_profiles: required.connectorProfiles,
+            message: 'Create the required connections before starting this session.',
+            connector_connections: required.connectorConnections,
           },
         },
       };
@@ -928,8 +965,8 @@ export async function createProjectSession(input: {
       error: {
         status: 409,
         body: {
-          error: 'Sessions using a personal connector profile must remain private',
-          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+          error: 'Sessions using a personal connection must remain private',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
         },
       },
     };
@@ -941,7 +978,7 @@ export async function createProjectSession(input: {
   // an undeclared agent is REJECTED with an explicit 400 before any row is
   // inserted or sandbox provisioned — never left to resolve to the permissive
   // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
-  // `.catch` in session-sandbox.ts `mintExecutorToken`, which must stay
+  // `.catch` in session-sandbox.ts `mintConnectorToken`, which must stay
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (
@@ -1122,6 +1159,7 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    workspace_mode: workspaceMode,
     sandbox_slug: sandboxSlug,
   };
 
@@ -1183,7 +1221,7 @@ export async function createProjectSession(input: {
               projectId,
               connectorAlias: binding.alias,
               connectorId: binding.connectorId,
-              profileId: binding.profileId,
+              connectionId: binding.connectionId,
               source: 'request' as const,
               createdBy: userId,
             })),
@@ -1199,7 +1237,7 @@ export async function createProjectSession(input: {
     // resolveSessionProvider validates against config, never against the DB.
     // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
-    // Session, context and profile bindings are one transaction. Nothing is
+    // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
@@ -1294,6 +1332,7 @@ export async function createProjectSession(input: {
           baseSha,
           defaultBranch: project.defaultBranch,
           manifestPath: project.manifestPath,
+          workspaceMode,
         }),
         )
         .then((envVars) => {

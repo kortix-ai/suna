@@ -62,6 +62,17 @@ Global options:
   -h, --help         Show this help.
 `;
 
+const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
+
+Start the OAuth device-code flow for openai or github-copilot.
+
+Options:
+  --enterprise <url>  GitHub Enterprise URL for github-copilot.
+  --project <id>      Operate on this project id (default: linked).
+  --host <name>       Operate against a non-default Kortix host.
+  -h, --help          Show this help without starting OAuth.
+`;
+
 // ── provider → required project-secret(s) for the API-key flow ────────────
 // Sourced from @kortix/llm-catalog's Kortix-owned auth requirement — NOT the
 // raw models.dev env list, which for some providers (Bedrock) includes an
@@ -115,6 +126,10 @@ export async function runProviders(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  if ((sub === 'login' || sub === 'oauth') && rest.some((arg) => arg === '-h' || arg === '--help')) {
+    process.stdout.write(LOGIN_HELP);
+    return 0;
+  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;

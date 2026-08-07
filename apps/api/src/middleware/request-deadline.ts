@@ -7,7 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 // Defense-in-depth against the fleet-wide "Request timed out after 30s" class
 // of incident (2026-06-08). The real root cause was DB connection-pool
 // starvation (see packages/db/src/client.ts), but a secondary failure mode is
-// any handler that makes a slow downstream call (Daytona, executor, git host)
+// any handler that makes a slow downstream call (Daytona, connector, git host)
 // without its own timeout: it hangs until the frontend's 30s client abort,
 // holding server resources the whole time and surfacing as a confusing,
 // URL-only timeout in Better Stack.
@@ -58,7 +58,7 @@ const EXEMPT_PREFIXES = [
   '/v1/router',   // LLM gateway — streamed chat completions
   '/v1/llm',      // LLM chat completions (streamed; p99 >10s is normal)
   '/v1/llm-gateway', // reverse proxy to the standalone gateway (streamed SSE)
-  '/v1/executor', // connector proxy — forwards to arbitrary upstream APIs
+  '/v1/connectors', // connector calls + git/provider sync — arbitrary upstream latency
   '/v1/webhooks', // inbound webhooks (Slack, …) — callers retry, don't truncate
   '/v1/billing/webhooks',   // Stripe webhook processing (observed >60s, legit)
   '/v1/billing/revenuecat', // RevenueCat sync — batch reconcile, legit-long

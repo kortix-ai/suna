@@ -22,7 +22,7 @@
  */
 
 import { and, gt, inArray, isNotNull, or } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { appRuntimes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -65,19 +65,33 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  // keepSet: never stop a box the DB considers live or touched recently.
-  const keepRows = await db
-    .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(
-      and(
-        isNotNull(sessionSandboxes.externalId),
-        or(
-          inArray(sessionSandboxes.status, ['active', 'provisioning']),
-          gt(sessionSandboxes.updatedAt, new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS)),
+  // keepSet: never stop a Session or App box the DB considers live or touched
+  // recently. App runtimes share the provider fleet and labels with Sessions.
+  const recentCutoff = new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS);
+  const [sessionKeepRows, appKeepRows] = await Promise.all([
+    db
+      .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          isNotNull(sessionSandboxes.externalId),
+          or(
+            inArray(sessionSandboxes.status, ['active', 'provisioning']),
+            gt(sessionSandboxes.updatedAt, recentCutoff),
+          ),
         ),
       ),
-    );
+    db
+      .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+      .from(appRuntimes)
+      .where(
+        or(
+          inArray(appRuntimes.status, ['provisioning', 'starting', 'running', 'stopping']),
+          gt(appRuntimes.updatedAt, recentCutoff),
+        ),
+      ),
+  ]);
+  const keepRows = [...sessionKeepRows, ...appKeepRows];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)

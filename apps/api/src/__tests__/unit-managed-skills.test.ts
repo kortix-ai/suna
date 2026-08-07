@@ -57,7 +57,7 @@ describe('managed skill catalog', () => {
   test('the served text is byte-identical to the sandbox-baked managed skills', () => {
     // Both sides run the same @kortix/starter extraction; this pins them together
     // so the API can never serve instructions a session would not get.
-    const skill = getManagedSkill('kortix-executor');
+    const skill = getManagedSkill('kortix-connectors');
     expect(skill).not.toBeNull();
     expect(skill!.bytes).toBe(
       skill!.body.length + skill!.references.reduce((n, f) => n + f.content.length, 0),

@@ -38,7 +38,7 @@ export function OutputBlock({
 }
 
 /** The one sanctioned section label (spec S1) — kills every ad-hoc
- *  sky/amber/executor uppercase treatment. */
+ *  sky/amber/connector uppercase treatment. */
 export function ToolSection({
   label,
   children,

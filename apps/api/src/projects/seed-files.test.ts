@@ -66,6 +66,27 @@ describe('buildProjectSeedFilesFromItem', () => {
     );
   });
 
+  test('clones the Use-case pack to conventional in-repo paths', async () => {
+    const seed = await buildProjectSeedFilesFromItem({
+      id: 'kortix-projects:use-case-pack',
+      projectName: 'Ops Pack',
+      repoFullName: 'acme/ops-pack',
+      extraMarketplaceItems: [],
+      now: '2026-08-06T00:00:00.000Z',
+    });
+
+    const paths = seed.files.map((f) => f.path);
+    // The pack's own README wins over the minimal scaffold's.
+    expect(seed.files.find((f) => f.path === 'README.md')?.content).toContain('Use-case pack');
+    // Runbook skills + persona agents land where the runtime loads them.
+    expect(paths.some((p) => p.startsWith('.kortix/opencode/skills/') && p.endsWith('/SKILL.md'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('.kortix/opencode/agents/') && p.endsWith('.md'))).toBe(true);
+    // No template-internal `runtime/` paths leak into a cloned repo.
+    expect(paths.every((p) => !p.startsWith('runtime/'))).toBe(true);
+    // The scaffold still provides the manifest with a declared default agent.
+    expect(seed.files.find((f) => f.path === 'kortix.yaml')?.content).toContain('default_agent:');
+  });
+
   /**
    * The bundled department projects (SEO / Marketing / Website Studio) were
    * retired — the marketplace leads with the single Kortix Starter project.

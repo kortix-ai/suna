@@ -27,8 +27,8 @@ import {
   pipedreamListAccounts,
   pipedreamCatalog,
   runPipedreamAction,
-} from '../src/executor/pipedream';
-import { normalize } from '../src/executor/normalize';
+} from '../src/connectors/pipedream';
+import { normalize } from '../src/connectors/normalize';
 
 const APP = (process.env.PD_APP ?? 'gmail').trim();
 const SLUG = APP;

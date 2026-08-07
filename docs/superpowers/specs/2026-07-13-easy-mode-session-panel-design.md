@@ -77,7 +77,7 @@ matching `ToolRegistry.get()` already does.
 | `delegate` | "Asked a helper agent to…" | `agent_spawn` `agent_message` `agent_status` `agent_stop` `agent_task` `agent_task_create` `agent_task_get` `agent_task_list` `agent_task_update` `agent_task_start` `agent_task_message` `agent_task_approve` `agent_task_cancel` |
 | `sessions` | "Checked earlier work" | `session_get` `session_read` `session_search` `session_message` `session_spawn` `session_lineage` `session_stats` `session_list` `session_list_background` `session_list_spawned` `session_start_background` |
 | `memory` | "Recalled what you told it before" | `memory` `memory_search` `mem_search` `ltm_search` `get_mem` |
-| `apps` | "Connected to Gmail" | `connector_get` `connector_list` `connector_setup` `kortix_executor_call` `kortix_executor_connectors` `kortix_executor_describe` `kortix_executor_discover` |
+| `apps` | "Connected to Gmail" | `connector_get` `connector_list` `connector_setup` `kortix_connector_call` `kortix_connectors` `kortix_connector_describe` `kortix_connector_discover` |
 | `automations` | "Set up an automation" | `triggers` `trigger_create` `trigger_delete` `trigger_get` `trigger_list` `trigger_pause` `trigger_resume` `trigger_test` `trigger_update` |
 | `projects` | "Opened your project" | `project_create` `project_delete` `project_get` `project_list` `project_select` `project_update` |
 | `skills` | "Used a skill" | `skill` |

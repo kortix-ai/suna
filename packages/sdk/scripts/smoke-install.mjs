@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Packs @kortix/sdk exactly as `npm publish` would, installs the tarball into a
- * throwaway project, and imports it in Node ESM.
+ * Packs @kortix/sdk and the final @kortix/executor-sdk adapter exactly as npm
+ * publishes them, installs the tarballs into a throwaway project, and imports
+ * both in Node ESM.
  *
  * This is the ONLY check that exercises the published artifact's module
  * resolution. `npm pack --dry-run` lists tarball contents; stage-npm-publish.mjs
@@ -23,6 +24,7 @@ import { join } from 'node:path';
 
 const PKG_DIR = process.cwd();
 const CATALOG_DIR = join(PKG_DIR, '..', 'llm-catalog');
+const EXECUTOR_DIR = join(PKG_DIR, '..', 'executor-sdk');
 
 /** `execFileSync` takes an options object — cwd and env both live there. */
 const run = (cmd, args, cwd, env) =>
@@ -36,11 +38,14 @@ const stage = (dir) =>
 
 const backup = join(tmpdir(), `kortix-sdk-pkg-${process.pid}.json`);
 const catalogBackup = join(tmpdir(), `kortix-llm-catalog-pkg-${process.pid}.json`);
+const executorBackup = join(tmpdir(), `kortix-executor-sdk-pkg-${process.pid}.json`);
 const workdir = mkdtempSync(join(tmpdir(), 'kortix-sdk-smoke-'));
 let staged = false;
 let catalogStaged = false;
+let executorStaged = false;
 let tarballPath;
 let catalogTarballPath;
+let executorTarballPath;
 
 try {
   console.log('→ building dist/');
@@ -50,6 +55,7 @@ try {
   // they must be built before staging — plain `build` only runs tsc.
   run('pnpm', ['run', 'build:bundles'], PKG_DIR);
   run('pnpm', ['run', 'build'], CATALOG_DIR);
+  run('pnpm', ['run', 'build'], EXECUTOR_DIR);
 
   console.log('→ staging the published manifests');
   copyFileSync(join(PKG_DIR, 'package.json'), backup);
@@ -58,19 +64,37 @@ try {
   copyFileSync(join(CATALOG_DIR, 'package.json'), catalogBackup);
   catalogStaged = true;
   stage(CATALOG_DIR);
+  copyFileSync(join(EXECUTOR_DIR, 'package.json'), executorBackup);
+  executorStaged = true;
+  stage(EXECUTOR_DIR);
 
   console.log('→ npm pack');
   const tarball = run('npm', ['pack', '--silent'], PKG_DIR).trim().split('\n').pop();
   tarballPath = join(PKG_DIR, tarball);
   const catalogTarball = run('npm', ['pack', '--silent'], CATALOG_DIR).trim().split('\n').pop();
   catalogTarballPath = join(CATALOG_DIR, catalogTarball);
+  const executorTarball = run('npm', ['pack', '--silent'], EXECUTOR_DIR).trim().split('\n').pop();
+  executorTarballPath = join(EXECUTOR_DIR, executorTarball);
 
-  console.log(`→ installing ${catalogTarball} + ${tarball} into ${workdir}`);
+  console.log(
+    `→ installing ${catalogTarball} + ${tarball} + ${executorTarball} into ${workdir}`,
+  );
   writeFileSync(
     join(workdir, 'package.json'),
     JSON.stringify({ name: 'smoke', private: true, type: 'module' }, null, 2),
   );
-  run('npm', ['install', '--no-audit', '--no-fund', catalogTarballPath, tarballPath], workdir);
+  run(
+    'npm',
+    [
+      'install',
+      '--no-audit',
+      '--no-fund',
+      catalogTarballPath,
+      tarballPath,
+      executorTarballPath,
+    ],
+    workdir,
+  );
 
   console.log('→ importing in Node ESM');
   writeFileSync(
@@ -78,18 +102,22 @@ try {
     [
       "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
       "import { createScopedKortix } from '@kortix/sdk/server';",
+      "import { createExecutorClient, ExecutorClient, ExecutorError } from '@kortix/executor-sdk';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
       "if (typeof classifyTurn !== 'function') throw new Error('classifyTurn is not a function');",
       "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
       "if (typeof getSessionCostRecord !== 'function') throw new Error('getSessionCostRecord missing');",
       "if (typeof listSessionCosts !== 'function') throw new Error('listSessionCosts missing');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
+      "if (typeof createExecutorClient !== 'function') throw new Error('createExecutorClient missing');",
+      "if (!(createExecutorClient({ apiUrl: 'http://smoke.test', token: 'x' }) instanceof ExecutorClient)) throw new Error('ExecutorClient compatibility missing');",
+      "if (!(new ExecutorError('x', 400, {}) instanceof Error)) throw new Error('ExecutorError compatibility missing');",
       "const k = createKortix({ backendUrl: 'http://smoke.test/v1', getToken: async () => null });",
       "if (typeof k.projects.list !== 'function') throw new Error('facade is not wired');",
       "if (typeof k.billing.sessionCosts.list !== 'function') throw new Error('sessionCosts.list missing');",
       "if (typeof k.billing.sessionCosts.get !== 'function') throw new Error('sessionCosts.get missing');",
       "if (typeof k.session('project', 'session').cost !== 'function') throw new Error('session.cost missing');",
-      "console.log('OK: @kortix/sdk imports and constructs from a packed tarball');",
+      "console.log('OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs');",
     ].join('\n'),
   );
   process.stdout.write(run('node', ['smoke.mjs'], workdir));
@@ -112,10 +140,13 @@ try {
   };
   if (staged) step(() => copyFileSync(backup, join(PKG_DIR, 'package.json')));
   if (catalogStaged) step(() => copyFileSync(catalogBackup, join(CATALOG_DIR, 'package.json')));
+  if (executorStaged) step(() => copyFileSync(executorBackup, join(EXECUTOR_DIR, 'package.json')));
   step(() => rmSync(backup, { force: true }));
   step(() => rmSync(catalogBackup, { force: true }));
+  step(() => rmSync(executorBackup, { force: true }));
   if (tarballPath) step(() => rmSync(tarballPath, { force: true }));
   if (catalogTarballPath) step(() => rmSync(catalogTarballPath, { force: true }));
+  if (executorTarballPath) step(() => rmSync(executorTarballPath, { force: true }));
   step(() => rmSync(workdir, { recursive: true, force: true }));
   if (cleanupErrors.length > 0) {
     throw new AggregateError(cleanupErrors, 'smoke-install cleanup failed');

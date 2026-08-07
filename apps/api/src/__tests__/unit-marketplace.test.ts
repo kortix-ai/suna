@@ -51,6 +51,65 @@ describe('marketplace catalog', () => {
     expect(starterDetail!.dependencyItems.some((d) => d.name === 'pdf')).toBe(true);
   });
 
+  test('the starter project lists only the starter floor; marketplace-layer skills stay out', async () => {
+    // "What's inside" the Kortix Starter is exactly what a cloned starter repo
+    // ships: the general-knowledge-worker floor. Marketplace-layer extras and
+    // use-case runbook skills must not be badged as starter contents.
+    const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
+    expect(starterDetail!.dependencyItems.map((d) => d.name).sort()).toEqual([
+      'agent-browser',
+      'convert-documents-to-markdown',
+      'design-foundations',
+      'docx',
+      'pdf',
+      'presentations',
+      'web-publishing-and-deployments',
+      'webapp',
+      'website-building',
+      'xlsx',
+    ]);
+
+    const all = await listCatalogItems({ source: 'kortix' });
+
+    // A marketplace-layer extra (deep-research) is a standalone browse tile
+    // WITHOUT the "Part of Kortix Starter" badge.
+    const deepResearch = all.find((i) => i.name === 'deep-research');
+    expect(deepResearch).toBeTruthy();
+    expect(deepResearch!.partOfProject).toBeUndefined();
+
+    // A use-case runbook skill is browseable but badged into the Use-case
+    // pack — the explore grid folds it under that tile, never the starter.
+    const invoiceMath = all.find((i) => i.name === 'invoice-math');
+    expect(invoiceMath).toBeTruthy();
+    expect(invoiceMath!.partOfProject).toEqual({
+      id: 'kortix-projects:use-case-pack',
+      title: 'Use-case pack',
+    });
+    expect(starterDetail!.dependencyItems.some((d) => d.name === 'invoice-math')).toBe(false);
+  });
+
+  test('the Use-case pack groups every runbook skill and clones to conventional paths', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    expect(all.find((i) => i.id === 'kortix-projects:use-case-pack')).toBeTruthy();
+
+    const pack = await getCatalogItemDetail('kortix-projects:use-case-pack');
+    expect(pack).toBeTruthy();
+    expect(pack!.type).toBe('registry:project');
+    // Every runbook skill lives in the pack's "what's inside" list — dozens of
+    // them — and none of them leak into the Kortix Starter.
+    expect(pack!.dependencyItems.length).toBeGreaterThan(40);
+    expect(pack!.dependencyItems.some((d) => d.name === 'invoice-math')).toBe(true);
+    expect(pack!.dependencyItems.every((d) => d.type === 'registry:skill')).toBe(true);
+
+    // Clone layout: runbook skills + persona agents land at their conventional
+    // in-project paths (same mapping the install wizard uses), plus a README.
+    const targets = pack!.files.map((f) => f.target);
+    expect(targets).toContain('README.md');
+    expect(targets.some((t) => t.startsWith('.kortix/opencode/skills/'))).toBe(true);
+    expect(targets.some((t) => t.startsWith('.kortix/opencode/agents/'))).toBe(true);
+    expect(targets.every((t) => !t.startsWith('runtime/'))).toBe(true);
+  });
+
   test('lists optional Kortix skills through the marketplace', async () => {
     // agent-browser is browseable alongside every other kortix-starter skill,
     // and it stays fully resolvable by id and shows up inside the starter
@@ -131,7 +190,7 @@ describe('marketplace catalog', () => {
     const managedCandidates = [
       'kortix-cli',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',
@@ -192,10 +251,11 @@ describe('marketplace catalog', () => {
     expect(kortix).toBeTruthy();
     expect(kortix.label).toBe('Kortix');
     expect(kortix.external).toBe(false);
-    // Kortix browses as the "Kortix Starter" project PLUS every individual
-    // kortix-starter skill as its own top-level browse tile — so the facet
-    // count is back to the full browseable kortix set, not the folded model's
-    // single hero tile (1).
+    // Kortix browses as the "Kortix Starter" + "Use-case pack" projects PLUS
+    // every individual kortix-starter skill as its own top-level browse tile
+    // (starter-floor and runbook skills carry a partOfProject badge, so the
+    // web folds them under their project tile) — the facet count is the full
+    // browseable kortix set, not the folded model's single hero tile (1).
     expect(kortix.count).toBeGreaterThan(20);
 
     // The base registries (kortix bundles + kortix-starter skills) collapse to one id…
@@ -349,6 +409,46 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
     } finally {
       restoreFetch();
       registerMarketplaceSourceProvider(async () => []);
+      _resetExternalCache();
+    }
+  });
+
+  test.serial('bounds concurrent external registry loads', async () => {
+    const sourceCount = 12;
+    let active = 0;
+    let maxActive = 0;
+    const fetchStub = (async (url: unknown) => {
+      const href = typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
+      if (!href.endsWith('/registry.json')) return new Response('not found', { status: 404 });
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Bun.sleep(10);
+      active -= 1;
+      const source = new URL(href).pathname.split('/')[2] ?? 'unknown';
+      return new Response(
+        JSON.stringify({
+          name: source,
+          items: [{ name: `skill-${source}`, type: 'registry:skill', title: source, files: [] }],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    globalThis.fetch = fetchStub;
+    githubLoaderOptions.fetchImpl = fetchStub;
+    process.env.KORTIX_MARKETPLACE_REGISTRIES = Array.from(
+      { length: sourceCount },
+      (_, index) => `github:mockorg/source-${index}`,
+    ).join(',');
+    _resetExternalCache();
+
+    try {
+      const all = await listCatalogItems();
+      expect(all.filter((item) => item.name.startsWith('skill-source-'))).toHaveLength(sourceCount);
+      expect(maxActive).toBeGreaterThan(1);
+      expect(maxActive).toBeLessThanOrEqual(4);
+    } finally {
+      restoreFetch();
+      delete process.env.KORTIX_MARKETPLACE_REGISTRIES;
       _resetExternalCache();
     }
   });

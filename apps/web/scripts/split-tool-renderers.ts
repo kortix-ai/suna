@@ -266,9 +266,9 @@ ${slice(5075, 5144).replace(/^function /gm, 'export function ')}
 `,
 );
 
-// ─── error-and-executor.tsx ───
+// ─── error-and-connector.tsx ───
 writeFileSync(
-  join(SHARED_DIR, 'error-and-executor.tsx'),
+  join(SHARED_DIR, 'error-and-connector.tsx'),
   `'use client';
 
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
@@ -410,11 +410,11 @@ import {
 } from '@/features/session/tool/shared/file-list';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import {
-  ExecutorJson,
-  ExecutorRiskBadge,
-  ExecutorSectionLabel,
-  parseExecutorOutput,
-} from '@/features/session/tool/shared/error-and-executor';
+  ConnectorJson,
+  ConnectorRiskBadge,
+  ConnectorSectionLabel,
+  parseConnectorOutput,
+} from '@/features/session/tool/shared/error-and-connector';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useOpenCodeMessages } from '@kortix/sdk/react';
@@ -543,7 +543,7 @@ writeFileSync(
   `'use client';
 
 import { StructuredOutput } from '@/features/session/tool/shared/infrastructure';
-import { parseErrorContent } from '@/features/session/tool/shared/error-and-executor';
+import { parseErrorContent } from '@/features/session/tool/shared/error-and-connector';
 import {
   hasStructuredContent,
   normalizeToolOutput,

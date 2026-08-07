@@ -3,7 +3,7 @@
 //
 // The pre-flight existed only at session create and warm-claim. A follow-up
 // prompt went straight through, so the founder's session answered "Still no
-// active connectors. The Gmail connector is gone from the executor catalog." —
+// active connectors. The Gmail connector is gone from the connector catalog." —
 // the agent apologising mid-turn for something the platform knew before the
 // first byte, after the user had already paid for the turn.
 //
@@ -29,7 +29,7 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
-const GMAIL_PROFILE = {
+const GMAIL_CONNECTION = {
   id: '11111111-1111-4111-a111-111111111111',
   slug: 'gmail',
   name: 'Gmail',
@@ -38,7 +38,7 @@ const GMAIL_PROFILE = {
 
 type Verdict =
   | { ok: true }
-  | { ok: false; kind: 'authorization_required'; profiles: unknown[] }
+  | { ok: false; kind: 'authorization_required'; connections: unknown[] }
   | { ok: false; kind: 'unavailable'; aliases: string[] };
 
 let verdict: Verdict = { ok: true };
@@ -76,7 +76,7 @@ mock.module('../../iam', () => ({
 }));
 mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved,
-  missingPromptConnectorAuthorizations: async (input: {
+  missingPromptConnectorConnections: async (input: {
     sessionAgent: string;
     requestedAgent: string | null;
   }) => {
@@ -173,14 +173,14 @@ afterAll(() => {
 });
 
 test('a prompt needing an unconnected connector is refused 409 and never reaches the sandbox', async () => {
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const response = await prompt();
 
   expect(response.status).toBe(409);
   expect(await response.json()).toMatchObject({
-    code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-    connector_profiles: [GMAIL_PROFILE],
+    code: 'CONNECTOR_CONNECTION_REQUIRED',
+    connector_connections: [GMAIL_CONNECTION],
   });
   // Nothing streamed, nothing spent, no side effect taken on a turn that did not run.
   expect(upstreamCalls).toBe(0);
@@ -191,7 +191,7 @@ test('a prompt needing an unconnected connector is refused 409 and never reaches
 test('the refusal carries `message` as well as `error`', async () => {
   // The SDK prefers `message` and otherwise substitutes a generic
   // "Failed to send message", which would bury the whole point of the refusal.
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const body = (await (await prompt()).json()) as Record<string, unknown>;
 
@@ -206,10 +206,10 @@ test('an alias that is not a connector on the project refuses with the unavailab
 
   expect(response.status).toBe(409);
   expect(await response.json()).toMatchObject({
-    code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+    code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
     connectors: ['gmail', 'slack'],
     // Plural list, plural verb.
-    error: 'Required connector profiles "gmail", "slack" are unavailable',
+    error: 'Required connections "gmail", "slack" are unavailable',
   });
   expect(upstreamCalls).toBe(0);
 });
@@ -219,7 +219,7 @@ test('RETRYING AFTER CONNECTING IS NOT SWALLOWED AS A DUPLICATE', async () => {
   // the Idempotency-Key, so this second send — byte-identical, which is exactly
   // what a retry is — would come back 200 {status:'duplicate'} and the user's
   // message would vanish. This assertion is the only one that pins the position.
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
   const refused = await send('/session/ses_1/prompt_async', {
     parts: [{ type: 'text', text: 'read my inbox' }],
   });
@@ -258,7 +258,7 @@ test('the gate reads the agent this prompt will actually RUN, not the boot agent
 });
 
 test('every turn-start shape is gated, not just prompt_async', async () => {
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   for (const path of [
     '/session/ses_1/prompt_async',
@@ -273,7 +273,7 @@ test('every turn-start shape is gated, not just prompt_async', async () => {
 test('summarize is NOT gated — compaction is not a user turn', async () => {
   // Refusing to compact a conversation because Gmail is disconnected would wedge
   // the session rather than protect it.
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const response = await send('/session/ses_1/summarize', {});
 
@@ -285,7 +285,7 @@ test('summarize is NOT gated — compaction is not a user turn', async () => {
 test('a turn addressed straight to the other session-data port is gated too', async () => {
   // The env-sync predicate keys on the client-addressed port, so :4096 slips past
   // it. This gate is built on isTurnStartRequest, which covers both.
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const response = await send('/session/ses_1/prompt_async', { parts: [] }, 4096);
 
@@ -302,7 +302,7 @@ test('an ordinary turn with nothing required pays nothing and forwards', async (
 });
 
 test('a non-turn request is never gated', async () => {
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const response = await forwardToSandbox(
     'sbx-1',
@@ -326,7 +326,7 @@ test('an unauthorized agent switch is refused WITHOUT revealing that agent\'s co
   // must not be able to enumerate them by naming B in a prompt — so the
   // authorization decision has to come first, not after.
   authorizeAllowed = false;
-  verdict = { ok: false, kind: 'authorization_required', profiles: [GMAIL_PROFILE] };
+  verdict = { ok: false, kind: 'authorization_required', connections: [GMAIL_CONNECTION] };
 
   const response = await prompt('nda-turnaround');
 

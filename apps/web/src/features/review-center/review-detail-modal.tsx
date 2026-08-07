@@ -42,7 +42,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChangeFilesModal } from './change-files';
-import { execExecutionId, formatItemAgeLong } from './review-actions';
+import { connectorCallId, formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -57,7 +57,7 @@ export interface ReviewActions {
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode. The shared Executor parameter review submits its exact
+  /** Live-data mode. The shared Connector parameter review submits its exact
    *  decision through `resolve()`. */
   connected?: boolean;
   /** The review item id currently mid-mutation, if any — drives the
@@ -446,7 +446,7 @@ function ApprovalBody({
   actions: ReviewActions;
 }) {
   const list = item.detail.actions ?? [];
-  const adaptedExecutionId = execExecutionId(item.id);
+  const adaptedExecutionId = connectorCallId(item.id);
   const adaptedAction = adaptedExecutionId ? list[0] : null;
   if (actions.connected && adaptedAction) {
     const busyDecision: ApprovalDecisionValue | null =
@@ -455,7 +455,7 @@ function ApprovalBody({
       <ApprovalRequest
         request={{
           action: adaptedAction.actionPath ?? adaptedAction.title,
-          risk: adaptedAction.executorRisk ?? adaptedAction.risk,
+          risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
           projectName: item.project,
           requestedAt: item.createdAt,
           argsPreview: adaptedAction.rawArgsPreview ?? null,
@@ -485,11 +485,11 @@ function ApprovalBody({
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
-  // Adapted Executor approvals return through ApprovalRequest above. This
+  // Adapted Connector approvals return through ApprovalRequest above. This
   // native/prototype branch keeps its existing whole-item decision behavior.
   return (
     <>
-      {/* Native multi-action approvals resolve as one item. Adapted Executor
+      {/* Native multi-action approvals resolve as one item. Adapted Connector
           approvals cannot reach this branch. */}
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;

@@ -1,7 +1,7 @@
 import { isCallLive, readTurns } from '../../channels/voice/runtime';
 import { SessionScopeInputSchema, SessionScopeSchema } from '@kortix/api-contract';
-import { approvalResolvedAuditEvent } from '../../executor/execution-audit';
-import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
+import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
+import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../connectors/share';
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
@@ -23,7 +23,7 @@ import { db } from '../../shared/db';
 import { inferAuditSource, recordAuditEvent } from '../../shared/audit';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionLifecycleCommands, sessionSandboxes,
+import { accountGroupMembers, accountGroups, accountMembers, connectors, connectorCalls, projectGroupGrants, projectSessions, sessionLifecycleCommands, sessionSandboxes,
   projectSessionConnectorBindings,
   serviceAccounts,
 } from '@kortix/db';
@@ -47,7 +47,7 @@ import { AnyObject, ClaimWarmProjectSessionInputSchema, GroupGrantSchema, OkSche
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError, type SessionCreateError } from '../lib/sessions';
 import {
-  RequiredConnectorProfileUnavailableError,
+  RequiredConnectorConnectionUnavailableError,
   resolveEffectiveSessionConnectorBindings,
   sessionHasMemberConnectorBinding,
   sessionConnectorBindingsRequirePrivateVisibility,
@@ -60,7 +60,7 @@ import {
   findAvailableWarmProjectSession,
   withWarmProjectSessionLock,
 } from '../lib/warm-session-store';
-import { refreshWarmSessionWorkspace } from '../lib/warm-session-workspace';
+import { prepareReusedWarmSession } from '../lib/warm-session-refresh';
 import {
   createWarmProjectSessionCoordinator,
   WarmProjectSessionError,
@@ -93,7 +93,7 @@ import {
   secretKeyCollisionInAllowlist,
 } from '../secrets';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
-import { missingWarmSessionAuthorizations } from '../lib/warm-session-authorizations';
+import { missingWarmSessionConnections } from '../lib/warm-session-connections';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -234,21 +234,21 @@ function resolvedWarmSessionConfiguration(project: {
   };
 }
 
-function connectorAuthorizationRequiredError(
-  connectorProfiles: Awaited<ReturnType<typeof missingWarmSessionAuthorizations>>,
+function requiredConnectionError(
+  connectorConnections: Awaited<ReturnType<typeof missingWarmSessionConnections>>,
 ): SessionCreateError {
   return {
     status: 409,
     body: {
-      code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-      message: 'Connect the required connector profiles before starting this session.',
-      connector_profiles: connectorProfiles,
+      code: 'CONNECTOR_CONNECTION_REQUIRED',
+      message: 'Create the required connections before starting this session.',
+      connector_connections: connectorConnections,
     },
   };
 }
 
 function unavailableRequiredConnectorError(
-  error: RequiredConnectorProfileUnavailableError,
+  error: RequiredConnectorConnectionUnavailableError,
 ): SessionCreateError {
   return {
     status: 409,
@@ -333,7 +333,7 @@ projectsApp.openapi(
     try {
       const ensured = await coordinator.ensure(configuration);
       if (ensured.reused) {
-        const missing = await missingWarmSessionAuthorizations(loaded.row, ensured.session);
+        const missing = await missingWarmSessionConnections(loaded.row, ensured.session);
         if (missing.length > 0) {
           const currentMarker =
             ensured.session.metadata?.warm_session &&
@@ -350,15 +350,26 @@ projectsApp.openapi(
               discard_reason: 'connector_authorization_invalid',
             },
           });
-          return sendSessionCreateError(c, connectorAuthorizationRequiredError(missing));
+          return sendSessionCreateError(c, requiredConnectionError(missing));
         }
       }
-      const workspaceRefresh = ensured.reused
-        ? await refreshWarmSessionWorkspace(
-            loaded.row,
-            ensured.session.sessionId,
-          )
-        : { status: 'skipped' as const };
+      const warmRefresh = ensured.reused
+        ? await prepareReusedWarmSession({
+            project: loaded.row,
+            accountId: loaded.row.accountId,
+            sessionId: ensured.session.sessionId,
+          })
+        : {
+            workspace: { status: 'skipped' as const },
+            config: { status: 'current' as const },
+          };
+      if (warmRefresh.config.status === 'failed') {
+        console.warn('[warm-session] failed to update compiled agent config', {
+          projectId,
+          sessionId: ensured.session.sessionId,
+          reason: warmRefresh.config.reason,
+        });
+      }
       return c.json(
         {
           session: serializeSession(ensured.session, {
@@ -366,12 +377,12 @@ projectsApp.openapi(
             canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
           }),
           reused: ensured.reused,
-          workspace_refresh: workspaceRefresh,
+          workspace_refresh: warmRefresh.workspace,
         },
         200,
       );
     } catch (error) {
-      if (error instanceof RequiredConnectorProfileUnavailableError) {
+      if (error instanceof RequiredConnectorConnectionUnavailableError) {
         return sendSessionCreateError(c, unavailableRequiredConnectorError(error));
       }
       if (error instanceof WarmSessionCreateFailure) {
@@ -435,9 +446,9 @@ projectsApp.openapi(
     try {
       const candidate = await findAvailableWarmProjectSession(scope);
       if (candidate?.sessionId === sessionId) {
-        const missing = await missingWarmSessionAuthorizations(loaded.row, candidate);
+        const missing = await missingWarmSessionConnections(loaded.row, candidate);
         if (missing.length > 0) {
-          return sendSessionCreateError(c, connectorAuthorizationRequiredError(missing));
+          return sendSessionCreateError(c, requiredConnectionError(missing));
         }
       }
 
@@ -460,7 +471,7 @@ projectsApp.openapi(
         200,
       );
     } catch (error) {
-      if (error instanceof RequiredConnectorProfileUnavailableError) {
+      if (error instanceof RequiredConnectorConnectionUnavailableError) {
         return sendSessionCreateError(c, unavailableRequiredConnectorError(error));
       }
       if (error instanceof WarmProjectSessionError) {
@@ -698,7 +709,7 @@ projectsApp.openapi(
   // must hold project.session.start (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
   const requestedConnectorBindings = body.connector_bindings;
-  const mayManageSystemConnectorProfiles =
+  const mayManageSystemConnections =
     requestedConnectorBindings &&
     typeof requestedConnectorBindings === 'object' &&
     Object.keys(requestedConnectorBindings).length > 0
@@ -754,7 +765,7 @@ projectsApp.openapi(
     callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
     idempotencyKey,
-    mayManageSystemConnectorProfiles,
+    mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
   for (const [key, value] of Object.entries(result.headers ?? {})) {
@@ -996,9 +1007,9 @@ projectsApp.openapi(
 
 // GET /v1/projects/:projectId/sessions/:sessionId/audit
 // Per-session audit log — the governed actions an agent took in this session:
-// every connector/tool call the executor gated, with its risk, allow/ask/block
+// every connector/tool call the connector gated, with its risk, allow/ask/block
 // verdict, who acted, and (for approvals) who resolved it. This is the enterprise
-// "what did the agent actually do" trail, read straight from executor_executions.
+// "what did the agent actually do" trail, read straight from connector_calls.
 // Same visibility gate as the session detail/transcript (project read + the
 // session must be visible to the caller). Non-Enterprise accounts get only the
 // unresolved pending approvals (never a 402 — see the entitlement note below).
@@ -1034,7 +1045,7 @@ projectsApp.openapi(
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
-    // default to require_approval on every tier (executor/policy.ts), the web
+    // default to require_approval on every tier (connector/policy.ts), the web
     // app polls this route from every open session to render the approval
     // prompt, and it is the launcher's only view of what's blocking the run.
     // A 402 here breaks approvals for every non-Enterprise account (and toasts
@@ -1044,34 +1055,34 @@ projectsApp.openapi(
 
     const rows = await db
       .select({
-        executionId: executorExecutions.executionId,
-        connectorId: executorExecutions.connectorId,
-        actionPath: executorExecutions.actionPath,
-        actingUserId: executorExecutions.actingUserId,
-        status: executorExecutions.status,
-        risk: executorExecutions.risk,
-        resultSummary: executorExecutions.resultSummary,
-        approvedBy: executorExecutions.approvedBy,
-        createdAt: executorExecutions.createdAt,
-        resolvedAt: executorExecutions.resolvedAt,
+        executionId: connectorCalls.executionId,
+        connectorId: connectorCalls.connectorId,
+        actionPath: connectorCalls.actionPath,
+        actingUserId: connectorCalls.actingUserId,
+        status: connectorCalls.status,
+        risk: connectorCalls.risk,
+        resultSummary: connectorCalls.resultSummary,
+        approvedBy: connectorCalls.approvedBy,
+        createdAt: connectorCalls.createdAt,
+        resolvedAt: connectorCalls.resolvedAt,
       })
-      .from(executorExecutions)
+      .from(connectorCalls)
       .where(
         and(
-          eq(executorExecutions.projectId, projectId),
-          eq(executorExecutions.sessionId, sessionId),
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.sessionId, sessionId),
           ...(audited
             ? []
             : [
-                eq(executorExecutions.status, 'pending_approval'),
-                isNull(executorExecutions.approvedBy),
-                isNull(executorExecutions.resolvedAt),
+                eq(connectorCalls.status, 'pending_approval'),
+                isNull(connectorCalls.approvedBy),
+                isNull(connectorCalls.resolvedAt),
               ]),
         ),
       )
       // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
       // actions (truncating oldest), not the other way round.
-      .orderBy(desc(executorExecutions.createdAt))
+      .orderBy(desc(connectorCalls.createdAt))
       .limit(limit.value);
 
     // Resolve actor + approver emails in one batched lookup (managers see who).
@@ -1086,9 +1097,9 @@ projectsApp.openapi(
     const slugByConnector = new Map<string, string>();
     if (connectorIds.length) {
       const conns = await db
-        .select({ connectorId: executorConnectors.connectorId, slug: executorConnectors.slug })
-        .from(executorConnectors)
-        .where(inArray(executorConnectors.connectorId, connectorIds));
+        .select({ connectorId: connectors.connectorId, slug: connectors.slug })
+        .from(connectors)
+        .where(inArray(connectors.connectorId, connectorIds));
       for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
     }
 
@@ -1100,7 +1111,7 @@ projectsApp.openapi(
       // shows the upgrade path for the full trail.
       audit_access: audited,
       count: rows.length,
-      // Most-recent-first trail of every executor-gated action this session took.
+      // Most-recent-first trail of every connector-gated action this session took.
       actions: rows.map((r) => ({
         execution_id: r.executionId,
         action: r.actionPath,
@@ -1215,7 +1226,7 @@ projectsApp.openapi(
 
 
 // GET /v1/projects/:projectId/approvals
-// The approval inbox: executor actions a policy gated as `require_approval` that
+// The approval inbox: connector actions a policy gated as `require_approval` that
 // are still awaiting a human decision (status=pending_approval, unresolved).
 // Manager-scoped — this is the project-wide oversight surface. A session's own
 // launcher also sees + resolves the pending items for their session via the
@@ -1248,24 +1259,24 @@ projectsApp.openapi(
 
     const rows = await db
       .select({
-        executionId: executorExecutions.executionId,
-        actionPath: executorExecutions.actionPath,
-        risk: executorExecutions.risk,
-        sessionId: executorExecutions.sessionId,
-        actingUserId: executorExecutions.actingUserId,
-        resultSummary: executorExecutions.resultSummary,
-        createdAt: executorExecutions.createdAt,
+        executionId: connectorCalls.executionId,
+        actionPath: connectorCalls.actionPath,
+        risk: connectorCalls.risk,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
+        resultSummary: connectorCalls.resultSummary,
+        createdAt: connectorCalls.createdAt,
       })
-      .from(executorExecutions)
+      .from(connectorCalls)
       .where(
         and(
-          eq(executorExecutions.projectId, projectId),
-          eq(executorExecutions.status, 'pending_approval'),
-          isNull(executorExecutions.approvedBy),
-          isNull(executorExecutions.resolvedAt),
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.status, 'pending_approval'),
+          isNull(connectorCalls.approvedBy),
+          isNull(connectorCalls.resolvedAt),
         ),
       )
-      .orderBy(desc(executorExecutions.createdAt))
+      .orderBy(desc(connectorCalls.createdAt))
       .limit(limit.value);
 
     const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
@@ -1289,7 +1300,7 @@ projectsApp.openapi(
 
 // GET /v1/projects/:projectId/approvals/needs-input
 // Lightweight per-session summary for the sidebar "needs input" indicator: which
-// sessions have an executor action awaiting a human decision, and how many. A
+// sessions have a connector call awaiting a human decision, and how many. A
 // project MANAGER sees every session; everyone else sees only the sessions they
 // LAUNCHED (mirrors who may resolve). Read-gated + cheap enough to poll.
 
@@ -1328,18 +1339,18 @@ projectsApp.openapi(
     }
 
     // Every unresolved pending action in the project, by session. (No DB join:
-    // executor_executions.session_id is `uuid` while project_sessions.session_id
+    // connector_calls.session_id is `uuid` while project_sessions.session_id
     // is `text` — cross-type equality errors in Postgres, so we resolve in JS
     // where both surface as strings.)
     const pendingRows = await db
-      .select({ sessionId: executorExecutions.sessionId })
-      .from(executorExecutions)
+      .select({ sessionId: connectorCalls.sessionId })
+      .from(connectorCalls)
       .where(
         and(
-          eq(executorExecutions.projectId, projectId),
-          eq(executorExecutions.status, 'pending_approval'),
-          isNull(executorExecutions.approvedBy),
-          isNull(executorExecutions.resolvedAt),
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.status, 'pending_approval'),
+          isNull(connectorCalls.approvedBy),
+          isNull(connectorCalls.resolvedAt),
         ),
       );
 
@@ -1443,18 +1454,18 @@ projectsApp.openapi(
 
     const [row] = await db
       .select({
-        executionId: executorExecutions.executionId,
-        sessionId: executorExecutions.sessionId,
-        actingUserId: executorExecutions.actingUserId,
-        connectorId: executorExecutions.connectorId,
-        actionPath: executorExecutions.actionPath,
-        status: executorExecutions.status,
-        approvedBy: executorExecutions.approvedBy,
-        resolvedAt: executorExecutions.resolvedAt,
-        resultSummary: executorExecutions.resultSummary,
+        executionId: connectorCalls.executionId,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
+        connectorId: connectorCalls.connectorId,
+        actionPath: connectorCalls.actionPath,
+        status: connectorCalls.status,
+        approvedBy: connectorCalls.approvedBy,
+        resolvedAt: connectorCalls.resolvedAt,
+        resultSummary: connectorCalls.resultSummary,
       })
-      .from(executorExecutions)
-      .where(and(eq(executorExecutions.executionId, executionId), eq(executorExecutions.projectId, projectId)))
+      .from(connectorCalls)
+      .where(and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)))
       .limit(1);
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.status !== 'pending_approval' || row.approvedBy || row.resolvedAt) {
@@ -1561,7 +1572,7 @@ projectsApp.openapi(
       : null;
     const resolved = await db.transaction(async (tx) => {
       const updated = await tx
-        .update(executorExecutions)
+        .update(connectorCalls)
         .set({
           status: decision === 'approve' ? 'ok' : 'denied',
           approvedBy: loaded.userId,
@@ -1570,14 +1581,14 @@ projectsApp.openapi(
         })
         .where(
           and(
-            eq(executorExecutions.executionId, executionId),
-            eq(executorExecutions.projectId, projectId),
-            eq(executorExecutions.status, 'pending_approval'),
-            isNull(executorExecutions.approvedBy),
-            isNull(executorExecutions.resolvedAt),
+            eq(connectorCalls.executionId, executionId),
+            eq(connectorCalls.projectId, projectId),
+            eq(connectorCalls.status, 'pending_approval'),
+            isNull(connectorCalls.approvedBy),
+            isNull(connectorCalls.resolvedAt),
           ),
         )
-        .returning({ id: executorExecutions.executionId });
+        .returning({ id: connectorCalls.executionId });
       if (updated.length > 0 && callbackValues) {
         await tx
           .insert(sessionLifecycleCommands)
@@ -1609,7 +1620,7 @@ projectsApp.openapi(
       console.error('[approvals] failed to record central audit event', error);
     }
 
-    // Decision callback. The executor HTTP call returned the approval URL and
+    // Decision callback. The connector HTTP call returned the approval URL and
     // ended. A human decision now enqueues one durable continue_session command
     // and starts a drain immediately. The next exact call claims the approved
     // request digest once. A changed payload creates a new approval instead.
@@ -1675,8 +1686,8 @@ projectsApp.openapi(
   ) {
     return c.json(
       {
-        error: 'Sessions using a personal connector profile must remain private',
-        code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+        error: 'Sessions using a personal connection must remain private',
+        code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
       },
       409,
     );
@@ -2118,7 +2129,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/scope',
     tags: ['sessions'],
-    summary: "Read a session's secret and connector authorization scope",
+    summary: "Read a session's secret and connection scope",
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -2220,7 +2231,12 @@ projectsApp.openapi(
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({ projectId, accountId: loaded.row.accountId, baseRef }),
+      latestAgentConfigEtag({
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        baseRef,
+      }),
     ]);
     return c.json({
       base_ref: baseRef,
@@ -2407,7 +2423,7 @@ projectsApp.openapi(
         await db
           .select({
             alias: projectSessionConnectorBindings.connectorAlias,
-            profileId: projectSessionConnectorBindings.profileId,
+            connectionId: projectSessionConnectorBindings.connectionId,
           })
           .from(projectSessionConnectorBindings)
           .where(
@@ -2416,7 +2432,7 @@ projectsApp.openapi(
               eq(projectSessionConnectorBindings.projectId, projectId),
             ),
           )
-      ).map((row) => [row.alias, row.profileId]),
+      ).map((row) => [row.alias, row.connectionId]),
     );
     const currentEffectiveBindings = await resolveEffectiveSessionConnectorBindings({
       accountId: loaded.row.accountId,
@@ -2427,7 +2443,7 @@ projectsApp.openapi(
     const currentEffectiveBindingIds = Object.fromEntries(
       Object.entries(currentEffectiveBindings).map(([alias, binding]) => [
         alias,
-        binding.authorization_id,
+        binding.connection_id,
       ]),
     );
 
@@ -2512,7 +2528,7 @@ projectsApp.openapi(
       const requested = Object.fromEntries(
         Object.entries(body.connector_bindings ?? {}).map(([alias, value]) => [
           alias,
-          value.authorization_id,
+          value.connection_id,
         ]),
       );
       const decided = rescopeSessionBindings({
@@ -2526,7 +2542,7 @@ projectsApp.openapi(
 
     // `require_connectors` is the one axis that can name an alias with NOTHING
     // connected to it — that is the whole point of it existing separately from
-    // bindings, which must carry a profile id. So it is checked against the
+    // bindings, which must carry a connection id. So it is checked against the
     // agent's grant (may this agent use the alias at all?) and never against
     // whether a connection exists: not-yet-connected is the state the caller is
     // deliberately declaring, and the pre-flight turns it into a connect prompt
@@ -2559,7 +2575,7 @@ projectsApp.openapi(
       accountId: string;
       connectorAlias: string;
       connectorId: string;
-      profileId: string;
+      connectionId: string;
       source: 'request';
       createdBy: string;
     }> = [];
@@ -2581,11 +2597,11 @@ projectsApp.openapi(
         projectId,
         actingUserId: visible.row.createdBy ?? '',
         actingPrincipalIsServiceAccount: ownerServiceAccount !== undefined,
-        mayManageSystemProfiles: false,
+        mayManageSystemConnections: false,
         bindings: Object.fromEntries(
           Object.entries(nextBindings).map(([alias, authorizationId]) => [
             alias,
-            { authorization_id: authorizationId },
+            { connection_id: authorizationId },
           ]),
         ),
       });
@@ -2599,7 +2615,7 @@ projectsApp.openapi(
         return c.json(
           {
             error: 'A user authorization requires a private session',
-            code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+            code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
           },
           409,
         );
@@ -2610,7 +2626,7 @@ projectsApp.openapi(
         accountId: loaded.row.accountId,
         connectorAlias: binding.alias,
         connectorId: binding.connectorId,
-        profileId: binding.profileId,
+        connectionId: binding.connectionId,
         source: 'request' as const,
         createdBy: loaded.userId,
       }));

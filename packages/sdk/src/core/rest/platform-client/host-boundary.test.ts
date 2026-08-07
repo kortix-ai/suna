@@ -62,7 +62,7 @@ describe('host boundary transport', () => {
     );
 
     expect(requests.map((request) => request.url)).toEqual([
-      'https://api.example.test/v1/setup-links/connector/connect-token',
+      'https://api.example.test/v1/setup-links/connectors/connect-token',
       'https://api.example.test/v1/p/public-share/share-token',
     ]);
     expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
@@ -83,7 +83,7 @@ describe('host boundary transport', () => {
         project_id: 'project-1',
         session_id: 'session-1',
         actor_type: 'agent',
-        source: 'executor',
+        source: 'connector',
         outcome: 'failure',
       },
       { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
@@ -95,7 +95,7 @@ describe('host boundary transport', () => {
       project_id: 'project-1',
       session_id: 'session-1',
       actor_type: 'agent',
-      source: 'executor',
+      source: 'connector',
       outcome: 'failure',
     });
   });

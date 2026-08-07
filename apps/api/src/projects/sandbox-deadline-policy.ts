@@ -15,6 +15,7 @@
 
 import { config } from '../config';
 import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
+import { isOpencodePort } from '../shared/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';
 
 /**
@@ -153,8 +154,8 @@ export function childIdleGraceMs(): number {
  * Two credentials reach the control plane from inside a box, and BOTH must be
  * caught:
  *   - `kortix_sb_…`, the sandbox token, which sets apiKeyType 'sandbox';
- *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN /
- *     KORTIX_EXECUTOR_TOKEN and used by the in-box `kortix` CLI), whose auth
+ *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN
+ *     and used by the in-box `kortix` CLI), whose auth
  *     branch never sets apiKeyType at all.
  * Testing apiKeyType alone therefore lets the box renew itself forever with its
  * own CLI token. A non-null session binding is the reliable signal: every
@@ -170,8 +171,7 @@ export function isSandboxAuthored(
   return apiKeyType === 'sandbox' || (sessionId ?? null) !== null;
 }
 
-/** opencode's own port, and the in-box agent that reverse-proxies to it. */
-const OPENCODE_PORT = 4096;
+/** opencode's own ports, and the in-box agent that reverse-proxies to it. */
 const AGENT_PORT = 8000;
 
 /**
@@ -188,7 +188,11 @@ const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize
  *  beginning without trusting anything the sandbox says about itself. */
 export function isTurnStartRequest(port: number, method: string, path: string): boolean {
   if (method.toUpperCase() !== 'POST') return false;
-  if (port !== AGENT_PORT && port !== OPENCODE_PORT) return false;
+  // Either half of the opencode pair counts. A verified reload swaps which one
+  // is live, and letting the other through here would let the box's own agent
+  // traffic read as a human using a preview — extending the deadline, which is
+  // exactly the self-renewal bounded lifetimes exist to prevent.
+  if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
   const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
   return TURN_START.test(p);
 }

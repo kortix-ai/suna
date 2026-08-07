@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   bulkSkipMessage,
   crChangeRequestId,
-  execExecutionId,
+  connectorCallId,
   formatItemAge,
   formatItemAgeLong,
   isQuickDecidableApproval,
@@ -12,14 +12,14 @@ import {
 } from './review-actions';
 import type { ReviewRisk } from './types';
 
-describe('execExecutionId', () => {
-  test('strips the exec: prefix', () => {
-    expect(execExecutionId('exec:abc-123')).toBe('abc-123');
+describe('connectorCallId', () => {
+  test('strips the call: prefix', () => {
+    expect(connectorCallId('call:abc-123')).toBe('abc-123');
   });
   test('returns null for a non-exec id', () => {
-    expect(execExecutionId('cr:abc-123')).toBeNull();
-    expect(execExecutionId('rv-native-1')).toBeNull();
-    expect(execExecutionId('')).toBeNull();
+    expect(connectorCallId('cr:abc-123')).toBeNull();
+    expect(connectorCallId('rv-native-1')).toBeNull();
+    expect(connectorCallId('')).toBeNull();
   });
 });
 
@@ -28,7 +28,7 @@ describe('crChangeRequestId', () => {
     expect(crChangeRequestId('cr:xyz-9')).toBe('xyz-9');
   });
   test('returns null for a non-cr id', () => {
-    expect(crChangeRequestId('exec:xyz-9')).toBeNull();
+    expect(crChangeRequestId('call:xyz-9')).toBeNull();
     expect(crChangeRequestId('rv-native-1')).toBeNull();
   });
 });
@@ -49,9 +49,9 @@ describe('itemDeepLink', () => {
 
 describe('planBulkAction', () => {
   test('buckets ids by how the inbox can act on them', () => {
-    const plan = planBulkAction(['rv-1', 'exec:e1', 'cr:c1', 'rv-2', 'exec:e2']);
+    const plan = planBulkAction(['rv-1', 'call:e1', 'cr:c1', 'rv-2', 'call:e2']);
     expect(plan.native).toEqual(['rv-1', 'rv-2']);
-    expect(plan.resolvable).toEqual(['exec:e1', 'exec:e2']);
+    expect(plan.resolvable).toEqual(['call:e1', 'call:e2']);
     expect(plan.unsupported).toEqual(['cr:c1']);
   });
   test('accepts a Set and handles an all-native selection', () => {
@@ -81,19 +81,19 @@ describe('formatItemAge', () => {
 });
 
 describe('isQuickDecidableApproval', () => {
-  test('a single-action executor approval requires the parameter-review modal', () => {
+  test('a single-action connector approval requires the parameter-review modal', () => {
     expect(
-      isQuickDecidableApproval({ kind: 'approval', id: 'exec:e1', detail: { actions: [{}] } }),
+      isQuickDecidableApproval({ kind: 'approval', id: 'call:e1', detail: { actions: [{}] } }),
     ).toBe(false);
   });
   test('an approval with no detail is not quick-decidable', () => {
-    expect(isQuickDecidableApproval({ kind: 'approval', id: 'exec:e1' })).toBe(false);
+    expect(isQuickDecidableApproval({ kind: 'approval', id: 'call:e1' })).toBe(false);
   });
   test('a multi-action approval needs the modal', () => {
     expect(
       isQuickDecidableApproval({
         kind: 'approval',
-        id: 'exec:e1',
+        id: 'call:e1',
         detail: { actions: [{}, {}] },
       }),
     ).toBe(false);
@@ -104,7 +104,7 @@ describe('isQuickDecidableApproval', () => {
     ).toBe(false);
   });
   test('non-approval kinds are never quick-decidable', () => {
-    expect(isQuickDecidableApproval({ kind: 'change', id: 'exec:e1' })).toBe(false);
+    expect(isQuickDecidableApproval({ kind: 'change', id: 'call:e1' })).toBe(false);
   });
 });
 
@@ -123,29 +123,29 @@ describe('resolveBulkOutcome', () => {
     (id: string): ReviewRisk | undefined =>
       m[id];
 
-  test('dismiss NEVER answers an executor approval — exec ids are kept, not denied', () => {
-    const out = resolveBulkOutcome(['exec:e1', 'rv-1'], 'dismiss', risk({ 'exec:e1': 'none' }));
+  test('dismiss NEVER answers an connector approval — exec ids are kept, not denied', () => {
+    const out = resolveBulkOutcome(['call:e1', 'rv-1'], 'dismiss', risk({ 'call:e1': 'none' }));
     expect(out.act).toEqual(['rv-1']);
-    expect(out.skippedApprovals).toEqual(['exec:e1']);
+    expect(out.skippedApprovals).toEqual(['call:e1']);
     expect(out.skippedRisky).toEqual([]);
   });
 
-  test('approve sweeps never answer executor approvals without individual parameter review', () => {
+  test('approve sweeps never answer connector approvals without individual parameter review', () => {
     const out = resolveBulkOutcome(
-      ['exec:safe', 'exec:risky', 'rv-1'],
+      ['call:safe', 'call:risky', 'rv-1'],
       'approve',
-      risk({ 'exec:safe': 'low', 'exec:risky': 'high' }),
+      risk({ 'call:safe': 'low', 'call:risky': 'high' }),
     );
     expect(out.act).toEqual(['rv-1']);
     expect(out.skippedRisky).toEqual([]);
-    expect(out.skippedApprovals).toEqual(['exec:safe', 'exec:risky']);
+    expect(out.skippedApprovals).toEqual(['call:safe', 'call:risky']);
   });
 
   test('an exec approval with unknown risk still requires individual review', () => {
-    const out = resolveBulkOutcome(['exec:mystery'], 'approve', risk({}));
+    const out = resolveBulkOutcome(['call:mystery'], 'approve', risk({}));
     expect(out.act).toEqual([]);
     expect(out.skippedRisky).toEqual([]);
-    expect(out.skippedApprovals).toEqual(['exec:mystery']);
+    expect(out.skippedApprovals).toEqual(['call:mystery']);
   });
 
   test('Change Requests are skipped under any verdict', () => {
@@ -169,8 +169,8 @@ describe('bulkSkipMessage', () => {
   test('names every skip bucket with counts', () => {
     const msg = bulkSkipMessage({
       act: [],
-      skippedRisky: ['exec:r'],
-      skippedApprovals: ['exec:a', 'exec:b'],
+      skippedRisky: ['call:r'],
+      skippedApprovals: ['call:a', 'call:b'],
       skippedChanges: ['cr:1'],
     });
     expect(msg).toContain('2 approvals kept');

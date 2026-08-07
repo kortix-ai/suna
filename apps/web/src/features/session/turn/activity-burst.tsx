@@ -174,11 +174,20 @@ export function ActivityGroupStep({
           )}
         >
           {failed ? (
-            <WarningIcon
-              weight="fill"
-              aria-label="This step failed"
-              className={cn('size-4 flex-none', STATUS_TEXT.destructive)}
-            />
+            <>
+              {/* Closed: failure mark replaces the family glyph. Open: the
+							    member rows carry their own verdicts, so the trigger falls
+							    back to the family icon and drops the duplicate warning. */}
+              <WarningIcon
+                weight="fill"
+                aria-label="This step failed"
+                className={cn(
+                  'size-4 flex-none group-data-[state=open]/step:hidden',
+                  STATUS_TEXT.destructive,
+                )}
+              />
+              <Icon className="text-muted-foreground hidden size-4 flex-none group-data-[state=open]/step:block" />
+            </>
           ) : (
             <Icon className="text-muted-foreground size-4 flex-none" />
           )}
@@ -335,8 +344,9 @@ export function ActivityBurst({
 					    step is reachable only by a reader who happens to expand a line
 					    that reads "Scraped 1 page". The glyph is the same one the failed
 					    row carries inside; it sits before the caret so the caret keeps
-					    its job as the affordance. */}
-          {failures > 0 && (
+					    its job as the affordance. Hidden while open — the chain body
+					    (failed rows + closing step) already carries the verdict. */}
+          {failures > 0 && !open && (
             <WarningIcon
               weight="fill"
               aria-label={failures === 1 ? '1 step failed' : `${failures} steps failed`}

@@ -1,5 +1,5 @@
 /**
- * `revokeSessionExecutorTokens` is one UPDATE, so the whole of its correctness
+ * `revokeSessionConnectorTokens` is one UPDATE, so the whole of its correctness
  * is in the SET and the WHERE. This renders both and asserts on them, which is
  * what the real-DB integration test in `__tests__/integration-token-revocation`
  * cannot do in CI (integration tests need a live Postgres and are excluded from
@@ -33,11 +33,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { revokeSessionExecutorTokens } = await import('./account-tokens');
+const { revokeSessionConnectorTokens } = await import('./account-tokens');
 
-describe('revokeSessionExecutorTokens', () => {
+describe('revokeSessionConnectorTokens', () => {
   test('revokes by session AND account AND active-only, and reports the count', async () => {
-    const revoked = await revokeSessionExecutorTokens('sess-1', 'acct-1');
+    const revoked = await revokeSessionConnectorTokens('sess-1', 'acct-1');
     expect(revoked).toBe(2);
 
     const { sql, params } = new PgDialect().sqlToQuery(lastWhere as SQL);
@@ -51,7 +51,7 @@ describe('revokeSessionExecutorTokens', () => {
   });
 
   test('marks the row revoked AND stamps when — status alone loses the audit trail', async () => {
-    await revokeSessionExecutorTokens('sess-1', 'acct-1');
+    await revokeSessionConnectorTokens('sess-1', 'acct-1');
     expect(lastSet?.status).toBe('revoked');
     expect(lastSet?.revokedAt).toBeInstanceOf(Date);
   });

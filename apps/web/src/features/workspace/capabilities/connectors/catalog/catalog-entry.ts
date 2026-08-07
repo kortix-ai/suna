@@ -1,4 +1,4 @@
-import type { AdminConnector, DiscoverIntegration, PipedreamApp } from '@kortix/sdk';
+import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
 import { sortByPicks } from './connector-picks';
@@ -7,7 +7,7 @@ import { sortByPicks } from './connector-picks';
  * Which catalogue an entry came from. This is not cosmetic — it decides which
  * add flow the card opens. A `discover` entry goes to `DiscoverAddFlow`
  * (template -> connector draft); an `easy-connect` entry goes to
- * `ConnectorProfileModal` (managed OAuth via Pipedream). The two build
+ * `ConnectorConnectionModal` (managed OAuth via Pipedream). The two build
  * different drafts and cannot be swapped.
  */
 export type CatalogSource = 'discover' | 'easy-connect';
@@ -36,20 +36,20 @@ interface CatalogEntryFields {
  * back to the matching add flow without a lookup.
  */
 export type CatalogEntry =
-  | (CatalogEntryFields & { source: 'discover'; integration: DiscoverIntegration })
+  | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
   | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp });
 
-export function catalogEntryFromDiscover(integration: DiscoverIntegration): CatalogEntry {
+export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogEntry {
   return {
     source: 'discover',
-    integration,
-    key: `discover:${integration.id}`,
-    slug: integration.slug,
-    name: integration.name,
-    description: integration.description,
-    icon: integration.icon,
-    categories: integration.categories,
-    popularity: integration.popularity,
+    connector,
+    key: `discover:${connector.id}`,
+    slug: connector.slug,
+    name: connector.name,
+    description: connector.description,
+    icon: connector.icon,
+    categories: connector.categories,
+    popularity: connector.popularity,
   };
 }
 
@@ -81,14 +81,14 @@ export function foldKey(value: string): string {
  * on a catalogue card.
  *
  * **This join is best-effort, and deliberately so.** `AdminConnector` does not
- * carry the catalogue app it was created from — `buildEasyConnectProfileDraft`
+ * carry the catalogue app it was created from — `buildEasyConnectConnectorDraft`
  * writes `app: <catalogue slug>` into the draft
- * (`connector-profile-form.ts:159`) but the read model never returns it
+ * (`connector-connection-form.ts:156`) but the read model never returns it
  * (`connectors.ts:20-50`). So the only evidence available on the client is the
- * connector's own profile slug and display name.
+ * connector's own connection slug and display name.
  *
- * Both are indexed, because the default add flow proposes a profile slug from
- * the app's *name* (`proposeConnectorProfileSlug(app.name, ...)`), not its
+ * Both are indexed, because the default add flow proposes a connection slug from
+ * the app's *name* (`proposeConnectorConnectionSlug(app.name, ...)`), not its
  * slug, and the two differ whenever the catalogue's slug is not a slugified
  * name (`google_sheets` vs "Google Sheets"). Folding both sides covers every
  * default add.

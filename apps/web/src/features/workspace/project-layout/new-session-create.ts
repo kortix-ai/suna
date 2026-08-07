@@ -1,11 +1,11 @@
 import type { ComposerOptions } from '@/features/session/composer-chat-input';
-import type { SessionConnectorBindings } from '@kortix/sdk';
+import type { SessionConnectorBindingsInput } from '@kortix/sdk';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
-  connector_bindings?: SessionConnectorBindings;
+  connector_bindings?: SessionConnectorBindingsInput;
   inherit_unbound?: boolean;
 }
 
@@ -40,7 +40,9 @@ export function buildNewSessionCreateInput(
     input.connector_bindings = Object.fromEntries(
       Object.entries(options.scope.draft.connector_bindings).map(([alias, binding]) => [
         alias,
-        { authorization_id: binding.authorization_id },
+        {
+          connection_id: binding.connection_id,
+        },
       ]),
     );
     input.inherit_unbound = false;

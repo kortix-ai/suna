@@ -109,6 +109,7 @@ export function buildOpencodeApp(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
+  agentEnvFile?: string,
 ): Hono {
   const app = new Hono()
 
@@ -119,8 +120,10 @@ export function buildOpencodeApp(
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const abortRouter = createAbortRouter(cfg)
-  const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
+  const abortRouter = createAbortRouter(cfg, opencode)
+  const envRouter = projectEnv
+    ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
+    : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
   const gitRouter = createGitRouter(cfg)
@@ -190,7 +193,14 @@ export function buildOpencodeApp(
   app.route(
     '/web-proxy',
     createWebProxyRouter({
-      blockedSelfPorts: new Set([cfg.servicePort, cfg.opencodeInternalPort]),
+      // BOTH halves of the opencode port pair. A verified reload swaps which
+      // one is live, and this set is built once — blocking only the current
+      // half would leave the other reachable the moment they trade places.
+      blockedSelfPorts: new Set([
+        cfg.servicePort,
+        cfg.opencodeInternalPort,
+        cfg.opencodeStandbyPort,
+      ]),
     }),
   )
 

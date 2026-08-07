@@ -76,12 +76,13 @@ module "api" {
   environment = {
     KORTIX_VERSION = "0.10.14"
   }
-  secrets = local.secrets
+  secrets          = local.secrets
+  secrets_blob_arn = var.secret_arn
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 
   task_cpu           = 1024
-  task_memory        = 2048
+  task_memory        = 4096
   desired_count      = 2
   min_capacity       = 2
   max_capacity       = 10
@@ -115,7 +116,8 @@ module "gateway" {
     KORTIX_API_URL = "https://${var.api_shadow_hostname}"
     KORTIX_VERSION = "0.10.14"
   }
-  secrets = local.secrets
+  secrets          = local.secrets
+  secrets_blob_arn = var.secret_arn
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 

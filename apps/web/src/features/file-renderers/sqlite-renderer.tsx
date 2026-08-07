@@ -16,7 +16,7 @@ import { useTranslations } from 'next-intl';
  *      - Add row / delete row support
  *      - Save modified database back to file
  *      - Schema inspector (CREATE TABLE statements, column info)
- *      - Raw SQL query executor with results grid
+ *      - Raw SQL query connector with results grid
  *   5. Lazy-loaded — only pulled in when a .db file is opened
  */
 

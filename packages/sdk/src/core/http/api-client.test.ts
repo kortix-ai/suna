@@ -394,16 +394,16 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
 
 // Regression for Better Stack frontend pattern `1f3c4d96…`
 // (`ApiError: not supported`, HTTP 501) on the co-worker session "add
-// connector" path: `POST /v1/executor/projects/:id/connectors/auth-discovery`
-// returned a bare `{ error: 'not supported' }` 501 when an optional executor
+// connector" path: `POST /v1/connectors/projects/:id/connectors/auth-discovery`
+// returned a bare `{ error: 'not supported' }` 501 when an optional connector
 // capability wasn't wired on the deployment, and `makeRequest` forwarded it
 // to `onError` → Sentry as an opaque, unhandled-looking `ApiError`. The API
 // now returns a TYPED 501 envelope with `code: 'feature_not_supported'`
-// (executor router `featureNotSupportedResponse`); `makeRequest` classifies
+// (connector router `featureNotSupportedResponse`); `makeRequest` classifies
 // that as an EXPECTED "feature unavailable" state — silent to `onError`
 // (Sentry) but still returned as an `ApiError` so callers/UI can branch on
 // `.code`. Mirrors the billing-gate 402 / no-compaction-model classification.
-// See `apps/api/src/__tests__/unit-executor-feature-not-supported.test.ts`
+// See `apps/api/src/__tests__/unit-connector-feature-not-supported.test.ts`
 // for the API-side half of this contract.
 describe('makeRequest classifies a typed feature_not_supported 501 as silent to Sentry', () => {
   function stubFetchOnce(status: number, body: unknown) {
@@ -434,7 +434,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
       feature: 'connector_auth_discovery',
     });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {
         provider: 'openapi',
         spec: 'https://example.com/openapi.json',
       });
@@ -464,7 +464,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
     });
     const restore = stubFetchOnce(501, { error: 'something broke', message: 'something broke' });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {});
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {});
       expect(res.success).toBe(false);
       expect(res.error).toBeInstanceOf(ApiError);
       expect(res.error?.status).toBe(501);

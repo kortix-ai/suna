@@ -74,7 +74,7 @@ export function agentInitials(name: string): string {
 // The API `detail` is polymorphic jsonb that arrives in three different shapes:
 // the rich payload a native agent submission carries, the THIN adapter payload a
 // Change Request produces (`{cr_id, base_ref, head_ref, description}`), or the
-// thin executor-approval payload (`{execution_id, action_path, connector_id}`).
+// thin connector-approval payload (`{execution_id, action_path, connector_id}`).
 // The modal bodies expect the full view-model shape, so we never pass the raw
 // detail through — we build a complete, defaulted detail for every kind. This is
 // what stops `ChangeBody` from reading `.map` of an undefined `whatChanged`.
@@ -152,7 +152,7 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
       })),
     };
   }
-  // Executor-approval adapter → a single action built from the call descriptor.
+  // Connector-approval adapter → a single action built from the call descriptor.
   // `action_path` is `connector.action` (e.g. `gmail.send_email`); the row's
   // `connector_id` is an opaque UUID, so we take the connector NAME from the path.
   const path = str(d.action_path) ?? '';
@@ -182,7 +182,7 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
         actionPath: path,
         rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
         reviewComplete: d.args_preview_complete === true,
-        executorRisk: str(d.risk) ?? null,
+        connectorRisk: str(d.risk) ?? null,
         policySource: 'Requires approval',
       },
     ],
@@ -277,7 +277,7 @@ export function mapApiReviewItem(
     primaryAction: PRIMARY_ACTION[kind],
     secondaryAction: SECONDARY_ACTION[kind],
     // Build a complete, defaulted detail for the kind — never trust the raw jsonb
-    // to already match the discriminated union (CR/executor adapters are thin).
+    // to already match the discriminated union (CR/connector adapters are thin).
     detail: normalizeDetail(kind, row),
     // kind↔detail correlation can't be statically proven across the switch.
   } as unknown as ReviewItem;

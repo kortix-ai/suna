@@ -21,6 +21,7 @@ import {
   projects,
   projectMembers,
   projectSessions,
+  projectSessionConnectorBindings,
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
@@ -28,13 +29,20 @@ import {
   sandboxMembers,
   kortixApiKeys,
   sandboxComputeSessions,
+  apps,
+  appArtifacts,
+  appDeployments,
+  appRuntimes,
+  appDeploymentEvents,
   creditAccounts,
   creditLedger,
   usageEvents,
   gatewayRequestLogs,
   accountSsoProviders,
-  executorConnectorAuthorizationStrategyEnum,
-  executorConnectors,
+  connectorAuthorizationStrategyEnum,
+  connectorCalls,
+  connectorConnections,
+  connectors,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -142,16 +150,61 @@ describe('kortix enums', () => {
   });
 
   test('connector authorization strategy is project or user', () => {
-    expect(executorConnectorAuthorizationStrategyEnum.enumName).toBe(
-      'executor_connector_authorization_strategy',
+    expect(connectorAuthorizationStrategyEnum.enumName).toBe(
+      'connector_authorization_strategy',
     );
-    expect(executorConnectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
+    expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
   });
 });
 
-describe('connector profiles', () => {
-  test('store one authorization strategy on each connector profile', () => {
-    expect(columnNames(executorConnectors)).toContain('authorization_strategy');
+describe('connectors', () => {
+  test('uses canonical physical database identifiers', () => {
+    expect(getTableConfig(connectors).name).toBe('connectors');
+    expect(getTableConfig(connectorConnections).name).toBe('connector_connections');
+    expect(getTableConfig(connectorCalls).name).toBe('connector_calls');
+  });
+
+  test('store one authorization strategy on each connector', () => {
+    expect(columnNames(connectors)).toContain('authorization_strategy');
+  });
+
+  test('maps connector call identifiers to the transition execution_id column', () => {
+    expect(primaryColumn(connectorCalls)).toBe('execution_id');
+  });
+
+  test('uses canonical physical index identifiers', () => {
+    expect(indexNames(connectors)).toEqual([
+      'idx_connectors_project',
+      'idx_connectors_account',
+      'idx_connectors_project_slug',
+      'idx_connectors_tenant_identity',
+      'idx_connectors_tenant_alias',
+    ]);
+    expect(indexNames(connectorConnections)).toEqual([
+      'idx_connector_connections_tenant_identity',
+      'idx_connector_connections_connector_identity',
+      'idx_connector_connections_default_project',
+      'idx_connector_connections_default_owner',
+      'idx_connector_connections_owner_label',
+      'idx_connector_connections_project_label',
+      'idx_connector_connections_project',
+      'idx_connector_connections_connector',
+    ]);
+    expect(indexNames(connectorCalls)).toEqual([
+      'idx_connector_calls_project',
+      'idx_connector_calls_project_session_created',
+      'idx_connector_calls_connector',
+      'idx_connector_calls_connection',
+      'idx_connector_calls_status',
+    ]);
+  });
+
+  test('uses connection_id for every active connection reference', () => {
+    expect(columnNames(connectorConnections)).toContain('connection_id');
+    expect(columnNames(connectorConnections)).not.toContain('profile_id');
+    expect(columnNames(connectorCalls)).toContain('connection_id');
+    expect(columnNames(connectorCalls)).not.toContain('profile_id');
+    expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
   });
 });
 
@@ -173,6 +226,42 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('Kortix Apps schema', () => {
+  test('stores stable app routing and an atomic active deployment pointer', () => {
+    expect(getTableConfig(apps).name).toBe('apps');
+    expect(columnNames(apps)).toEqual(expect.arrayContaining([
+      'app_id',
+      'project_id',
+      'route_key',
+      'desired_state',
+      'active_deployment_id',
+      'idle_timeout_seconds',
+      'monthly_budget_usd',
+    ]));
+    expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
+  });
+
+  test('stores immutable artifacts and deployment versions', () => {
+    expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
+    expect(getTableConfig(appDeployments).name).toBe('app_deployments');
+    expect(columnNames(appDeployments)).toContain('created_by');
+    expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
+  });
+
+  test('stores provider runtimes and append-only deployment events', () => {
+    expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
+    expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
+    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('attributes compute windows to App runtimes', () => {
+    expect(columnNames(sandboxComputeSessions)).toEqual(expect.arrayContaining([
+      'workload_type',
+      'app_runtime_id',
+    ]));
   });
 });
 

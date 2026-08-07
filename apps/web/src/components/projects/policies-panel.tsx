@@ -3,7 +3,7 @@
 /**
  * Project-wide approval rules for tool calls. Source of truth = `kortix.yaml`;
  * this panel CRUDs the same file via the admin endpoint, then the gateway
- * enforces on every Executor call.
+ * enforces on every Connector call.
  *
  * Rendered in two places: the Global rules sheet on the capabilities pages, and
  * the Connectors section of the customize panel. Both are narrow columns, so

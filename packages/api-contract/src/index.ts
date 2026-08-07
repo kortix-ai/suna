@@ -54,6 +54,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
+  apps: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 
@@ -215,34 +216,16 @@ const SessionConnectorBindingAliasSchema = z
 
 export const SessionConnectorBindingInputSchema = z
   .object({
-    authorization_id: z.string().uuid().optional(),
-    profile_id: z.string().uuid().optional(),
+    connection_id: z.string().uuid(),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (!value.authorization_id && !value.profile_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['authorization_id'],
-        message: 'authorization_id is required',
-      });
-    }
-    if (value.authorization_id && value.profile_id && value.authorization_id !== value.profile_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['profile_id'],
-        message: 'authorization_id and profile_id must match',
-      });
-    }
-  })
-  .transform((value) => ({
-    authorization_id: value.authorization_id ?? value.profile_id!,
-  }));
-export type SessionConnectorBindingInput = z.input<typeof SessionConnectorBindingInputSchema>;
+  .strict();
+export type SessionConnectorBindingInput = z.input<
+  typeof SessionConnectorBindingInputSchema
+>;
 
 export const SessionConnectorBindingSchema = z
   .object({
-    authorization_id: z.string().uuid(),
+    connection_id: z.string().uuid(),
   })
   .strict();
 export type SessionConnectorBinding = z.infer<typeof SessionConnectorBindingSchema>;
@@ -357,7 +340,7 @@ export const SessionScopeSchema = z
   .strict();
 export type SessionScope = z.infer<typeof SessionScopeSchema>;
 
-export const ConnectorAuthorizationRequiredProfileSchema = z
+export const RequiredConnectorConnectionSchema = z
   .object({
     id: z.string().uuid(),
     slug: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
@@ -365,29 +348,29 @@ export const ConnectorAuthorizationRequiredProfileSchema = z
     authorization_strategy: ConnectorAuthorizationStrategySchema,
   })
   .strict();
-export type ConnectorAuthorizationRequiredProfile = z.infer<
-  typeof ConnectorAuthorizationRequiredProfileSchema
+export type RequiredConnectorConnection = z.infer<
+  typeof RequiredConnectorConnectionSchema
 >;
 
-export const ConnectorAuthorizationRequiredErrorSchema = z
+export const ConnectorConnectionRequiredErrorSchema = z
   .object({
-    code: z.literal('CONNECTOR_AUTHORIZATION_REQUIRED'),
+    code: z.literal('CONNECTOR_CONNECTION_REQUIRED'),
     message: z.string().min(1),
-    connector_profiles: z.array(ConnectorAuthorizationRequiredProfileSchema).min(1),
+    connector_connections: z.array(RequiredConnectorConnectionSchema).min(1),
   })
   .strict();
-export type ConnectorAuthorizationRequiredError = z.infer<
-  typeof ConnectorAuthorizationRequiredErrorSchema
+export type ConnectorConnectionRequiredError = z.infer<
+  typeof ConnectorConnectionRequiredErrorSchema
 >;
 
-export const ConnectorAuthorizationOwnerTypeSchema = z.enum([
+export const ConnectionOwnerTypeSchema = z.enum([
   'agent',
   'member',
   'subject',
   'external',
 ]);
-export const ConnectorAuthorizationStatusSchema = z.enum(['active', 'revoked', 'error']);
-export const ConnectorAuthorizationMetadataSchema = z
+export const ConnectionStatusSchema = z.enum(['active', 'revoked', 'error']);
+export const ConnectionMetadataSchema = z
   .record(
     z
       .string()
@@ -397,7 +380,7 @@ export const ConnectorAuthorizationMetadataSchema = z
           !/(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/.test(
             key,
           ),
-        'connector authorization metadata is non-secret',
+        'connection metadata is non-secret',
       ),
     SessionRuntimeContextScalarSchema,
   )
@@ -415,49 +398,32 @@ export const ConnectorAuthorizationMetadataSchema = z
       });
     }
   });
-export const ConnectorAuthorizationSchema = z.object({
-  profile_id: z.string().uuid(),
+export const ConnectionSchema = z.object({
+  connection_id: z.string().uuid(),
   connector_alias: z.string(),
   owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
   owner_id: z.string().nullable(),
   label: z.string(),
-  status: ConnectorAuthorizationStatusSchema,
+  status: ConnectionStatusSchema,
   is_default: z.boolean(),
-  metadata: ConnectorAuthorizationMetadataSchema,
+  metadata: ConnectionMetadataSchema,
 });
-export type ConnectorAuthorization = z.infer<typeof ConnectorAuthorizationSchema>;
+export type Connection = z.infer<typeof ConnectionSchema>;
 
-export const ReconcileConnectorAuthorizationInputSchema = z
+export const ReconcileConnectionInputSchema = z
   .object({
     connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
     // `project` = a project-shared connection (several are allowed per connector,
     // distinguished by label); it takes no owner_id. Every other owner type
-    // requires one. Creating a project connection needs the profiles-manage
+    // requires one. Creating a project connection needs the connections-manage
     // capability — enforced at the route.
     owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
     owner_id: z.string().trim().min(1).max(512).optional(),
     label: z.string().trim().min(1).max(255),
-    metadata: ConnectorAuthorizationMetadataSchema.optional(),
+    metadata: ConnectionMetadataSchema.optional(),
   })
   .strict();
-export type ReconcileConnectorAuthorizationInput = z.infer<
-  typeof ReconcileConnectorAuthorizationInputSchema
->;
-
-/** @deprecated Use `ConnectorAuthorizationOwnerTypeSchema`. */
-export const ConnectionProfileOwnerTypeSchema = ConnectorAuthorizationOwnerTypeSchema;
-/** @deprecated Use `ConnectorAuthorizationStatusSchema`. */
-export const ConnectionProfileStatusSchema = ConnectorAuthorizationStatusSchema;
-/** @deprecated Use `ConnectorAuthorizationMetadataSchema`. */
-export const ConnectionProfileMetadataSchema = ConnectorAuthorizationMetadataSchema;
-/** @deprecated Use `ConnectorAuthorizationSchema`. */
-export const ConnectionProfileSchema = ConnectorAuthorizationSchema;
-/** @deprecated Use `ConnectorAuthorization`. */
-export type ConnectionProfile = ConnectorAuthorization;
-/** @deprecated Use `ReconcileConnectorAuthorizationInputSchema`. */
-export const ReconcileConnectionProfileInputSchema = ReconcileConnectorAuthorizationInputSchema;
-/** @deprecated Use `ReconcileConnectorAuthorizationInput`. */
-export type ReconcileConnectionProfileInput = ReconcileConnectorAuthorizationInput;
+export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
 
 export const OAuth2ClientCredentialsSchema = z
   .object({
@@ -646,7 +612,7 @@ export const OAuth2ConnectionStatusSchema = z
   .strict();
 export type OAuth2ConnectionStatus = z.infer<typeof OAuth2ConnectionStatusSchema>;
 
-export const UpdateConnectorAuthorizationCredentialInputSchema = z.union([
+export const UpdateConnectionCredentialInputSchema = z.union([
   z
     .object({
       value: z.string().min(1).max(65536),
@@ -655,15 +621,9 @@ export const UpdateConnectorAuthorizationCredentialInputSchema = z.union([
     .strict(),
   z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
 ]);
-export type UpdateConnectorAuthorizationCredentialInput = z.infer<
-  typeof UpdateConnectorAuthorizationCredentialInputSchema
+export type UpdateConnectionCredentialInput = z.infer<
+  typeof UpdateConnectionCredentialInputSchema
 >;
-/** @deprecated Use `UpdateConnectorAuthorizationCredentialInputSchema`. */
-export const UpdateConnectionProfileCredentialInputSchema =
-  UpdateConnectorAuthorizationCredentialInputSchema;
-/** @deprecated Use `UpdateConnectorAuthorizationCredentialInput`. */
-export type UpdateConnectionProfileCredentialInput = UpdateConnectorAuthorizationCredentialInput;
-
 export const PendingSessionPromptSchema = z
   .object({
     text: z.string().max(1_000_000),
@@ -716,9 +676,9 @@ export const SessionCreateInputSchema = z
     // When `connector_bindings` is set, unbound aliases fail closed.
     // `inherit_unbound: true` keeps strategy-based default resolution for them.
     inherit_unbound: z.boolean().optional(),
-    // Require each named connector profile to resolve an authorization that
-    // matches its project-or-user strategy. Missing authorizations return the
-    // structured CONNECTOR_AUTHORIZATION_REQUIRED response before provisioning.
+    // Require each named connector to resolve a connection that matches its
+    // project-or-user strategy. Missing connections return the
+    // structured CONNECTOR_CONNECTION_REQUIRED response before provisioning.
     require_connectors: z
       .array(
         z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'),
@@ -976,7 +936,6 @@ export const SecretConsumerSchema = z.enum([
   'sandbox',
   'llm_gateway',
   'connector',
-  'executor',
   'git_proxy',
   'http_broker',
   'network',
@@ -993,7 +952,7 @@ export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const SecretEgressPolicySchema = z.object({
-  backend: z.enum(['llm_gateway', 'executor', 'git_proxy', 'kortix_fetch']).optional(),
+  backend: z.enum(['llm_gateway', 'connector', 'git_proxy', 'kortix_fetch']).optional(),
   base_url_env: z.string().optional(),
   rules: z.array(
     z.object({

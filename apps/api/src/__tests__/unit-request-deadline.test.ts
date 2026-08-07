@@ -32,6 +32,7 @@ function makeApp() {
   app.get('/v1/projects/x/turn-stream', slow);      // JSON relay, bounded
   app.get('/v1/router/chat/completions', slow);      // exempt prefix
   app.get('/v1/llm/chat/completions', slow);          // exempt prefix (LLM streaming)
+  app.post('/v1/connectors/projects/x/connectors', slow); // exempt prefix (git + provider sync)
   app.post('/v1/billing/webhooks/stripe', slow);      // exempt prefix (webhook)
   app.post('/v1/projects/x/sessions/y/start', slow);  // exempt fragment (long sync op)
   app.post('/v1/projects/x/oauth/openai/start', slow); // exempt fragment (OAuth device flow — start can be slow on a cold replica)
@@ -77,6 +78,13 @@ describe('requestDeadline', () => {
 
   it('exempts the LLM completions prefix from the deadline', async () => {
     const res = await makeApp().request('/v1/llm/chat/completions');
+    expect(res.status).toBe(200);
+  });
+
+  it('exempts connector routes that can perform git and provider synchronization', async () => {
+    const res = await makeApp().request('/v1/connectors/projects/x/connectors', {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
   });
 

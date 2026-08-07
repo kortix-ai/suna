@@ -66,7 +66,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/enterprise',
   '/help',
   '/help/credits',
-  '/integrations',
+  '/connectors',
   '/legal',
   '/marketplace',
   '/pricing',
@@ -256,12 +256,12 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'integrations',
+    slug: 'connectors',
     title: 'Kortix connectors',
     description:
       'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
-    htmlPath: '/integrations',
-    markdownPath: '/markdown/integrations.md',
+    htmlPath: '/connectors',
+    markdownPath: '/markdown/connectors.md',
   },
   {
     kind: 'marketing',

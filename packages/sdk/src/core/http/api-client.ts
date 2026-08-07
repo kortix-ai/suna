@@ -45,7 +45,7 @@ export interface ApiResponse<T = any> {
  * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
  * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
  * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
- * `apps/api/src/executor/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ * `apps/api/src/connectors/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
  */
 export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
 
@@ -217,7 +217,8 @@ async function makeRequest<T = any>(
       }
 
       try {
-        response = await fetch(url, {
+        const fetchImpl = platformConfig().fetch ?? fetch;
+        response = await fetchImpl(url, {
           ...fetchOptions,
           headers,
           signal: attemptController.signal,
@@ -257,7 +258,9 @@ async function makeRequest<T = any>(
 
       try {
         errorData = await response.json();
-        if (typeof errorData.message === 'string') {
+        if (typeof errorData.reason === 'string') {
+          errorMessage = errorData.reason;
+        } else if (typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } else if (errorData.error && typeof errorData.error === 'string') {
           errorMessage = errorData.error;
@@ -311,7 +314,7 @@ async function makeRequest<T = any>(
 
       // Expected "feature not enabled on this deployment" state — the backend
       // returns a TYPED 501 with `code: 'feature_not_supported'` (see the
-      // executor router's `featureNotSupportedResponse`) when an OPTIONAL
+      // connector router's `featureNotSupportedResponse`) when an OPTIONAL
       // capability isn't wired on this deployment (e.g. connector
       // auth-discovery, Pipedream). The dashboard already surfaces these as a
       // graceful "unavailable" UI state (e.g. the connector-auth-discovery

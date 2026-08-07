@@ -38,6 +38,7 @@ const {
   manifestHashForAgent,
   resolveGovernedAgentGrant,
   requiredConnectorsForAgent,
+  workspaceFromLoadedAgents,
 } =
   await import('./agents');
 
@@ -233,5 +234,31 @@ describe('connectors_required — v2 agent required-connector declaration', () =
     expect(
       manifestHashForAgent({ ...base, connectorsRequired: ['gmail'] }),
     ).not.toBe(manifestHashForAgent(base));
+  });
+});
+
+describe('workspace — v2 agent workspace declaration', () => {
+  test('resolves the selected and default agent workspace modes', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    workspace: runtime',
+        '  engineer:',
+        '    workspace: branch',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.errors).toEqual([]);
+    expect(workspaceFromLoadedAgents('support', loaded)).toBe('runtime');
+    expect(workspaceFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe('runtime');
+    expect(workspaceFromLoadedAgents('engineer', loaded)).toBe('branch');
+    expect(workspaceFromLoadedAgents('missing', loaded)).toBeNull();
   });
 });

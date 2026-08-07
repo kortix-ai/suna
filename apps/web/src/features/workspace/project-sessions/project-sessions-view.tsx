@@ -9,6 +9,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -89,15 +93,12 @@ function SessionListSkeleton() {
  */
 function SessionsSidebarToggle() {
   const sidebar = useOptionalSidebar();
-  if (!sidebar) return null;
-  if (!sidebar.isMobile && sidebar.state === 'expanded') return null;
+  // Shared gate — see sidebar-opener.ts. Must be called before the early
+  // return, and it already covers the `!sidebar` case.
+  const show = useShowPageSidebarOpener();
+  if (!sidebar || !show) return null;
 
-  const label =
-    sidebar.state === 'expanded'
-      ? 'Collapse sidebar'
-      : sidebar.peek
-        ? 'Pin sidebar'
-        : 'Open sidebar';
+  const label = sidebarOpenerLabel(sidebar);
 
   return (
     <Hint label={label} side="bottom">
@@ -119,8 +120,6 @@ function SessionsSidebarToggle() {
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const sidebar = useOptionalSidebar();
-  const showSidebarToggle = sidebar != null && (sidebar.isMobile || sidebar.state !== 'expanded');
   const [filter, setFilter] = useState<ProjectSessionsFilter>('all');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);

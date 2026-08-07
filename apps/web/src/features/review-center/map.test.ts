@@ -107,7 +107,7 @@ describe('mapApiReviewItem', () => {
     expect(d.advanced.files).toEqual([]);
   });
 
-  test('normalizes a thin executor-approval detail into a single humanized action', () => {
+  test('normalizes a thin connector-approval detail into a single humanized action', () => {
     const item = mapApiReviewItem(
       {
         ...row,

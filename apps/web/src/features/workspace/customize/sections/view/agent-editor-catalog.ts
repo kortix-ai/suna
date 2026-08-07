@@ -4,10 +4,17 @@
  */
 
 export const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
+/** Display names — the raw values are lowercase manifest keys, and a Select
+ *  trigger renders the value verbatim (no `capitalize` reaches it). */
+export const AGENT_MODE_LABEL: Record<(typeof AGENT_MODES)[number], string> = {
+  primary: 'Primary',
+  subagent: 'Subagent',
+  all: 'All',
+};
 export const AGENT_MODE_HELP: Record<(typeof AGENT_MODES)[number], string> = {
-  primary: 'Selectable as the main agent for a session.',
-  subagent: 'Callable by other agents only — not selectable directly.',
-  all: 'Available both as primary and as a subagent.',
+  primary: 'People pick it to start a session. Other agents cannot call it.',
+  subagent: 'Other agents call it. It never shows in the session picker.',
+  all: 'People can start it, and other agents can call it.',
 };
 export const THEME_COLORS = [
   'primary',
@@ -18,13 +25,40 @@ export const THEME_COLORS = [
   'error',
   'info',
 ] as const;
+/**
+ * What each theme colour looks like, for the swatch picker. The manifest stores
+ * the NAME (`success`), not a hex — the runtime resolves it against the active
+ * theme. These classes are a preview of that resolution, mapped onto the
+ * `kortix-*` brand tokens so the picker shows colour instead of seven words.
+ */
+export const THEME_COLOR_SWATCH: Record<(typeof THEME_COLORS)[number], string> = {
+  primary: 'bg-foreground',
+  secondary: 'bg-muted-foreground',
+  accent: 'bg-kortix-purple',
+  success: 'bg-kortix-green',
+  warning: 'bg-kortix-orange',
+  error: 'bg-kortix-red',
+  info: 'bg-kortix-blue',
+};
 export const WORKSPACE_MODES = ['runtime', 'read', 'branch'] as const;
+/** Display names — see AGENT_MODE_LABEL. */
+export const WORKSPACE_MODE_LABEL: Record<(typeof WORKSPACE_MODES)[number], string> = {
+  runtime: 'Runtime',
+  read: 'Read',
+  branch: 'Branch',
+};
 export const WORKSPACE_MODE_HELP: Record<(typeof WORKSPACE_MODES)[number], string> = {
-  runtime: 'Works directly in the live project workspace.',
-  read: 'Can read files but cannot modify them.',
-  branch: 'Works on an isolated git branch, merged in later.',
+  runtime: 'Edits the live project files directly.',
+  read: 'Reads the project files. Cannot change them.',
+  branch: 'Works on its own branch. You review and merge the result.',
 };
 export const PERMISSION_ACTIONS = ['allow', 'ask', 'deny'] as const;
+/** Display names — see AGENT_MODE_LABEL. */
+export const PERMISSION_ACTION_LABEL: Record<(typeof PERMISSION_ACTIONS)[number], string> = {
+  allow: 'Allow',
+  ask: 'Ask',
+  deny: 'Deny',
+};
 
 // Permission keys that accept the full rule form (bare action OR glob-map).
 // `skill` is intentionally EXCLUDED — the Skills governance control below owns
@@ -50,10 +84,41 @@ export const PERMISSION_ACTION_ONLY_KEYS = [
   'doom_loop',
 ] as const;
 
-export const PERMISSION_RULE_GROUPS: { label: string; keys: (typeof PERMISSION_RULE_KEYS)[number][] }[] = [
-  { label: 'Files & search', keys: ['read', 'edit', 'glob', 'grep', 'list'] },
-  { label: 'Execution', keys: ['bash', 'task', 'external_directory', 'lsp'] },
+export const PERMISSION_RULE_GROUPS: {
+  label: string;
+  keys: (typeof PERMISSION_RULE_KEYS)[number][];
+}[] = [
+  { label: 'Files and search', keys: ['read', 'edit', 'glob', 'grep', 'list'] },
+  { label: 'Commands and tools', keys: ['bash', 'task', 'external_directory', 'lsp'] },
 ];
+
+/** The heading over the keys that take a bare action and never a path rule. */
+export const PERMISSION_ACTION_ONLY_GROUP_LABEL = 'Everything else';
+
+/**
+ * What each permission key lets the agent DO, in plain words.
+ *
+ * The raw key (`external_directory`, `lsp`, `doom_loop`) is a manifest token
+ * and stays visible in mono beside this — people grep for it and hand-edit the
+ * YAML. But a settings row whose only text is `lsp` tells a reader nothing, so
+ * the sentence leads and the token follows.
+ */
+export const PERMISSION_KEY_LABEL: Record<string, string> = {
+  read: 'Read files',
+  edit: 'Create and change files',
+  glob: 'Find files by name',
+  grep: 'Search inside files',
+  list: 'List folders',
+  bash: 'Run shell commands',
+  task: 'Hand work to a subagent',
+  external_directory: 'Reach outside the project',
+  lsp: 'Use the language server',
+  todowrite: 'Keep a todo list',
+  question: 'Ask you a question mid-run',
+  webfetch: 'Fetch a URL',
+  websearch: 'Search the web',
+  doom_loop: 'Break out of a failure loop',
+};
 
 export const PERMISSION_KEY_HELP: Record<string, string> = {
   read: 'Read file contents.',
@@ -148,7 +213,7 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
     actions: [
       'project.connector.read',
       'project.connector.write',
-      'project.connector.profiles.manage',
+      'project.connector.connections.manage',
     ],
   },
   {

@@ -19,9 +19,9 @@ import { fileURLToPath } from 'node:url';
  */
 
 const PAGES = [
+  { name: 'agents', file: '../agents/agents-page.tsx', clear: 'setSelectedPath(null)' },
   { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
-  { name: 'commands', file: '../commands/commands-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
 
 const read = (relativePath: string) =>
@@ -96,14 +96,25 @@ describe('catalogue search keeps its results', () => {
 
   test('the cold state and the refreshing state are reported separately', () => {
     expect(code).toContain('isRefreshing:');
-    expect(code).toContain('active.isPlaceholderData');
+    expect(code).toContain('isRefreshing: opts.enabled && isPlaceholderData');
   });
 
-  test('the background page-prefetch chain does not run against placeholder data', () => {
+  test('no paging path runs against placeholder data', () => {
     // `loadedPages`/`hasNextPage` describe the PREVIOUS key while the
     // placeholder shows, so paging off them fires a cursor request for a query
     // whose first page has not landed.
-    expect(code).toContain('if (isPlaceholderData) return;');
+    //
+    // There are now three ways to reach `fetchNextPage` — the automatic chain,
+    // the scroll sentinel and the "Load more" button — so the guard is asserted
+    // at each of the two entry points rather than at one `if` that used to be
+    // the only one. `shouldAutoLoadPage` refusing placeholder data is proved
+    // behaviourally in `catalog-paging.test.ts`; this pins that `use-catalog`
+    // actually feeds it the flag, and that `loadMore` carries its own copy.
+    expect(code).toContain('isPlaceholderData,\n        focus:');
+    expect(code).toContain('if (!hasNextPage || isFetchingNextPage || isPlaceholderData) return;');
+    // `hasMore` is what the sentinel and the button both read, so withholding
+    // it during the placeholder window disarms both at once.
+    expect(code).toContain('hasMore: opts.enabled && hasNextPage && !isPlaceholderData');
   });
 
   test('the browse grid dims instead of blanking', () => {

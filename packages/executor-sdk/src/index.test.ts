@@ -1,9 +1,3 @@
-/**
- * @kortix/executor-sdk — full unit coverage with an injected fetch (no network).
- * Exercises construction/validation, project-explicit vs flat route selection,
- * call/connectors/tools/discover/describe, error mapping (ExecutorError), the
- * URL normalization + path joining, and response-body parsing.
- */
 import { describe, expect, test } from 'bun:test';
 import {
   createExecutorClient,
@@ -12,285 +6,193 @@ import {
   type ExecutorConnector,
 } from './index';
 
-interface Recorded {
+type Recorded = {
   url: string;
   method: string;
-  headers: Record<string, string>;
+  headers: Headers;
   body: unknown;
-}
+};
 
-/** Fake fetch: records each request, returns the scripted (status, body). */
-function harness(reply: (url: string, init: any) => { status?: number; body?: unknown }) {
+function harness(reply: (call: Recorded) => { status?: number; body?: unknown }) {
   const calls: Recorded[] = [];
-  const fetchImpl = (async (url: any, init: any) => {
-    const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push({
-      url: String(url),
-      method: init?.method ?? 'GET',
-      headers,
-      body: typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body,
-    });
-    const r = reply(String(url), init);
-    const payload = r.body === undefined ? '' : typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
-    return new Response(payload, { status: r.status ?? 200, headers: { 'content-type': 'application/json' } });
-  }) as unknown as typeof fetch;
-  return { fetchImpl, calls };
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const text = request.method === 'GET' ? '' : await request.clone().text();
+    let body: unknown = undefined;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
+    }
+    const call: Recorded = {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      body,
+    };
+    calls.push(call);
+    const result = reply(call);
+    return Response.json(result.body ?? {}, { status: result.status ?? 200 });
+  }) as typeof fetch;
+  return { calls, fetchImpl };
 }
 
-const CATALOG: { connectors: ExecutorConnector[] } = {
+const catalog: { connectors: ExecutorConnector[] } = {
   connectors: [
     {
-      slug: 'slack',
-      name: 'Slack',
-      provider: 'channel',
+      slug: 'gmail',
+      name: 'Gmail',
+      provider: 'pipedream',
       status: 'active',
       actions: [
-        { path: 'send_message', name: 'Send', description: 'post a message', risk: 'write', inputSchema: null },
-        { path: 'get_history', name: 'History', description: 'read messages', risk: 'read', inputSchema: null },
+        {
+          path: 'send_email',
+          name: 'Send email',
+          description: 'Send an email',
+          risk: 'write',
+          inputSchema: { type: 'object' },
+        },
       ],
     },
   ],
 };
 
-/* ─── construction + validation ───────────────────────────────────────────── */
-
-describe('construction', () => {
-  test('requires apiUrl and token', () => {
-    expect(() => new ExecutorClient({ apiUrl: '', token: 't' })).toThrow(/apiUrl/);
-    expect(() => new ExecutorClient({ apiUrl: 'http://x', token: '  ' })).toThrow(/token/);
-  });
-
-  test('createExecutorClient returns a client', () => {
-    expect(createExecutorClient({ apiUrl: 'http://x', token: 't' })).toBeInstanceOf(ExecutorClient);
-  });
-});
-
-/* ─── URL normalization (observable via the request URL) ──────────────────── */
-
-describe('apiUrl normalization', () => {
-  async function urlFor(apiUrl: string): Promise<string> {
-    const { fetchImpl, calls } = harness(() => ({ body: { connectors: [] } }));
-    await createExecutorClient({ apiUrl, token: 't', fetchImpl }).connectors();
-    return calls[0]!.url;
-  }
-
-  test('appends /v1 when missing', async () => {
-    expect(await urlFor('http://localhost:8008')).toBe('http://localhost:8008/v1/executor/connectors');
-  });
-  test('strips trailing slashes then appends /v1', async () => {
-    expect(await urlFor('http://localhost:8008///')).toBe('http://localhost:8008/v1/executor/connectors');
-  });
-  test('does not double /v1', async () => {
-    expect(await urlFor('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/executor/connectors');
-  });
-});
-
-/* ─── route selection: project-explicit vs flat ───────────────────────────── */
-
-describe('route selection', () => {
-  test('flat routes when no projectId', async () => {
-    const { fetchImpl, calls } = harness((url) =>
-      url.includes('/call') ? { body: { ok: true, data: 1 } } : { body: { connectors: [] } },
+describe('final Executor compatibility adapter', () => {
+  test('preserves constructor validation and factory identity', () => {
+    expect(() => new ExecutorClient({ apiUrl: '', token: 'token' })).toThrow('apiUrl is required');
+    expect(() => new ExecutorClient({ apiUrl: 'https://api.test', token: '' })).toThrow('token is required');
+    expect(createExecutorClient({ apiUrl: 'https://api.test', token: 'token' })).toBeInstanceOf(
+      ExecutorClient,
     );
-    const c = createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl });
-    await c.connectors();
-    await c.call('slack', 'auth_test');
-    expect(calls[0]!.url).toBe('http://x/v1/executor/connectors');
-    expect(calls[1]!.url).toBe('http://x/v1/executor/call');
   });
 
-  test('project-explicit routes when projectId set (+ encoded)', async () => {
-    const { fetchImpl, calls } = harness((url) =>
-      url.includes('/call') ? { body: { ok: true } } : { body: { connectors: [] } },
+  test('maps the flat session-token surface to @kortix/sdk Connector routes', async () => {
+    const { calls, fetchImpl } = harness((call) =>
+      call.url.endsWith('/call')
+        ? { body: { ok: true, data: { id: 'message-1' } } }
+        : { body: catalog },
     );
-    const c = createExecutorClient({ apiUrl: 'http://x', token: 't', projectId: 'p/1', fetchImpl });
-    await c.connectors();
-    await c.call('slack', 'auth_test');
-    expect(calls[0]!.url).toBe('http://x/v1/executor/projects/p%2F1/catalog');
-    expect(calls[1]!.url).toBe('http://x/v1/executor/projects/p%2F1/call');
-  });
-
-  test('blank projectId falls back to flat', async () => {
-    const { fetchImpl, calls } = harness(() => ({ body: { connectors: [] } }));
-    await createExecutorClient({ apiUrl: 'http://x', token: 't', projectId: '   ', fetchImpl }).connectors();
-    expect(calls[0]!.url).toBe('http://x/v1/executor/connectors');
-  });
-});
-
-/* ─── call() ──────────────────────────────────────────────────────────────── */
-
-describe('call', () => {
-  test('POSTs {connector, action, args} with bearer auth + returns the envelope', async () => {
-    const { fetchImpl, calls } = harness(() => ({ body: { ok: true, data: { ts: '1.2' }, risk: 'write' } }));
-    const res = await createExecutorClient({ apiUrl: 'http://x', token: 'sek', fetchImpl })
-      .call('slack', 'send_message', { channel: 'C1', text: 'hi' });
-    expect(res).toEqual({ ok: true, data: { ts: '1.2' }, risk: 'write' });
-    expect(calls[0]!.method).toBe('POST');
-    expect(calls[0]!.headers.Authorization).toBe('Bearer sek');
-    expect(calls[0]!.headers['Content-Type']).toBe('application/json');
-    expect(calls[0]!.body).toEqual({ connector: 'slack', action: 'send_message', args: { channel: 'C1', text: 'hi' } });
-  });
-
-  test('defaults args to {}', async () => {
-    const { fetchImpl, calls } = harness(() => ({ body: { ok: true } }));
-    await createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).call('slack', 'auth_test');
-    expect(calls[0]!.body).toEqual({ connector: 'slack', action: 'auth_test', args: {} });
-  });
-
-  test('preserves the approval handoff URL and human-readable summary', async () => {
-    const pending = {
-      ok: false,
-      status: 'pending_approval',
-      execution_id: 'exec-1',
-      retryable: false,
-      approval_url: 'https://app.kortix.test/approve/token',
-      approval_summary: 'to: finance@example.com',
-      approval_instructions:
-        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.',
-    };
-    const { fetchImpl } = harness(() => ({ status: 202, body: pending }));
-    const result = await createExecutorClient({
-      apiUrl: 'http://x',
-      token: 't',
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'agent-token',
       fetchImpl,
-    }).call('gmail', 'send_email', { to: 'finance@example.com' });
-    expect(result).toEqual(pending);
-  });
-});
-
-/* ─── attachment upload ──────────────────────────────────────────────────── */
-
-describe('uploadAttachment', () => {
-  test('streams raw bytes to the flat attachment route', async () => {
-    const { fetchImpl, calls } = harness(() => ({
-      body: {
-        attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
-        filename: 'Investment Memo.pdf',
-        content_type: 'application/pdf',
-        content_disposition: 'attachment',
-        size: 9,
-        expires_at: '2026-08-03T20:00:00.000Z',
-      },
-    }));
-    const bytes = new TextEncoder().encode('pdf-bytes');
-    const result = await createExecutorClient({
-      apiUrl: 'http://x',
-      token: 'sek',
-      fetchImpl,
-    }).uploadAttachment(bytes, {
-      filename: 'Investment Memo.pdf',
-      contentType: 'application/pdf',
     });
 
-    expect(result.attachment_id).toBe('019fc40d-04dd-7f52-a591-65ab13d2a245');
-    expect(calls[0]!.url).toBe('http://x/v1/executor/attachments');
-    expect(calls[0]!.method).toBe('POST');
-    expect(calls[0]!.headers.Authorization).toBe('Bearer sek');
-    expect(calls[0]!.headers['Content-Type']).toBe('application/pdf');
-    expect(calls[0]!.headers['X-Kortix-Attachment-Filename']).toBe(
-      encodeURIComponent('Investment Memo.pdf'),
-    );
-    expect(calls[0]!.body).toBe(bytes);
-  });
-
-  test('uses the project-explicit route and sends optional inline metadata', async () => {
-    const { fetchImpl, calls } = harness(() => ({
-      body: {
-        attachment_id: '019fc40d-04dd-7f52-a591-65ab13d2a245',
-        filename: 'chart.png',
-        content_type: 'image/png',
-        content_disposition: 'inline',
-        content_id: 'chart-1',
-        size: 3,
-        expires_at: '2026-08-03T20:00:00.000Z',
-      },
-    }));
-    await createExecutorClient({
-      apiUrl: 'http://x',
-      token: 'sek',
-      projectId: 'p/1',
-      fetchImpl,
-    }).uploadAttachment(new Uint8Array([1, 2, 3]), {
-      filename: 'chart.png',
-      contentType: 'image/png',
-      contentDisposition: 'inline',
-      contentId: 'chart-1',
+    expect((await client.connectors())[0]?.slug).toBe('gmail');
+    expect((await client.tools())[0]?.tool).toBe('gmail.send_email');
+    expect((await client.discover('send email'))[0]?.tool).toBe('gmail.send_email');
+    expect((await client.describe('gmail.send_email'))?.action).toBe('send_email');
+    expect(await client.call('gmail', 'send_email', { to: 'agent@example.com' })).toEqual({
+      ok: true,
+      data: { id: 'message-1' },
     });
 
-    expect(calls[0]!.url).toBe('http://x/v1/executor/projects/p%2F1/attachments');
-    expect(calls[0]!.headers['X-Kortix-Attachment-Disposition']).toBe('inline');
-    expect(calls[0]!.headers['X-Kortix-Attachment-Content-Id']).toBe('chart-1');
-  });
-});
-
-/* ─── catalog → tools / discover / describe ───────────────────────────────── */
-
-describe('catalog helpers', () => {
-  const make = () => createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl: harness(() => ({ body: CATALOG })).fetchImpl });
-
-  test('connectors() returns the array; empty when absent', async () => {
-    expect((await make().connectors())[0]!.slug).toBe('slack');
-    const empty = createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl: harness(() => ({ body: {} })).fetchImpl });
-    expect(await empty.connectors()).toEqual([]);
+    expect(calls[0]?.url).toBe('https://api.test/v1/connectors/catalog');
+    expect(calls.at(-1)?.url).toBe('https://api.test/v1/connectors/call');
+    expect(calls.at(-1)?.headers.get('authorization')).toBe('Bearer agent-token');
+    expect(calls.at(-1)?.body).toEqual({
+      connector: 'gmail',
+      action: 'send_email',
+      args: { to: 'agent@example.com' },
+    });
   });
 
-  test('tools() flattens to slug.path matches', async () => {
-    const tools = await make().tools();
-    expect(tools.map((t) => t.tool)).toEqual(['slack.send_message', 'slack.get_history']);
-    expect(tools[0]).toMatchObject({ connector: 'slack', action: 'send_message', risk: 'write', description: 'post a message' });
+  test('maps project-explicit calls and attachment uploads to @kortix/sdk', async () => {
+    const { calls, fetchImpl } = harness((call) =>
+      call.url.endsWith('/attachments')
+        ? {
+            body: {
+              attachment_id: 'attachment-1',
+              filename: 'note.txt',
+              content_type: 'text/plain',
+              content_disposition: 'attachment',
+              size: 4,
+              expires_at: '2026-08-06T00:00:00.000Z',
+            },
+          }
+        : { body: catalog },
+    );
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test/v1/',
+      token: 'user-token',
+      projectId: 'project/1',
+      fetchImpl,
+    });
+
+    await client.connectors();
+    const attachment = await client.uploadAttachment(new TextEncoder().encode('note'), {
+      filename: 'note.txt',
+      contentType: 'text/plain',
+    });
+
+    expect(attachment.attachment_id).toBe('attachment-1');
+    expect(calls[0]?.url).toBe(
+      'https://api.test/v1/connectors/projects/project%2F1/catalog',
+    );
+    expect(calls[1]?.url).toBe(
+      'https://api.test/v1/connectors/projects/project%2F1/attachments',
+    );
   });
 
-  test('discover() filters by query + honors limit', async () => {
-    expect((await make().discover('history')).map((t) => t.tool)).toEqual(['slack.get_history']);
-    expect((await make().discover('')).length).toBe(2);
-    expect((await make().discover('', { limit: 1 })).length).toBe(1);
-  });
+  test('preserves ExecutorError for failed SDK calls', async () => {
+    const { fetchImpl } = harness(() => ({
+      status: 404,
+      body: { reason: 'connector_not_found' },
+    }));
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'agent-token',
+      fetchImpl,
+    });
 
-  test('describe() finds by tool name, null otherwise', async () => {
-    expect((await make().describe('slack.send_message'))?.action).toBe('send_message');
-    expect(await make().describe('slack.nope')).toBeNull();
-  });
-});
-
-/* ─── error mapping ───────────────────────────────────────────────────────── */
-
-describe('error handling', () => {
-  test('non-2xx throws ExecutorError with status + body + extracted reason', async () => {
-    const { fetchImpl } = harness(() => ({ status: 500, body: { ok: false, status: 'error', reason: 'channel_not_found' } }));
-    const c = createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl });
     try {
-      await c.call('slack', 'send_message');
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ExecutorError);
-      expect((e as ExecutorError).status).toBe(500);
-      expect((e as ExecutorError).message).toBe('channel_not_found');
-      expect((e as ExecutorError).body).toMatchObject({ reason: 'channel_not_found' });
+      await client.call('gmail', 'send_email');
+      throw new Error('expected call to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ExecutorError);
+      expect((error as ExecutorError).status).toBe(404);
+      expect((error as ExecutorError).message).toBe('connector_not_found');
+      expect((error as ExecutorError).body).toMatchObject({ reason: 'connector_not_found' });
     }
   });
 
-  test('prefers reason, then error, then message, then HTTP status', async () => {
-    const msg = async (body: unknown, status = 400) => {
-      const { fetchImpl } = harness(() => ({ status, body }));
-      try { await createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).connectors(); }
-      catch (e) { return (e as ExecutorError).message; }
-    };
-    expect(await msg({ error: 'bad' })).toBe('bad');
-    expect(await msg({ message: 'oops' })).toBe('oops');
-    expect(await msg('', 503)).toBe('HTTP 503');
+  test('keeps request() as a deprecated route-remapping escape hatch', async () => {
+    const { calls, fetchImpl } = harness(() => ({ body: catalog }));
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'agent-token',
+      fetchImpl,
+    });
+
+    expect(await client.request<{ connectors: ExecutorConnector[] }>('/executor/connectors')).toEqual(
+      catalog,
+    );
+    expect(calls[0]?.url).toBe('https://api.test/v1/connectors/catalog');
   });
 
-  test('denied (403) still throws ExecutorError', async () => {
-    const { fetchImpl } = harness(() => ({ status: 403, body: { ok: false, status: 'denied', reason: 'not_shared' } }));
-    await expect(createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).call('s', 'a')).rejects.toBeInstanceOf(ExecutorError);
-  });
-});
+  test('preserves the legacy approval_execution_id call field', async () => {
+    const { calls, fetchImpl } = harness(() => ({ body: { ok: true } }));
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'agent-token',
+      projectId: 'project/1',
+      fetchImpl,
+    });
 
-/* ─── response body parsing ───────────────────────────────────────────────── */
+    await client.call('gmail', 'send_email', { to: 'agent@example.com' }, {
+      approvalExecutionId: 'approval-1',
+    });
 
-describe('body parsing', () => {
-  test('empty body → null result fields tolerated', async () => {
-    const { fetchImpl } = harness(() => ({ status: 200, body: '' }));
-    expect(await createExecutorClient({ apiUrl: 'http://x', token: 't', fetchImpl }).connectors()).toEqual([]);
+    expect(calls[0]?.url).toBe(
+      'https://api.test/v1/connectors/projects/project%2F1/call',
+    );
+    expect(calls[0]?.body).toEqual({
+      connector: 'gmail',
+      action: 'send_email',
+      args: { to: 'agent@example.com' },
+      approval_execution_id: 'approval-1',
+    });
   });
 });

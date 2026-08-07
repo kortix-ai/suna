@@ -11,7 +11,7 @@
  *   4. The token CANNOT call account-level routes (/v1/accounts/tokens),
  *      but the self-identity probe (/v1/accounts/me) is allowed.
  *   5. The token CANNOT enumerate projects (GET /v1/projects → 403).
- *   6. The token CAN use project-explicit Executor routes for its project
+ *   6. The token CAN use project-explicit Connector routes for its project
  *      (gateway + connector management), but not another project's routes.
  *   7. Revoking via DELETE /v1/projects/:id/cli-token/:tokenId yields
  *      401 on the next call.
@@ -170,24 +170,24 @@ async function main() {
   }
   ok('token cannot list account-level PATs → 403');
 
-  // ── 8. Executor project scope: own project allowed, cross-project denied ─
-  const executorCatalog = await callApi(secretKey, `/executor/projects/${projA.project_id}/catalog`);
-  if (executorCatalog.status !== 200) {
-    die(`projA token → /executor/projects/<projA>/catalog should 200, got ${executorCatalog.status}: ${JSON.stringify(executorCatalog.body)}`);
+  // ── 8. Connector project scope: own project allowed, cross-project denied ─
+  const connectorCatalog = await callApi(secretKey, `/connectors/projects/${projA.project_id}/catalog`);
+  if (connectorCatalog.status !== 200) {
+    die(`projA token → /connectors/projects/<projA>/catalog should 200, got ${connectorCatalog.status}: ${JSON.stringify(connectorCatalog.body)}`);
   }
-  ok('token can use the Executor project-explicit catalog gateway → 200');
+  ok('token can use the Connector project-explicit catalog gateway → 200');
 
-  const executorAdmin = await callApi(secretKey, `/executor/projects/${projA.project_id}/connectors`);
-  if (executorAdmin.status !== 200) {
-    die(`projA token → /executor/projects/<projA>/connectors should 200, got ${executorAdmin.status}: ${JSON.stringify(executorAdmin.body)}`);
+  const connectorAdmin = await callApi(secretKey, `/connectors/projects/${projA.project_id}/connectors`);
+  if (connectorAdmin.status !== 200) {
+    die(`projA token → /connectors/projects/<projA>/connectors should 200, got ${connectorAdmin.status}: ${JSON.stringify(connectorAdmin.body)}`);
   }
-  ok('token can use Executor connector management routes for its own project → 200');
+  ok('token can use connector management routes for its own project → 200');
 
-  const crossProjectCatalog = await callApi(secretKey, `/executor/projects/${projB.project_id}/catalog`);
+  const crossProjectCatalog = await callApi(secretKey, `/connectors/projects/${projB.project_id}/catalog`);
   if (crossProjectCatalog.status !== 403) {
-    die(`projA token → /executor/projects/<projB>/catalog should 403, got ${crossProjectCatalog.status}: ${JSON.stringify(crossProjectCatalog.body)}`);
+    die(`projA token → /connectors/projects/<projB>/catalog should 403, got ${crossProjectCatalog.status}: ${JSON.stringify(crossProjectCatalog.body)}`);
   }
-  ok('token cannot use Executor gateway routes for a different project → 403');
+  ok('token cannot use Connector gateway routes for a different project → 403');
 
   // ── 8b. Defense-in-depth: forged foreign project scope is rejected ───
   if (foreignProject) {
@@ -200,18 +200,18 @@ async function main() {
         (${m.account_id}, ${m.user_id}, ${foreignProject.project_id}, 'e2e-forged-foreign-scope', ${forged.publicKey}, ${forgedHash})
     `);
     try {
-      const forgedCatalog = await callApi(forged.secretKey, `/executor/projects/${foreignProject.project_id}/catalog`);
+      const forgedCatalog = await callApi(forged.secretKey, `/connectors/projects/${foreignProject.project_id}/catalog`);
       if (forgedCatalog.status !== 403) {
-        die(`foreign-scoped forged token → /executor/projects/<foreign>/catalog should 403, got ${forgedCatalog.status}: ${JSON.stringify(forgedCatalog.body)}`);
+        die(`foreign-scoped forged token → /connectors/projects/<foreign>/catalog should 403, got ${forgedCatalog.status}: ${JSON.stringify(forgedCatalog.body)}`);
       }
-      ok('forged token row with a foreign project_id cannot use Executor gateway routes → 403');
+      ok('forged token row with a foreign project_id cannot use Connector gateway routes → 403');
     } finally {
       await db.execute(sql`
         delete from kortix.account_tokens where secret_key_hash = ${forgedHash}
       `);
     }
   } else {
-    dim('foreign', 'executor forged-scope check skipped (no second account project available)');
+    dim('foreign', 'connector forged-scope check skipped (no second account project available)');
   }
 
   // ── 9. Revoke + verify 401 ───────────────────────────────────────────

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { useConnectorGateStore } from './connector-gate-store';
 
-const connectorProfiles = [
+const connectorConnections = [
   {
     id: '653ca2f1-fe4c-4df4-932a-dc3045885ddb',
     slug: 'gmail-read',
@@ -21,13 +21,13 @@ beforeEach(() => {
   useConnectorGateStore.setState({
     isOpen: false,
     projectId: null,
-    connectorProfiles: [],
+    connectorConnections: [],
     retry: null,
   });
 });
 
 describe('useConnectorGateStore', () => {
-  test('opens with every missing connector profile and the original retry callback', () => {
+  test('opens with every missing connector and the original retry callback', () => {
     let retryCount = 0;
     const retry = () => {
       retryCount += 1;
@@ -35,22 +35,22 @@ describe('useConnectorGateStore', () => {
 
     useConnectorGateStore
       .getState()
-      .openConnectorGate({ projectId: 'project-1', connectorProfiles, retry });
+      .openConnectorGate({ projectId: 'project-1', connectorConnections, retry });
 
     const state = useConnectorGateStore.getState();
     expect(state.isOpen).toBe(true);
     expect(state.projectId).toBe('project-1');
-    expect(state.connectorProfiles).toEqual(connectorProfiles);
+    expect(state.connectorConnections).toEqual(connectorConnections);
     expect(state.retry).toBe(retry);
 
     state.retry?.();
     expect(retryCount).toBe(1);
   });
 
-  test('close clears every profile and the retry callback', () => {
+  test('close clears every connection and the retry callback', () => {
     useConnectorGateStore.getState().openConnectorGate({
       projectId: 'project-1',
-      connectorProfiles,
+      connectorConnections,
       retry: () => undefined,
     });
 
@@ -59,7 +59,7 @@ describe('useConnectorGateStore', () => {
     const state = useConnectorGateStore.getState();
     expect(state.isOpen).toBe(false);
     expect(state.projectId).toBeNull();
-    expect(state.connectorProfiles).toEqual([]);
+    expect(state.connectorConnections).toEqual([]);
     expect(state.retry).toBeNull();
   });
 });

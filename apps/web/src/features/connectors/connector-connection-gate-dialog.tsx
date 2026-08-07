@@ -20,21 +20,21 @@ import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-conn
 import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { type ConnectorGateProfile, useConnectorGateStore } from '@/stores/connector-gate-store';
+import { type ConnectorGateConnection, useConnectorGateStore } from '@/stores/connector-gate-store';
 
-export function ConnectorAuthorizationGateContent({
-  profiles,
+export function ConnectorConnectionGateContent({
+  connections,
   connectedIds,
   pendingId,
-  canManageProjectAuthorizations,
+  canManageProjectConnections,
   onConnect,
   onCancel,
 }: {
-  profiles: ConnectorGateProfile[];
+  connections: ConnectorGateConnection[];
   connectedIds: ReadonlySet<string>;
   pendingId: string | null;
-  canManageProjectAuthorizations: boolean;
-  onConnect: (profile: ConnectorGateProfile) => void;
+  canManageProjectConnections: boolean;
+  onConnect: (connection: ConnectorGateConnection) => void;
   onCancel: () => void;
 }) {
   return (
@@ -42,40 +42,40 @@ export function ConnectorAuthorizationGateContent({
       <ModalHeader>
         <ModalTitle className="flex items-center gap-2">
           <Lock className="size-4" />
-          Connect required authorizations
+          Create required connections
         </ModalTitle>
         <ModalDescription>
-          {profiles.length === 1
-            ? 'This session needs one connector profile.'
-            : `This session needs ${profiles.length} connector profiles.`}{' '}
-          Connect every profile before the session starts.
+          {connections.length === 1
+            ? 'This session needs one connection.'
+            : `This session needs ${connections.length} connections.`}{' '}
+          Create every connection before the session starts.
         </ModalDescription>
       </ModalHeader>
 
       <div className="space-y-2">
-        {profiles.map((profile) => {
-          const connected = connectedIds.has(profile.id);
-          const pending = pendingId === profile.id;
+        {connections.map((connection) => {
+          const connected = connectedIds.has(connection.id);
+          const pending = pendingId === connection.id;
           const managerRequired =
-            profile.authorization_strategy === 'project' && !canManageProjectAuthorizations;
+            connection.authorization_strategy === 'project' && !canManageProjectConnections;
           return (
             <div
-              key={profile.id}
+              key={connection.id}
               className="border-border/70 bg-muted/20 flex items-center gap-3 rounded-lg border px-3 py-2.5"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium">{profile.name}</span>
+                  <span className="truncate text-sm font-medium">{connection.name}</span>
                   <Badge variant="muted" size="xs">
-                    {profile.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                    {connection.authorization_strategy === 'user' ? 'Private' : 'Project'}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
                   {managerRequired
-                    ? 'A project manager must connect this authorization.'
-                    : profile.authorization_strategy === 'user'
-                      ? 'Only your private sessions can use this authorization.'
-                      : 'Eligible project members can use this authorization.'}
+                    ? 'A project manager must create this connection.'
+                    : connection.authorization_strategy === 'user'
+                      ? 'Only your private sessions can use this connection.'
+                      : 'Eligible project members can use this connection.'}
                 </p>
               </div>
 
@@ -94,9 +94,9 @@ export function ConnectorAuthorizationGateContent({
                   size="sm"
                   variant="outline"
                   className="shrink-0 gap-1.5"
-                  onClick={() => onConnect(profile)}
+                  onClick={() => onConnect(connection)}
                   disabled={pendingId !== null}
-                  aria-label={`Connect ${profile.name}`}
+                  aria-label={`Connect ${connection.name}`}
                 >
                   {pending ? <Loading className="size-3.5" /> : <Lock className="size-3.5" />}
                   Connect
@@ -116,23 +116,23 @@ export function ConnectorAuthorizationGateContent({
   );
 }
 
-function ConnectorAuthorizationAction({
+function ConnectorConnectionAction({
   projectId,
-  profile,
+  connection,
   active,
   onPending,
   onConnected,
 }: {
   projectId: string;
-  profile: ConnectorGateProfile;
+  connection: ConnectorGateConnection;
   active: boolean;
   onPending: (id: string | null) => void;
   onConnected: (id: string) => void;
 }) {
-  const connected = useCallback(() => onConnected(profile.id), [onConnected, profile.id]);
-  const member = usePipedreamConnectMember(projectId, profile.slug, connected);
-  const project = usePipedreamConnectProject(projectId, profile.slug, connected);
-  const mutation = profile.authorization_strategy === 'user' ? member : project;
+  const connected = useCallback(() => onConnected(connection.id), [onConnected, connection.id]);
+  const member = usePipedreamConnectMember(projectId, connection.slug, connected);
+  const project = usePipedreamConnectProject(projectId, connection.slug, connected);
+  const mutation = connection.authorization_strategy === 'user' ? member : project;
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -147,26 +147,26 @@ function ConnectorAuthorizationAction({
 }
 
 /**
- * Global gate for a structured `CONNECTOR_AUTHORIZATION_REQUIRED` response.
+ * Global gate for a structured `CONNECTOR_CONNECTION_REQUIRED` response.
  */
 export function ConnectorConnectionGateDialog() {
-  const { isOpen, projectId, connectorProfiles, retry, closeConnectorGate } =
+  const { isOpen, projectId, connectorConnections, retry, closeConnectorGate } =
     useConnectorGateStore();
   const queryClient = useQueryClient();
-  const canManageProjectAuthorizations =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE)
+  const canManageProjectConnections =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)
       .allowed === true;
   const [connectedIds, setConnectedIds] = useState<Set<string>>(() => new Set());
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const profileKey = useMemo(
-    () => connectorProfiles.map((profile) => profile.id).join(','),
-    [connectorProfiles],
+  const connectionKey = useMemo(
+    () => connectorConnections.map((connection) => connection.id).join(','),
+    [connectorConnections],
   );
 
   useEffect(() => {
     setConnectedIds(new Set());
     setPendingId(null);
-  }, [isOpen, profileKey]);
+  }, [isOpen, connectionKey]);
 
   const handleConnected = useCallback((id: string) => {
     setConnectedIds((current) => {
@@ -177,11 +177,11 @@ export function ConnectorConnectionGateDialog() {
   }, []);
 
   useEffect(() => {
-    if (!isOpen || connectorProfiles.length === 0) return;
-    if (!connectorProfiles.every((profile) => connectedIds.has(profile.id))) return;
+    if (!isOpen || connectorConnections.length === 0) return;
+    if (!connectorConnections.every((connection) => connectedIds.has(connection.id))) return;
     if (projectId) {
       void queryClient.invalidateQueries({
-        queryKey: ['connector-profiles', projectId],
+        queryKey: ['connections', projectId],
       });
       void queryClient.invalidateQueries({
         queryKey: qk.project.connectors(projectId),
@@ -193,28 +193,28 @@ export function ConnectorConnectionGateDialog() {
     const run = retry;
     closeConnectorGate();
     run?.();
-  }, [closeConnectorGate, connectedIds, connectorProfiles, isOpen, projectId, queryClient, retry]);
+  }, [closeConnectorGate, connectedIds, connectorConnections, isOpen, projectId, queryClient, retry]);
 
-  const activeProfile =
+  const activeConnection =
     pendingId === null
       ? null
-      : (connectorProfiles.find((profile) => profile.id === pendingId) ?? null);
+      : (connectorConnections.find((connection) => connection.id === pendingId) ?? null);
 
   return (
     <Modal open={isOpen} onOpenChange={(open) => !open && closeConnectorGate()}>
       <ModalContent className="lg:max-w-lg">
-        <ConnectorAuthorizationGateContent
-          profiles={connectorProfiles}
+        <ConnectorConnectionGateContent
+          connections={connectorConnections}
           connectedIds={connectedIds}
           pendingId={pendingId}
-          canManageProjectAuthorizations={canManageProjectAuthorizations}
-          onConnect={(profile) => setPendingId(profile.id)}
+          canManageProjectConnections={canManageProjectConnections}
+          onConnect={(connection) => setPendingId(connection.id)}
           onCancel={closeConnectorGate}
         />
-        {activeProfile && projectId ? (
-          <ConnectorAuthorizationAction
+        {activeConnection && projectId ? (
+          <ConnectorConnectionAction
             projectId={projectId}
-            profile={activeProfile}
+            connection={activeConnection}
             active
             onPending={setPendingId}
             onConnected={handleConnected}
