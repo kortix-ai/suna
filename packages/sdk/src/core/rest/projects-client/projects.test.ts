@@ -1,15 +1,18 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
   type KortixProject,
   type ProjectInput,
+  type ProvisionPhase,
   type ProvisionProjectInput,
+  type ProvisionStreamEvent,
   createProjectRepo,
   getProject,
   getProjectDetail,
   provisionProject,
+  provisionProjectStream,
   provisionProjectWithToken,
   updateProject,
 } from './projects';
@@ -527,4 +530,175 @@ test('a project response with a null icon_glyph reaches the caller as null', asy
   const project = await updateProject('proj-1', { icon_glyph: null });
 
   expect(project.icon_glyph).toBeNull();
+});
+
+// ── B-default-branch: `default_branch` on `ProvisionProjectInput` ───────────
+//
+// Carried Minor: apps/web sends `default_branch` on provision and the server
+// (apps/api/src/projects/routes/r1.ts:546) reads it, but the SDK's
+// `ProvisionProjectInput` never declared it — forcing a double-cast at the
+// web call site. Additive only: a new optional field, no existing member
+// touched.
+
+test('ProvisionProjectInput accepts an optional default_branch', () => {
+  const withBranch: ProvisionProjectInput = {
+    name: 'My First Project',
+    default_branch: 'develop',
+  };
+  const without: ProvisionProjectInput = { name: 'My First Project' };
+
+  expect(withBranch.default_branch).toBe('develop');
+  expect('default_branch' in without).toBe(false);
+});
+
+test('provisionProject sends default_branch on the wire', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await provisionProject({ account_id: 'acc-1', name: 'x', default_branch: 'develop' });
+
+  expect(sentBody).toMatchObject({ default_branch: 'develop' });
+});
+
+// ── provisionProjectStream ───────────────────────────────────────────────────
+//
+// POST /projects/provision-stream reports the same create as provisionProject,
+// but as a series of data-only SSE frames (`data: {"type":…}\n\n`, no `event:`
+// line — see apps/api/src/projects/routes/r1.ts). Frame parsing is line-by-line
+// on purpose: SSE allows `: comment` lines and, in principle, an `event:` line
+// ahead of `data:`; a parser that hard-fails on any frame that isn't EXACTLY
+// `data: <json>` breaks on the first spec-legal frame a server adds.
+
+/** A `fetch` that returns `body` as a single streamed chunk. */
+function stubStreamingFetch(body: string) {
+  return async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+}
+
+describe('provisionProjectStream', () => {
+  test('is exported', () => {
+    expect(typeof provisionProjectStream).toBe('function');
+  });
+
+  test('reports each phase in order and resolves with the project', async () => {
+    const seen: string[] = [];
+    const body = [
+      'data: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"phase","phase":"creating_repository"}\n\n',
+      'data: {"type":"phase","phase":"registering"}\n\n',
+      'data: {"type":"phase","phase":"seeding"}\n\n',
+      'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n',
+    ].join('');
+
+    const project = await provisionProjectStream(
+      { name: 'suna-web' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      { fetch: stubStreamingFetch(body) },
+    );
+
+    expect(seen).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  test('rejects with the server error when the stream ends in an error event', async () => {
+    const body = 'data: {"type":"error","error":"Owner or admin role required"}\n\n';
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch(body) }),
+    ).rejects.toThrow('Owner or admin role required');
+  });
+
+  test('rejects when the stream closes with no terminal event', async () => {
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch('') }),
+    ).rejects.toThrow();
+  });
+
+  // Not in the brief's draft, added for robustness: the parser must be
+  // defensive to frames that aren't a bare `data: <json>` line — an SSE
+  // comment line (`: …`) and a leading `event:` line are both spec-legal and
+  // must be skipped rather than treated as a parse failure.
+  test('skips SSE comment and event lines instead of failing on them', async () => {
+    const body = [
+      ': keep-alive\n\n',
+      'event: phase\ndata: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n',
+    ].join('');
+    const seen: string[] = [];
+
+    const project = await provisionProjectStream(
+      { name: 'suna-web' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      { fetch: stubStreamingFetch(body) },
+    );
+
+    expect(seen).toEqual(['validating']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  // Guards the pre-stream denial path documented in
+  // apps/api/src/projects/routes/r1.ts: an unauthorized caller gets a plain
+  // JSON 403, never a 200 SSE stream carrying an error frame. The client must
+  // not silently hang or resolve undefined when the response never opens a
+  // stream body at all.
+  test('rejects when the initial response is not ok and carries no stream', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'Owner or admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
+    ).rejects.toThrow('Owner or admin role required');
+  });
+
+  test('the phase union matches the API contract exactly', () => {
+    const phases: ProvisionPhase[] = [
+      'validating',
+      'creating_repository',
+      'registering',
+      'seeding',
+    ];
+    // Compile-time: any added or renamed member breaks this assignment.
+    const exhaustive: Record<ProvisionPhase, true> = {
+      validating: true,
+      creating_repository: true,
+      registering: true,
+      seeding: true,
+    };
+    expect(Object.keys(exhaustive).sort()).toEqual([...phases].sort());
+  });
+
+  test('ProvisionStreamEvent discriminates on type', () => {
+    const phase: ProvisionStreamEvent = { type: 'phase', phase: 'validating' };
+    const done: ProvisionStreamEvent = {
+      type: 'done',
+      project: { project_id: 'p1' } as KortixProject,
+    };
+    const error: ProvisionStreamEvent = { type: 'error', error: 'boom', code: 'x' };
+
+    expect(phase.type).toBe('phase');
+    expect(done.type).toBe('done');
+    expect(error.type).toBe('error');
+  });
 });

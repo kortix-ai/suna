@@ -31,6 +31,20 @@ export interface ApiClientOptions {
   showErrors?: boolean;
   errorContext?: ErrorContext;
   timeout?: number;
+  /**
+   * Override for the `fetch` implementation `backendApi.postStream` issues
+   * the request with. Exists as an explicit injection point — not a global
+   * (`globalThis.fetch = …`) — so a test (or a host with an unusual runtime)
+   * can hand in a stub `Response` with a real streamed `ReadableStream` body
+   * without touching the network. Ignored by `get`/`post`/`put`/`patch`/
+   * `delete`/`upload`, which all go through `makeRequest` and the ambient
+   * `fetch`. Defaults to the ambient `fetch`.
+   *
+   * Deliberately narrower than `typeof fetch` (no `preconnect` static) so a
+   * plain `async (input, init?) => new Response(...)` stub satisfies it
+   * without also having to fake Bun's non-standard `fetch.preconnect`.
+   */
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
 export interface ApiResponse<T = any> {
@@ -487,6 +501,55 @@ export const supabaseClient = {
   },
 };
 
+/**
+ * Streaming POST — bypasses `makeRequest`'s single-shot body consumption
+ * (`.json()`/`.text()`/`.blob()`, which can only run once) and hands back
+ * the raw `Response` so a caller can read `response.body` incrementally as
+ * Server-Sent-Event frames arrive. No idempotent-read retry (POST is not
+ * retryable), no automatic body parsing.
+ *
+ * Auth mirrors `makeRequest`: same bearer token, client-source header, and
+ * admin-bypass header. Unlike `makeRequest`, a missing token does not
+ * short-circuit before the network call — the caller either gets a stream to
+ * read or the server's own 401, not a synthetic client-side one, because this
+ * is the one path where "no token yet" and "an actually-unauthorized create"
+ * both have to reach the caller as the SAME kind of terminal failure (a
+ * rejected promise), not silently different ones.
+ *
+ * `timeout` bounds only the initial connect/response-headers exchange (as
+ * `fetch()`'s promise settles), not how long the stream stays open —
+ * provisioning can legitimately take longer than one request timeout while
+ * it reports progress frames.
+ */
+async function postStream(
+  endpoint: string,
+  data: unknown,
+  options: ApiClientOptions = {},
+): Promise<Response> {
+  const { timeout = 30000, fetch: fetchImpl = fetch } = options;
+  const token = await getSupabaseAccessTokenWithRetry();
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const clientSource = normalizeClientSource(platformConfig().clientSource);
+  if (clientSource) headers['X-Kortix-Client'] = clientSource;
+  if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetchImpl(`${getApiUrl()}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+      signal: controller.signal,
+      credentials: 'omit',
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export const backendApi = {
   get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
@@ -540,4 +603,6 @@ export const backendApi = {
       headers: uploadHeaders,
     });
   },
+
+  postStream,
 };

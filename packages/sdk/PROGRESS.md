@@ -6516,4 +6516,75 @@ composes are tested directly.
 
 **Status:** COMPLETE.
 
+---
+
+### 2026-08-07 — session `workspace-switcher` Task 18: `provisionProjectStream`
+
+No SDK **Now** task claimed (`Now` tracks the unrelated OpenCode ACP canary
+plan). Task 18 of `.superpowers/sdd/2026-08-06-workspace-switcher/` — expose
+`POST /projects/provision-stream` (built server-side in an earlier task of the
+same plan) through the SDK, so `apps/web`'s create-project flow can show phase
+progress instead of a single opaque wait.
+
+Added:
+
+- `provisionProjectStream(input, onEvent, options?)` in
+  `core/rest/projects-client/projects.ts` — POSTs to `/projects/provision-stream`,
+  parses the data-only SSE body **line by line** (not `frame.startsWith('data: ')`
+  on the whole frame), calls `onEvent` per phase/done/error frame, and resolves
+  with the project on `done`. Rejects on a terminal `error` frame, on a pre-stream
+  non-2xx response (the route's "Owner or admin role required" 403 denial, which
+  arrives as plain JSON before any stream opens), and on a stream that closes
+  with no terminal frame at all — the last case matters because resolving with
+  `undefined` would route a caller to `/projects/undefined`.
+- `ProvisionPhase` and `ProvisionStreamEvent` — the phase union is pinned by a
+  compile-time exhaustiveness test against the literal 4-member list, so a
+  rename on either side of the two independent declarations (this one and
+  `PROVISION_PHASES` in `apps/api/src/projects/provision-core.ts`) fails loudly
+  instead of the UI silently stopping mid-progress.
+- `ApiClientOptions.fetch` — an explicit `fetch` injection point (narrower than
+  `typeof fetch`, no `preconnect`, so a plain stub function satisfies it) and
+  `backendApi.postStream`, a new POST variant that returns the raw `Response`
+  instead of consuming its body, so a caller can read `response.body`
+  incrementally. Chosen over `globalThis.fetch = mock(...)` (the rest of this
+  file's convention) because the task required a real injection seam, not just
+  a way to make this one test pass.
+- `default_branch?: string` on `ProvisionProjectInput` (carried-Minor cleanup):
+  `apps/web` was sending it and the server was reading it
+  (`apps/api/src/projects/routes/r1.ts:546`) with no field to type it, forcing
+  a `payload as unknown as ProvisionProjectInput` double-cast at the web call
+  site. Additive only — no existing field touched.
+
+Doc comment states the streaming target matrix and says plainly that **React
+Native is not supported** (RN's `fetch` has no `response.body`; Hermes has no
+`TextDecoderStream`) — matches this file's existing streaming guidance.
+
+RED (watched fail, for the right reason):
+
+```
+SyntaxError: Export named 'provisionProjectStream' not found in module
+'.../packages/sdk/src/core/rest/projects-client/projects.ts'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1579 pass`, `2 skip`, `0 fail`,
+  `6381 expect()` calls across `122` files (baseline going in was `1569`/`122`
+  — the 10-test delta is exactly the tests this task added).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0` — tarball packed,
+  installed into a throwaway project, imported successfully.
+
+Public surface changed additively only, verified by reading the diff before
+re-recording: `provisionProjectStream`, `ProvisionPhase`, `ProvisionStreamEvent`
+added to both the root and `projects-client` entries in both
+`public-surface.snapshot.json` (runtime) and `public-type-surface.snapshot.json`
+(type-level). Nothing removed, nothing renamed. `default_branch` is a new field
+on an existing interface, so it does not appear in either name-list snapshot.
+`package.json`'s `version` was not touched.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 **SDK package shippable to production: YES.**
