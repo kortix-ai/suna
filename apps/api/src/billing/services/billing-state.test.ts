@@ -7,6 +7,7 @@ import {
   hasLiveSubscription,
   hasPayingSubscription,
   hasPlan,
+  isPayingSubscriptionStatus,
   resolveBillingState,
   subscriptionBypassesWalletFloor,
 } from './billing-state';
@@ -283,6 +284,40 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
   test('hasLiveSubscription stays a REPORTING predicate and still counts past_due as live', () => {
     expect(hasLiveSubscription(perSeat('past_due', 0))).toBe(true);
     expect(hasPayingSubscription(perSeat('past_due', 0))).toBe(false);
+  });
+});
+
+describe('isPayingSubscriptionStatus — the webhook layer activation gate', () => {
+  test('only active and trialing are paying', () => {
+    expect(isPayingSubscriptionStatus('active')).toBe(true);
+    expect(isPayingSubscriptionStatus('trialing')).toBe(true);
+  });
+
+  test('a never-paid subscription is not paying — the 85-account/$840 signup farm', () => {
+    expect(isPayingSubscriptionStatus('incomplete')).toBe(false);
+    expect(isPayingSubscriptionStatus('incomplete_expired')).toBe(false);
+  });
+
+  test('a lapsed or terminated subscription is not paying', () => {
+    expect(isPayingSubscriptionStatus('past_due')).toBe(false);
+    expect(isPayingSubscriptionStatus('unpaid')).toBe(false);
+    expect(isPayingSubscriptionStatus('canceled')).toBe(false);
+    expect(isPayingSubscriptionStatus('paused')).toBe(false);
+  });
+
+  test('an absent or unknown status fails CLOSED', () => {
+    expect(isPayingSubscriptionStatus(null)).toBe(false);
+    expect(isPayingSubscriptionStatus(undefined)).toBe(false);
+    expect(isPayingSubscriptionStatus('')).toBe(false);
+    expect(isPayingSubscriptionStatus('some_future_stripe_status')).toBe(false);
+  });
+
+  test('agrees with hasPayingSubscription for every status', () => {
+    for (const status of ['active', 'trialing', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid', 'canceled']) {
+      expect(isPayingSubscriptionStatus(status)).toBe(
+        hasPayingSubscription(snapshot({ subscriptionId: 'sub_1', subscriptionStatus: status })),
+      );
+    }
   });
 });
 

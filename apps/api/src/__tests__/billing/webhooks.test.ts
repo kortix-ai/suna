@@ -261,6 +261,234 @@ describe('checkout.session.completed', () => {
   });
 });
 
+// ─── Payment-gated activation ────────────────────────────────────────────────
+// Regression suite for the never-paid-subscription hole: the webhook layer used
+// to activate on subscription EVENTS, so a checkout whose first invoice was
+// never paid still received the paid-tier write AND the activation credit
+// grant. Measured on production: 85 accounts on incomplete/incomplete_expired
+// subscriptions burned $840 of granted credit without paying anything.
+
+describe('activation is gated on payment', () => {
+  test('checkout.session.completed with payment_status=unpaid records the sub pointer ONLY', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({ status: 'incomplete' });
+
+    const session = createMockStripeCheckoutSession({ payment_status: 'unpaid' });
+    const event = createMockStripeEvent('checkout.session.completed', session);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // The pointer is factual bookkeeping and IS written.
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_test_123');
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('incomplete');
+    expect(upsertCreditAccountCalls[0].data.provider).toBe('stripe');
+
+    // Entitlements and money are NOT.
+    expect(upsertCreditAccountCalls[0].data.tier).toBeUndefined();
+    expect(grantCreditsCalls.length).toBe(0);
+    expect(upsertCustomerCalls.length).toBe(0);
+  });
+
+  test('invoice.paid(subscription_create) on an active sub performs the full activation', async () => {
+    const invoice = createMockStripeInvoice({ billing_reason: 'subscription_create' });
+    const event = createMockStripeEvent('invoice.paid', invoice);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].accountId).toBe('acc_test_123');
+    expect(upsertCreditAccountCalls[0].data.tier).toBe('tier_6_50');
+    expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_test_123');
+
+    const tierGrant = grantCreditsCalls.find((c: any) => c[2] === 'tier_grant');
+    expect(tierGrant).toBeDefined();
+    expect(tierGrant[1]).toBe(50);
+    expect(tierGrant[5]).toBe('subscription_activation:sub_test_123');
+
+    // Customer is stitched from the subscription's customer, with no email.
+    expect(upsertCustomerCalls.length).toBe(1);
+    expect(upsertCustomerCalls[0].id).toBe('cus_test_123');
+  });
+
+  test('invoice.paid(subscription_create) is skipped when the sub is not in a paying status', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({ status: 'incomplete' });
+
+    const invoice = createMockStripeInvoice({ billing_reason: 'subscription_create' });
+    const event = createMockStripeEvent('invoice.paid', invoice);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(upsertCreditAccountCalls.length).toBe(0);
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('invoice.paid(subscription_create) after a paid checkout does NOT grant twice', async () => {
+    // Both paths call grantCredits with the SAME idempotency key, so the credits
+    // ledger collapses them. Model that here: the stub grants once per key and
+    // records the effective grants.
+    const grantedKeys = new Set<string>();
+    const effectiveGrants: any[] = [];
+    mockRegistry.grantCredits = async (...args: any[]) => {
+      grantCreditsCalls.push(args);
+      const key = args[5];
+      if (key && grantedKeys.has(key)) return;
+      if (key) grantedKeys.add(key);
+      effectiveGrants.push(args);
+    };
+
+    const checkout = createMockStripeCheckoutSession();
+    const checkoutEvent = createMockStripeEvent('checkout.session.completed', checkout);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => checkoutEvent;
+    await processStripeWebhook(JSON.stringify(checkoutEvent), 'sig');
+
+    const invoice = createMockStripeInvoice({ billing_reason: 'subscription_create' });
+    const invoiceEvent = createMockStripeEvent('invoice.paid', invoice);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => invoiceEvent;
+    await processStripeWebhook(JSON.stringify(invoiceEvent), 'sig');
+
+    expect(grantCreditsCalls.length).toBe(2);
+    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_test_123');
+    expect(grantCreditsCalls[1][5]).toBe(grantCreditsCalls[0][5]);
+    expect(effectiveGrants.length).toBe(1);
+    expect(effectiveGrants[0][1]).toBe(50);
+  });
+
+  test('customer.subscription.created with status=incomplete writes no tier and no recovery credits', async () => {
+    // An account with no sub pointer on a free tier is exactly the shape that
+    // used to earn recovery credits from a subscription that never paid.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null, balance: '0' });
+
+    const sub = createMockStripeSubscription({ status: 'incomplete' });
+    const event = createMockStripeEvent('customer.subscription.created', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('incomplete');
+    expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('a per-seat sub with status=incomplete writes no seat entitlements', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ tier: 'free', billingModel: null, seatCount: 0, stripeSubscriptionId: null });
+
+    const sub = createMockStripeSubscription({
+      id: 'sub_seat_incomplete',
+      status: 'incomplete',
+      metadata: { account_id: 'acc_test_123', tier_key: 'per_seat', billing_model: 'per_seat' },
+      items: { data: [{ id: 'si_seat_1', quantity: 5, price: { id: 'price_seat' } }] },
+    });
+    const event = createMockStripeEvent('customer.subscription.created', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
+    expect(updateCreditAccountCalls[0].data.billingModel).toBeUndefined();
+    expect(updateCreditAccountCalls[0].data.seatCount).toBeUndefined();
+    expect(grantCreditsCalls.filter((c: any) => c[2] === 'seat_grant').length).toBe(0);
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+  });
+});
+
+describe('incomplete_expired revokes a never-paid tier', () => {
+  test('resets the account to free when it still holds the tier this sub granted', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'tier_6_50' });
+
+    const sub = createMockStripeSubscription({ id: 'sub_test_123', status: 'incomplete_expired' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.tier).toBe('free');
+    expect(updateCreditAccountCalls[0].data.stripeSubscriptionStatus).toBe('incomplete_expired');
+  });
+
+  test('a per-seat account is reset to free and off the per-seat billing model', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_seat_expired',
+        tier: 'per_seat',
+        billingModel: 'per_seat',
+        seatCount: 5,
+      });
+
+    const sub = createMockStripeSubscription({
+      id: 'sub_seat_expired',
+      status: 'incomplete_expired',
+      metadata: { account_id: 'acc_test_123', billing_model: 'per_seat' },
+      items: { data: [{ id: 'si_seat_1', quantity: 5, price: { id: 'price_seat' } }] },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data.tier).toBe('free');
+    expect(updateCreditAccountCalls[0].data.billingModel).toBe('legacy');
+  });
+
+  test('an enterprise-entitled account is NEVER reset', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        stripeSubscriptionId: 'sub_test_123',
+        tier: 'tier_6_50',
+        enterpriseEntitled: true,
+      });
+
+    const sub = createMockStripeSubscription({ id: 'sub_test_123', status: 'incomplete_expired' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
+  });
+
+  test('does not touch a tier this subscription did not grant', async () => {
+    // The account moved on to another plan; an old sub expiring unpaid must not
+    // strip the tier some other subscription paid for.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_test_123', tier: 'tier_2_20' });
+
+    const sub = createMockStripeSubscription({ id: 'sub_test_123', status: 'incomplete_expired' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    expect(updateCreditAccountCalls[0].data.tier).toBeUndefined();
+  });
+
+  test('does not touch an account that points at a different subscription', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: 'sub_live_other', tier: 'tier_6_50' });
+
+    const sub = createMockStripeSubscription({ id: 'sub_expired', status: 'incomplete_expired' });
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+
+    await processStripeWebhook(JSON.stringify(event), 'sig');
+
+    // Stale-sub guard bails before any write.
+    expect(updateCreditAccountCalls.length).toBe(0);
+  });
+});
+
 describe('subscription changes', () => {
   test('updates tier, status, billing cycle anchor', async () => {
     const sub = createMockStripeSubscription();
