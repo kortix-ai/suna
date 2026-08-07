@@ -5,7 +5,7 @@ import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
-import type { ProjectEnvStore } from '../project-env'
+import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_API_KEY',
@@ -35,6 +35,7 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // is really running. Pushed with the config; allowlisted so the two cannot
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
+  'KORTIX_SECRET_CAPABILITIES',
 ])
 
 function bearerToken(header: string | undefined): string | null {
@@ -167,6 +168,10 @@ export function createEnvRouter(
           env: body.env as Record<string, unknown>,
           names: body.names,
         })
+        // PTYs and other daemon children inherit process.env directly. Keep it
+        // aligned with the authoritative store so a new child cannot inherit a
+        // revoked boot secret before it sources agent-env.sh.
+        reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
         const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed

@@ -279,4 +279,4 @@ describe('effectiveTierForLimits', () => {
   test('a null tier defaults to free rather than throwing', () => {
     expect(effectiveTierForLimits(null, null)).toBe('free');
   });
-})
+});

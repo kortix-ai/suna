@@ -1,0 +1,38 @@
+---
+title: Apps
+description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable Kortix URLs.
+---
+
+Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
+
+```ts
+const apps = kortix.project(projectId).apps;
+const app = await apps.create({ slug: 'docs', name: 'Docs' });
+const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
+const deployment = await apps.deployments.create(app.app_id, {
+  artifact_id: artifact.artifact_id,
+  source: { kind: 'static', spa: true },
+});
+console.log(app.url, deployment.status);
+```
+
+For OCI images, register the immutable image reference and declare the process command and public target port:
+
+```ts
+const registered = await apps.artifacts.register({
+  kind: 'oci_image',
+  image: 'ghcr.io/acme/service:2026-08-07',
+});
+await apps.deployments.create(app.app_id, {
+  artifact_id: registered.artifact.artifact_id,
+  source: {
+    kind: 'oci_image',
+    image: 'ghcr.io/acme/service:2026-08-07',
+    command: ['node', 'server.js'],
+    port: 3000,
+    readiness_path: '/health',
+  },
+});
+```
+
+Use `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle. Hosting provider selection remains a server policy unless an operator explicitly supplies the optional deployment preference.

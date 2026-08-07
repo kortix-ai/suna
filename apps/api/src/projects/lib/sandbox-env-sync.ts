@@ -20,6 +20,7 @@ import {
   resolveCompiledAgentConfigForSession,
 } from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 
 /**
  * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
@@ -46,6 +47,7 @@ export interface SandboxEnvSnapshot {
   names: string[];
   revision: string;
   scope: 'inherit' | 'restricted' | 'none';
+  capabilitiesJson: string;
 }
 
 export interface ProjectSecretPropagationTarget {
@@ -75,7 +77,11 @@ async function resolveOwnerRawEnv(
   projectId: string,
   sessionId: string | null,
   requestedAgent?: string | null,
-): Promise<{ env: Record<string, string>; scope: SandboxEnvSnapshot['scope'] } | null> {
+): Promise<{
+  env: Record<string, string>;
+  capabilitiesJson: string;
+  scope: SandboxEnvSnapshot['scope'];
+} | null> {
   if (!sessionId) return null;
   const [row] = await db
     .select({
@@ -127,18 +133,17 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
-  const env = (
-    await listProjectSecretsSnapshotForUser(
-      projectId,
-      row.createdBy,
-      grantEnvForSession,
-      // Same session the boot path built for — boot and hot push must agree on
-      // delivery or a prompt would re-push a value boot deliberately withheld.
-      sessionId,
-    )
-  ).env;
+  const snapshot = await listProjectSecretsSnapshotForUser(
+    projectId,
+    row.createdBy,
+    grantEnvForSession,
+    // Same session the boot path built for — boot and hot push must agree on
+    // delivery or a prompt would re-push a value boot deliberately withheld.
+    sessionId,
+  );
   return {
-    env,
+    env: snapshot.env,
+    capabilitiesJson: snapshot.capabilitiesJson,
     scope:
       row.secretsAllowlist == null
         ? 'inherit'
@@ -156,7 +161,13 @@ export async function resolveSandboxEnvSnapshot(
   const resolved = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
   if (!resolved) return null;
   const { env, names } = sanitizeSandboxEnv(resolved.env);
-  return { env, names, revision: projectSecretsRevision(env), scope: resolved.scope };
+  return {
+    env,
+    names,
+    revision: projectSecretsRevision(env),
+    capabilitiesJson: resolved.capabilitiesJson,
+    scope: resolved.scope,
+  };
 }
 
 function isSecureOrPrivateTarget(rawUrl: string): boolean {
@@ -219,7 +230,10 @@ async function postEnvToDaemon(args: {
       names: args.snapshot.names,
       revision: args.snapshot.revision,
       refreshModels: args.refreshModels ?? false,
-      ...(args.opencodeEnv ? { opencodeEnv: args.opencodeEnv } : {}),
+      opencodeEnv: {
+        ...(args.opencodeEnv ?? {}),
+        [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
+      },
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -567,6 +581,7 @@ function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
     names: [],
     revision: `${reason}-${Date.now()}`,
     scope: 'inherit',
+    capabilitiesJson: '{"version":1,"capabilities":[]}',
   };
 }
 

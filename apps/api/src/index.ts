@@ -89,10 +89,17 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import { handleAppPublicRequest, resolveAppHost } from './apps/public-proxy';
+import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
+import {
+  startAppDeploymentWorker,
+  stopAppDeploymentWorker,
+} from './apps/deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
@@ -1272,6 +1279,8 @@ async function startSingletonWorkers() {
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
   startProviderTransitionWorker();
+  startAppDeploymentWorker();
+  startAppIdleReaper();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1285,6 +1294,8 @@ async function stopSingletonWorkers() {
   stopProjectMaintenance();
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
+  stopAppDeploymentWorker();
+  stopAppIdleReaper();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }
@@ -1421,6 +1432,26 @@ export default {
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
     const host = req.headers.get('host') || '';
+    if (resolveAppHost(url.hostname)) {
+      server.timeout(req, 0);
+      if (isWsUpgrade) {
+        const prepared = await prepareAppWsUpgrade(req, url);
+        if (!prepared.ok) {
+          return new Response(JSON.stringify({ error: prepared.message }), {
+            status: prepared.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const upgraded = server.upgrade(req, { data: prepared.data });
+        if (upgraded) return undefined;
+        return new Response(JSON.stringify({ error: 'App WebSocket upgrade failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const appResponse = await handleAppPublicRequest(req);
+      if (appResponse) return appResponse;
+    }
     if (parsePreviewSubdomain(host)) {
       server.timeout(req, 0);
       // WS-on-subdomain isn't wired yet (agent server's port-proxy is
@@ -1529,6 +1560,10 @@ export default {
         previewWsHandlers.open(ws as any);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.open(ws as any);
+        return;
+      }
       // No other WS upgrades are accepted.
       try {
         ws.close(1011, 'unsupported websocket upgrade');
@@ -1547,6 +1582,10 @@ export default {
         previewWsHandlers.message(ws as any, message);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.message(ws as any, message);
+        return;
+      }
     },
 
     close(ws: { data: any }) {
@@ -1556,6 +1595,10 @@ export default {
       }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.close(ws as any);
+        return;
+      }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.close(ws as any);
         return;
       }
     },

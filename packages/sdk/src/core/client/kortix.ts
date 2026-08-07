@@ -351,6 +351,36 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
 
+      /** Provider-neutral serverless Apps owned by this project. */
+      apps: {
+        list: () => P.listApps(projectId),
+        create: (input: Parameters<typeof P.createApp>[1]) => P.createApp(projectId, input),
+        get: (appId: string) => P.getApp(projectId, appId),
+        update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
+        remove: (appId: string) => P.deleteApp(projectId, appId),
+        artifacts: {
+          register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
+            P.registerAppArtifact(projectId, input),
+          uploadArchive: (...a: DropFirst<Parameters<typeof P.uploadAppArtifactArchive>>) =>
+            P.uploadAppArtifactArchive(projectId, ...a),
+          finalize: (...a: DropFirst<Parameters<typeof P.finalizeAppArtifact>>) =>
+            P.finalizeAppArtifact(projectId, ...a),
+        },
+        deployments: {
+          create: (...a: DropFirst<Parameters<typeof P.createAppDeployment>>) =>
+            P.createAppDeployment(projectId, ...a),
+          list: (appId: string) => P.listAppDeployments(projectId, appId),
+          get: (...a: DropFirst<Parameters<typeof P.getAppDeployment>>) =>
+            P.getAppDeployment(projectId, ...a),
+          logs: (...a: DropFirst<Parameters<typeof P.getAppDeploymentLogs>>) =>
+            P.getAppDeploymentLogs(projectId, ...a),
+        },
+        start: (appId: string) => P.startApp(projectId, appId),
+        stop: (appId: string) => P.stopApp(projectId, appId),
+        rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
+          P.rollbackApp(projectId, ...a),
+      },
+
       /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
       tokens: {
         list: () => P.listProjectCliTokens(projectId),

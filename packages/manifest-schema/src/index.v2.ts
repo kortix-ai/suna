@@ -163,6 +163,34 @@ export interface ManifestV2 {
   sandbox?: Record<string, unknown>;
   triggers?: Array<Record<string, unknown>>;
   connectors?: Array<Record<string, unknown>>;
+  apps?: Record<string, AppBlockV2>;
+}
+
+export interface AppResourcesV2 {
+  cpu?: number;
+  memory_gb?: number;
+  disk_gb?: number;
+}
+
+/** Local deployment defaults. The server remains the App control plane. */
+export interface AppBlockV2 {
+  path?: string;
+  type?: 'static' | 'bundle' | 'dockerfile' | 'oci_image';
+  image?: string;
+  dockerfile?: string;
+  command?: string[];
+  port?: number;
+  root?: string;
+  output_dir?: string;
+  install_command?: string;
+  build_command?: string;
+  spa?: boolean;
+  readiness_path?: string;
+  idle_timeout_seconds?: number;
+  monthly_budget_usd?: number;
+  resources?: AppResourcesV2;
+  env?: Record<string, string>;
+  secrets?: Record<string, string>;
 }
 
 /**

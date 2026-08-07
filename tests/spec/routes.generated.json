@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 532,
+  "count": 546,
   "routes": [
     {
       "method": "GET",
@@ -1125,6 +1125,62 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/approvals/needs-input"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:appId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
     },
     {
       "method": "GET",

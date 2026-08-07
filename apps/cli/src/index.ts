@@ -3,6 +3,7 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
+import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -216,6 +217,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'sandboxes',
             args: '<subcommand>',
             blurb: 'Manage sandbox images: templates, builds, health',
+          },
+          {
+            name: 'apps',
+            args: '<subcommand>',
+            blurb: 'Deploy and operate serverless Apps with stable Kortix URLs',
           },
           {
             name: 'marketplace',
@@ -475,6 +481,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'gateway') {
     return runGateway(argv.slice(1));
   }
+  if (argv[0] === 'apps') {
+    return runApps(argv.slice(1));
+  }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));
   }
@@ -578,6 +587,7 @@ const KNOWN_COMMANDS = [
   'providers',
   'env',
   'gateway',
+  'apps',
   'channels',
   'sandboxes',
   'marketplace',

@@ -151,6 +151,7 @@ describe('requiresRespawn', () => {
     expect([...RESPAWN_REQUIRED_ENV_NAMES].sort()).toEqual([
       'CODEX_AUTH_JSON',
       'KORTIX_OPENCODE_DENY_ENV',
+      'KORTIX_SECRET_CAPABILITIES',
       'OPENCODE_AUTH_JSON',
     ])
   })

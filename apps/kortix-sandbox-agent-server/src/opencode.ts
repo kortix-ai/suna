@@ -12,6 +12,10 @@ import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import {
+  SECRET_CAPABILITIES_ENV_NAME,
+  writeSecretCapabilitiesInstruction,
+} from './secret-capabilities'
 
 const READY_POLL_MS = 100
 /** How long the post-respawn turn finalize waits for opencode to answer again.
@@ -55,6 +59,7 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
   OPENCODE_AUTH_JSON_SECRET,
   'KORTIX_OPENCODE_DENY_ENV',
+  SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
 /** Does this env delta need a full respawn rather than a dispose? */
@@ -113,7 +118,10 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(
   env: NodeJS.ProcessEnv,
-  opts: { injectedSkillsDir?: string | null } = {},
+  opts: {
+    injectedSkillsDir?: string | null
+    secretCapabilitiesInstructionPath?: string | null
+  } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_CLI_TOKEN
   const apiUrl = env.KORTIX_API_URL
@@ -160,7 +168,18 @@ export async function buildOpencodeConfigContent(
   // box with no project config (the platform meta sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
-  if (!hasConnectorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig && !injectedSkillsDir)
+  const secretCapabilitiesInstructionPath =
+    opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
+      ? opts.secretCapabilitiesInstructionPath
+      : null
+  if (
+    !hasConnectorMcp &&
+    !hasLlmGateway &&
+    !isSlackSession &&
+    !hasCompiledAgentConfig &&
+    !injectedSkillsDir &&
+    !secretCapabilitiesInstructionPath
+  )
     return undefined
 
   let base: Record<string, unknown> = {}
@@ -184,6 +203,15 @@ export async function buildOpencodeConfigContent(
     }
   }
   const out: Record<string, unknown> = { ...base }
+
+  if (secretCapabilitiesInstructionPath) {
+    const instructions = Array.isArray(out.instructions)
+      ? out.instructions.filter((item): item is string => typeof item === 'string')
+      : []
+    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
+      ? instructions
+      : [...instructions, secretCapabilitiesInstructionPath]
+  }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
   // config already declares; never clobber.
@@ -534,9 +562,16 @@ const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-openc
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
-  opts: { configPath?: string; injectedSkillsDir?: string | null } = {},
+  opts: {
+    configPath?: string
+    injectedSkillsDir?: string | null
+    secretCapabilitiesInstructionPath?: string | null
+  } = {},
 ): Promise<string | null> {
-  const content = await buildOpencodeConfigContent(env, { injectedSkillsDir: opts.injectedSkillsDir })
+  const content = await buildOpencodeConfigContent(env, {
+    injectedSkillsDir: opts.injectedSkillsDir,
+    secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+  })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
   mkdirSync(dirname(configPath), { recursive: true })
@@ -1075,8 +1110,17 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
+    let secretCapabilitiesInstructionPath: string | null = null
+    try {
+      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     const configPath = await writeKortixOpencodeConfig(baseEnv, {
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      secretCapabilitiesInstructionPath,
     })
     if (configPath) {
       env.OPENCODE_CONFIG = configPath

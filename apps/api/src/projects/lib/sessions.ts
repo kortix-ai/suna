@@ -52,6 +52,7 @@ import {
   parseSessionSecretsAllowlist,
   secretKeyCollisionInAllowlist,
 } from '../secrets';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
@@ -376,7 +377,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // WHICH identifiers are eligible; this only picks the per-user override owner.
   const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
 
-  let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
+  let runtimeSecrets: {
+    env: Record<string, string>;
+    names: string[];
+    revision: string;
+    capabilitiesJson: string;
+  };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
@@ -435,6 +441,7 @@ export async function buildSessionSandboxEnvVars(input: {
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
+    [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
     // Runtime-delivered provider keys may reach the sandbox for user code.
     // OpenCode must not receive them because it would bypass the gateway.
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',

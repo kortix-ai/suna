@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -97,6 +97,7 @@ Load this skill when the user asks any of:
 - "How do I use or test OpenCode?"
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
+- "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
 - "How do I create an OpenCode agent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -159,6 +160,17 @@ project-scoped — it cannot enumerate other projects or hit account-level
 routes. Trying `kortix projects ls` from inside the sandbox returns 403;
 that's intentional. Use `kortix projects info` to inspect **this** project.
 
+**Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
+value-free JSON catalog for this session. Check it before asking for a
+credential. It lists only secrets allowed by both the agent grant and session
+scope. A `sandbox` entry names the environment variable that contains the
+value. An `https_broker` entry must use `kortix secrets call IDENTIFIER URL
+[options]`; Kortix adds the value server-side only after the request matches the
+stored host, method, and path policy. A `kortix_service` entry is available only
+through its named service, such as a connector or the LLM gateway. Never print
+or return a secret value or an opaque broker handle. Use `kortix secrets ls
+--json` when you need the complete delivery policy.
+
 **Getting a credential — never punt to the dashboard.** When you need an API key
 or an app connected, **mint a setup link and surface the URL in the same turn** —
 don't tell the human to "open Customize → Connectors", and don't ask them to
@@ -179,6 +191,43 @@ you're done. No manifest, no bot token, no secret-intake link. Details in the
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
 </cli>
+
+<apps>
+## Kortix Apps — deploy a website or container
+
+An **App** is a project-scoped, serverless deployment with one stable Kortix
+URL. A deployment is immutable. A failed deployment never replaces the active
+version. The control plane starts the App sandbox on the first public request,
+keeps it running while requests arrive, and stops it after the configured idle
+timeout. Manual `stop` blocks cold wake until `start` is called.
+
+Use the CLI from the source directory:
+
+```sh
+kortix apps deploy .                         # auto-detect static, bundle, or Dockerfile
+kortix apps deploy ./dist --type static
+kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
+kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
+kortix apps ls --json
+```
+
+For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`, then
+run `kortix apps deploy --manifest-app <name>`. A single declared App becomes
+the default for bare `kortix apps deploy`. The manifest stores non-secret
+environment values and maps runtime environment keys to **project secret
+identifiers**. It never stores secret values.
+
+The first release supports one public HTTP port, static sites, JavaScript
+bundles, Dockerfiles, and public OCI images. It supports HTTP streaming, SSE,
+and WebSockets. It does not support replicas, persistent volumes, UDP, private
+registries, or custom domains.
+
+**Full reference:**
+`.kortix/opencode/skills/kortix-system/references/kortix/apps.md` — workload
+selection, manifest fields, every lifecycle command, ignore rules, secrets,
+cold starts, rollback, limits, and failure handling. Load it before deploying
+or operating an App.
+</apps>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -527,6 +576,14 @@ to see the full enum.
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/apps.md">
+  Kortix Apps deployment and operations reference. Covers static, bundle,
+  Dockerfile, and OCI workloads; the v2 manifest `apps:` map; archive ignore
+  rules; environment and secret mappings; stable URLs; cold wake and idle
+  stop; lifecycle commands; rollback; resource and budget limits; and current
+  first-release boundaries. Load before deploying or operating an App.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">

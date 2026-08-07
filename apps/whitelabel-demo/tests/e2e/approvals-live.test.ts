@@ -20,6 +20,7 @@ import {
 } from '../../src/components/workbench/approvals-model';
 import { DEMO_PASSWORD, WRAPPER_KEY, wrapperEnv } from './env';
 import {
+  APP_SETUP_TIMEOUT_MS,
   type AppInstance,
   createTestKortix,
   loginUser,
@@ -188,7 +189,7 @@ describe('approvals + wrapper project access', () => {
     // `projects/{id}/…` call for an id the caller doesn't own — so nothing
     // below is reachable until this runs.
     await kortix.projects.provision({ name: 'Approvals project' });
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

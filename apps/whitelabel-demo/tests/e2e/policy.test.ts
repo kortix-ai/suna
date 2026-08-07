@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { evaluatePolicy } from '../../src/server/policy';
 import {
+  APP_SETUP_TIMEOUT_MS,
   TEST_DATA_DIR,
   type AppInstance,
   createTestKortix,
@@ -29,7 +30,7 @@ describe('wrapper-mode policy matrix', () => {
     resetUsersStore();
     mock = createMockUpstream(WRAPPER_KEY);
     app = await startApp(wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1` }));
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

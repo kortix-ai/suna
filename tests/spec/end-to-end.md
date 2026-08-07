@@ -754,3 +754,30 @@ metadata stays in the wrapper's data store. See
 `KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
 `KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
 `KAAB-7` backend idempotency context guard: same key + different `runtime_context` → **409 `IDEMPOTENCY_CONTEXT_CONFLICT`**; a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`**.
+
+---
+
+## 28. Kortix Apps
+
+Kortix Apps are project-owned serverless deployments. The API owns the stable
+hostname, immutable artifact and deployment records, provider-neutral machine
+specification, runtime lifecycle, billing attribution, and atomic active
+deployment pointer. The provider remains an implementation detail.
+
+`APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
+`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. A project writer creates a
+unique lower-case slug and machine policy; list/get return the stable public URL
+and active deployment pointer; patch updates mutable policy; delete is soft and
+removes the App from subsequent reads. Invalid slugs → 400; `NONMEMBER` → 403.
+
+`APP-2` Artifact and deployment boundaries —
+`POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
+or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
+awaiting archive. `POST …/:appId/deployments` requires a ready artifact and an
+exact source-kind match. Deployment list/detail/logs expose durable state.
+Rollback accepts only a ready deployment. Start and stop require an active
+deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
+back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
+specified by each route. The full ready-deployment, public HTTP, streaming,
+WebSocket, idle-stop, cold-wake, budget, rollback, and log path is exercised by
+`tests/e2e/scripts/apps-local-smoke.ts` against the real API and runtime.

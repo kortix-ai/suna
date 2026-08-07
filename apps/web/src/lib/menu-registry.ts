@@ -398,6 +398,17 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository project drive browser explorer',
   },
   {
+    id: 'proj-apps',
+    label: 'Apps',
+    icon: Globe,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/apps',
+    requiresProject: true,
+    keywords: 'apps deploy deployments serverless docker static hosting urls',
+  },
+  {
     id: 'proj-agents',
     label: 'Agents',
     icon: Bot,

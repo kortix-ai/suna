@@ -33,9 +33,27 @@ Claimed scope:
 The required `tdd` skill is unavailable in this session. This work will use the
 same RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+RED, GREEN, REFACTOR:
 
-**SDK package shippable to production: NOT YET.**
+- Added failing REST, facade, React-hook, and public-surface tests before the
+  corresponding SDK implementations.
+- Added the framework-free Apps transport and direct project-bound facade.
+- Added the React query hooks only after the framework-free client passed.
+- Regenerated both public-surface snapshots after reviewing the additive names.
+
+Final evidence:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`; core and examples compile.
+- `pnpm --filter @kortix/sdk test`: `1597 pass`, `0 fail`, and
+  `6549 expect()` calls across `127` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk` in Node ESM.
+- The public surface adds Apps names only. No published name was removed or
+  renamed. The SDK version remains release-managed at `0.3.0`.
+
+**Status:** COMPLETE in commit `966335ad2a`.
+
+**SDK package shippable to production: YES.**
 
 ---
 
@@ -84,6 +102,52 @@ functions, connector-authorization entity aliases, legacy binding identifiers,
 and legacy email-installation fields.
 
 **Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-07 — session `kortix-apps` claim
+
+No **Now** task claimed. This is the user-directed Kortix Apps implementation.
+
+Claimed SDK scope:
+
+- Add the framework-free Apps REST contract and public types.
+- Expose the canonical project surface at `kortix.project(projectId).apps`.
+- Support artifact upload, deployment creation, inspection, logs, rollback,
+  start, stop, and removal through the existing `getToken` seam.
+- Keep provider selection server-side and preserve every published SDK name.
+- Add the SDK documentation, executable example, and public-surface snapshots.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required final gates are `typecheck`, the complete SDK test suite, and the
+packed-install smoke test.
+
+Final security correction:
+
+- `AppDeployment.created_by` records the caller who created the immutable
+  deployment.
+- The API uses that actor for personal secret resolution, runtime ownership,
+  and compute attribution.
+- The type addition is backward-compatible and changes no public export name.
+
+RED:
+
+- `pnpm --filter @kortix/sdk typecheck`: failed with `TS2551` because
+  `AppDeployment.created_by` did not exist.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1598 pass`, `0 fail`, and `6550 expect()`
+  calls across `127` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk`.
+
+**Status:** COMPLETE in PR #6197.
 
 **SDK package shippable to production: YES.**
 

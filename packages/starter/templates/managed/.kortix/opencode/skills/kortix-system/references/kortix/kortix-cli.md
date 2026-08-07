@@ -125,10 +125,44 @@ If none resolve, the command errors with a pointer to `projects link`.
    home Kortix instance).
 3. The globally-active host.
 
+### Apps — serverless application deployments
+
+Apps have stable URLs and immutable deployment versions. Each deployment runs
+in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
+stop blocks wake.
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List the project's Apps, state, and stable URL. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Resource flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--budget`. |
+| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source. Waits for readiness by default. |
+| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
+| `kortix apps show <id-or-slug> [--json]` | Show an App and immutable deployment history. |
+| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs. Supports `--after` and `--limit`. |
+| `kortix apps start <id-or-slug>` | Permit traffic and start the active deployment now. |
+| `kortix apps stop <id-or-slug>` | Stop the active runtime and block cold wake. |
+| `kortix apps rollback <id-or-slug> <deployment-id>` | Start a ready target, move traffic atomically, then stop the previous runtime. |
+| `kortix apps delete <id-or-slug> --yes` | Delete the App and every runtime. |
+
+Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
+`--output-dir`, `--install-command`, `--build-command`, `--dockerfile`,
+`--command`, `--port`, `--readiness-path`, and `--provider`. Omit `--provider`
+for platform policy. Use `--no-wait` only when another process will poll the
+deployment.
+
+Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore`.
+They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
+`--include-node-modules` only overrides the `node_modules` default.
+
+See the `apps.md` reference for the complete manifest, runtime, secret, and
+failure contract.
+
 ### Secrets
 
-Encrypted env vars stored on the project, injected as plain env
-into every session sandbox at boot.
+Encrypted project credentials. Delivery follows each secret's policy and the
+session's agent grant. Only `sandbox` delivery exposes plaintext as an
+environment variable.
 
 | Command | Effect |
 | --- | --- |
@@ -136,6 +170,12 @@ into every session sandbox at boot.
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
 | `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `runtime` = injected into the sandbox env), `--expires <minutes>` (default 30). Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
+| `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | Send one policy-bound HTTPS request. Kortix injects the secret server-side. |
+
+`$KORTIX_SECRET_CAPABILITIES` is the session's value-free machine-readable
+catalog. It contains only granted capabilities. Use `kortix secrets ls --json`
+for the full stored policy. Brokered and service-delivered secrets are not
+plaintext environment variables.
 
 > **Asking a human for a secret.** You usually don't *have* the value, so don't
 > use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
