@@ -17,25 +17,15 @@ import {
   listAccounts,
   PROVISION_IN_FLIGHT_CODE,
   provisionProject,
+  provisionProjectStream,
   type KortixAccount,
   type KortixProject,
+  type ProvisionPhase,
   type ProvisionProjectInput,
+  type ProvisionStreamEvent,
 } from '@kortix/sdk';
 
 export type CreateStatus = 'idle' | 'creating' | 'error';
-
-/**
- * Provisioning stage streamed from the server while a create is in flight.
- *
- * Uninhabited on purpose. Task 19 switches this hook from `provisionProject`
- * to `provisionProjectStream` and defines the real stage union there — until
- * that lands, `phase` can only ever be `null`, which is exactly this task's
- * contract. Declaring the alias now (rather than typing the field bare `null`)
- * means Task 19 widens this alias — a non-breaking change — instead of adding
- * a field to `useCreateWorkspace`'s return shape, which would be a breaking
- * change for every consumer of this hook.
- */
-export type ProvisionPhase = never;
 
 /**
  * Backoff for a 409 `provision_in_flight` retry, ms — one entry per retry.
@@ -185,8 +175,8 @@ export function isRetryableError(error: unknown): boolean {
 }
 
 /**
- * The one network call `runCreateAttempt` needs, injectable so its retry
- * logic is unit-tested with a plain fake instead of
+ * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
+ * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
  * hazard for sibling test suites (see `ensure-first-project.ts`'s own
  * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
@@ -195,13 +185,55 @@ export function isRetryableError(error: unknown): boolean {
  */
 export type CreateWorkspaceClient = {
   provisionProject: (input: ProvisionProjectInput) => Promise<KortixProject>;
+  provisionProjectStream: (
+    input: ProvisionProjectInput,
+    onEvent: (event: ProvisionStreamEvent) => void,
+  ) => Promise<KortixProject>;
   wait: (ms: number) => Promise<void>;
 };
 
 const defaultClient: CreateWorkspaceClient = {
   provisionProject,
+  provisionProjectStream,
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
+
+/**
+ * Whether a provisioning failure is TRANSPORT-shaped — the stream itself
+ * never reached the server to do real work, as opposed to a real failure the
+ * server reported through a stream that worked. `runProvisionAttempt` (below)
+ * uses this, ALWAYS in combination with "zero events received", as the only
+ * signal that its fallback to the plain `provisionProject` is safe: retrying
+ * a genuine provisioning failure as a second `POST /projects/provision` risks
+ * a second upstream managed repo, so this classifier stays conservative and
+ * recognizes only the three shapes `provisionProjectStream`'s own doc comment
+ * (`packages/sdk/src/core/rest/projects-client/projects.ts`) names as
+ * "stream unavailable" failures:
+ *
+ * - **A raw network failure** — the `fetch()` call itself never got a
+ *   response. Every fetch implementation (browsers, undici/Node, Bun) throws
+ *   a `TypeError` for this, and ONLY for this; a server-returned failure
+ *   (however bad) is always a plain `Error` or `ApiError`, never a
+ *   `TypeError`. Checking the error's real TYPE, not a message string, is
+ *   what keeps this from being the fragile message-sniffing the brief for
+ *   this task explicitly warns against.
+ * - **No `response.body`** — the React Native case. `provisionProjectStream`
+ *   throws the literal message `'...(no response body)'`.
+ * - **The `/projects/provision-stream` route itself 404s** — an older server
+ *   build without it. `provisionProjectStream` throws
+ *   `` `Provision failed: HTTP ${status}` `` when the response is non-2xx and
+ *   carries no JSON `error` field; a REAL API rejection (400/403/503) always
+ *   carries one, and lands in the pre-stream-denial branch below instead.
+ *
+ * Everything else — an in-stream `error` event, a pre-stream non-2xx WITH a
+ * server message (e.g. "Owner or admin role required"), a malformed-frame
+ * parse failure — is a REAL failure and must rethrow, never fall back.
+ */
+export function isTransportFailure(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (!(error instanceof Error)) return false;
+  return error.message.includes('no response body') || /\bHTTP 404\b/.test(error.message);
+}
 
 /**
  * Runs one logical create to completion.
@@ -231,6 +263,53 @@ export async function runCreateAttempt(
   }
   // Unreachable: every iteration above either returns or throws.
   throw new Error('runCreateAttempt: retry loop exited without resolving');
+}
+
+/**
+ * One provisioning attempt, preferring the live-progress
+ * `provisionProjectStream` and falling back to the plain `runCreateAttempt`
+ * (the 409-retrying `provisionProject` above) exactly once — and only when
+ * the fallback is provably safe.
+ *
+ * The gate is **whether `onEvent` fired at all**, not the shape of the error
+ * that follows. If the stream delivered even ONE event — a phase, or even
+ * the terminal `error` event itself — it reached the server and did real
+ * work, so ANY failure after that is a genuine provisioning failure and MUST
+ * rethrow. Retrying it as a fresh `runCreateAttempt` call would be a SECOND
+ * create for the same user intent — the exact "two upstream repos" failure
+ * this function exists to prevent. Only when NOTHING was ever received AND
+ * the failure is transport-shaped (`isTransportFailure`) is it safe to
+ * conclude the stream never reached the server, and the fallback runs.
+ *
+ * The fallback reuses `payload` UNCHANGED — same `idempotency_key` the
+ * streaming attempt just sent. It is the SAME logical attempt continuing on
+ * a different transport, not a new one; a re-minted key here would be
+ * exactly the bug this function exists to prevent, just moved one layer up.
+ * Routing the fallback through `runCreateAttempt` (rather than a bare
+ * `client.provisionProject` call) also means it inherits that function's own
+ * 409 `provision_in_flight` retry, so the plain-POST path keeps its full
+ * existing resilience even when reached through the stream.
+ *
+ * `onPhase(null)` fires once, right before the fallback runs — there is no
+ * real phase information once the plain POST takes over, and freezing the UI
+ * on the last streamed phase would show progress that stopped being true.
+ */
+export async function runProvisionAttempt(
+  payload: ProvisionProjectInput,
+  onPhase: (phase: ProvisionPhase | null) => void,
+  client: CreateWorkspaceClient = defaultClient,
+): Promise<KortixProject> {
+  let eventsReceived = 0;
+  try {
+    return await client.provisionProjectStream(payload, (event) => {
+      eventsReceived += 1;
+      if (event.type === 'phase') onPhase(event.phase);
+    });
+  } catch (streamFailure) {
+    if (eventsReceived > 0 || !isTransportFailure(streamFailure)) throw streamFailure;
+    onPhase(null);
+    return runCreateAttempt(payload, client);
+  }
 }
 
 /**
@@ -328,7 +407,13 @@ export function useCreateWorkspace(): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
   status: CreateStatus;
   error: string | null;
-  /** Null until Task 19 wires the stream; see {@link ProvisionPhase}. */
+  /**
+   * The phase `POST /projects/provision-stream` last reported, or `null`
+   * before the first event and while the plain-POST fallback is running (see
+   * `runProvisionAttempt`'s `onPhase(null)`). Render it through
+   * `phaseStatuses` (`provision-phases.ts`) for the full four-row checklist,
+   * not this value alone.
+   */
   phase: ProvisionPhase | null;
   retry: () => void;
   /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
@@ -339,6 +424,7 @@ export function useCreateWorkspace(): {
   const { user } = useAuth();
   const [status, setStatus] = useState<CreateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<ProvisionPhase | null>(null);
   // The raw thrown value, not just its formatted message — `canRetry` below
   // needs to classify it with `isRetryableError`, which reads `.status`, not
   // the already-rendered string.
@@ -353,11 +439,12 @@ export function useCreateWorkspace(): {
       setLastState(state);
       setStatus('creating');
       setError(null);
+      setPhase(null);
 
       const result = await runCreate(state, creatableAccounts, user?.id, {
         attemptKeyFor,
         clearAttemptKey,
-        runCreateAttempt,
+        runCreateAttempt: (payload) => runProvisionAttempt(payload, setPhase),
         primeProjectCache: (accountId, project) => {
           queryClient.setQueryData<KortixProject[]>(['projects', accountId], (existing) => [
             project,
@@ -391,5 +478,5 @@ export function useCreateWorkspace(): {
   // create is `'creating'` or has already succeeded.
   const canRetry = status === 'error' && isRetryableError(lastError);
 
-  return { create, status, error, phase: null as ProvisionPhase | null, retry, canRetry };
+  return { create, status, error, phase, retry, canRetry };
 }

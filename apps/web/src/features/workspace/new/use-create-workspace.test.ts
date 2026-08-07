@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   buildCreatePayload,
   fingerprintOf,
+  isTransportFailure,
   messageFor,
   RETRY_DELAY_MS,
   runCreate,
   runCreateAttempt,
+  runProvisionAttempt,
   type CreateOrchestrationClient,
   type CreateWorkspaceClient,
 } from './use-create-workspace';
@@ -17,7 +19,9 @@ import {
   PROVISION_IN_FLIGHT_CODE,
   type KortixAccount,
   type KortixProject,
+  type ProvisionPhase,
   type ProvisionProjectInput,
+  type ProvisionStreamEvent,
 } from '@kortix/sdk';
 
 const OWNER_ACCOUNT: KortixAccount = { account_id: 'acct-owner', name: 'Owner Co', account_role: 'owner' };
@@ -173,6 +177,13 @@ describe('runCreateAttempt', () => {
       provisionProject: async (input) => {
         calls.push(input);
         return fakeProject('created-1');
+      },
+      // Unused by any test in THIS describe block — `runCreateAttempt` never
+      // calls it — but required to satisfy `CreateWorkspaceClient`. Throwing
+      // makes an accidental future call to it fail loudly instead of
+      // resolving a project no test asked for.
+      provisionProjectStream: async () => {
+        throw new Error('provisionProjectStream should not be called by runCreateAttempt');
       },
       wait: async (ms) => {
         waits.push(ms);
@@ -404,6 +415,12 @@ describe('runCreate: the full create() orchestration', () => {
             }
             return fakeProject('created-retry-mint');
           },
+          // Unused here — this test exercises `runCreateAttempt`'s 409 retry,
+          // not the streaming path — but required to satisfy
+          // `CreateWorkspaceClient`.
+          provisionProjectStream: async () => {
+            throw new Error('provisionProjectStream should not be called by runCreateAttempt');
+          },
           wait: async () => {},
         }),
       primeProjectCache: () => {},
@@ -496,5 +513,226 @@ describe('runCreate: the full create() orchestration', () => {
     );
 
     expect(sentPayloads[0]?.account_id).toBe('acct-owner');
+  });
+});
+
+/**
+ * `isTransportFailure` is the ONLY signal `runProvisionAttempt` (below) is
+ * allowed to use to decide the fallback is safe, and only in combination with
+ * "zero events received". It must recognize exactly the transport-shaped
+ * failures `provisionProjectStream`'s own doc comment
+ * (`packages/sdk/src/core/rest/projects-client/projects.ts`) names — no
+ * `response.body` (React Native), the stream route 404ing (an old server
+ * build), and a raw network failure — and MUST NOT recognize a real server
+ * rejection, even one that (like a transport failure) arrives before any
+ * `onEvent` call.
+ */
+describe('isTransportFailure', () => {
+  test('a raw network failure (fetch itself never got a response) is transport-shaped', () => {
+    // Every fetch implementation (browser, undici/Node, Bun) throws a
+    // TypeError, never a plain Error, when the request never reaches a
+    // server — this IS the discriminator, not a message-string guess.
+    expect(isTransportFailure(new TypeError('fetch failed'))).toBe(true);
+    expect(isTransportFailure(new TypeError('Failed to fetch'))).toBe(true);
+  });
+
+  test('no response.body (the React Native case) is transport-shaped', () => {
+    expect(
+      isTransportFailure(new Error('Provision stream is unavailable on this runtime (no response body)')),
+    ).toBe(true);
+  });
+
+  test('the stream route 404ing (an old server build without it) is transport-shaped', () => {
+    expect(isTransportFailure(new Error('Provision failed: HTTP 404'))).toBe(true);
+  });
+
+  test('MANDATORY: a real pre-stream authorization denial is NOT transport-shaped', () => {
+    // `provisionProjectStream` rejects a 403 the same way it rejects a
+    // non-transport HTTP status — a plain `Error` carrying the SERVER's own
+    // message, no `HTTP 404`, no "no response body", not a `TypeError`. This
+    // is the exact shape that must NOT trigger the fallback: retrying it as
+    // `provisionProject` would be pointless (same rejection) and, if the
+    // classifier were as loose as "any zero-event failure", would blur the
+    // line between "the stream is unavailable" and "the server said no".
+    expect(isTransportFailure(new Error('Owner or admin role required'))).toBe(false);
+  });
+
+  test('MANDATORY: a real in-stream provisioning failure (ApiError with a status) is NOT transport-shaped', () => {
+    expect(isTransportFailure(new ApiError('Bad Gateway', { status: 502 }))).toBe(false);
+  });
+
+  test('a non-Error throw is NOT transport-shaped', () => {
+    expect(isTransportFailure('not even an Error')).toBe(false);
+    expect(isTransportFailure(undefined)).toBe(false);
+  });
+});
+
+/**
+ * `runProvisionAttempt` is the fallback gate itself: try
+ * `provisionProjectStream`; fall back to the plain `provisionProject` — via
+ * `runCreateAttempt`, so the fallback keeps that function's own 409
+ * `provision_in_flight` retry — ONLY when the stream never delivered a single
+ * event AND the failure is transport-shaped. Any other failure rethrows
+ * unchanged.
+ *
+ * The danger this gate exists to prevent: falling back after the stream
+ * already did real work would run `POST /projects/provision` a SECOND time
+ * for the same user intent, minting a second upstream managed repo. So the
+ * two halves below are both MANDATORY, and deliberately adversarial to each
+ * other — one proves an event must block the fallback even when the error
+ * that follows LOOKS like a transport failure; the other proves a qualifying
+ * transport failure with zero events actually falls back.
+ */
+describe('runProvisionAttempt', () => {
+  function streamClient(overrides: Partial<CreateWorkspaceClient> = {}): CreateWorkspaceClient & {
+    plainCalls: ProvisionProjectInput[];
+    waits: number[];
+  } {
+    const plainCalls: ProvisionProjectInput[] = [];
+    const waits: number[] = [];
+    return {
+      provisionProjectStream: async () => {
+        throw new Error('this test must override provisionProjectStream');
+      },
+      provisionProject: async (input) => {
+        plainCalls.push(input);
+        return fakeProject('created-fallback');
+      },
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+      plainCalls,
+      waits,
+      ...overrides,
+    };
+  }
+
+  test('the stream succeeds — resolves with its project, reports every phase, never touches provisionProject', async () => {
+    const seenPhases: (ProvisionPhase | null)[] = [];
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        const events: ProvisionStreamEvent[] = [
+          { type: 'phase', phase: 'validating' },
+          { type: 'phase', phase: 'creating_repository' },
+        ];
+        for (const event of events) onEvent(event);
+        return fakeProject('created-stream');
+      },
+    });
+
+    const project = await runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, (phase) => {
+      seenPhases.push(phase);
+    }, client);
+
+    expect(project.project_id).toBe('created-stream');
+    expect(seenPhases).toEqual(['validating', 'creating_repository']);
+    expect(client.plainCalls).toEqual([]);
+  });
+
+  test('MANDATORY: an event fired, THEN the stream fails — rethrows the real failure and NEVER falls back', async () => {
+    const err = new Error('Provision stream ended without a result');
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        // The stream delivered real progress before dying — a genuine
+        // provisioning failure, not an unreached server.
+        onEvent({ type: 'phase', phase: 'validating' });
+        throw err;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(err);
+    expect(client.plainCalls).toEqual([]);
+  });
+
+  test('MANDATORY: an event fired via the terminal error frame itself still blocks the fallback', async () => {
+    // The in-stream `error` event IS an `onEvent` call before
+    // `provisionProjectStream` throws — even a failure on the very first
+    // frame must not fall back, because the stream demonstrably reached the
+    // server.
+    const err = new Error('Owner or admin role required');
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        onEvent({ type: 'error', error: 'Owner or admin role required' });
+        throw err;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(err);
+    expect(client.plainCalls).toEqual([]);
+  });
+
+  test('MANDATORY: zero events AND a transport-shaped failure — falls back to provisionProject with the SAME idempotency_key', async () => {
+    const payload: ProvisionProjectInput = { name: 'suna-web', idempotency_key: 'stream-key-1' };
+    const seenPhases: (ProvisionPhase | null)[] = [];
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const project = await runProvisionAttempt(payload, (phase) => seenPhases.push(phase), client);
+
+    expect(project.project_id).toBe('created-fallback');
+    expect(client.plainCalls).toHaveLength(1);
+    // The exact idempotency_key the streaming attempt would have sent — the
+    // fallback is the SAME attempt continuing on a different transport, not
+    // a freshly minted one. A re-minted key here is exactly the "second
+    // upstream repo" bug this whole gate exists to prevent.
+    expect(client.plainCalls[0]?.idempotency_key).toBe('stream-key-1');
+    expect(client.plainCalls[0]).toBe(payload);
+    // The UI's phase readout is reset, not frozen on stale/absent progress —
+    // there is no real phase information once the fallback takes over.
+    expect(seenPhases).toEqual([null]);
+  });
+
+  test('MANDATORY: zero events but a NON-transport failure (a real pre-stream denial) — does NOT fall back', async () => {
+    // This is what separates the real rule ("zero events AND
+    // transport-shaped") from the looser, wrong one ("zero events implies
+    // fall back"): a pre-stream 403 also fires zero events, but retrying it
+    // through a second code path is not what this gate is for.
+    const err = new Error('Owner or admin role required');
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw err;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(err);
+    expect(client.plainCalls).toEqual([]);
+  });
+
+  test('the fallback goes through runCreateAttempt — it keeps the 409 provision_in_flight retry', async () => {
+    // Proves the fallback is not a bare `provisionProject` call: routing it
+    // through `runCreateAttempt` means the plain-POST path keeps its full
+    // existing resilience even when reached through the stream.
+    let plainAttempts = 0;
+    const client = streamClient({
+      provisionProjectStream: async () => {
+        throw new TypeError('fetch failed');
+      },
+      provisionProject: async (input) => {
+        plainAttempts += 1;
+        if (plainAttempts === 1) {
+          throw new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
+        }
+        return fakeProject('created-after-retry');
+      },
+    });
+
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      () => {},
+      client,
+    );
+
+    expect(project.project_id).toBe('created-after-retry');
+    expect(plainAttempts).toBe(2);
+    expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
   });
 });

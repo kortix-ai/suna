@@ -251,3 +251,58 @@ describe('/new page: exports', () => {
     expect(code).toContain('export function NewWorkspacePage()');
   });
 });
+
+describe('/new page: ProvisionProgress wiring (Task 19)', () => {
+  test('imports ProvisionProgress from its own module, not re-implemented inline', () => {
+    expect(code).toContain("from '@/features/workspace/new/provision-progress'");
+    expect(code).toContain('<ProvisionProgress');
+  });
+
+  test('renders ProvisionProgress wired to the real workspace name and the live phase — not a re-derived name', () => {
+    const provisionProgress = code.match(/<ProvisionProgress[\s\S]*?\/>/)?.[0];
+    expect(provisionProgress).toBeDefined();
+    expect(provisionProgress).toContain('workspaceName={state.name.trim()}');
+    expect(provisionProgress).toContain('current={phase}');
+  });
+
+  test('phase comes from useCreateWorkspace, not local component state', () => {
+    // Paired with the ProvisionProgress prop check above: `phase` must be
+    // destructured from the hook, or the prop check above would be wiring a
+    // variable that doesn't exist.
+    expect(code).toContain(
+      'const { create, status, error: createError, phase, retry, canRetry } = useCreateWorkspace();',
+    );
+  });
+
+  test('the form and the panel are mutually exclusive on `submitting` — never both, never neither', () => {
+    // A single ternary keyed on `submitting`, not two independent
+    // conditionals — the second shape could render neither (or both) branch
+    // depending on how `submitting` and `status` drift relative to each
+    // other.
+    const swapMatch = code.match(/\{submitting \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
+    expect(swapMatch).toBeDefined();
+    const [, creatingBranch, formBranch] = swapMatch ?? [];
+    expect(creatingBranch).toContain('<ProvisionProgress');
+    expect(formBranch).toContain('<form');
+  });
+
+  test('exactly one cross-fade transition wraps the swap — no other AnimatePresence on the page', () => {
+    expect((code.match(/<AnimatePresence/g) ?? []).length).toBe(1);
+    expect(code).toContain("from 'motion/react'");
+  });
+
+  test('the swap animates opacity only — no transform, no movement besides the fade itself', () => {
+    const swapMatch = code.match(/<AnimatePresence[\s\S]*?<\/AnimatePresence>/)?.[0];
+    expect(swapMatch).toBeDefined();
+    // Word-boundary so this doesn't false-positive on "opacity:" — the `y` in
+    // "opacit-y:" has no boundary before it, `\b` requires one.
+    expect(swapMatch).not.toMatch(/\bx:\s*-?[\d'"]/);
+    expect(swapMatch).not.toMatch(/\by:\s*-?[\d'"]/);
+    expect(swapMatch).not.toMatch(/\bscale:\s*[\d.]/);
+    // Paired positive: opacity IS the property driving the fade — confirms
+    // the negative checks above are excluding real candidates, not just
+    // finding nothing to match against.
+    expect(swapMatch).toContain('opacity: 0');
+    expect(swapMatch).toContain('opacity: 1');
+  });
+});

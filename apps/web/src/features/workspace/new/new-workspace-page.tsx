@@ -3,13 +3,13 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { AnimatePresence, m } from 'motion/react';
 
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
@@ -20,12 +20,30 @@ import {
   isSubmittable,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { ProvisionProgress } from '@/features/workspace/new/provision-progress';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
 import { listAccounts } from '@kortix/sdk';
+
+/**
+ * The form <-> `ProvisionProgress` swap's ONLY transition — a plain opacity
+ * cross-fade, no transform. "Nothing else moves" (task brief) is deliberate:
+ * this page centers its column with `justify-center`, so the two states'
+ * differing heights already reflow the header on swap; layering a slide or
+ * scale on top of that reflow would read as two competing motions instead of
+ * one. `mode="wait"` (not a true overlapping crossfade) because the form and
+ * the panel are different heights — overlapping them mid-transition would
+ * show both at once, at two different vertical rhythms. Same curve and
+ * duration family as `session-starting-loader.tsx`'s `EASE_OUT`/`MESSAGE_IN`
+ * — this codebase's other phase-swap surface — exit deliberately faster than
+ * enter (~75%), matching the doctrine in `animations-dev`.
+ */
+const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
+const SWAP_IN = { duration: 0.2, ease: EASE_OUT };
+const SWAP_OUT = { duration: 0.15, ease: EASE_OUT };
 
 /**
  * Create a workspace.
@@ -74,7 +92,7 @@ export function NewWorkspacePage() {
     templateId: cloneItemId,
   }));
   const [touched, setTouched] = useState(false);
-  const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();
+  const { create, status, error: createError, phase, retry, canRetry } = useCreateWorkspace();
   const submitting = status === 'creating';
 
   // Only surface a name error after the field has been left once. Validating
@@ -162,118 +180,147 @@ export function NewWorkspacePage() {
         </p>
       </header>
 
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setTouched(true);
-          if (!canSubmit) return;
-          void create(state);
-        }}
-      >
-        {state.templateId && (
-          <p className="text-muted-foreground text-center text-xs">
-            This workspace will be seeded from the template you picked.
-          </p>
-        )}
+      {/* The form <-> ProvisionProgress swap's ONE transition — see the
+          `SWAP_IN`/`SWAP_OUT` doc comment above. `mode="wait"`, not a true
+          overlap: the two states are different heights, so a moment with
+          neither mounted reads better than both visible at once at two
+          different rhythms. `initial={false}` — the form must not fade in on
+          first paint, only on the swap back from the panel. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {submitting ? (
+          <m.div
+            key="creating"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: SWAP_IN }}
+            exit={{ opacity: 0, transition: SWAP_OUT }}
+          >
+            <ProvisionProgress workspaceName={state.name.trim()} current={phase} />
+          </m.div>
+        ) : (
+          <m.div
+            key="form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: SWAP_IN }}
+            exit={{ opacity: 0, transition: SWAP_OUT }}
+          >
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setTouched(true);
+                if (!canSubmit) return;
+                void create(state);
+              }}
+            >
+              {state.templateId && (
+                <p className="text-muted-foreground text-center text-xs">
+                  This workspace will be seeded from the template you picked.
+                </p>
+              )}
 
-        <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
-          <Label htmlFor="workspace-name">Name</Label>
-          {/* `items-start`, not `items-center`: the icon trigger and the input
-              are both 9 units tall today, so it reads identically either way,
-              and it stays correct if the input ever grows a second line
-              beneath it (the create modal's own row uses the same rule). */}
-          <div className="flex items-start gap-2">
-            <ProjectIconField
-              value={state.icon}
-              onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
-              onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
-              disabled={submitting}
-            />
-            <div className="min-w-0 flex-1">
-              <Input
-                id="workspace-name"
-                autoFocus
-                autoCapitalize="none"
-                autoCorrect="off"
-                value={state.name}
-                onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
-                onBlur={() => setTouched(true)}
-                placeholder="my-agi-company"
-                maxLength={WORKSPACE_NAME_MAX_LENGTH}
-                disabled={submitting}
-                aria-invalid={nameError ? true : undefined}
-                aria-describedby={nameError ? 'workspace-name-error' : undefined}
-              />
-            </div>
-          </div>
-          {nameError ? (
-            <p id="workspace-name-error" className="text-destructive text-xs">
-              {nameError}
-            </p>
-          ) : null}
+              <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
+                <Label htmlFor="workspace-name">Name</Label>
+                {/* `items-start`, not `items-center`: the icon trigger and the
+                    input are both 9 units tall today, so it reads identically
+                    either way, and it stays correct if the input ever grows a
+                    second line beneath it (the create modal's own row uses the
+                    same rule). */}
+                <div className="flex items-start gap-2">
+                  <ProjectIconField
+                    value={state.icon}
+                    onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
+                    onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      id="workspace-name"
+                      autoFocus
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      value={state.name}
+                      onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
+                      onBlur={() => setTouched(true)}
+                      placeholder="my-agi-company"
+                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                      aria-invalid={nameError ? true : undefined}
+                      aria-describedby={nameError ? 'workspace-name-error' : undefined}
+                    />
+                  </div>
+                </div>
+                {nameError ? (
+                  <p id="workspace-name-error" className="text-destructive text-xs">
+                    {nameError}
+                  </p>
+                ) : null}
 
-          <AccountPicker
-            accounts={creatableAccounts}
-            value={state.accountId}
-            onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-          />
-          {/* `isSubmittable`'s `accountCount < 1` floor already disables the
-              button here — this note is what stops that disabled button from
-              being unexplained. Gated on `!accountsQuery.isLoading` so it
-              cannot flash true during the load window, when
-              `creatableAccounts` is `[]` for every user regardless of their
-              real access. Plain muted text in the field group's own flow,
-              same treatment as `AdvancedFields`' GitHub-source note — no
-              `InfoBanner`, no second card. */}
-          {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
-            <p className="text-muted-foreground text-xs">
-              You need owner or admin access in an account to create a workspace.
-            </p>
-          ) : null}
+                <AccountPicker
+                  accounts={creatableAccounts}
+                  value={state.accountId}
+                  onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+                />
+                {/* `isSubmittable`'s `accountCount < 1` floor already disables
+                    the button here — this note is what stops that disabled
+                    button from being unexplained. Gated on
+                    `!accountsQuery.isLoading` so it cannot flash true during
+                    the load window, when `creatableAccounts` is `[]` for
+                    every user regardless of their real access. Plain muted
+                    text in the field group's own flow, same treatment as
+                    `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
+                    second card. */}
+                {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    You need owner or admin access in an account to create a workspace.
+                  </p>
+                ) : null}
 
-          <AdvancedFields state={state} onChange={setState} />
-        </div>
+                <AdvancedFields state={state} onChange={setState} />
+              </div>
 
-        <Button type="submit" disabled={!canSubmit} className="w-full">
-          {submitting ? <Loading className="size-4 shrink-0" /> : 'Create workspace'}
-        </Button>
-        {/* Form-level, not a field error: every failure `messageFor`
-            (`use-create-workspace.ts`) maps — 403 wrong-account, 400 bad
-            name, a managed-git-unavailable 503, a retryable 502, or a
-            generic retry hint — is about the SUBMIT, not one input, so it
-            sits below the button rather than inside the card. `role="alert"`
-            announces it the moment `status` flips to `'error'`, matching the
-            a11y treatment already on the name field.
-
-            The retry control is gated on `canRetry` (`useCreateWorkspace`,
-            derived from `isRetryableError`), not just `status === 'error'`:
-            the managed-git-unavailable 503 is a server configuration state,
-            not a transient one, and `retry` — which reuses the SAME
-            idempotency key rather than minting a new one — can never turn
-            that into a success. Offering it anyway would waste the user's
-            time on a click that cannot work. Styled to match the page's one
-            other secondary control (`Log out`, above) — `variant="ghost"
-            size="sm"` with the identical `text-muted-foreground
-            hover:text-foreground` treatment — rather than introducing a
-            third button weight beside the primary submit and that one. */}
-        {status === 'error' && createError ? (
-          <div role="alert" className="flex flex-col items-center gap-1.5">
-            <p className="text-destructive text-center text-xs">{createError}</p>
-            {canRetry ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={retry}
-              >
-                Try again
+              <Button type="submit" disabled={!canSubmit} className="w-full">
+                Create workspace
               </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </form>
+              {/* Form-level, not a field error: every failure `messageFor`
+                  (`use-create-workspace.ts`) maps — 403 wrong-account, 400
+                  bad name, a managed-git-unavailable 503, a retryable 502, or
+                  a generic retry hint — is about the SUBMIT, not one input,
+                  so it sits below the button rather than inside the card.
+                  `role="alert"` announces it the moment `status` flips to
+                  `'error'`, matching the a11y treatment already on the name
+                  field.
+
+                  The retry control is gated on `canRetry`
+                  (`useCreateWorkspace`, derived from `isRetryableError`), not
+                  just `status === 'error'`: the managed-git-unavailable 503
+                  is a server configuration state, not a transient one, and
+                  `retry` — which reuses the SAME idempotency key rather than
+                  minting a new one — can never turn that into a success.
+                  Offering it anyway would waste the user's time on a click
+                  that cannot work. Styled to match the page's one other
+                  secondary control (`Log out`, above) — `variant="ghost"
+                  size="sm"` with the identical `text-muted-foreground
+                  hover:text-foreground` treatment — rather than introducing a
+                  third button weight beside the primary submit and that
+                  one. */}
+              {status === 'error' && createError ? (
+                <div role="alert" className="flex flex-col items-center gap-1.5">
+                  <p className="text-destructive text-center text-xs">{createError}</p>
+                  {canRetry ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={retry}
+                    >
+                      Try again
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </form>
+          </m.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
