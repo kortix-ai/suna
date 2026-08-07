@@ -1,6 +1,6 @@
 # Autonomous Agent Vertical Slice — Implementation Plan
 
-Status: active
+Status: local implementation complete; remote delivery pending approval
 Date: 2026-08-06
 Spec: `docs/specs/2026-08-06-autonomous-agent-harness.md`
 
@@ -70,3 +70,9 @@ with completion.
 - Vector memory as an authoritative store.
 - Online weight updates or claims of AGI.
 - Organization charts, roles, epics, and additional orchestration nouns.
+
+## Delivery state
+
+- Local implementation and local black-box verification are complete on `agi-kernel`.
+- The branch remains local because remote delivery requires explicit user approval.
+- PR checks, merge, Deploy Dev, deployed-SHA proof, and Dev black-box verification remain pending.
