@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
+  createMockStripeCheckoutSession,
   createMockStripeClient,
   mockRegistry,
   registerGlobalMocks,
@@ -643,5 +644,45 @@ describe('createCheckoutSession: machine sub does not clobber live plan sub', ()
     // Should overwrite since the existing sub is dead
     expect(upsertCreditAccountCalls.length).toBe(1);
     expect(upsertCreditAccountCalls[0].data.stripeSubscriptionId).toBe('sub_machine_new');
+  });
+});
+
+describe('confirmCheckoutSession: payment gate (client-callable fraud path)', () => {
+  test('a COMPLETE session with an UNPAID first invoice does not activate or grant', async () => {
+    // The old guard accepted session.status === 'complete' as proof of payment.
+    // A delayed/failed payment method completes checkout with
+    // payment_status 'unpaid' and subscription 'incomplete' — the same
+    // never-paid shape the webhook fraud gate closes, but reachable by any
+    // signed-in client via POST checkout/confirm.
+    mockRegistry.stripeClient.checkout.sessions.retrieve = async () =>
+      createMockStripeCheckoutSession({ status: 'complete', payment_status: 'unpaid' });
+
+    let granted = false;
+    mockRegistry.grantCredits = async () => {
+      granted = true;
+    };
+
+    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const result = await confirmCheckoutSession({
+      accountId: 'acc_test_123',
+      sessionId: 'cs_test_123',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe('pending');
+    expect(granted).toBe(false);
+  });
+
+  test('no_payment_required (100% coupon) still activates', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = async () =>
+      createMockStripeCheckoutSession({ status: 'complete', payment_status: 'no_payment_required' });
+
+    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const result = await confirmCheckoutSession({
+      accountId: 'acc_test_123',
+      sessionId: 'cs_test_123',
+    });
+
+    expect(result.success).toBe(true);
   });
 });
