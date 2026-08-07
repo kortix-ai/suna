@@ -22,7 +22,11 @@ This document answers that, and specifies the surface built on top of it: the
 AGI agent, goals, tasks, and the loop that keeps them advancing without a human
 prompt.
 
-Everything here ships behind one experimental feature key, `agi`.
+Implementation update (2026-08-07): the shipped feature key is `meta_agent`,
+and it gates only platform-launched reserved-meta sessions. Goal and task API,
+SDK, and CLI surfaces remain available through their leaf IAM actions. The
+older single-key `agi` proposal below is superseded by
+`2026-08-06-autonomous-agent-harness.md`.
 
 ### 1.1 Prior art
 
@@ -432,15 +436,10 @@ costs the entire control while failing closed cannot touch a human flow.
 Kill switch: `KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION`
 (`enforce` default | `observe` | `off`). See `apps/api/src/git-proxy/`.
 
-R-38b.2 — The "MUST NOT merge its own change request" half remains UNENFORCED
-and is carried only by the AGI's behavior file. CR merge runs server-side from
-the API's bare mirror straight to the upstream and never traverses the git
-proxy, so no ref-level control can see it; the AGI's grant (`kortixCli: 'all'`)
-satisfies `assertAgentScope(c, 'project.cr.merge')`. R-9.6 is therefore only
-HALF enforced today. Closing it is a separate change in the grant/CR layer —
-either drop `project.cr.merge`/`project.gitops.merge` from `agiAgentGrant()`, or
-add a no-self-merge rule keyed on `change_requests.created_by` versus the acting
-principal. Recommended as the immediate follow-up.
+R-38b.2 — Implemented. The reserved `meta` grant excludes merge and raw push.
+The IAM principal fold also denies those exact actions for stale meta tokens,
+including tokens stamped with `kortixCli: 'all'`. Agents land work through a
+change request and an independently authorized principal performs the merge.
 
 R-39 — Its grant is the full authority of the human who launched it, and no
 more. It MUST NOT be able to grant itself capability the launching user lacks.
@@ -471,10 +470,10 @@ UI-only capability is out of contract (R-8.1, 2026-07-24 spec).
 
 ### 10.2 Experimental gate
 
-R-44 — All of it ships behind a single key, `agi`, in
-`apps/api/src/experimental/features.ts`: `available: () => true`,
-`platformDefault: () => false`, per-project opt-in. When off, no routes, no CLI
-commands, no UI, no manifest keys.
+R-44 — Superseded. `meta_agent` is default-off and controls only reserved-meta
+launch. Goal/task routes, CLI commands, SDK methods, and manifest validation use
+leaf IAM and schema enforcement rather than the removed all-or-nothing `agi`
+gate.
 
 ---
 
@@ -507,7 +506,7 @@ commands, no UI, no manifest keys.
 
 Each step is independently shippable and independently useful.
 
-1. **Experimental key `agi`** — gate exists, everything below hangs off it.
+1. **Reserved-meta gate** — `meta_agent` gates platform meta launch only.
 2. **Tasks** — table, claim semantics, `kortix tasks` CLI, API routes. Usable by
    existing agents immediately, with no AGI and no goals.
 3. **Goals** — `kortix.yaml` block, `validate` enforcement, `push` desugaring to
