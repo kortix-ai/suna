@@ -128,7 +128,10 @@ idempotent settlement replay, continuation consumption, escalation, and blocker.
 Registration verifies the project, live coordinator claim, worker session, and
 `metadata.spawned_by_session`. It atomically binds those identities and queues
 the initial prompt through the existing session lifecycle outbox. The coordinator
-creates the worker without a prompt before registration.
+creates the worker without a prompt before registration. Every server prompt
+ingress rejects a marked but unbound child and a terminal bound worker. The
+lifecycle engine and direct OpenCode proxy re-check admission immediately before
+prompt dispatch.
 
 The coordinator records exactly one of two outcomes for a settled turn:
 semantic evidence through `/progress`, or no progress through `/no-progress`.
@@ -169,10 +172,14 @@ remains pending initial-prompt delivery and is not classified as settled or
 no-progress. A liveness-stopped worker must not be revived.
 
 The reserved meta principal excludes broad project write, arbitrary session
-stop, protected-branch push, and merge. Server-owned finalization performs the
-bounded worker stop. Session principals can attribute goal observations only to
-their own session. A human principal may cite only a validated session in the
-same project.
+stop, protected-branch push, and merge. Runtime Git clone credentials contain
+only the Kortix proxy origin and the caller's existing Kortix token. Sandbox
+tokens are read-only at the proxy. A session PAT must contain the literal
+`project.gitops.push` grant for `receive-pack`; CR-open aliases, stale agent PATs,
+unbound workers, terminal workers, and the meta principal cannot bypass that
+gate. Server-owned finalization performs the bounded worker stop. Session
+principals can attribute goal observations only to their own session. A human
+principal may cite only a validated session in the same project.
 
 ## 7. Memory model
 
