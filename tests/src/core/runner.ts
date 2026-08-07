@@ -8,7 +8,12 @@ import { resolve } from "node:path";
 import { Client } from "./client";
 import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
-import { allFlows, clearRegistry, type RegisteredFlow } from "./flow";
+import {
+  allFlows,
+  clearRegistry,
+  DEFAULT_FLOW_ATTEMPTS,
+  type RegisteredFlow,
+} from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
 import { partitionParallelFlows } from "./lanes";
@@ -93,7 +98,7 @@ async function runOneFlow(
   const flowStart = performance.now();
   // Every flow gets one clean retry for errors explicitly marked as
   // infrastructure failures. Assertion failures never retry.
-  const maxAttempts = f.meta.retry?.attempts ?? 2;
+  const maxAttempts = f.meta.retry?.attempts ?? DEFAULT_FLOW_ATTEMPTS;
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
