@@ -5,45 +5,14 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import type { ProjectConfigSummary } from '../git/types';
 
 const PLATFORM_META_AGENT_ACTIONS = [
+  // Five nouns only: project/tasks/goals, CR, session, file, and Git state.
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_DELETE,
   PROJECT_ACTIONS.PROJECT_CR_OPEN,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_START,
-  PROJECT_ACTIONS.PROJECT_SESSION_STOP,
-  PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
-  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
-  PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_BUDGET_SET,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
-  PROJECT_ACTIONS.PROJECT_AGENT_READ,
-  PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
-  PROJECT_ACTIONS.PROJECT_SKILL_READ,
-  PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
-  PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-  PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
   PROJECT_ACTIONS.PROJECT_FILE_READ,
-  PROJECT_ACTIONS.PROJECT_FILE_WRITE,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-  PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
-  PROJECT_ACTIONS.PROJECT_SECRET_READ,
-  PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-  PROJECT_ACTIONS.PROJECT_REVIEW_READ,
-  PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
-  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ] as const;
 
 /** Per-project opt-in for the platform coordinator (Customize → Experimental). */
@@ -89,12 +58,13 @@ export function buildPlatformMetaOpenCodeConfig(): string {
 }
 
 /**
- * The platform coordinator can manage project surfaces except landing code.
+ * The platform coordinator can read project/repository state, mutate generated
+ * goal/task state, start/read/chat/wait sessions, and open a CR.
  *
- * Merge actions stay absent from this explicit allowlist. An added project
- * action therefore does not silently grant the coordinator new authority.
- * Project secrets and connectors stay unavailable because the coordinator
- * delegates project work to specialized sessions.
+ * It cannot push or merge Git state. It also cannot delete projects, stop
+ * sessions, administer IAM, mutate triggers, manage gateway keys or budgets,
+ * write project files, submit reviews, or read/mutate secrets and connectors.
+ * Workers receive their own separately bounded project grants.
  */
 export function platformMetaAgentGrant(): AgentGrant {
   return {

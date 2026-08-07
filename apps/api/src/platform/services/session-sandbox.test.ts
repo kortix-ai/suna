@@ -379,10 +379,35 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     const kortixCli = grant.kortixCli;
     expect(Array.isArray(kortixCli)).toBe(true);
     if (!Array.isArray(kortixCli)) throw new Error('meta grant must be an action allowlist');
-    expect(kortixCli).toContain('project.cr.open');
-    expect(kortixCli).toContain('project.gitops.push');
-    expect(kortixCli).not.toContain('project.cr.merge');
-    expect(kortixCli).not.toContain('project.gitops.merge');
+    expect(kortixCli).toEqual([
+      'project.read',
+      'project.write',
+      'project.cr.open',
+      'project.session.read',
+      'project.session.start',
+      'project.file.read',
+      'project.gitops.read',
+    ]);
+    for (const forbidden of [
+      'project.delete',
+      'project.cr.merge',
+      'project.session.stop',
+      'project.session.bindings.write',
+      'project.members.manage',
+      'project.trigger.create',
+      'project.trigger.update',
+      'project.trigger.delete',
+      'project.gateway.keys.manage',
+      'project.secret.write',
+      'project.connector.write',
+      'project.connector.connections.manage',
+      'project.gitops.push',
+      'project.gitops.merge',
+      'project.review.submit',
+      'project.review.act',
+    ]) {
+      expect(kortixCli).not.toContain(forbidden);
+    }
     expect(serviceAccountCreateCalls).toHaveLength(0);
   });
 
