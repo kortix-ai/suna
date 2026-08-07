@@ -751,6 +751,9 @@
     "verifyGatewayProvider"
   ],
   "./react": [
+    "ADMIN_ANALYTICS_DEFAULT_DAYS",
+    "ADMIN_ANALYTICS_MAX_DAYS",
+    "ADMIN_ANALYTICS_MIN_DAYS",
     "BillingError",
     "CHECK_TIMEOUT",
     "FAIL_THRESHOLD_FIRST",
@@ -780,6 +783,7 @@
     "buildPreviewAuthEndpoint",
     "canQueryOpenCodeSession",
     "changeRequestsKey",
+    "clampAdminAnalyticsDays",
     "classifyProbeResult",
     "classifySendError",
     "clearConfigOverrides",
@@ -910,6 +914,7 @@
     "useAdminAccountSandboxes",
     "useAdminAccountUsers",
     "useAdminAccounts",
+    "useAdminActivityAnalytics",
     "useAdminCriticalFeedback",
     "useAdminDebitCredits",
     "useAdminFeedbackAnalysis",
@@ -933,6 +938,7 @@
     "useAdminSetEnterpriseEntitled",
     "useAdminSetManagedModels",
     "useAdminSetTier",
+    "useAdminUsageAnalytics",
     "useAdminUserTransactions",
     "useAgentPersona",
     "useAllVisibleAgents",

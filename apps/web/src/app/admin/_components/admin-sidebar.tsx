@@ -6,6 +6,7 @@ import {
   ActivityIcon as Activity,
   ArrowLeftIcon as ArrowLeft,
   CubeIcon as Boxes,
+  ChartLineUpIcon as ChartLineUp,
   ShieldCheckIcon as ShieldCheck,
   UsersIcon as Users,
   WrenchIcon as Wrench,
@@ -40,6 +41,11 @@ export function AdminSidebar() {
 
   // Only pages that actually exist under app/admin/*.
   const primaryItems: NavItem[] = [
+    {
+      href: '/admin/analytics',
+      label: 'Analytics',
+      icon: ChartLineUp,
+    },
     {
       href: '/admin/ops',
       label: 'Operations',

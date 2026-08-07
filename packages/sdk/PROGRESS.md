@@ -12,6 +12,50 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `admin-activity-analytics`
+
+Added two read hooks for the new admin activity-analytics API
+(`GET /v1/admin/analytics/{activity,usage}`), backing
+`apps/web/src/app/admin/analytics/page.tsx`.
+
+SDK scope:
+
+- New file `src/react/use-admin-activity-analytics.ts`, exporting
+  `useAdminActivityAnalytics(days)`, `useAdminUsageAnalytics(days)`,
+  `clampAdminAnalyticsDays()`, the three `ADMIN_ANALYTICS_*_DAYS` constants, and
+  six response types.
+- One line added to `src/react/index.ts`.
+- **Nothing removed or renamed.** The legacy `use-admin-analytics.ts` surface is
+  untouched — its 24 hooks bind to an older `/admin/analytics/*` shape the current
+  backend does not serve, so new work sits beside it rather than extending it.
+- No new subpath, so `package.json` `exports`, `publishConfig.exports`, and
+  `SUBPATH_TIERS` are unchanged. Version untouched.
+
+Both snapshots re-recorded; the diff is **purely additive** — 18 insertions, 0
+deletions, no rename and no removal.
+
+TDD: `src/react/use-admin-activity-analytics.test.ts` was written first and
+watched fail with `Cannot find module './use-admin-activity-analytics'` —
+`0 pass, 1 fail, 1 error`. It went green at `13 pass, 0 fail` once the module
+landed.
+
+Verification:
+
+- SDK typecheck: exit `0`.
+- SDK suite: `1740 pass`, `2 skip`, `0 fail`, `6846 expect()` calls, `137` files.
+- SDK packed-install smoke: exit `0`.
+- Live API behind the hooks (local stack, admin JWT): `activity?days=7` and
+  `usage?days=7` both `200`; ANON `401`; authed non-admin `403`. Series values
+  cross-checked against ground-truth SQL (`sessionsLast7d 43`, `dau 9`,
+  `wau 25`, `mau 353`, `totalAccounts 875`, `totalProjects 867` — exact match).
+- Browser: `/admin/analytics` issued
+  `GET /v1/admin/analytics/activity?days=30` + `usage?days=30`, then
+  `?days=7` for both after switching the range control. `0` console errors.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-07 — session `remove-local-docker`
 
 User-directed hard removal of the live `local-docker` sandbox provider.

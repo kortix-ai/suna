@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 551,
+  "count": 553,
   "routes": [
     {
       "method": "GET",
@@ -465,6 +465,14 @@
     {
       "method": "DELETE",
       "path": "/v1/accounts/tokens/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/analytics/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/analytics/usage"
     },
     {
       "method": "GET",

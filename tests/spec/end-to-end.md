@@ -523,6 +523,13 @@ An admin-issued **trial** makes an account BEHAVE as a paid tier — entitlement
 `ADM-18` `GET /v1/admin/api/accounts` rows carry the entitlement columns the console renders: `billingModel`, `seatCount`, `trial:{status,tier,seats,startedAt,endsAt,note}`, `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled`. A never-granted account reads `trial.status:"none"` with null tier/seats/window, `managedModelsOverride:null`, `demoEnterprise:false`, `enterpriseEntitled:false`. Non-admin → 403; ANON → 401.
 `ADM-19` `POST /v1/billing/cron/trial-expiry` — **internal-cron auth**, not `requireAdmin` (same `requireInternalCronAuth` gate as `BILL-13`/`BILL-16`: Bearer or `X-Kortix-Internal-Key` must timing-safe-equal `INTERNAL_SERVICE_KEY`) → flips `active` trials past `trial_ends_at` to `expired` → 200 `{expired:n}`; no/wrong credentials → 401; billing internals disabled → 200 `{skipped:true}`. Status hygiene only — the lazy overlay already stopped granting at the timestamp.
 
+#### Activity analytics
+
+`/v1/admin/analytics/*` is a sub-router mounted INSIDE `adminApp` after its global `supabaseAuth` + `requireAdmin` gate, so it declares no auth of its own and inherits it (`apps/api/src/admin/analytics.ts`). Note the path has no `api` segment, unlike the `/v1/admin/api/*` console routes above. Both routes take `?days=` (1-90, default 30); out-of-range values are clamped and non-numeric falls back to the default — neither is a 400. Buckets are UTC calendar days and the series is dense (zero-filled), so `days[]` always has exactly the clamped length.
+
+`ADM-20` `GET /v1/admin/analytics/activity?days=` → `{days:[{date,sessionsCreated,activeAccounts,activeUsers,newAccounts,activeProjects}],summary:{sessionsLast7d,sessionsPrev7d,dau,wau,mau,totalAccounts,totalProjects}}` → 200. `activeUsers`/`dau`/`wau`/`mau` count distinct `project_sessions.created_by`; `summary` uses fixed 1/7/30-day windows and does NOT vary with `days`. `days=0` → 1 entry; `days=9999` → 90 entries; `days=abc` → 30 entries. Non-admin → 403; ANON → 401.
+`ADM-21` `GET /v1/admin/analytics/usage?days=` → `{days:[{date,computeUsd,llmUsd,otherUsd,totalUsd,payingAccounts}],summary:{totalUsd,computeUsd,llmUsd,otherUsd,spendLast7d,spendPrev7d,payingAccountsLast7d}}` → 200. Debits only, as positive USD magnitudes, classified by `metadata->>'ledger_type'` falling back to `credit_ledger.type` (the same classifier the billing usage breakdown uses), so `totalUsd` is always exactly `computeUsd + llmUsd + otherUsd`. `payingAccountsLast7d` is a window-wide `COUNT(DISTINCT account_id)`, not a sum of the daily counts. Non-admin → 403; ANON → 401.
+
 ---
 
 ## 19. Cross-cutting boundary / negative matrix

@@ -17,11 +17,19 @@ import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
+import { analyticsApp } from './analytics';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
 // Every admin route requires a logged-in platform admin.
 adminApp.use('*', supabaseAuth, requireAdmin);
+
+// Activity analytics. Mounted HERE — directly after the gate above and before
+// any route definition — so it inherits supabaseAuth + requireAdmin instead of
+// re-declaring them. `analyticsApp` carries no middleware of its own; moving
+// this line above the `use('*')` would publish platform-wide activity data to
+// anonymous callers. `analytics-mount.test.ts` fails if that happens.
+adminApp.route('/analytics', analyticsApp);
 
 // ── List accounts ────────────────────────────────────────────────────────────
 adminApp.openapi(

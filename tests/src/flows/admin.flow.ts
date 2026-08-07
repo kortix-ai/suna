@@ -748,3 +748,145 @@ flow(
     }
   },
 );
+
+// ADM-20 / ADM-21 — activity analytics (apps/api/src/admin/analytics.ts).
+//
+// These two routes carry NO middleware of their own: `analyticsApp` is mounted
+// inside `adminApp` BELOW its global `supabaseAuth` + `requireAdmin` gate and
+// relies entirely on inheriting it. The ANON/OWNER steps are therefore the real
+// point of these flows, not boilerplate — they are what proves the inherited
+// gate fires on a sub-router path.
+//
+// Note the path shape: `/v1/admin/analytics/*`, with no `api` segment, unlike
+// every `/v1/admin/api/*` console route above.
+//
+// Read-only. Nothing is created, so there is nothing to track or clean up.
+
+interface ActivityDay {
+  date: string;
+  sessionsCreated: number;
+  activeAccounts: number;
+  activeUsers: number;
+  newAccounts: number;
+  activeProjects: number;
+}
+
+flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/analytics/activity"] }, async (ctx) => {
+  await ctx.step("ANON → 401 (inherited gate)", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/analytics/activity");
+    r.status(401);
+  });
+  await ctx.step("non-admin OWNER → 403 (inherited gate)", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/admin/analytics/activity");
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+
+    await ctx.step("platform admin reads the activity series → 200", async () => {
+      const r = await admin.get("/v1/admin/analytics/activity", { query: { days: "7" } });
+      r.status(200)
+        .body()
+        .exists("$.days")
+        .exists("$.summary.sessionsLast7d")
+        .exists("$.summary.sessionsPrev7d")
+        .exists("$.summary.dau")
+        .exists("$.summary.wau")
+        .exists("$.summary.mau")
+        .exists("$.summary.totalAccounts")
+        .exists("$.summary.totalProjects");
+
+      const days = r.json<{ days: ActivityDay[] }>().days;
+      // Dense series: one entry per requested UTC day, zero-filled. A sparse
+      // GROUP BY result would draw a flat line across a dead day and read as
+      // "steady" when the truth is "nothing happened".
+      if (days.length !== 7) {
+        throw new Error(`days=7 should return 7 dense entries, got ${days.length}`);
+      }
+      for (const key of [
+        "date",
+        "sessionsCreated",
+        "activeAccounts",
+        "activeUsers",
+        "newAccounts",
+        "activeProjects",
+      ] as const) {
+        if (!(key in days[0]!)) throw new Error(`day entry is missing "${key}"`);
+      }
+      // Ascending, oldest first — the charts render in array order.
+      const dates = days.map((d) => d.date);
+      if ([...dates].sort().join() !== dates.join()) {
+        throw new Error(`day entries are not ascending: ${dates.join(",")}`);
+      }
+    });
+
+    await ctx.step("days is clamped to [1,90], never rejected", async () => {
+      const count = async (days: string) => {
+        const r = await admin.get("/v1/admin/analytics/activity", { query: { days } });
+        r.status(200);
+        return r.json<{ days: ActivityDay[] }>().days.length;
+      };
+      const zero = await count("0");
+      if (zero !== 1) throw new Error(`days=0 should clamp to 1 entry, got ${zero}`);
+      const huge = await count("9999");
+      if (huge !== 90) throw new Error(`days=9999 should clamp to 90 entries, got ${huge}`);
+      const junk = await count("abc");
+      if (junk !== 30) throw new Error(`days=abc should fall back to 30 entries, got ${junk}`);
+    });
+  }
+});
+
+interface UsageDay {
+  date: string;
+  computeUsd: number;
+  llmUsd: number;
+  otherUsd: number;
+  totalUsd: number;
+  payingAccounts: number;
+}
+
+flow("ADM-21", { domain: "admin", routes: ["GET /v1/admin/analytics/usage"] }, async (ctx) => {
+  await ctx.step("ANON → 401 (inherited gate)", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/analytics/usage");
+    r.status(401);
+  });
+  await ctx.step("non-admin OWNER → 403 (inherited gate)", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/admin/analytics/usage");
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+
+    await ctx.step("platform admin reads the credit-burn series → 200", async () => {
+      const r = await admin.get("/v1/admin/analytics/usage", { query: { days: "7" } });
+      r.status(200)
+        .body()
+        .exists("$.days")
+        .exists("$.summary.totalUsd")
+        .exists("$.summary.computeUsd")
+        .exists("$.summary.llmUsd")
+        .exists("$.summary.otherUsd")
+        .exists("$.summary.spendLast7d")
+        .exists("$.summary.spendPrev7d")
+        .exists("$.summary.payingAccountsLast7d");
+
+      const days = r.json<{ days: UsageDay[] }>().days;
+      if (days.length !== 7) {
+        throw new Error(`days=7 should return 7 dense entries, got ${days.length}`);
+      }
+      for (const day of days) {
+        // The invariant that makes the stacked chart honest: the total is the
+        // sum of the segments actually drawn, never an independent SUM that can
+        // disagree with its own breakdown.
+        const parts = day.computeUsd + day.llmUsd + day.otherUsd;
+        if (Math.abs(parts - day.totalUsd) > 1e-9) {
+          throw new Error(`${day.date}: totalUsd ${day.totalUsd} != compute+llm+other ${parts}`);
+        }
+        // Debits are reported as positive magnitudes, never signed ledger values.
+        if (day.totalUsd < 0 || day.payingAccounts < 0) {
+          throw new Error(`${day.date}: negative value in ${JSON.stringify(day)}`);
+        }
+      }
+    });
+  }
+});

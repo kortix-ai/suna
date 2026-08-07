@@ -794,6 +794,11 @@ export const projectSessions = kortixSchema.table(
           and ${table.metadata}->'warm_session'->>'state' = 'available'
           and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
       ),
+    // NOTE: a plain btree `idx_project_sessions_created_at` (created_at) ALSO
+    // exists — created by migrations/20260807202731277_admin_analytics_time_indexes.concurrent.ts
+    // so the admin activity dashboard's global `created_at >= $1` window scan
+    // doesn't seq-scan the whole session history. Declared there, not here, for
+    // the same reason as the index below: it must be built CONCURRENTLY.
     // NOTE: a partial composite index `idx_project_sessions_account_active`
     // ((account_id) WHERE status IN active-set) ALSO exists — created by the
     // hand-written migration drizzle/20260617102106_account_active_session_index.sql
@@ -3182,6 +3187,12 @@ export const creditLedger = kortixSchema.table(
   },
   (table) => [
     unique('kortix_unique_stripe_event').on(table.stripeEventId),
+    // NOTE: several more indexes exist on this table than are declared here,
+    // all created by hand-written migrations. Relevant to the admin credit-burn
+    // dashboard: `idx_credit_ledger_created_at` (created_at), added by
+    // migrations/20260807202731278_admin_analytics_ledger_time_index.concurrent.ts.
+    // Every other time-ordered index leads with account_id and so cannot serve
+    // a platform-wide time-range scan.
     index('idx_kortix_credit_ledger_idempotency')
       .on(table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),
