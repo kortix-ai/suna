@@ -577,13 +577,22 @@ test('provisionProject sends default_branch on the wire', async () => {
 // ahead of `data:`; a parser that hard-fails on any frame that isn't EXACTLY
 // `data: <json>` breaks on the first spec-legal frame a server adds.
 
-/** A `fetch` that returns `body` as a single streamed chunk. */
-function stubStreamingFetch(body: string) {
+/**
+ * A `fetch` that streams `chunks` as SEPARATE `enqueue()` calls, in order —
+ * so a test can force a frame boundary, a JSON body, or a multi-byte UTF-8
+ * character to land split across two (or more) reads, matching how a real
+ * network actually delivers bytes. A string chunk is UTF-8-encoded whole;
+ * pass a raw `Uint8Array` chunk to split a multi-byte character mid-sequence
+ * (a plain string chunk can't express "half a codepoint").
+ */
+function stubStreamingFetch(chunks: Array<string | Uint8Array>) {
   return async () =>
     new Response(
       new ReadableStream({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode(body));
+          for (const chunk of chunks) {
+            controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
+          }
           controller.close();
         },
       }),
@@ -611,7 +620,7 @@ describe('provisionProjectStream', () => {
       (event) => {
         if (event.type === 'phase') seen.push(event.phase);
       },
-      { fetch: stubStreamingFetch(body) },
+      { fetch: stubStreamingFetch([body]) },
     );
 
     expect(seen).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
@@ -621,13 +630,13 @@ describe('provisionProjectStream', () => {
   test('rejects with the server error when the stream ends in an error event', async () => {
     const body = 'data: {"type":"error","error":"Owner or admin role required"}\n\n';
     await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch(body) }),
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([body]) }),
     ).rejects.toThrow('Owner or admin role required');
   });
 
   test('rejects when the stream closes with no terminal event', async () => {
     await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch('') }),
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([]) }),
     ).rejects.toThrow();
   });
 
@@ -648,11 +657,123 @@ describe('provisionProjectStream', () => {
       (event) => {
         if (event.type === 'phase') seen.push(event.phase);
       },
-      { fetch: stubStreamingFetch(body) },
+      { fetch: stubStreamingFetch([body]) },
     );
 
     expect(seen).toEqual(['validating']);
     expect(project.project_id).toBe('p1');
+  });
+
+  // ── Chunk-boundary reassembly ────────────────────────────────────────────
+  //
+  // packages/sdk/CLAUDE.md calls streaming "the single most breakable surface
+  // in this package" precisely because chunk boundaries over a real network
+  // are unpredictable — a frame can split anywhere, including mid-JSON and
+  // mid-codepoint. Every test above delivers its whole body in ONE
+  // `enqueue()`, so none of them exercise the `buffer +=` / `{ stream: true }`
+  // reassembly logic at all; a refactor that dropped `{ stream: true }` or
+  // broke the `\n\n` boundary search would stay green against all of them.
+  // These pin the reassembly itself, not just the single-chunk happy path.
+
+  test('reassembles a frame split mid-JSON across two chunks', async () => {
+    const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
+    const splitPoint = frame.indexOf('"project_id"') + 5; // land inside the JSON body
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]) },
+    );
+
+    expect(project.project_id).toBe('p1');
+    expect(project.name).toBe('suna-web');
+  });
+
+  test('reassembles a frame split mid multi-byte UTF-8 character across two chunks', async () => {
+    // 🚀 is U+1F680, a 4-byte UTF-8 sequence. Splitting it in half is exactly
+    // what `decoder.decode(value, { stream: true })` exists to survive —
+    // without `{ stream: true }` the decoder emits a replacement character
+    // (U+FFFD) for the truncated half and `JSON.parse` fails.
+    const name = 'suna-🚀';
+    const frame = `data: ${JSON.stringify({ type: 'done', project: { project_id: 'p1', name } })}\n\n`;
+    const bytes = new TextEncoder().encode(frame);
+    const emojiByteOffset = new TextEncoder().encode(frame.slice(0, frame.indexOf('🚀'))).length;
+    const splitPoint = emojiByteOffset + 2; // split the 4-byte emoji sequence in half
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]) },
+    );
+
+    expect(project.name).toBe(name);
+  });
+
+  test('parses two frames delivered in a single chunk', async () => {
+    const seen: string[] = [];
+    const combinedChunk = [
+      'data: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"phase","phase":"creating_repository"}\n\n',
+    ].join('');
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      {
+        fetch: stubStreamingFetch([
+          combinedChunk,
+          'data: {"type":"done","project":{"project_id":"p1"}}\n\n',
+        ]),
+      },
+    );
+
+    expect(seen).toEqual(['validating', 'creating_repository']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  test('reassembles a single frame split across three chunks', async () => {
+    const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
+    const third = Math.ceil(frame.length / 3);
+    const chunks = [frame.slice(0, third), frame.slice(third, third * 2), frame.slice(third * 2)];
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch(chunks) },
+    );
+
+    expect(project.project_id).toBe('p1');
+    expect(project.name).toBe('suna-web');
+  });
+
+  // ── Malformed frame ───────────────────────────────────────────────────────
+
+  test('wraps a JSON parse failure with context, and still cancels the reader', async () => {
+    let cancelled = false;
+    const stub = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {this is not json}\n\n'));
+            // Deliberately left open — no controller.close(). A stream that
+            // is already closed would make a real `reader.cancel()` and a
+            // no-op look identical; leaving it open is what proves the
+            // cancel algorithm actually ran.
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
+    ).rejects.toThrow('provisionProjectStream: received an unparseable SSE frame');
+
+    expect(cancelled).toBe(true);
   });
 
   // Guards the pre-stream denial path documented in
@@ -689,16 +810,28 @@ describe('provisionProjectStream', () => {
     expect(Object.keys(exhaustive).sort()).toEqual([...phases].sort());
   });
 
-  test('ProvisionStreamEvent discriminates on type', () => {
-    const phase: ProvisionStreamEvent = { type: 'phase', phase: 'validating' };
-    const done: ProvisionStreamEvent = {
-      type: 'done',
-      project: { project_id: 'p1' } as KortixProject,
+  // Replaces an earlier version of this test that only constructed three
+  // `ProvisionStreamEvent` literals and asserted `event.type === 'x'` — true
+  // by construction, already guaranteed by the type checker, and exercising
+  // no code under test. This version drives a REAL runtime `switch` and
+  // proves each arm is actually reached for each of the three wire shapes,
+  // which the compiler cannot guarantee on its own.
+  test('a runtime switch over ProvisionStreamEvent.type reaches all three wire shapes', () => {
+    const describeEvent = (event: ProvisionStreamEvent): string => {
+      switch (event.type) {
+        case 'phase':
+          return `phase:${event.phase}`;
+        case 'done':
+          return `done:${event.project.project_id}`;
+        case 'error':
+          return `error:${event.error}`;
+      }
     };
-    const error: ProvisionStreamEvent = { type: 'error', error: 'boom', code: 'x' };
 
-    expect(phase.type).toBe('phase');
-    expect(done.type).toBe('done');
-    expect(error.type).toBe('error');
+    expect(describeEvent({ type: 'phase', phase: 'validating' })).toBe('phase:validating');
+    expect(describeEvent({ type: 'done', project: { project_id: 'p1' } as KortixProject })).toBe(
+      'done:p1',
+    );
+    expect(describeEvent({ type: 'error', error: 'boom', code: 'x' })).toBe('error:boom');
   });
 });

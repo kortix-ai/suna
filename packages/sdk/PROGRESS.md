@@ -6586,5 +6586,3 @@ on an existing interface, so it does not appear in either name-list snapshot.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
-
-**SDK package shippable to production: YES.**

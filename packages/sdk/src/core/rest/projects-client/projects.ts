@@ -519,13 +519,37 @@ export type ProvisionStreamEvent =
  * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
  * in one frame are joined with `\n` before parsing.
  */
+/** How much of an unparseable frame's payload to surface in the thrown error.
+ *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
+ *  on the wrong route — could in principle carry something sensitive (a push
+ *  token). Never include more than this, and never log the payload anywhere. */
+const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
+
 function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
   const dataLines = frame
     .split('\n')
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).replace(/^ /, ''));
   if (dataLines.length === 0) return null;
-  return JSON.parse(dataLines.join('\n')) as ProvisionStreamEvent;
+
+  const payload = dataLines.join('\n');
+  try {
+    return JSON.parse(payload) as ProvisionStreamEvent;
+  } catch (cause) {
+    const excerpt =
+      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
+        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
+        : payload;
+    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
+    // '}'` gives someone debugging a proxy that mangled one frame in
+    // production nothing to go on — no mention of provisionProjectStream, no
+    // mention that this came from an SSE frame, no sight of what the frame
+    // actually contained.
+    throw new Error(
+      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
+      { cause },
+    );
+  }
 }
 
 /**
@@ -562,10 +586,13 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  * | Cloudflare Workers                | yes |
  * | **React Native / Expo**          | **NO** |
  *
- * **React Native is NOT supported.** RN's `fetch` has no `response.body`,
- * and Hermes has no `TextDecoderStream` — there is no way to read a stream
- * incrementally on that runtime. Callers on RN must use `provisionProject`
- * instead (single request/response, no progress reporting).
+ * **React Native is NOT supported.** RN's `fetch` has no `response.body` —
+ * there is no way to read a stream incrementally on that runtime, full stop.
+ * (This function decodes with plain `TextDecoder.decode()`, not
+ * `TextDecoderStream`, so Hermes's missing `TextDecoderStream` is not what
+ * blocks it here — the absent `response.body` alone is sufficient.) Callers
+ * on RN must use `provisionProject` instead (single request/response, no
+ * progress reporting).
  */
 export async function provisionProjectStream(
   input: ProvisionProjectInput,
