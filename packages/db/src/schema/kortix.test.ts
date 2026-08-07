@@ -405,11 +405,28 @@ describe('generated project state tables', () => {
       'claim_session_id',
       'claimed_at',
       'claim_expires_at',
+      'liveness_worker_session_id',
+      'liveness_coordinator_session_id',
+      'liveness_worker_contract',
+      'liveness_started_at',
+      'liveness_deadline_at',
+      'liveness_iterations_admitted',
+      'no_progress_settlements',
+      'continuation_consumed_at',
+      'last_progress_at',
+      'last_progress_ref',
+      'last_no_progress_settlement_id',
+      'last_no_progress_action',
+      'last_no_progress_command_id',
+      'escalated_at',
+      'liveness_blocker',
       'created_at',
       'updated_at',
     ]);
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_project_origin_fingerprint');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_blocked_by');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_deadline');
+    expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_worker');
   });
 
   test('goal observations expose the indexed metric time range', () => {

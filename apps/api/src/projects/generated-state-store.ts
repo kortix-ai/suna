@@ -4,6 +4,7 @@ import {
   projectSessions,
   type projectTaskStatusEnum,
   projectTasks,
+  sessionLifecycleCommands,
 } from '@kortix/db/schema';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
@@ -177,7 +178,13 @@ export async function claimProjectTask(
         eq(projectTasks.projectId, input.projectId),
         eq(projectTasks.taskId, input.taskId),
         inArray(projectTasks.status, ['backlog', 'todo', 'doing']),
-        or(isNull(projectTasks.claimSessionId), lte(projectTasks.claimExpiresAt, input.now)),
+        or(
+          isNull(projectTasks.claimSessionId),
+          and(
+            lte(projectTasks.claimExpiresAt, input.now),
+            sql`not (${projectTasks.status} = 'doing' and ${projectTasks.livenessWorkerSessionId} is not null)`,
+          ),
+        ),
         sql`exists (
           select 1
           from ${projectSessions} as claimant_session
@@ -276,6 +283,289 @@ export async function transitionProjectTask(
     taskId: input.taskId,
     claimSessionId: current.claimSessionId,
     claimExpiresAt: current.claimExpiresAt,
+  });
+}
+
+
+export interface ProjectTaskWorkerContract {
+  max_wall_seconds: number;
+  max_tokens: number;
+  max_cost_usd: number;
+  max_iterations: number;
+}
+
+export interface ProjectTaskMeasuredUsage {
+  total_cost: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  total_tokens: number;
+  request_count: number;
+}
+
+export class TaskLivenessConflictError extends Error {
+  readonly code = 'TASK_LIVENESS_CONFLICT' as const;
+  constructor(readonly projectId: string, readonly taskId: string, message: string) {
+    super(message);
+    this.name = 'TaskLivenessConflictError';
+  }
+}
+
+function sameWorkerContract(left: unknown, right: ProjectTaskWorkerContract): boolean {
+  if (!left || typeof left !== 'object') return false;
+  const value = left as Record<string, unknown>;
+  return value.max_wall_seconds === right.max_wall_seconds &&
+    value.max_tokens === right.max_tokens &&
+    value.max_cost_usd === right.max_cost_usd &&
+    value.max_iterations === right.max_iterations;
+}
+
+/** Atomically bind one immutable worker contract and enqueue its initial prompt. */
+export async function registerProjectTaskWorker(
+  database: Database,
+  input: {
+    projectId: string;
+    accountId: string;
+    taskId: string;
+    claimSessionId: string;
+    workerSessionId: string;
+    actorUserId: string | null;
+    prompt: string;
+    contract: ProjectTaskWorkerContract;
+    now: Date;
+  },
+): Promise<{ task: ProjectTask; commandId: string; existing: boolean }> {
+  assertValidDate(input.now, 'now');
+  const deadline = new Date(input.now.getTime() + input.contract.max_wall_seconds * 1_000);
+  const idempotencyKey = `task-worker:${input.taskId}:${input.workerSessionId}`;
+  const messageId = `task-worker-${input.taskId}-${input.workerSessionId}`;
+
+  return database.transaction(async (tx) => {
+    const [bound] = await tx
+      .update(projectTasks)
+      .set({
+        livenessWorkerSessionId: input.workerSessionId,
+        livenessCoordinatorSessionId: input.claimSessionId,
+        livenessWorkerContract: input.contract,
+        livenessStartedAt: input.now,
+        livenessDeadlineAt: deadline,
+        claimExpiresAt: deadline,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(projectTasks.projectId, input.projectId),
+          eq(projectTasks.taskId, input.taskId),
+          eq(projectTasks.status, 'doing'),
+          eq(projectTasks.claimSessionId, input.claimSessionId),
+          gt(projectTasks.claimExpiresAt, input.now),
+          isNull(projectTasks.livenessWorkerSessionId),
+          sql`exists (
+            select 1 from ${projectSessions} worker
+            where worker.project_id = ${projectTasks.projectId}
+              and worker.session_id = ${input.workerSessionId}
+              and worker.session_id <> ${input.claimSessionId}
+              and worker.metadata->>'spawned_by_session' = ${input.claimSessionId}
+              and coalesce(worker.metadata->>'deletedAt', '') = ''
+          )`,
+        ),
+      )
+      .returning();
+
+    let task = bound;
+    let existing = false;
+    if (!task) {
+      const [current] = await tx
+        .select()
+        .from(projectTasks)
+        .where(and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId)))
+        .limit(1);
+      if (
+        current?.status === 'doing' &&
+        current.claimSessionId === input.claimSessionId &&
+        current.claimExpiresAt != null && current.claimExpiresAt > input.now &&
+        current.livenessWorkerSessionId === input.workerSessionId &&
+        current.livenessCoordinatorSessionId === input.claimSessionId &&
+        sameWorkerContract(current.livenessWorkerContract, input.contract)
+      ) {
+        task = current;
+        existing = true;
+      } else {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task worker is already bound or the live claim is not owned by this session');
+      }
+    }
+
+    const [inserted] = await tx
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'continue_session',
+        source: 'cli',
+        status: 'queued',
+        projectId: input.projectId,
+        accountId: input.accountId,
+        actorUserId: input.actorUserId,
+        sessionId: input.workerSessionId,
+        idempotencyKey,
+        payload: { text: input.prompt, messageId },
+        result: {},
+        availableAt: input.now,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    const command = inserted ?? (await tx
+      .select({ commandId: sessionLifecycleCommands.commandId })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey))
+      .limit(1))[0];
+    if (!command) throw new Error('task worker prompt command conflicted but could not be loaded');
+    if (existing) {
+      const [persisted] = await tx.select({ payload: sessionLifecycleCommands.payload })
+        .from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.commandId, command.commandId))
+        .limit(1);
+      const payload = (persisted?.payload ?? {}) as Record<string, unknown>;
+      if (payload.text !== input.prompt || payload.messageId !== messageId) {
+        throw new TaskLivenessConflictError(input.projectId, input.taskId, 'registered worker prompt is immutable');
+      }
+    }
+    return { task, commandId: command.commandId, existing };
+  });
+}
+
+export async function recordProjectTaskProgress(
+  database: Database,
+  input: {
+    projectId: string;
+    taskId: string;
+    claimSessionId: string;
+    workerSessionId: string;
+    ref: string;
+    now: Date;
+  },
+): Promise<ProjectTask> {
+  const [task] = await database.update(projectTasks).set({
+    lastProgressAt: input.now,
+    lastProgressRef: input.ref,
+    updatedAt: input.now,
+  }).where(and(
+    eq(projectTasks.projectId, input.projectId),
+    eq(projectTasks.taskId, input.taskId),
+    eq(projectTasks.status, 'doing'),
+    eq(projectTasks.claimSessionId, input.claimSessionId),
+    eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+    gt(projectTasks.claimExpiresAt, input.now),
+  )).returning();
+  if (!task) throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task has no matching live worker binding');
+  return task;
+}
+
+function exceededWorkerBounds(task: ProjectTask, usage: ProjectTaskMeasuredUsage, now: Date): string | null {
+  const contract = task.livenessWorkerContract;
+  if (!contract || !task.livenessDeadlineAt) return 'worker contract is unavailable';
+  if (now >= task.livenessDeadlineAt) return 'max_wall_seconds exceeded';
+  if (usage.total_tokens >= contract.max_tokens) return 'max_tokens exceeded';
+  if (usage.total_cost >= contract.max_cost_usd) return 'max_cost_usd exceeded';
+  if (task.livenessIterationsAdmitted >= contract.max_iterations) return 'max_iterations exceeded';
+  return null;
+}
+
+/**
+ * Record one idempotent no-progress settlement. The first distinct settlement
+ * queues one continuation. The next settlement or an exceeded bound blocks and
+ * releases the task in the same transaction that queues escalation.
+ */
+export async function settleProjectTaskNoProgress(
+  database: Database,
+  input: {
+    projectId: string;
+    accountId: string;
+    taskId: string;
+    claimSessionId: string;
+    workerSessionId: string;
+    actorUserId: string | null;
+    settlementId: string;
+    reason: string;
+    measuredUsage: ProjectTaskMeasuredUsage;
+    now: Date;
+  },
+): Promise<{ task: ProjectTask; action: 'continuation_queued' | 'blocked_escalation_queued'; commandId: string }> {
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select task_id from ${projectTasks}
+      where project_id = ${input.projectId} and task_id = ${input.taskId} for update`);
+    const task = (await tx.select().from(projectTasks).where(and(
+      eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId),
+    )).limit(1))[0];
+    if (!task) throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task not found');
+    if (
+      task.livenessCoordinatorSessionId !== input.claimSessionId ||
+      task.livenessWorkerSessionId !== input.workerSessionId
+    ) {
+      throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task has no matching worker binding');
+    }
+    if (task.lastNoProgressSettlementId === input.settlementId && task.lastNoProgressAction && task.lastNoProgressCommandId) {
+      return {
+        task,
+        action: task.lastNoProgressAction as 'continuation_queued' | 'blocked_escalation_queued',
+        commandId: task.lastNoProgressCommandId,
+      };
+    }
+    if (task.status !== 'doing' || task.claimSessionId !== input.claimSessionId ||
+        task.livenessWorkerSessionId !== input.workerSessionId || !task.claimExpiresAt || task.claimExpiresAt <= input.now) {
+      throw new TaskLivenessConflictError(input.projectId, input.taskId, 'task has no matching live worker binding');
+    }
+
+    const exceeded = exceededWorkerBounds(task, input.measuredUsage, input.now);
+    const escalates = exceeded != null || task.continuationConsumedAt != null;
+    const action = escalates ? 'blocked_escalation_queued' as const : 'continuation_queued' as const;
+    const idempotencyKey = escalates
+      ? `task-escalate:${input.taskId}:${input.settlementId}`
+      : `task-no-progress:${input.taskId}:${input.workerSessionId}`;
+    const targetSessionId = escalates ? input.claimSessionId : input.workerSessionId;
+    const text = escalates
+      ? `Task ${input.taskId} is blocked. ${exceeded ?? input.reason}. Escalate through the existing review, question, or channel path.`
+      : `Continue task ${input.taskId} once. Previous settlement made no progress: ${input.reason}. Return verifier evidence or a delivered blocker within the registered bounds.`;
+    const [command] = await tx.insert(sessionLifecycleCommands).values({
+      commandType: 'continue_session', source: 'cli', status: 'queued',
+      projectId: input.projectId, accountId: input.accountId, actorUserId: input.actorUserId,
+      sessionId: targetSessionId, idempotencyKey,
+      payload: { text, messageId: idempotencyKey }, result: {}, availableAt: input.now, updatedAt: input.now,
+    }).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    const persistedCommand = command ?? (await tx.select({ commandId: sessionLifecycleCommands.commandId })
+      .from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey)).limit(1))[0];
+    if (!persistedCommand) throw new Error('liveness command conflicted but could not be loaded');
+
+    if (escalates) {
+      await tx.insert(sessionLifecycleCommands).values({
+        commandType: 'stop_session', source: 'cli', status: 'queued',
+        projectId: input.projectId, accountId: input.accountId, actorUserId: input.actorUserId,
+        sessionId: input.workerSessionId,
+        idempotencyKey: `task-stop:${input.taskId}:${input.workerSessionId}`,
+        payload: { reason: 'task_liveness_exhausted' }, result: {},
+        availableAt: input.now, updatedAt: input.now,
+      }).onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    }
+    const blocker = exceeded ?? input.reason;
+    const [updated] = await tx.update(projectTasks).set({
+      noProgressSettlements: Math.min(2, task.noProgressSettlements + 1),
+      lastNoProgressSettlementId: input.settlementId,
+      lastNoProgressAction: action,
+      lastNoProgressCommandId: persistedCommand.commandId,
+      ...(escalates ? {
+        status: 'blocked' as const,
+        escalatedAt: input.now,
+        livenessBlocker: blocker,
+        result: { ...task.result, liveness: { blocker, measured_usage: input.measuredUsage } },
+        claimSessionId: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+      } : { continuationConsumedAt: input.now }),
+      updatedAt: input.now,
+    }).where(and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId))).returning();
+    if (!updated) throw new Error('locked task disappeared during liveness settlement');
+    return { task: updated, action, commandId: persistedCommand.commandId };
   });
 }
 

@@ -1,15 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Database, accounts, createDb, projects } from '@kortix/db';
-import { projectGoalObservations, projectSessions, projectTasks } from '@kortix/db/schema';
+import {
+  projectGoalObservations,
+  projectSessions,
+  projectTasks,
+  sessionLifecycleCommands,
+} from '@kortix/db/schema';
 import { eq } from 'drizzle-orm';
 import {
   TaskClaimConflictError,
   TaskTransitionConflictError,
+  TaskLivenessConflictError,
   claimProjectTask,
   createProjectTask,
   getProjectTask,
   listProjectGoalObservations,
   recordProjectGoalObservation,
+  registerProjectTaskWorker,
+  settleProjectTaskNoProgress,
   transitionProjectTask,
 } from './generated-state-store';
 
@@ -67,6 +75,7 @@ async function seed() {
       branchName: 'generated-state-b',
       agentName: 'reviewer',
       createdBy: USER_B,
+      metadata: { spawned_by_session: SESSION_A },
     },
   ]);
 }
@@ -525,6 +534,139 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(unchanged?.status).toBe('doing');
     expect(unchanged?.claimSessionId).toBe(SESSION_A);
     expect(unchanged?.claimExpiresAt?.toISOString()).toBe('2026-08-07T13:01:00.000Z');
+  });
+
+  test('worker registration and one continuation survive retries and process restarts', async () => {
+    const database = testDb();
+    const { task } = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Restart-safe liveness',
+      origin: 'liveness-proof',
+    });
+    const claimedAt = new Date('2026-08-07T14:00:00.000Z');
+    await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      sessionId: SESSION_A,
+      now: claimedAt,
+      leaseMs: 60_000,
+    });
+    const contract = {
+      max_wall_seconds: 3_600,
+      max_tokens: 50_000,
+      max_cost_usd: 5,
+      max_iterations: 10,
+    };
+    const registered = await registerProjectTaskWorker(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      prompt: 'Do the bounded task.',
+      contract,
+      now: claimedAt,
+    });
+    expect(registered.existing).toBe(false);
+    expect(registered.task.claimExpiresAt?.toISOString()).toBe('2026-08-07T15:00:00.000Z');
+    const retry = await registerProjectTaskWorker(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      prompt: 'Do the bounded task.',
+      contract,
+      now: new Date('2026-08-07T14:00:01.000Z'),
+    });
+    expect(retry.existing).toBe(true);
+    expect(retry.commandId).toBe(registered.commandId);
+    await expect(registerProjectTaskWorker(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      prompt: 'A changed prompt must conflict.',
+      contract,
+      now: new Date('2026-08-07T14:00:02.000Z'),
+    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+
+    const usage = {
+      total_cost: 0.5,
+      input_tokens: 100,
+      output_tokens: 100,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 200,
+      request_count: 1,
+    };
+    const first = await settleProjectTaskNoProgress(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      settlementId: 'turn-1',
+      reason: 'No evidence',
+      measuredUsage: usage,
+      now: new Date('2026-08-07T14:01:00.000Z'),
+    });
+    expect(first.action).toBe('continuation_queued');
+    const lostResponseRetry = await settleProjectTaskNoProgress(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      settlementId: 'turn-1',
+      reason: 'No evidence',
+      measuredUsage: usage,
+      now: new Date('2026-08-07T14:01:01.000Z'),
+    });
+    expect(lostResponseRetry.action).toBe('continuation_queued');
+    expect(lostResponseRetry.commandId).toBe(first.commandId);
+
+    const second = await settleProjectTaskNoProgress(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      settlementId: 'turn-2',
+      reason: 'Still no evidence',
+      measuredUsage: usage,
+      now: new Date('2026-08-07T14:02:00.000Z'),
+    });
+    expect(second.action).toBe('blocked_escalation_queued');
+    expect(second.task.status).toBe('blocked');
+    expect(second.task.claimSessionId).toBeNull();
+    expect(second.task.noProgressSettlements).toBe(2);
+    await expect(settleProjectTaskNoProgress(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_B,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
+      settlementId: 'turn-2',
+      reason: 'Guessed retry',
+      measuredUsage: usage,
+      now: new Date('2026-08-07T14:02:01.000Z'),
+    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+
+    const commands = await database.select().from(sessionLifecycleCommands);
+    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-worker:${task.taskId}`))).toHaveLength(1);
+    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-no-progress:${task.taskId}`))).toHaveLength(1);
+    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-escalate:${task.taskId}`))).toHaveLength(1);
+    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-stop:${task.taskId}`))).toHaveLength(1);
   });
 
   test('goal observations reject non-finite values and query one metric range in time order', async () => {

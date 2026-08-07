@@ -20,6 +20,7 @@ import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
+import { stopSession } from './stop';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
@@ -473,7 +474,7 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, runtimeId) =>
-      postPrompt(externalId, runtimeId, text, userId, sessionId),
+      postPrompt(externalId, runtimeId, text, userId, sessionId, command.messageId),
   });
 }
 
@@ -498,6 +499,11 @@ export async function drainSessionLifecycleQueue(
   for (const row of rows) {
     if (row.commandType === 'continue_session') {
       const outcome = await executeQueuedContinue(row);
+      out[outcome] += 1;
+      continue;
+    }
+    if (row.commandType === 'stop_session') {
+      const outcome = await executeQueuedStop(row);
       out[outcome] += 1;
       continue;
     }
@@ -558,6 +564,44 @@ export async function drainSessionLifecycleQueue(
  * request that picked the decision up during the grace window cleanly turns
  * this into a no-op instead of a duplicate prompt.
  */
+async function executeQueuedStop(
+  row: SessionLifecycleCommandRow,
+): Promise<'succeeded' | 'queued' | 'failed'> {
+  if (!row.sessionId) {
+    await markCommandFailed(row.commandId, 'stop_session command missing sessionId', {
+      retryable: false,
+      attempts: row.attempts,
+    });
+    return 'failed';
+  }
+  const userId = row.actorUserId ?? (await resolveProjectAutomationActor(row.accountId));
+  if (!userId) {
+    await markCommandFailed(row.commandId, 'stop_session command has no actor', {
+      retryable: true,
+      attempts: row.attempts,
+      sessionId: row.sessionId,
+    });
+    return 'queued';
+  }
+  const result = await stopSession({
+    projectId: row.projectId,
+    sessionId: row.sessionId,
+    accountId: row.accountId,
+    userId,
+  });
+  if (result.status === 200 || result.status === 404 || result.status === 409) {
+    await markCommandSucceeded(row.commandId, { status: 'stopped', response: result.body }, row.sessionId);
+    return 'succeeded';
+  }
+  const retryable = result.status === 429 || result.status >= 500;
+  await markCommandFailed(row.commandId, String(result.body.error ?? `stop failed: ${result.status}`), {
+    retryable,
+    attempts: row.attempts,
+    sessionId: row.sessionId,
+  });
+  return retryable ? 'queued' : 'failed';
+}
+
 async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
 ): Promise<'succeeded' | 'queued' | 'failed'> {
@@ -593,6 +637,7 @@ async function executeQueuedContinue(
       source: row.source as SessionInvocationSource,
       sessionId: row.sessionId,
       text,
+      messageId: payload.messageId,
       userId: row.actorUserId,
     });
     if (delivery === 'delivered') {
@@ -808,8 +853,14 @@ async function postPrompt(
   /** The session this prompt is FOR. Passed as the caller binding so the
    *  isolation guard proves the target matches, rather than being waived. */
   callerSessionId: string,
+  messageId?: string | null,
 ): Promise<boolean> {
-  const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
+  const body = new TextEncoder().encode(
+    JSON.stringify({
+      ...(messageId ? { messageID: messageId } : {}),
+      parts: [{ type: 'text', text }],
+    }),
+  );
   try {
     const res = await forwardToSandbox(
       externalId,

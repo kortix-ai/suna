@@ -11,6 +11,7 @@ import {
   numeric,
   pgSchema,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -847,6 +848,31 @@ export const projectTasks = kortixSchema.table(
     claimSessionId: text('claim_session_id').references(() => projectSessions.sessionId),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
     claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    /** Immutable, server-enforced bounds for the one worker bound to this claim. */
+    livenessWorkerSessionId: text('liveness_worker_session_id').references(
+      () => projectSessions.sessionId,
+    ),
+    livenessCoordinatorSessionId: text('liveness_coordinator_session_id').references(
+      () => projectSessions.sessionId,
+    ),
+    livenessWorkerContract: jsonb('liveness_worker_contract').$type<{
+      max_wall_seconds: number;
+      max_tokens: number;
+      max_cost_usd: number;
+      max_iterations: number;
+    }>(),
+    livenessStartedAt: timestamp('liveness_started_at', { withTimezone: true }),
+    livenessDeadlineAt: timestamp('liveness_deadline_at', { withTimezone: true }),
+    livenessIterationsAdmitted: integer('liveness_iterations_admitted').default(0).notNull(),
+    noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
+    continuationConsumedAt: timestamp('continuation_consumed_at', { withTimezone: true }),
+    lastProgressAt: timestamp('last_progress_at', { withTimezone: true }),
+    lastProgressRef: text('last_progress_ref'),
+    lastNoProgressSettlementId: text('last_no_progress_settlement_id'),
+    lastNoProgressAction: text('last_no_progress_action'),
+    lastNoProgressCommandId: uuid('last_no_progress_command_id'),
+    escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+    livenessBlocker: text('liveness_blocker'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -867,6 +893,12 @@ export const projectTasks = kortixSchema.table(
     index('idx_project_tasks_claim_expiry')
       .on(table.claimExpiresAt)
       .where(sql`${table.claimSessionId} is not null`),
+    index('idx_project_tasks_liveness_deadline')
+      .on(table.status, table.livenessDeadlineAt)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_liveness_worker')
+      .on(table.livenessWorkerSessionId)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
     index('idx_project_tasks_blocked_by').using('gin', table.blockedBy),
     uniqueIndex('idx_project_tasks_project_origin_fingerprint')
       .on(table.projectId, table.originFingerprint)
@@ -895,6 +927,42 @@ export const projectTasks = kortixSchema.table(
       sql`${table.claimExpiresAt} is null or ${table.claimExpiresAt} > ${table.claimedAt}`,
     ),
     check('project_tasks_not_self_blocked', sql`not (${table.taskId} = any(${table.blockedBy}))`),
+    check(
+      'project_tasks_liveness_complete',
+      sql`num_nonnulls(${table.livenessWorkerSessionId}, ${table.livenessCoordinatorSessionId}, ${table.livenessWorkerContract}, ${table.livenessStartedAt}, ${table.livenessDeadlineAt}) in (0, 5)`,
+    ),
+    check(
+      'project_tasks_liveness_deadline_after_start',
+      sql`${table.livenessDeadlineAt} is null or ${table.livenessDeadlineAt} > ${table.livenessStartedAt}`,
+    ),
+    check(
+      'project_tasks_liveness_worker_not_claimant',
+      sql`${table.livenessWorkerSessionId} is null or ${table.livenessWorkerSessionId} <> ${table.claimSessionId}`,
+    ),
+    check(
+      'project_tasks_no_progress_settlements_range',
+      sql`${table.noProgressSettlements} between 0 and 2`,
+    ),
+    check(
+      'project_tasks_continuation_has_settlement',
+      sql`${table.continuationConsumedAt} is null or ${table.noProgressSettlements} >= 1`,
+    ),
+    check(
+      'project_tasks_liveness_contract_valid',
+      sql`${table.livenessWorkerContract} is null or (
+        jsonb_typeof(${table.livenessWorkerContract}) = 'object'
+        and ${table.livenessWorkerContract} ?& array['max_wall_seconds','max_tokens','max_cost_usd','max_iterations']
+        and (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric <= 86400
+        and (${table.livenessWorkerContract}->>'max_tokens')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric > 0
+      )`,
+    ),
+    check(
+      'project_tasks_last_no_progress_action_valid',
+      sql`${table.lastNoProgressAction} is null or ${table.lastNoProgressAction} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
   ],
 );
 

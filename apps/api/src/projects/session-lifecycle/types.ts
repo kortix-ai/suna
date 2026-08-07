@@ -97,6 +97,8 @@ export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
   text: string;
+  /** Stable OpenCode message ID for at-least-once outbox retries. */
+  messageId?: string | null;
   userId?: string | null;
   /** Allow-listed env applied to OpenCode before server-side prompt delivery. */
   opencodeEnv?: Record<string, string | null>;

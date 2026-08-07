@@ -31,6 +31,8 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
 
 export interface QueuedContinueSessionPayload {
   text: string;
+  /** Stable OpenCode message ID for idempotent retry after a process crash. */
+  messageId?: string | null;
   /** When set, the drain SKIPS delivery if this execution's decision was
    *  already consumed in-band (a live held/poll request resumed the turn) —
    *  the follow-up prompt would just be noise. */
@@ -54,6 +56,7 @@ export interface EnqueueContinueSessionCommandInput {
   sessionId: string;
   actorUserId: string | null;
   text: string;
+  messageId?: string | null;
   executionId?: string | null;
   triggerSlug?: string | null;
   availableAt?: Date;
@@ -66,6 +69,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
   const now = new Date();
   const payload: QueuedContinueSessionPayload = {
     text: input.text,
+    messageId: input.messageId ?? null,
     executionId: input.executionId ?? null,
     triggerSlug: input.triggerSlug ?? null,
   };
@@ -319,7 +323,13 @@ export async function claimDueLifecycleCommands(input: {
     .from(sessionLifecycleCommands)
     .where(
       and(
-        eq(sessionLifecycleCommands.status, 'queued'),
+        or(
+          eq(sessionLifecycleCommands.status, 'queued'),
+          and(
+            eq(sessionLifecycleCommands.status, 'running'),
+            lte(sessionLifecycleCommands.lockedUntil, now),
+          ),
+        ),
         input.idempotencyKey
           ? eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey)
           : undefined,
@@ -344,7 +354,13 @@ export async function claimDueLifecycleCommands(input: {
       .where(
         and(
           eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'queued'),
+          or(
+            eq(sessionLifecycleCommands.status, 'queued'),
+            and(
+              eq(sessionLifecycleCommands.status, 'running'),
+              lte(sessionLifecycleCommands.lockedUntil, now),
+            ),
+          ),
         ),
       )
       .returning();
