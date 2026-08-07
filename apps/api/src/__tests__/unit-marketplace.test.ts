@@ -412,4 +412,44 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       _resetExternalCache();
     }
   });
+
+  test.serial('bounds concurrent external registry loads', async () => {
+    const sourceCount = 12;
+    let active = 0;
+    let maxActive = 0;
+    const fetchStub = (async (url: unknown) => {
+      const href = typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
+      if (!href.endsWith('/registry.json')) return new Response('not found', { status: 404 });
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Bun.sleep(10);
+      active -= 1;
+      const source = new URL(href).pathname.split('/')[2] ?? 'unknown';
+      return new Response(
+        JSON.stringify({
+          name: source,
+          items: [{ name: `skill-${source}`, type: 'registry:skill', title: source, files: [] }],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    globalThis.fetch = fetchStub;
+    githubLoaderOptions.fetchImpl = fetchStub;
+    process.env.KORTIX_MARKETPLACE_REGISTRIES = Array.from(
+      { length: sourceCount },
+      (_, index) => `github:mockorg/source-${index}`,
+    ).join(',');
+    _resetExternalCache();
+
+    try {
+      const all = await listCatalogItems();
+      expect(all.filter((item) => item.name.startsWith('skill-source-'))).toHaveLength(sourceCount);
+      expect(maxActive).toBeGreaterThan(1);
+      expect(maxActive).toBeLessThanOrEqual(4);
+    } finally {
+      restoreFetch();
+      delete process.env.KORTIX_MARKETPLACE_REGISTRIES;
+      _resetExternalCache();
+    }
+  });
 });

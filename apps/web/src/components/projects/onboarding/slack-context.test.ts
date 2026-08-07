@@ -15,13 +15,15 @@ describe('Slack onboarding context', () => {
     expect(connectorsView).toContain('customOnly?: boolean');
   });
 
-  test('keeps the custom-only form flat and stacked inside the context rail', () => {
+  test('keeps the custom-only form flat and stacked in the decision lane', () => {
+    expect(slackStep).not.toContain('StepContext');
+    expect(slackStep).toContain('customOpen &&');
     expect(connectorsView).toContain("!customOnly && 'border-border/60 bg-card rounded-2xl border p-4'");
     expect(connectorsView).toContain("!customOnly && 'sm:flex-row sm:items-end sm:justify-between'");
     expect(connectorsView).toContain("!customOnly && 'sm:grid-cols-2'");
   });
 
-  test('announces OAuth progress and connection results from the context rail', () => {
+  test('announces OAuth progress and connection results in the decision lane', () => {
     expect(slackStep).toContain('aria-live="polite"');
     expect(slackStep).toContain('Waiting for approval in Slack');
     expect(slackStep).toContain('Connected to Slack');

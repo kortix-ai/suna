@@ -22,7 +22,8 @@ export type ExperimentalFeatureKey =
   | 'voice'
   | 'llm_gateway'
   | 'review_center'
-  | 'meta_agent';
+  | 'meta_agent'
+  | 'apps';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

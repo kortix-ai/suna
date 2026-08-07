@@ -792,19 +792,60 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
   if (!ctx) return 1;
 
   try {
-    const result = await ctx.client.post<{ ok: boolean; synced: number }>(
+    const result = await ctx.client.post<{
+      ok: boolean;
+      active_sandboxes: number;
+      targeted: number;
+      synced: number;
+      failed: number;
+      exported: number;
+      results: Array<{
+        session_id: string;
+        sandbox_id: string | null;
+        status: 'synced' | 'failed';
+        scope: 'inherit' | 'restricted' | 'none' | null;
+        revision: string | null;
+        exported: number;
+        managed: number | null;
+        withheld: number | null;
+        agent_env_written: boolean;
+        reason?: string;
+      }>;
+    }>(
       `/projects/${ctx.projectId}/secrets/sync`,
       {},
     );
     if (json) {
       emitJson(result);
+      return result.ok ? 0 : 1;
+    }
+    if (result.ok) {
+      if (result.active_sandboxes === 0) {
+        process.stdout.write(`\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`);
+        return 0;
+      }
+      process.stdout.write(
+        `\n${status.ok(`Verified ${result.exported} secret export(s) across ${result.synced}/${result.active_sandboxes} active sandbox(es).`)}\n`,
+      );
+      for (const target of result.results) {
+        const scope = target.scope === 'none' ? ' · scope permits zero secrets' : '';
+        process.stdout.write(
+          `  ${C.dim}${target.session_id}: ${target.exported} exported · revision ${target.revision}${scope}${C.reset}\n`,
+        );
+      }
+      process.stdout.write('\n');
       return 0;
     }
-    process.stdout.write(
-      `\n${status.ok(`Synced ${result.synced ?? 'all'} secret(s) to active sandboxes.`)}\n` +
-        `  ${C.dim}If secrets are still missing, source /dev/shm/kortix/agent-env.sh or restart the session.${C.reset}\n\n`,
+
+    process.stderr.write(
+      `${status.err(`Secret sync incomplete: ${result.synced} synced, ${result.failed} failed.`)}\n`,
     );
-    return 0;
+    for (const target of result.results.filter((item) => item.status === 'failed')) {
+      process.stderr.write(
+        `  ${C.dim}${target.session_id || 'project'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
+      );
+    }
+    return 1;
   } catch (err) {
     return surfaceApiError(err);
   }

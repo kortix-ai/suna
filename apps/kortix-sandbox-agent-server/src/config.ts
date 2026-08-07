@@ -24,6 +24,16 @@ const BoolFlag = z.preprocess((v) => {
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
+  // The other half of the opencode port PAIR. A verified reload boots the new
+  // opencode on whichever of the two is idle, proves it serves, and only then
+  // swaps to it and kills the old one — so a config that cannot boot never
+  // takes the session down with it.
+  //
+  // Fixed rather than picked at reload time on purpose: both ports must be in
+  // the web proxy's blocked-self-ports set, and that set is built once at
+  // startup. An ephemeral port would be unguarded the moment it went live,
+  // handing the sandbox an unproxied route to its own opencode.
+  KORTIX_OPENCODE_STANDBY_PORT: z.coerce.number().int().positive().default(4097),
   // Static web server port. Default 3211 is a hard contract: apps/web
   // (platform-client STATIC_FILE_SERVER, url.ts) and the starter `show` tool
   // build preview URLs against this exact port via /proxy/3211 and p3211-* .
@@ -81,6 +91,8 @@ const Schema = z.object({
 export type Config = {
   servicePort: number
   opencodeInternalPort: number
+  /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */
+  opencodeStandbyPort: number
   staticPort: number
   workspace: string
   projectTarget: string
@@ -108,6 +120,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
+    KORTIX_OPENCODE_STANDBY_PORT: env.KORTIX_OPENCODE_STANDBY_PORT,
     KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
     KORTIX_WORKSPACE: env.KORTIX_WORKSPACE,
     KORTIX_PROJECT_TARGET: env.KORTIX_PROJECT_TARGET,
@@ -133,6 +146,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     servicePort: parsed.KORTIX_SERVICE_PORT,
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
+    opencodeStandbyPort: parsed.KORTIX_OPENCODE_STANDBY_PORT,
     staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,
     projectTarget: parsed.KORTIX_PROJECT_TARGET,

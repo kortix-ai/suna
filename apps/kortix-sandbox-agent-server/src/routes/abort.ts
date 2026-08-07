@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { logger } from '../logger'
 import { readPinnedOpencodeSessionId } from '../main'
 import type { Config } from '../config'
+import type { Opencode } from '../opencode'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -11,7 +12,7 @@ import {
 // session. apps/api calls this when the user clicks "Stop" on the Slack
 // stream. opencode's /session/{id}/abort cancels the running model call and
 // any in-flight tools; the next prompt to the same session resumes cleanly.
-export function createAbortRouter(cfg: Config): Hono {
+export function createAbortRouter(cfg: Config, opencode: Opencode): Hono {
   const app = new Hono()
 
   app.post('/', async (c) => {
@@ -31,7 +32,7 @@ export function createAbortRouter(cfg: Config): Hono {
     }
 
     const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
-    const url = `http://127.0.0.1:${cfg.opencodeInternalPort}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
+    const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
     try {
       const res = await fetch(url, {
         method: 'POST',

@@ -19,7 +19,7 @@ describe('project onboarding connections', () => {
   });
 
   test('allows multiple connections for one provider app', () => {
-    expect(source).toContain('proposeConnectorConnectionSlug(selectedApp.slug, existingSlugs)');
+    expect(source).toContain('proposeConnectorConnectionSlug(selectedApp.name, existingSlugs)');
     expect(source).toContain('aria-label={`Add ${app.name} connection`}');
     expect(source).not.toContain('disabled={connected || busy}');
   });

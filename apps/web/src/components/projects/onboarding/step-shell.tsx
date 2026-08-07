@@ -4,19 +4,16 @@
  * The shared shapes onboarding is allowed to draw.
  *
  * Every step renders inside `StepShell`. Survey choices use `SelectionRow`.
- * Actions use `ActionRow`. Optional supporting content uses `StepContext`.
+ * Actions use `ActionRow`.
  *
  * Adding an eighth step must never require inventing new chrome.
  */
 
-import { motion, useReducedMotion } from 'motion/react';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
-
-import { contextVariants } from './motion';
 
 const StepIdentityContext = createContext<string | null>(null);
 
@@ -76,7 +73,6 @@ export function StepShell({
   onPrimary,
   skipLabel,
   onSkip,
-  context,
 }: {
   title: string;
   description?: string;
@@ -86,7 +82,6 @@ export function StepShell({
   onPrimary: () => void;
   skipLabel?: string;
   onSkip?: () => void;
-  context?: ReactNode;
 }) {
   const generatedId = useId();
   const idPrefix = useContext(StepIdentityContext) ?? `onboarding-step-${generatedId}`;
@@ -114,8 +109,6 @@ export function StepShell({
 
       {children && <div className="mt-6">{children}</div>}
 
-      {context}
-
       {/* Skip and Continue are siblings with real distance between them and from
           the content above. A skip tucked directly under the primary reads as a
           footnote to it; side by side it reads as the other choice, which is
@@ -141,22 +134,6 @@ export function StepShell({
         </Button>
       </div>
     </div>
-  );
-}
-
-export function StepContext({ children }: { children: ReactNode }) {
-  const reduced = useReducedMotion() ?? false;
-
-  return (
-    <motion.aside
-      variants={contextVariants(reduced)}
-      initial="enter"
-      animate="center"
-      exit="exit"
-      className="mt-6 w-full xl:absolute xl:top-0 xl:left-[calc(100%+2rem)] xl:mt-0 xl:max-h-[min(560px,calc(100dvh-160px))] xl:w-[340px] xl:overflow-y-auto"
-    >
-      {children}
-    </motion.aside>
   );
 }
 
@@ -192,7 +169,7 @@ export function SelectionRow({
           <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
         )}
       </span>
-      <RadioGroupItem id={id} value={value} disabled={disabled} />
+      <RadioGroupItem id={id} value={value} disabled={disabled}  />
     </label>
   );
 }

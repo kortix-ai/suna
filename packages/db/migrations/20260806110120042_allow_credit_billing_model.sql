@@ -27,7 +27,7 @@ set statement_timeout = '30s';
 -- nothing can hold 'credit' until the v3 Stripe prices exist, and checkout
 -- fails closed without them ("No price configured for this tier").
 alter table "kortix"."credit_accounts"
-  drop constraint "kortix_credit_accounts_billing_model_check";
+  drop constraint if exists "kortix_credit_accounts_billing_model_check";
 
 alter table "kortix"."credit_accounts"
   add constraint "kortix_credit_accounts_billing_model_check"

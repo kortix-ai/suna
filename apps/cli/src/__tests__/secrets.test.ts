@@ -42,6 +42,7 @@ let secretItems: Array<{
 }>;
 let manifestRequired: string[];
 let manifestOptional: string[];
+let syncResponse: Record<string, unknown>;
 
 function secret(
   identifier: string,
@@ -150,6 +151,9 @@ function mockApi() {
         body_base64: Buffer.from('{"created":true}').toString('base64'),
       });
     }
+    if (url.endsWith('/projects/proj_1/secrets/sync') && method === 'POST') {
+      return json(syncResponse);
+    }
     if (url.includes('/projects/proj_1/secrets') && method === 'POST') {
       const input = typeof body === 'object' && body !== null ? body : {};
       const name = String(input.name).toUpperCase();
@@ -196,6 +200,25 @@ beforeEach(() => {
   secretItems = [];
   manifestRequired = [];
   manifestOptional = [];
+  syncResponse = {
+    ok: true,
+    active_sandboxes: 1,
+    targeted: 1,
+    synced: 1,
+    failed: 0,
+    exported: 2,
+    results: [{
+      session_id: 'session-1',
+      sandbox_id: 'sandbox-1',
+      status: 'synced',
+      scope: 'inherit',
+      revision: 'revision-1',
+      exported: 2,
+      managed: 2,
+      withheld: 0,
+      agent_env_written: true,
+    }],
+  };
   mockApi();
 });
 
@@ -281,6 +304,93 @@ describe('kortix secrets set — identifier', () => {
     const code = await runSecrets(['set', 'NOTAPAIR']);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('expected KEY=VALUE');
+  });
+});
+
+describe('kortix secrets sync — verified delivery', () => {
+  test('reports verified exports instead of formatting a boolean as a count', async () => {
+    const code = await runSecrets(['sync']);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('Verified 2 secret export(s) across 1/1 active sandbox(es).');
+    expect(stripAnsi(stdout)).toContain('session-1: 2 exported');
+    expect(stripAnsi(stdout)).toContain('revision revision-1');
+    expect(stripAnsi(stdout)).not.toContain('Synced true secret(s)');
+  });
+
+  test('exits non-zero and prints the target reason when daemon proof fails', async () => {
+    syncResponse = {
+      ok: false,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 0,
+      failed: 1,
+      exported: 0,
+      results: [{
+        session_id: 'session-broken',
+        sandbox_id: 'sandbox-broken',
+        status: 'failed',
+        scope: 'inherit',
+        revision: 'revision-broken',
+        exported: 0,
+        managed: null,
+        withheld: null,
+        agent_env_written: false,
+        reason: 'env sync did not confirm agent-env.sh write',
+      }],
+    };
+
+    const code = await runSecrets(['sync']);
+
+    expect(code).toBe(1);
+    expect(stripAnsi(stderr)).toContain('Secret sync incomplete: 0 synced, 1 failed.');
+    expect(stripAnsi(stderr)).toContain('env sync did not confirm agent-env.sh write');
+    expect(stripAnsi(stdout)).toBe('');
+  });
+
+  test('states when a verified zero export is caused by the session scope', async () => {
+    syncResponse = {
+      ok: true,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 1,
+      failed: 0,
+      exported: 0,
+      results: [{
+        session_id: 'session-zero',
+        sandbox_id: 'sandbox-zero',
+        status: 'synced',
+        scope: 'none',
+        revision: 'revision-zero',
+        exported: 0,
+        managed: 54,
+        withheld: 54,
+        agent_env_written: true,
+      }],
+    };
+
+    const code = await runSecrets(['sync']);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('0 exported · revision revision-zero · scope permits zero secrets');
+  });
+
+  test('states when no active sandbox needs synchronization', async () => {
+    syncResponse = {
+      ok: true,
+      active_sandboxes: 0,
+      targeted: 0,
+      synced: 0,
+      failed: 0,
+      exported: 0,
+      results: [],
+    };
+
+    const code = await runSecrets(['sync']);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('No active sandboxes require secret synchronization.');
+    expect(stripAnsi(stdout)).not.toContain('Verified 0 secret export');
   });
 });
 

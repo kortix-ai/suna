@@ -5,7 +5,7 @@ import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
-import type { ProjectEnvStore } from '../project-env'
+import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_API_KEY',
@@ -35,6 +35,7 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // is really running. Pushed with the config; allowlisted so the two cannot
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
+  'KORTIX_SECRET_CAPABILITIES',
 ])
 
 function bearerToken(header: string | undefined): string | null {
@@ -114,7 +115,12 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
   })
 }
 
-export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: ProjectEnvStore): Hono {
+export function createEnvRouter(
+  cfg: Config,
+  opencode: Opencode,
+  projectEnv: ProjectEnvStore,
+  opts: { agentEnvFile?: string } = {},
+): Hono {
   const router = new Hono()
   let syncInFlight: Promise<Response> | null = null
 
@@ -162,8 +168,14 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           env: body.env as Record<string, unknown>,
           names: body.names,
         })
+        // PTYs and other daemon children inherit process.env directly. Keep it
+        // aligned with the authoritative store so a new child cannot inherit a
+        // revoked boot secret before it sources agent-env.sh.
+        reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
         const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        // null when no reload was needed at all; otherwise how it was applied.
+        let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
 
@@ -172,8 +184,12 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
             revision: result.revision,
             names: result.names.length,
           })
-          writeAgentEnvFile(projectEnv)
         }
+        // Always rewrite the shell artifact, including an identical revision.
+        // A warm-fork race can leave agent-env.sh stale while the in-memory
+        // store already has the requested revision. A sync replay must repair it.
+        const agentEnvWritten = writeAgentEnvFile(projectEnv, { sh: opts.agentEnvFile })
+        if (!agentEnvWritten) throw new Error('failed to write live agent env file')
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
           // reloadConfig, not restart: opencode re-reads its config file in
           // place via /global/dispose in ~51ms, against ~8s for a respawn
@@ -206,6 +222,11 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           const projectSecretsMoved = result.changedNames.length > 0
           const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
           const how = await opencode.reloadConfig({ mustRespawn })
+          // 'kept-old' means the verified swap declined: the new opencode never
+          // came up, so the running one was left serving. The config did NOT
+          // take, and the caller has to be told — logging it here and returning
+          // ok:true would report a reload that silently did nothing.
+          reloadOutcome = how
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
@@ -215,15 +236,34 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           })
         }
 
+        const applied = projectEnv.snapshot()
+        const exported = Object.keys(applied.env).length
+        logger.info('[env] project env applied', {
+          revision: applied.revision,
+          managed: applied.knownNames.length,
+          current: applied.names.length,
+          exported,
+          withheld: Math.max(0, applied.knownNames.length - exported),
+          agentEnvWritten,
+        })
+
         return c.json({
           ok: true,
           changed: result.changed,
           revision: result.revision,
           names: result.names,
+          exported,
+          managed: applied.knownNames.length,
+          withheld: Math.max(0, applied.knownNames.length - exported),
+          agent_env_written: agentEnvWritten,
           opencode_env_changed: opencodeEnvChanged,
           opencode_env_names: opencodeEnvNames,
           opencode: opencode.getState(),
           opencode_pid: opencode.getPid(),
+          // 'disposed' | 'restarted' | 'kept-old' | null (no reload needed).
+          // 'kept-old' is the verified swap declining a config that would not
+          // boot — a successful safety outcome, and a FAILED reload.
+          opencode_reload: reloadOutcome,
         })
       } catch (err) {
         const message = (err as Error).message || 'env sync failed'

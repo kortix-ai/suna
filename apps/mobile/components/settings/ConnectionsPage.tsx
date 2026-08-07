@@ -43,7 +43,6 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { SettingsHeader } from './SettingsHeader';
 import { AppIcon } from './connections/AppIcon';
 import { ManageConnectionSheet } from './connections/ManageConnectionSheet';
-import { CustomMcpDialog } from './connections/CustomMcpDialog';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';

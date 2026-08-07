@@ -98,9 +98,14 @@ describe('tryDisposeReload', () => {
     const reload = OPENCODE_SRC.split('async reloadConfig(')[1]?.split('\n    },')[0]
     expect(reload).toBeTruthy()
     expect(reload).toContain('tryDisposeReload()')
-    expect(reload).toContain('this.restart()')
+    // The fallback is now a VERIFIED swap rather than `this.restart()`: boot the
+    // new opencode, prove it serves, then retire the old one, so a config that
+    // cannot boot leaves the session on the instance it already had instead of
+    // with nothing. The ordering guarantee below is unchanged — dispose is still
+    // tried first, and the expensive path is still the fallback.
+    expect(reload).toContain('reloadVerified()')
     const disposeAt = (reload as string).indexOf('tryDisposeReload()')
-    const restartAt = (reload as string).indexOf('this.restart()')
+    const restartAt = (reload as string).indexOf('reloadVerified()')
     expect(disposeAt).toBeLessThan(restartAt)
   })
 })
@@ -151,6 +156,7 @@ describe('requiresRespawn', () => {
     expect([...RESPAWN_REQUIRED_ENV_NAMES].sort()).toEqual([
       'CODEX_AUTH_JSON',
       'KORTIX_OPENCODE_DENY_ENV',
+      'KORTIX_SECRET_CAPABILITIES',
       'OPENCODE_AUTH_JSON',
     ])
   })

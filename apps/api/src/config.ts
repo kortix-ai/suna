@@ -1,10 +1,13 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
 } from './llm-gateway/routing/policy-config';
+
+hydrateEnvironmentSecret();
 
 /**
  * Running sandbox version.

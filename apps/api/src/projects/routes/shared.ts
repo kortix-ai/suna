@@ -16,7 +16,10 @@ import { and, eq, sql } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import {
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import { inspectSandboxRuntime } from '../runtime-inspection';
@@ -270,6 +273,7 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
   });

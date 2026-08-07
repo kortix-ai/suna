@@ -788,8 +788,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll prod ECS (api + gateway) from the prod-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}"
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
 
   # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
   # The shadow uses the native US East 2 Supabase project and separate ECS

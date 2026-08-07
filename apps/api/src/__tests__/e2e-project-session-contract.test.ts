@@ -596,6 +596,9 @@ mock.module('../shared/db', () => ({
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
+            if (table === projectSessions && fields?.sessionMetadata) {
+              return sessionRow ? [{ sessionMetadata: sessionRow.metadata }] : [];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
@@ -1369,6 +1372,65 @@ describe('project session API contract', () => {
     expect(patBody.origin).toBe('backend');
     expect(patBody).not.toHaveProperty('end_user_ref');
     expect(patBody).not.toHaveProperty('origin_ref');
+  });
+
+  test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
+    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const projectRes = await app.request(`/v1/projects/${PROJECT_ID}`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(projectRes.status).toBe(403);
+    expect(await projectRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const patCloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+    );
+    expect(patCloneRes.status).toBe(403);
+    expect(await patCloneRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const sandboxCloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      { headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` } },
+    );
+    expect(sandboxCloneRes.status).toBe(403);
+    expect(await sandboxCloneRes.json()).toMatchObject({
+      error: 'sandbox workspace does not allow repository access',
+    });
+
+    for (const suffix of ['diff', 'merge-preview']) {
+      const crRes = await app.request(
+        `/v1/projects/${PROJECT_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+        { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+      );
+      expect(crRes.status).toBe(403);
+      expect(await crRes.json()).toMatchObject({
+        message: 'session workspace does not allow repository access',
+      });
+    }
   });
 
   test('rejects removed session attribution fields', async () => {

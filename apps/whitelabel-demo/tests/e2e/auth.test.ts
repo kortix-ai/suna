@@ -5,7 +5,13 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, resetUsersStore, startApp, uniqueEmail } from './harness';
+import {
+  APP_SETUP_TIMEOUT_MS,
+  type AppInstance,
+  resetUsersStore,
+  startApp,
+  uniqueEmail,
+} from './harness';
 import { DEMO_PASSWORD, SESSION_SECRET, wrapperEnv } from './env';
 import { expiredToken, tamperedToken } from './session-crypto';
 
@@ -21,7 +27,7 @@ describe('wrapper-mode auth', () => {
   beforeAll(async () => {
     resetUsersStore();
     app = await startApp(wrapperEnv());
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

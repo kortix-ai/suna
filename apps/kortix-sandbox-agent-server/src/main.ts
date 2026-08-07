@@ -384,7 +384,7 @@ async function startSessionRuntime(
   bootMark: (label: string) => void,
 ): Promise<void> {
   const onQuestionAsked = (req: QuestionRequest) => {
-    void relayQuestionToApi(req, cfg).catch((err) =>
+    void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
@@ -1276,7 +1276,11 @@ function slackRelayContext(): SandboxRelayContext | null {
 // answers `question.asked` interactively over opencode's own SSE, and
 // auto-answering it here is the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
-async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+async function relayQuestionToApi(
+  req: QuestionRequest,
+  cfg: Config,
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+): Promise<void> {
   // EVERY session, not just Slack ones.
   //
   // This used to take `slackRelayContext()`, which returns null without
@@ -1348,7 +1352,7 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     'wait for an answer here; finish this turn now. Next time, just ask with ' +
     '`slack send` rather than the question tool.)'
   const answers: string[][] = req.questions.map(() => [sentinel])
-  const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
+  const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
       method: 'POST',

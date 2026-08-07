@@ -21,14 +21,11 @@ export const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 /** How far content travels. Small enough to read as a shift, not a swipe. */
 const STEP_TRAVEL = 16;
-const CONTEXT_TRAVEL = 12;
 
 export const ENTER_TRANSITION: Transition = { duration: 0.22, ease: EASE_OUT };
 
 /** Exits run ~75% of the enter — the user has already decided, get out of the way. */
 export const EXIT_TRANSITION: Transition = { duration: 0.17, ease: EASE_OUT };
-export const CONTEXT_ENTER_TRANSITION: Transition = { duration: 0.2, ease: EASE_OUT };
-export const CONTEXT_EXIT_TRANSITION: Transition = { duration: 0.15, ease: EASE_OUT };
 export const REDUCED_TRANSITION: Transition = { duration: 0.16, ease: EASE_OUT };
 
 /**
@@ -59,30 +56,6 @@ export function slideVariants(reduced: boolean): Variants {
       x: direction >= 0 ? behind : ahead,
       transition: reduced ? REDUCED_TRANSITION : EXIT_TRANSITION,
     }),
-  };
-}
-
-/**
- * Context enters from the rail side without moving the decision lane.
- *
- * The rail uses the same timing as the step transition, but it does not mirror
- * with navigation direction. It always belongs to the right side of the lane.
- * Reduced motion keeps only the opacity change and omits the x property so the
- * browser never creates a transform for the rail.
- */
-export function contextVariants(reduced: boolean): Variants {
-  if (reduced) {
-    return {
-      enter: { opacity: 0 },
-      center: { opacity: 1, transition: REDUCED_TRANSITION },
-      exit: { opacity: 0, transition: REDUCED_TRANSITION },
-    };
-  }
-
-  return {
-    enter: { opacity: 0, x: CONTEXT_TRAVEL },
-    center: { opacity: 1, x: 0, transition: CONTEXT_ENTER_TRANSITION },
-    exit: { opacity: 0, x: CONTEXT_TRAVEL, transition: CONTEXT_EXIT_TRANSITION },
   };
 }
 

@@ -100,12 +100,13 @@ describe('slack step', () => {
     expect(slack).toContain('Connected to Slack');
   });
 
-  // The custom-app setup sits in the shared context rail. An earlier pass
-  // widened this step only, which moved the decision lane off centre.
-  test('opens the custom app in the shared context rail', () => {
-    expect(slack).toContain('<StepContext');
+  // The custom-app setup sits under the chooser in the same decision lane. An
+  // earlier pass opened a side context panel, which pulled the lane off centre.
+  test('opens the custom app inline in the decision lane', () => {
+    expect(slack).not.toContain('StepContext');
     expect(slack).not.toContain('xl:flex-row');
     expect(slack).toContain('Bring your own Slack app');
+    expect(slack).toContain('customOpen &&');
   });
 
   // The chunk downloaded and parsed during the open animation, dropping frames
@@ -190,14 +191,12 @@ describe('plan step', () => {
   });
 
   test('describes BYOK accurately with and without an existing model', () => {
-    const byokContext = plan.slice(
-      plan.indexOf("if (choice === 'byok')"),
-      plan.indexOf("if (choice === 'later')"),
+    expect(plan).toContain(
+      "label={hasSelectableModels ? 'Connect another provider' : 'Bring your own API key'}",
     );
-
-    expect(byokContext).toContain('copy: hasSelectableModels');
-    expect(byokContext).toContain('Your existing model access stays unchanged.');
-    expect(byokContext).toContain('This connects your first model provider.');
+    expect(plan).toContain(
+      "label={hasSelectableModels ? 'Keep what I have' : 'Decide later'}",
+    );
   });
 
   // An earlier version short-circuited to a confirm-only screen when a model

@@ -145,7 +145,10 @@ export function writeAgentEnvFile(
 ): boolean {
   const snapshot = store.snapshot()
   const bootEnv = opts.bootEnv ?? process.env
-  const bootNames = bootSecretNames(bootEnv)
+  // Hot delivery can add a name that was absent from the boot-time list and
+  // later revoke it. Keep every managed name in the unset set so a shell that
+  // inherited the old value cannot retain it after revocation.
+  const managedNames = [...new Set([...bootSecretNames(bootEnv), ...snapshot.knownNames])].sort()
   // Pull the per-session identity creds from the live process env (reloadSessionEnv
 // populates process.env from /etc/pt-env on warm-snapshot restore). On a no-restart hot-swap the
   // daemon has these but the reused seed opencode does not — so writing them here
@@ -155,7 +158,7 @@ export function writeAgentEnvFile(
     const v = bootEnv[name]
     if (typeof v === 'string' && v.length > 0) sessionCreds[name] = v
   }
-  return atomicWrite(opts.sh ?? AGENT_ENV_SH, renderShellEnv(snapshot.env, bootNames, sessionCreds))
+  return atomicWrite(opts.sh ?? AGENT_ENV_SH, renderShellEnv(snapshot.env, managedNames, sessionCreds))
 }
 
 // Best-effort shred on shutdown: overwrite-in-place with random bytes then

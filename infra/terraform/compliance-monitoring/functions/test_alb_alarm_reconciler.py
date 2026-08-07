@@ -14,12 +14,26 @@ class FakePaginator:
 
 
 class FakeElbv2:
-    def __init__(self, pages):
+    def __init__(self, pages, target_groups=None):
         self.paginator = FakePaginator(pages)
+        self.target_groups = target_groups or {
+            load_balancer["LoadBalancerArn"]: [
+                target_group(
+                    f"{load_balancer['LoadBalancerName']}-tg",
+                    f"{load_balancer['LoadBalancerName']}-tg-id",
+                )
+            ]
+            for page in pages
+            for load_balancer in page.get("LoadBalancers", [])
+            if load_balancer.get("Type") == "application"
+        }
 
     def get_paginator(self, operation):
         assert operation == "describe_load_balancers"
         return self.paginator
+
+    def describe_target_groups(self, **kwargs):
+        return {"TargetGroups": self.target_groups.get(kwargs["LoadBalancerArn"], [])}
 
 
 class FakeCloudWatch:
@@ -52,10 +66,20 @@ def load_balancer(name, identifier, load_balancer_type="application"):
     }
 
 
+def target_group(name, identifier):
+    return {
+        "TargetGroupName": name,
+        "TargetGroupArn": (
+            "arn:aws:elasticloadbalancing:us-west-2:935064898258:"
+            f"targetgroup/{name}/{identifier}"
+        ),
+    }
+
+
 class ReconcilerTest(unittest.TestCase):
     topic = "arn:aws:sns:us-west-2:935064898258:suna-api-alerts"
 
-    def test_creates_three_drata_compatible_alarms_for_each_application_lb(self):
+    def test_creates_four_drata_compatible_alarms_for_each_application_lb(self):
         elbv2 = FakeElbv2(
             [
                 {
@@ -72,9 +96,9 @@ class ReconcilerTest(unittest.TestCase):
         result = reconcile(elbv2, cloudwatch, self.topic)
 
         self.assertEqual(result["load_balancers"], 2)
-        self.assertEqual(result["covered_alarms"], 6)
-        self.assertEqual(len(result["updated_alarms"]), 6)
-        self.assertEqual(len(cloudwatch.put_calls), 6)
+        self.assertEqual(result["covered_alarms"], 8)
+        self.assertEqual(len(result["updated_alarms"]), 8)
+        self.assertEqual(len(cloudwatch.put_calls), 8)
         target_alarm = next(
             alarm
             for alarm in cloudwatch.put_calls
@@ -84,15 +108,67 @@ class ReconcilerTest(unittest.TestCase):
         self.assertEqual(target_alarm["MetricName"], "TargetResponseTime")
         self.assertEqual(
             target_alarm["Dimensions"],
-            [{"Name": "LoadBalancer", "Value": "app/a/a-id"}],
+            [
+                {"Name": "TargetGroup", "Value": "targetgroup/a-tg/a-tg-id"},
+                {"Name": "LoadBalancer", "Value": "app/a/a-id"},
+            ],
         )
         self.assertEqual(target_alarm["AlarmActions"], [self.topic])
         self.assertEqual(target_alarm["TreatMissingData"], "notBreaching")
-        self.assertEqual(set(ALARM_SPECS), {
-            "target-response-time",
-            "elb-5xx",
-            "unhealthy-hosts",
-        })
+        self.assertEqual(
+            set(ALARM_SPECS),
+            {
+                "target-response-time",
+                "elb-5xx",
+                "unhealthy-hosts",
+                "zero-healthy-hosts",
+            },
+        )
+        zero_healthy_alarm = next(
+            alarm
+            for alarm in cloudwatch.put_calls
+            if alarm["AlarmName"] == "kortix-alb-a-zero-healthy-hosts"
+        )
+        self.assertEqual(zero_healthy_alarm["MetricName"], "HealthyHostCount")
+        self.assertEqual(zero_healthy_alarm["Statistic"], "Minimum")
+        self.assertEqual(zero_healthy_alarm["Period"], 60)
+        self.assertEqual(zero_healthy_alarm["ComparisonOperator"], "LessThanThreshold")
+        self.assertEqual(
+            zero_healthy_alarm["Dimensions"],
+            [
+                {"Name": "TargetGroup", "Value": "targetgroup/a-tg/a-tg-id"},
+                {"Name": "LoadBalancer", "Value": "app/a/a-id"},
+            ],
+        )
+
+    def test_creates_distinct_target_alarms_for_multiple_target_groups(self):
+        lb = load_balancer("a", "app/a/a-id")
+        elbv2 = FakeElbv2(
+            [{"LoadBalancers": [lb]}],
+            {
+                lb["LoadBalancerArn"]: [
+                    target_group("blue", "blue-id"),
+                    target_group("green", "green-id"),
+                ]
+            },
+        )
+        cloudwatch = FakeCloudWatch()
+
+        result = reconcile(elbv2, cloudwatch, self.topic)
+
+        self.assertEqual(result["covered_alarms"], 7)
+        self.assertEqual(
+            set(result["updated_alarms"]),
+            {
+                "kortix-alb-a-elb-5xx",
+                "kortix-alb-a-blue-target-response-time",
+                "kortix-alb-a-blue-unhealthy-hosts",
+                "kortix-alb-a-blue-zero-healthy-hosts",
+                "kortix-alb-a-green-target-response-time",
+                "kortix-alb-a-green-unhealthy-hosts",
+                "kortix-alb-a-green-zero-healthy-hosts",
+            },
+        )
 
     def test_does_not_rewrite_compliant_alarms(self):
         lb = load_balancer("a", "app/a/a-id")
@@ -100,9 +176,7 @@ class ReconcilerTest(unittest.TestCase):
         reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), first_cloudwatch, self.topic)
         cloudwatch = FakeCloudWatch(first_cloudwatch.put_calls)
 
-        result = reconcile(
-            FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic
-        )
+        result = reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic)
 
         self.assertEqual(result["updated_alarms"], [])
         self.assertEqual(cloudwatch.put_calls, [])
@@ -118,9 +192,7 @@ class ReconcilerTest(unittest.TestCase):
         alarms[1]["AlarmActions"] = []
         cloudwatch = FakeCloudWatch(alarms)
 
-        result = reconcile(
-            FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic
-        )
+        result = reconcile(FakeElbv2([{"LoadBalancers": [lb]}]), cloudwatch, self.topic)
 
         self.assertEqual(
             result["updated_alarms"],
@@ -132,7 +204,13 @@ class ReconcilerTest(unittest.TestCase):
         self.assertEqual(len(cloudwatch.put_calls), 2)
         self.assertEqual(
             cloudwatch.put_calls[0]["Dimensions"],
-            [{"Name": "LoadBalancer", "Value": "app/previews/new-id"}],
+            [
+                {
+                    "Name": "TargetGroup",
+                    "Value": "targetgroup/previews-tg/previews-tg-id",
+                },
+                {"Name": "LoadBalancer", "Value": "app/previews/new-id"},
+            ],
         )
         self.assertEqual(cloudwatch.put_calls[1]["AlarmActions"], [self.topic])
 

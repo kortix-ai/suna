@@ -15,18 +15,26 @@
  * requiresRespawn(opencodeEnvNames)`. The dispose fast path is preserved for
  * pure model/auth/deny changes that touch no project secret.
  */
-import { describe, expect, it } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Config } from '../config'
 import type { Opencode } from '../opencode'
 import { createProjectEnvStore } from '../project-env'
 import { buildOpencodeApp } from '../proxy'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
+const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
+let testEnvFileSequence = 0
+
+afterAll(() => rmSync(TEST_ENV_DIR, { recursive: true, force: true }))
 
 function baseConfig(): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -66,6 +74,19 @@ function fakeOpencode(): { opencode: Opencode; calls: ReloadCall[] } {
   return { opencode, calls }
 }
 
+function buildTestApp(opencode: Opencode, store: ReturnType<typeof createProjectEnvStore>) {
+  return buildOpencodeApp(
+    baseConfig(),
+    opencode,
+    Date.now(),
+    { repoMaterializationError: null, timeline: [] },
+    store,
+    null,
+    undefined,
+    join(TEST_ENV_DIR, `agent-env-${testEnvFileSequence++}.sh`),
+  )
+}
+
 async function postEnv(
   app: ReturnType<typeof buildOpencodeApp>,
   body: Record<string, unknown>,
@@ -82,6 +103,30 @@ async function postEnv(
 }
 
 describe('env route — project-secret delta forces respawn, not dispose', () => {
+  it('a secret capability catalog change forces a respawn', async () => {
+    const { opencode, calls } = fakeOpencode()
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+      KORTIX_PROJECT_SECRET_NAMES: '',
+      KORTIX_SECRET_CAPABILITIES: '{"version":1,"capabilities":[]}',
+    } as NodeJS.ProcessEnv)
+    const app = buildTestApp(opencode, store)
+
+    const { status } = await postEnv(app, {
+      revision: 'rev-1',
+      env: {},
+      names: [],
+      opencodeEnv: {
+        KORTIX_SECRET_CAPABILITIES:
+          '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}',
+      },
+      refreshModels: true,
+    })
+
+    expect(status).toBe(200)
+    expect(calls).toEqual([{ mustRespawn: true }])
+  })
+
   it('a project-secret CHANGE (value moved) forces a respawn', async () => {
     const { opencode, calls } = fakeOpencode()
     // Boot store already has API_KEY=v1.
@@ -90,10 +135,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'v1',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     // Push a new revision where API_KEY's value moved. refreshModels=true asks
     // for the reload; the project-secret delta is what demands a RESPAWN.
@@ -118,10 +160,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'v1',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     // The allowlist widens: a brand-new secret STRIPE_KEY is granted. The
     // opencode process env did not have it before, so a respawn is required to
@@ -147,10 +186,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       API_KEY: 'v1',
       STRIPE_KEY: 'sk_live_old',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     // STRIPE_KEY is revoked: it leaves the env. The opencode process env still
     // holds it from spawn, so a respawn is required to clear it via
@@ -168,6 +204,35 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(true)
   })
 
+  it('removes a revoked project secret from the daemon environment', async () => {
+    const name = 'LIVE_REVOKE_TEST_KEY'
+    const previous = process.env[name]
+    process.env[name] = 'boot-value'
+
+    try {
+      const { opencode } = fakeOpencode()
+      const store = createProjectEnvStore({
+        KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+        KORTIX_PROJECT_SECRET_NAMES: name,
+        [name]: 'boot-value',
+      } as NodeJS.ProcessEnv)
+      const app = buildTestApp(opencode, store)
+
+      const { status } = await postEnv(app, {
+        revision: 'rev-2',
+        env: {},
+        names: [],
+        refreshModels: true,
+      })
+
+      expect(status).toBe(200)
+      expect(process.env[name]).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    }
+  })
+
   it('a pure MODEL change (no project-secret delta) keeps the dispose fast path', async () => {
     const { opencode, calls } = fakeOpencode()
     const store = createProjectEnvStore({
@@ -175,10 +240,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'v1',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     // Only the model moves; project secrets are byte-identical. This is the
     // case the dispose fast path is FOR — mustRespawn must stay false so
@@ -208,10 +270,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'v1',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     const { status } = await postEnv(app, {
       revision: 'rev-1',
@@ -236,10 +295,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'BOOT_SECRET',
       BOOT_SECRET: 'already-loaded',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     const { status, json } = await postEnv(app, {
       revision: 'rev-boot',
@@ -265,10 +321,7 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'v1',
     } as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(baseConfig(), opencode, Date.now(), {
-      repoMaterializationError: null,
-      timeline: [],
-    }, store)
+    const app = buildTestApp(opencode, store)
 
     const { status, json } = await postEnv(app, {
       revision: 'rev-2',

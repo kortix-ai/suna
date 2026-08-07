@@ -19,12 +19,11 @@ import {
   CalendarBlankIcon as Calendar,
   CheckCircleIcon as CheckCircle,
 } from '@phosphor-icons/react';
-import { useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 
 import { starterPromptsFor } from '../onboarding-profile';
-import { ActionRow, StepContext, StepShell } from '../step-shell';
+import { ActionRow, StepShell } from '../step-shell';
 
 export function DoneStep({
   useCase,
@@ -43,7 +42,6 @@ export function DoneStep({
   onUsePrompt: (prompt: string) => void;
 }) {
   const prompts = starterPromptsFor(useCase);
-  const reduced = useReducedMotion() ?? false;
 
   return (
     <div className="flex flex-col gap-7">
@@ -63,19 +61,6 @@ export function DoneStep({
         }
         primaryLabel="Open project"
         onPrimary={onStart}
-        context={
-          profileCount > 0 ? (
-            <StepContext>
-              <div className="bg-popover rounded-md border px-4 py-3">
-                <p className="text-foreground text-sm font-medium">Setup summary</p>
-                <p className="text-muted-foreground text-xs leading-5 text-pretty">
-                  <span className="text-foreground tabular-nums">{profileCount}</span>{' '}
-                  {profileCount === 1 ? 'tool is' : 'tools are'} connected and ready for your agent.
-                </p>
-              </div>
-            </StepContext>
-          ) : undefined
-        }
       >
         <div className="flex flex-col gap-2">
           {prompts.map((p) => (

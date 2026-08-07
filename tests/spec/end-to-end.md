@@ -437,7 +437,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403.
 `SEC-4` injection — `buildSessionSandboxEnvVars` decrypts **all** project secrets into the session env (project-global, no per-member scoping) + minted `KORTIX_TOKEN`/`KORTIX_CLI_TOKEN`, `KORTIX_LLM_*`, `KORTIX_GIT_AUTH_TOKEN`, etc.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
-`SEC-8` `PUT /projects/:id/secrets/:identifier/strategy {strategy,consumer?,egress_policy?,handle_prefix?}` → manager-only control plane; `runtime|denied` → 200; `broker` accepts `llm_gateway|connector|http_broker`; only `http_broker` accepts and requires a validated `backend=kortix_fetch` policy. Generic `git_proxy` broker and transparent `egress` → 409 until their adapters are available. Each change revokes active HTTP broker handles and writes `secret.strategy.changed`; agent principals → 403. `POST /projects/:id/secrets/sync` requires secret write and re-applies current policy to active sessions. `POST /projects/:id/secrets/:identifier/broker` accepts only a session-scoped agent token, intersects the immutable agent grant with the current session allowlist, requires an active revisioned handle, applies the stored HTTPS host/method/path/injection policy, and writes pending plus terminal audit events without request bodies, headers, query values, handles, or secret values.
+`SEC-8` `PUT /projects/:id/secrets/:identifier/strategy {strategy,consumer?,egress_policy?,handle_prefix?}` → manager-only control plane; `runtime|denied` → 200; `broker` accepts `llm_gateway|connector|http_broker`; only `http_broker` accepts and requires a validated `backend=kortix_fetch` policy. Generic `git_proxy` broker and transparent `egress` → 409 until their adapters are available. Each change revokes active HTTP broker handles and writes `secret.strategy.changed`; agent principals → 403. `POST /projects/:id/secrets/sync` requires secret write and re-applies current policy to active sessions. Its response reports `active_sandboxes`, `targeted`, `synced`, `failed`, `exported`, and one result per sandbox with the applied `scope`, `revision`, export counts, and `agent_env_written` proof. A partial delivery returns `ok:false`. `POST /projects/:id/secrets/:identifier/broker` accepts only a session-scoped agent token, intersects the immutable agent grant with the current session allowlist, requires an active revisioned handle, applies the stored HTTPS host/method/path/injection policy, and writes pending plus terminal audit events without request bodies, headers, query values, handles, or secret values.
 `SEC-9` server consumers resolve only matching `broker` rows. LLM resolution returns every authorized identifier for one provider key in deterministic order: canonical identifier, newest update, then identifier. The gateway tries the next same-provider credential after a thrown 401, a terminal-auth 400, or a terminal-auth streaming error; one invalid credential preserves the upstream terminal error. Connector, subscription, channel, webhook, and Git paths use their server-side credential resolvers and write metadata-only `secret.consumer.*` audit events.
 `CONN-ATT-AUTH` `POST /connectors/[projects/:projectId/]attachments` → both attachment-upload forms require authentication before accepting multipart data; anonymous requests → 401.
 
@@ -687,7 +687,7 @@ supplied scope field without restarting the session.
 `CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId` → `project.connector.write`; unknown bindingId → 404 before body validation; empty body on an existing binding → 400; non-member 403/404; ANON 401.
 `Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
 `Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
-`AUD-1` `GET /accounts/:id/audit` → 200 `{events,next_cursor}`. Each event exposes the centralized envelope: `project_id`, `session_id`, `actor_type`, `source`, `outcome`, `http_status`, `duration_ms`, `request_id`, `trace_id`, and `correlation_id`. The route filters by project, session, actor, actor type, source, outcome, request, correlation, resource, action, time, or free-text search. Request-event `source` is derived from authenticated server context; `X-Kortix-Client` cannot override it. A correlated project request can be reconstructed through one exact filtered query. NONMEMBER → 403.
+`AUD-1` `GET /accounts/:id/audit` → 200 `{events,next_cursor}`. Each event exposes the centralized envelope: `project_id`, `session_id`, `actor_type`, `source`, `outcome`, `http_status`, `duration_ms`, `request_id`, `trace_id`, and `correlation_id`. The route filters by project, session, actor, actor type, source, outcome, request, correlation, resource, action, time, or free-text search. Request-event `actor_type` is derived from authenticated server context. The allowlisted `X-Kortix-Client` values (`api`, `cli`, `mobile`, and `web`) attribute the calling surface without changing the actor. A correlated project request can be reconstructed through one exact filtered query. NONMEMBER → 403.
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
 `AUD-3` `GET /accounts/:id/audit/webhooks` → 200; NONMEMBER → 403.
 `AUD-4` `POST`/`PATCH`/`DELETE /accounts/:id/audit/webhooks[/:id]` → 201 secret-once; bad url → 400; unknown → 404; delete 200.
@@ -754,3 +754,30 @@ metadata stays in the wrapper's data store. See
 `KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
 `KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
 `KAAB-7` backend idempotency context guard: same key + different `runtime_context` → **409 `IDEMPOTENCY_CONTEXT_CONFLICT`**; a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`**.
+
+---
+
+## 28. Kortix Apps
+
+Kortix Apps are project-owned serverless deployments. The API owns the stable
+hostname, immutable artifact and deployment records, provider-neutral machine
+specification, runtime lifecycle, billing attribution, and atomic active
+deployment pointer. The provider remains an implementation detail.
+
+`APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
+`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. A project writer creates a
+unique lower-case slug and machine policy; list/get return the stable public URL
+and active deployment pointer; patch updates mutable policy; delete is soft and
+removes the App from subsequent reads. Invalid slugs → 400; `NONMEMBER` → 403.
+
+`APP-2` Artifact and deployment boundaries —
+`POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
+or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
+awaiting archive. `POST …/:appId/deployments` requires a ready artifact and an
+exact source-kind match. Deployment list/detail/logs expose durable state.
+Rollback accepts only a ready deployment. Start and stop require an active
+deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
+back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
+specified by each route. The full ready-deployment, public HTTP, streaming,
+WebSocket, idle-stop, cold-wake, budget, rollback, and log path is exercised by
+`tests/e2e/scripts/apps-local-smoke.ts` against the real API and runtime.

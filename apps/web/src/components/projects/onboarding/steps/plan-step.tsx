@@ -22,7 +22,7 @@ import { useModelConnectionGate } from '@/features/session/use-model-connection-
 import { useRuntimeProviders } from '@kortix/sdk/react';
 
 import { Kortix } from '@/features/icon/icons/kortix';
-import { SelectionRow, StepContext, StepShell } from '../step-shell';
+import { SelectionRow, StepShell } from '../step-shell';
 
 type PlanChoice = 'kortix' | 'byok' | 'later';
 
@@ -31,44 +31,6 @@ export function PlanStep({ onContinue }: { onContinue: () => void }) {
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
     useModelConnectionGate(flattenModels(providers));
   const [choice, setChoice] = useState<PlanChoice | null>(null);
-
-  const context = (() => {
-    if (choice === 'kortix') {
-      return {
-        title: 'Kortix models',
-        copy: 'Continue to compare managed plans. Kortix handles provider setup and usage limits.',
-      };
-    }
-    if (choice === 'byok') {
-      return {
-        title: hasSelectableModels ? 'Add another provider' : 'Bring your own provider',
-        copy: hasSelectableModels
-          ? 'Continue to connect another provider key. Your existing model access stays unchanged.'
-          : 'Continue to connect a provider key. This connects your first model provider.',
-      };
-    }
-    if (choice === 'later') {
-      return {
-        title: hasSelectableModels ? 'Current model stays active' : 'Decide when you send a task',
-        copy: hasSelectableModels
-          ? 'Kortix keeps your current model connection. You can change it from project settings.'
-          : 'The composer will ask for model access before it sends your first task.',
-      };
-    }
-    return hasSelectableModels
-      ? {
-          title: 'A model is connected',
-          copy: showUpgradeOption
-            ? 'Keep it, add another provider, or compare Kortix plans.'
-            : 'Keep it or connect another provider. Billing options are unavailable here.',
-        }
-      : {
-          title: 'Choose your model access',
-          copy: showUpgradeOption
-            ? 'Use managed Kortix models, connect your own provider, or decide later.'
-            : 'Connect your own provider now, or let the composer ask when model access is required.',
-        };
-  })();
 
   // Nothing opens until Continue. This is the whole point of the step.
   const handleContinue = () => {
@@ -93,14 +55,6 @@ export function PlanStep({ onContinue }: { onContinue: () => void }) {
           choice === 'kortix' ? 'See plans' : choice === 'byok' ? 'Add a key' : 'Continue'
         }
         onPrimary={handleContinue}
-        context={
-          <StepContext>
-            <div className="bg-popover rounded-md border px-4 py-3">
-              <p className="text-foreground text-sm font-medium">{context.title}</p>
-              <p className="text-muted-foreground text-xs leading-5 text-pretty">{context.copy}</p>
-            </div>
-          </StepContext>
-        }
       >
         {/* A connected model is context, not an answer. The options stay so the
             user can add a provider or move onto a plan. */}

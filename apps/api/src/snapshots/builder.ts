@@ -1364,6 +1364,10 @@ let startupPreBuildKicked = false;
  * session never pays a provider-specific lazy build.
  */
 export function kickStartupPreBuild(): void {
+  // Isolated local-Docker Apps acceptance builds its own App images and does
+  // not need the multi-gigabyte session and meta images. Production keeps the
+  // pre-build enabled by default.
+  if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
   for (const providerId of templateBuildProviders()) {

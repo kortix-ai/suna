@@ -687,6 +687,8 @@ function getBaseCatalog(): Catalog {
 
 // ── external catalog (async, cached, progressive) ──────────────────────────
 const EXTERNAL_TTL_MS = 24 * 60 * 60 * 1000; // 24h — sources rarely change; refresh lazily
+const EXTERNAL_REFRESH_JITTER_MS = 60 * 60 * 1000;
+export const MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY = 4;
 
 // The cache lives on globalThis so it survives `bun --hot` reloads in dev
 // (otherwise every edit re-scans every source → the "so slow"). External sources
@@ -703,6 +705,7 @@ export interface SourceStatus {
 interface MarketplaceCache {
   external: Catalog | null; // last fully-resolved external catalog (the 24h cache)
   externalAt: number;
+  externalRefreshAt: number;
   partial: Catalog | null; // in-progress accumulator on a COLD build (grows per source)
   pending: number; // sources still resolving this round
   building: boolean;
@@ -719,6 +722,7 @@ const CACHE: MarketplaceCache = ((
 ).__kortixMarketplaceCache2 ??= {
   external: null,
   externalAt: 0,
+  externalRefreshAt: 0,
   partial: null,
   pending: 0,
   building: false,
@@ -973,7 +977,8 @@ export function assertAllowedSourceAddress(address: string): void {
  *  is in. Sets `building`/`partial` SYNCHRONOUSLY so progressive readers see the
  *  loading state on the very first call. */
 function startExternalBuild(): Promise<Catalog> {
-  if (CACHE.external && Date.now() - CACHE.externalAt < EXTERNAL_TTL_MS)
+  const refreshAt = CACHE.externalRefreshAt || CACHE.externalAt + EXTERNAL_TTL_MS;
+  if (CACHE.external && Date.now() < refreshAt)
     return Promise.resolve(CACHE.external);
   // Coalesce concurrent cold callers onto ONE build (no re-scan stampede).
   if (CACHE.inflight) return CACHE.inflight;
@@ -992,6 +997,25 @@ function startExternalBuild(): Promise<Catalog> {
 }
 
 type LoadedRegistry = Awaited<ReturnType<typeof loadRegistry>>;
+
+async function forEachWithConcurrency<T>(
+  values: readonly T[],
+  concurrency: number,
+  operation: (value: T, index: number) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await operation(values[index]!, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
 
 async function buildExternalCatalog(): Promise<Catalog> {
   const refs = await externalRefs();
@@ -1018,8 +1042,10 @@ async function buildExternalCatalog(): Promise<Catalog> {
   // Resolve sources concurrently with isolation — one slow/huge/dead source
   // neither blocks the others nor sinks the catalog; each folds in the instant
   // it arrives so the list streams Kortix-first, then source-by-source.
-  await Promise.allSettled(
-    refs.map(async ({ ref, sourceId }, i) => {
+  await forEachWithConcurrency(
+    refs,
+    MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY,
+    async ({ ref, sourceId }, i) => {
       try {
         addRegistryToCatalog(
           acc,
@@ -1037,10 +1063,14 @@ async function buildExternalCatalog(): Promise<Catalog> {
         CACHE.pending = Math.max(0, CACHE.pending - 1);
         CACHE.gen++; // a source landed → next read re-merges and streams it in
       }
-    }),
+    },
   );
   CACHE.external = acc;
   CACHE.externalAt = Date.now();
+  CACHE.externalRefreshAt =
+    CACHE.externalAt +
+    EXTERNAL_TTL_MS +
+    Math.floor(Math.random() * EXTERNAL_REFRESH_JITTER_MS);
   return acc;
 }
 
@@ -2162,6 +2192,7 @@ async function readExternalFile(
 export function _resetExternalCache(): void {
   CACHE.external = null;
   CACHE.externalAt = 0;
+  CACHE.externalRefreshAt = 0;
   CACHE.partial = null;
   CACHE.pending = 0;
   CACHE.building = false;

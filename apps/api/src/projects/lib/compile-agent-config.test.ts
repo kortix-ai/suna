@@ -61,6 +61,7 @@ const {
   agentMarkdownPath,
   compileAgentConfig,
   resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -647,5 +648,49 @@ describe('resolveCompiledAgentConfigForSession — read failures', () => {
     } finally {
       transientFailurePaths = new Set();
     }
+  });
+});
+
+describe('resolveSelectedAgentConfigForSession', () => {
+  test('reads and emits only the selected agent', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': supportMd(
+        'model: anthropic/claude-sonnet-4-5',
+        'Support body.',
+      ),
+      '.kortix/opencode/agents/pr-bot.md': 'PR bot body.',
+    };
+    readRepoFileCalls = [];
+
+    const result = await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main');
+    const parsed = JSON.parse(result) as OpencodeConfig;
+
+    expect(Object.keys(parsed.agent)).toEqual(['support']);
+    expect(parsed.agent.support.prompt).toBe('Support body.');
+    expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
+    expect(readRepoFileCalls).toEqual(['.kortix/opencode/agents/support.md']);
+  });
+
+  test('fails closed when the selected agent configuration cannot be read', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {};
+    transientFailurePaths = new Set(['.kortix/opencode/agents/support.md']);
+
+    try {
+      await expect(
+        resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main'),
+      ).rejects.toThrow('fatal: unable to access remote');
+    } finally {
+      transientFailurePaths = new Set();
+    }
+  });
+
+  test('fails closed when the selected agent is not declared', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+
+    await expect(
+      resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
+    ).rejects.toThrow('not declared');
   });
 });

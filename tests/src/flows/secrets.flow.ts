@@ -172,7 +172,15 @@ flow(
           {},
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.ok", true).has("$.synced", true);
+      r.status(200)
+        .body()
+        .has("$.ok", true)
+        .has("$.active_sandboxes", 0)
+        .has("$.targeted", 0)
+        .has("$.synced", 0)
+        .has("$.failed", 0)
+        .has("$.exported", 0)
+        .has("$.results", []);
     });
 
     await ctx.step("runtime delivery stays disabled until rotation", async () => {
@@ -259,7 +267,7 @@ flow(
           { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
           { params: { projectId: p.id } },
         );
-      rotate.status(200).body().has("$.strategy", "denied").has("$.requires_rotation", false);
+      rotate.status(200).body().has("$.strategy", "broker").has("$.requires_rotation", false);
 
       const restore = await ctx.client
         .as(ctx.P.OWNER)

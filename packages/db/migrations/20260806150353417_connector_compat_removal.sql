@@ -40,8 +40,57 @@ ALTER TABLE kortix.project_session_connector_bindings
   ALTER COLUMN connection_id SET NOT NULL;
 ALTER TABLE kortix.project_session_connector_bindings
   DROP CONSTRAINT project_session_connector_bindings_profile_tenant_fk;
+
+-- Logical publications with explicit column lists depend on every published
+-- column. Detach this table before removing profile_id, then re-add it with the
+-- canonical post-cutover columns. The publication change and column removal
+-- commit atomically with this migration.
+CREATE TEMP TABLE connector_binding_publications ON COMMIT DROP AS
+SELECT pg_publication.pubname
+FROM pg_publication
+JOIN pg_publication_rel
+  ON pg_publication_rel.prpubid = pg_publication.oid
+WHERE pg_publication_rel.prrelid =
+  'kortix.project_session_connector_bindings'::regclass;
+
+DO $do$
+DECLARE
+  publication record;
+BEGIN
+  FOR publication IN SELECT pubname FROM connector_binding_publications LOOP
+    EXECUTE format(
+      'ALTER PUBLICATION %I DROP TABLE kortix.project_session_connector_bindings',
+      publication.pubname
+    );
+  END LOOP;
+END
+$do$;
+
 -- squawk-ignore ban-drop-column
 ALTER TABLE kortix.project_session_connector_bindings DROP COLUMN profile_id;
+
+DO $do$
+DECLARE
+  publication record;
+  column_list text;
+BEGIN
+  SELECT string_agg(format('%I', column_name), ', ' ORDER BY ordinal_position)
+  INTO column_list
+  FROM information_schema.columns
+  WHERE table_schema = 'kortix'
+    AND table_name = 'project_session_connector_bindings'
+    AND is_generated = 'NEVER';
+
+  FOR publication IN SELECT pubname FROM connector_binding_publications LOOP
+    EXECUTE format(
+      'ALTER PUBLICATION %I ADD TABLE kortix.project_session_connector_bindings (%s)',
+      publication.pubname,
+      column_list
+    );
+  END LOOP;
+END
+$do$;
+
 ALTER TABLE kortix.project_session_connector_bindings
   DROP CONSTRAINT project_session_connector_bindings_connection_not_null;
 

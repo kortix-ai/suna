@@ -34,8 +34,7 @@ import { ConnectorConnectionModal } from '@/features/workspace/customize/section
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 import { listPipedreamApps } from '@kortix/sdk';
 
-import { ActionRow, StepContext, StepShell } from '../step-shell';
-
+import { ActionRow, StepShell } from '../step-shell';
 /** Slack has its own dedicated step, so keep it out of this list. */
 const SLACK_SLUGS = new Set(['slack', 'slack_v2']);
 
@@ -70,7 +69,6 @@ export function ToolsStep({
     .filter((a) => !SLACK_SLUGS.has(a.slug));
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
-  const connectionCount = existingSlugs.length;
 
   return (
     <StepShell
@@ -80,20 +78,6 @@ export function ToolsStep({
       onPrimary={onContinue}
       skipLabel="Skip for now"
       onSkip={onSkip}
-      context={
-        <StepContext>
-          <div className="bg-popover rounded-md border px-4 py-3">
-            <p className="text-foreground text-sm font-medium">
-              <span className="tabular-nums">{connectionCount}</span>{' '}
-              {connectionCount === 1 ? 'connection' : 'connections'} connected
-            </p>
-            <p className="text-muted-foreground  text-xs leading-5 text-pretty">
-              Authorization happens with each provider. Kortix receives only the access that you
-              approve, and you can revoke it later.
-            </p>
-          </div>
-        </StepContext>
-      }
     >
       <div className="flex flex-col gap-4">
         <InputGroupSearch>
@@ -198,12 +182,6 @@ export function ToolsStep({
             )}
           </FadedScrollArea>
         )}
-
-        <p className="text-muted-foreground text-xs">
-          {connectionCount > 0
-            ? `${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'} added — add as many as you like, then continue.`
-            : 'Connect a few now, or skip and add them anytime.'}
-        </p>
       </div>
 
       <ConnectorConnectionModal
