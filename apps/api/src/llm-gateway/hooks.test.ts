@@ -14,6 +14,9 @@ let settledAdmissions: Array<{ workerSessionId: string; admissionId: string }> =
 let blockedAdmissions: Array<{ workerSessionId: string; admissionId: string; reason: string }> = [];
 let requestAwareUsageInputs: unknown[] = [];
 let creditGrantCalls = 0;
+let walletSettlementThrow = false;
+let debitInputs: unknown[] = [];
+let grantInputs: unknown[][] = [];
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -102,8 +105,15 @@ mock.module('../shared/usage-events', () => ({
   },
 }));
 mock.module('../billing/services/credits', () => ({
-  deductForLlmUsage: async () => {},
-  grantCredits: async () => { creditGrantCalls += 1; },
+  deductForLlmUsage: async (input: unknown) => {
+    debitInputs.push(input);
+    if (walletSettlementThrow) throw new Error('wallet unavailable');
+  },
+  grantCredits: async (...input: unknown[]) => {
+    creditGrantCalls += 1;
+    grantInputs.push(input);
+    if (walletSettlementThrow) throw new Error('wallet unavailable');
+  },
 }));
 
 mock.module('../shared/db', () => ({ db: {} }));
@@ -172,6 +182,9 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     blockedAdmissions = [];
     requestAwareUsageInputs = [];
     creditGrantCalls = 0;
+    walletSettlementThrow = false;
+    debitInputs = [];
+    grantInputs = [];
   });
 
   test('insufficient_credits survives the RPC boundary', async () => {
@@ -254,6 +267,9 @@ describe('authorizeRequest — task worker liveness admission', () => {
     blockedAdmissions = [];
     requestAwareUsageInputs = [];
     creditGrantCalls = 0;
+    walletSettlementThrow = false;
+    debitInputs = [];
+    grantInputs = [];
   });
 
   test('a non-worker session skips the aggregate usage query', async () => {
@@ -301,6 +317,9 @@ describe('gateway liveness parity and billing safety', () => {
     usageEventThrow = false; settledAdmissions = []; blockedAdmissions = [];
     requestAwareUsageInputs = [];
     usageLoadCalls = 0; admissionCalls = 0; creditGrantCalls = 0;
+    walletSettlementThrow = false;
+    debitInputs = [];
+    grantInputs = [];
   });
 
   test('the in-process budget hook performs the same worker admission CAS', async () => {
@@ -353,7 +372,7 @@ describe('gateway liveness parity and billing safety', () => {
     expect(blockedAdmissions[0]).toMatchObject({
       workerSessionId: 'worker-session',
       admissionId: 'req-ledger-fail',
-      reason: 'accounting unavailable: usage ledger write failed',
+      reason: 'accounting unavailable: usage or wallet settlement failed',
     });
   });
 
@@ -367,6 +386,37 @@ describe('gateway liveness parity and billing safety', () => {
     })).rejects.toThrow('usage ledger unavailable');
     expect(blockedAdmissions).toHaveLength(0);
     expect(settledAdmissions).toHaveLength(0);
+  });
+
+  test('a wallet settlement failure blocks the worker after the synchronous usage event', async () => {
+    walletSettlementThrow = true;
+    await expect(recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1', sessionId: 'worker-session',
+      provider: 'anthropic', model: 'claude-sonnet-4.6', requestId: 'req-wallet-fail',
+      livenessAdmissionId: 'req-wallet-fail', streaming: false,
+      promptTokens: 10, completionTokens: 5, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0.002, finalCost: 0.03, billingMode: 'credits', billingHoldUsd: 0.01,
+    })).rejects.toThrow('wallet unavailable');
+
+    expect(settledAdmissions).toHaveLength(0);
+    expect(blockedAdmissions[0]).toMatchObject({
+      admissionId: 'req-wallet-fail',
+      reason: 'accounting unavailable: usage or wallet settlement failed',
+    });
+    expect(debitInputs[0]).toMatchObject({
+      idempotencyKey: 'llm-gateway:acct-1:req-wallet-fail:settlement-debit',
+    });
+  });
+
+  test('a refund retry uses one request-scoped wallet key', async () => {
+    await recordGatewayUsage({
+      accountId: 'acct-1', actorUserId: 'user-1', projectId: 'project-1',
+      provider: '', model: 'unknown', requestId: 'req-refund', streaming: false,
+      promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheWriteTokens: 0,
+      upstreamCost: 0, finalCost: 0, billingMode: 'none', billingHoldUsd: 0.01,
+    });
+
+    expect(grantInputs[0]?.[6]).toBe('llm-gateway:acct-1:req-refund:settlement-refund');
   });
 
   test('a finalizer failure cannot skip billing-hold reconciliation', async () => {

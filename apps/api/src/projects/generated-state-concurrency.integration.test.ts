@@ -238,6 +238,25 @@ describeWithDb('task liveness concurrency — real PostgreSQL', () => {
       .toMatchObject({ livenessIterationsAdmitted: 2, livenessAdmissionId: 'req-next' });
   });
 
+  test('concurrent retries with one request id replay one admission and one iteration', async () => {
+    const database = testDb();
+    const now = new Date('2026-08-07T18:30:00.000Z');
+    const task = await bindWorker(0, now);
+
+    const admissions = await Promise.all(
+      Array.from({ length: 8 }, () => admitProjectTaskWorkerIteration(database, {
+        workerSessionId: WORKERS[0],
+        requestId: 'request-replay',
+        usage: ZERO_USAGE,
+        now: new Date(now.getTime() + 1_000),
+      })),
+    );
+
+    expect(admissions.every((admission) => admission?.admissionId === 'request-replay')).toBe(true);
+    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }))
+      .toMatchObject({ livenessIterationsAdmitted: 1, livenessAdmissionId: 'request-replay' });
+  });
+
   test('recurring limited sweeps rotate checked rows so an exhausted worker cannot starve', async () => {
     const database = testDb();
     const now = new Date('2026-08-07T19:00:00.000Z');

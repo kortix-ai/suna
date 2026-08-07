@@ -39,7 +39,10 @@ export interface GatewayHooks {
   // return a `holdUsd` when it took an atomic admission hold against the
   // wallet — the handler attaches it to the principal so settle() can
   // reconcile it to the real cost (see AuthedPrincipal.billingHold).
-  assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
+  assertBillingActive: (
+    accountId: string,
+    requestId: string,
+  ) => Promise<{ holdUsd?: number } | void>;
   assertBudget?: (
     principal: AuthedPrincipal,
     requestId: string,

@@ -135,8 +135,11 @@ function logGatewayBudgetWarnings(
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
-export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
-  const { exceeded, message, warnings } = await checkBudget(principal);
+export async function assertGatewayBudget(
+  principal: AuthedPrincipal,
+  requestId?: string,
+): Promise<void> {
+  const { exceeded, message, warnings } = await checkBudget(principal, requestId);
   logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) throw new Error(message ?? 'Budget exceeded');
 }
@@ -178,7 +181,7 @@ export async function authorizeRequest(
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    const billing = await assertLlmBillingActive(principal.accountId);
+    const billing = await assertLlmBillingActive(principal.accountId, requestId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
   } catch (err) {
     return {
@@ -195,7 +198,7 @@ export async function authorizeRequest(
       principal,
     };
   }
-  const { exceeded, message, warnings } = await checkBudget(principal);
+  const { exceeded, message, warnings } = await checkBudget(principal, requestId);
   logGatewayBudgetWarnings(principal, warnings);
   if (exceeded) {
     // A hold was taken above but the budget gate denies dispatch — the caller
@@ -257,12 +260,13 @@ export async function authorizeRequest(
  */
 export async function assertLlmBillingActive(
   accountId: string,
+  requestId?: string,
 ): Promise<{ holdUsd?: number } | void> {
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
     const tier = await getCachedAccountTier(accountId);
     if (accountIsFreeTierForModels(tier)) return;
   }
-  return assertBillingActive(accountId);
+  return assertBillingActive(accountId, requestId);
 }
 
 /**
@@ -324,7 +328,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     event.finalCost === 0;
   // A no-dispatch release has no usage to persist. Every completed upstream
   // request must durably enter the synchronous ledger before its fence opens.
-  let usageLedgerPersisted = pureHoldRefund || pureLivenessRelease;
+  let accountingSettled = !config.KORTIX_BILLING_INTERNAL_ENABLED;
 
   try {
     // A pure admission settlement observed nothing — no upstream call happened.
@@ -356,7 +360,6 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         });
     if (!pureHoldRefund && !pureLivenessRelease) {
       if (!usageEventId) throw new Error('Usage ledger write returned no durable event');
-      usageLedgerPersisted = true;
     }
 
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
@@ -373,6 +376,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           usageEventId,
           upstreamCostUsd: event.upstreamCost,
           markup: llmPriceMarkup(),
+          idempotencyKey: `llm-gateway:${event.accountId}:${event.requestId}:settlement-debit`,
         });
       } else if (toRefund > 0) {
         await grantCredits(
@@ -381,12 +385,18 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
           'llm_reservation_refund',
           `LLM gateway admission-hold refund${event.model && event.model !== 'unknown' ? ` · ${event.model}` : ''}`,
           false,
+          undefined,
+          `llm-gateway:${event.accountId}:${event.requestId}:settlement-refund`,
         );
       }
+      accountingSettled = true;
       return;
     }
 
-    if (event.billingMode === 'none') return;
+    if (event.billingMode === 'none') {
+      accountingSettled = true;
+      return;
+    }
     await deductForLlmUsage({
       accountId: event.accountId,
       costUsd: event.finalCost,
@@ -396,15 +406,17 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
       usageEventId,
       upstreamCostUsd: event.upstreamCost,
       markup: llmPriceMarkup(),
+      idempotencyKey: `llm-gateway:${event.accountId}:${event.requestId}:settlement-debit`,
     });
+    accountingSettled = true;
   } finally {
     if (event.sessionId && event.livenessAdmissionId) {
       try {
-        if (!usageLedgerPersisted) {
+        if (!accountingSettled) {
           await blockProjectTaskWorkerAdmission(db, {
             workerSessionId: event.sessionId,
             admissionId: event.livenessAdmissionId,
-            reason: 'accounting unavailable: usage ledger write failed',
+            reason: 'accounting unavailable: usage or wallet settlement failed',
             now: new Date(),
           });
         } else {
@@ -536,7 +548,7 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     resolveUpstream: resolveCandidates,
     assertBillingActive: assertLlmBillingActive,
     assertBudget: async (principal, requestId) => {
-      await assertGatewayBudget(principal);
+      await assertGatewayBudget(principal, requestId);
       const livenessAdmissionId = await admitTaskLiveness(principal, requestId);
       return livenessAdmissionId ? { livenessAdmissionId } : undefined;
     },

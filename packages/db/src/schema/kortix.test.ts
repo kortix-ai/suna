@@ -454,6 +454,17 @@ describe('generated project state tables', () => {
     expect(sql).toContain('liveness_deadline_at');
   });
 
+  test('terminal tasks cannot retain gateway or Git request fences', () => {
+    const terminalFence = getTableConfig(projectTasks).checks.find(
+      (candidate) => candidate.name === 'project_tasks_terminal_has_no_live_fences',
+    );
+    expect(terminalFence).toBeDefined();
+    const sql = new PgDialect().sqlToQuery(terminalFence!.value).sql;
+    expect(sql).toContain(`not in ('done', 'blocked')`);
+    expect(sql).toContain('liveness_admission_id');
+    expect(sql).toContain('git_write_request_id');
+  });
+
   test('worker contracts cannot exceed server-owned platform ceilings', () => {
     expect(TASK_WORKER_PLATFORM_CEILINGS).toEqual({
       max_wall_seconds: 3_600,

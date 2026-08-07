@@ -344,6 +344,13 @@ function noLiveTaskGitWrite(now: Date) {
   );
 }
 
+function noLiveTaskLivenessAdmission(now: Date) {
+  return or(
+    isNull(projectTasks.livenessAdmissionId),
+    lte(projectTasks.livenessAdmissionExpiresAt, now),
+  );
+}
+
 async function revokeWorkerSessionTokens(
   database: Pick<Database, 'update'>,
   workerSessionId: string,
@@ -388,6 +395,8 @@ export async function transitionProjectTask(
           claimSessionId: null,
           claimedAt: null,
           claimExpiresAt: null,
+          livenessAdmissionId: null,
+          livenessAdmissionExpiresAt: null,
           gitWriteRequestId: null,
           gitWriteLeaseExpiresAt: null,
         } : {}),
@@ -399,7 +408,9 @@ export async function transitionProjectTask(
           eq(projectTasks.taskId, input.taskId),
           eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
           gt(projectTasks.claimExpiresAt, input.now),
-          ...(clearsClaim ? [noLiveTaskGitWrite(input.now)] : []),
+          ...(clearsClaim
+            ? [noLiveTaskGitWrite(input.now), noLiveTaskLivenessAdmission(input.now)]
+            : []),
         ),
       )
       .returning();
@@ -449,6 +460,14 @@ export async function transitionProjectTask(
     current.gitWriteLeaseExpiresAt > input.now
   ) {
     throw new TaskGitWriteInFlightError(current.taskId, current.gitWriteLeaseExpiresAt);
+  }
+  if (
+    clearsClaim &&
+    current.livenessAdmissionId &&
+    current.livenessAdmissionExpiresAt &&
+    current.livenessAdmissionExpiresAt > input.now
+  ) {
+    throw new TaskLivenessRequestInFlightError(current.taskId, current.livenessAdmissionExpiresAt);
   }
   throw new TaskTransitionConflictError({
     projectId: input.projectId,
@@ -865,6 +884,14 @@ export async function settleProjectTaskNoProgress(
     ) {
       throw new TaskGitWriteInFlightError(task.taskId, task.gitWriteLeaseExpiresAt);
     }
+    if (
+      escalates &&
+      task.livenessAdmissionId &&
+      task.livenessAdmissionExpiresAt &&
+      task.livenessAdmissionExpiresAt > input.now
+    ) {
+      throw new TaskLivenessRequestInFlightError(task.taskId, task.livenessAdmissionExpiresAt);
+    }
     const action = escalates ? 'blocked_escalation_queued' as const : 'continuation_queued' as const;
     const idempotencyKey = escalates
       ? `task-escalate:${input.taskId}:${input.settlementId}`
@@ -908,6 +935,8 @@ export async function settleProjectTaskNoProgress(
         claimSessionId: null,
         claimedAt: null,
         claimExpiresAt: null,
+        livenessAdmissionId: null,
+        livenessAdmissionExpiresAt: null,
         gitWriteRequestId: null,
         gitWriteLeaseExpiresAt: null,
       } : { continuationConsumedAt: input.now }),
@@ -1093,6 +1122,18 @@ export async function admitProjectTaskWorkerIteration(
   if (!row) return null;
   const active = row.task;
   if (active.status !== 'doing') throw new TaskLivenessLimitExceededError(active.taskId);
+  if (
+    active.livenessAdmissionId === input.requestId &&
+    active.livenessAdmissionExpiresAt &&
+    active.livenessAdmissionExpiresAt > input.now
+  ) {
+    return {
+      taskId: active.taskId,
+      admitted: true,
+      admissionId: input.requestId,
+      admissionExpiresAt: active.livenessAdmissionExpiresAt,
+    };
+  }
   const contract = active.livenessWorkerContract;
   if (!contract || !active.livenessDeadlineAt) {
     throw new TaskLivenessLimitExceededError(active.taskId);
@@ -1117,6 +1158,19 @@ export async function admitProjectTaskWorkerIteration(
   )).returning({ taskId: projectTasks.taskId });
   if (!admitted) {
     const fresh = await getProjectTask(database, { projectId: active.projectId, taskId: active.taskId });
+    if (
+      fresh?.status === 'doing' &&
+      fresh.livenessAdmissionId === input.requestId &&
+      fresh.livenessAdmissionExpiresAt &&
+      fresh.livenessAdmissionExpiresAt > input.now
+    ) {
+      return {
+        taskId: fresh.taskId,
+        admitted: true,
+        admissionId: input.requestId,
+        admissionExpiresAt: fresh.livenessAdmissionExpiresAt,
+      };
+    }
     if (
       fresh?.status === 'doing' &&
       fresh.livenessAdmissionId &&

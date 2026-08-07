@@ -984,6 +984,15 @@ export const projectTasks = kortixSchema.table(
       )`,
     ),
     check(
+      'project_tasks_terminal_has_no_live_fences',
+      sql`${table.status} not in ('done', 'blocked') or num_nonnulls(
+        ${table.livenessAdmissionId},
+        ${table.livenessAdmissionExpiresAt},
+        ${table.gitWriteRequestId},
+        ${table.gitWriteLeaseExpiresAt}
+      ) = 0`,
+    ),
+    check(
       'project_tasks_liveness_deadline_after_start',
       sql`${table.livenessDeadlineAt} is null or ${table.livenessDeadlineAt} > ${table.livenessStartedAt}`,
     ),

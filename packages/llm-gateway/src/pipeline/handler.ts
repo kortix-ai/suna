@@ -184,7 +184,7 @@ async function admit(
   }
 
   try {
-    const billing = await hooks.assertBillingActive(principal.accountId);
+    const billing = await hooks.assertBillingActive(principal.accountId, requestId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     step('billing_ok', { ms: lap() });
   } catch (err) {

@@ -22,7 +22,7 @@ let creditAccount: {
   stripeSubscriptionStatus: string | null;
 } | null = null;
 let billingInternalEnabled = true;
-let deductCreditsCalls: Array<{ accountId: string; amount: number }> = [];
+let deductCreditsCalls: Array<{ accountId: string; amount: number; idempotencyKey?: string }> = [];
 let deductShouldFail = false;
 
 mock.module('../config', () => ({
@@ -42,8 +42,14 @@ mock.module('../billing/services/free-tier', () => ({
 }));
 
 mock.module('../billing/services/credits', () => ({
-  deductCredits: async (accountId: string, amount: number) => {
-    deductCreditsCalls.push({ accountId, amount });
+  deductCredits: async (
+    accountId: string,
+    amount: number,
+    _description: string,
+    _ledgerType: string,
+    idempotencyKey?: string,
+  ) => {
+    deductCreditsCalls.push({ accountId, amount, idempotencyKey });
     if (deductShouldFail) {
       throw new Error('Insufficient credits');
     }
@@ -74,7 +80,20 @@ describe('checkBillingActive — atomic admission hold (pure-wallet path)', () =
     // The critical behavioral change: this is a real deduction call through
     // the SAME atomic path the final charge uses, not a passive balance read.
     expect(deductCreditsCalls).toHaveLength(1);
-    expect(deductCreditsCalls[0]).toEqual({ accountId: 'acct-1', amount: 0.01 });
+    expect(deductCreditsCalls[0]).toEqual({
+      accountId: 'acct-1',
+      amount: 0.01,
+      idempotencyKey: undefined,
+    });
+  });
+
+  test('a gateway request id keys the admission hold for retry replay', async () => {
+    const result = await checkBillingActive('acct-1', 'request-1');
+
+    expect(result.ok).toBe(true);
+    expect(deductCreditsCalls[0]?.idempotencyKey).toBe(
+      'llm-gateway:acct-1:request-1:hold',
+    );
   });
 
   test('a hold that fails (concurrent drain / insufficient balance) denies with insufficient_credits — same denial shape as the old read check', async () => {

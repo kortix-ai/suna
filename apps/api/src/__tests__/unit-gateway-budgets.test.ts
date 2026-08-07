@@ -235,6 +235,19 @@ describe('checkBudget', () => {
       expect(admitted).toBeGreaterThan(0);
     });
 
+    test('a retry with the same gateway request id reuses its reservation', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '0.5', period: 'day', action: 'block' },
+      ];
+      spendQueue = [0, 0];
+
+      const first = await checkBudget(principal(), 'request-replay');
+      const retry = await checkBudget(principal(), 'request-replay');
+
+      expect(first.exceeded).toBe(false);
+      expect(retry.exceeded).toBe(false);
+    });
+
     test('a reservation only affects the SAME project/member key — a different project is unaffected', async () => {
       budgetRows = [
         { scope: 'project', subjectUserId: null, limitUsd: '1', period: 'day', action: 'block' },

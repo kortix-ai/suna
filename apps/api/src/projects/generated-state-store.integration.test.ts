@@ -16,6 +16,7 @@ import {
   TaskTransitionConflictError,
   TaskLivenessConflictError,
   TaskLivenessLimitExceededError,
+  TaskLivenessRequestInFlightError,
   TaskWorkerReservationConflictError,
   acquireProjectTaskGitWrite,
   assertTaskWorkerReservationSlot,
@@ -781,12 +782,13 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       total_tokens: 200,
       request_count: 1,
     };
-    await expect(admitProjectTaskWorkerIteration(database, {
+    const liveAdmission = await admitProjectTaskWorkerIteration(database, {
       workerSessionId: SESSION_B,
       requestId: 'req-terminal-boundary',
       usage,
       now: new Date('2026-08-07T14:00:30.000Z'),
-    })).resolves.toMatchObject({ taskId: task.taskId, admitted: true });
+    });
+    expect(liveAdmission).toMatchObject({ taskId: task.taskId, admitted: true });
 
     const progressed = await recordProjectTaskProgress(database, {
       projectId: PROJECT_ID, taskId: task.taskId, claimSessionId: SESSION_A,
@@ -829,7 +831,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(lostResponseRetry.action).toBe('continuation_queued');
     expect(lostResponseRetry.commandId).toBe(first.commandId);
 
-    const second = await settleProjectTaskNoProgress(database, {
+    const secondInput = {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
       taskId: task.taskId,
@@ -840,7 +842,16 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       reason: 'Still no evidence',
       measuredUsage: usage,
       now: new Date('2026-08-07T14:02:00.000Z'),
-    });
+    };
+    await expect(settleProjectTaskNoProgress(database, secondInput))
+      .rejects.toBeInstanceOf(TaskLivenessRequestInFlightError);
+    expect(await settleProjectTaskWorkerAdmission(database, {
+      workerSessionId: SESSION_B,
+      admissionId: liveAdmission!.admissionId,
+      usage,
+      now: new Date('2026-08-07T14:01:30.000Z'),
+    })).toBe(true);
+    const second = await settleProjectTaskNoProgress(database, secondInput);
     expect(second.action).toBe('blocked_escalation_queued');
     expect(second.task.status).toBe('blocked');
     expect(second.task.claimSessionId).toBeNull();
@@ -1091,6 +1102,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         now: new Date(transitionNow.getTime() + 1_000),
       }),
     ));
+    const livenessAdmission = await admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_B,
+      requestId: 'liveness-transition',
+      usage: zeroUsage,
+      now: new Date(transitionNow.getTime() + 1_000),
+    });
     expect(transitionLeases.filter(Boolean)).toHaveLength(1);
     const transitionRequestId = transitionLeases.find(Boolean)?.requestId;
     expect(transitionRequestId).toBeTruthy();
@@ -1106,6 +1123,18 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     })).toBe(false);
     expect(await settleProjectTaskGitWrite(database, {
       projectId: PROJECT_ID, workerSessionId: SESSION_B, requestId: transitionRequestId!,
+      now: new Date(transitionNow.getTime() + 3_000),
+    })).toBe(true);
+    await expect(transitionProjectTask(database, {
+      projectId: PROJECT_ID, taskId: transitioned.taskId, status: 'done',
+      expectedClaimSessionId: SESSION_A, result: { evidence: [{ ref: 'proof' }] },
+      now: new Date(transitionNow.getTime() + 3_000),
+    })).rejects.toBeInstanceOf(TaskLivenessRequestInFlightError);
+    expect(await tokenStatus(SESSION_B)).toBe('active');
+    expect(await settleProjectTaskWorkerAdmission(database, {
+      workerSessionId: SESSION_B,
+      admissionId: livenessAdmission!.admissionId,
+      usage: zeroUsage,
       now: new Date(transitionNow.getTime() + 3_000),
     })).toBe(true);
     await transitionProjectTask(database, {
