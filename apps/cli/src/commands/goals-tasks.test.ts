@@ -51,6 +51,21 @@ const TASK = {
   claim_session_id: null,
   claimed_at: null,
   claim_expires_at: null,
+  liveness_worker_session_id: null,
+  liveness_coordinator_session_id: null,
+  liveness_worker_contract: null,
+  liveness_started_at: null,
+  liveness_deadline_at: null,
+  liveness_iterations_admitted: 0,
+  no_progress_settlements: 0,
+  continuation_consumed_at: null,
+  last_progress_at: null,
+  last_progress_ref: null,
+  last_no_progress_settlement_id: null,
+  last_no_progress_action: null,
+  last_no_progress_command_id: null,
+  escalated_at: null,
+  liveness_blocker: null,
   result: {},
   created_at: "2026-08-01T00:00:00.000Z",
   updated_at: "2026-08-01T00:00:00.000Z",
@@ -135,6 +150,23 @@ function fakeSdkFactory() {
             block: (...args: unknown[]) =>
               record("tasks.block", args, {
                 task: { ...TASK, status: "blocked" },
+              }),
+            registerWorker: (...args: unknown[]) =>
+              record("tasks.registerWorker", args, {
+                task: { ...TASK, status: "doing" },
+                worker: { session_id: "worker-session", command_id: "command-1", state: "queued" },
+                contract: { max_wall_seconds: 900, max_tokens: 50000, max_cost_usd: 2.5, max_iterations: 8 },
+              }),
+            recordProgress: (...args: unknown[]) =>
+              record("tasks.recordProgress", args, { task: { ...TASK, status: "doing" }, action: "recorded" }),
+            settleNoProgress: (...args: unknown[]) =>
+              record("tasks.settleNoProgress", args, {
+                action: "continuation_queued",
+                task: {
+                  ...TASK,
+                  status: "doing",
+                  no_progress_settlements: 1,
+                },
               }),
           },
         };
@@ -492,6 +524,40 @@ describe("tasks command", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Blocked task");
     expect(stderr).toBe("");
+    resetOutput();
+
+    code = await runTasks(
+      commandArgs([
+        "worker", TASK.task_id, "--session", "coordinator-session",
+        "--worker-session", "worker-session", "--prompt", "Implement and verify",
+        "--max-wall-seconds", "900", "--max-tokens", "50000",
+        "--max-cost-usd", "2.5", "--max-iterations", "8",
+      ]), { kortixFromAuth: sdk },
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain("Worker queued");
+    resetOutput();
+
+    code = await runTasks(
+      commandArgs([
+        "progress", TASK.task_id, "--session", "coordinator-session",
+        "--worker-session", "worker-session", "--ref", "commit:abc123",
+      ]), { kortixFromAuth: sdk },
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain("Recorded progress");
+    resetOutput();
+
+    code = await runTasks(
+      commandArgs([
+        "no-progress", TASK.task_id, "--session", "coordinator-session",
+        "--worker-session", "worker-session", "--settlement-id", "turn-1",
+        "--reason", "Settled without evidence",
+      ]), { kortixFromAuth: sdk },
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain("Continue task");
+    expect(stderr).toBe("");
 
     expect(calls).toEqual([
       {
@@ -541,6 +607,27 @@ describe("tasks command", () => {
           { session_id: "session_1", blocker: "Waiting for API" },
         ],
       },
+      {
+        method: "tasks.registerWorker", projectId: "project_1",
+        args: [TASK.task_id, {
+          session_id: "coordinator-session", worker_session_id: "worker-session",
+          prompt: "Implement and verify",
+          contract: { max_wall_seconds: 900, max_tokens: 50000, max_cost_usd: 2.5, max_iterations: 8 },
+        }],
+      },
+      {
+        method: "tasks.recordProgress", projectId: "project_1",
+        args: [TASK.task_id, {
+          session_id: "coordinator-session", worker_session_id: "worker-session", ref: "commit:abc123",
+        }],
+      },
+      {
+        method: "tasks.settleNoProgress", projectId: "project_1",
+        args: [TASK.task_id, {
+          session_id: "coordinator-session", worker_session_id: "worker-session",
+          settlement_id: "turn-1", reason: "Settled without evidence",
+        }],
+      },
     ]);
   });
 
@@ -575,6 +662,15 @@ describe("tasks command", () => {
           "29",
         ],
         "between 30 and 86400",
+      ],
+      [
+        [
+          "worker", TASK.task_id, "--session", "coordinator-session",
+          "--worker-session", "worker-session", "--prompt", "work",
+          "--max-wall-seconds", "900", "--max-tokens", "0",
+          "--max-cost-usd", "2.5", "--max-iterations", "8",
+        ],
+        "--max-tokens must be a positive integer",
       ],
       [
         ["done", TASK.task_id, "--session", "session_1"],

@@ -44,6 +44,9 @@ Subcommands:
   claim <id>             Claim a task for a session.
   done <id>              Complete a task with cited evidence.
   block <id>             Block a task with a reason.
+  worker <id>            Bind bounded worker and deliver its initial prompt.
+  progress <id>          Record semantic worker progress.
+  no-progress <id>       Atomically continue once, then block and escalate.
 
 List options:
   --goal <slug>          Only tasks for one goal.
@@ -65,6 +68,10 @@ Transition options:
   claim: --session <id> [--lease-seconds <30..86400>]
   done:  --session <id> --evidence <ref> [--summary <text>]
   block: --session <id> --reason <text>
+  worker: --session <claim-id> --worker-session <id> --prompt <text>
+          --max-wall-seconds <n> --max-tokens <n> --max-cost-usd <n> --max-iterations <n>
+  progress: --session <claim-id> --worker-session <id> --ref <evidence-ref>
+  no-progress: --session <claim-id> --worker-session <id> --settlement-id <id> --reason <text>
 
 Global options:
   --project <id>         Operate on this project id (default: linked/default).
@@ -77,6 +84,11 @@ Examples:
   kortix tasks new --goal improve-reliability --title "Add retry telemetry" --status todo
   kortix tasks claim <id> --session <session-id> --lease-seconds 900
   kortix tasks done <id> --session <session-id> --evidence pr:123
+  kortix tasks worker <id> --session <claim-id> --worker-session <worker-id> \
+    --prompt "Implement and verify" --max-wall-seconds 900 --max-tokens 50000 \
+    --max-cost-usd 2.5 --max-iterations 8
+  kortix tasks no-progress <id> --session <claim-id> --worker-session <worker-id> \
+    --settlement-id turn-1 --reason "Settled without evidence"
 `;
 
 type SdkFactory = typeof kortixFromAuth;
@@ -150,6 +162,23 @@ function parseInteger(
     throw new Error(`${flag} must be a safe integer`);
   if (bounds && (value < bounds.min || value > bounds.max)) {
     throw new Error(`${flag} must be between ${bounds.min} and ${bounds.max}`);
+  }
+  return value;
+}
+
+function requirePositiveInteger(raw: string | undefined, flag: string): number {
+  const value = parseInteger(raw, flag);
+  if (value === undefined || value <= 0) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return value;
+}
+
+function requirePositiveNumber(raw: string | undefined, flag: string): number {
+  if (raw === undefined) throw new Error(`${flag} is required`);
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${flag} must be a positive finite number`);
   }
   return value;
 }
@@ -409,6 +438,69 @@ export async function runTasks(
         } catch (error) {
           return surfaceApiError(error);
         }
+      }
+      case "worker": {
+        const id = requireId(rest, "worker");
+        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
+        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
+        const prompt = requireText(takeFlagValue(rest, ["--prompt"]), "--prompt");
+        const maxWallSeconds = requirePositiveInteger(takeNumericFlag(rest, "--max-wall-seconds"), "--max-wall-seconds");
+        const maxTokens = requirePositiveInteger(takeNumericFlag(rest, "--max-tokens"), "--max-tokens");
+        const maxCostUsd = requirePositiveNumber(takeNumericFlag(rest, "--max-cost-usd"), "--max-cost-usd");
+        const maxIterations = requirePositiveInteger(takeNumericFlag(rest, "--max-iterations"), "--max-iterations");
+        rejectExtraArgs(rest);
+        const project = await projectHandle(flags, sdkFactory);
+        if (!project) return 1;
+        try {
+          const response = await project.tasks.registerWorker(id, {
+            session_id: session, worker_session_id: workerSession, prompt,
+            contract: {
+              max_wall_seconds: maxWallSeconds, max_tokens: maxTokens,
+              max_cost_usd: maxCostUsd, max_iterations: maxIterations,
+            },
+          });
+          if (flags.json) emitJson(response);
+          else process.stdout.write(`${status.ok(`Worker ${response.worker.state} for task ${response.task.task_id}`)}\n`);
+          return 0;
+        } catch (error) { return surfaceApiError(error); }
+      }
+      case "progress": {
+        const id = requireId(rest, "progress");
+        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
+        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
+        const ref = requireText(takeFlagValue(rest, ["--ref"]), "--ref");
+        rejectExtraArgs(rest);
+        const project = await projectHandle(flags, sdkFactory);
+        if (!project) return 1;
+        try {
+          const response = await project.tasks.recordProgress(id, {
+            session_id: session, worker_session_id: workerSession, ref,
+          });
+          if (flags.json) emitJson(response);
+          else process.stdout.write(`${status.ok(`Recorded progress for task ${response.task.task_id}`)}\n`);
+          return 0;
+        } catch (error) { return surfaceApiError(error); }
+      }
+      case "no-progress": {
+        const id = requireId(rest, "no-progress");
+        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
+        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
+        const settlementId = requireText(takeFlagValue(rest, ["--settlement-id"]), "--settlement-id");
+        const reason = requireText(takeFlagValue(rest, ["--reason"]), "--reason");
+        rejectExtraArgs(rest);
+        const project = await projectHandle(flags, sdkFactory);
+        if (!project) return 1;
+        try {
+          const response = await project.tasks.settleNoProgress(id, {
+            session_id: session, worker_session_id: workerSession, settlement_id: settlementId, reason,
+          });
+          if (flags.json) emitJson(response);
+          else {
+            const label = response.action === "continuation_queued" ? "Continue" : "Escalate";
+            process.stdout.write(`${status.ok(`${label} task ${response.task.task_id}`)}\n`);
+          }
+          return 0;
+        } catch (error) { return surfaceApiError(error); }
       }
       default:
         process.stderr.write(

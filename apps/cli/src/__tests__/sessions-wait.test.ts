@@ -3,6 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { classifyWaitPoll, isAuthoritativelySettled } from '../commands/sessions-wait.ts';
 
 describe('classifyWaitPoll', () => {
+  test('an empty new session is pending prompt delivery, not settled no-progress', () => {
+    expect(classifyWaitPoll({}, 'oc_1', { permissions: 0, questions: 0 }, false)).toBe('working');
+  });
+
   test('an absent status entry means the agent loop is idle', () => {
     expect(classifyWaitPoll({}, 'oc_1', { permissions: 0, questions: 0 })).toBe('idle');
   });
