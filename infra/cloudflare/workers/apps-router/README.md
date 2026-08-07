@@ -12,6 +12,11 @@ Required Cloudflare resources:
 - The `DEV_EDGE_SECRET`, `STAGING_EDGE_SECRET`, `PROD_EDGE_SECRET`, and
   `PREVIEW_EDGE_SECRET` Worker secrets.
 
+Run the `Configure Kortix Apps Edge` GitHub workflow after the Worker deploys.
+The workflow creates the proxied wildcard DNS record when it is absent. It
+refuses to replace a conflicting record. It also verifies the Worker route,
+secret bindings, public DNS, TLS, and the signed Dev routing path.
+
 Each API environment must receive the corresponding value as
 `KORTIX_APPS_EDGE_SECRET`. The API falls back to its existing `API_KEY_SECRET`
 when the dedicated value is absent. Do not store secret values in
