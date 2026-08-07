@@ -12,6 +12,28 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-08 — session `apps-final-verification`
+
+Final Apps verification after rebasing onto current `origin/main`.
+
+SDK scope:
+
+- Keep the public Apps API provider-neutral.
+- Keep `AppHostingProvider` limited to `daytona | platinum | e2b`.
+- Preserve every published export name and the release-managed package version.
+
+GREEN:
+
+- `pnpm test`: `1755 pass`, `0 fail`, and `6890 expect()` calls across `138` files.
+- `pnpm typecheck`: exit `0` for the package and examples.
+- `pnpm smoke:install`: packed `@kortix/sdk` and `@kortix/executor-sdk` imported and constructed in Node ESM.
+- CLI black-box and unit suite: `756 pass`, `0 fail`.
+- No published export name changed. The package version remains release-managed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-07 — session `admin-activity-analytics`
 
 Added two read hooks for the new admin activity-analytics API
