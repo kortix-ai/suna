@@ -270,7 +270,7 @@ projectsApp.openapi(
   const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
   const authorization = c.req.header('Authorization') as string | undefined;
   const callerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
-  let runtimePrincipal = isProjectSessionPrincipal(c);
+  let runtimePrincipal = isProjectSessionPrincipal(c) || getAgentGrant(c) !== null;
   let projectRow: typeof projects.$inferSelect | null = null;
 
   if (authType === 'pat') {

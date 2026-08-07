@@ -687,20 +687,22 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
-    if (scope === 'write' && result.sessionId) {
-      // A session PAT is the only runtime principal allowed to push. Its
-      // immutable token grant must authorize the exact raw-push leaf. Do not
-      // use the CR-open alias and do not let owning-account equality bypass it.
+    if (scope === 'write' && (result.agentGrant || result.sessionId)) {
+      // Every agent/session PAT must carry the immutable grant and authorize
+      // the exact raw-push leaf. This includes pre-migration agent PATs that
+      // lack sessionId. Do not use the CR-open alias or account ownership.
       if (!result.agentGrant || !agentMayPerformExact(result.agentGrant, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)) {
         return { ok: false, status: 403, message: 'session token is not explicitly authorized to push' };
       }
-      const admissionState = await projectTaskWorkerAdmissionState(db, result.sessionId);
-      if (admissionState === 'spawned_unbound') {
-        return { ok: false, status: 403, message: 'spawned worker is not bound to a task' };
-      }
-      const workerBinding = await getProjectTaskWorkerBinding(db, result.sessionId);
-      if (workerBinding && workerBinding.status !== 'doing') {
-        return { ok: false, status: 403, message: 'terminal task workers cannot push' };
+      if (result.sessionId) {
+        const admissionState = await projectTaskWorkerAdmissionState(db, result.sessionId);
+        if (admissionState === 'spawned_unbound') {
+          return { ok: false, status: 403, message: 'spawned worker is not bound to a task' };
+        }
+        const workerBinding = await getProjectTaskWorkerBinding(db, result.sessionId);
+        if (workerBinding && workerBinding.status !== 'doing') {
+          return { ok: false, status: 403, message: 'terminal task workers cannot push' };
+        }
       }
     }
     if (result.accountId !== project.accountId) {

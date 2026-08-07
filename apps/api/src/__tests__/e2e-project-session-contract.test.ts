@@ -24,6 +24,7 @@ const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
+const STALE_AGENT_PAT = 'kortix_pat_stale_agent_without_session';
 const META_SESSION_PAT = 'kortix_pat_meta_session';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
@@ -208,6 +209,22 @@ mock.module('../middleware/auth', () => ({
         connectors: 'all',
         kortixCli: 'all',
         env: 'all',
+      });
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${STALE_AGENT_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000905');
+      c.set('agentGrant', {
+        agent: 'stale-reader',
+        connectors: [],
+        kortixCli: ['project.gitops.read'],
+        env: [],
       });
       await next();
       return;
@@ -1393,7 +1410,7 @@ describe('project session API contract', () => {
 
     // Every runtime principal receives only its existing Kortix token and the
     // proxy origin. The raw GitLab credential never crosses into the sandbox.
-    for (const token of [PROJECT_SANDBOX_TOKEN, SESSION_AGENT_PAT, META_SESSION_PAT]) {
+    for (const token of [PROJECT_SANDBOX_TOKEN, SESSION_AGENT_PAT, STALE_AGENT_PAT, META_SESSION_PAT]) {
       const cloneRes = await app.request(
         `/v1/projects/${PROJECT_ID}/git/clone-credential`,
         { headers: { Authorization: `Bearer ${token}` } },

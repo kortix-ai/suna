@@ -122,6 +122,40 @@ describe('authorizeGitProxy — CLI PAT', () => {
     expect(authorizeCalls).toHaveLength(0);
   });
 
+  test('a stale meta agent PAT without sessionId cannot push', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-stale-meta',
+      projectId: PROJECT_ID,
+      agentGrant: { agent: 'meta', kortixCli: 'all', connectors: [], env: [] },
+    };
+
+    const write = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const read = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+
+    expect(write).toMatchObject({ ok: false, status: 403 });
+    expect(read.ok).toBe(true);
+    expect(authorizeCalls).toHaveLength(0);
+  });
+
+  test('a stale non-push agent PAT without sessionId cannot use account ownership to push', async () => {
+    patResult = {
+      isValid: true,
+      accountId: OWNER_ACCOUNT,
+      userId: 'user-1',
+      tokenId: 'tok-stale-reader',
+      projectId: PROJECT_ID,
+      agentGrant: { agent: 'reader', kortixCli: ['project.gitops.read'], connectors: [] },
+    };
+
+    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(authorizeCalls).toHaveLength(0);
+  });
+
   test('an ordinary project agent PAT keeps write access', async () => {
     patResult = {
       isValid: true,
