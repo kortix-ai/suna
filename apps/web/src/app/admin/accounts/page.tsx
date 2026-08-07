@@ -89,25 +89,40 @@ import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_componen
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 
-// Tiers & payment statuses surfaced in the filter UI. Current tiers first, then
-// the hidden legacy tier_* plans. Keep these `value`s in sync with the canonical
-// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` also renders
+// The canonical tier catalog, admin-labelled. Mirror the `value`s against the
+// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` renders
 // account rows off this list, so a missing entry shows the raw tier key.
-const TIER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'free', label: 'Free' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'per_seat', label: 'Team' },
+//
+// Only FOUR plans are current (sellable today): the billing-v3 credit plans
+// Starter/Team/Scale (paid, BYOK — no bundled managed inference) and
+// Enterprise (sales-assigned; SSO/SCIM/RBAC/audit). Everything marked legacy
+// is grandfathered compatibility — old plans existing customers keep, never
+// offered to new ones. `free`/`none` are non-plans.
+type TierOption = { value: string; label: string; legacy?: boolean };
+const TIER_CATALOG: TierOption[] = [
+  { value: 'starter', label: 'Starter' },
+  { value: 'team', label: 'Team' },
+  { value: 'scale', label: 'Scale' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'tier_2_20', label: 'Plus (legacy)' },
-  { value: 'tier_6_50', label: 'Pro (legacy)' },
-  { value: 'tier_12_100', label: 'Business (legacy)' },
-  { value: 'tier_25_200', label: 'Ultra (legacy)' },
-  { value: 'tier_50_400', label: 'Enterprise (legacy)' },
-  { value: 'tier_125_800', label: 'Scale (legacy)' },
-  { value: 'tier_200_1000', label: 'Max (legacy)' },
-  { value: 'tier_150_1200', label: 'Enterprise Max (legacy)' },
+  { value: 'free', label: 'Free' },
   { value: 'none', label: 'No plan' },
+  { value: 'pro', label: 'Pro', legacy: true },
+  { value: 'per_seat', label: 'Team per-seat', legacy: true },
+  { value: 'tier_2_20', label: 'Plus', legacy: true },
+  { value: 'tier_6_50', label: 'Pro', legacy: true },
+  { value: 'tier_12_100', label: 'Business', legacy: true },
+  { value: 'tier_25_200', label: 'Ultra', legacy: true },
+  { value: 'tier_50_400', label: 'Enterprise', legacy: true },
+  { value: 'tier_125_800', label: 'Scale', legacy: true },
+  { value: 'tier_200_1000', label: 'Max', legacy: true },
+  { value: 'tier_150_1200', label: 'Enterprise Max', legacy: true },
 ];
+
+// Filter list: every key an account row can carry, legacy ones labelled so.
+const TIER_OPTIONS: { value: string; label: string }[] = TIER_CATALOG.map((t) => ({
+  value: t.value,
+  label: t.legacy ? `${t.label} · legacy` : t.label,
+}));
 
 const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'active', label: 'Active' },
@@ -204,14 +219,9 @@ function formatDateTime(value: string | null | undefined) {
 
 function tierLabel(tier: string | null) {
   if (!tier) return 'No plan';
-  // TIER_OPTIONS is the filter list; TRIAL_TIER_OPTIONS carries the paid tiers
-  // that are grantable but not filterable (starter/team/scale), so a trial
-  // tier renders as "Team", not the raw key.
-  return (
-    TIER_OPTIONS.find((t) => t.value === tier)?.label ??
-    TRIAL_TIER_OPTIONS.find((t) => t.value === tier)?.label ??
-    tier
-  );
+  const entry = TIER_CATALOG.find((t) => t.value === tier);
+  if (!entry) return tier;
+  return entry.legacy ? `${entry.label} · legacy` : entry.label;
 }
 
 function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badge>['variant'] {
@@ -223,14 +233,16 @@ function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badg
 // `active` is the only status that grants the trial tier. The other four are
 // history the row keeps for audit, so they render greyed rather than hidden.
 
-/** Trial tiers offered in the grant form. `free`/`none` are rejected server-side. */
-const TRIAL_TIER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'starter', label: 'Starter' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'team', label: 'Team' },
-  { value: 'per_seat', label: 'Team (per-seat)' },
-  { value: 'scale', label: 'Scale' },
-  { value: 'enterprise', label: 'Enterprise' },
+/**
+ * Trial tiers offered in the grant form. Deliberately TWO, not the whole
+ * catalog: model access is the independent "Managed models" switch below (not
+ * a tier property), so the only real choice is whether the trial carries the
+ * enterprise identity surface. The API accepts any paid tier for edge cases;
+ * `free`/`none` are rejected server-side.
+ */
+const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'team', label: 'Team', hint: 'Standard paid plan — recommended' },
+  { value: 'enterprise', label: 'Enterprise', hint: 'Adds SSO, SCIM, RBAC, audit log' },
 ];
 
 const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
@@ -1312,12 +1324,12 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onClick={() => handleSetTier('per_seat', 'Team')}
               disabled={setTier.isPending}
             >
-              {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextRevertToTeam5247682b')}
+              {'Revert to Team'}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0')}
+          {'Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is unchanged.'}
         </p>
       </div>
 
@@ -1636,11 +1648,15 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 <SelectContent>
                   {TRIAL_TIER_OPTIONS.map((t) => (
                     <SelectItem key={t.value} value={t.value}>
-                      {t.label}
+                      <span>{t.label}</span>
+                      <span className="text-muted-foreground ml-1.5 text-xs">{t.hint}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-muted-foreground text-xs">
+                Model access is the Managed models switch below, not the tier.
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">

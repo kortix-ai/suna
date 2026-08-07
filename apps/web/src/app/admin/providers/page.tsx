@@ -351,7 +351,7 @@ export default function ProvidersPage() {
     <SectionContainer>
       <SectionHeader
         icon={Boxes}
-        title={tI18nHardcoded.raw('autoAppAdminProvidersPageJsxAttrTitleSandboxProviders3d848bdc')}
+        title={'Sandbox Providers'}
         description={tI18nHardcoded.raw(
           'autoAppAdminProvidersPageJsxAttrDescriptionBalanceNewSandboxese2321356',
         )}
@@ -403,14 +403,14 @@ export default function ProvidersPage() {
           <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
             <div className="space-y-1">
               <h2 className="text-sm font-semibold tracking-tight">
-                {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSplitDistributione4a343e6')}
+                {'Split distribution'}
               </h2>
               <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
                 {tI18nHardcoded.raw(
                   'autoAppAdminProvidersPageJsxTextWeightedRandomSelectionFor79233150',
                 )}
                 {dist ? ` (${dist.default})` : ''}
-                {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextAnExplicitPerRequest5f99bd23')}
+                {'. An explicit per-request provider always wins.'}
               </p>
             </div>
             {distQ.isLoading ? (
@@ -446,7 +446,7 @@ export default function ProvidersPage() {
                         </div>
                         <div className="text-muted-foreground text-xs tabular-nums">
                           {pct}
-                          {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextOfTraffic256cb9eb')}
+                          {'% of traffic'}
                         </div>
                       </div>
                     );
@@ -459,7 +459,7 @@ export default function ProvidersPage() {
                   className="gap-1.5"
                 >
                   {saveWeights.isPending && <Loading className="h-3.5 w-3.5" />}
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveDistribution65ccde94')}
+                  {'Save distribution'}
                 </Button>
               </>
             )}
@@ -470,10 +470,10 @@ export default function ProvidersPage() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <h2 className="text-sm font-semibold tracking-tight">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextProviderFailover2a22c982')}
+                  {'Provider failover'}
                 </h2>
                 <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextOffByDefaultWhenb655089e')}
+                  {'Off by default. When enabled, a failed session init retries once'}
                 </p>
               </div>
               {fbQ.isLoading ? (
@@ -495,7 +495,7 @@ export default function ProvidersPage() {
               className="gap-1.5"
             >
               {saveFb.isPending && <Loading className="h-3.5 w-3.5" />}
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveFailoverffe7c977')}
+              {'Save failover'}
             </Button>
           </div>
 
@@ -526,7 +526,7 @@ export default function ProvidersPage() {
                 action={
                   search ? (
                     <Button variant="outline" size="sm" onClick={() => setSearch('')}>
-                      {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextClearSearch7a95b0d5')}
+                      {'Clear search'}
                     </Button>
                   ) : undefined
                 }
@@ -547,7 +547,7 @@ export default function ProvidersPage() {
                     <TableHead>Session</TableHead>
                     <TableHead>Account</TableHead>
                     <TableHead>
-                      {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextLastUsed130e79ff')}
+                      {'Last used'}
                     </TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
@@ -633,16 +633,16 @@ export default function ProvidersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="1">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextLast24h06f647bb')}
+                  {'Last 24h'}
                 </SelectItem>
                 <SelectItem value="7">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextLast7Daysec82c24e')}
+                  {'Last 7 days'}
                 </SelectItem>
                 <SelectItem value="30">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextLast30Days99470ae1')}
+                  {'Last 30 days'}
                 </SelectItem>
                 <SelectItem value="90">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextLast90Days90e23dba')}
+                  {'Last 90 days'}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -756,7 +756,7 @@ export default function ProvidersPage() {
                       )}
                     </h3>
                     <p className="text-muted-foreground text-xs">
-                      {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextMedianTimeToA5477dc7b')}
+                      {'Median time to a ready sandbox, per provider per day.'}
                     </p>
                   </div>
                   <ChartContainer config={chartConfig} className="h-[260px] w-full">
@@ -853,7 +853,7 @@ export default function ProvidersPage() {
               <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-5">
                 <div>
                   <h3 className="text-sm font-semibold tracking-tight">
-                    {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextWhereTheTimeGoes1635a89e')}
+                    {'Where the time goes'}
                   </h3>
                   <p className="text-muted-foreground text-xs">
                     {tI18nHardcoded.raw(
@@ -901,7 +901,7 @@ export default function ProvidersPage() {
                 <div className="border-border/60 overflow-hidden rounded-2xl border">
                   <div className="border-border/60 border-b px-4 py-3">
                     <h3 className="text-sm font-semibold tracking-tight">
-                      {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextRecentErrors79fc1ef2')}
+                      {'Recent errors'}
                     </h3>
                   </div>
                   <Table>
@@ -962,20 +962,20 @@ export default function ProvidersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextMigrateSandbox0dd6b182')}
+              {'Migrate sandbox'}
             </DialogTitle>
             <DialogDescription>
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextMoveSession35fbd577')}
+              {'Move session'}
               <span className="font-mono">{migrating?.sessionId?.slice(0, 8)}</span> off
               <Badge variant="outline" size="sm" className="mx-1 capitalize">
                 {migrating?.provider}
               </Badge>
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextToAnotherProviderThe7cfa2460')}
+              {'on another provider. The session keeps its id; the sandbox is rebuilt.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-1">
             <label className="text-sm font-medium">
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextTargetProvider63739a78')}
+              {'Target provider'}
             </label>
             <Select value={target} onValueChange={setTarget}>
               <SelectTrigger>

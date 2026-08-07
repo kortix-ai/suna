@@ -65,14 +65,23 @@ describe('admin accounts — Entitlements tab', () => {
     expect(choices).toContain('value: false');
   });
 
-  test('rejects a free/none trial tier before the request leaves the browser', () => {
+  test('trial picker offers exactly Team and Enterprise — model access is the switch, not the tier', () => {
     const options = pageSource.match(/TRIAL_TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(options).not.toBe('');
-    expect(options).not.toContain("value: 'free'");
-    expect(options).not.toContain("value: 'none'");
-    for (const tier of ['starter', 'pro', 'team', 'per_seat', 'scale', 'enterprise']) {
+    for (const tier of ['team', 'enterprise']) {
       expect(options).toContain(`value: '${tier}'`);
     }
+    // Never offer non-plans, legacy plans, or the whole catalog — that picker
+    // confused even the founder ("what are these tiers dude").
+    for (const tier of ['free', 'none', 'starter', 'pro', 'per_seat', 'scale', 'tier_']) {
+      expect(options).not.toContain(`value: '${tier}'`);
+    }
+  });
+
+  test('legacy tiers are labelled as legacy wherever tier keys render', () => {
+    const catalog = pageSource.match(/TIER_CATALOG[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    expect(catalog).toContain('legacy: true');
+    expect(pageSource).toMatch(/entry\.legacy \? `\$\{entry\.label\} · legacy` : entry\.label/);
   });
 
   test('the open sheet re-resolves against the refetched list so a mutation shows its result', () => {
