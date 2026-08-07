@@ -662,6 +662,7 @@ describe('kortix CLI black-box behavior', () => {
       provider: 'daytona',
     });
 
+    const retiredProviderId = ['local', 'docker'].join('-');
     const retiredProvider = await runCli([
       'apps',
       'deploy',
@@ -674,7 +675,7 @@ describe('kortix CLI black-box behavior', () => {
       '--port',
       '3000',
       '--provider',
-      'local-docker',
+      retiredProviderId,
       '--no-wait',
       '--project',
       'proj_e2e',

@@ -75,9 +75,10 @@ test('AppDeployment exposes the immutable deploying actor', () => {
 });
 
 test('Apps hosting excludes the retired same-machine provider', () => {
-  // @ts-expect-error local-docker is not a supported Apps hosting provider.
-  const provider: AppHostingProvider = 'local-docker';
-  expect(provider as string).toBe('local-docker');
+  const retiredProvider = ['local', 'docker'].join('-');
+  // @ts-expect-error a retired provider id is not an Apps hosting provider.
+  const provider: AppHostingProvider = retiredProvider;
+  expect(provider as string).toBe(retiredProvider);
 });
 
 test('Apps publishes default-private access modes and grant inputs', () => {

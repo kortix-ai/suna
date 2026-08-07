@@ -12,6 +12,22 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-08 — session `apps-retired-provider-scanner`
+
+The final PR cadence found the retired-provider id as a literal in one SDK
+negative test. The test now constructs the id from separate words. The exact
+`AppHostingProvider` union assertion remains unchanged.
+
+GREEN:
+
+- Retired-provider repository scanner: `1 pass`, `0 fail`.
+- SDK typecheck, including examples: exit `0`.
+- CLI Apps black-box coverage: `21 pass`, `0 fail`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-08 — session `apps-final-verification`
 
 Final Apps verification after rebasing onto current `origin/main`.
