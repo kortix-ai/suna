@@ -6,7 +6,7 @@ describe('OpenCode 1.17.11 message ID compatibility', () => {
     for (const deterministicId of [
       'task-worker:task-1:worker-1',
       'task-no-progress:task-1:worker-1',
-      'task-escalate:task-1:settlement-2',
+      'task-escalate:task-1:44444444-4444-4444-8444-444444444444',
       'task-bound-escalate:task-1',
     ]) {
       expect(normalizeOpenCodeMessageId(deterministicId)).toMatch(/^msg/);
@@ -31,7 +31,7 @@ describe('OpenCode 1.17.11 message ID compatibility', () => {
   });
   test('worker, continuation, and escalation commands persist normalized IDs', async () => {
     const source = await Bun.file(new URL('../generated-state-store.ts', import.meta.url)).text();
-    expect(source).toContain('const messageId = normalizeOpenCodeMessageId(`task-worker-');
+    expect(source).toContain('`task-worker-${input.taskId}-${input.workerSessionId}`');
     expect(source).toContain('messageId: normalizeOpenCodeMessageId(idempotencyKey)');
     expect(source).toContain('messageId: normalizeOpenCodeMessageId(`task-bound-escalate:');
   });
@@ -45,8 +45,12 @@ describe('OpenCode 1.17.11 message ID compatibility', () => {
   test('deployment repair requeues persisted dead-lettered legacy prompts before claiming work', async () => {
     const store = await Bun.file(new URL('./store.ts', import.meta.url)).text();
     expect(store).toContain('export async function repairLegacyLifecycleMessageIds');
-    expect(store).toContain("when ${sessionLifecycleCommands.status} = 'dead_lettered' then 'queued'");
-    expect(store).toContain("to_jsonb('msg_' || (${sessionLifecycleCommands.payload}->>'messageId'))");
+    expect(store).toContain(
+      "when ${sessionLifecycleCommands.status} = 'dead_lettered' then 'queued'",
+    );
+    expect(store).toContain(
+      "to_jsonb('msg_' || (${sessionLifecycleCommands.payload}->>'messageId'))",
+    );
     expect(store).toContain('else ${sessionLifecycleCommands.availableAt}');
 
     const engine = await Bun.file(new URL('./engine.ts', import.meta.url)).text();
@@ -54,5 +58,4 @@ describe('OpenCode 1.17.11 message ID compatibility', () => {
       engine.indexOf('const rows = await claimDueLifecycleCommands'),
     );
   });
-
 });

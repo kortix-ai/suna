@@ -25,6 +25,7 @@ import {
   projectSessionConnectorBindings,
   projectTasks,
   projectTaskNoProgressSettlements,
+  projectTaskTurnOutcomes,
   TASK_WORKER_PLATFORM_CEILINGS,
   projectGoalEvaluations,
   projectGoalObservations,
@@ -163,9 +164,7 @@ describe('kortix enums', () => {
   });
 
   test('connector authorization strategy is project or user', () => {
-    expect(connectorAuthorizationStrategyEnum.enumName).toBe(
-      'connector_authorization_strategy',
-    );
+    expect(connectorAuthorizationStrategyEnum.enumName).toBe('connector_authorization_strategy');
     expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
   });
 });
@@ -245,8 +244,7 @@ describe('sandbox compute provider attribution', () => {
 describe('warm project session uniqueness', () => {
   test('allows one available warm session per project and creator', () => {
     const index = getTableConfig(projectSessions).indexes.find(
-      (candidate) =>
-        candidate.config.name === 'idx_project_sessions_one_available_warm',
+      (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
     );
 
     expect(index).toBeDefined();
@@ -414,6 +412,7 @@ describe('generated project state tables', () => {
       'liveness_started_at',
       'liveness_deadline_at',
       'liveness_iterations_admitted',
+      'liveness_turn_id',
       'liveness_admission_id',
       'liveness_admission_expires_at',
       'git_write_request_id',
@@ -480,6 +479,13 @@ describe('generated project state tables', () => {
     expect(sql).toContain('liveness_admission_id');
     expect(sql).toContain('git_write_request_id');
     expect(sql).toContain('git_write_state');
+    const turnFence = getTableConfig(projectTasks).checks.find(
+      (candidate) => candidate.name === 'project_tasks_turn_requires_doing_worker',
+    );
+    expect(turnFence).toBeDefined();
+    const turnSql = new PgDialect().sqlToQuery(turnFence!.value).sql;
+    expect(turnSql).toContain('liveness_turn_id');
+    expect(turnSql).toContain(`status" = 'doing'`);
   });
 
   test('worker contracts cannot exceed server-owned platform ceilings', () => {
@@ -520,10 +526,31 @@ describe('generated project state tables', () => {
       'task_id',
       'settlement_id',
     ]);
-    expect(config.foreignKeys.some((foreignKey) =>
-      foreignKey.getName() === 'project_task_no_progress_settlements_task_fkey' &&
-      foreignKey.onDelete === 'cascade'
-    )).toBe(true);
+    expect(
+      config.foreignKeys.some(
+        (foreignKey) =>
+          foreignKey.getName() === 'project_task_no_progress_settlements_task_fkey' &&
+          foreignKey.onDelete === 'cascade',
+      ),
+    ).toBe(true);
+  });
+
+  test('worker turns expose one shared progress or no-progress identity', () => {
+    expect(columnNames(projectTaskTurnOutcomes)).toEqual([
+      'project_id',
+      'task_id',
+      'settlement_id',
+      'claim_session_id',
+      'worker_session_id',
+      'outcome',
+      'task_snapshot',
+      'created_at',
+    ]);
+    const config = getTableConfig(projectTaskTurnOutcomes);
+    expect(config.primaryKeys[0]?.columns.map((column) => column.name)).toEqual([
+      'task_id',
+      'settlement_id',
+    ]);
   });
 
   test('goal evaluations and observations expose durable push identity', () => {
@@ -535,12 +562,16 @@ describe('generated project state tables', () => {
       'source',
       'idempotency_key',
       'state',
+      'fired_at',
       'lifecycle_command_id',
       'session_id',
       'created_at',
       'updated_at',
     ]);
-    expect(indexNames(projectGoalEvaluations)).toContain('idx_project_goal_evaluations_goal_created');
+    expect(indexNames(projectGoalEvaluations)).toContain(
+      'idx_project_goal_evaluations_goal_created',
+    );
+    expect(indexNames(projectGoalEvaluations)).toContain('idx_project_goal_evaluations_goal_fired');
     expect(columnNames(projectGoalObservations)).toEqual([
       'observation_id',
       'project_id',
@@ -554,7 +585,9 @@ describe('generated project state tables', () => {
       'created_at',
     ]);
     expect(indexNames(projectGoalObservations)).toContain('idx_project_goal_observations_range');
-    expect(indexNames(projectGoalObservations)).toContain('idx_project_goal_observations_evaluation');
+    expect(indexNames(projectGoalObservations)).toContain(
+      'idx_project_goal_observations_evaluation',
+    );
   });
 });
 
@@ -698,7 +731,6 @@ describe('accountSsoProviders table', () => {
     expect(col?.default).toBe(false);
   });
 });
-
 
 describe('usage_events idempotency', () => {
   test('stores a nullable key with one unique per-account index', () => {

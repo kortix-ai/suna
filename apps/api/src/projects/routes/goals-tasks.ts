@@ -4,6 +4,7 @@ import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import { and, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../../iam';
+import { getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { getSessionResourceUsage } from '../../shared/session-costs';
@@ -28,6 +29,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { withProjectGitAuth } from '../lib/git';
+import { manualTriggerIdempotencyKey } from '../lib/manual-trigger-idempotency';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
 import { drainSessionLifecycleQueue } from '../session-lifecycle/engine';
@@ -100,18 +102,25 @@ const GoalsResponseSchema = z
 const GoalResponseSchema = z.object({ goal: GoalSchema }).strict();
 const GoalEvaluationStateSchema = z.enum(['queued', 'fired', 'failed']);
 const GoalHealthStatusSchema = z.enum(['unmeasurable', 'stalled', 'measuring']);
-const GoalHealthSchema = z.object({
-  goal_slug: z.string(),
-  desired_status: z.enum(['active', 'achieved', 'paused', 'abandoned']),
-  health_status: GoalHealthStatusSchema,
-  metrics: z.array(z.object({
-    metric: z.string(),
-    status: GoalHealthStatusSchema,
-    evaluation_id: z.string().uuid().nullable(),
-    evaluation_state: GoalEvaluationStateSchema.nullable(),
-    observation_value: z.number().finite().nullable(),
-  }).strict()),
-}).strict().openapi('ProjectGoalHealth');
+const GoalHealthSchema = z
+  .object({
+    goal_slug: z.string(),
+    desired_status: z.enum(['active', 'achieved', 'paused', 'abandoned']),
+    health_status: GoalHealthStatusSchema,
+    metrics: z.array(
+      z
+        .object({
+          metric: z.string(),
+          status: GoalHealthStatusSchema,
+          evaluation_id: z.string().uuid().nullable(),
+          evaluation_state: GoalEvaluationStateSchema.nullable(),
+          observation_value: z.number().finite().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+  .openapi('ProjectGoalHealth');
 const GoalHealthResponseSchema = z.object({ health: GoalHealthSchema }).strict();
 
 const ObservationSchema = z
@@ -174,12 +183,15 @@ const TaskSchema = z
     liveness_started_at: z.string().datetime({ offset: true }).nullable(),
     liveness_deadline_at: z.string().datetime({ offset: true }).nullable(),
     liveness_iterations_admitted: z.number().int().nonnegative(),
+    liveness_turn_id: z.string().uuid().nullable(),
     no_progress_settlements: z.number().int().min(0).max(2),
     continuation_consumed_at: z.string().datetime({ offset: true }).nullable(),
     last_progress_at: z.string().datetime({ offset: true }).nullable(),
     last_progress_ref: z.string().nullable(),
     last_no_progress_settlement_id: z.string().nullable(),
-    last_no_progress_action: z.enum(['continuation_queued', 'blocked_escalation_queued']).nullable(),
+    last_no_progress_action: z
+      .enum(['continuation_queued', 'blocked_escalation_queued'])
+      .nullable(),
     last_no_progress_command_id: z.string().uuid().nullable(),
     escalated_at: z.string().datetime({ offset: true }).nullable(),
     liveness_blocker: z.string().nullable(),
@@ -264,6 +276,7 @@ const ProgressBodySchema = z
   .object({
     session_id: z.string().trim().min(1).max(256),
     worker_session_id: z.string().trim().min(1).max(256),
+    settlement_id: z.string().uuid(),
     ref: z.string().trim().min(1).max(2_048),
   })
   .strict();
@@ -271,15 +284,21 @@ const NoProgressBodySchema = z
   .object({
     session_id: z.string().trim().min(1).max(256),
     worker_session_id: z.string().trim().min(1).max(256),
-    settlement_id: z.string().trim().min(1).max(256),
+    settlement_id: z.string().uuid(),
     reason: z.string().trim().min(1).max(100_000),
   })
   .strict();
-const MeasuredUsageSchema = z.object({
-  total_cost: z.number(), input_tokens: z.number(), output_tokens: z.number(),
-  cached_tokens: z.number(), cache_write_tokens: z.number(), total_tokens: z.number(),
-  request_count: z.number(),
-}).strict();
+const MeasuredUsageSchema = z
+  .object({
+    total_cost: z.number(),
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+    cached_tokens: z.number(),
+    cache_write_tokens: z.number(),
+    total_tokens: z.number(),
+    request_count: z.number(),
+  })
+  .strict();
 
 function serializeGoal(goal: GitGoalSpec) {
   return {
@@ -343,12 +362,16 @@ function serializeTask(row: ProjectTask) {
     liveness_started_at: row.livenessStartedAt ? iso(row.livenessStartedAt) : null,
     liveness_deadline_at: row.livenessDeadlineAt ? iso(row.livenessDeadlineAt) : null,
     liveness_iterations_admitted: row.livenessIterationsAdmitted,
+    liveness_turn_id: row.livenessTurnId,
     no_progress_settlements: row.noProgressSettlements,
     continuation_consumed_at: row.continuationConsumedAt ? iso(row.continuationConsumedAt) : null,
     last_progress_at: row.lastProgressAt ? iso(row.lastProgressAt) : null,
     last_progress_ref: row.lastProgressRef,
     last_no_progress_settlement_id: row.lastNoProgressSettlementId,
-    last_no_progress_action: row.lastNoProgressAction as 'continuation_queued' | 'blocked_escalation_queued' | null,
+    last_no_progress_action: row.lastNoProgressAction as
+      | 'continuation_queued'
+      | 'blocked_escalation_queued'
+      | null,
     last_no_progress_command_id: row.lastNoProgressCommandId,
     escalated_at: row.escalatedAt ? iso(row.escalatedAt) : null,
     liveness_blocker: row.livenessBlocker,
@@ -402,7 +425,14 @@ async function taskWorkerControlDenial(
   taskId?: string,
 ): Promise<{ error: string; code: 'task_worker_control_denied' } | null> {
   const sessionId = callerKortixSessionId(c);
-  if (!sessionId) return null;
+  if (!sessionId) {
+    return getAgentGrant(c) === null
+      ? null
+      : {
+          error: 'A runtime principal without a live session identity cannot coordinate work',
+          code: 'task_worker_control_denied',
+        };
+  }
   const state = await projectTaskWorkerAdmissionState(db, sessionId);
   if (state === 'not_worker') return null;
   if (operation === 'own_task' && state === 'bound') {
@@ -410,9 +440,10 @@ async function taskWorkerControlDenial(
     if (binding && binding.taskId === taskId && binding.status === 'doing') return null;
   }
   return {
-    error: state === 'spawned_unbound'
-      ? 'A spawned worker must bind before task effects and cannot coordinate tasks'
-      : 'A task worker can mutate only its own doing task and cannot coordinate other tasks',
+    error:
+      state === 'spawned_unbound'
+        ? 'A spawned worker must bind before task effects and cannot coordinate tasks'
+        : 'A task worker can mutate only its own doing task and cannot coordinate other tasks',
     code: 'task_worker_control_denied',
   };
 }
@@ -602,12 +633,23 @@ projectsApp.openapi(
       actor: loaded.userId,
       message: { text: '', source: 'goal_push' },
     };
+    let idempotencyKey: string | undefined;
+    try {
+      idempotencyKey = manualTriggerIdempotencyKey(
+        projectId,
+        triggerSlug,
+        c.req.header('Idempotency-Key'),
+      );
+    } catch (error) {
+      return c.json({ error: (error as Error).message, code: 'invalid_idempotency_key' }, 400);
+    }
     const result = await fireGitTrigger({
       spec,
       project: loaded.row,
       payload,
       renderedPrompt: renderPromptTemplate(spec.promptTemplate, payload),
       source: 'manual',
+      idempotencyKey,
       request: requestAuditContext(c),
     });
     if (result.status === 'failed') {
@@ -616,8 +658,8 @@ projectsApp.openapi(
     if (!result.evaluationId || !result.evaluationState) {
       return c.json({ error: 'Goal push returned no evaluation identity' }, 500);
     }
-    await markGitTriggerFired(projectId, triggerSlug, now, result.status);
-    if (result.status === 'queued') {
+    if (!result.deduped) await markGitTriggerFired(projectId, triggerSlug, now, result.status);
+    if (result.status === 'queued' && !result.deduped) {
       return c.json(
         {
           status: 'queued' as const,
@@ -715,6 +757,16 @@ projectsApp.openapi(
     } catch (error) {
       if (error instanceof RangeError) {
         return c.json({ error: error.message, code: 'evaluation_invalid' }, 400);
+      }
+      const generatedCode =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code: unknown }).code)
+          : '';
+      if (generatedCode === 'GOAL_OBSERVATION_AUTHORITY') {
+        return c.json({ error: (error as Error).message, code: 'goal_observation_authority' }, 403);
+      }
+      if (generatedCode === 'GOAL_EVALUATION_NOT_FIRED') {
+        return c.json({ error: (error as Error).message, code: 'goal_evaluation_not_fired' }, 409);
       }
       const conflict = mapGeneratedStateError(error);
       if (conflict) return c.json({ error: conflict.error, code: conflict.code }, conflict.status);
@@ -1059,7 +1111,6 @@ projectsApp.openapi(
   },
 );
 
-
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -1072,13 +1123,22 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: RegisterWorkerBodySchema } } },
     },
     responses: {
-      202: json(z.object({
-        task: TaskSchema,
-        worker: z.object({
-          session_id: z.string(), command_id: z.string().uuid(), state: z.enum(['queued', 'drained']),
-        }).strict(),
-        contract: WorkerContractSchema,
-      }).strict(), 'Worker binding and durable initial prompt'),
+      202: json(
+        z
+          .object({
+            task: TaskSchema,
+            worker: z
+              .object({
+                session_id: z.string(),
+                command_id: z.string().uuid(),
+                state: z.enum(['queued', 'drained']),
+              })
+              .strict(),
+            contract: WorkerContractSchema,
+          })
+          .strict(),
+        'Worker binding and durable initial prompt',
+      ),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -1087,16 +1147,33 @@ projectsApp.openapi(
     const body = c.req.valid('json');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+    );
     const workerDenial = await taskWorkerControlDenial(c, 'control');
     if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
-      return c.json({ error: 'A project session can register workers only for its own claim', code: 'session_identity_mismatch' }, 403);
+      return c.json(
+        {
+          error: 'A project session can register workers only for its own claim',
+          code: 'session_identity_mismatch',
+        },
+        403,
+      );
     }
-    if (!(await sessionBelongsToProject(projectId, body.session_id)) ||
-        !(await sessionBelongsToProject(projectId, body.worker_session_id))) {
-      return c.json({ error: 'Both sessions must belong to this project', code: 'session_not_in_project' }, 400);
+    if (
+      !(await sessionBelongsToProject(projectId, body.session_id)) ||
+      !(await sessionBelongsToProject(projectId, body.worker_session_id))
+    ) {
+      return c.json(
+        { error: 'Both sessions must belong to this project', code: 'session_not_in_project' },
+        400,
+      );
     }
     try {
       const result = await registerProjectTaskWorker(db, {
@@ -1124,17 +1201,25 @@ projectsApp.openapi(
         });
         if (drained.succeeded > 0) state = 'drained';
       } catch (error) {
-        console.warn('[task-liveness] immediate worker provisioning/prompt drain failed; outbox will retry', {
-          projectId, taskId, commandId: result.commandId,
-          provisionCommandId: result.provisionCommandId,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        console.warn(
+          '[task-liveness] immediate worker provisioning/prompt drain failed; outbox will retry',
+          {
+            projectId,
+            taskId,
+            commandId: result.commandId,
+            provisionCommandId: result.provisionCommandId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
-      return c.json({
-        task: serializeTask(result.task),
-        worker: { session_id: body.worker_session_id, command_id: result.commandId, state },
-        contract: body.contract,
-      }, 202);
+      return c.json(
+        {
+          task: serializeTask(result.task),
+          worker: { session_id: body.worker_session_id, command_id: result.commandId, state },
+          contract: body.contract,
+        },
+        202,
+      );
     } catch (error) {
       return serviceErrorResponse(c, error);
     }
@@ -1148,9 +1233,15 @@ projectsApp.openapi(
     tags: ['tasks'],
     summary: 'Record authenticated semantic worker progress',
     ...auth,
-    request: { params: TaskParamsSchema, body: { content: { 'application/json': { schema: ProgressBodySchema } } } },
+    request: {
+      params: TaskParamsSchema,
+      body: { content: { 'application/json': { schema: ProgressBodySchema } } },
+    },
     responses: {
-      200: json(z.object({ task: TaskSchema, action: z.literal('recorded') }).strict(), 'Progress recorded'),
+      200: json(
+        z.object({ task: TaskSchema, action: z.literal('recorded') }).strict(),
+        'Progress recorded',
+      ),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -1159,17 +1250,34 @@ projectsApp.openapi(
     const body = c.req.valid('json');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+    );
     const workerDenial = await taskWorkerControlDenial(c, 'control');
     if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
-      return c.json({ error: 'A project session can record progress only for its own claim', code: 'session_identity_mismatch' }, 403);
+      return c.json(
+        {
+          error: 'A project session can record progress only for its own claim',
+          code: 'session_identity_mismatch',
+        },
+        403,
+      );
     }
     try {
       const task = await recordProjectTaskProgress(db, {
-        projectId, taskId, claimSessionId: body.session_id,
-        workerSessionId: body.worker_session_id, ref: body.ref, now: new Date(),
+        projectId,
+        taskId,
+        claimSessionId: body.session_id,
+        workerSessionId: body.worker_session_id,
+        settlementId: body.settlement_id,
+        ref: body.ref,
+        now: new Date(),
       });
       return c.json({ task: serializeTask(task), action: 'recorded' as const });
     } catch (error) {
@@ -1185,14 +1293,22 @@ projectsApp.openapi(
     tags: ['tasks'],
     summary: 'Atomically continue once, then block and escalate',
     ...auth,
-    request: { params: TaskParamsSchema, body: { content: { 'application/json': { schema: NoProgressBodySchema } } } },
+    request: {
+      params: TaskParamsSchema,
+      body: { content: { 'application/json': { schema: NoProgressBodySchema } } },
+    },
     responses: {
-      200: json(z.object({
-        task: TaskSchema,
-        action: z.enum(['continuation_queued', 'blocked_escalation_queued']),
-        command_id: z.string().uuid(),
-        measured_usage: MeasuredUsageSchema,
-      }).strict(), 'Durable liveness decision'),
+      200: json(
+        z
+          .object({
+            task: TaskSchema,
+            action: z.enum(['continuation_queued', 'blocked_escalation_queued']),
+            command_id: z.string().uuid(),
+            measured_usage: MeasuredUsageSchema,
+          })
+          .strict(),
+        'Durable liveness decision',
+      ),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -1201,12 +1317,24 @@ projectsApp.openapi(
     const body = c.req.valid('json');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+    );
     const workerDenial = await taskWorkerControlDenial(c, 'control');
     if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
-      return c.json({ error: 'A project session can settle only its own claim', code: 'session_identity_mismatch' }, 403);
+      return c.json(
+        {
+          error: 'A project session can settle only its own claim',
+          code: 'session_identity_mismatch',
+        },
+        403,
+      );
     }
     try {
       const measuredUsage = await getSessionResourceUsage({
@@ -1214,14 +1342,22 @@ projectsApp.openapi(
         sessionId: body.worker_session_id,
       });
       const result = await settleProjectTaskNoProgress(db, {
-        projectId, accountId: loaded.row.accountId, taskId,
-        claimSessionId: body.session_id, workerSessionId: body.worker_session_id,
-        actorUserId: loaded.userId, settlementId: body.settlement_id,
-        reason: body.reason, measuredUsage, now: new Date(),
+        projectId,
+        accountId: loaded.row.accountId,
+        taskId,
+        claimSessionId: body.session_id,
+        workerSessionId: body.worker_session_id,
+        actorUserId: loaded.userId,
+        settlementId: body.settlement_id,
+        reason: body.reason,
+        measuredUsage,
+        now: new Date(),
       });
       return c.json({
-        task: serializeTask(result.task), action: result.action,
-        command_id: result.commandId, measured_usage: result.measuredUsage,
+        task: serializeTask(result.task),
+        action: result.action,
+        command_id: result.commandId,
+        measured_usage: result.measuredUsage,
       });
     } catch (error) {
       return serviceErrorResponse(c, error);

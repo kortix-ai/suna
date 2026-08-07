@@ -1,8 +1,4 @@
-import type {
-  CreatableProjectTaskStatus,
-  ProjectTask,
-  ProjectTaskStatus,
-} from "@kortix/sdk";
+import type { CreatableProjectTaskStatus, ProjectTask, ProjectTaskStatus } from '@kortix/sdk';
 
 import {
   emitJson,
@@ -10,18 +6,18 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-} from "../command-helpers.ts";
-import { kortixFromAuth } from "../api/sdk.ts";
-import { C, help, pad, status } from "../style.ts";
+} from '../command-helpers.ts';
+import { kortixFromAuth } from '../api/sdk.ts';
+import { C, help, pad, status } from '../style.ts';
 
 const TASK_STATUSES: readonly ProjectTaskStatus[] = [
-  "backlog",
-  "todo",
-  "doing",
-  "blocked",
-  "review",
-  "done",
-  "cancelled",
+  'backlog',
+  'todo',
+  'doing',
+  'blocked',
+  'review',
+  'done',
+  'cancelled',
 ];
 
 const TASK_WORKER_PLATFORM_CEILINGS = {
@@ -32,11 +28,11 @@ const TASK_WORKER_PLATFORM_CEILINGS = {
 } as const;
 
 const CREATABLE_TASK_STATUSES: readonly CreatableProjectTaskStatus[] = [
-  "backlog",
-  "todo",
-  "doing",
-  "review",
-  "cancelled",
+  'backlog',
+  'todo',
+  'doing',
+  'review',
+  'cancelled',
 ];
 
 const HELP = help`Usage: kortix tasks <subcommand> [options]
@@ -78,7 +74,8 @@ Transition options:
   worker: --session <claim-id> --worker-session <id> --prompt <text>
           --max-wall-seconds <1..3600> --max-tokens <1..1000000>
           --max-cost-usd <0..25> --max-iterations <1..128>
-  progress: --session <claim-id> --worker-session <id> --ref <evidence-ref>
+  progress: --session <claim-id> --worker-session <id> --settlement-id <turn-id> --ref <evidence-ref>
+            Use the current task.liveness_turn_id returned by the server.
   no-progress: --session <claim-id> --worker-session <id> --settlement-id <id> --reason <text>
 
 Global options:
@@ -96,7 +93,7 @@ Examples:
     --prompt "Implement and verify" --max-wall-seconds 900 --max-tokens 50000 \
     --max-cost-usd 2.5 --max-iterations 8
   kortix tasks no-progress <id> --session <claim-id> --worker-session <worker-id> \
-    --settlement-id turn-1 --reason "Settled without evidence"
+    --settlement-id <task.liveness_turn_id> --reason "Settled without evidence"
 `;
 
 type SdkFactory = typeof kortixFromAuth;
@@ -113,9 +110,9 @@ interface CommonFlags {
 
 function parseCommon(argv: string[]): CommonFlags {
   return {
-    json: takeFlagBool(argv, ["--json"]),
-    project: takeFlagValue(argv, ["--project"]),
-    host: takeFlagValue(argv, ["--host"]),
+    json: takeFlagBool(argv, ['--json']),
+    project: takeFlagValue(argv, ['--project']),
+    host: takeFlagValue(argv, ['--host']),
   };
 }
 
@@ -145,7 +142,7 @@ function requireText(value: string | undefined, flag: string): string {
 
 function requireId(argv: string[], action: string): string {
   const id = argv.shift();
-  if (!id || id.startsWith("-")) {
+  if (!id || id.startsWith('-')) {
     throw new Error(`Pass a task id: kortix tasks ${action} <id>`);
   }
   return id;
@@ -154,7 +151,7 @@ function requireId(argv: string[], action: string): string {
 function rejectExtraArgs(argv: string[]): void {
   if (argv.length === 0) return;
   const arg = argv[0];
-  if (arg.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
+  if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
   throw new Error(`Unexpected argument: ${arg}`);
 }
 
@@ -166,8 +163,7 @@ function parseInteger(
   if (raw === undefined) return undefined;
   if (!/^-?\d+$/.test(raw)) throw new Error(`${flag} must be an integer`);
   const value = Number(raw);
-  if (!Number.isSafeInteger(value))
-    throw new Error(`${flag} must be a safe integer`);
+  if (!Number.isSafeInteger(value)) throw new Error(`${flag} must be a safe integer`);
   if (bounds && (value < bounds.min || value > bounds.max)) {
     throw new Error(`${flag} must be between ${bounds.min} and ${bounds.max}`);
   }
@@ -185,11 +181,7 @@ function requirePositiveInteger(raw: string | undefined, flag: string, max?: num
   return value;
 }
 
-function requirePositiveNumber(
-  raw: string | undefined,
-  flag: string,
-  max?: number,
-): number {
+function requirePositiveNumber(raw: string | undefined, flag: string, max?: number): number {
   if (raw === undefined) throw new Error(`${flag} is required`);
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
@@ -204,18 +196,16 @@ function requirePositiveNumber(
 function parseStatus(raw: string | undefined): ProjectTaskStatus | undefined {
   if (raw === undefined) return undefined;
   if (!TASK_STATUSES.includes(raw as ProjectTaskStatus)) {
-    throw new Error(`--status must be one of: ${TASK_STATUSES.join(", ")}`);
+    throw new Error(`--status must be one of: ${TASK_STATUSES.join(', ')}`);
   }
   return raw as ProjectTaskStatus;
 }
 
-function parseCreatableStatus(
-  raw: string | undefined,
-): CreatableProjectTaskStatus | undefined {
+function parseCreatableStatus(raw: string | undefined): CreatableProjectTaskStatus | undefined {
   if (raw === undefined) return undefined;
   if (!CREATABLE_TASK_STATUSES.includes(raw as CreatableProjectTaskStatus)) {
     throw new Error(
-      `--status creatable status must be one of: ${CREATABLE_TASK_STATUSES.join(", ")}`,
+      `--status creatable status must be one of: ${CREATABLE_TASK_STATUSES.join(', ')}`,
     );
   }
   return raw as CreatableProjectTaskStatus;
@@ -223,9 +213,9 @@ function parseCreatableStatus(
 
 function parseBlockedBy(raw: string | undefined): string[] | undefined {
   if (raw === undefined) return undefined;
-  const ids = raw.split(",").map((id) => id.trim());
+  const ids = raw.split(',').map((id) => id.trim());
   if (ids.length === 0 || ids.some((id) => !id)) {
-    throw new Error("--blocked-by must be a comma-separated list of task ids");
+    throw new Error('--blocked-by must be a comma-separated list of task ids');
   }
   return ids;
 }
@@ -239,15 +229,12 @@ async function projectHandle(flags: CommonFlags, sdkFactory: SdkFactory) {
   return sdkFactory(ctx.auth).project(ctx.projectId);
 }
 
-export async function runTasks(
-  argv: string[],
-  deps: TasksCommandDeps = {},
-): Promise<number> {
-  if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
+export async function runTasks(argv: string[], deps: TasksCommandDeps = {}): Promise<number> {
+  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
   }
-  if (argv.includes("-h") || argv.includes("--help")) {
+  if (argv.includes('-h') || argv.includes('--help')) {
     process.stdout.write(HELP);
     return 0;
   }
@@ -259,18 +246,14 @@ export async function runTasks(
   try {
     const flags = parseCommon(rest);
     switch (subcommand) {
-      case "ls":
-      case "list": {
-        const goal = takeFlagValue(rest, ["--goal"]);
-        const taskStatus = parseStatus(takeFlagValue(rest, ["--status"]));
-        const limit = parseInteger(
-          takeNumericFlag(rest, "--limit"),
-          "--limit",
-          {
-            min: 1,
-            max: 1_000,
-          },
-        );
+      case 'ls':
+      case 'list': {
+        const goal = takeFlagValue(rest, ['--goal']);
+        const taskStatus = parseStatus(takeFlagValue(rest, ['--status']));
+        const limit = parseInteger(takeNumericFlag(rest, '--limit'), '--limit', {
+          min: 1,
+          max: 1_000,
+        });
         rejectExtraArgs(rest);
 
         const project = await projectHandle(flags, sdkFactory);
@@ -288,8 +271,8 @@ export async function runTasks(
           return surfaceApiError(error);
         }
       }
-      case "show": {
-        const id = requireId(rest, "show");
+      case 'show': {
+        const id = requireId(rest, 'show');
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -302,29 +285,23 @@ export async function runTasks(
           return surfaceApiError(error);
         }
       }
-      case "new":
-      case "create": {
-        const goal = requireText(takeFlagValue(rest, ["--goal"]), "--goal");
-        const title = requireText(takeFlagValue(rest, ["--title"]), "--title");
-        const body = takeFlagValue(rest, ["--body"]);
-        const priority = parseInteger(
-          takeNumericFlag(rest, "--priority"),
-          "--priority",
-        );
-        const taskStatus = parseCreatableStatus(
-          takeFlagValue(rest, ["--status"]),
-        );
-        const agent = takeFlagValue(rest, ["--agent"]);
-        const blockedBy = parseBlockedBy(takeFlagValue(rest, ["--blocked-by"]));
-        const origin = (takeFlagValue(rest, ["--origin"]) ?? "cli").trim();
-        const fingerprint = takeFlagValue(rest, ["--fingerprint"]);
+      case 'new':
+      case 'create': {
+        const goal = requireText(takeFlagValue(rest, ['--goal']), '--goal');
+        const title = requireText(takeFlagValue(rest, ['--title']), '--title');
+        const body = takeFlagValue(rest, ['--body']);
+        const priority = parseInteger(takeNumericFlag(rest, '--priority'), '--priority');
+        const taskStatus = parseCreatableStatus(takeFlagValue(rest, ['--status']));
+        const agent = takeFlagValue(rest, ['--agent']);
+        const blockedBy = parseBlockedBy(takeFlagValue(rest, ['--blocked-by']));
+        const origin = (takeFlagValue(rest, ['--origin']) ?? 'cli').trim();
+        const fingerprint = takeFlagValue(rest, ['--fingerprint']);
         rejectExtraArgs(rest);
 
-        if (!origin) throw new Error("--origin cannot be empty");
-        if (agent !== undefined && !agent.trim())
-          throw new Error("--agent cannot be empty");
+        if (!origin) throw new Error('--origin cannot be empty');
+        if (agent !== undefined && !agent.trim()) throw new Error('--agent cannot be empty');
         if (fingerprint !== undefined && !fingerprint.trim()) {
-          throw new Error("--fingerprint cannot be empty");
+          throw new Error('--fingerprint cannot be empty');
         }
 
         const project = await projectHandle(flags, sdkFactory);
@@ -339,13 +316,11 @@ export async function runTasks(
             ...(taskStatus === undefined ? {} : { status: taskStatus }),
             ...(agent === undefined ? {} : { assignee_agent: agent.trim() }),
             ...(blockedBy === undefined ? {} : { blocked_by: blockedBy }),
-            ...(fingerprint === undefined
-              ? {}
-              : { origin_fingerprint: fingerprint.trim() }),
+            ...(fingerprint === undefined ? {} : { origin_fingerprint: fingerprint.trim() }),
           });
           if (flags.json) emitJson(response);
           else {
-            const verb = response.created ? "Created" : "Reused";
+            const verb = response.created ? 'Created' : 'Reused';
             process.stdout.write(
               `${status.ok(`${verb} task ${response.task.task_id}: ${response.task.title}`)}\n`,
             );
@@ -355,15 +330,12 @@ export async function runTasks(
           return surfaceApiError(error);
         }
       }
-      case "claim": {
-        const id = requireId(rest, "claim");
-        const session = requireText(
-          takeFlagValue(rest, ["--session"]),
-          "--session",
-        );
+      case 'claim': {
+        const id = requireId(rest, 'claim');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
         const leaseSeconds = parseInteger(
-          takeNumericFlag(rest, "--lease-seconds"),
-          "--lease-seconds",
+          takeNumericFlag(rest, '--lease-seconds'),
+          '--lease-seconds',
           { min: 30, max: 86_400 },
         );
         rejectExtraArgs(rest);
@@ -373,38 +345,27 @@ export async function runTasks(
         try {
           const response = await project.tasks.claim(id, {
             session_id: session,
-            ...(leaseSeconds === undefined
-              ? {}
-              : { lease_seconds: leaseSeconds }),
+            ...(leaseSeconds === undefined ? {} : { lease_seconds: leaseSeconds }),
           });
           if (flags.json) emitJson(response);
           else {
             const until = response.task.claim_expires_at
               ? ` until ${response.task.claim_expires_at}`
-              : "";
-            process.stdout.write(
-              `${status.ok(`Claimed task ${id} for ${session}${until}`)}\n`,
-            );
+              : '';
+            process.stdout.write(`${status.ok(`Claimed task ${id} for ${session}${until}`)}\n`);
           }
           return 0;
         } catch (error) {
           return surfaceApiError(error);
         }
       }
-      case "done": {
-        const id = requireId(rest, "done");
-        const session = requireText(
-          takeFlagValue(rest, ["--session"]),
-          "--session",
-        );
-        const evidence = requireText(
-          takeFlagValue(rest, ["--evidence"]),
-          "--evidence",
-        );
-        const summary = takeFlagValue(rest, ["--summary"]);
+      case 'done': {
+        const id = requireId(rest, 'done');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
+        const evidence = requireText(takeFlagValue(rest, ['--evidence']), '--evidence');
+        const summary = takeFlagValue(rest, ['--summary']);
         rejectExtraArgs(rest);
-        if (summary !== undefined && !summary.trim())
-          throw new Error("--summary cannot be empty");
+        if (summary !== undefined && !summary.trim()) throw new Error('--summary cannot be empty');
 
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -419,25 +380,16 @@ export async function runTasks(
             ],
           });
           if (flags.json) emitJson(response);
-          else
-            process.stdout.write(
-              `${status.ok(`Completed task ${response.task.task_id}`)}\n`,
-            );
+          else process.stdout.write(`${status.ok(`Completed task ${response.task.task_id}`)}\n`);
           return 0;
         } catch (error) {
           return surfaceApiError(error);
         }
       }
-      case "block": {
-        const id = requireId(rest, "block");
-        const session = requireText(
-          takeFlagValue(rest, ["--session"]),
-          "--session",
-        );
-        const reason = requireText(
-          takeFlagValue(rest, ["--reason"]),
-          "--reason",
-        );
+      case 'block': {
+        const id = requireId(rest, 'block');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
+        const reason = requireText(takeFlagValue(rest, ['--reason']), '--reason');
         rejectExtraArgs(rest);
 
         const project = await projectHandle(flags, sdkFactory);
@@ -457,29 +409,32 @@ export async function runTasks(
           return surfaceApiError(error);
         }
       }
-      case "worker": {
-        const id = requireId(rest, "worker");
-        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
-        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
-        const prompt = requireText(takeFlagValue(rest, ["--prompt"]), "--prompt");
+      case 'worker': {
+        const id = requireId(rest, 'worker');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
+        const workerSession = requireText(
+          takeFlagValue(rest, ['--worker-session']),
+          '--worker-session',
+        );
+        const prompt = requireText(takeFlagValue(rest, ['--prompt']), '--prompt');
         const maxWallSeconds = requirePositiveInteger(
-          takeNumericFlag(rest, "--max-wall-seconds"),
-          "--max-wall-seconds",
+          takeNumericFlag(rest, '--max-wall-seconds'),
+          '--max-wall-seconds',
           TASK_WORKER_PLATFORM_CEILINGS.max_wall_seconds,
         );
         const maxTokens = requirePositiveInteger(
-          takeNumericFlag(rest, "--max-tokens"),
-          "--max-tokens",
+          takeNumericFlag(rest, '--max-tokens'),
+          '--max-tokens',
           TASK_WORKER_PLATFORM_CEILINGS.max_tokens,
         );
         const maxCostUsd = requirePositiveNumber(
-          takeNumericFlag(rest, "--max-cost-usd"),
-          "--max-cost-usd",
+          takeNumericFlag(rest, '--max-cost-usd'),
+          '--max-cost-usd',
           TASK_WORKER_PLATFORM_CEILINGS.max_cost_usd,
         );
         const maxIterations = requirePositiveInteger(
-          takeNumericFlag(rest, "--max-iterations"),
-          "--max-iterations",
+          takeNumericFlag(rest, '--max-iterations'),
+          '--max-iterations',
           TASK_WORKER_PLATFORM_CEILINGS.max_iterations,
         );
         rejectExtraArgs(rest);
@@ -487,54 +442,89 @@ export async function runTasks(
         if (!project) return 1;
         try {
           const response = await project.tasks.registerWorker(id, {
-            session_id: session, worker_session_id: workerSession, prompt,
+            session_id: session,
+            worker_session_id: workerSession,
+            prompt,
             contract: {
-              max_wall_seconds: maxWallSeconds, max_tokens: maxTokens,
-              max_cost_usd: maxCostUsd, max_iterations: maxIterations,
+              max_wall_seconds: maxWallSeconds,
+              max_tokens: maxTokens,
+              max_cost_usd: maxCostUsd,
+              max_iterations: maxIterations,
             },
           });
           if (flags.json) emitJson(response);
-          else process.stdout.write(`${status.ok(`Worker ${response.worker.state} for task ${response.task.task_id}`)}\n`);
+          else
+            process.stdout.write(
+              `${status.ok(`Worker ${response.worker.state} for task ${response.task.task_id}; turn ${response.task.liveness_turn_id}`)}\n`,
+            );
           return 0;
-        } catch (error) { return surfaceApiError(error); }
+        } catch (error) {
+          return surfaceApiError(error);
+        }
       }
-      case "progress": {
-        const id = requireId(rest, "progress");
-        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
-        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
-        const ref = requireText(takeFlagValue(rest, ["--ref"]), "--ref");
+      case 'progress': {
+        const id = requireId(rest, 'progress');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
+        const workerSession = requireText(
+          takeFlagValue(rest, ['--worker-session']),
+          '--worker-session',
+        );
+        const settlementId = requireText(
+          takeFlagValue(rest, ['--settlement-id']),
+          '--settlement-id',
+        );
+        const ref = requireText(takeFlagValue(rest, ['--ref']), '--ref');
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
         try {
           const response = await project.tasks.recordProgress(id, {
-            session_id: session, worker_session_id: workerSession, ref,
+            session_id: session,
+            worker_session_id: workerSession,
+            settlement_id: settlementId,
+            ref,
           });
           if (flags.json) emitJson(response);
-          else process.stdout.write(`${status.ok(`Recorded progress for task ${response.task.task_id}`)}\n`);
+          else
+            process.stdout.write(
+              `${status.ok(`Recorded progress for task ${response.task.task_id}; next turn ${response.task.liveness_turn_id}`)}\n`,
+            );
           return 0;
-        } catch (error) { return surfaceApiError(error); }
+        } catch (error) {
+          return surfaceApiError(error);
+        }
       }
-      case "no-progress": {
-        const id = requireId(rest, "no-progress");
-        const session = requireText(takeFlagValue(rest, ["--session"]), "--session");
-        const workerSession = requireText(takeFlagValue(rest, ["--worker-session"]), "--worker-session");
-        const settlementId = requireText(takeFlagValue(rest, ["--settlement-id"]), "--settlement-id");
-        const reason = requireText(takeFlagValue(rest, ["--reason"]), "--reason");
+      case 'no-progress': {
+        const id = requireId(rest, 'no-progress');
+        const session = requireText(takeFlagValue(rest, ['--session']), '--session');
+        const workerSession = requireText(
+          takeFlagValue(rest, ['--worker-session']),
+          '--worker-session',
+        );
+        const settlementId = requireText(
+          takeFlagValue(rest, ['--settlement-id']),
+          '--settlement-id',
+        );
+        const reason = requireText(takeFlagValue(rest, ['--reason']), '--reason');
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
         try {
           const response = await project.tasks.settleNoProgress(id, {
-            session_id: session, worker_session_id: workerSession, settlement_id: settlementId, reason,
+            session_id: session,
+            worker_session_id: workerSession,
+            settlement_id: settlementId,
+            reason,
           });
           if (flags.json) emitJson(response);
           else {
-            const label = response.action === "continuation_queued" ? "Continue" : "Escalate";
+            const label = response.action === 'continuation_queued' ? 'Continue' : 'Escalate';
             process.stdout.write(`${status.ok(`${label} task ${response.task.task_id}`)}\n`);
           }
           return 0;
-        } catch (error) { return surfaceApiError(error); }
+        } catch (error) {
+          return surfaceApiError(error);
+        }
       }
       default:
         process.stderr.write(
@@ -552,13 +542,13 @@ export async function runTasks(
 
 function renderTaskList(tasks: ProjectTask[]): void {
   if (tasks.length === 0) {
-    process.stdout.write("No tasks match these filters.\n");
+    process.stdout.write('No tasks match these filters.\n');
     return;
   }
   const statusWidth = Math.max(6, ...tasks.map((task) => task.status.length));
   const goalWidth = Math.max(4, ...tasks.map((task) => task.goal_slug.length));
   process.stdout.write(
-    `${pad("ID", 36)}  ${pad("STATUS", statusWidth)}  PRI  ${pad("GOAL", goalWidth)}  TITLE\n`,
+    `${pad('ID', 36)}  ${pad('STATUS', statusWidth)}  PRI  ${pad('GOAL', goalWidth)}  TITLE\n`,
   );
   for (const task of tasks) {
     process.stdout.write(
@@ -573,15 +563,14 @@ function renderTask(task: ProjectTask): void {
   process.stdout.write(`Goal: ${task.goal_slug}\n`);
   process.stdout.write(`Status: ${task.status}\n`);
   process.stdout.write(`Priority: ${task.priority}\n`);
-  if (task.assignee_agent)
-    process.stdout.write(`Agent: ${task.assignee_agent}\n`);
+  if (task.assignee_agent) process.stdout.write(`Agent: ${task.assignee_agent}\n`);
   if (task.claim_session_id) {
     process.stdout.write(
-      `Claim: ${task.claim_session_id}${task.claim_expires_at ? ` until ${task.claim_expires_at}` : ""}\n`,
+      `Claim: ${task.claim_session_id}${task.claim_expires_at ? ` until ${task.claim_expires_at}` : ''}\n`,
     );
   }
   if (task.blocked_by.length > 0)
-    process.stdout.write(`Blocked by: ${task.blocked_by.join(", ")}\n`);
+    process.stdout.write(`Blocked by: ${task.blocked_by.join(', ')}\n`);
   if (task.body) process.stdout.write(`\n${task.body}\n`);
   if (Object.keys(task.result).length > 0) {
     process.stdout.write(`Result: ${JSON.stringify(task.result)}\n`);

@@ -52,6 +52,11 @@ export interface ProjectGoalHealth {
   metrics: ProjectGoalMetricHealth[];
 }
 
+export interface ProjectGoalPushOptions {
+  /** Stable retry key for one logical manual goal push. */
+  idempotencyKey?: string;
+}
+
 export interface ProjectGoalPushResponse {
   status: 'queued' | 'fired' | 'deduped';
   evaluation_id: string;
@@ -81,7 +86,8 @@ export interface RecordProjectGoalObservationInput {
   metric: string;
   value: number;
   source: string;
-  session_id?: string | null;
+  /** @deprecated Session principals are attributed from authentication. Human principals cannot impersonate a session. */
+  session_id?: string;
   observed_at?: string;
 }
 
@@ -111,9 +117,19 @@ export async function getProjectGoalHealth(projectId: string, slug: string) {
   );
 }
 
-export async function pushProjectGoal(projectId: string, slug: string) {
+export async function pushProjectGoal(
+  projectId: string,
+  slug: string,
+  options: ProjectGoalPushOptions = {},
+) {
   return unwrap(
-    await backendApi.post<ProjectGoalPushResponse>(`${goalPath(projectId, slug)}/push`, {}),
+    await backendApi.post<ProjectGoalPushResponse>(
+      `${goalPath(projectId, slug)}/push`,
+      {},
+      options.idempotencyKey
+        ? { headers: { 'Idempotency-Key': options.idempotencyKey } }
+        : undefined,
+    ),
   );
 }
 

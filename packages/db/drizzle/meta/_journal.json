@@ -358,6 +358,20 @@
       "when": 1786080954100,
       "tag": "20260807053554_goal_objective_health_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1786085204456,
+      "tag": "20260807071000_final_autonomy_audit_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786085228310,
+      "tag": "20260807071001_goal_evaluation_fired_index",
+      "breakpoints": true
     }
   ]
 }

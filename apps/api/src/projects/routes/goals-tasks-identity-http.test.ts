@@ -228,6 +228,24 @@ describe('task transition HTTP identity binding', () => {
 });
 
 describe('goal observation HTTP identity binding', () => {
+  test('a human principal cannot attribute an observation to a project session', async () => {
+    authType = 'supabase';
+    authenticatedSessionId = null;
+    const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        evaluation_id: '66666666-6666-4666-8666-666666666666',
+        metric: 'latency',
+        value: 1,
+        source: 'test',
+        session_id: 'existing-session',
+      }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
+  });
+
   test('a project-session principal cannot attribute an observation to another session', async () => {
     const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
       method: 'POST',

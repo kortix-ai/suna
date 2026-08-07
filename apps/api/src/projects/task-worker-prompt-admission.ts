@@ -8,6 +8,7 @@ import {
 export type ProjectTaskWorkerPromptAdmission =
   | { state: 'not_worker' }
   | { state: 'spawned_unbound' }
+  | { state: 'stale_runtime' }
   | { state: 'bound'; binding: ProjectTaskWorkerBinding };
 
 /**

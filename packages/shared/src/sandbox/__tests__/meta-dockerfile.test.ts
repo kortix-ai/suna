@@ -26,7 +26,9 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain(
       'You coordinate work. You do not perform project work in this sandbox.',
     );
-    expect(dockerfile).toContain('Optionally use `kortix sessions cp` after empty session creation');
+    expect(dockerfile).toContain(
+      'Optionally use `kortix sessions cp` after empty session creation',
+    );
     expect(dockerfile).toContain('Pass initial work only through `kortix tasks worker --prompt`');
     expect(dockerfile).toContain('never starts a session.');
     expect(dockerfile).toContain(
@@ -99,13 +101,17 @@ describe('META_AGENT_GUIDE control loop', () => {
 
   test('requires an explicit transition and external verifier evidence', () => {
     expect(META_AGENT_GUIDE).toContain('An empty new session');
-    expect(META_AGENT_GUIDE).toContain('is awaiting initial-prompt delivery and is not settled or no-progress.');
+    expect(META_AGENT_GUIDE).toContain(
+      'is awaiting initial-prompt delivery and is not settled or no-progress.',
+    );
     expect(META_AGENT_GUIDE).toContain('Exit 0 means settled only.');
     expect(META_AGENT_GUIDE).toContain('never means the task or goal is complete.');
     expect(META_AGENT_GUIDE).toContain('independently verify the resulting external state.');
     expect(META_AGENT_GUIDE).toContain('coordinator then transitions its claim to `done`');
     expect(META_AGENT_GUIDE).toContain('with cited verifier evidence');
-    expect(META_AGENT_GUIDE).toContain('`kortix tasks progress` and its evidence ref');
+    expect(META_AGENT_GUIDE).toContain(
+      'exactly one of `kortix tasks progress` or `kortix tasks no-progress`',
+    );
     expect(META_AGENT_GUIDE).toContain('Completion exists only after the explicit durable');
     expect(META_AGENT_GUIDE).toContain('`done` transition plus evidence.');
     expect(META_AGENT_GUIDE).toContain('Record the goal observation with its');
@@ -114,7 +120,9 @@ describe('META_AGENT_GUIDE control loop', () => {
 
   test('uses one idempotent no-progress settlement before server-owned escalation', () => {
     expect(META_AGENT_GUIDE).toContain('`kortix tasks no-progress` with a stable');
-    expect(META_AGENT_GUIDE).toContain('Retry the same settlement ID after any timeout or restart.');
+    expect(META_AGENT_GUIDE).toContain(
+      'Retry the same settlement ID after any timeout or restart.',
+    );
     expect(META_AGENT_GUIDE).toContain('queues the only continuation to the same worker');
     expect(META_AGENT_GUIDE).toContain('queues server-owned worker stop');
     expect(META_AGENT_GUIDE).toContain('wakes the coordinator for');
@@ -122,7 +130,9 @@ describe('META_AGENT_GUIDE control loop', () => {
     expect(META_AGENT_GUIDE).toContain('`last_no_progress_action`');
     expect(META_AGENT_GUIDE).toContain('`last_no_progress_command_id`');
     expect(META_AGENT_GUIDE).toContain('Alternative only when settled without evidence');
-    expect(META_AGENT_GUIDE).toContain('Never revive a worker stopped by liveness exhaustion or blocking.');
+    expect(META_AGENT_GUIDE).toContain(
+      'Never revive a worker stopped by liveness exhaustion or blocking.',
+    );
   });
 
   test('classifies unmeasurable and stalled goals before selecting work', () => {

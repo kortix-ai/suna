@@ -29,11 +29,14 @@ Completed:
 - Observation writes require that evaluation identity.
 - `project.goals.health(slug)` exposes deterministic metric health without inferring goal completion.
 - Public types, facade methods, examples, reference documentation, and surface snapshots are synchronized.
+- Manual goal and trigger fires accept optional stable idempotency keys.
+- Progress and no-progress inputs share one required turn settlement identity.
 
 Verification:
 
-- `pnpm --filter @kortix/sdk test`: 1,605 pass, 0 fail.
+- `pnpm --filter @kortix/sdk test`: 1,606 pass, 0 fail.
 - `pnpm --filter @kortix/sdk typecheck`: core and examples pass.
+- `pnpm --filter @kortix/sdk build`: exit 0.
 - `pnpm --filter @kortix/sdk smoke:install`: packed SDKs install, import, and construct successfully.
 
 **Status:** COMPLETE.

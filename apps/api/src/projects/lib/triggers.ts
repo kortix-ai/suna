@@ -1,7 +1,13 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import type { TriggerList } from '@kortix/api-contract';
-import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import {
+  connectors,
+  projectSessions,
+  projectTriggerRuntime,
+  projects,
+  sessionLifecycleCommands,
+} from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -897,7 +903,12 @@ async function enqueueTriggerPrompt(input: {
   source: 'cron' | 'webhook' | 'manual';
   triggerSlug: string;
   idempotencyKey?: string | null;
-}): Promise<{ status: 'queued' | 'no-session' | 'failed'; commandId?: string }> {
+}): Promise<{
+  status: 'queued' | 'no-session' | 'failed';
+  commandId?: string;
+  sessionId?: string;
+  deduped?: boolean;
+}> {
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
@@ -922,7 +933,12 @@ async function enqueueTriggerPrompt(input: {
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
-  return { status: 'queued', commandId: command?.commandId };
+  return {
+    status: 'queued',
+    commandId: command.commandId,
+    sessionId: command.sessionId,
+    deduped: command.deduped,
+  };
 }
 
 /**
@@ -954,9 +970,12 @@ export interface FireGitTriggerInput {
 
 export async function fireGitTrigger(input: FireGitTriggerInput): Promise<GitTriggerFireResult> {
   const rawGoal = input.payload.goal;
-  const payloadGoalSlug = rawGoal && typeof rawGoal === 'object' && typeof (rawGoal as { slug?: unknown }).slug === 'string'
-    ? (rawGoal as { slug: string }).slug
-    : null;
+  const payloadGoalSlug =
+    rawGoal &&
+    typeof rawGoal === 'object' &&
+    typeof (rawGoal as { slug?: unknown }).slug === 'string'
+      ? (rawGoal as { slug: string }).slug
+      : null;
   const goalSlug = input.spec.goalSlug ?? payloadGoalSlug;
   const isGoalPush =
     input.source !== 'webhook' &&
@@ -1017,12 +1036,45 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
 
+  let replayingCreateSession = false;
+  if (input.idempotencyKey) {
+    const [existing] = await db
+      .select({
+        commandId: sessionLifecycleCommands.commandId,
+        commandType: sessionLifecycleCommands.commandType,
+        status: sessionLifecycleCommands.status,
+        projectId: sessionLifecycleCommands.projectId,
+        sessionId: sessionLifecycleCommands.sessionId,
+      })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+    if (existing?.commandId) {
+      if (
+        existing.projectId !== project.projectId ||
+        !['create_session', 'continue_session'].includes(existing.commandType)
+      ) {
+        return { status: 'failed', error: 'Idempotency key belongs to another delivery' };
+      }
+      if (existing.commandType === 'continue_session') {
+        return {
+          status: existing.status === 'succeeded' ? 'fired' : 'queued',
+          commandId: existing.commandId,
+          sessionId: existing.sessionId ?? undefined,
+          deduped: true,
+          reason: `delivery replay (${existing.status})`,
+        };
+      }
+      replayingCreateSession = true;
+    }
+  }
+
   // Session pinning — when a trigger opts into `session_mode = "pinned"`, always
   // re-prompt the EXACT session the user chose (`spec.pinnedSessionId`), not
   // "whatever this trigger last created" (that's `reuse`). If the pinned session
   // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
   // (the trigger's own last session), then to a brand-new session.
-  if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
+  if (!replayingCreateSession && spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
     const outcome = await enqueueTriggerPrompt({
       project,
       sessionId: spec.pinnedSessionId,
@@ -1036,7 +1088,8 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
       return {
         status: 'queued',
         commandId: outcome.commandId,
-        sessionId: spec.pinnedSessionId,
+        sessionId: outcome.sessionId,
+        deduped: outcome.deduped,
         reason: 'prompt queued for delivery',
       };
     }
@@ -1056,7 +1109,7 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
   // customer / repo. A key that renders empty falls through to a fresh session
   // rather than blending every keyless delivery into a shared one.
   const sessionKey = renderSessionKey(spec, payload);
-  if (sessionKey) {
+  if (!replayingCreateSession && sessionKey) {
     const keyed = await findKeyedTriggerSession(project.projectId, spec.slug, sessionKey);
     if (keyed) {
       const outcome = await enqueueTriggerPrompt({
@@ -1072,7 +1125,8 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
         return {
           status: 'queued',
           commandId: outcome.commandId,
-          sessionId: keyed.sessionId,
+          sessionId: outcome.sessionId,
+          deduped: outcome.deduped,
           reason: 'prompt queued for delivery',
         };
       }
@@ -1081,7 +1135,7 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
     }
   }
 
-  if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
+  if (!replayingCreateSession && (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned')) {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
       const outcome = await enqueueTriggerPrompt({
@@ -1100,7 +1154,8 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
         return {
           status: 'queued',
           commandId: outcome.commandId,
-          sessionId: reusable.sessionId,
+          sessionId: outcome.sessionId,
+          deduped: outcome.deduped,
           reason: 'prompt queued for delivery',
         };
       }

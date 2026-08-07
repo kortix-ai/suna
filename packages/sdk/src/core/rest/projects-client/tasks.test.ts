@@ -102,7 +102,6 @@ test('task claim and terminal transitions carry session ownership and evidence',
   });
 });
 
-
 test('worker registration, progress, and no-progress use separate durable contracts', async () => {
   await registerProjectTaskWorker('project-1', 'task-1', {
     session_id: 'coordinator-session',
@@ -116,31 +115,47 @@ test('worker registration, progress, and no-progress use separate durable contra
     },
   });
   expect(last()).toMatchObject({
-    url: 'http://test.local/projects/project-1/tasks/task-1/worker', method: 'POST',
-    body: expect.objectContaining({ worker_session_id: 'worker-session', prompt: 'Implement and verify the bounded task.' }),
+    url: 'http://test.local/projects/project-1/tasks/task-1/worker',
+    method: 'POST',
+    body: expect.objectContaining({
+      worker_session_id: 'worker-session',
+      prompt: 'Implement and verify the bounded task.',
+    }),
   });
 
   await recordProjectTaskProgress('project-1', 'task-1', {
-    session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123',
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    settlement_id: '11111111-1111-4111-8111-111111111111',
+    ref: 'commit:abc123',
   });
   expect(last()).toMatchObject({
-    url: 'http://test.local/projects/project-1/tasks/task-1/progress', method: 'POST',
-    body: { session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123' },
+    url: 'http://test.local/projects/project-1/tasks/task-1/progress',
+    method: 'POST',
+    body: {
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      ref: 'commit:abc123',
+    },
   });
 
   await settleNoProgressProjectTask('project-1', 'task-1', {
-    session_id: 'coordinator-session', worker_session_id: 'worker-session', settlement_id: 'settlement-1',
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    settlement_id: '33333333-3333-4333-8333-333333333333',
     reason: 'Worker settled without verifier evidence or a delivered blocker',
   });
   expect(last()).toMatchObject({
-    url: 'http://test.local/projects/project-1/tasks/task-1/no-progress', method: 'POST',
+    url: 'http://test.local/projects/project-1/tasks/task-1/no-progress',
+    method: 'POST',
     body: {
-      session_id: 'coordinator-session', worker_session_id: 'worker-session', settlement_id: 'settlement-1',
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      settlement_id: '33333333-3333-4333-8333-333333333333',
       reason: 'Worker settled without verifier evidence or a delivered blocker',
     },
   });
 });
-
 
 test('worker registration accepts the exact platform ceilings', async () => {
   const input = {
@@ -163,22 +178,23 @@ test.each([
   ['max_tokens', 1_000_001, 'max_tokens must be between 1 and 1000000'],
   ['max_cost_usd', 25.000_001, 'max_cost_usd must be between 0 (exclusive) and 25'],
   ['max_iterations', 129, 'max_iterations must be between 1 and 128'],
-] as const)('worker registration rejects %s above the platform ceiling', async (
-  field,
-  value,
-  message,
-) => {
-  await expect(registerProjectTaskWorker('project-1', 'task-1', {
-    session_id: 'coordinator-session',
-    worker_session_id: 'worker-session',
-    prompt: 'Execute the bounded task.',
-    contract: {
-      max_wall_seconds: 3_600,
-      max_tokens: 1_000_000,
-      max_cost_usd: 25,
-      max_iterations: 128,
-      [field]: value,
-    },
-  })).rejects.toThrow(message);
-  expect(calls).toHaveLength(0);
-});
+] as const)(
+  'worker registration rejects %s above the platform ceiling',
+  async (field, value, message) => {
+    await expect(
+      registerProjectTaskWorker('project-1', 'task-1', {
+        session_id: 'coordinator-session',
+        worker_session_id: 'worker-session',
+        prompt: 'Execute the bounded task.',
+        contract: {
+          max_wall_seconds: 3_600,
+          max_tokens: 1_000_000,
+          max_cost_usd: 25,
+          max_iterations: 128,
+          [field]: value,
+        },
+      }),
+    ).rejects.toThrow(message);
+    expect(calls).toHaveLength(0);
+  },
+);

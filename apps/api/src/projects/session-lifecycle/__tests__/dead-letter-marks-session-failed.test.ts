@@ -32,29 +32,29 @@ mock.module('../../../lib/logger', () => ({
   },
 }));
 
-mock.module('../../../shared/db', () => ({
-  db: {
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        // Awaitable (the projectSessions park) AND chainable to `.returning()`
-        // (the sessionLifecycleCommands mark). Records one call either way.
-        where: () => {
-          const record = () => updateCalls.push({ table, updates });
-          return {
-            then: (resolve: (v: unknown) => void) => {
-              record();
-              resolve(undefined);
-            },
-            returning: async () => {
-              record();
-              return commandRow ? [commandRow] : [];
-            },
-          };
-        },
-      }),
+const mockDb: any = {
+  update: (table: unknown) => ({
+    set: (updates: Record<string, unknown>) => ({
+      // Awaitable (the projectSessions park) AND chainable to `.returning()`
+      // (the sessionLifecycleCommands mark). Records one call either way.
+      where: () => {
+        const record = () => updateCalls.push({ table, updates });
+        return {
+          then: (resolve: (v: unknown) => void) => {
+            record();
+            resolve(undefined);
+          },
+          returning: async () => {
+            record();
+            return commandRow ? [commandRow] : [];
+          },
+        };
+      },
     }),
-  },
-}));
+  }),
+};
+mockDb.transaction = async (callback: (tx: typeof mockDb) => unknown) => callback(mockDb);
+mock.module('../../../shared/db', () => ({ db: mockDb }));
 
 const { markCommandFailed } = await import('../store');
 

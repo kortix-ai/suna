@@ -38,6 +38,8 @@ export interface ProjectTask {
   liveness_started_at: string | null;
   liveness_deadline_at: string | null;
   liveness_iterations_admitted: number;
+  /** Server-owned identity that must be used for the current worker-turn outcome. */
+  liveness_turn_id: string | null;
   no_progress_settlements: number;
   continuation_consumed_at: string | null;
   last_progress_at: string | null;
@@ -114,6 +116,7 @@ export interface RegisterProjectTaskWorkerResponse {
 export interface RecordProjectTaskProgressInput {
   session_id: string;
   worker_session_id: string;
+  settlement_id: string;
   ref: string;
 }
 
@@ -198,7 +201,6 @@ export async function blockProjectTask(
   );
 }
 
-
 const WORKER_CONTRACT_PLATFORM_CEILINGS = {
   max_wall_seconds: 3_600,
   max_tokens: 1_000_000,
@@ -214,9 +216,11 @@ function assertWorkerContractWithinPlatformCeilings(contract: ProjectTaskWorkerC
       throw new RangeError(`${field} must be between 1 and ${maximum}`);
     }
   }
-  if (!Number.isFinite(contract.max_cost_usd) ||
-      contract.max_cost_usd <= 0 ||
-      contract.max_cost_usd > WORKER_CONTRACT_PLATFORM_CEILINGS.max_cost_usd) {
+  if (
+    !Number.isFinite(contract.max_cost_usd) ||
+    contract.max_cost_usd <= 0 ||
+    contract.max_cost_usd > WORKER_CONTRACT_PLATFORM_CEILINGS.max_cost_usd
+  ) {
     throw new RangeError(
       `max_cost_usd must be between 0 (exclusive) and ${WORKER_CONTRACT_PLATFORM_CEILINGS.max_cost_usd}`,
     );
@@ -230,9 +234,12 @@ export async function registerProjectTaskWorker(
   input: RegisterProjectTaskWorkerInput,
 ) {
   assertWorkerContractWithinPlatformCeilings(input.contract);
-  return unwrap(await backendApi.post<RegisterProjectTaskWorkerResponse>(
-    `${taskPath(projectId, taskId)}/worker`, input,
-  ));
+  return unwrap(
+    await backendApi.post<RegisterProjectTaskWorkerResponse>(
+      `${taskPath(projectId, taskId)}/worker`,
+      input,
+    ),
+  );
 }
 
 /** Record semantic progress for the authenticated task worker. */
@@ -241,9 +248,12 @@ export async function recordProjectTaskProgress(
   taskId: string,
   input: RecordProjectTaskProgressInput,
 ) {
-  return unwrap(await backendApi.post<RecordProjectTaskProgressResponse>(
-    `${taskPath(projectId, taskId)}/progress`, input,
-  ));
+  return unwrap(
+    await backendApi.post<RecordProjectTaskProgressResponse>(
+      `${taskPath(projectId, taskId)}/progress`,
+      input,
+    ),
+  );
 }
 
 /** Atomically consume the only continuation or block and escalate. */
@@ -252,7 +262,10 @@ export async function settleNoProgressProjectTask(
   taskId: string,
   input: SettleNoProgressProjectTaskInput,
 ) {
-  return unwrap(await backendApi.post<SettleNoProgressProjectTaskResponse>(
-    `${taskPath(projectId, taskId)}/no-progress`, input,
-  ));
+  return unwrap(
+    await backendApi.post<SettleNoProgressProjectTaskResponse>(
+      `${taskPath(projectId, taskId)}/no-progress`,
+      input,
+    ),
+  );
 }

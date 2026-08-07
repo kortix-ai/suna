@@ -153,37 +153,48 @@ describe('goals/tasks service boundaries', () => {
   });
 });
 
-
 describe('goal observation session attribution', () => {
   test('project-session principals default to themselves and cannot cite another session', async () => {
     const belongs = mock(async () => true);
-    await expect(resolveObservationSessionId(
-      { sessionBelongsToProject: belongs },
-      { projectId: PROJECT_ID, authenticatedSessionId: 'session-a' },
-    )).resolves.toBe('session-a');
-    await expect(resolveObservationSessionId(
-      { sessionBelongsToProject: belongs },
-      { projectId: PROJECT_ID, authenticatedSessionId: 'session-a', requestedSessionId: 'session-b' },
-    )).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+    await expect(
+      resolveObservationSessionId(
+        { sessionBelongsToProject: belongs },
+        { projectId: PROJECT_ID, authenticatedSessionId: 'session-a' },
+      ),
+    ).resolves.toBe('session-a');
+    await expect(
+      resolveObservationSessionId(
+        { sessionBelongsToProject: belongs },
+        {
+          projectId: PROJECT_ID,
+          authenticatedSessionId: 'session-a',
+          requestedSessionId: 'session-b',
+        },
+      ),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
   });
 
-  test('human callers can cite only an existing project worker session', async () => {
-    await expect(resolveObservationSessionId(
-      { sessionBelongsToProject: async () => true },
-      { projectId: PROJECT_ID, requestedSessionId: 'worker-session' },
-    )).resolves.toBe('worker-session');
-    await expect(resolveObservationSessionId(
-      { sessionBelongsToProject: async () => false },
-      { projectId: PROJECT_ID, requestedSessionId: 'foreign-session' },
-    )).rejects.toMatchObject({ status: 400, code: 'session_not_in_project' });
+  test('human callers cannot impersonate a project session', async () => {
+    await expect(
+      resolveObservationSessionId(
+        { sessionBelongsToProject: async () => true },
+        { projectId: PROJECT_ID, requestedSessionId: 'worker-session' },
+      ),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+    await expect(
+      resolveObservationSessionId(
+        { sessionBelongsToProject: async () => false },
+        { projectId: PROJECT_ID },
+      ),
+    ).resolves.toBeNull();
   });
 });
 
-
 describe('worker contract platform ceilings', () => {
   test('accepts every exact platform maximum', async () => {
-    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } =
-      await import('./goals-tasks-schemas');
+    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } = await import(
+      './goals-tasks-schemas'
+    );
 
     expect(WorkerContractSchema.safeParse(WORKER_CONTRACT_PLATFORM_CEILINGS).success).toBe(true);
   });
@@ -194,12 +205,15 @@ describe('worker contract platform ceilings', () => {
     ['max_cost_usd', 25.000_001],
     ['max_iterations', 129],
   ] as const)('rejects %s above the platform maximum', async (field, value) => {
-    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } =
-      await import('./goals-tasks-schemas');
+    const { WorkerContractSchema, WORKER_CONTRACT_PLATFORM_CEILINGS } = await import(
+      './goals-tasks-schemas'
+    );
 
-    expect(WorkerContractSchema.safeParse({
-      ...WORKER_CONTRACT_PLATFORM_CEILINGS,
-      [field]: value,
-    }).success).toBe(false);
+    expect(
+      WorkerContractSchema.safeParse({
+        ...WORKER_CONTRACT_PLATFORM_CEILINGS,
+        [field]: value,
+      }).success,
+    ).toBe(false);
   });
 });

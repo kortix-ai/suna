@@ -172,7 +172,9 @@ Use the project handle to drive the same control plane as the Kortix CLI:
 ```ts
 const project = kortix.project(projectId);
 const { goals } = await project.goals.list();
-const pushed = await project.goals.push(goals[0].slug);
+const pushed = await project.goals.push(goals[0].slug, {
+  idempotencyKey: crypto.randomUUID(),
+});
 const { task } = await project.tasks.create({
   goal_slug: goals[0].slug,
   title: "Measure the current position",
@@ -225,24 +227,29 @@ const registration = await project.tasks.registerWorker(task.task_id, {
   },
 });
 console.log(registration.worker.state); // "drained" or "queued"
+```
 
 The platform ceilings are `max_wall_seconds <= 3,600`, `max_tokens <= 1,000,000`,
 `max_cost_usd <= 25`, and `max_iterations <= 128`. A coordinator, including
 meta, can select smaller positive bounds. It cannot widen these server-owned
 ceilings.
 
-await project.tasks.recordProgress(task.task_id, {
+```ts
+const progress = await project.tasks.recordProgress(task.task_id, {
   session_id: coordinatorSessionId,
   worker_session_id: workerSessionId,
+  settlement_id: registration.task.liveness_turn_id!,
   ref: "commit:abc123",
 });
 await project.tasks.settleNoProgress(task.task_id, {
   session_id: coordinatorSessionId,
   worker_session_id: workerSessionId,
-  settlement_id: "worker-turn-1",
-  reason: "The worker settled without terminal evidence.",
+  settlement_id: progress.task.liveness_turn_id!,
+  reason: "The next worker turn settled without terminal evidence.",
 });
 ```
+
+The server returns `task.liveness_turn_id` for the current worker turn. Use that exact ID for one progress or no-progress outcome. Reuse it only to retry the same outcome.
 
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited

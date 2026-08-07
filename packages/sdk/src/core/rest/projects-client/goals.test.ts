@@ -9,7 +9,8 @@ import {
   recordProjectGoalObservation,
 } from './goals';
 
-let calls: Array<{ url: string; method: string; body?: unknown }> = [];
+let calls: Array<{ url: string; method: string; body?: unknown; idempotencyKey?: string | null }> =
+  [];
 
 beforeEach(() => {
   calls = [];
@@ -18,6 +19,7 @@ beforeEach(() => {
       url: String(url),
       method: options.method ?? 'GET',
       body: typeof options.body === 'string' ? JSON.parse(options.body) : undefined,
+      idempotencyKey: new Headers(options.headers).get('Idempotency-Key'),
     });
     return new Response(
       JSON.stringify({ goals: [], errors: [], observations: [], status: 'queued' }),
@@ -46,11 +48,12 @@ test('goal health uses the authenticated goal endpoint', async () => {
 });
 
 test('goal push uses the explicit goal endpoint', async () => {
-  await pushProjectGoal('project-1', 'ship-kernel');
+  await pushProjectGoal('project-1', 'ship-kernel', { idempotencyKey: 'push-1' });
   expect(last()).toMatchObject({
     url: 'http://test.local/projects/project-1/goals/ship-kernel/push',
     method: 'POST',
     body: {},
+    idempotencyKey: 'push-1',
   });
 });
 
@@ -60,7 +63,6 @@ test('goal observation writes evidence and builds a bounded range query', async 
     metric: 'passing_flows',
     value: 14,
     source: 'ke2e run 123',
-    session_id: 'session-1',
     observed_at: '2026-08-06T20:00:00.000Z',
   });
   expect(last()).toMatchObject({
@@ -71,7 +73,6 @@ test('goal observation writes evidence and builds a bounded range query', async 
       metric: 'passing_flows',
       value: 14,
       source: 'ke2e run 123',
-      session_id: 'session-1',
       observed_at: '2026-08-06T20:00:00.000Z',
     },
   });

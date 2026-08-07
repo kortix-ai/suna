@@ -125,7 +125,7 @@ separate memory service.
 Each manual or scheduled goal push creates one idempotent PostgreSQL evaluation.
 The existing trigger and lifecycle-command paths own its `queued`, `fired`, or
 `failed` delivery state. Metric observations require the returned evaluation
-identity. The health read ignores failed and incomplete deliveries. It reports a
+identity. Lifecycle settlement persists `fired_at`; health orders only fired evaluations by that durable completion time and ignores failed or incomplete deliveries. It reports a
 metric as `unmeasurable` without a finite value in the latest fired evaluation,
 `stalled` after three consecutive fired evaluations contain the same finite
 value, and `measuring` otherwise. The aggregate prioritizes `stalled`, then
@@ -145,9 +145,8 @@ ingress rejects a marked but unbound child and a terminal bound worker. The
 lifecycle engine and direct OpenCode proxy re-check admission immediately before
 prompt dispatch.
 
-The coordinator records exactly one of two outcomes for a settled turn:
-semantic evidence through `/progress`, or no progress through `/no-progress`.
-`/no-progress` requires a stable `settlement_id`. A replay returns the stored
+The coordinator records exactly one of two outcomes for each server-owned `task.liveness_turn_id`: semantic evidence through `/progress`, or no progress through `/no-progress`. PostgreSQL rejects the opposite outcome for the same task and settlement id, including concurrent retries. Each accepted outcome advances or clears the current turn id.
+`/no-progress` requires the current stable `settlement_id`. A replay returns the stored
 action. The first distinct settlement queues the only continuation. A second
 distinct settlement atomically blocks and releases the task, queues a
 server-owned worker stop, and wakes the coordinator. Restarts cannot reset this
@@ -194,8 +193,8 @@ tokens are read-only at the proxy. A session PAT must contain the literal
 `project.gitops.push` grant for `receive-pack`; CR-open aliases, stale agent PATs,
 unbound workers, terminal workers, and the meta principal cannot bypass that
 gate. Server-owned finalization performs the bounded worker stop. Session
-principals can attribute goal observations only to their own session. A human
-principal may cite only a validated session in the same project.
+principals are attributed from authentication and can write only their assigned evaluation. Human
+observations store `session_id = null` and cannot impersonate a project session.
 
 ## 7. Memory model
 

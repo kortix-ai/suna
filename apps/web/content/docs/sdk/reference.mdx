@@ -318,7 +318,7 @@ create PostgreSQL time-series state. They do not edit the manifest.
 | `get(slug)` | Return one authored goal. |
 | `health(slug)` | Return deterministic aggregate and per-metric health with evaluation identity. |
 | `push(slug)` | Request the goal's generated trigger. Returns `evaluation_id`, `evaluation_state`, and delivery state. |
-| `observations.record(slug, input)` | Record `{ evaluation_id, metric, value, source, session_id?, observed_at? }`. |
+| `observations.record(slug, input)` | Record `{ evaluation_id, metric, value, source, observed_at? }`. Session attribution comes from authentication. |
 | `observations.list(slug, options)` | List one metric by `{ metric, from?, to?, limit? }`. |
 
 `observed_at` defaults to now. Observation-list `to` defaults to now. Its
@@ -331,13 +331,12 @@ reviewed `kortix.yaml` declaration.
 ```ts
 const project = kortix.project(projectId);
 const { goals, errors } = await project.goals.list();
-const pushed = await project.goals.push('reduce-api-latency');
+const pushed = await project.goals.push('reduce-api-latency', { idempotencyKey: crypto.randomUUID() });
 const { observation } = await project.goals.observations.record('reduce-api-latency', {
   evaluation_id: pushed.evaluation_id,
   metric: 'api_p95_ms',
   value: 184,
   source: 'prometheus:api-p95',
-  session_id: sessionId,
 });
 const { health } = await project.goals.health('reduce-api-latency');
 ```
@@ -361,7 +360,7 @@ A `ProjectGoal` contains `slug`, `path`, `title`, `done_when`, `status`,
 | `create(input)` | Create a task, or reuse the matching `origin_fingerprint`. Returns `{ task, created }`. |
 | `claim(taskId, input)` | Claim ready work with `{ session_id, lease_seconds? }` and set its status to `doing`. All dependencies must be `done`. The lease defaults to 900 seconds. |
 | `registerWorker(taskId, input)` | Bind one spawned worker with `{ session_id, worker_session_id, prompt, contract }`. The API persists the immutable bounds and initial prompt atomically. |
-| `recordProgress(taskId, input)` | Persist `{ session_id, worker_session_id, ref }` for the matching live worker binding. |
+| `recordProgress(taskId, input)` | Persist `{ session_id, worker_session_id, settlement_id, ref }` for the matching live worker binding. |
 | `settleNoProgress(taskId, input)` | Submit `{ session_id, worker_session_id, settlement_id, reason }`. The first distinct settlement queues one continuation. The second or an exhausted bound blocks and escalates. |
 | `complete(taskId, input)` | Complete with `{ session_id, evidence: [{ ref, summary? }] }`. Evidence cannot be empty. A liveness-bound task must cite its server-recorded `last_progress_ref`. |
 | `block(taskId, input)` | Block with `{ session_id, blocker }`. |
@@ -407,6 +406,7 @@ ceilings.
 await project.tasks.recordProgress(task.task_id, {
   session_id: coordinatorSessionId,
   worker_session_id: workerSessionId,
+  settlement_id: registration.task.liveness_turn_id!,
   ref: 'profile-report://runs/4f34a2d',
 });
 await project.tasks.complete(task.task_id, {
@@ -419,19 +419,19 @@ await project.tasks.complete(task.task_id, {
 ```
 
 If the worker settles without evidence or a blocker, call
-`settleNoProgress()` with a stable `settlement_id`. Retrying the same ID returns
+`settleNoProgress()` with the current server-owned `task.liveness_turn_id`. Retrying the same ID returns
 the same decision. The response contains `action`, `command_id`,
 `measured_usage`, and the updated task.
 
 A `ProjectTask` contains its project and goal IDs, hierarchy (`parent_id`),
 dependencies (`blocked_by`), assignee, status, priority, origin, claim lease,
-worker contract, progress, settlement, escalation, result, and timestamps.
+worker contract, current `liveness_turn_id`, progress, settlement, escalation, result, and timestamps.
 `parent_id` is structure. Only `blocked_by` declares a dependency. The API
 rejects a claim held by another live session with `409`.
 
 For a liveness-bound task, the server enforces evidence provenance and
 transition order. The worker is a distinct child of the coordinator.
-`recordProgress()` must match that live binding. `complete()` must cite the
+`recordProgress()` must match that live binding. Progress and no-progress share one settlement ledger; the same settlement id cannot record both outcomes. `complete()` must cite the
 persisted `last_progress_ref`. The terminal result includes server-owned
 coordinator, worker, progress-ref, and timestamp provenance. A general task
 without a liveness worker preserves the original contract: `complete()` is the

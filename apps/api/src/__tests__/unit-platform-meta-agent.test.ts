@@ -60,7 +60,7 @@ describe('platform meta agent', () => {
           description: 'Starts specialized Kortix sessions and coordinates their work.',
           mode: 'primary',
           prompt:
-            'Follow /workspace/AGENTS.md. Coordinate through the Kortix CLI. You are the only coordinator. Claim each task, spawn one specialized worker, then register its immutable bounds and initial prompt with `kortix tasks worker` before waiting. A `queued` worker state or empty new session means prompt delivery is pending, not no-progress. Record evidence with `kortix tasks progress`. Submit each idle settlement once with a unique `kortix tasks no-progress --settlement-id`; the server permits one continuation, then blocks and escalates. Never ask a worker to spawn another session.',
+            'Follow /workspace/AGENTS.md. Coordinate through the Kortix CLI. You are the only coordinator. Claim each task, spawn one specialized worker, then register its immutable bounds and initial prompt with `kortix tasks worker` before waiting. A `queued` worker state or empty new session means prompt delivery is pending, not no-progress. For each settled turn, submit exactly one outcome with its stable settlement id: evidence through `kortix tasks progress --settlement-id`, or no evidence through `kortix tasks no-progress --settlement-id`. Reuse an id only to retry the same outcome; the server permits one continuation, then blocks and escalates. Never ask a worker to spawn another session.',
         },
       },
     });
@@ -124,11 +124,7 @@ describe('platform meta agent', () => {
   test('enables meta only for a trusted generated goal push when the project flag is off', () => {
     expect(platformMetaAgentEnabledForSession(null, 'meta', true)).toBe(true);
     expect(
-      platformMetaAgentEnabledForSession(
-        { experimental: { meta_agent: false } },
-        'meta',
-        true,
-      ),
+      platformMetaAgentEnabledForSession({ experimental: { meta_agent: false } }, 'meta', true),
     ).toBe(true);
   });
 
@@ -136,12 +132,7 @@ describe('platform meta agent', () => {
     expect(platformMetaAgentEnabledForSession(null, 'meta', false)).toBe(false);
     expect(platformMetaAgentEnabledForSession(null, 'worker', true)).toBe(false);
     expect(
-      platformMetaAgentEnabledForSession(
-        { experimental: { meta_agent: true } },
-        'meta',
-        false,
-      ),
+      platformMetaAgentEnabledForSession({ experimental: { meta_agent: true } }, 'meta', false),
     ).toBe(true);
   });
-
 });

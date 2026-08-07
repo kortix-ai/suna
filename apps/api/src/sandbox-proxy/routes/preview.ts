@@ -114,6 +114,16 @@ async function taskWorkerPromptRefusal(
 ): Promise<Response | null> {
   const admission = await projectTaskWorkerPromptAdmission(db, sessionId);
   if (admission.state === 'not_worker') return null;
+  if (admission.state === 'stale_runtime') {
+    return jsonProxyError(
+      {
+        error: 'A stale runtime principal cannot start another turn',
+        code: 'TASK_WORKER_CONFINED',
+      },
+      409,
+      origin,
+    );
+  }
   if (admission.state === 'spawned_unbound') {
     return jsonProxyError(
       {

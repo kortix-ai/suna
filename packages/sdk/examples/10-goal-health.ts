@@ -11,7 +11,9 @@ const kortix = createKortix({
 });
 const projectId = process.env.KORTIX_PROJECT_ID ?? '';
 const project = kortix.project(projectId);
-const pushed = await project.goals.push('reduce-api-latency');
+const pushed = await project.goals.push('reduce-api-latency', {
+  idempotencyKey: crypto.randomUUID(),
+});
 await project.goals.observations.record('reduce-api-latency', {
   evaluation_id: pushed.evaluation_id,
   metric: 'api_p95_ms',

@@ -12,6 +12,7 @@
 // `bun test <file>` invocation (as CI does), same caveat as
 // ../sandbox-reaper.test.ts.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sessionLifecycleCommands } from '@kortix/db';
 
 let reusableRows: Array<{ sessionId: string }> = [];
 let sessionRows: Array<{ status: string; metadata: Record<string, unknown> }> = [];
@@ -20,6 +21,7 @@ let drainCalls: Array<Record<string, unknown>> = [];
 let createCalls: Array<Record<string, unknown>> = [];
 let evaluationCreateCalls: Array<Record<string, unknown>> = [];
 let evaluationSettleCalls: Array<Record<string, unknown>> = [];
+let lifecycleReplayRows: Array<Record<string, unknown>> = [];
 
 mock.module('../../config', () => ({
   config: {},
@@ -34,12 +36,13 @@ mock.module('../../shared/db', () => ({
   hasDatabase: false,
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => ({
           // findReusableTriggerSession: where().orderBy().limit()
           orderBy: () => ({ limit: async () => reusableRows }),
-          // enqueueTriggerPrompt liveness pre-check: where().limit()
-          limit: async () => sessionRows,
+          // Existing delivery replay or enqueueTriggerPrompt liveness pre-check.
+          limit: async () =>
+            table === sessionLifecycleCommands ? lifecycleReplayRows : sessionRows,
         }),
       }),
     }),
@@ -76,6 +79,14 @@ mock.module('../session-lifecycle', () => ({
   },
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueueCalls.push(input);
+    return {
+      commandId: '33333333-3333-4333-8333-333333333333',
+      commandType: 'continue_session',
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      status: 'queued',
+      deduped: false,
+    };
   },
   resolveAgentRunAttribution: async () => null,
   resolveProjectAutomationActor: async () => 'actor-1',
@@ -103,9 +114,41 @@ beforeEach(() => {
   createCalls = [];
   evaluationCreateCalls = [];
   evaluationSettleCalls = [];
+  lifecycleReplayRows = [];
 });
 
 describe('fireGitTrigger — durable prompt delivery', () => {
+  test('a stable key replays the original target after reuse selection changes', async () => {
+    lifecycleReplayRows = [
+      {
+        commandId: '22222222-2222-4222-8222-222222222222',
+        commandType: 'continue_session',
+        status: 'dead_lettered',
+        projectId: 'proj-1',
+        sessionId: 'sess-original',
+      },
+    ];
+    reusableRows = [{ sessionId: 'sess-new-selection' }];
+
+    const result = await fireGitTrigger({
+      spec: { ...baseSpec, sessionMode: 'reuse' } as never,
+      project,
+      payload: {},
+      renderedPrompt: 'do the thing',
+      source: 'manual',
+      idempotencyKey: 'trigger:manual:proj-1:daily:stable-key',
+    });
+
+    expect(result).toMatchObject({
+      status: 'queued',
+      commandId: '22222222-2222-4222-8222-222222222222',
+      sessionId: 'sess-original',
+      deduped: true,
+    });
+    expect(enqueueCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(0);
+  });
+
   test('reuse mode with a live canonical session enqueues a durable command and kicks a drain', async () => {
     reusableRows = [{ sessionId: 'sess-reuse' }];
     sessionRows = [{ status: 'stopped', metadata: {} }];

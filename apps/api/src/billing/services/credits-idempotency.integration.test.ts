@@ -20,7 +20,11 @@ function testDb(): ReturnType<typeof postgres> {
 }
 
 async function cleanup(): Promise<void> {
-  await testDb()`delete from kortix.accounts where account_id = ${ACCOUNT_ID}::uuid`;
+  await testDb().begin(async (sql) => {
+    await sql`delete from kortix.credit_ledger where account_id = ${ACCOUNT_ID}::uuid`;
+    await sql`delete from kortix.credit_accounts where account_id = ${ACCOUNT_ID}::uuid`;
+    await sql`delete from kortix.accounts where account_id = ${ACCOUNT_ID}::uuid`;
+  });
 }
 
 async function walletBalance(): Promise<number> {

@@ -19,6 +19,7 @@ flow(
       'POST /v1/projects/:projectId/goals/:slug/push',
       'POST /v1/projects/:projectId/goals/:slug/observations',
       'GET /v1/projects/:projectId/goals/:slug/observations',
+      'GET /v1/projects/:projectId/goals/:slug/health',
     ],
   },
   async (ctx) => {
@@ -29,6 +30,7 @@ flow(
       const anon = ctx.client.as(ctx.P.ANON);
       (await anon.get('/v1/projects/:projectId/goals', { params })).status(401);
       (await anon.get('/v1/projects/:projectId/goals/:slug', { params })).status(401);
+      (await anon.get('/v1/projects/:projectId/goals/:slug/health', { params })).status(401);
       (await anon.post('/v1/projects/:projectId/goals/:slug/push', {}, { params })).status(401);
       (
         await anon.post(
@@ -48,6 +50,7 @@ flow(
     await ctx.step('authenticated callers cannot use an unknown project as an oracle', async () => {
       (await owner.get('/v1/projects/:projectId/goals', { params })).status(404);
       (await owner.get('/v1/projects/:projectId/goals/:slug', { params })).status(404);
+      (await owner.get('/v1/projects/:projectId/goals/:slug/health', { params })).status(404);
       (await owner.post('/v1/projects/:projectId/goals/:slug/push', {}, { params })).status(404);
       (
         await owner.post(
@@ -138,7 +141,6 @@ flow(
   },
 );
 
-
 flow(
   'TASK-3',
   {
@@ -152,28 +154,48 @@ flow(
   async (ctx) => {
     const params = { projectId: UNKNOWN_PROJECT, taskId: UNKNOWN_TASK };
     const worker = {
-      session_id: 'coordinator-session', worker_session_id: 'worker-session',
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
       prompt: 'Execute the bounded task.',
       contract: { max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5, max_iterations: 8 },
     };
     const progress = {
-      session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123',
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      settlement_id: 'turn-progress-1',
+      ref: 'commit:abc123',
     };
     const noProgress = {
-      session_id: 'coordinator-session', worker_session_id: 'worker-session',
-      settlement_id: 'turn-1', reason: 'No terminal evidence',
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      settlement_id: 'turn-1',
+      reason: 'No terminal evidence',
     };
     await ctx.step('task liveness mutations require authentication', async () => {
       const anon = ctx.client.as(ctx.P.ANON);
-      (await anon.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(401);
-      (await anon.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })).status(401);
-      (await anon.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, { params })).status(401);
+      (await anon.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(
+        401,
+      );
+      (
+        await anon.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })
+      ).status(401);
+      (
+        await anon.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, { params })
+      ).status(401);
     });
     await ctx.step('task liveness mutations hide an unknown project', async () => {
       const owner = ctx.client.as(ctx.P.OWNER);
-      (await owner.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(404);
-      (await owner.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })).status(404);
-      (await owner.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, { params })).status(404);
+      (await owner.post('/v1/projects/:projectId/tasks/:taskId/worker', worker, { params })).status(
+        404,
+      );
+      (
+        await owner.post('/v1/projects/:projectId/tasks/:taskId/progress', progress, { params })
+      ).status(404);
+      (
+        await owner.post('/v1/projects/:projectId/tasks/:taskId/no-progress', noProgress, {
+          params,
+        })
+      ).status(404);
     });
   },
 );

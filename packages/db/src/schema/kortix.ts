@@ -254,16 +254,17 @@ export const accountInvitations = kortixSchema.table(
      *  user who hasn't logged in yet (a pending invite, no user row) is parked
      *  here and materialized into account_group_members on acceptance — same
      *  ride-along pattern as project grants. */
-    bootstrapGrants: jsonb('bootstrap_grants').$type<
-      Array<
-        | {
-            project_id: string;
-            role: 'manager' | 'editor' | 'member';
-            expires_at?: string | null;
-          }
-        | { group_id: string }
-      >
-    >(),
+    bootstrapGrants:
+      jsonb('bootstrap_grants').$type<
+        Array<
+          | {
+              project_id: string;
+              role: 'manager' | 'editor' | 'member';
+              expires_at?: string | null;
+            }
+          | { group_id: string }
+        >
+      >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     acceptedByUserId: uuid('accepted_by_user_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -875,6 +876,8 @@ export const projectTasks = kortixSchema.table(
     livenessStartedAt: timestamp('liveness_started_at', { withTimezone: true }),
     livenessDeadlineAt: timestamp('liveness_deadline_at', { withTimezone: true }),
     livenessIterationsAdmitted: integer('liveness_iterations_admitted').default(0).notNull(),
+    /** Server-owned identity for the one semantic outcome allowed in the current worker turn. */
+    livenessTurnId: uuid('liveness_turn_id'),
     /** Durable single-request gateway fence. Cleared only by its matching request. */
     livenessAdmissionId: text('liveness_admission_id'),
     livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
@@ -1007,6 +1010,13 @@ export const projectTasks = kortixSchema.table(
       )`,
     ),
     check(
+      'project_tasks_turn_requires_doing_worker',
+      sql`${table.livenessTurnId} is null or (
+        ${table.status} = 'doing'
+        and ${table.livenessWorkerSessionId} is not null
+      )`,
+    ),
+    check(
       'project_tasks_terminal_has_no_live_fences',
       sql`${table.status} not in ('done', 'blocked') or num_nonnulls(
         ${table.livenessAdmissionId},
@@ -1086,15 +1096,17 @@ export const projectTaskNoProgressSettlements = kortixSchema.table(
     action: text('action').notNull(),
     commandId: uuid('command_id').notNull(),
     taskSnapshot: jsonb('task_snapshot').$type<Record<string, unknown>>().notNull(),
-    measuredUsage: jsonb('measured_usage').$type<{
-      total_cost: number;
-      input_tokens: number;
-      output_tokens: number;
-      cached_tokens: number;
-      cache_write_tokens: number;
-      total_tokens: number;
-      request_count: number;
-    }>().notNull(),
+    measuredUsage: jsonb('measured_usage')
+      .$type<{
+        total_cost: number;
+        input_tokens: number;
+        output_tokens: number;
+        cached_tokens: number;
+        cache_write_tokens: number;
+        total_tokens: number;
+        request_count: number;
+      }>()
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1120,6 +1132,39 @@ export const projectTaskNoProgressSettlements = kortixSchema.table(
   ],
 );
 
+/** Exactly one semantic outcome for one settled bounded-worker turn. */
+export const projectTaskTurnOutcomes = kortixSchema.table(
+  'project_task_turn_outcomes',
+  {
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    settlementId: text('settlement_id').notNull(),
+    claimSessionId: text('claim_session_id').notNull(),
+    workerSessionId: text('worker_session_id').notNull(),
+    outcome: varchar('outcome', { length: 16 }).notNull(),
+    taskSnapshot: jsonb('task_snapshot').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.settlementId] }),
+    foreignKey({
+      name: 'project_task_turn_outcomes_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_turn_outcomes_project').on(table.projectId),
+    check('project_task_turn_outcomes_id_nonempty', sql`btrim(${table.settlementId}) <> ''`),
+    check(
+      'project_task_turn_outcomes_outcome_valid',
+      sql`${table.outcome} in ('progress', 'no_progress')`,
+    ),
+    check(
+      'project_task_turn_outcomes_snapshot_valid',
+      sql`(${table.outcome} = 'progress') = (${table.taskSnapshot} is not null)`,
+    ),
+  ],
+);
+
 /** Durable identity and delivery state for one authored goal push. */
 export const projectGoalEvaluations = kortixSchema.table(
   'project_goal_evaluations',
@@ -1133,6 +1178,7 @@ export const projectGoalEvaluations = kortixSchema.table(
     source: varchar('source', { length: 16 }).notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
     state: varchar('state', { length: 16 }).default('queued').notNull(),
+    firedAt: timestamp('fired_at', { withTimezone: true }),
     lifecycleCommandId: uuid('lifecycle_command_id'),
     sessionId: text('session_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1140,11 +1186,6 @@ export const projectGoalEvaluations = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_project_goal_evaluations_idempotency').on(table.idempotencyKey),
-    foreignKey({
-      name: 'project_goal_evaluations_lifecycle_command_fkey',
-      columns: [table.lifecycleCommandId],
-      foreignColumns: [sessionLifecycleCommands.commandId],
-    }).onDelete('set null'),
     foreignKey({
       name: 'project_goal_evaluations_session_fkey',
       columns: [table.sessionId],
@@ -1155,11 +1196,24 @@ export const projectGoalEvaluations = kortixSchema.table(
       table.goalSlug,
       table.createdAt,
     ),
+    index('idx_project_goal_evaluations_goal_fired')
+      .on(table.projectId, table.goalSlug, table.firedAt.desc())
+      .where(sql`${table.state} = 'fired'`),
     check('project_goal_evaluations_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
     check('project_goal_evaluations_trigger_slug_nonempty', sql`btrim(${table.triggerSlug}) <> ''`),
-    check('project_goal_evaluations_idempotency_nonempty', sql`btrim(${table.idempotencyKey}) <> ''`),
+    check(
+      'project_goal_evaluations_idempotency_nonempty',
+      sql`btrim(${table.idempotencyKey}) <> ''`,
+    ),
     check('project_goal_evaluations_source_valid', sql`${table.source} in ('cron', 'manual')`),
-    check('project_goal_evaluations_state_valid', sql`${table.state} in ('queued', 'fired', 'failed')`),
+    check(
+      'project_goal_evaluations_state_valid',
+      sql`${table.state} in ('queued', 'fired', 'failed')`,
+    ),
+    check(
+      'project_goal_evaluations_fired_at_valid',
+      sql`(${table.state} = 'fired') = (${table.firedAt} is not null)`,
+    ),
   ],
 );
 
@@ -3224,9 +3278,7 @@ export const sessionPendingQuestions = kortixSchema.table(
     opencodeSessionId: text('opencode_session_id'),
     /** The raw QuestionInfo[] as opencode reported it. */
     questions: jsonb().notNull(),
-    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' })
-      .defaultNow()
-      .notNull(),
+    askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */
     answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
     answers: jsonb(),
@@ -3472,7 +3524,10 @@ export interface TunnelNetworkScope {
 
 /** Union of all capability scopes. */
 export type TunnelPermissionScope =
-  TunnelFilesystemScope | TunnelShellScope | TunnelNetworkScope | Record<string, unknown>;
+  | TunnelFilesystemScope
+  | TunnelShellScope
+  | TunnelNetworkScope
+  | Record<string, unknown>;
 
 export const tunnelConnections = kortixSchema.table(
   'tunnel_connections',
@@ -4542,9 +4597,7 @@ export const connectors = kortixSchema.table(
      *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: connectorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Exclusive authorization owner model for this connector. */
-    authorizationStrategy: connectorAuthorizationStrategyEnum(
-      'authorization_strategy',
-    )
+    authorizationStrategy: connectorAuthorizationStrategyEnum('authorization_strategy')
       .default('project')
       .notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
@@ -4578,10 +4631,11 @@ export const connectorConnectionOwnerTypeEnum = kortixSchema.enum(
   ['project', 'agent', 'member', 'subject', 'external'],
 );
 
-export const connectorConnectionStatusEnum = kortixSchema.enum(
-  'connector_connection_status',
-  ['active', 'revoked', 'error'],
-);
+export const connectorConnectionStatusEnum = kortixSchema.enum('connector_connection_status', [
+  'active',
+  'revoked',
+  'error',
+]);
 
 /** A concrete server-side identity behind one logical connector definition. */
 export const connectorConnections = kortixSchema.table(
@@ -4604,11 +4658,7 @@ export const connectorConnections = kortixSchema.table(
   (table) => [
     foreignKey({
       columns: [table.accountId, table.projectId, table.connectorId],
-      foreignColumns: [
-        connectors.accountId,
-        connectors.projectId,
-        connectors.connectorId,
-      ],
+      foreignColumns: [connectors.accountId, connectors.projectId, connectors.connectorId],
       name: 'connector_connections_connector_tenant_fk',
     }).onDelete('cascade'),
     uniqueIndex('idx_connector_connections_tenant_identity').on(
@@ -4776,10 +4826,7 @@ export const connectionCredentials = kortixSchema.table(
       .where(sql`${table.connectionId} is not null`),
     foreignKey({
       columns: [table.connectorId, table.connectionId],
-      foreignColumns: [
-        connectorConnections.connectorId,
-        connectorConnections.connectionId,
-      ],
+      foreignColumns: [connectorConnections.connectorId, connectorConnections.connectionId],
       name: 'connection_credentials_connector_connection_fk',
     }).onDelete('cascade'),
     uniqueIndex('idx_connection_credentials_legacy_connector_unique')
@@ -5160,15 +5207,12 @@ export const connectorActionsRelations = relations(connectorActions, ({ one }) =
   }),
 }));
 
-export const connectorPoliciesRelations = relations(
-  connectorPolicies,
-  ({ one }) => ({
-    connector: one(connectors, {
-      fields: [connectorPolicies.connectorId],
-      references: [connectors.connectorId],
-    }),
+export const connectorPoliciesRelations = relations(connectorPolicies, ({ one }) => ({
+  connector: one(connectors, {
+    fields: [connectorPolicies.connectorId],
+    references: [connectors.connectorId],
   }),
-);
+}));
 
 export const connectorProjectPoliciesRelations = relations(connectorProjectPolicies, ({ one }) => ({
   project: one(projects, {

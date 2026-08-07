@@ -6,6 +6,7 @@ import {
   projectGoalObservations,
   projectSessions,
   projectTaskNoProgressSettlements,
+  projectTaskTurnOutcomes,
   projectTasks,
   sessionLifecycleCommands,
   sessionSandboxes,
@@ -34,6 +35,7 @@ import {
   reconcileProjectTaskGitWrites,
   registerProjectTaskWorker,
   projectTaskWorkerIsBound,
+  projectTaskWorkerAdmissionState,
   settleProjectGoalEvaluation,
   settleProjectTaskGitWrite,
   settleProjectTaskNoProgress,
@@ -41,10 +43,12 @@ import {
   sweepTaskLivenessBounds,
   transitionProjectTask,
 } from './generated-state-store';
+import { enqueueContinueSessionCommand } from './session-lifecycle/store';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
   process.env.TEST_DATABASE_URL &&
+    process.env.DATABASE_URL === process.env.TEST_DATABASE_URL &&
     process.env.KORTIX_TEST_DB_CONFIRM === CONFIRMATION &&
     process.env.INTERNAL_KORTIX_ENV !== 'prod',
 );
@@ -108,31 +112,46 @@ async function seed() {
       createdBy: USER_B,
     },
     {
-      sessionId: SESSION_C, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
-      branchName: 'generated-state-c', agentName: 'reviewer', createdBy: USER_B,
+      sessionId: SESSION_C,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      branchName: 'generated-state-c',
+      agentName: 'reviewer',
+      createdBy: USER_B,
     },
     {
-      sessionId: SESSION_D, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
-      branchName: 'generated-state-d', agentName: 'reviewer', createdBy: USER_B,
+      sessionId: SESSION_D,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      branchName: 'generated-state-d',
+      agentName: 'reviewer',
+      createdBy: USER_B,
     },
     {
-      sessionId: SESSION_E, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
-      branchName: 'generated-state-e', agentName: 'reviewer', createdBy: USER_B,
+      sessionId: SESSION_E,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      branchName: 'generated-state-e',
+      agentName: 'reviewer',
+      createdBy: USER_B,
     },
   ]);
 }
 
 async function reserveWorker(sessionId: string) {
-  await testDb().update(projectSessions).set({
-    status: 'queued',
-    metadata: {
-      spawned_by_session: SESSION_A,
-      task_liveness_binding_required: true,
-      task_liveness_binding_status: 'pending',
-      task_liveness_reserved_at: '2026-08-07T13:59:00.000Z',
-      task_liveness_reservation_expires_at: '2099-01-01T00:00:00.000Z',
-    },
-  }).where(eq(projectSessions.sessionId, sessionId));
+  await testDb()
+    .update(projectSessions)
+    .set({
+      status: 'queued',
+      metadata: {
+        spawned_by_session: SESSION_A,
+        task_liveness_binding_required: true,
+        task_liveness_binding_status: 'pending',
+        task_liveness_reserved_at: '2026-08-07T13:59:00.000Z',
+        task_liveness_reservation_expires_at: '2099-01-01T00:00:00.000Z',
+      },
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
 }
 
 describeWithDb('generated task and goal-observation state — real PostgreSQL', () => {
@@ -141,6 +160,39 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     await seed();
   });
   afterEach(cleanup);
+
+  test('concurrent lifecycle idempotency returns the winning persisted target', async () => {
+    const idempotencyKey = 'trigger:manual:concurrent-target';
+    const [first, second] = await Promise.all([
+      enqueueContinueSessionCommand({
+        source: 'trigger:manual',
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        sessionId: SESSION_A,
+        actorUserId: USER_A,
+        text: 'stable delivery',
+        idempotencyKey,
+      }),
+      enqueueContinueSessionCommand({
+        source: 'trigger:manual',
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        sessionId: SESSION_B,
+        actorUserId: USER_A,
+        text: 'stable delivery',
+        idempotencyKey,
+      }),
+    ]);
+    expect(first.commandId).toBe(second.commandId);
+    expect(first.sessionId).toBe(second.sessionId);
+    expect([SESSION_A, SESSION_B]).toContain(first.sessionId);
+    const [persisted] = await testDb()
+      .select()
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey));
+    expect(persisted!.commandId).toBe(first.commandId);
+    expect(persisted!.sessionId).toBe(first.sessionId);
+  });
 
   test('task creation is project-idempotent by a non-null origin fingerprint', async () => {
     const database = testDb();
@@ -602,44 +654,61 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     const database = testDb();
     const now = new Date('2026-08-07T13:00:00.000Z');
     const childIds = ['parallel-reservation-a', 'parallel-reservation-b'];
-    const attempts = await Promise.allSettled(childIds.map((sessionId) =>
-      database.transaction(async (tx) => {
-        await assertTaskWorkerReservationSlot(tx as unknown as Database, {
-          projectId: PROJECT_ID,
-          coordinatorSessionId: SESSION_A,
-          now,
-        });
-        await tx.insert(projectSessions).values({
-          sessionId,
-          accountId: ACCOUNT_ID,
-          projectId: PROJECT_ID,
-          branchName: sessionId,
-          agentName: 'reviewer',
-          createdBy: USER_B,
-          status: 'queued',
-          metadata: {
-            spawned_by_session: SESSION_A,
-            task_liveness_binding_required: true,
-            task_liveness_binding_status: 'pending',
-            task_liveness_reserved_at: now.toISOString(),
-            task_liveness_reservation_expires_at: new Date(now.getTime() + 300_000).toISOString(),
-          },
-        });
-      })));
+    const attempts = await Promise.allSettled(
+      childIds.map((sessionId) =>
+        database.transaction(async (tx) => {
+          await assertTaskWorkerReservationSlot(tx as unknown as Database, {
+            projectId: PROJECT_ID,
+            coordinatorSessionId: SESSION_A,
+            now,
+          });
+          await tx.insert(projectSessions).values({
+            sessionId,
+            accountId: ACCOUNT_ID,
+            projectId: PROJECT_ID,
+            branchName: sessionId,
+            agentName: 'reviewer',
+            createdBy: USER_B,
+            status: 'queued',
+            metadata: {
+              spawned_by_session: SESSION_A,
+              task_liveness_binding_required: true,
+              task_liveness_binding_status: 'pending',
+              task_liveness_reserved_at: now.toISOString(),
+              task_liveness_reservation_expires_at: new Date(now.getTime() + 300_000).toISOString(),
+            },
+          });
+        }),
+      ),
+    );
     expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     const rejected = attempts.find((result) => result.status === 'rejected');
-    expect(rejected?.status === 'rejected' ? rejected.reason : null)
-      .toBeInstanceOf(TaskWorkerReservationConflictError);
+    expect(rejected?.status === 'rejected' ? rejected.reason : null).toBeInstanceOf(
+      TaskWorkerReservationConflictError,
+    );
 
-    const rows = await database.select().from(projectSessions)
+    const rows = await database
+      .select()
+      .from(projectSessions)
       .where(eq(projectSessions.projectId, PROJECT_ID));
-    expect(rows.filter((row) =>
-      (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_required === true
-    )).toHaveLength(1);
-    expect(await database.select().from(sessionSandboxes)
-      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
-    expect(await database.select().from(sessionLifecycleCommands)
-      .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID))).toHaveLength(0);
+    expect(
+      rows.filter(
+        (row) =>
+          (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_required === true,
+      ),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .select()
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.projectId, PROJECT_ID)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID)),
+    ).toHaveLength(0);
   });
 
   test('spawned reservations cannot claim coordinator authority', async () => {
@@ -651,30 +720,58 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       title: 'Coordinator-only claim',
       origin: 'confinement-proof',
     });
-    await expect(claimProjectTask(database, {
-      projectId: PROJECT_ID,
-      taskId: task.taskId,
-      sessionId: SESSION_B,
-      now: new Date('2026-08-07T13:30:00.000Z'),
-      leaseMs: 60_000,
-    })).rejects.toBeInstanceOf(TaskClaimConflictError);
-    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }))
-      .toMatchObject({ status: 'backlog', claimSessionId: null });
+    await expect(
+      claimProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        sessionId: SESSION_B,
+        now: new Date('2026-08-07T13:30:00.000Z'),
+        leaseMs: 60_000,
+      }),
+    ).rejects.toBeInstanceOf(TaskClaimConflictError);
+    expect(
+      await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }),
+    ).toMatchObject({ status: 'backlog', claimSessionId: null });
+    await database
+      .update(projectSessions)
+      .set({ status: 'stopped', updatedAt: new Date('2026-08-07T13:31:00.000Z') })
+      .where(eq(projectSessions.sessionId, SESSION_A));
+    expect(await projectTaskWorkerAdmissionState(database, SESSION_A)).toBe('stale_runtime');
+    await database
+      .update(projectSessions)
+      .set({ status: 'running', updatedAt: new Date('2026-08-07T13:31:01.000Z') })
+      .where(eq(projectSessions.sessionId, SESSION_A));
   });
 
   test('worker registration and one continuation survive retries and process restarts', async () => {
     const database = testDb();
-    await Promise.all([reserveWorker(SESSION_B), reserveWorker(SESSION_C), reserveWorker(SESSION_D)]);
+    await Promise.all([
+      reserveWorker(SESSION_B),
+      reserveWorker(SESSION_C),
+      reserveWorker(SESSION_D),
+    ]);
     // Three durable child reservations exist, but no runtime or lifecycle work
     // exists before one is atomically bound.
-    expect(await database.select().from(sessionSandboxes)
-      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
-    expect(await database.select().from(sessionLifecycleCommands)
-      .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID))).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.projectId, PROJECT_ID)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID)),
+    ).toHaveLength(0);
     const reservations = await database.select().from(projectSessions);
-    expect(reservations.filter((row) =>
-      (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_status === 'pending'
-    )).toHaveLength(3);
+    expect(
+      reservations.filter(
+        (row) =>
+          (row.metadata as Record<string, unknown> | null)?.task_liveness_binding_status ===
+          'pending',
+      ),
+    ).toHaveLength(3);
 
     const { task } = await createProjectTask(database, {
       projectId: PROJECT_ID,
@@ -710,8 +807,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(registered.existing).toBe(false);
     expect(registered.task.claimExpiresAt?.toISOString()).toBe('2026-08-07T15:00:00.000Z');
     expect(registered.task.livenessDeadlineAt?.toISOString()).toBe('2026-08-07T15:00:00.000Z');
-    expect(await database.select().from(sessionSandboxes)
-      .where(eq(sessionSandboxes.projectId, PROJECT_ID))).toHaveLength(0);
+    expect(
+      await database
+        .select()
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.projectId, PROJECT_ID)),
+    ).toHaveLength(0);
     const registrationCommands = (await database.select().from(sessionLifecycleCommands))
       .filter((row) => row.sessionId === SESSION_B)
       .sort((left, right) => left.availableAt.getTime() - right.availableAt.getTime());
@@ -723,9 +824,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       `task-worker-provision:${task.taskId}:${SESSION_B}`,
       `task-worker:${task.taskId}:${SESSION_B}`,
     ]);
-    expect(registrationCommands[0].availableAt.getTime())
-      .toBeLessThan(registrationCommands[1].availableAt.getTime());
-    const [boundReservation] = await database.select().from(projectSessions)
+    expect(registrationCommands[0].availableAt.getTime()).toBeLessThan(
+      registrationCommands[1].availableAt.getTime(),
+    );
+    const [boundReservation] = await database
+      .select()
+      .from(projectSessions)
       .where(eq(projectSessions.sessionId, SESSION_B));
     expect(boundReservation.status).toBe('queued');
     expect(boundReservation.metadata).toMatchObject({
@@ -747,7 +851,47 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(retry.existing).toBe(true);
     expect(retry.commandId).toBe(registered.commandId);
     expect(retry.provisionCommandId).toBe(registered.provisionCommandId);
-    const parallelRetries = await Promise.all(Array.from({ length: 4 }, () =>
+    const parallelRetries = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        registerProjectTaskWorker(database, {
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          taskId: task.taskId,
+          claimSessionId: SESSION_A,
+          workerSessionId: SESSION_B,
+          actorUserId: null,
+          prompt: 'Do the bounded task.',
+          contract,
+          now: new Date('2026-08-07T14:00:01.500Z'),
+        }),
+      ),
+    );
+    expect(new Set(parallelRetries.map((result) => result.commandId))).toEqual(
+      new Set([registered.commandId]),
+    );
+    expect(new Set(parallelRetries.map((result) => result.provisionCommandId))).toEqual(
+      new Set([registered.provisionCommandId]),
+    );
+    expect(
+      (await database.select().from(sessionLifecycleCommands)).filter(
+        (row) => row.sessionId === SESSION_B,
+      ),
+    ).toHaveLength(2);
+
+    // PostgreSQL enforces that the coordinator claim cannot be shortened below
+    // the immutable worker deadline.
+    await expect(
+      (async () => {
+        await database
+          .update(projectTasks)
+          .set({
+            claimExpiresAt: new Date('2026-08-07T14:59:59.000Z'),
+          })
+          .where(eq(projectTasks.taskId, task.taskId));
+      })(),
+    ).rejects.toThrow();
+
+    await expect(
       registerProjectTaskWorker(database, {
         projectId: PROJECT_ID,
         accountId: ACCOUNT_ID,
@@ -755,35 +899,11 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         claimSessionId: SESSION_A,
         workerSessionId: SESSION_B,
         actorUserId: null,
-        prompt: 'Do the bounded task.',
+        prompt: 'A changed prompt must conflict.',
         contract,
-        now: new Date('2026-08-07T14:00:01.500Z'),
-      })));
-    expect(new Set(parallelRetries.map((result) => result.commandId))).toEqual(new Set([registered.commandId]));
-    expect(new Set(parallelRetries.map((result) => result.provisionCommandId)))
-      .toEqual(new Set([registered.provisionCommandId]));
-    expect((await database.select().from(sessionLifecycleCommands))
-      .filter((row) => row.sessionId === SESSION_B)).toHaveLength(2);
-
-    // PostgreSQL enforces that the coordinator claim cannot be shortened below
-    // the immutable worker deadline.
-    await expect((async () => {
-      await database.update(projectTasks).set({
-        claimExpiresAt: new Date('2026-08-07T14:59:59.000Z'),
-      }).where(eq(projectTasks.taskId, task.taskId));
-    })()).rejects.toThrow();
-
-    await expect(registerProjectTaskWorker(database, {
-      projectId: PROJECT_ID,
-      accountId: ACCOUNT_ID,
-      taskId: task.taskId,
-      claimSessionId: SESSION_A,
-      workerSessionId: SESSION_B,
-      actorUserId: null,
-      prompt: 'A changed prompt must conflict.',
-      contract,
-      now: new Date('2026-08-07T14:00:02.000Z'),
-    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+        now: new Date('2026-08-07T14:00:02.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
 
     const usage = {
       total_cost: 0.5,
@@ -802,19 +922,45 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
     expect(liveAdmission).toMatchObject({ taskId: task.taskId, admitted: true });
 
+    const initialTurnId = registered.task.livenessTurnId!;
     const progressed = await recordProjectTaskProgress(database, {
-      projectId: PROJECT_ID, taskId: task.taskId, claimSessionId: SESSION_A,
-      workerSessionId: SESSION_B, ref: 'commit:abc123',
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      settlementId: initialTurnId,
+      ref: 'commit:abc123',
       now: new Date('2026-08-07T14:00:40.000Z'),
     });
     expect(progressed.lastProgressRef).toBe('commit:abc123');
     expect(progressed.lastProgressAt?.toISOString()).toBe('2026-08-07T14:00:40.000Z');
-    await expect(recordProjectTaskProgress(database, {
-      projectId: PROJECT_ID, taskId: task.taskId, claimSessionId: SESSION_A,
-      workerSessionId: SESSION_C, ref: 'commit:impersonated',
-      now: new Date('2026-08-07T14:00:41.000Z'),
-    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+    await expect(
+      settleProjectTaskNoProgress(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        actorUserId: null,
+        settlementId: initialTurnId,
+        reason: 'conflicting outcome',
+        measuredUsage: usage,
+        now: new Date('2026-08-07T14:00:40.500Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
+    await expect(
+      recordProjectTaskProgress(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_C,
+        settlementId: progressed.livenessTurnId!,
+        ref: 'commit:impersonated',
+        now: new Date('2026-08-07T14:00:41.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
 
+    const nextTurnId = progressed.livenessTurnId!;
     const first = await settleProjectTaskNoProgress(database, {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
@@ -822,7 +968,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       claimSessionId: SESSION_A,
       workerSessionId: SESSION_B,
       actorUserId: null,
-      settlementId: 'turn-1',
+      settlementId: nextTurnId,
       reason: 'No evidence',
       measuredUsage: usage,
       now: new Date('2026-08-07T14:01:00.000Z'),
@@ -835,13 +981,24 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       claimSessionId: SESSION_A,
       workerSessionId: SESSION_B,
       actorUserId: null,
-      settlementId: 'turn-1',
+      settlementId: nextTurnId,
       reason: 'No evidence',
       measuredUsage: usage,
       now: new Date('2026-08-07T14:01:01.000Z'),
     });
     expect(lostResponseRetry.action).toBe('continuation_queued');
     expect(lostResponseRetry.commandId).toBe(first.commandId);
+    await expect(
+      recordProjectTaskProgress(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        settlementId: nextTurnId,
+        ref: 'conflicting:progress',
+        now: new Date('2026-08-07T14:01:01.500Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
 
     const secondInput = {
       projectId: PROJECT_ID,
@@ -850,19 +1007,22 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       claimSessionId: SESSION_A,
       workerSessionId: SESSION_B,
       actorUserId: null,
-      settlementId: 'turn-2',
+      settlementId: first.task.livenessTurnId!,
       reason: 'Still no evidence',
       measuredUsage: usage,
       now: new Date('2026-08-07T14:02:00.000Z'),
     };
-    await expect(settleProjectTaskNoProgress(database, secondInput))
-      .rejects.toBeInstanceOf(TaskLivenessRequestInFlightError);
-    expect(await settleProjectTaskWorkerAdmission(database, {
-      workerSessionId: SESSION_B,
-      admissionId: liveAdmission!.admissionId,
-      usage,
-      now: new Date('2026-08-07T14:01:30.000Z'),
-    })).toBe(true);
+    await expect(settleProjectTaskNoProgress(database, secondInput)).rejects.toBeInstanceOf(
+      TaskLivenessRequestInFlightError,
+    );
+    expect(
+      await settleProjectTaskWorkerAdmission(database, {
+        workerSessionId: SESSION_B,
+        admissionId: liveAdmission!.admissionId,
+        usage,
+        now: new Date('2026-08-07T14:01:30.000Z'),
+      }),
+    ).toBe(true);
     const second = await settleProjectTaskNoProgress(database, secondInput);
     expect(second.action).toBe('blocked_escalation_queued');
     expect(second.task.status).toBe('blocked');
@@ -876,7 +1036,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       claimSessionId: SESSION_A,
       workerSessionId: SESSION_B,
       actorUserId: null,
-      settlementId: 'turn-1',
+      settlementId: nextTurnId,
       reason: 'A replay cannot replace the original reason',
       measuredUsage: { ...usage, total_tokens: 999 },
       now: new Date('2026-08-07T14:02:01.000Z'),
@@ -887,57 +1047,181 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       measuredUsage: usage,
       task: { status: 'doing', noProgressSettlements: 1, claimSessionId: SESSION_A },
     });
-    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }))
-      .toEqual(second.task);
-    expect(await database.select().from(projectTaskNoProgressSettlements)
-      .where(eq(projectTaskNoProgressSettlements.taskId, task.taskId))).toHaveLength(2);
+    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId })).toEqual(
+      second.task,
+    );
+    expect(
+      await database
+        .select()
+        .from(projectTaskNoProgressSettlements)
+        .where(eq(projectTaskNoProgressSettlements.taskId, task.taskId)),
+    ).toHaveLength(2);
 
-    await expect(settleProjectTaskNoProgress(database, {
+    await expect(
+      settleProjectTaskNoProgress(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_B,
+        workerSessionId: SESSION_B,
+        actorUserId: null,
+        settlementId: first.task.livenessTurnId!,
+        reason: 'Guessed retry',
+        measuredUsage: usage,
+        now: new Date('2026-08-07T14:02:01.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
+
+    const commands = await database.select().from(sessionLifecycleCommands);
+    expect(
+      commands.filter((row) => row.idempotencyKey?.startsWith(`task-worker:${task.taskId}`)),
+    ).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey?.startsWith(`task-no-progress:${task.taskId}`)),
+    ).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey?.startsWith(`task-escalate:${task.taskId}`)),
+    ).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey?.startsWith(`task-stop:${task.taskId}`)),
+    ).toHaveLength(1);
+
+    await database.delete(projectTasks).where(eq(projectTasks.taskId, task.taskId));
+    expect(
+      await database
+        .select()
+        .from(projectTaskNoProgressSettlements)
+        .where(eq(projectTaskNoProgressSettlements.taskId, task.taskId)),
+    ).toHaveLength(0);
+  });
+
+  test('one server-owned worker turn accepts exactly one concurrent semantic outcome', async () => {
+    const database = testDb();
+    await reserveWorker(SESSION_B);
+    const { task } = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Concurrent turn outcome',
+      origin: 'turn-outcome-proof',
+    });
+    const now = new Date('2026-08-07T14:30:00.000Z');
+    await claimProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      sessionId: SESSION_A,
+      now,
+      leaseMs: 600_000,
+    });
+    const registered = await registerProjectTaskWorker(database, {
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
       taskId: task.taskId,
-      claimSessionId: SESSION_B,
+      claimSessionId: SESSION_A,
       workerSessionId: SESSION_B,
-      actorUserId: null,
-      settlementId: 'turn-2',
-      reason: 'Guessed retry',
-      measuredUsage: usage,
-      now: new Date('2026-08-07T14:02:01.000Z'),
-    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+      actorUserId: USER_A,
+      prompt: 'Return one semantic outcome.',
+      contract: { max_wall_seconds: 600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 4 },
+      now,
+    });
+    const turnId = registered.task.livenessTurnId!;
+    const arbitraryId = '00000000-0000-4000-a000-000000000099';
+    await expect(
+      recordProjectTaskProgress(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        settlementId: arbitraryId,
+        ref: 'commit:wrong-turn',
+        now: new Date(now.getTime() + 500),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
 
-    const commands = await database.select().from(sessionLifecycleCommands);
-    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-worker:${task.taskId}`))).toHaveLength(1);
-    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-no-progress:${task.taskId}`))).toHaveLength(1);
-    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-escalate:${task.taskId}`))).toHaveLength(1);
-    expect(commands.filter((row) => row.idempotencyKey?.startsWith(`task-stop:${task.taskId}`))).toHaveLength(1);
-
-    await database.delete(projectTasks).where(eq(projectTasks.taskId, task.taskId));
-    expect(await database.select().from(projectTaskNoProgressSettlements)
-      .where(eq(projectTaskNoProgressSettlements.taskId, task.taskId))).toHaveLength(0);
+    const usage = {
+      total_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0,
+      request_count: 0,
+    };
+    const results = await Promise.allSettled([
+      recordProjectTaskProgress(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        settlementId: turnId,
+        ref: 'commit:race-winner',
+        now: new Date(now.getTime() + 1_000),
+      }),
+      settleProjectTaskNoProgress(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        actorUserId: USER_A,
+        settlementId: turnId,
+        reason: 'No evidence',
+        measuredUsage: usage,
+        now: new Date(now.getTime() + 1_000),
+      }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const rows = await database
+      .select()
+      .from(projectTaskTurnOutcomes)
+      .where(eq(projectTaskTurnOutcomes.taskId, task.taskId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.settlementId).toBe(turnId);
+    const current = await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId });
+    expect(current!.livenessTurnId).not.toBe(turnId);
   });
 
   test('worker registration rejects stopped sessions before queuing an initial prompt', async () => {
     const database = testDb();
     await reserveWorker(SESSION_B);
     const { task } = await createProjectTask(database, {
-      projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: 'Stopped worker', origin: 'stopped-worker-proof',
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      title: 'Stopped worker',
+      origin: 'stopped-worker-proof',
     });
     const now = new Date('2026-08-07T14:30:00.000Z');
     await claimProjectTask(database, {
-      projectId: PROJECT_ID, taskId: task.taskId, sessionId: SESSION_A, now, leaseMs: 60_000,
-    });
-    await database.update(projectSessions).set({ status: 'stopped' }).where(eq(projectSessions.sessionId, SESSION_B));
-
-    await expect(registerProjectTaskWorker(database, {
-      projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: task.taskId,
-      claimSessionId: SESSION_A, workerSessionId: SESSION_B, actorUserId: null,
-      prompt: 'This must never run.',
-      contract: { max_wall_seconds: 60, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1 },
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      sessionId: SESSION_A,
       now,
-    })).rejects.toBeInstanceOf(TaskLivenessConflictError);
+      leaseMs: 60_000,
+    });
+    await database
+      .update(projectSessions)
+      .set({ status: 'stopped' })
+      .where(eq(projectSessions.sessionId, SESSION_B));
+
+    await expect(
+      registerProjectTaskWorker(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_B,
+        actorUserId: null,
+        prompt: 'This must never run.',
+        contract: { max_wall_seconds: 60, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1 },
+        now,
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
     expect(await projectTaskWorkerIsBound(database, SESSION_B)).toBe(false);
-    expect((await database.select().from(sessionLifecycleCommands))
-      .filter((row) => row.sessionId === SESSION_B)).toHaveLength(0);
+    expect(
+      (await database.select().from(sessionLifecycleCommands)).filter(
+        (row) => row.sessionId === SESSION_B,
+      ),
+    ).toHaveLength(0);
   });
 
   test('terminal task transitions retain the worker binding, queue its stop, and reject later admission', async () => {
@@ -951,35 +1235,55 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
     const now = new Date('2026-08-07T15:00:00.000Z');
     await claimProjectTask(database, {
-      projectId: PROJECT_ID, taskId: task.taskId, sessionId: SESSION_A, now, leaseMs: 60_000,
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      sessionId: SESSION_A,
+      now,
+      leaseMs: 60_000,
     });
     await registerProjectTaskWorker(database, {
-      projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: task.taskId,
-      claimSessionId: SESSION_A, workerSessionId: SESSION_B, actorUserId: null,
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: task.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_B,
+      actorUserId: null,
       prompt: 'Complete this bounded task.',
       contract: { max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 2 },
       now,
     });
 
     const terminal = await transitionProjectTask(database, {
-      projectId: PROJECT_ID, taskId: task.taskId, status: 'done',
-      expectedClaimSessionId: SESSION_A, result: { evidence: [{ ref: 'proof' }] },
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+      status: 'done',
+      expectedClaimSessionId: SESSION_A,
+      result: { evidence: [{ ref: 'proof' }] },
       now: new Date(now.getTime() + 1_000),
     });
 
     expect(terminal).toMatchObject({ status: 'done', livenessWorkerSessionId: SESSION_B });
     expect(await projectTaskWorkerIsBound(database, SESSION_B)).toBe(true);
-    await expect(admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_B,
-      requestId: 'req-terminal-confinement',
-      usage: {
-        total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
-        cache_write_tokens: 0, total_tokens: 0, request_count: 0,
-      },
-      now: new Date(now.getTime() + 2_000),
-    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    await expect(
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_B,
+        requestId: 'req-terminal-confinement',
+        usage: {
+          total_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+          total_tokens: 0,
+          request_count: 0,
+        },
+        now: new Date(now.getTime() + 2_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
     const commands = await database.select().from(sessionLifecycleCommands);
-    expect(commands.filter((row) => row.idempotencyKey === `task-stop:${task.taskId}:${SESSION_B}`)).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey === `task-stop:${task.taskId}:${SESSION_B}`),
+    ).toHaveLength(1);
   });
 
   test('iteration admission and usage sweeps atomically finalize exhausted workers', async () => {
@@ -987,50 +1291,110 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     await reserveWorker(SESSION_B);
     const now = new Date('2026-08-07T16:00:00.000Z');
     const usage = {
-      total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
-      cache_write_tokens: 0, total_tokens: 0, request_count: 0,
+      total_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0,
+      request_count: 0,
     };
-    async function boundedTask(origin: string, workerSessionId: string, contract: {
-      max_wall_seconds: number; max_tokens: number; max_cost_usd: number; max_iterations: number;
-    }) {
+    async function boundedTask(
+      origin: string,
+      workerSessionId: string,
+      contract: {
+        max_wall_seconds: number;
+        max_tokens: number;
+        max_cost_usd: number;
+        max_iterations: number;
+      },
+    ) {
       await reserveWorker(workerSessionId);
       const { task } = await createProjectTask(database, {
-        projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: origin, origin,
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        title: origin,
+        origin,
       });
       await claimProjectTask(database, {
-        projectId: PROJECT_ID, taskId: task.taskId, sessionId: SESSION_A, now, leaseMs: 60_000,
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        sessionId: SESSION_A,
+        now,
+        leaseMs: 60_000,
       });
       await registerProjectTaskWorker(database, {
-        projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: task.taskId,
-        claimSessionId: SESSION_A, workerSessionId, actorUserId: null,
-        prompt: `Execute ${origin}`, contract, now,
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId,
+        actorUserId: null,
+        prompt: `Execute ${origin}`,
+        contract,
+        now,
       });
       return task;
     }
 
     const exhausted = await boundedTask('iteration-exhaustion', SESSION_B, {
-      max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1,
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000,
+      max_cost_usd: 1,
+      max_iterations: 1,
     });
-    await admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_B, requestId: 'req-iteration-first', usage, now });
+    await admitProjectTaskWorkerIteration(database, {
+      workerSessionId: SESSION_B,
+      requestId: 'req-iteration-first',
+      usage,
+      now,
+    });
     await settleProjectTaskWorkerAdmission(database, {
-      workerSessionId: SESSION_B, admissionId: 'req-iteration-first', usage,
+      workerSessionId: SESSION_B,
+      admissionId: 'req-iteration-first',
+      usage,
       now: new Date(now.getTime() + 500),
     });
-    await expect(admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_B, requestId: 'req-iteration-second', usage, now: new Date(now.getTime() + 1_000),
-    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
-    const exhaustedReadBack = await getProjectTask(database, { projectId: PROJECT_ID, taskId: exhausted.taskId });
+    await expect(
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_B,
+        requestId: 'req-iteration-second',
+        usage,
+        now: new Date(now.getTime() + 1_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    const exhaustedReadBack = await getProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: exhausted.taskId,
+    });
     expect(exhaustedReadBack).toMatchObject({ status: 'blocked', claimSessionId: null });
     let commands = await database.select().from(sessionLifecycleCommands);
-    expect(commands.filter((row) => row.idempotencyKey === `task-stop:${exhausted.taskId}:${SESSION_B}`)).toHaveLength(1);
-    expect(commands.filter((row) => row.idempotencyKey === `task-bound-escalate:${exhausted.taskId}`)).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey === `task-stop:${exhausted.taskId}:${SESSION_B}`),
+    ).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey === `task-bound-escalate:${exhausted.taskId}`),
+    ).toHaveLength(1);
 
     const concurrent = await boundedTask('concurrent-iteration-exhaustion', SESSION_C, {
-      max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1,
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000,
+      max_cost_usd: 1,
+      max_iterations: 1,
     });
     const admissions = await Promise.allSettled([
-      admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_C, requestId: 'req-concurrent-a', usage, now }),
-      admitProjectTaskWorkerIteration(database, { workerSessionId: SESSION_C, requestId: 'req-concurrent-b', usage, now }),
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_C,
+        requestId: 'req-concurrent-a',
+        usage,
+        now,
+      }),
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_C,
+        requestId: 'req-concurrent-b',
+        usage,
+        now,
+      }),
     ]);
     expect(admissions.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(admissions.filter((result) => result.status === 'rejected')).toHaveLength(1);
@@ -1044,46 +1408,77 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       usage,
       now: new Date(now.getTime() + 500),
     });
-    await expect(admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_C,
-      requestId: 'req-concurrent-exhausted',
-      usage,
-      now: new Date(now.getTime() + 1_000),
-    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
-    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: concurrent.taskId }))
-      .toMatchObject({ status: 'blocked', livenessIterationsAdmitted: 1 });
+    await expect(
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_C,
+        requestId: 'req-concurrent-exhausted',
+        usage,
+        now: new Date(now.getTime() + 1_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    expect(
+      await getProjectTask(database, { projectId: PROJECT_ID, taskId: concurrent.taskId }),
+    ).toMatchObject({ status: 'blocked', livenessIterationsAdmitted: 1 });
 
     const swept = await boundedTask('usage-sweep-exhaustion', SESSION_D, {
-      max_wall_seconds: 3_600, max_tokens: 100, max_cost_usd: 10, max_iterations: 10,
+      max_wall_seconds: 3_600,
+      max_tokens: 100,
+      max_cost_usd: 10,
+      max_iterations: 10,
     });
-    const finalized = await sweepTaskLivenessBounds(database, new Date(now.getTime() + 1_000), 100, async () => ({
-      ...usage, total_tokens: 101,
-    }));
+    const finalized = await sweepTaskLivenessBounds(
+      database,
+      new Date(now.getTime() + 1_000),
+      100,
+      async () => ({
+        ...usage,
+        total_tokens: 101,
+      }),
+    );
     expect(finalized).toBe(1);
-    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: swept.taskId }))
-      .toMatchObject({ status: 'blocked', livenessBlocker: 'max_tokens exceeded' });
+    expect(
+      await getProjectTask(database, { projectId: PROJECT_ID, taskId: swept.taskId }),
+    ).toMatchObject({ status: 'blocked', livenessBlocker: 'max_tokens exceeded' });
     commands = await database.select().from(sessionLifecycleCommands);
-    expect(commands.filter((row) => row.idempotencyKey === `task-stop:${swept.taskId}:${SESSION_D}`)).toHaveLength(1);
+    expect(
+      commands.filter((row) => row.idempotencyKey === `task-stop:${swept.taskId}:${SESSION_D}`),
+    ).toHaveLength(1);
   });
 
   test('every terminal path waits for receive-pack and revokes worker PATs transactionally', async () => {
     const database = testDb();
     const zeroUsage = {
-      total_cost: 0, input_tokens: 0, output_tokens: 0, cached_tokens: 0,
-      cache_write_tokens: 0, total_tokens: 0, request_count: 0,
+      total_cost: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0,
+      request_count: 0,
     };
 
     async function bind(workerSessionId: string, origin: string, now: Date) {
       await reserveWorker(workerSessionId);
       const { task } = await createProjectTask(database, {
-        projectId: PROJECT_ID, goalSlug: 'ship-kernel', title: origin, origin,
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        title: origin,
+        origin,
       });
       await claimProjectTask(database, {
-        projectId: PROJECT_ID, taskId: task.taskId, sessionId: SESSION_A, now, leaseMs: 600_000,
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+        sessionId: SESSION_A,
+        now,
+        leaseMs: 600_000,
       });
-      await registerProjectTaskWorker(database, {
-        projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: task.taskId,
-        claimSessionId: SESSION_A, workerSessionId, actorUserId: USER_A,
+      const registered = await registerProjectTaskWorker(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId,
+        actorUserId: USER_A,
         prompt: origin,
         contract: { max_wall_seconds: 600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 10 },
         now,
@@ -1097,23 +1492,31 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         publicKey: `pub-${workerSessionId}`,
         secretKeyHash: `hash-${workerSessionId}`,
       });
-      return task;
+      return registered.task;
     }
 
     async function tokenStatus(workerSessionId: string) {
-      const [token] = await database.select({ status: accountTokens.status })
-        .from(accountTokens).where(eq(accountTokens.sessionId, workerSessionId)).limit(1);
+      const [token] = await database
+        .select({ status: accountTokens.status })
+        .from(accountTokens)
+        .where(eq(accountTokens.sessionId, workerSessionId))
+        .limit(1);
       return token?.status;
     }
 
     const transitionNow = new Date('2026-08-07T17:00:00.000Z');
     const transitioned = await bind(SESSION_B, 'terminal-transition-fence', transitionNow);
-    const transitionLeases = await Promise.all(['git-transition-a', 'git-transition-b'].map(
-      (requestId) => acquireProjectTaskGitWrite(database, {
-        projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId,
-        now: new Date(transitionNow.getTime() + 1_000),
-      }),
-    ));
+    const transitionLeases = await Promise.all(
+      ['git-transition-a', 'git-transition-b'].map((requestId) =>
+        acquireProjectTaskGitWrite(database, {
+          projectId: PROJECT_ID,
+          workerSessionId: SESSION_B,
+          ...gitWriteCommand(SESSION_B),
+          requestId,
+          now: new Date(transitionNow.getTime() + 1_000),
+        }),
+      ),
+    );
     const livenessAdmission = await admitProjectTaskWorkerIteration(database, {
       workerSessionId: SESSION_B,
       requestId: 'liveness-transition',
@@ -1123,66 +1526,117 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     expect(transitionLeases.filter(Boolean)).toHaveLength(1);
     const transitionRequestId = transitionLeases.find(Boolean)?.requestId;
     expect(transitionRequestId).toBeTruthy();
-    await expect(transitionProjectTask(database, {
-      projectId: PROJECT_ID, taskId: transitioned.taskId, status: 'done',
-      expectedClaimSessionId: SESSION_A, result: { evidence: [{ ref: 'proof' }] },
-      now: new Date(transitionNow.getTime() + 2_000),
-    })).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
+    await expect(
+      transitionProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: transitioned.taskId,
+        status: 'done',
+        expectedClaimSessionId: SESSION_A,
+        result: { evidence: [{ ref: 'proof' }] },
+        now: new Date(transitionNow.getTime() + 2_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
     expect(await tokenStatus(SESSION_B)).toBe('active');
-    expect(await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId: 'wrong-request',
-      now: new Date(transitionNow.getTime() + 3_000),
-    })).toBe(false);
-    expect(await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_B, ...gitWriteCommand(SESSION_B), requestId: transitionRequestId!,
-      now: new Date(transitionNow.getTime() + 3_000),
-    })).toBe(true);
-    await expect(transitionProjectTask(database, {
-      projectId: PROJECT_ID, taskId: transitioned.taskId, status: 'done',
-      expectedClaimSessionId: SESSION_A, result: { evidence: [{ ref: 'proof' }] },
-      now: new Date(transitionNow.getTime() + 3_000),
-    })).rejects.toBeInstanceOf(TaskLivenessRequestInFlightError);
+    expect(
+      await settleProjectTaskGitWrite(database, {
+        projectId: PROJECT_ID,
+        workerSessionId: SESSION_B,
+        ...gitWriteCommand(SESSION_B),
+        requestId: 'wrong-request',
+        now: new Date(transitionNow.getTime() + 3_000),
+      }),
+    ).toBe(false);
+    expect(
+      await settleProjectTaskGitWrite(database, {
+        projectId: PROJECT_ID,
+        workerSessionId: SESSION_B,
+        ...gitWriteCommand(SESSION_B),
+        requestId: transitionRequestId!,
+        now: new Date(transitionNow.getTime() + 3_000),
+      }),
+    ).toBe(true);
+    await expect(
+      transitionProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: transitioned.taskId,
+        status: 'done',
+        expectedClaimSessionId: SESSION_A,
+        result: { evidence: [{ ref: 'proof' }] },
+        now: new Date(transitionNow.getTime() + 3_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessRequestInFlightError);
     expect(await tokenStatus(SESSION_B)).toBe('active');
-    expect(await settleProjectTaskWorkerAdmission(database, {
-      workerSessionId: SESSION_B,
-      admissionId: livenessAdmission!.admissionId,
-      usage: zeroUsage,
-      now: new Date(transitionNow.getTime() + 3_000),
-    })).toBe(true);
+    expect(
+      await settleProjectTaskWorkerAdmission(database, {
+        workerSessionId: SESSION_B,
+        admissionId: livenessAdmission!.admissionId,
+        usage: zeroUsage,
+        now: new Date(transitionNow.getTime() + 3_000),
+      }),
+    ).toBe(true);
     await transitionProjectTask(database, {
-      projectId: PROJECT_ID, taskId: transitioned.taskId, status: 'done',
-      expectedClaimSessionId: SESSION_A, result: { evidence: [{ ref: 'proof' }] },
+      projectId: PROJECT_ID,
+      taskId: transitioned.taskId,
+      status: 'done',
+      expectedClaimSessionId: SESSION_A,
+      result: { evidence: [{ ref: 'proof' }] },
       now: new Date(transitionNow.getTime() + 4_000),
     });
     expect(await tokenStatus(SESSION_B)).toBe('revoked');
 
     const noProgressNow = new Date('2026-08-07T18:00:00.000Z');
     const noProgress = await bind(SESSION_C, 'no-progress-fence', noProgressNow);
-    await settleProjectTaskNoProgress(database, {
-      projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: noProgress.taskId,
-      claimSessionId: SESSION_A, workerSessionId: SESSION_C, actorUserId: USER_A,
-      settlementId: 'no-progress-first', reason: 'first', measuredUsage: zeroUsage,
+    const noProgressFirst = await settleProjectTaskNoProgress(database, {
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: noProgress.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_C,
+      actorUserId: USER_A,
+      settlementId: noProgress.livenessTurnId!,
+      reason: 'first',
+      measuredUsage: zeroUsage,
       now: new Date(noProgressNow.getTime() + 1_000),
     });
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_C, ...gitWriteCommand(SESSION_C), requestId: 'git-no-progress',
+      projectId: PROJECT_ID,
+      workerSessionId: SESSION_C,
+      ...gitWriteCommand(SESSION_C),
+      requestId: 'git-no-progress',
       now: new Date(noProgressNow.getTime() + 2_000),
     });
-    await expect(settleProjectTaskNoProgress(database, {
-      projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: noProgress.taskId,
-      claimSessionId: SESSION_A, workerSessionId: SESSION_C, actorUserId: USER_A,
-      settlementId: 'no-progress-second', reason: 'second', measuredUsage: zeroUsage,
-      now: new Date(noProgressNow.getTime() + 3_000),
-    })).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
+    await expect(
+      settleProjectTaskNoProgress(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: noProgress.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_C,
+        actorUserId: USER_A,
+        settlementId: noProgressFirst.task.livenessTurnId!,
+        reason: 'second',
+        measuredUsage: zeroUsage,
+        now: new Date(noProgressNow.getTime() + 3_000),
+      }),
+    ).rejects.toBeInstanceOf(TaskGitWriteInFlightError);
     expect(await tokenStatus(SESSION_C)).toBe('active');
     await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_C, ...gitWriteCommand(SESSION_C), requestId: 'git-no-progress',
+      projectId: PROJECT_ID,
+      workerSessionId: SESSION_C,
+      ...gitWriteCommand(SESSION_C),
+      requestId: 'git-no-progress',
       now: new Date(noProgressNow.getTime() + 4_000),
     });
     await settleProjectTaskNoProgress(database, {
-      projectId: PROJECT_ID, accountId: ACCOUNT_ID, taskId: noProgress.taskId,
-      claimSessionId: SESSION_A, workerSessionId: SESSION_C, actorUserId: USER_A,
-      settlementId: 'no-progress-second', reason: 'second', measuredUsage: zeroUsage,
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      taskId: noProgress.taskId,
+      claimSessionId: SESSION_A,
+      workerSessionId: SESSION_C,
+      actorUserId: USER_A,
+      settlementId: noProgressFirst.task.livenessTurnId!,
+      reason: 'second',
+      measuredUsage: zeroUsage,
       now: new Date(noProgressNow.getTime() + 5_000),
     });
     expect(await tokenStatus(SESSION_C)).toBe('revoked');
@@ -1190,95 +1644,151 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     const ledgerNow = new Date('2026-08-07T19:00:00.000Z');
     await bind(SESSION_D, 'ledger-failure-fence', ledgerNow);
     const ledgerAdmission = await admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_D, requestId: 'ledger-admission', usage: zeroUsage, now: ledgerNow,
+      workerSessionId: SESSION_D,
+      requestId: 'ledger-admission',
+      usage: zeroUsage,
+      now: ledgerNow,
     });
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_D, ...gitWriteCommand(SESSION_D), requestId: 'git-ledger',
+      projectId: PROJECT_ID,
+      workerSessionId: SESSION_D,
+      ...gitWriteCommand(SESSION_D),
+      requestId: 'git-ledger',
       now: new Date(ledgerNow.getTime() + 1_000),
     });
-    expect(await blockProjectTaskWorkerAdmission(database, {
-      workerSessionId: SESSION_D, admissionId: ledgerAdmission!.admissionId,
-      reason: 'ledger write failed', now: new Date(ledgerNow.getTime() + 2_000),
-    })).toBe(false);
+    expect(
+      await blockProjectTaskWorkerAdmission(database, {
+        workerSessionId: SESSION_D,
+        admissionId: ledgerAdmission!.admissionId,
+        reason: 'ledger write failed',
+        now: new Date(ledgerNow.getTime() + 2_000),
+      }),
+    ).toBe(false);
     expect(await tokenStatus(SESSION_D)).toBe('revoked');
-    await expect(admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_D, requestId: 'ledger-prompt-after-quiesce',
-      usage: zeroUsage, now: new Date(ledgerNow.getTime() + 2_001),
-    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    await expect(
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_D,
+        requestId: 'ledger-prompt-after-quiesce',
+        usage: zeroUsage,
+        now: new Date(ledgerNow.getTime() + 2_001),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
     await settleProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_D, ...gitWriteCommand(SESSION_D), requestId: 'git-ledger',
+      projectId: PROJECT_ID,
+      workerSessionId: SESSION_D,
+      ...gitWriteCommand(SESSION_D),
+      requestId: 'git-ledger',
       now: new Date(ledgerNow.getTime() + 3_000),
     });
-    expect(await blockProjectTaskWorkerAdmission(database, {
-      workerSessionId: SESSION_D, admissionId: ledgerAdmission!.admissionId,
-      reason: 'ledger write failed', now: new Date(ledgerNow.getTime() + 4_000),
-    })).toBe(true);
+    expect(
+      await blockProjectTaskWorkerAdmission(database, {
+        workerSessionId: SESSION_D,
+        admissionId: ledgerAdmission!.admissionId,
+        reason: 'ledger write failed',
+        now: new Date(ledgerNow.getTime() + 4_000),
+      }),
+    ).toBe(true);
     expect(await tokenStatus(SESSION_D)).toBe('revoked');
 
     const sweepNow = new Date('2026-08-07T20:00:00.000Z');
     const sweepFence = await bind(SESSION_E, 'sweep-fence', sweepNow);
     await acquireProjectTaskGitWrite(database, {
-      projectId: PROJECT_ID, workerSessionId: SESSION_E, ...gitWriteCommand(SESSION_E), requestId: 'git-sweep',
+      projectId: PROJECT_ID,
+      workerSessionId: SESSION_E,
+      ...gitWriteCommand(SESSION_E),
+      requestId: 'git-sweep',
       now: new Date(sweepNow.getTime() + 1_000),
     });
     const loadZeroUsage = async () => zeroUsage;
-    expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 2_000), 100, loadZeroUsage,
-    )).toBe(0);
+    expect(
+      await sweepTaskLivenessBounds(
+        database,
+        new Date(sweepNow.getTime() + 2_000),
+        100,
+        loadZeroUsage,
+      ),
+    ).toBe(0);
     expect(await tokenStatus(SESSION_E)).toBe('active');
     // Simulate a crashed proxy and an unavailable provider. Deadline equality
     // is not settlement, so the task stays nonterminal behind the live fence.
     // The same transaction revokes runtime authority and queues both commands.
-    expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 600_000), 100, loadZeroUsage,
-    )).toBe(0);
+    expect(
+      await sweepTaskLivenessBounds(
+        database,
+        new Date(sweepNow.getTime() + 600_000),
+        100,
+        loadZeroUsage,
+      ),
+    ).toBe(0);
     expect(await tokenStatus(SESSION_E)).toBe('revoked');
     const quiesced = await getProjectTask(database, {
-      projectId: PROJECT_ID, taskId: sweepFence.taskId,
+      projectId: PROJECT_ID,
+      taskId: sweepFence.taskId,
     });
     expect(quiesced).toMatchObject({
       status: 'doing',
       livenessBlocker: 'max_wall_seconds exceeded',
       gitWriteState: 'live',
     });
-    await expect(admitProjectTaskWorkerIteration(database, {
-      workerSessionId: SESSION_E,
-      requestId: 'prompt-after-quiesce',
-      usage: zeroUsage,
-      now: new Date(sweepNow.getTime() + 600_001),
-    })).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
+    await expect(
+      admitProjectTaskWorkerIteration(database, {
+        workerSessionId: SESSION_E,
+        requestId: 'prompt-after-quiesce',
+        usage: zeroUsage,
+        now: new Date(sweepNow.getTime() + 600_001),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
     const quiesceCommands = (await database.select().from(sessionLifecycleCommands)).filter(
-      (row) => row.idempotencyKey === `task-stop:${sweepFence.taskId}:${SESSION_E}` ||
+      (row) =>
+        row.idempotencyKey === `task-stop:${sweepFence.taskId}:${SESSION_E}` ||
         row.idempotencyKey === `task-bound-escalate:${sweepFence.taskId}`,
     );
     expect(quiesceCommands).toHaveLength(2);
 
-    expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 630_000), 100, loadZeroUsage,
-    )).toBe(0);
-    expect(await reconcileProjectTaskGitWrites(database, {
-      now: new Date(sweepNow.getTime() + 630_001),
-      reconcileRemoteRef: async () => { throw new Error('provider unavailable'); },
-    })).toBe(0);
+    expect(
+      await sweepTaskLivenessBounds(
+        database,
+        new Date(sweepNow.getTime() + 630_000),
+        100,
+        loadZeroUsage,
+      ),
+    ).toBe(0);
+    expect(
+      await reconcileProjectTaskGitWrites(database, {
+        now: new Date(sweepNow.getTime() + 630_001),
+        reconcileRemoteRef: async () => {
+          throw new Error('provider unavailable');
+        },
+      }),
+    ).toBe(0);
     expect(await tokenStatus(SESSION_E)).toBe('revoked');
-    expect(await reconcileProjectTaskGitWrites(database, {
-      now: new Date(sweepNow.getTime() + 630_001),
-      reconcileRemoteRef: async () => false,
-    })).toBe(0);
+    expect(
+      await reconcileProjectTaskGitWrites(database, {
+        now: new Date(sweepNow.getTime() + 630_001),
+        reconcileRemoteRef: async () => false,
+      }),
+    ).toBe(0);
     expect(await tokenStatus(SESSION_E)).toBe('revoked');
 
     const observed: string[] = [];
-    expect(await reconcileProjectTaskGitWrites(database, {
-      now: new Date(sweepNow.getTime() + 630_001),
-      reconcileRemoteRef: async (target) => {
-        observed.push(target.ref);
-        return true;
-      },
-    })).toBe(1);
+    expect(
+      await reconcileProjectTaskGitWrites(database, {
+        now: new Date(sweepNow.getTime() + 630_001),
+        reconcileRemoteRef: async (target) => {
+          observed.push(target.ref);
+          return true;
+        },
+      }),
+    ).toBe(1);
     expect(observed).toEqual([`refs/heads/${SESSION_E}`]);
-    expect(await sweepTaskLivenessBounds(
-      database, new Date(sweepNow.getTime() + 630_002), 100, loadZeroUsage,
-    )).toBe(1);
+    expect(
+      await sweepTaskLivenessBounds(
+        database,
+        new Date(sweepNow.getTime() + 630_002),
+        100,
+        loadZeroUsage,
+      ),
+    ).toBe(1);
     expect(await tokenStatus(SESSION_E)).toBe('revoked');
   });
 
@@ -1296,6 +1806,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         triggerSlug: 'kortix-goal-push-ship-kernel',
         source: 'manual',
         idempotencyKey: `observation-range-proof:${observedAt}`,
+        now: new Date(observedAt),
+      });
+      await settleProjectGoalEvaluation(database, {
+        evaluationId: evaluation.evaluationId,
+        state: 'fired',
+        sessionId: SESSION_A,
         now: new Date(observedAt),
       });
       await recordProjectGoalObservation(database, {
@@ -1317,6 +1833,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       idempotencyKey: 'observation-range-proof:other',
       now: new Date('2026-08-07T12:01:00.000Z'),
     });
+    await settleProjectGoalEvaluation(database, {
+      evaluationId: otherEvaluation.evaluationId,
+      state: 'fired',
+      sessionId: SESSION_A,
+      now: new Date('2026-08-07T12:01:00.000Z'),
+    });
     await recordProjectGoalObservation(database, {
       projectId: PROJECT_ID,
       goalSlug: 'ship-kernel',
@@ -1326,6 +1848,18 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       source: 'task-store',
       observedAt: new Date('2026-08-07T12:01:00.000Z'),
     });
+    await expect(
+      recordProjectGoalObservation(database, {
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        evaluationId: otherEvaluation.evaluationId,
+        metric: 'forged_metric',
+        value: 1,
+        source: 'wrong-session',
+        sessionId: SESSION_B,
+        observedAt: new Date('2026-08-07T12:01:01.000Z'),
+      }),
+    ).rejects.toMatchObject({ code: 'GOAL_OBSERVATION_AUTHORITY' });
 
     const rows = await listProjectGoalObservations(database, {
       projectId: PROJECT_ID,
@@ -1361,49 +1895,64 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
 
   test('goal evaluation creation and one metric observation are concurrent-idempotent', async () => {
     const database = testDb();
-    const created = await Promise.all(Array.from({ length: 8 }, () =>
-      createProjectGoalEvaluation(database, {
-        projectId: PROJECT_ID,
-        goalSlug: 'ship-kernel',
-        triggerSlug: 'kortix-goal-push-ship-kernel',
-        source: 'cron',
-        idempotencyKey: 'trigger:cron:ship-kernel:2026-08-07T12:00:00Z',
-        now: new Date('2026-08-07T12:00:00.000Z'),
-      })));
+    const created = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        createProjectGoalEvaluation(database, {
+          projectId: PROJECT_ID,
+          goalSlug: 'ship-kernel',
+          triggerSlug: 'kortix-goal-push-ship-kernel',
+          source: 'cron',
+          idempotencyKey: 'trigger:cron:ship-kernel:2026-08-07T12:00:00Z',
+          now: new Date('2026-08-07T12:00:00.000Z'),
+        }),
+      ),
+    );
     expect(new Set(created.map((row) => row.evaluationId)).size).toBe(1);
     expect(await database.select().from(projectGoalEvaluations)).toHaveLength(1);
 
     const evaluationId = created[0]!.evaluationId;
-    const observations = await Promise.all(Array.from({ length: 8 }, () =>
+    await settleProjectGoalEvaluation(database, {
+      evaluationId,
+      state: 'fired',
+      now: new Date('2026-08-07T12:00:30.000Z'),
+    });
+    const observations = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        recordProjectGoalObservation(database, {
+          projectId: PROJECT_ID,
+          goalSlug: 'ship-kernel',
+          evaluationId,
+          metric: 'open_tasks',
+          value: 3,
+          source: 'goal-evaluator',
+          observedAt: new Date('2026-08-07T12:01:00.000Z'),
+        }),
+      ),
+    );
+    expect(new Set(observations.map((row) => row.observationId)).size).toBe(1);
+    await expect(
       recordProjectGoalObservation(database, {
         projectId: PROJECT_ID,
         goalSlug: 'ship-kernel',
         evaluationId,
         metric: 'open_tasks',
-        value: 3,
+        value: 4,
         source: 'goal-evaluator',
         observedAt: new Date('2026-08-07T12:01:00.000Z'),
-      })));
-    expect(new Set(observations.map((row) => row.observationId)).size).toBe(1);
-    await expect(recordProjectGoalObservation(database, {
-      projectId: PROJECT_ID,
-      goalSlug: 'ship-kernel',
-      evaluationId,
-      metric: 'open_tasks',
-      value: 4,
-      source: 'goal-evaluator',
-      observedAt: new Date('2026-08-07T12:01:00.000Z'),
-    })).rejects.toMatchObject({ code: 'GOAL_OBSERVATION_CONFLICT' });
+      }),
+    ).rejects.toMatchObject({ code: 'GOAL_OBSERVATION_CONFLICT' });
 
     const rows = await getProjectGoalEvaluationHealthRows(database, {
       projectId: PROJECT_ID,
       goalSlug: 'ship-kernel',
     });
-    expect(rows).toEqual([expect.objectContaining({
-      evaluationId,
-      state: 'queued',
-      observations: { open_tasks: 3 },
-    })]);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        evaluationId,
+        state: 'fired',
+        observations: { open_tasks: 3 },
+      }),
+    ]);
 
     const fired = await settleProjectGoalEvaluation(database, {
       evaluationId,
@@ -1417,5 +1966,97 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       now: new Date('2026-08-07T12:03:00.000Z'),
     });
     expect(terminal.state).toBe('fired');
+
+    const deliveredLater = await createProjectGoalEvaluation(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      triggerSlug: 'kortix-goal-push-ship-kernel',
+      source: 'manual',
+      idempotencyKey: 'goal-fired-order-later',
+      now: new Date('2026-08-07T11:00:00.000Z'),
+    });
+    await settleProjectGoalEvaluation(database, {
+      evaluationId: deliveredLater.evaluationId,
+      state: 'fired',
+      now: new Date('2026-08-07T12:03:00.000Z'),
+    });
+    const ordered = await getProjectGoalEvaluationHealthRows(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+    });
+    expect(ordered[0]?.evaluationId).toBe(deliveredLater.evaluationId);
+    expect(ordered.every((row) => row.state === 'fired')).toBe(true);
+
+    const [successFirstCommand] = await database
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'create_session',
+        source: 'trigger:manual',
+        status: 'succeeded',
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        sessionId: SESSION_B,
+        idempotencyKey: 'goal-success-before-attach',
+        payload: {},
+        result: {},
+        updatedAt: new Date('2026-08-07T12:04:00.000Z'),
+      })
+      .returning();
+    const successFirstEvaluation = await createProjectGoalEvaluation(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      triggerSlug: 'kortix-goal-push-ship-kernel',
+      source: 'manual',
+      idempotencyKey: 'goal-success-before-attach',
+      now: new Date('2026-08-07T12:03:30.000Z'),
+    });
+    const successFirst = await settleProjectGoalEvaluation(database, {
+      evaluationId: successFirstEvaluation.evaluationId,
+      state: 'queued',
+      lifecycleCommandId: successFirstCommand!.commandId,
+      sessionId: null,
+      now: new Date('2026-08-07T12:04:01.000Z'),
+    });
+    expect(successFirst).toMatchObject({ state: 'fired', sessionId: SESSION_B });
+    expect(successFirst.firedAt?.toISOString()).toBe('2026-08-07T12:04:00.000Z');
+
+    const [attachFirstCommand] = await database
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'create_session',
+        source: 'trigger:manual',
+        status: 'queued',
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        sessionId: SESSION_C,
+        idempotencyKey: 'goal-attach-before-success',
+        payload: {},
+        result: {},
+      })
+      .returning();
+    const attachFirstEvaluation = await createProjectGoalEvaluation(database, {
+      projectId: PROJECT_ID,
+      goalSlug: 'ship-kernel',
+      triggerSlug: 'kortix-goal-push-ship-kernel',
+      source: 'manual',
+      idempotencyKey: 'goal-attach-before-success',
+      now: new Date('2026-08-07T12:05:00.000Z'),
+    });
+    await settleProjectGoalEvaluation(database, {
+      evaluationId: attachFirstEvaluation.evaluationId,
+      state: 'queued',
+      lifecycleCommandId: attachFirstCommand!.commandId,
+      now: new Date('2026-08-07T12:05:01.000Z'),
+    });
+    await database
+      .update(sessionLifecycleCommands)
+      .set({ status: 'succeeded', updatedAt: new Date('2026-08-07T12:05:02.000Z') })
+      .where(eq(sessionLifecycleCommands.commandId, attachFirstCommand!.commandId));
+    const [attachFirst] = await database
+      .select()
+      .from(projectGoalEvaluations)
+      .where(eq(projectGoalEvaluations.evaluationId, attachFirstEvaluation.evaluationId));
+    expect(attachFirst).toMatchObject({ state: 'fired', sessionId: SESSION_C });
+    expect(attachFirst!.firedAt?.toISOString()).toBe('2026-08-07T12:05:02.000Z');
   });
 });

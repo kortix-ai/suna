@@ -1,4 +1,4 @@
-import type { ProjectGoal, ProjectGoalObservation } from "@kortix/sdk";
+import type { ProjectGoal, ProjectGoalObservation } from '@kortix/sdk';
 
 import {
   emitJson,
@@ -6,9 +6,9 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-} from "../command-helpers.ts";
-import { kortixFromAuth } from "../api/sdk.ts";
-import { C, help, pad, status } from "../style.ts";
+} from '../command-helpers.ts';
+import { kortixFromAuth } from '../api/sdk.ts';
+import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix goals <subcommand> [options]
 
@@ -20,6 +20,9 @@ Subcommands:
   show <slug> [--json]   Show one goal.
   health <slug> [--json] Show deterministic metric and evaluation health.
   push <slug> [--json]   Request an immediate run for one active goal.
+
+Push options:
+  --idempotency-key <key> Stable retry key (default: generated once per command).
   observe <slug>         Record one goal metric observation.
   observations <slug>    List durable observations for one metric.
 
@@ -28,7 +31,7 @@ Observe options:
   --metric <name>        Metric declared by the goal (required).
   --value <number>       Finite metric value (required).
   --source <text>        Observation source, such as "prometheus" (required).
-  --session <id>         Session that produced the observation.
+  --session <id>         Deprecated. Session principals are attributed from authentication.
   --observed-at <ISO>    Observation timestamp with timezone (default: now).
   --json                 Print the raw SDK response.
 
@@ -67,9 +70,9 @@ interface CommonFlags {
 
 function parseCommon(argv: string[]): CommonFlags {
   return {
-    json: takeFlagBool(argv, ["--json"]),
-    project: takeFlagValue(argv, ["--project"]),
-    host: takeFlagValue(argv, ["--host"]),
+    json: takeFlagBool(argv, ['--json']),
+    project: takeFlagValue(argv, ['--project']),
+    host: takeFlagValue(argv, ['--host']),
   };
 }
 
@@ -114,7 +117,7 @@ function requireText(value: string | undefined, flag: string): string {
 
 function requireSlug(argv: string[], action: string): string {
   const slug = argv.shift();
-  if (!slug || slug.startsWith("-")) {
+  if (!slug || slug.startsWith('-')) {
     throw new Error(`Pass a goal slug: kortix goals ${action} <slug>`);
   }
   return slug;
@@ -123,7 +126,7 @@ function requireSlug(argv: string[], action: string): string {
 function rejectExtraArgs(argv: string[]): void {
   if (argv.length === 0) return;
   const arg = argv[0];
-  if (arg.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
+  if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
   throw new Error(`Unexpected argument: ${arg}`);
 }
 
@@ -136,15 +139,12 @@ async function projectHandle(flags: CommonFlags, sdkFactory: SdkFactory) {
   return sdkFactory(ctx.auth).project(ctx.projectId);
 }
 
-export async function runGoals(
-  argv: string[],
-  deps: GoalsCommandDeps = {},
-): Promise<number> {
-  if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
+export async function runGoals(argv: string[], deps: GoalsCommandDeps = {}): Promise<number> {
+  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
   }
-  if (argv.includes("-h") || argv.includes("--help")) {
+  if (argv.includes('-h') || argv.includes('--help')) {
     process.stdout.write(HELP);
     return 0;
   }
@@ -156,8 +156,8 @@ export async function runGoals(
   try {
     const flags = parseCommon(rest);
     switch (subcommand) {
-      case "ls":
-      case "list": {
+      case 'ls':
+      case 'list': {
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -170,8 +170,8 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
-      case "show": {
-        const slug = requireSlug(rest, "show");
+      case 'show': {
+        const slug = requireSlug(rest, 'show');
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -184,8 +184,8 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
-      case "health": {
-        const slug = requireSlug(rest, "health");
+      case 'health': {
+        const slug = requireSlug(rest, 'health');
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -198,21 +198,22 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
-      case "push": {
-        const slug = requireSlug(rest, "push");
+      case 'push': {
+        const slug = requireSlug(rest, 'push');
+        const idempotencyKey = takeFlagValue(rest, ['--idempotency-key']) ?? crypto.randomUUID();
         rejectExtraArgs(rest);
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
         try {
-          const response = await project.goals.push(slug);
+          const response = await project.goals.push(slug, { idempotencyKey });
           if (flags.json) emitJson(response);
           else {
             const target = response.session_id
               ? ` session ${response.session_id}`
               : response.command_id
                 ? ` command ${response.command_id}`
-                : "";
-            const reason = response.reason ? ` — ${response.reason}` : "";
+                : '';
+            const reason = response.reason ? ` — ${response.reason}` : '';
             process.stdout.write(
               `${status.ok(`${slug}: ${response.status}${target}; evaluation ${response.evaluation_id} (${response.evaluation_state})${reason}`)}\n`,
             );
@@ -222,35 +223,23 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
-      case "observations":
-      case "observation":
-      case "obs": {
-        const slug = requireSlug(rest, "observations");
-        const metric = requireText(
-          takeFlagValue(rest, ["--metric"]),
-          "--metric",
-        );
-        const from = takeFlagValue(rest, ["--from"]);
-        const to = takeFlagValue(rest, ["--to"]);
-        const limit = parseBoundedInteger(
-          takeNumericFlag(rest, "--limit"),
-          "--limit",
-          1,
-          10_000,
-        );
+      case 'observations':
+      case 'observation':
+      case 'obs': {
+        const slug = requireSlug(rest, 'observations');
+        const metric = requireText(takeFlagValue(rest, ['--metric']), '--metric');
+        const from = takeFlagValue(rest, ['--from']);
+        const to = takeFlagValue(rest, ['--to']);
+        const limit = parseBoundedInteger(takeNumericFlag(rest, '--limit'), '--limit', 1, 10_000);
         rejectExtraArgs(rest);
         if (from !== undefined && !isIsoTimestamp(from)) {
-          throw new Error("--from must be an ISO timestamp with a timezone");
+          throw new Error('--from must be an ISO timestamp with a timezone');
         }
         if (to !== undefined && !isIsoTimestamp(to)) {
-          throw new Error("--to must be an ISO timestamp with a timezone");
+          throw new Error('--to must be an ISO timestamp with a timezone');
         }
-        if (
-          from !== undefined &&
-          to !== undefined &&
-          Date.parse(from) > Date.parse(to)
-        ) {
-          throw new Error("--from must not be later than --to");
+        if (from !== undefined && to !== undefined && Date.parse(from) > Date.parse(to)) {
+          throw new Error('--from must not be later than --to');
         }
 
         const project = await projectHandle(flags, sdkFactory);
@@ -269,36 +258,23 @@ export async function runGoals(
           return surfaceApiError(error);
         }
       }
-      case "observe": {
-        const slug = requireSlug(rest, "observe");
-        const evaluationIdRaw = takeFlagValue(rest, ["--evaluation"]);
-        const metric = requireText(
-          takeFlagValue(rest, ["--metric"]),
-          "--metric",
-        );
-        const rawValue = requireText(
-          takeNumericFlag(rest, "--value"),
-          "--value",
-        );
-        const source = requireText(
-          takeFlagValue(rest, ["--source"]),
-          "--source",
-        );
-        const session = takeFlagValue(rest, ["--session"]);
-        const observedAt = takeFlagValue(rest, ["--observed-at"]);
+      case 'observe': {
+        const slug = requireSlug(rest, 'observe');
+        const evaluationIdRaw = takeFlagValue(rest, ['--evaluation']);
+        const metric = requireText(takeFlagValue(rest, ['--metric']), '--metric');
+        const rawValue = requireText(takeNumericFlag(rest, '--value'), '--value');
+        const source = requireText(takeFlagValue(rest, ['--source']), '--source');
+        const session = takeFlagValue(rest, ['--session']);
+        const observedAt = takeFlagValue(rest, ['--observed-at']);
         rejectExtraArgs(rest);
 
         const value = Number(rawValue);
-        if (!Number.isFinite(value))
-          throw new Error("--value must be a finite number");
-        if (session !== undefined && !session.trim())
-          throw new Error("--session cannot be empty");
+        if (!Number.isFinite(value)) throw new Error('--value must be a finite number');
+        if (session !== undefined && !session.trim()) throw new Error('--session cannot be empty');
         if (observedAt !== undefined && !isIsoTimestamp(observedAt)) {
-          throw new Error(
-            "--observed-at must be an ISO timestamp with a timezone",
-          );
+          throw new Error('--observed-at must be an ISO timestamp with a timezone');
         }
-        const evaluationId = requireText(evaluationIdRaw, "--evaluation");
+        const evaluationId = requireText(evaluationIdRaw, '--evaluation');
 
         const project = await projectHandle(flags, sdkFactory);
         if (!project) return 1;
@@ -338,9 +314,8 @@ export async function runGoals(
 
 function isIsoTimestamp(value: string): boolean {
   return (
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      value,
-    ) && Number.isFinite(Date.parse(value))
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value))
   );
 }
 
@@ -360,26 +335,22 @@ function renderGoalHealth(health: {
   process.stdout.write(`Desired status: ${health.desired_status}\n`);
   process.stdout.write(`Health: ${health.health_status}\n`);
   for (const metric of health.metrics) {
-    const value = metric.observation_value === null ? "unobserved" : String(metric.observation_value);
+    const value =
+      metric.observation_value === null ? 'unobserved' : String(metric.observation_value);
     const evaluation = metric.evaluation_id
       ? ` evaluation=${metric.evaluation_id} (${metric.evaluation_state})`
-      : "";
+      : '';
     process.stdout.write(`  ${metric.metric}: ${metric.status} value=${value}${evaluation}\n`);
   }
 }
 
 function renderObservations(observations: ProjectGoalObservation[]): void {
   if (observations.length === 0) {
-    process.stdout.write("No observations match these filters.\n");
+    process.stdout.write('No observations match these filters.\n');
     return;
   }
-  const metricWidth = Math.max(
-    6,
-    ...observations.map((item) => item.metric.length),
-  );
-  process.stdout.write(
-    `${pad("OBSERVED AT", 24)}  ${pad("METRIC", metricWidth)}  VALUE  SOURCE\n`,
-  );
+  const metricWidth = Math.max(6, ...observations.map((item) => item.metric.length));
+  process.stdout.write(`${pad('OBSERVED AT', 24)}  ${pad('METRIC', metricWidth)}  VALUE  SOURCE\n`);
   for (const item of observations) {
     process.stdout.write(
       `${pad(item.observed_at, 24)}  ${pad(item.metric, metricWidth)}  ${item.value}  ${item.source}\n`,
@@ -392,13 +363,11 @@ function renderGoalList(
   errors: Array<{ slug: string; path: string; error: string }>,
 ): void {
   if (goals.length === 0) {
-    process.stdout.write("No goals declared in the project manifest.\n");
+    process.stdout.write('No goals declared in the project manifest.\n');
   } else {
     const slugWidth = Math.max(4, ...goals.map((goal) => goal.slug.length));
     const statusWidth = Math.max(6, ...goals.map((goal) => goal.status.length));
-    process.stdout.write(
-      `${pad("SLUG", slugWidth)}  ${pad("STATUS", statusWidth)}  TITLE\n`,
-    );
+    process.stdout.write(`${pad('SLUG', slugWidth)}  ${pad('STATUS', statusWidth)}  TITLE\n`);
     for (const goal of goals) {
       process.stdout.write(
         `${pad(goal.slug, slugWidth)}  ${pad(goal.status, statusWidth)}  ${goal.title}\n`,
@@ -415,16 +384,13 @@ function renderGoal(goal: ProjectGoal): void {
   process.stdout.write(`Status: ${goal.status}\n`);
   process.stdout.write(`Done when: ${goal.done_when}\n`);
   if (goal.agent) process.stdout.write(`Agent: ${goal.agent}\n`);
-  if (goal.push_cron)
-    process.stdout.write(`Push: ${goal.push_cron} (${goal.timezone})\n`);
+  if (goal.push_cron) process.stdout.write(`Push: ${goal.push_cron} (${goal.timezone})\n`);
   if (goal.metrics.length > 0) {
-    process.stdout.write("Metrics:\n");
+    process.stdout.write('Metrics:\n');
     for (const metric of goal.metrics) {
-      const target = metric.target === null ? "" : ` target=${metric.target}`;
-      const unit = metric.unit === null ? "" : ` ${metric.unit}`;
-      process.stdout.write(
-        `  ${metric.name}: ${metric.direction}${target}${unit}\n`,
-      );
+      const target = metric.target === null ? '' : ` target=${metric.target}`;
+      const unit = metric.unit === null ? '' : ` ${metric.unit}`;
+      process.stdout.write(`  ${metric.name}: ${metric.direction}${target}${unit}\n`);
     }
   }
 }

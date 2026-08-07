@@ -26,8 +26,8 @@ export function deriveProjectGoalHealth(input: {
   metricNames: string[];
   evaluations: GoalHealthEvaluation[];
 }): ProjectGoalHealthResult {
-  const latest = input.evaluations[0] ?? null;
   const fired = input.evaluations.filter((evaluation) => evaluation.state === 'fired');
+  const latest = fired[0] ?? null;
   const metrics = input.metricNames.map((metric) => {
     const latestFiredValue = fired[0]?.observations[metric];
     let status: GoalMetricHealthStatus = Number.isFinite(latestFiredValue)
@@ -340,15 +340,14 @@ export async function resolveObservationSessionId(
     }
     return authenticated;
   }
-  if (input.requestedSessionId == null) return null;
-  if (!(await dependencies.sessionBelongsToProject(input.projectId, input.requestedSessionId))) {
+  if (input.requestedSessionId != null) {
     throw new GoalsTasksServiceError(
-      400,
-      'session_not_in_project',
-      'session_id must belong to this project',
+      403,
+      'session_identity_mismatch',
+      'A human observation cannot impersonate a project session',
     );
   }
-  return input.requestedSessionId;
+  return null;
 }
 
 function assertSessionIdentity(input: {
