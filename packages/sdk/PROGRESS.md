@@ -7694,3 +7694,65 @@ No SDK export or version changed.
 **Status:** COMPLETE in commit `9c5d9dc11d`.
 
 **SDK package shippable to production: YES.**
+
+---
+
+## Session `admin-projects` — `useAdminProjects` fleet-list hook (2026-08-07)
+
+No **Now** task claimed. Additive host-driven work: the admin console gains a
+`/admin/projects` page (every project across every account, most-active first)
+backed by the new `GET /v1/admin/api/projects` route in
+`apps/api/src/admin/index.ts`. Per the root rule that hosts are thin, the data
+layer landed here, not in `apps/web`.
+
+New file `src/react/use-admin-projects.ts`, exported from `src/react/index.ts`:
+
+- `useAdminProjects(filters)` — query hook over `GET /admin/api/projects`,
+  shaped exactly like `useAdminAccounts`: unset filters are omitted from the
+  query string, `staleTime` 15s, `placeholderData: (prev) => prev`.
+- Types: `AdminProject`, `AdminProjectsResponse`, `AdminProjectsFilters`,
+  `AdminProjectsSortBy` (`activity` | `created` | `sessions`),
+  `AdminProjectsSortDir`.
+- Query key is `['admin','projects', search, accountId, status.join(','),
+  sortBy, sortDir, page, limit]` — every input, so two filter sets can never
+  share one cache entry.
+
+No subpath was added, so the three-synchronized-edits rule does not apply: the
+hook rides the existing `./react` entry. The package `version` is untouched.
+
+The required `tdd` skill was unavailable in this session. The RED → GREEN →
+REFACTOR sequence was followed directly.
+
+RED:
+
+- `bun test src/react/use-admin-projects.test.ts` before implementation:
+  `0 pass, 1 fail` — `Cannot find module './use-admin-projects'`.
+
+GREEN:
+
+- `bun test src/react/use-admin-projects.test.ts`: `8 pass`, `0 fail`,
+  `23 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1737 pass`, `0 fail`, `6854 expect()` calls
+  across `137` files (was `1729`/`136` before this change).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+Both surface snapshots were re-recorded. The diff is **7 insertions, 0
+deletions** — `useAdminProjects` in the runtime snapshot, plus the same name and
+the 5 type names in the type snapshot. No rename, no removal, so no consumer
+breaks.
+
+Verified end to end against the live local worktree stack (web `:23700`, API
+`:23708`): a Chromium run drove `/admin/projects` and asserted `32` conditions —
+the default request (`sortBy=activity&sortDir=desc&page=1&limit=50`, no empty
+`search`/`status` params), search/sort/status each firing a new request with the
+right params and resetting to page 1, and the rendered rows (activity order with
+never-run last, `2/3` active-of-total session counts, `1h ago` relative
+activity, and the account cell's `/admin/accounts?search=<ownerEmail>` href).
+`33` direct HTTP assertions against the route passed alongside it.
+
+**Status:** COMPLETE (uncommitted — left in the working tree on branch
+`admin-tier-labels` at the requester's instruction, so no claim commit was made;
+this entry is the handoff record).
+
+**SDK package shippable to production: YES.**

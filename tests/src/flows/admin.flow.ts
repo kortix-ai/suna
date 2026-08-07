@@ -715,6 +715,93 @@ flow("ADM-18", { domain: "admin", routes: ["GET /v1/admin/api/accounts"] }, asyn
   }
 });
 
+// ADM-20 — the fleet projects list. Asserted against a FRESH run-owned project
+// so the never-run defaults (sessionCount 0, lastSessionAt null) are exact
+// rather than whatever the first page happens to hold. The two sanitizer steps
+// matter more than they look: both inputs reach Postgres as typed literals, so
+// an unsanitized value is a 500, and an unsanitized accountId that were merely
+// DROPPED would silently widen "one account" to the whole fleet.
+flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/api/projects"] }, async (ctx) => {
+  await ctx.step("ANON → 401", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/api/projects", { query: { limit: "1" } });
+    r.status(401);
+  });
+  await ctx.step("non-admin OWNER → 403", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/admin/api/projects", { query: { limit: "1" } });
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    const name = ctx.fixtures.name("adm20-fleet");
+    const project = await ctx.fixtures.project({ name });
+
+    await ctx.step("a never-run project carries the account join and zeroed session counts", async () => {
+      const r = await admin.get("/v1/admin/api/projects", { query: { search: name, limit: "5" } });
+      r.status(200)
+        .body()
+        .has("$.total", 1)
+        .has("$.page", 1)
+        .has("$.limit", 5)
+        .has("$.projects[0].projectId", project.id)
+        .has("$.projects[0].name", name)
+        .has("$.projects[0].status", "active")
+        .has("$.projects[0].accountId", ctx.P.OWNER.accountId!)
+        .has("$.projects[0].ownerEmail", ctx.P.OWNER.email!)
+        .has("$.projects[0].sessionCount", 0)
+        .has("$.projects[0].activeSessionCount", 0)
+        .has("$.projects[0].lastSessionAt", null)
+        .exists("$.projects[0].createdAt");
+    });
+
+    await ctx.step("search also matches the owning account's member email", async () => {
+      const r = await admin.get("/v1/admin/api/projects", {
+        query: { search: ctx.P.OWNER.email!, accountId: ctx.P.OWNER.accountId!, limit: "100" },
+      });
+      r.status(200).body().exists("$.projects[0].projectId");
+    });
+
+    await ctx.step("every sortBy is accepted, in both directions", async () => {
+      for (const sortBy of ["activity", "created", "sessions"]) {
+        for (const sortDir of ["asc", "desc"]) {
+          const r = await admin.get("/v1/admin/api/projects", {
+            query: { search: name, sortBy, sortDir, limit: "5" },
+          });
+          r.status(200).body().has("$.total", 1);
+        }
+      }
+    });
+
+    await ctx.step("status filter selects and excludes; an unknown value degrades to no filter", async () => {
+      const active = await admin.get("/v1/admin/api/projects", {
+        query: { search: name, status: "active", limit: "5" },
+      });
+      active.status(200).body().has("$.total", 1);
+
+      const archived = await admin.get("/v1/admin/api/projects", {
+        query: { search: name, status: "archived", limit: "5" },
+      });
+      archived.status(200).body().has("$.total", 0);
+
+      const bogus = await admin.get("/v1/admin/api/projects", {
+        query: { search: name, status: "not-a-status", limit: "5" },
+      });
+      bogus.status(200).body().has("$.total", 1);
+    });
+
+    await ctx.step("a non-uuid accountId narrows to an empty page, never to the fleet", async () => {
+      const r = await admin.get("/v1/admin/api/projects", {
+        query: { accountId: "not-a-uuid", limit: "5" },
+      });
+      r.status(200).body().has("$.total", 0).has("$.projects", []);
+    });
+
+    await ctx.step("limit is capped at 100", async () => {
+      const r = await admin.get("/v1/admin/api/projects", { query: { limit: "1000" } });
+      r.status(200).body().has("$.limit", 100);
+    });
+  }
+});
+
 // ADM-19 — the trial-expiry sweep cron. Same `requireInternalCronAuth` gate as
 // BILL-13/BILL-16 (Bearer or X-Kortix-Internal-Key must timing-safe-equal
 // INTERNAL_SERVICE_KEY). Unlike the credit rotations the sweep grants nothing —
@@ -749,7 +836,7 @@ flow(
   },
 );
 
-// ADM-20 / ADM-21 — activity analytics (apps/api/src/admin/analytics.ts).
+// ADM-21 / ADM-22 — activity analytics (apps/api/src/admin/analytics.ts).
 //
 // These two routes carry NO middleware of their own: `analyticsApp` is mounted
 // inside `adminApp` BELOW its global `supabaseAuth` + `requireAdmin` gate and
@@ -771,7 +858,7 @@ interface ActivityDay {
   activeProjects: number;
 }
 
-flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/analytics/activity"] }, async (ctx) => {
+flow("ADM-21", { domain: "admin", routes: ["GET /v1/admin/analytics/activity"] }, async (ctx) => {
   await ctx.step("ANON → 401 (inherited gate)", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/analytics/activity");
     r.status(401);
@@ -845,7 +932,7 @@ interface UsageDay {
   payingAccounts: number;
 }
 
-flow("ADM-21", { domain: "admin", routes: ["GET /v1/admin/analytics/usage"] }, async (ctx) => {
+flow("ADM-22", { domain: "admin", routes: ["GET /v1/admin/analytics/usage"] }, async (ctx) => {
   await ctx.step("ANON → 401 (inherited gate)", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/analytics/usage");
     r.status(401);

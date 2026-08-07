@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 553,
+  "count": 554,
   "routes": [
     {
       "method": "GET",
@@ -525,6 +525,10 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/projects"
     },
     {
       "method": "GET",

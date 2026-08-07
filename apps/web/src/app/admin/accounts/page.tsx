@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import {
   ArrowDownIcon as ArrowDown,
@@ -24,6 +23,7 @@ import {
   UsersIcon as Users,
   XIcon as X,
 } from '@phosphor-icons/react';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -89,25 +89,40 @@ import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_componen
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 
-// Tiers & payment statuses surfaced in the filter UI. Current tiers first, then
-// the hidden legacy tier_* plans. Keep these `value`s in sync with the canonical
-// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` also renders
+// The canonical tier catalog, admin-labelled. Mirror the `value`s against the
+// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` renders
 // account rows off this list, so a missing entry shows the raw tier key.
-const TIER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'free', label: 'Free' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'per_seat', label: 'Team' },
+//
+// Only FOUR plans are current (sellable today): the billing-v3 credit plans
+// Starter/Team/Scale (paid, BYOK — no bundled managed inference) and
+// Enterprise (sales-assigned; SSO/SCIM/RBAC/audit). Everything marked legacy
+// is grandfathered compatibility — old plans existing customers keep, never
+// offered to new ones. `free`/`none` are non-plans.
+type TierOption = { value: string; label: string; legacy?: boolean };
+const TIER_CATALOG: TierOption[] = [
+  { value: 'starter', label: 'Starter' },
+  { value: 'team', label: 'Team' },
+  { value: 'scale', label: 'Scale' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'tier_2_20', label: 'Plus (legacy)' },
-  { value: 'tier_6_50', label: 'Pro (legacy)' },
-  { value: 'tier_12_100', label: 'Business (legacy)' },
-  { value: 'tier_25_200', label: 'Ultra (legacy)' },
-  { value: 'tier_50_400', label: 'Enterprise (legacy)' },
-  { value: 'tier_125_800', label: 'Scale (legacy)' },
-  { value: 'tier_200_1000', label: 'Max (legacy)' },
-  { value: 'tier_150_1200', label: 'Enterprise Max (legacy)' },
+  { value: 'free', label: 'Free' },
   { value: 'none', label: 'No plan' },
+  { value: 'pro', label: 'Pro', legacy: true },
+  { value: 'per_seat', label: 'Team per-seat', legacy: true },
+  { value: 'tier_2_20', label: 'Plus', legacy: true },
+  { value: 'tier_6_50', label: 'Pro', legacy: true },
+  { value: 'tier_12_100', label: 'Business', legacy: true },
+  { value: 'tier_25_200', label: 'Ultra', legacy: true },
+  { value: 'tier_50_400', label: 'Enterprise', legacy: true },
+  { value: 'tier_125_800', label: 'Scale', legacy: true },
+  { value: 'tier_200_1000', label: 'Max', legacy: true },
+  { value: 'tier_150_1200', label: 'Enterprise Max', legacy: true },
 ];
+
+// Filter list: every key an account row can carry, legacy ones labelled so.
+const TIER_OPTIONS: { value: string; label: string }[] = TIER_CATALOG.map((t) => ({
+  value: t.value,
+  label: t.legacy ? `${t.label} · legacy` : t.label,
+}));
 
 const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'active', label: 'Active' },
@@ -204,14 +219,9 @@ function formatDateTime(value: string | null | undefined) {
 
 function tierLabel(tier: string | null) {
   if (!tier) return 'No plan';
-  // TIER_OPTIONS is the filter list; TRIAL_TIER_OPTIONS carries the paid tiers
-  // that are grantable but not filterable (starter/team/scale), so a trial
-  // tier renders as "Team", not the raw key.
-  return (
-    TIER_OPTIONS.find((t) => t.value === tier)?.label ??
-    TRIAL_TIER_OPTIONS.find((t) => t.value === tier)?.label ??
-    tier
-  );
+  const entry = TIER_CATALOG.find((t) => t.value === tier);
+  if (!entry) return tier;
+  return entry.legacy ? `${entry.label} · legacy` : entry.label;
 }
 
 function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badge>['variant'] {
@@ -223,14 +233,16 @@ function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badg
 // `active` is the only status that grants the trial tier. The other four are
 // history the row keeps for audit, so they render greyed rather than hidden.
 
-/** Trial tiers offered in the grant form. `free`/`none` are rejected server-side. */
-const TRIAL_TIER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'starter', label: 'Starter' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'team', label: 'Team' },
-  { value: 'per_seat', label: 'Team (per-seat)' },
-  { value: 'scale', label: 'Scale' },
-  { value: 'enterprise', label: 'Enterprise' },
+/**
+ * Trial tiers offered in the grant form. Deliberately TWO, not the whole
+ * catalog: model access is the independent "Managed models" switch below (not
+ * a tier property), so the only real choice is whether the trial carries the
+ * enterprise identity surface. The API accepts any paid tier for edge cases;
+ * `free`/`none` are rejected server-side.
+ */
+const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'team', label: 'Team', hint: 'Standard paid plan — recommended' },
+  { value: 'enterprise', label: 'Enterprise', hint: 'Adds SSO, SCIM, RBAC, audit log' },
 ];
 
 const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
@@ -330,8 +342,10 @@ function activeFilterCount(f: AccountFilters): number {
 }
 
 export default function AdminAccountsPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [searchInput, setSearchInput] = useState('');
+  // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
+  // land on a filtered list instead of the whole fleet.
+  const urlSearchParams = useSearchParams();
+  const [searchInput, setSearchInput] = useState(urlSearchParams.get('search') ?? '');
   const search = useDebounce(searchInput);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<AccountFilters>(EMPTY_FILTERS);
@@ -392,9 +406,7 @@ export default function AdminAccountsPage() {
       <SectionHeader
         icon={Users}
         title="Accounts"
-        description={tHardcodedUi.raw(
-          'appAdminAccountsPage.line337JsxAttrDescriptionFilterSortAndInspectEveryAccountGrantOr',
-        )}
+        description={'Filter, sort, and inspect every account. Grant or debit credits, review ledger, and see billing state.'}
         actions={
           <Button
             variant="outline"
@@ -411,7 +423,7 @@ export default function AdminAccountsPage() {
 
       <StatRow>
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line354JsxAttrLabelTotalFiltered')}
+          label={'Total (filtered)'}
           value={total.toLocaleString()}
           hint={filtersCount > 0 ? 'Matches current filters' : 'All accounts'}
         />
@@ -419,15 +431,15 @@ export default function AdminAccountsPage() {
           label="Paid"
           value={(summary?.paidCount ?? 0).toLocaleString()}
           tone="success"
-          hint={tHardcodedUi.raw('appAdminAccountsPage.line362JsxAttrHintNonFreeTiers')}
+          hint={'Non-free tiers'}
         />
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line365JsxAttrLabelCreditsInSet')}
+          label={'Credits in set'}
           value={formatCredits(summary?.totalCredits ?? 0)}
-          hint={tHardcodedUi.raw('appAdminAccountsPage.line367JsxAttrHintSumOfBalances')}
+          hint={'Sum of balances'}
         />
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line370JsxAttrLabelPastDue')}
+          label={'Past due'}
           value={summary?.pastDueCount ?? 0}
           tone={(summary?.pastDueCount ?? 0) > 0 ? 'warning' : 'default'}
           hint={(summary?.pastDueCount ?? 0) > 0 ? 'Needs review' : 'All clear'}
@@ -471,7 +483,7 @@ export default function AdminAccountsPage() {
             action={
               search || filtersCount > 0 ? (
                 <Button variant="outline" size="sm" onClick={resetFilters}>
-                  {tHardcodedUi.raw('appAdminAccountsPage.line409JsxTextClearFilters')}
+                  {'Clear filters'}
                 </Button>
               ) : undefined
             }
@@ -641,15 +653,12 @@ function FilterBar({
   onReset: () => void;
   filtersCount: number;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <PageSearchBar
         value={searchInput}
         onChange={onSearchChange}
-        placeholder={tHardcodedUi.raw(
-          'appAdminAccountsPage.line580JsxAttrPlaceholderSearchByAccountOwnerEmailOrAccountId',
-        )}
+        placeholder={'Search by account, owner email, or account ID…'}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -657,12 +666,10 @@ function FilterBar({
           <Switch
             checked={filters.paidOnly}
             onCheckedChange={(v) => onFiltersChange({ ...filters, paidOnly: v })}
-            aria-label={tHardcodedUi.raw(
-              'appAdminAccountsPage.line588JsxAttrAriaLabelPaidAccountsOnly',
-            )}
+            aria-label={'Paid accounts only'}
           />
           <span className="text-sm">
-            {tHardcodedUi.raw('appAdminAccountsPage.line590JsxTextPaidOnly')}
+            {'Paid only'}
           </span>
         </label>
 
@@ -696,28 +703,28 @@ function FilterBar({
           </SelectTrigger>
           <SelectContent align="end">
             <SelectItem value="created:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line622JsxTextNewestFirst')}
+              {'Newest first'}
             </SelectItem>
             <SelectItem value="created:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line623JsxTextOldestFirst')}
+              {'Oldest first'}
             </SelectItem>
             <SelectItem value="balance:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line624JsxTextBalanceHigh')}
+              {'Balance — high'}
             </SelectItem>
             <SelectItem value="balance:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line625JsxTextBalanceLow')}
+              {'Balance — low'}
             </SelectItem>
             <SelectItem value="members:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line626JsxTextMostMembers')}
+              {'Most members'}
             </SelectItem>
             <SelectItem value="members:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line627JsxTextFewestMembers')}
+              {'Fewest members'}
             </SelectItem>
             <SelectItem value="name:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line628JsxTextNameAZ')}
+              {'Name A–Z'}
             </SelectItem>
             <SelectItem value="name:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line629JsxTextNameZA')}
+              {'Name Z–A'}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -735,7 +742,6 @@ function FiltersPanel({
   onChange: (f: AccountFilters) => void;
   onReset: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [minBalance, setMinBalance] = useState(
     filters.minBalance !== null ? String(filters.minBalance) : '',
   );
@@ -779,7 +785,7 @@ function FiltersPanel({
       <div className="border-border/60 flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">Filters</span>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>
-          {tHardcodedUi.raw('appAdminAccountsPage.line689JsxTextResetAll')}
+          {'Reset all'}
         </Button>
       </div>
 
@@ -789,7 +795,7 @@ function FiltersPanel({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span>
-            {tHardcodedUi.raw('appAdminAccountsPage.line698JsxTextHasActiveSubscription')}
+            {'Has active subscription'}
           </span>
           <Select
             value={
@@ -853,7 +859,7 @@ function FiltersPanel({
       <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            {tHardcodedUi.raw('appAdminAccountsPage.line761JsxTextPaymentStatus')}
+            {'Payment status'}
           </div>
           {filters.paymentStatus.length > 0 && (
             <Button
@@ -921,7 +927,6 @@ function ActiveChips({
   searchInput: string;
   onSearchChange: (v: string) => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
   if (searchInput) {
@@ -1006,7 +1011,7 @@ function ActiveChips({
             onChange({ ...EMPTY_FILTERS, sortBy: filters.sortBy, sortDir: filters.sortDir });
           }}
         >
-          {tHardcodedUi.raw('appAdminAccountsPage.line913JsxTextClearAll')}
+          {'Clear all'}
         </Button>
       )}
     </div>
@@ -1207,8 +1212,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 }
 
 function CreditsTab({ account }: { account: AdminAccount }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
   const setTier = useAdminSetTier();
@@ -1312,12 +1315,12 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onClick={() => handleSetTier('per_seat', 'Team')}
               disabled={setTier.isPending}
             >
-              {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextRevertToTeam5247682b')}
+              {'Revert to Team'}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0')}
+          {'Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is unchanged.'}
         </p>
       </div>
 
@@ -1341,17 +1344,13 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'appAdminAccountsPage.line1161JsxAttrPlaceholderAmountEG25',
-            )}
+            placeholder={'Amount (e.g. 25)'}
             step="0.01"
           />
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'appAdminAccountsPage.line1167JsxAttrPlaceholderReasonNote',
-            )}
+            placeholder={'Reason / note'}
           />
           <label className="text-muted-foreground flex items-center gap-2 text-sm">
             <input
@@ -1360,7 +1359,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onChange={(e) => setIsExpiring(e.target.checked)}
               className="size-4"
             />
-            {tHardcodedUi.raw('appAdminAccountsPage.line1176JsxTextGrantAsExpiringCredits')}
+            {'Grant as expiring credits'}
           </label>
         </div>
         <div className="flex gap-2">
@@ -1374,7 +1373,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             ) : (
               <ArrowUpRight className="h-3.5 w-3.5" />
             )}
-            {tHardcodedUi.raw('appAdminAccountsPage.line1190JsxTextGrantCredits')}
+            {'Grant credits'}
           </Button>
           <Button
             variant="outline"
@@ -1391,7 +1390,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
       <ConfirmDialog
         open={confirmDebit}
         onOpenChange={setConfirmDebit}
-        title={tHardcodedUi.raw('appAdminAccountsPage.line1207JsxAttrTitleDebitCredits')}
+        title={'Debit credits?'}
         description={
           <div className="space-y-2 text-sm">
             <p>
@@ -1400,9 +1399,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               from <span className="font-medium">{account.name || account.accountId}</span>.
             </p>
             <p className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw(
-                'appAdminAccountsPage.line1215JsxTextWillFailIfTheAccountHasInsufficientCredits',
-              )}
+              {'Will fail if the account has insufficient credits. Action is recorded in the ledger.'}
             </p>
           </div>
         }
@@ -1636,11 +1633,15 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 <SelectContent>
                   {TRIAL_TIER_OPTIONS.map((t) => (
                     <SelectItem key={t.value} value={t.value}>
-                      {t.label}
+                      <span>{t.label}</span>
+                      <span className="text-muted-foreground ml-1.5 text-xs">{t.hint}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-muted-foreground text-xs">
+                Model access is the Managed models switch below, not the tier.
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
@@ -1829,12 +1830,11 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
 }
 
 function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccountUsers> }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (usersQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
         <Loading className="h-4 w-4" />
-        {tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}
+        {'Loading users…'}
       </div>
     );
   }
@@ -1845,10 +1845,8 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
       <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
-          title={tHardcodedUi.raw('appAdminAccountsPage.line1247JsxAttrTitleNoUsersOnThisAccount')}
-          description={tHardcodedUi.raw(
-            'appAdminAccountsPage.line1248JsxAttrDescriptionMembersWillAppearHereOnceUsersAreAdded',
-          )}
+          title={'No users on this account'}
+          description={'Members will appear here once users are added.'}
           size="sm"
         />
       </div>
@@ -1886,7 +1884,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
             <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">
                 <span className="text-muted-foreground/70">
-                  {tHardcodedUi.raw('appAdminAccountsPage.line1285JsxTextLastSignIn')}
+                  {'Last sign-in:'}
                 </span>
                 <span className="text-foreground/80">
                   {user.last_sign_in_at ? formatRelative(user.last_sign_in_at) : 'Never'}
@@ -1894,7 +1892,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
               </div>
               <div className="truncate">
                 <span className="text-muted-foreground/70">
-                  {tHardcodedUi.raw('appAdminAccountsPage.line1291JsxTextSignedUp')}
+                  {'Signed up:'}
                 </span>
                 <span className="text-foreground/80">
                   {user.signed_up_at ? formatRelative(user.signed_up_at) : '—'}
@@ -2004,12 +2002,11 @@ function formatRelative(value: string | null) {
 }
 
 function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAccountLedger> }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (ledgerQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
         <Loading className="h-4 w-4" />
-        {tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}
+        {'Loading ledger…'}
       </div>
     );
   }
@@ -2020,10 +2017,8 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
       <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
-          title={tHardcodedUi.raw('appAdminAccountsPage.line1342JsxAttrTitleNoLedgerEntries')}
-          description={tHardcodedUi.raw(
-            'appAdminAccountsPage.line1343JsxAttrDescriptionCreditActivityWillShowUpHere',
-          )}
+          title={'No ledger entries'}
+          description={'Credit activity will show up here.'}
           size="sm"
         />
       </div>
@@ -2081,7 +2076,6 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
 }
 
 function BillingTab({ account }: { account: AdminAccount }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const actions = billingActionsFor(account);
 
   const summary: Array<[string, React.ReactNode]> = [
@@ -2183,9 +2177,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="border-border/60 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
-                    title={tHardcodedUi.raw(
-                      'appAdminAccountsPage.line1495JsxAttrTitleOpenInStripe',
-                    )}
+                    title={'Open in Stripe'}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
                     Open

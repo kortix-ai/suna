@@ -1,12 +1,11 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import {
-  ActivityIcon as Activity,
   ArrowLeftIcon as ArrowLeft,
   CubeIcon as Boxes,
   ChartLineUpIcon as ChartLineUp,
+  KanbanIcon as FolderKanban,
   ShieldCheckIcon as ShieldCheck,
   UsersIcon as Users,
   WrenchIcon as Wrench,
@@ -35,36 +34,38 @@ interface NavItem {
 }
 
 export function AdminSidebar() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const router = useRouter();
 
-  // Only pages that actually exist under app/admin/*.
+  // Only pages that actually exist under app/admin/*. Operations was removed
+  // (the /admin overview already carries the health pills); "Sandboxes" is the
+  // renamed providers console — operators manage sandboxes, providers are the
+  // implementation detail.
   const primaryItems: NavItem[] = [
+    {
+      href: '/admin/accounts',
+      label: 'Accounts',
+      icon: Users,
+    },
+    {
+      href: '/admin/projects',
+      label: 'Projects',
+      icon: FolderKanban,
+    },
     {
       href: '/admin/analytics',
       label: 'Analytics',
       icon: ChartLineUp,
     },
     {
-      href: '/admin/ops',
-      label: 'Operations',
-      icon: Activity,
+      href: '/admin/sandboxes',
+      label: 'Sandboxes',
+      icon: Boxes,
     },
     {
       href: '/admin/utils',
       label: 'Maintenance',
       icon: Wrench,
-    },
-    {
-      href: '/admin/providers',
-      label: 'Providers',
-      icon: Boxes,
-    },
-    {
-      href: '/admin/accounts',
-      label: 'Accounts',
-      icon: Users,
     },
   ];
 
@@ -81,7 +82,7 @@ export function AdminSidebar() {
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
             <span className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}
+              {'Kortix console'}
             </span>
           </div>
         </Link>
@@ -103,12 +104,12 @@ export function AdminSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip={tHardcodedUi.raw('appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole')}
+              tooltip={'Leave admin console'}
               onClick={() => router.push(PROJECT_LANDING_PATH)}
             >
               <ArrowLeft />
               <span>
-                {tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}
+                {'Back to app'}
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
