@@ -22,8 +22,10 @@ WORKDIR /runtime
 COPY apps/kortix-app-runtime/go.mod apps/kortix-app-runtime/main.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -buildvcs=false -trimpath -ldflags='-s -w' -o /out/kortix-appd . && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOBIN=/out go install \
-      -ldflags='-s -w' github.com/caddyserver/caddy/v2/cmd/caddy@v2.11.4
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOPATH=/tmp/caddy-go go install \
+      -ldflags='-s -w' github.com/caddyserver/caddy/v2/cmd/caddy@v2.11.4 && \
+    find /tmp/caddy-go/bin -type f -name caddy -exec cp {} /out/caddy \; && \
+    test -x /out/caddy
 
 # ---- Sandbox Agent Stage ----
 # The API builds Daytona layered snapshots at runtime. Those snapshots bake the
