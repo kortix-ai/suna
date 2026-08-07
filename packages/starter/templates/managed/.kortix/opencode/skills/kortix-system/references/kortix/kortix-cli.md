@@ -125,6 +125,39 @@ If none resolve, the command errors with a pointer to `projects link`.
    home Kortix instance).
 3. The globally-active host.
 
+### Apps — serverless application deployments
+
+Apps have stable URLs and immutable deployment versions. Each deployment runs
+in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
+stop blocks wake.
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List the project's Apps, state, and stable URL. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Resource flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--budget`. |
+| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source. Waits for readiness by default. |
+| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
+| `kortix apps show <id-or-slug> [--json]` | Show an App and immutable deployment history. |
+| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs. Supports `--after` and `--limit`. |
+| `kortix apps start <id-or-slug>` | Permit traffic and start the active deployment now. |
+| `kortix apps stop <id-or-slug>` | Stop the active runtime and block cold wake. |
+| `kortix apps rollback <id-or-slug> <deployment-id>` | Start a ready target, move traffic atomically, then stop the previous runtime. |
+| `kortix apps delete <id-or-slug> --yes` | Delete the App and every runtime. |
+
+Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
+`--output-dir`, `--install-command`, `--build-command`, `--dockerfile`,
+`--command`, `--port`, `--readiness-path`, and `--provider`. Omit `--provider`
+for platform policy. Use `--no-wait` only when another process will poll the
+deployment.
+
+Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore`.
+They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
+`--include-node-modules` only overrides the `node_modules` default.
+
+See the `apps.md` reference for the complete manifest, runtime, secret, and
+failure contract.
+
 ### Secrets
 
 Encrypted project credentials. Delivery follows each secret's policy and the

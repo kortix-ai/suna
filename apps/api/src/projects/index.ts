@@ -37,6 +37,7 @@ import './routes/agent-scope';
 import './routes/agent-config';
 import './routes/gateway';
 import './routes/channel-bindings';
+import '../apps/routes';
 
 // The wired Hono app instances (all routes registered above via side-effect).
 export { projectsApp, projectWebhooksApp } from './lib/app';

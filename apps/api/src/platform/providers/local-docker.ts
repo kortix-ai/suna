@@ -35,6 +35,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
+import { assertWorkloadCredential, sandboxWorkloadType } from './index';
 
 /** Agent daemon port every sandbox image EXPOSEs (matches every other provider). */
 const AGENT_PORT = 8000;
@@ -64,11 +65,12 @@ const DEFAULT_MEMORY_GB = Number.parseFloat(process.env.LOCAL_DOCKER_MEMORY_GB |
 // daytona.ts's managedSandboxLabels() exactly — the reaper's
 // listManagedRunningSandboxes() scoping logic is provider-agnostic and reads
 // the SAME two labels regardless of provider.
-function managedLabels(externalId: string): Record<string, string> {
+function managedLabels(externalId: string, workloadType: 'session' | 'app'): Record<string, string> {
   return {
     'kortix.managed': 'true',
     'kortix.env': config.INTERNAL_KORTIX_ENV,
     'kortix.sandbox': externalId,
+    ...(workloadType === 'app' ? { 'kortix.workload': workloadType } : {}),
   };
 }
 
@@ -223,6 +225,7 @@ export class LocalDockerProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    const workloadType = sandboxWorkloadType(opts);
     // Every sandbox boots from its project's own per-project snapshot — the
     // SAME per-provider Docker image the local-docker snapshot adapter built
     // (apps/api/src/snapshots/providers/local-docker.ts). No shared fallback,
@@ -234,9 +237,7 @@ export class LocalDockerProvider implements SandboxProvider {
         'per-project image built by apps/api/src/snapshots/builder.ts. There is no shared fallback.',
       );
     }
-    if (!opts.envVars?.KORTIX_SANDBOX_TOKEN) {
-      throw new Error('[local-docker] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
-    }
+    assertWorkloadCredential(this.name, opts, opts.envVars ?? {});
 
     const docker = getDockerClient();
     await assertDockerReachable(docker);
@@ -258,6 +259,7 @@ export class LocalDockerProvider implements SandboxProvider {
       ...opts.envVars,
       KORTIX_API_URL: `${sandboxInternalApiBase()}/v1`,
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
+      ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
     };
     // Same fix, same reason, for OpenCode's own LLM-gateway base URL: session-
     // sandbox.ts's provisionSessionSandbox() already asks
@@ -276,12 +278,22 @@ export class LocalDockerProvider implements SandboxProvider {
     }
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
 
+    const publishedPorts = Array.from(new Set(
+      opts.publishedPorts ?? (workloadType === 'app' ? [7331, 8080] : [AGENT_PORT]),
+    ));
+    const exposedPorts = Object.fromEntries(publishedPorts.map((port) => [`${port}/tcp`, {}]));
+    const portBindings = Object.fromEntries(
+      publishedPorts.map((port) => [`${port}/tcp`, [{ HostIp: '127.0.0.1', HostPort: '0' }]]),
+    );
+    const cpuCores = opts.resourceSpec?.cpuCores ?? DEFAULT_CPUS;
+    const memoryGb = opts.resourceSpec?.memoryGb ?? DEFAULT_MEMORY_GB;
+
     const container = await docker.createContainer({
       name,
       Image: snapshot,
       Env: env,
-      ExposedPorts: { [`${AGENT_PORT}/tcp`]: {} },
-      Labels: managedLabels(externalId),
+      ExposedPorts: exposedPorts,
+      Labels: managedLabels(externalId, workloadType),
       HostConfig: {
         NetworkMode: network,
         // Published to loopback only — convenience for operator/CLI debugging
@@ -293,9 +305,9 @@ export class LocalDockerProvider implements SandboxProvider {
         // is NOT guaranteed stable across a stop/start cycle (observed
         // reassigning to a new port on Docker Desktop), so anything that
         // depended on this published port surviving a resume would be wrong.
-        PortBindings: { [`${AGENT_PORT}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: '0' }] },
-        NanoCpus: Math.round(DEFAULT_CPUS * 1e9),
-        Memory: Math.round(DEFAULT_MEMORY_GB * 1024 * 1024 * 1024),
+        PortBindings: portBindings,
+        NanoCpus: Math.round(cpuCores * 1e9),
+        Memory: Math.round(memoryGb * 1024 * 1024 * 1024),
         RestartPolicy: { Name: 'unless-stopped' },
         // Docker daemon default networking on Linux lets the host reach an
         // extra_hosts host-gateway; harmless on Docker Desktop where it
@@ -305,7 +317,8 @@ export class LocalDockerProvider implements SandboxProvider {
     });
     await container.start();
 
-    const baseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/p/${externalId}/${AGENT_PORT}`;
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const baseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/p/${externalId}/${ingressPort}`;
 
     return {
       externalId,
@@ -317,6 +330,8 @@ export class LocalDockerProvider implements SandboxProvider {
         image: snapshot,
         network,
         version: SANDBOX_VERSION,
+        workloadType,
+        resourceSpec: { cpuCores, memoryGb, diskGb: opts.resourceSpec?.diskGb ?? 10 },
       },
     };
   }
@@ -369,6 +384,29 @@ export class LocalDockerProvider implements SandboxProvider {
   }
 
   async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {
+    // `pnpm worktree` runs kortix-api directly on the macOS host. The host
+    // cannot resolve a container name from Docker's private DNS, so use the
+    // loopback-only published port in that explicit development mode. Inspect
+    // on every request because Docker Desktop can assign a new ephemeral port
+    // after a stopped container resumes.
+    if (process.env.KORTIX_APPS_LOCAL === 'true') {
+      const docker = getDockerClient();
+      await assertDockerReachable(docker);
+      const info = await docker.getContainer(containerName(externalId)).inspect();
+      const binding = info.NetworkSettings?.Ports?.[`${request.port}/tcp`]?.[0];
+      const hostPort = binding?.HostPort;
+      if (!hostPort) {
+        throw new Error(
+          `[local-docker] App port ${request.port} is not published for sandbox ${externalId}`,
+        );
+      }
+      return {
+        url: `http://127.0.0.1:${hostPort}`,
+        headers: {},
+        effectivePort: request.port,
+      };
+    }
+
     // Docker's own network DNS makes every port on the container reachable by
     // name with zero pre-registration — no expose/preview-link step needed
     // (unlike Daytona/Platinum, whose edges must be told about a port first).

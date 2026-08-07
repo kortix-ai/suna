@@ -1,0 +1,18 @@
+main = "worker.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = false
+account_id = "9785405a992435bb0c7bd19f9b6d26d5"
+
+name = "kortix-apps-router"
+routes = [
+  { pattern = "*.apps.kortix.com/*", zone_name = "kortix.com" },
+]
+
+[vars]
+DEV_API_ORIGIN = "https://dev-api.kortix.com"
+STAGING_API_ORIGIN = "https://staging-api.kortix.com"
+PROD_API_ORIGIN = "https://api.kortix.com"
+PREVIEW_API_ORIGIN = "https://dev-api.kortix.com"
+
+# EDGE_SECRET is a Worker secret. It must equal KORTIX_APPS_EDGE_SECRET on every
+# API environment. Set it with `wrangler secret put EDGE_SECRET`.

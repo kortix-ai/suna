@@ -68,6 +68,37 @@ export interface CreateSandboxOpts {
    * cannot create persistent boxes.
    */
   autoStopInterval?: number;
+  /**
+   * Runtime contract hosted by the provider object. Missing means `session`
+   * for backward compatibility with every existing caller.
+   */
+  workloadType?: 'session' | 'app';
+  /** Provider-normalized App machine limits. Session snapshots retain their existing limits. */
+  resourceSpec?: {
+    cpuCores: number;
+    memoryGb: number;
+    diskGb: number;
+  };
+  /** Ports that the provider must make reachable through resolveIngress(). */
+  publishedPorts?: number[];
+}
+
+export function sandboxWorkloadType(opts: CreateSandboxOpts): 'session' | 'app' {
+  return opts.workloadType ?? 'session';
+}
+
+export function assertWorkloadCredential(
+  provider: ProviderName,
+  opts: CreateSandboxOpts,
+  envVars: Record<string, string>,
+): void {
+  const workloadType = sandboxWorkloadType(opts);
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  if (!envVars[required]) {
+    throw new Error(
+      `[${provider}] create() called without ${required} for ${workloadType} workload`,
+    );
+  }
 }
 
 export interface ProvisionResult {

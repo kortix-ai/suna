@@ -29,7 +29,11 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
-import { SandboxTemplateNotFoundError } from './index';
+import {
+  assertWorkloadCredential,
+  SandboxTemplateNotFoundError,
+  sandboxWorkloadType,
+} from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
 
@@ -131,6 +135,7 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   private async provisionFromTemplate(template: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    const workloadType = sandboxWorkloadType(opts);
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
@@ -140,11 +145,10 @@ export class PlatinumProvider implements SandboxProvider {
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
       // Frontend base for user-facing dashboard links (never the API host).
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
+      ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_SANDBOX_TOKEN) {
-      throw new Error('[platinum] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
-    }
+    assertWorkloadCredential(this.name, opts, envVars);
 
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
     // (never auto-stops); >0 → ephemeral with that idle timeout.
@@ -207,7 +211,8 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
-    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy
@@ -220,7 +225,7 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
         method: 'POST',
-        body: JSON.stringify({ port: AGENT_PORT, public: true }),
+        body: JSON.stringify({ port: ingressPort, public: true }),
       });
       exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
     } catch (err) {
@@ -256,6 +261,7 @@ export class PlatinumProvider implements SandboxProvider {
         platinumSandboxId: externalId,
         template,
         version: SANDBOX_VERSION,
+        workloadType,
       },
     };
   }

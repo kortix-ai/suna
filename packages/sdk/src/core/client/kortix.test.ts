@@ -48,6 +48,36 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  expect(typeof apps.list).toBe('function');
+  expect(typeof apps.create).toBe('function');
+  expect(typeof apps.get).toBe('function');
+  expect(typeof apps.update).toBe('function');
+  expect(typeof apps.remove).toBe('function');
+  expect(typeof apps.artifacts.register).toBe('function');
+  expect(typeof apps.artifacts.uploadArchive).toBe('function');
+  expect(typeof apps.artifacts.finalize).toBe('function');
+  expect(typeof apps.deployments.create).toBe('function');
+  expect(typeof apps.deployments.list).toBe('function');
+  expect(typeof apps.deployments.get).toBe('function');
+  expect(typeof apps.deployments.logs).toBe('function');
+  expect(typeof apps.start).toBe('function');
+  expect(typeof apps.stop).toBe('function');
+  expect(typeof apps.rollback).toBe('function');
+
+  await apps.deployments.create('APP1', {
+    artifact_id: 'ART1',
+    source: { kind: 'static' },
+  });
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments',
+    body: { artifact_id: 'ART1', source: { kind: 'static' } },
+  });
+});
+
 test('project(id).connectors exposes the complete connector data plane', async () => {
   const connectors = kortix.project('PID123').connectors;
 
@@ -296,8 +326,10 @@ test('project(id).channels covers slack, email and voice', async () => {
   expect(last().method).toBe('PUT');
 });
 
-test('project(id) omits the retired hosted-app surface', () => {
-  expect('apps' in (kortix.project('PID123') as object)).toBe(false);
+test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
+  const handle = kortix.project('PID123') as unknown as Record<string, unknown>;
+  expect('apps' in handle).toBe(true);
+  expect('deployments' in handle).toBe(false);
 });
 
 test('project(id).modelDefaults gets/sets/clears the default model', async () => {

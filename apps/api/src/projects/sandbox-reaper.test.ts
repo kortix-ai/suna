@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realProviders from '../platform/providers';
 import * as realComputeMetering from '../billing/services/compute-metering';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
+let appRuntimeKeepRows: any[] = [];
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
@@ -157,6 +158,8 @@ mock.module('../shared/db', () => ({
             return hybrid(
               table === sessionSandboxes
                 ? candidates
+                : table === appRuntimes
+                  ? appRuntimeKeepRows
                 : table === sandboxComputeSessions
                   ? computeRows
                   : table === projectSessions
@@ -253,6 +256,7 @@ const HOUR = 3_600_000;
 
 beforeEach(() => {
   candidates = [];
+  appRuntimeKeepRows = [];
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
@@ -588,6 +592,20 @@ describe('reapOrphanProviderBoxes', () => {
     expect(stops).toContain('orphan-b'); // and the next one still ran
     expect(r.stopped).toBe(1);
     expect(r.errors).toBe(1);
+  });
+
+  test('keeps a provider box referenced by a live App runtime', async () => {
+    candidates = [];
+    appRuntimeKeepRows = [{ provider: 'daytona', externalId: 'app-live' }];
+    managedBoxes = [
+      { externalId: 'app-live', createdAt: hoursAgo(48) },
+      { externalId: 'real-orphan', createdAt: hoursAgo(48) },
+    ];
+
+    const r = await reapOrphanProviderBoxes(NOW2);
+
+    expect(stops).toEqual(['real-orphan']);
+    expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
   });
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {

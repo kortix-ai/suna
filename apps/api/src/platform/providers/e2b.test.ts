@@ -229,6 +229,70 @@ describe('E2B provider lifecycle', () => {
     expect(killed).toEqual(['sb-tokenless']);
   });
 
+  test('App creation persists appd auth and launches only the App entrypoint', async () => {
+    const sandbox = fakeSandbox('app-secure');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+
+    const result = await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'app-1',
+      snapshot: 'app-template-1',
+      workloadType: 'app',
+      envVars: { KORTIX_APPD_TOKEN: 'appd-token' },
+      publishedPorts: [7331, 8080],
+    });
+
+    expect(result.baseUrl).toBe('https://api.example.com/v1/p/app-secure/8080');
+    expect(createdOpts).toMatchObject({
+      metadata: { kortix_workload: 'app' },
+      envs: { KORTIX_WORKLOAD_TYPE: 'app', KORTIX_APPD_TOKEN: 'appd-token' },
+    });
+    expect(sandbox.runs.map((run) => run.command)).toEqual([
+      'chmod 600 /etc/kortix/runtime-env.json',
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    expect(sandbox.runs.map((run) => run.command).join('\n')).not.toContain(
+      '/usr/local/bin/kortix-entrypoint',
+    );
+    expect(JSON.parse(sandbox.fileWrites[0]!.data)).toMatchObject({
+      KORTIX_WORKLOAD_TYPE: 'app',
+      KORTIX_APPD_TOKEN: 'appd-token',
+    });
+  });
+
+  test('App cold resume relaunches appd and skips the session entrypoint', async () => {
+    const resumed = fakeSandbox('app-resume');
+    resumed.persistedFiles.set('/etc/kortix/runtime-env.json', JSON.stringify({
+      KORTIX_WORKLOAD_TYPE: 'app',
+      KORTIX_APPD_TOKEN: 'persisted-appd-token',
+    }));
+    connectFactory = () => resumed;
+
+    await new E2BProvider().start('app-resume');
+
+    expect(resumed.runs.map((run) => run.command)).toEqual([
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    expect(resumed.runs.map((run) => run.command).join('\n')).not.toContain(
+      '/usr/local/bin/kortix-entrypoint',
+    );
+  });
+
+  test('rejects an App workload without KORTIX_APPD_TOKEN', async () => {
+    await expect(new E2BProvider().create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'app-1',
+      snapshot: 'app-template-1',
+      workloadType: 'app',
+      envVars: { KORTIX_SANDBOX_TOKEN: 'session-token-is-not-valid-for-apps' },
+    })).rejects.toThrow(/KORTIX_APPD_TOKEN/);
+  });
+
   test('stop drops RAM but preserves disk, and start explicitly reconnects the same identity', async () => {
     const sandbox = fakeSandbox('sb-lifecycle');
     createFactory = () => sandbox;
