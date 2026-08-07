@@ -131,6 +131,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|admin|api|accounts|:id|trial",
   "POST|v1|admin|api|accounts|:id|trial",
   "GET|v1|admin|api|accounts|:id|users",
+  "GET|v1|admin|api|projects",
   "GET|v1|admin|api|provider-analytics",
   "GET|v1|admin|api|provider-distribution",
   "PUT|v1|admin|api|provider-distribution",
