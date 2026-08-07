@@ -1033,6 +1033,7 @@
     "useProjectModels",
     "useProjectName",
     "useProjectSecrets",
+    "useProjectSession",
     "useProjectTriggers",
     "useQuestionSelfHeal",
     "useRefreshFeedbackData",

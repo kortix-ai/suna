@@ -1,12 +1,8 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-
-import { getProjectSession } from '../core/rest/projects-client';
-
 import { resolveSessionPin } from './initial-session-pin';
 import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
-import { qk } from './query-keys';
+import { useProjectSession } from './use-project-session';
 
 /**
  * OpenCode ↔ Kortix session mapping — READ side.
@@ -61,17 +57,17 @@ export function useCanonicalOpenCodeSession(params: {
   // reads active but the pin isn't resolved (pinFromStart null → query still runs).
   // On a warm start pinFromStart is always present, so this saves a redundant
   // round-trip that otherwise contends for connections during boot.
-  const projectSessionQuery = useQuery({
-    // Same fetcher (`getProjectSession`) apps/web's `session-changes-shared.tsx`
-    // / `session-files-panel.tsx` already key on `qk.project.session(id, sid)`
-    // — and the entry `session-title-sync.ts`'s title-refresh ladder reads via
-    // `getQueryData`/refetches. This hook is the one that actually POPULATES it
-    // for the session page's own (non-git) session id, so it has to share the
-    // key, not a standalone flat `project-session` array literal.
-    queryKey: qk.project.session(projectId, sessionId),
-    queryFn: () => getProjectSession(projectId, sessionId, { showErrors: false }),
-    enabled: !!projectId && !!sessionId && !pinFromStart && !initialPin,
-    staleTime: 10_000,
+  // Through `useProjectSession`, not a local `useQuery`: this hook POPULATES
+  // the `qk.project.session(id, sid)` entry that `session-files-panel.tsx`,
+  // `session-changes-shared.tsx` and `session-title-sync.ts`'s title-refresh
+  // ladder all read. A local `useQuery` here shared the key but not the
+  // contract — a bare `staleTime: 10_000` against the panels'
+  // `contract('inventory')`, and a `queryFn` that differed in `showErrors` —
+  // so freshness and error-toast behaviour both came down to which surface
+  // mounted first. `enabled` is the one thing that stays local: on a warm
+  // start /start already handed us the pin, so this read is pure overhead.
+  const projectSessionQuery = useProjectSession(projectId, sessionId, {
+    enabled: !pinFromStart && !initialPin,
   });
   const pin = projectSessionQuery.data?.opencode_session_id ?? null;
   const rootSessionId = resolveSessionPin({

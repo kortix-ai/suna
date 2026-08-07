@@ -1,15 +1,13 @@
 'use client';
 
 import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { useProjectSession } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
@@ -63,12 +61,9 @@ export function SessionFilesPanel({
   // with nothing yet) instead of flashing the empty state prematurely.
   const isLoadingChanges = !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
-  const sessionQuery = useQuery({
-    queryKey: qk.project.session(projectId ?? '', gitSessionId ?? ''),
-    queryFn: () => getProjectSession(projectId!, gitSessionId!),
-    enabled: !!projectId && !!gitSessionId,
-    ...contract('inventory'),
-  });
+  // `useProjectSession` owns the key, the freshness contract and the fetcher
+  // for this entry — see its doc comment for why all three readers must agree.
+  const sessionQuery = useProjectSession(projectId, gitSessionId);
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
 
   const { openPreview } = useFilePreviewStore();
