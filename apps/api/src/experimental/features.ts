@@ -165,6 +165,15 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     available: () => true,
     platformDefault: () => false,
   },
+  {
+    key: 'apps',
+    name: 'Apps',
+    description:
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. The deployment contract is still experimental.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

@@ -7,11 +7,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 
+import { catalogErrorCopy } from './catalog-error';
 import { CATALOG_CARD_HEIGHT_CLASSNAME, GRID_CLASSNAME } from './catalog-grid-tokens';
 
 export interface CatalogGridProps {
   isLoading: boolean;
   isError: boolean;
+  /** The thrown value, when there is one. Optional so existing callers keep
+   *  working; without it every failure reads as a connection failure, which is
+   *  what `catalogErrorCopy` exists to stop. Pass it. */
+  error?: unknown;
   onRetry: () => void;
   isEmpty: boolean;
   /** Rendered in place of the grid when `isEmpty` is true. The grid does not
@@ -79,6 +84,7 @@ export function CatalogGridSkeleton({
 export function CatalogGrid({
   isLoading,
   isError,
+  error,
   onRetry,
   isEmpty,
   empty,
@@ -89,15 +95,20 @@ export function CatalogGrid({
   }
 
   if (isError) {
+    // Copy is derived from the failure rather than fixed, because the fixed
+    // string named a cause. See `catalog-error.ts`.
+    const copy = catalogErrorCopy(error);
     return (
       <ErrorState
         size="sm"
-        title="Couldn't load"
-        description="Check your connection and try again."
+        title={copy.title}
+        description={copy.description}
         action={
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            Retry
-          </Button>
+          copy.canRetry ? (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : undefined
         }
       />
     );

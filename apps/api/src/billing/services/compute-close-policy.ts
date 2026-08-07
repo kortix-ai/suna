@@ -74,6 +74,7 @@ export function decideComputeClose(input: {
   sandboxStatus: string | null;
   hasProviderTarget: boolean;
   runtimeStartFailed: boolean;
+  wakeInProgress: boolean;
   providerStatus: SandboxStatus | null;
   unresolvedForMs: number | null;
   openForMs: number;
@@ -101,6 +102,9 @@ export function decideComputeClose(input: {
   if (input.openForMs >= input.maxWindowMs) return db_('window-past-max');
 
   // ── Provider-informed rules ──
+  if (input.providerStatus === 'stopped' && input.wakeInProgress) {
+    return { reason: null, needsProviderStatus: true };
+  }
   if (
     input.providerStatus === 'stopped' ||
     input.providerStatus === 'removed' ||
@@ -126,9 +130,15 @@ export function decideComputeClose(input: {
  * box never came up — observed in prod with the meter still accruing behind it.
  */
 export function hasFailedRuntimeStart(metadata: Record<string, unknown> | null): boolean {
-  const failedAt = typeof metadata?.runtimeWakeFailedAt === 'string' ? Date.parse(metadata.runtimeWakeFailedAt) : Number.NaN;
+  const failedAt =
+    typeof metadata?.runtimeWakeFailedAt === 'string'
+      ? Date.parse(metadata.runtimeWakeFailedAt)
+      : Number.NaN;
   if (!Number.isFinite(failedAt)) return false;
-  const startedAt = typeof metadata?.runtimeWakeStartedAt === 'string' ? Date.parse(metadata.runtimeWakeStartedAt) : Number.NaN;
+  const startedAt =
+    typeof metadata?.runtimeWakeStartedAt === 'string'
+      ? Date.parse(metadata.runtimeWakeStartedAt)
+      : Number.NaN;
   return !Number.isFinite(startedAt) || failedAt >= startedAt;
 }
 

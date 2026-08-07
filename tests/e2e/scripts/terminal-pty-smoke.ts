@@ -2,8 +2,9 @@
 
 /**
  * Real provider PTY smoke:
- * auth -> project -> provider-pinned session -> sandbox -> create PTY ->
- * WebSocket attach -> command I/O -> reconnect replay -> cleanup.
+ * auth -> project -> provider-pinned session -> sandbox -> stop -> resume the
+ * same sandbox -> create PTY -> WebSocket attach -> command I/O -> reconnect
+ * replay -> cleanup.
  *
  * Run with the isolated stack up:
  *   dotenvx run -f apps/api/.env -f apps/web/.env -- \
@@ -90,7 +91,23 @@ async function waitForRuntime(externalId: string): Promise<void> {
   throw new Error(`runtime did not become reachable: ${last}`);
 }
 
-async function attachAndCollect(wsUrl: string, input?: string): Promise<{ output: string; close?: { code: number; reason: string } }> {
+async function waitForStoredSessionStatus(expected: string): Promise<void> {
+  const end = deadline(60_000);
+  let last = '';
+  while (Date.now() < end) {
+    const response = await api(`/projects/${projectId}/sessions/${sessionId}`);
+    const status = response.body?.status ?? '';
+    last = `${response.status} ${status}`;
+    if (response.status === 200 && status === expected) return;
+    await sleep(500);
+  }
+  throw new Error(`stored session status did not become ${expected}: ${last}`);
+}
+
+async function attachAndCollect(
+  wsUrl: string,
+  input?: string,
+): Promise<{ output: string; close?: { code: number; reason: string } }> {
   return new Promise((resolve, reject) => {
     let output = '';
     let settled = false;
@@ -98,8 +115,14 @@ async function attachAndCollect(wsUrl: string, input?: string): Promise<{ output
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { ws.close(); } catch {}
-      reject(new Error(`timed out waiting for PTY output; received=${JSON.stringify(output.slice(-500))}`));
+      try {
+        ws.close();
+      } catch {}
+      reject(
+        new Error(
+          `timed out waiting for PTY output; received=${JSON.stringify(output.slice(-500))}`,
+        ),
+      );
     }, 20_000);
 
     ws.addEventListener('open', () => {
@@ -107,7 +130,10 @@ async function attachAndCollect(wsUrl: string, input?: string): Promise<{ output
       if (input) ws.send(input);
     });
     ws.addEventListener('message', (event) => {
-      output += typeof event.data === 'string' ? event.data : Buffer.from(event.data as ArrayBuffer).toString();
+      output +=
+        typeof event.data === 'string'
+          ? event.data
+          : Buffer.from(event.data as ArrayBuffer).toString();
       if (output.includes(marker) && !settled) {
         settled = true;
         clearTimeout(timer);
@@ -154,7 +180,7 @@ async function main(): Promise<void> {
 
   const accounts = await api('/accounts');
   const account = Array.isArray(accounts.body)
-    ? accounts.body.find((candidate: any) => candidate.personal_account) ?? accounts.body[0]
+    ? (accounts.body.find((candidate: any) => candidate.personal_account) ?? accounts.body[0])
     : null;
   if (!account?.account_id) throw new Error(`personal account missing: ${accounts.text}`);
 
@@ -201,6 +227,26 @@ async function main(): Promise<void> {
   const { externalId } = await waitForSandbox();
   await waitForRuntime(externalId);
 
+  const stopped = await api(`/projects/${projectId}/sessions/${sessionId}/stop`, {
+    method: 'POST',
+    body: '{}',
+  });
+  if (stopped.status !== 200 || stopped.body?.status !== 'stopped') {
+    throw new Error(`session stop failed: ${stopped.status} ${stopped.text}`);
+  }
+  await waitForStoredSessionStatus('stopped');
+  log('session stopped', { externalId });
+
+  const resumed = await waitForSandbox();
+  if (resumed.externalId !== externalId) {
+    throw new Error(
+      `resume replaced the sandbox identity: before=${externalId} after=${resumed.externalId}`,
+    );
+  }
+  await waitForStoredSessionStatus('running');
+  await waitForRuntime(externalId);
+  log('session resumed in place', { externalId });
+
   const createdPty = await api(`/p/${externalId}/8000/kortix/pty`, {
     method: 'POST',
     body: JSON.stringify({ env: { TERM: 'xterm-256color', COLORTERM: 'truecolor' } }),
@@ -215,27 +261,39 @@ async function main(): Promise<void> {
   const wsUrl = `${wsBase}/p/${externalId}/8000/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(token)}`;
   const first = await attachAndCollect(wsUrl, `printf '${marker}\\n'\n`);
   if (!first.output.includes(marker)) {
-    throw new Error(`first attach failed: close=${JSON.stringify(first.close)} output=${JSON.stringify(first.output)}`);
+    throw new Error(
+      `first attach failed: close=${JSON.stringify(first.close)} output=${JSON.stringify(first.output)}`,
+    );
   }
 
   const second = await attachAndCollect(wsUrl);
   if (!second.output.includes(marker)) {
-    throw new Error(`reconnect replay failed: close=${JSON.stringify(second.close)} output=${JSON.stringify(second.output)}`);
+    throw new Error(
+      `reconnect replay failed: close=${JSON.stringify(second.close)} output=${JSON.stringify(second.output)}`,
+    );
   }
 
   const listed = await api(`/p/${externalId}/8000/kortix/pty`);
-  if (!Array.isArray(listed.body) || !listed.body.some((pty: any) => pty.id === ptyId && pty.status === 'running')) {
+  if (
+    !Array.isArray(listed.body) ||
+    !listed.body.some((pty: any) => pty.id === ptyId && pty.status === 'running')
+  ) {
     throw new Error(`PTY list lost running terminal: ${listed.status} ${listed.text}`);
   }
 
-  const removed = await api(`/p/${externalId}/8000/kortix/pty/${encodeURIComponent(ptyId)}`, { method: 'DELETE' });
-  if (removed.status !== 200) throw new Error(`PTY delete failed: ${removed.status} ${removed.text}`);
+  const removed = await api(`/p/${externalId}/8000/kortix/pty/${encodeURIComponent(ptyId)}`, {
+    method: 'DELETE',
+  });
+  if (removed.status !== 200)
+    throw new Error(`PTY delete failed: ${removed.status} ${removed.text}`);
   log('PASS', { provider, marker, ptyId });
 }
 
 async function cleanup(): Promise<void> {
   if (sessionId && projectId) {
-    await api(`/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => null);
+    await api(`/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(
+      () => null,
+    );
   }
   if (projectId) {
     await api(`/projects/${projectId}`, { method: 'DELETE' }).catch(() => null);

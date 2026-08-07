@@ -368,8 +368,7 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
 // match wins. `segments` is the path after /v1/ with UUIDs replaced by
 // the literal token `:id`, so e.g.
 //   POST /v1/projects/abc-…/group-grants
-// becomes
-//   ['projects', ':id', 'group-grants']
+// becomes segments ["projects", ":id", "group-grants"]
 
 type PathSegments = string[];
 type HttpPatternHandler = (

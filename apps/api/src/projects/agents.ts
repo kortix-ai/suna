@@ -35,7 +35,13 @@ import type { ParsedManifest } from './triggers';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
-import { resolveGrantSet, SLUG_RE, type GrantSetV2 } from '@kortix/manifest-schema';
+import {
+  resolveGrantSet,
+  SLUG_RE,
+  WORKSPACE_MODES_V2,
+  type GrantSetV2,
+  type WorkspaceModeV2,
+} from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from './lib/agent-config-v2';
 
 const MANIFEST_FILENAME = 'kortix.toml';
@@ -109,6 +115,8 @@ export interface AgentSpec {
   model: string | null;
   /** Default sandbox template slug for sessions started with this agent. */
   sandbox?: string | null;
+  /** Project file delivery mode for sessions started with this agent. */
+  workspace?: WorkspaceModeV2 | null;
 }
 
 export interface AgentParseError {
@@ -408,6 +416,18 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
   return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
 }
 
+/** Resolve the selected agent's project file delivery mode without repository I/O. */
+export function workspaceFromLoadedAgents(
+  agentName: string,
+  loaded: LoadedAgents,
+): WorkspaceModeV2 | null {
+  const concreteName =
+    agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.defaultAgent
+      : agentName;
+  return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.workspace ?? null;
+}
+
 /**
  * Resolve the connectors that the selected agent requires at session start.
  * Each connector controls which connection owner is valid.
@@ -590,6 +610,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     kortixCli: spec.kortixCli,
     env: spec.env,
     file: spec.file,
+    workspace: spec.workspace,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -644,6 +665,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       file,
       model,
       sandbox: null,
+      workspace: null,
     },
   };
 }
@@ -691,6 +713,15 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
+  const workspaceRaw = normalizedRow.workspace;
+  if (
+    workspaceRaw !== undefined &&
+    (typeof workspaceRaw !== 'string' ||
+      !(WORKSPACE_MODES_V2 as readonly string[]).includes(workspaceRaw))
+  ) {
+    return err(name, `agents.${name}.workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')}`);
+  }
+  const workspace = (workspaceRaw as WorkspaceModeV2 | undefined) ?? null;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 
@@ -735,6 +766,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       file,
       model,
       sandbox,
+      workspace,
     },
   };
 }

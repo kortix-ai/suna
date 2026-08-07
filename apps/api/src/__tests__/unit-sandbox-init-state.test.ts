@@ -52,6 +52,7 @@ describe('sandbox init state helpers', () => {
         if (attempts < 3) throw new Error(`attempt-${attempts}`);
         return { externalId: 'machine-123', baseUrl: 'https://sandbox.example', metadata: { daytonaSandboxId: 'abc' } };
       },
+      async ensureAppRuntimeStarted() {},
       async start() {},
       async stop() {},
       async remove() {},
@@ -84,6 +85,7 @@ describe('sandbox init state helpers', () => {
         attempts += 1;
         throw new Error('Maximum number of concurrent E2B sandboxes reached');
       },
+      async ensureAppRuntimeStarted() {},
       async start() {},
       async stop() {},
       async remove() {},

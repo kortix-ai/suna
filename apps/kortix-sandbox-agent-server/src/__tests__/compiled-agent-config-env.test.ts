@@ -87,9 +87,13 @@ describe('the unplanned-respawn hook waits for readiness', () => {
     // Those return early with `stopping` set; their callers own the turn.
     // The full signature — a comment upstream also mentions `proc.on('exit')`,
     // and splitting on that matched the prose instead of the handler.
-    const exitHandler = OPENCODE_SRC.split("proc.on('exit', (code, signal) =>")[1]?.split(
-      "proc.on('error'",
-    )[0]
+    // Read the SUPERVISED handler specifically. It moved into `superviseChild`
+    // when the verified reload landed — a promoted candidate needs the same
+    // supervision the ordinary child has — and spawnChild now also attaches a
+    // bare logging handler for the unsupervised candidate. Splitting on the
+    // first `proc.on('exit'` picked up that one instead, which has no respawn
+    // to guard and made this pass or fail for the wrong reason.
+    const exitHandler = OPENCODE_SRC.split('function superviseChild(')[1]?.split('\n  }')[0]
     expect(exitHandler).toContain('if (stopping) return')
     // The respawn (and with it the hook) is only reached past that guard.
     expect((exitHandler as string).indexOf('if (stopping) return')).toBeLessThan(

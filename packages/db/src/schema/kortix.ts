@@ -2866,6 +2866,8 @@ export const sandboxComputeSessions = kortixSchema.table(
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
     ledgerId: uuid('ledger_id'),
     metadata: jsonb().default({}).notNull(),
+    workloadType: varchar('workload_type', { length: 16 }).default('session').notNull(),
+    appRuntimeId: uuid('app_runtime_id'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -2874,6 +2876,10 @@ export const sandboxComputeSessions = kortixSchema.table(
       .notNull(),
   },
   (table) => [
+    check(
+      'sandbox_compute_sessions_workload_type_check',
+      sql`${table.workloadType} IN ('session', 'app')`,
+    ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
     index('idx_sandbox_compute_sessions_open')
@@ -2885,6 +2891,210 @@ export const sandboxComputeSessions = kortixSchema.table(
     index('idx_sandbox_compute_sessions_last_billed')
       .on(table.lastBilledAt)
       .where(sql`${table.state} = 'active'`),
+  ],
+);
+
+/**
+ * Stable, user-facing Kortix Apps. A row owns one hostname and an atomic
+ * pointer to the deployment currently receiving traffic. Provider selection
+ * never lives here; it is recorded on the immutable deployment and runtime.
+ */
+export const apps = kortixSchema.table(
+  'apps',
+  {
+    appId: uuid('app_id').defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    slug: varchar('slug', { length: 63 }).notNull(),
+    name: text('name').notNull(),
+    routeKey: varchar('route_key', { length: 20 }).notNull().unique(),
+    desiredState: varchar('desired_state', { length: 16 }).default('running').notNull(),
+    activeDeploymentId: uuid('active_deployment_id'),
+    cpuCores: integer('cpu_cores').default(1).notNull(),
+    memoryGb: integer('memory_gb').default(2).notNull(),
+    diskGb: integer('disk_gb').default(10).notNull(),
+    idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
+    monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
+      .default('5.00')
+      .notNull(),
+    lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('apps_desired_state_check', sql`${table.desiredState} IN ('running', 'stopped')`),
+    check('apps_cpu_check', sql`${table.cpuCores} BETWEEN 1 AND 64`),
+    check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
+    check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
+    check('apps_idle_timeout_check', sql`${table.idleTimeoutSeconds} BETWEEN 120 AND 86400`),
+    check('apps_budget_check', sql`${table.monthlyBudgetUsd} >= 0`),
+    uniqueIndex('apps_project_slug_live_unique')
+      .on(table.projectId, table.slug)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index('apps_account_idx').on(table.accountId),
+    index('apps_route_key_idx').on(table.routeKey),
+  ],
+);
+
+/** Immutable uploaded source archive or OCI reference. */
+export const appArtifacts = kortixSchema.table(
+  'app_artifacts',
+  {
+    artifactId: uuid('artifact_id').defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 16 }).notNull(),
+    status: varchar('status', { length: 16 }).default('uploading').notNull(),
+    objectPath: text('object_path').unique(),
+    imageReference: text('image_reference'),
+    sha256: varchar('sha256', { length: 64 }),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    mediaType: text('media_type'),
+    metadata: jsonb().default({}).notNull(),
+    error: text('error'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('app_artifacts_kind_check', sql`${table.kind} IN ('archive', 'oci_image')`),
+    check(
+      'app_artifacts_status_check',
+      sql`${table.status} IN ('uploading', 'uploaded', 'ready', 'rejected', 'deleted')`,
+    ),
+    check('app_artifacts_size_check', sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} > 0`),
+    index('app_artifacts_project_idx').on(table.projectId, table.createdAt),
+    index('app_artifacts_sha_idx').on(table.accountId, table.sha256),
+  ],
+);
+
+/** Immutable deployment version. Active routing remains an Apps-row pointer. */
+export const appDeployments = kortixSchema.table(
+  'app_deployments',
+  {
+    deploymentId: uuid('deployment_id').defaultRandom().primaryKey().notNull(),
+    appId: uuid('app_id')
+      .notNull()
+      .references(() => apps.appId, { onDelete: 'cascade' }),
+    artifactId: uuid('artifact_id')
+      .notNull()
+      .references(() => appArtifacts.artifactId, { onDelete: 'restrict' }),
+    version: integer('version').notNull(),
+    status: varchar('status', { length: 20 }).default('queued').notNull(),
+    sourceKind: varchar('source_kind', { length: 16 }).notNull(),
+    hostingType: varchar('hosting_type', { length: 16 }).default('sandbox').notNull(),
+    hostingProvider: varchar('hosting_provider', { length: 32 }),
+    providerBuildId: text('provider_build_id'),
+    runtimeSpec: jsonb('runtime_spec').default({}).notNull(),
+    buildSpec: jsonb('build_spec').default({}).notNull(),
+    runtimeVersion: text('runtime_version').notNull(),
+    errorCode: text('error_code'),
+    error: text('error'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseOwner: text('lease_owner'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    createdBy: uuid('created_by').notNull(),
+    sourceSessionId: text('source_session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    actorType: varchar('actor_type', { length: 24 })
+      .$type<'human' | 'agent' | 'service_account' | 'system'>()
+      .default('human')
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'app_deployments_status_check',
+      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled')`,
+    ),
+    check(
+      'app_deployments_source_kind_check',
+      sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
+    ),
+    check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check(
+      'app_deployments_actor_type_check',
+      sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
+    ),
+    check('app_deployments_version_check', sql`${table.version} > 0`),
+    uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
+    index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),
+    index('app_deployments_app_idx').on(table.appId, table.createdAt),
+  ],
+);
+
+/** Provider sandbox executing one deployment. */
+export const appRuntimes = kortixSchema.table(
+  'app_runtimes',
+  {
+    runtimeId: uuid('runtime_id').defaultRandom().primaryKey().notNull(),
+    deploymentId: uuid('deployment_id')
+      .notNull()
+      .references(() => appDeployments.deploymentId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    externalId: text('external_id').notNull(),
+    status: varchar('status', { length: 20 }).default('provisioning').notNull(),
+    controlPort: integer('control_port').default(7331).notNull(),
+    ingressPort: integer('ingress_port').default(8080).notNull(),
+    controlTokenHash: text('control_token_hash').notNull(),
+    idleDeadlineAt: timestamp('idle_deadline_at', { withTimezone: true }),
+    activityLeaseUntil: timestamp('activity_lease_until', { withTimezone: true }),
+    wakeLeaseOwner: text('wake_lease_owner'),
+    wakeLeaseUntil: timestamp('wake_lease_until', { withTimezone: true }),
+    lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    check(
+      'app_runtimes_status_check',
+      sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping', 'stopped', 'error', 'deleted')`,
+    ),
+    index('app_runtimes_deployment_idx').on(table.deploymentId, table.createdAt),
+    index('app_runtimes_external_idx').on(table.provider, table.externalId),
+    uniqueIndex('app_runtimes_one_live_per_deployment')
+      .on(table.deploymentId)
+      .where(sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping')`),
+  ],
+);
+
+/** Append-only deployment and runtime event stream. */
+export const appDeploymentEvents = kortixSchema.table(
+  'app_deployment_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey().notNull(),
+    deploymentId: uuid('deployment_id').notNull(),
+    runtimeId: uuid('runtime_id').references(() => appRuntimes.runtimeId, { onDelete: 'set null' }),
+    level: varchar('level', { length: 8 }).default('info').notNull(),
+    type: text('type').notNull(),
+    message: text('message').notNull(),
+    data: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'app_deployment_events_deployment_fk',
+      columns: [table.deploymentId],
+      foreignColumns: [appDeployments.deploymentId],
+    }).onDelete('cascade'),
+    check('app_deployment_events_level_check', sql`${table.level} IN ('debug', 'info', 'warn', 'error')`),
+    index('app_deployment_events_deployment_idx').on(table.deploymentId, table.createdAt),
   ],
 );
 

@@ -7,11 +7,20 @@ import {
 } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
+import { OPENCODE_PORTS } from './opencode-ports';
 
 export type PublicShareResourceType = 'preview' | 'file';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
-export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000, STATIC_FILE_SHARE_PORT]);
+// Both halves of the opencode port pair — a verified reload swaps which one is
+// live, so blocking only 4096 would leave the conversation API publicly
+// shareable through the other after a single reload. See shared/opencode-ports.
+export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
+  22,
+  ...OPENCODE_PORTS,
+  8000,
+  STATIC_FILE_SHARE_PORT,
+]);
 
 export const DEFAULT_PREVIEW_CANDIDATES = [
   { id: 'web', label: 'App preview', port: 3000, path: '/', source: 'default' },

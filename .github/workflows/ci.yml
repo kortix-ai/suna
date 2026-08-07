@@ -58,6 +58,7 @@ jobs:
             api:
               - *pnpm
               - 'apps/api/**'
+              - 'apps/kortix-app-runtime/**'
               - 'packages/agent-tunnel/**'
               - 'packages/api-contract/**'
               - 'packages/db/**'
@@ -85,6 +86,7 @@ jobs:
             self_host:
               - *pnpm
               - 'apps/api/Dockerfile'
+              - 'apps/kortix-app-runtime/**'
               - 'apps/api/src/snapshots/builder.ts'
               - 'apps/api/src/config.ts'
               - 'packages/db/**'

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { qk } from '@kortix/sdk/react';
 
 import {
   connectionOwnerTypeForStrategy,
@@ -199,7 +200,7 @@ describe('connector authorization strategy controls', () => {
 
   test('returns every cache affected by connection changes', () => {
     expect(connectorConnectionQueryKeys('project-1')).toEqual([
-      ['project-connectors', 'project-1'],
+      qk.project.connectors('project-1'),
       ['connections', 'project-1'],
       ['connections-all', 'project-1'],
       ['session-scope-catalog', 'project-1'],

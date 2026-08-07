@@ -150,8 +150,8 @@ which is a different and wrong statement.
    `git branch --show-current` are identical before and after.
 2. A session with committed work keeps it, and keeps its files.
 3. A session that edited its own agent config keeps that, and is **told** so.
-4. After a real merge, the marker appears in `localhost:4096/config` — not just in
-   `~/.config/kortix-opencode.json`. The second proves the push; only the first
-   proves the agent changed.
+4. After a real merge, the marker appears in `localhost:<reload.port>/config` —
+   not only in `~/.config/kortix-opencode.json`. The refresh response reports
+   the active port. The runtime port alternates after verified process swaps.
 
 Point 4 is the one that was never checked, and it is why this shipped broken.

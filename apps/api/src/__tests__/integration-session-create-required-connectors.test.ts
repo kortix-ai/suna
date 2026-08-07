@@ -25,6 +25,7 @@ const PROJECT_ID = crypto.randomUUID();
 const USER_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
 const UNAVAILABLE_SESSION_ID = crypto.randomUUID();
+const READ_WORKSPACE_SESSION_ID = crypto.randomUUID();
 const PROJECT_CONNECTOR_ID = crypto.randomUUID();
 const USER_CONNECTOR_ID = crypto.randomUUID();
 
@@ -153,6 +154,8 @@ beforeAll(async () => {
       '  mixed_failures:',
       '    connectors: [ghost_one, project_records]',
       '    connectors_required: [ghost_one, project_records]',
+      '  restricted_reader:',
+      '    workspace: read',
       '',
     ].join('\n'),
     'utf8',
@@ -169,6 +172,69 @@ afterAll(async () => {
 });
 
 describe('createProjectSession required connection gate', () => {
+  test('rejects read mode before creating a session row', async () => {
+    const result = await createProjectSession({
+      project,
+      userId: USER_ID,
+      requestingPrincipalType: 'human',
+      body: {
+        session_id: READ_WORKSPACE_SESSION_ID,
+        agent_name: 'restricted_reader',
+      },
+      enforceAccountCap: false,
+      authType: 'supabase',
+    });
+
+    expect(result).toEqual({
+      error: {
+        status: 409,
+        body: {
+          error: 'workspace mode "read" requires restricted workspace artifacts',
+          code: 'WORKSPACE_MODE_UNAVAILABLE',
+        },
+      },
+    });
+
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, PROJECT_ID),
+          eq(projectSessions.sessionId, READ_WORKSPACE_SESSION_ID),
+        ),
+      );
+    expect(rows).toEqual([]);
+  });
+
+  test('returns the read-mode refusal through the session HTTP route', async () => {
+    const sessionId = crypto.randomUUID();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        agent_name: 'restricted_reader',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'workspace mode "read" requires restricted workspace artifacts',
+      code: 'WORKSPACE_MODE_UNAVAILABLE',
+    });
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, sessionId)),
+      );
+    expect(rows).toEqual([]);
+  });
+
   test('returns every missing connection and creates no session row', async () => {
     const result = await createProjectSession({
       project,

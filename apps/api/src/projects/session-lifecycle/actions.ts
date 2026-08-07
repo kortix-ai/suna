@@ -7,10 +7,14 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import {
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
@@ -199,6 +203,7 @@ export async function restartSession(input: {
       .where(eq(projectSessions.sessionId, sessionId));
 
     const runtimeMetadata = { restarted_at: new Date().toISOString() };
+    const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
     allocateSessionRuntime({
       sessionId,
       accountId: loaded.row.accountId,
@@ -230,8 +235,13 @@ export async function restartSession(input: {
           // meta agent config, so the daemon clones the project over the meta
           // workspace and wipes /workspace/AGENTS.md.
           platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
+      beforeActive: rehydrate
+        ? (externalId) =>
+            rehydrateSessionChat({ sessionId, externalId, provider: providerName, spec: rehydrate })
+        : undefined,
     });
   };
 

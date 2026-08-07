@@ -120,7 +120,7 @@ export function buildOpencodeApp(
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const abortRouter = createAbortRouter(cfg)
+  const abortRouter = createAbortRouter(cfg, opencode)
   const envRouter = projectEnv
     ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
     : null
@@ -193,7 +193,14 @@ export function buildOpencodeApp(
   app.route(
     '/web-proxy',
     createWebProxyRouter({
-      blockedSelfPorts: new Set([cfg.servicePort, cfg.opencodeInternalPort]),
+      // BOTH halves of the opencode port pair. A verified reload swaps which
+      // one is live, and this set is built once — blocking only the current
+      // half would leave the other reachable the moment they trade places.
+      blockedSelfPorts: new Set([
+        cfg.servicePort,
+        cfg.opencodeInternalPort,
+        cfg.opencodeStandbyPort,
+      ]),
     }),
   )
 

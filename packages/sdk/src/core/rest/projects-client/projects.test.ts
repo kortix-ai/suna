@@ -3,6 +3,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
+  type ExperimentalFeatureKey,
   type KortixProject,
   type ProjectInput,
   type ProvisionProjectInput,
@@ -13,6 +14,11 @@ import {
   provisionProjectWithToken,
   updateProject,
 } from './projects';
+
+test('ExperimentalFeatureKey includes the project-scoped Apps gate', () => {
+  const feature: ExperimentalFeatureKey = 'apps';
+  expect(feature).toBe('apps');
+});
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 

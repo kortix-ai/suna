@@ -4,8 +4,7 @@ import { ProjectFilesProvider } from '@/features/project-files';
 import { ReviewCenterConnected } from '@/features/review-center/review-center-connected';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getProject } from '@kortix/sdk';
-import { useQuery } from '@tanstack/react-query';
+import { useProjectName } from '@kortix/sdk/react';
 
 /**
  * Review Center customize section — the per-project human-in-the-loop inbox wired
@@ -13,12 +12,12 @@ import { useQuery } from '@tanstack/react-query';
  * customize-panel.tsx + project-actions.ts). Mirrors changes-view.tsx.
  */
 export function ReviewView({ projectId }: { projectId: string }) {
-  const projectQuery = useQuery({
-    queryKey: ['projects', projectId, 'meta'],
-    queryFn: () => getProject(projectId),
-    staleTime: 60_000,
-  });
-  const projectName = projectQuery.data?.name ?? '';
+  // One source for the project name — see `useProjectName`'s doc comment.
+  // Reads the SAME qk.project.detail(projectId) entry customize-panel.tsx
+  // already mounts whenever the panel is open (this view only renders while
+  // that panel is open), so this is a cache hit, not a second `getProject`
+  // request for data the parent already holds.
+  const projectName = useProjectName(projectId) ?? '';
   // Acting on a review item (approve/reject/request-changes, and the bulk act)
   // asserts project.review.act server-side. A read-only role (review.read only)
   // still SEES the inbox — ReviewCenterConnected withholds the act handlers so the

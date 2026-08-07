@@ -41,6 +41,7 @@ import {
   requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
+  workspaceFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { resolveSessionSecretGrant } from './secret-grant';
@@ -52,7 +53,12 @@ import {
   parseSessionSecretsAllowlist,
   secretKeyCollisionInAllowlist,
 } from '../secrets';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import {
+  resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
+} from './compile-agent-config';
+import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -82,7 +88,10 @@ import {
 } from '../session-title-generate';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditEvent } from './session-audit';
-import { resolveSessionSandboxSlug } from './session-sandbox-metadata';
+import {
+  resolveSessionSandboxSlug,
+  workspaceModeAllowsFullRepository,
+} from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
@@ -285,6 +294,7 @@ export async function buildSessionSandboxEnvVars(input: {
   manifestPath?: string;
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
+  workspaceMode?: WorkspaceModeV2 | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -307,20 +317,24 @@ export async function buildSessionSandboxEnvVars(input: {
     ? buildPlatformMetaOpenCodeConfig()
     : null;
   if (input.defaultBranch && !input.platformMetaAgent) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession(
-      {
-        projectId: input.projectId,
-        repoUrl: input.repoUrl,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      },
-      // Compile from the ref this session actually runs on. It used to compile
-      // from the default branch regardless, so a session started on a feature
-      // branch ran main's agents from its first turn — you could edit an agent,
-      // push, start a session on that branch, and see no change at all.
-      input.baseRef,
-    ).catch(() => null);
+    const gitProject = {
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    compiledAgentConfig =
+      !workspaceModeAllowsFullRepository(input.workspaceMode)
+        ? await resolveSelectedAgentConfigForSession(
+            gitProject,
+            input.agentName,
+            input.baseRef,
+          )
+          : await resolveCompiledAgentConfigForSession(
+              gitProject,
+              input.baseRef,
+            ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -376,7 +390,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // WHICH identifiers are eligible; this only picks the per-user override owner.
   const secretsPrincipalUserId = sessionPolicyRow?.createdBy ?? input.userId;
 
-  let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
+  let runtimeSecrets: {
+    env: Record<string, string>;
+    names: string[];
+    revision: string;
+    capabilitiesJson: string;
+  };
   try {
     runtimeSecrets = await listProjectSecretsSnapshotForUser(
       input.projectId,
@@ -435,11 +454,10 @@ export async function buildSessionSandboxEnvVars(input: {
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
+    [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
     // Runtime-delivered provider keys may reach the sandbox for user code.
     // OpenCode must not receive them because it would bypass the gateway.
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
-    KORTIX_PROJECT_AUTO_CLONE: input.platformMetaAgent ? '0' : '1',
-    ...(input.platformMetaAgent ? { KORTIX_META_AGENT: '1' } : {}),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -473,7 +491,14 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
+      workspaceMode: input.workspaceMode,
     }),
+    // The platform coordinator uses API-level delegation and never receives a
+    // project checkout. Keep this override after buildSessionRuntimeEnv so the
+    // agent workspace mode cannot re-enable the daemon's automatic clone.
+    ...(input.platformMetaAgent
+      ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
+      : {}),
   };
 }
 
@@ -747,6 +772,18 @@ export async function createProjectSession(input: {
           error:
             'The meta coordinator cannot spawn another meta coordinator — pick a project agent',
           code: 'META_AGENT_RECURSION',
+        },
+      },
+    };
+  }
+  const workspaceMode = workspaceFromLoadedAgents(agentName, loadedAgents) ?? 'branch';
+  if (workspaceMode === 'read') {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: 'workspace mode "read" requires restricted workspace artifacts',
+          code: 'WORKSPACE_MODE_UNAVAILABLE',
         },
       },
     };
@@ -1122,6 +1159,7 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    workspace_mode: workspaceMode,
     sandbox_slug: sandboxSlug,
   };
 
@@ -1294,6 +1332,7 @@ export async function createProjectSession(input: {
           baseSha,
           defaultBranch: project.defaultBranch,
           manifestPath: project.manifestPath,
+          workspaceMode,
         }),
         )
         .then((envVars) => {

@@ -21,7 +21,6 @@ import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { configEntitySourcePath } from '@/features/workspace/customize/sections/component/config-entity-source-path';
 import {
   editConfigPrompt,
@@ -31,6 +30,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { listProjectFiles, readProjectFile } from '@kortix/sdk';
+import { useProjectAccountId } from '@kortix/sdk/react';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 

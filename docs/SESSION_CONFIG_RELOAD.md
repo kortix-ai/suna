@@ -144,3 +144,7 @@ after the edit. The clean run above is the one to trust.
    `/kortix/refresh` (the only client-reachable path that restarts the runtime —
    it pulls the workspace too, and the palette label says so). Both check
    `content-type` before trusting a 200, for the reason above.
+4. A required respawn is a verified process swap. The daemon boots the candidate
+   on the idle OpenCode port and probes its session API. It then routes new
+   requests to that same process before retiring the previous process. A failed
+   candidate is retired while the previous PID and port remain active.

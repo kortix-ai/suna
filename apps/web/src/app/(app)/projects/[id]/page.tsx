@@ -20,7 +20,7 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { writeStartStash } from '@kortix/sdk/react';
+import { contract, qk, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,9 +36,10 @@ export default function ProjectIndexPage() {
   const searchParams = useSearchParams();
 
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);

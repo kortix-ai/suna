@@ -26,10 +26,8 @@ import {
   type ReloadBusyReason,
   useSessionConfigFreshness,
 } from '@/hooks/projects/use-session-config-freshness';
-import { dismissToast, warningToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
 import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 /** The server's two refusals, as something a person would actually read. */
 const BUSY_COPY: Record<ReloadBusyReason, { title: string; body: string; tail: string }> = {
@@ -62,58 +60,12 @@ export function SessionConfigIndicator({
   const { notice } = useSessionConfigFreshness(projectId, sessionId);
   const [open, setOpen] = useState(false);
 
-  const stale = notice.kind === 'stale';
-
-  // A toast as well as the chip, because the chip alone was not found.
-  //
-  // The chip is correct and stays — it is the durable, always-available
-  // affordance, and it is where you look once you know the concept exists. But
-  // it is an icon in a header, and a session that silently runs the wrong agent
-  // is exactly the case where the user does NOT already know to look. So the
-  // arrival of staleness also gets announced once, where new information
-  // belongs.
-  //
-  // Announced ONCE per distinct config version, not once per render and not
-  // again after dismissal: `shownFor` keys on the etag pair, so re-checks of the
-  // same staleness stay quiet and only a genuinely newer config speaks up again.
-  // Persistent (`Infinity`) because it reports a condition, not an event — it
-  // stays true until acted on — and `warningToast` already carries its own close
-  // button, so it is dismissible without being self-dismissing.
-  const toastId = `session-config-stale-${sessionId}`;
-  const shownFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (notice.kind !== 'stale') {
-      // Retract on the way out. After a successful reload the condition is gone,
-      // and a lingering card offering to fix it would be worse than no card.
-      if (shownFor.current !== null) {
-        shownFor.current = null;
-        dismissToast(toastId);
-      }
-      return;
-    }
-    const version = `${notice.running}->${notice.latest}`;
-    if (shownFor.current === version) return;
-    shownFor.current = version;
-    warningToast('Agent config is out of date', {
-      id: toastId,
-      description:
-        'This session is running an older version of the agent config. Your commits and other files are untouched.',
-      duration: Number.POSITIVE_INFINITY,
-      button: (
-        <Button size="sm" disabled={!canReload || isPending} onClick={() => reload()}>
-          {isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Reload config
-        </Button>
-      ),
-    });
-  }, [notice, toastId, reload, canReload, isPending]);
-
   // The confirm is rendered by the header, not here — see `SessionConfigReloadConfirm`.
   // This component may vanish the moment a reload lands, and a dialog that
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden') return null;
 
-  const label = stale ? 'Agent config is out of date' : "Can't confirm the agent config";
+  const label = 'Agent config update available';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -123,12 +75,7 @@ export function SessionConfigIndicator({
             <span className="relative inline-flex">
               <ArrowsClockwiseIcon className="text-foreground size-4" />
               <span
-                className={cn(
-                  'ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2',
-                  // Orange is "needs attention"; a session we merely could not
-                  // ask about has not done anything wrong, so it stays neutral.
-                  stale ? 'bg-kortix-orange' : 'bg-muted-foreground',
-                )}
+                className="ring-background bg-kortix-orange absolute -top-1 -right-1 size-2 rounded-full ring-2"
                 aria-hidden
               />
             </span>
@@ -139,18 +86,7 @@ export function SessionConfigIndicator({
       <PopoverContent align="end" sideOffset={8} className="w-[320px] overflow-hidden p-0">
         <div className="border-border border-b px-4 pt-4 pb-3">
           <div className="flex items-center gap-2.5">
-            <span
-              className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-md',
-                // Spelled literally rather than via STATUS_BG/STATUS_TEXT:
-                // those pair a kortix-yellow fill with a raw amber foreground,
-                // which is both off-token and a different colour from every
-                // other "needs attention" surface in the app.
-                stale
-                  ? 'bg-kortix-orange/10 text-kortix-orange'
-                  : 'text-muted-foreground border-border border',
-              )}
-            >
+            <span className="bg-kortix-orange/10 text-kortix-orange flex size-8 shrink-0 items-center justify-center rounded-md">
               <ArrowsClockwiseIcon className="size-4" />
             </span>
             <div className="min-w-0">
@@ -161,24 +97,15 @@ export function SessionConfigIndicator({
           </div>
 
           <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-            {stale
-              ? // Only ONE unconditional promise is made here — that nothing of
-                // yours is lost — because that one is structural: the reload
-                // never moves the branch. Bringing the agent files forward is
-                // deliberately worded as an attempt, since the reload refuses
-                // when this session has edited them itself. The toast afterwards
-                // reports which of the two happened.
-                'This session started with an older version of the agent config. Reloading tries to bring its agent files up to date, and keeps any changes this session made to them. Your commits and other files are untouched.'
-              : "This session's runtime didn't report which agent config it's running, so we can't tell whether it's current. Reloading puts it on the latest."}
+            A newer agent config is available. Reloading restarts the agent runtime and leaves every
+            project file and commit unchanged.
           </p>
 
-          {notice.kind === 'stale' && (
-            <p className="text-muted-foreground mt-2.5 font-mono text-[11px]">
-              <span className="text-foreground/80">{notice.running}</span>
-              {' → '}
-              <span className="text-foreground/80">{notice.latest}</span>
-            </p>
-          )}
+          <p className="text-muted-foreground mt-2.5 font-mono text-[11px]">
+            <span className="text-foreground/80">{notice.running}</span>
+            {' → '}
+            <span className="text-foreground/80">{notice.latest}</span>
+          </p>
         </div>
 
         {canReload ? (

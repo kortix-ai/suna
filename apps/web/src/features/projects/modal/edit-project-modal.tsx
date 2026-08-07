@@ -19,7 +19,13 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { updateProject, type ProjectInput } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
+import {
+  renameOnError,
+  renameOnMutate,
+  renameOnSettled,
+} from '@/hooks/projects/project-rename-cache';
 import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patch';
 import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 
@@ -94,21 +100,30 @@ export const EditProjectModal = ({
       if (!projectId) throw new Error('No project selected');
       return updateProject(projectId, patch);
     },
+    // Paint the new name in the same frame the modal closes, snapshotting
+    // what it overwrote so a REJECTED rename can put it back. The rename bug
+    // this modal used to cause was not a missing invalidation — it was that
+    // the sidebar and the project home title read two different caches, and
+    // only one of them (the list) ever got invalidated. `renameOnMutate` /
+    // `renameOnError` / `renameOnSettled` are shared with `settings-view.tsx`
+    // so the two rename paths cannot drift.
+    onMutate: (patch) => renameOnMutate(queryClient, projectId, patch.name),
     // `patch` is the mutation's own variables, not the component's current
     // state: the message has to describe what was SENT, and by the time this
     // runs the draft could already have moved on.
     onSuccess: (updated, patch) => {
       if (projectId) {
-        queryClient.setQueryData(['project', projectId], updated);
+        queryClient.setQueryData(qk.project.summary(projectId), updated);
       }
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
       successToast(summarizeProjectEdit(patch, updated?.name ?? name.trim()));
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err) => {
+    onError: (err, _patch, context) => {
+      renameOnError(queryClient, projectId, context);
       errorToast(err instanceof Error ? err.message : 'Failed to update project');
     },
+    onSettled: () => renameOnSettled(queryClient, projectId),
   });
 
   // ONE predicate, for the button and for Enter. `status !== 'ready'` covers

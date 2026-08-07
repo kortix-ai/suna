@@ -10,6 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  APP_SETUP_TIMEOUT_MS,
   type AppInstance,
   createTestKortix,
   loginUser,
@@ -31,7 +32,7 @@ describe.skipIf(!hasLiveEnv)('live upstream golden path', () => {
     app = await startApp(
       wrapperEnv({ KORTIX_API_KEY: LIVE_KEY, KORTIX_UPSTREAM: LIVE_UPSTREAM }),
     );
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

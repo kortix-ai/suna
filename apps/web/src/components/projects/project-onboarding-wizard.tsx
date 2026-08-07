@@ -15,6 +15,7 @@ import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { listConnectors } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 import { slideVariants } from './onboarding/motion';
 import {
@@ -33,8 +34,6 @@ import { useOnboardingAnswers } from './onboarding/use-onboarding-answers';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
-
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 function AnimatedStep({
   children,
@@ -128,17 +127,18 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
 
   const isPending = onboarding.hydrated && onboarding.status === 'pending';
   const connectors = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
     enabled: isPending,
-    ...Q,
+    ...contract('config'),
+    refetchOnWindowFocus: false,
   });
   const connectorSlugs = useMemo(
     () => (connectors.data?.connectors ?? []).map((connector) => connector.slug),
     [connectors.data],
   );
   const refreshConnectors = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
   }, [queryClient, projectId]);
 
   // Direction drives the slide. Without it, Back and Continue animate

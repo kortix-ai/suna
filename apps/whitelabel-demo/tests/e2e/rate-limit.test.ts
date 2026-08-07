@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  APP_SETUP_TIMEOUT_MS,
   type AppInstance,
   createTestKortix,
   loginUser,
@@ -28,7 +29,7 @@ describe('rate limiting', () => {
     app = await startApp(
       wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1`, RATE_LIMIT_PER_MIN: String(CAPACITY) }),
     );
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

@@ -274,6 +274,20 @@
       "when": 1786028633408,
       "tag": "20260806150353_connector_compat_removal",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786067397287,
+      "tag": "20260807014957_add_kortix_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786114559482,
+      "tag": "20260807145559_app_deployment_provenance_schema_sync",
+      "breakpoints": true
     }
   ]
 }

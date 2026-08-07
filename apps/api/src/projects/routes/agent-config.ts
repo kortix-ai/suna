@@ -43,7 +43,11 @@ import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents } from '../agents';
 import { readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  assertProjectCapability,
+  loadProjectForUser,
+} from '../lib/access';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
@@ -163,6 +167,7 @@ projectsApp.openapi(
     const agentName = c.req.param('agentName');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
     let manifest;
     try {
@@ -227,6 +232,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -325,6 +331,7 @@ projectsApp.openapi(
     const agentName = c.req.param('agentName');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     await assertProjectCapability(
       c,
       loaded.userId,

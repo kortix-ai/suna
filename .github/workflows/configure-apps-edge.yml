@@ -1,0 +1,300 @@
+name: Configure Kortix Apps Edge
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: configure-kortix-apps-edge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    name: Configure and verify Apps edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Account: Workers Scripts Write. kortix.com zone: DNS Write,
+      # Workers Routes Write, Transform Rules Write, SSL and Certificates Write,
+      # and Zone Read.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+      CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      APPS_DNS_NAME: '*.apps.kortix.com'
+      APPS_DNS_TARGET: '192.0.2.1'
+      APPS_CERT_HOST: '*.apps.kortix.com'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Cloudflare configuration
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_GLOBAL_API_KEY CLOUDFLARE_EMAIL CLOUDFLARE_ZONE_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is not configured."
+              exit 1
+            fi
+          done
+
+      - name: Verify Worker route and secret bindings
+        working-directory: infra/cloudflare/workers/apps-router
+        run: |
+          set -euo pipefail
+          routes="$({
+            curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/workers/routes"
+          })"
+          jq -e '
+            .success == true and
+            any(.result[]; .pattern == "*.apps.kortix.com/*" and .script == "kortix-apps-router")
+          ' <<<"$routes"
+
+          secrets="$(npx --yes wrangler@4.34.0 secret list --format json)"
+          jq -e '
+            map(.name) | sort ==
+            ["DEV_EDGE_SECRET", "PREVIEW_EDGE_SECRET", "PROD_EDGE_SECRET", "STAGING_EDGE_SECRET"]
+          ' <<<"$secrets"
+
+      - name: Reserve Apps response headers for the Worker
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets"
+          phase="$api/phases/http_response_headers_transform/entrypoint"
+          current="$({
+            curl --fail-with-body --silent --show-error \
+              --header "X-Auth-Email: $CLOUDFLARE_EMAIL" \
+              --header "X-Auth-Key: $CLOUDFLARE_GLOBAL_API_KEY" \
+              "$phase"
+          })"
+          jq -e '.success == true and (.result.id | type == "string")' <<<"$current"
+
+          # Cloudflare response-header transforms run after Workers. Any broad
+          # CSP or X-Frame-Options rule must exclude Apps because the Apps Worker
+          # owns frame-ancestors for embedded previews.
+          body="$(jq -c '
+            def owns_apps_frame_header:
+              any(.action_parameters.headers.set[]?;
+                ((.name // "") | ascii_downcase) == "content-security-policy" or
+                ((.name // "") | ascii_downcase) == "x-frame-options"
+              ) or
+              any(.action_parameters.headers.remove[]?;
+                ((.name // "") | ascii_downcase) == "content-security-policy" or
+                ((.name // "") | ascii_downcase) == "x-frame-options"
+              );
+            .result
+            | .rules |= map(
+                if owns_apps_frame_header and
+                  ((.expression // "") | contains("ends_with(http.host, \".apps.kortix.com\")") | not)
+                then .expression = "(" + .expression + ") and not ends_with(http.host, \".apps.kortix.com\")"
+                else .
+                end
+              )
+            | {description, rules}
+          ' <<<"$current")"
+
+          ruleset_id="$(jq -er '.result.id' <<<"$current")"
+          updated="$({
+            curl --fail-with-body --silent --show-error \
+              --request PUT \
+              --header "X-Auth-Email: $CLOUDFLARE_EMAIL" \
+              --header "X-Auth-Key: $CLOUDFLARE_GLOBAL_API_KEY" \
+              --header 'Content-Type: application/json' \
+              --data "$body" \
+              "$api/$ruleset_id"
+          })"
+          jq -e '
+            .success == true and
+            all(
+              .result.rules[]
+              | select(
+                  any(.action_parameters.headers.set[]?;
+                    ((.name // "") | ascii_downcase) == "content-security-policy" or
+                    ((.name // "") | ascii_downcase) == "x-frame-options"
+                  ) or
+                  any(.action_parameters.headers.remove[]?;
+                    ((.name // "") | ascii_downcase) == "content-security-policy" or
+                    ((.name // "") | ascii_downcase) == "x-frame-options"
+                  )
+                );
+              (.expression // "") | contains("ends_with(http.host, \".apps.kortix.com\")")
+            )
+          ' <<<"$updated"
+
+      - name: Create or verify proxied wildcard DNS
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records"
+          records="$({
+            curl --fail-with-body --silent --show-error --get \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data-urlencode "name=$APPS_DNS_NAME" \
+              "$api"
+          })"
+          jq -e '.success == true' <<<"$records"
+          count="$(jq '.result | length' <<<"$records")"
+
+          if [ "$count" = 0 ]; then
+            body="$(jq -n \
+              --arg name "$APPS_DNS_NAME" \
+              --arg content "$APPS_DNS_TARGET" \
+              '{type:"A", name:$name, content:$content, ttl:1, proxied:true, comment:"Kortix Apps Worker ingress"}')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data "$body" \
+                "$api"
+            })"
+            jq -e '
+              .success == true and
+              .result.type == "A" and
+              .result.name == "*.apps.kortix.com" and
+              .result.content == "192.0.2.1" and
+              .result.proxied == true
+            ' <<<"$created"
+            exit 0
+          fi
+
+          if [ "$count" != 1 ]; then
+            echo "::error::Expected at most one $APPS_DNS_NAME record; found $count."
+            exit 1
+          fi
+          jq -e \
+            --arg name "$APPS_DNS_NAME" \
+            --arg content "$APPS_DNS_TARGET" '
+              .result[0].type == "A" and
+              .result[0].name == $name and
+              .result[0].content == $content and
+              .result[0].proxied == true
+            ' <<<"$records"
+
+      - name: Create or verify nested wildcard certificate
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/ssl/certificate_packs"
+          auth=(--header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+          list_packs() {
+            curl --fail-with-body --silent --show-error "${auth[@]}" "$api"
+          }
+
+          packs="$(list_packs)"
+          jq -e '.success == true' <<<"$packs"
+          pack_id="$(jq -r --arg host "$APPS_CERT_HOST" '
+            [.result[]
+              | select(.type == "advanced")
+              | select((.hosts // []) | index($host))
+              | select(.status != "expired" and .status != "deleted" and .status != "pending_deletion")
+            ][0].id // empty
+          ' <<<"$packs")"
+
+          if [ -n "$pack_id" ]; then
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            if [ "$status" = validation_timed_out ]; then
+              restarted="$({
+                curl --fail-with-body --silent --show-error \
+                  --request PATCH \
+                  "${auth[@]}" \
+                  --header 'Content-Type: application/json' \
+                  --data '{"cloudflare_branding":false}' \
+                  "$api/$pack_id"
+              })"
+              jq -e '.success == true' <<<"$restarted"
+            fi
+          else
+            order="$(jq -n '{
+              type: "advanced",
+              hosts: ["kortix.com", "apps.kortix.com", "*.apps.kortix.com"],
+              validation_method: "txt",
+              validity_days: 90,
+              certificate_authority: "lets_encrypt",
+              cloudflare_branding: false
+            }')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                "${auth[@]}" \
+                --header 'Content-Type: application/json' \
+                --data "$order" \
+                "$api/order"
+            })"
+            jq -e '.success == true' <<<"$created"
+            pack_id="$(jq -er '.result.id' <<<"$created")"
+          fi
+
+          for attempt in $(seq 1 90); do
+            packs="$(list_packs)"
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            case "$status" in
+              active)
+                jq -e --arg id "$pack_id" --arg host "$APPS_CERT_HOST" '
+                  any(.result[];
+                    .id == $id and
+                    .status == "active" and
+                    ((.hosts // []) | index($host))
+                  )
+                ' <<<"$packs"
+                exit 0
+                ;;
+              validation_timed_out|expired|deleted)
+                echo "::error::Certificate pack $pack_id reached terminal status $status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" = 90 ]; then
+              echo "::error::Certificate pack $pack_id stayed in status $status for 15 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Verify public DNS and TLS routing
+        run: |
+          set -euo pipefail
+          # Keep the probe syntactically valid so the API host parser reaches
+          # the signed Apps route before returning the expected missing App.
+          host="dev-edge-probe-invalid-0000000000000000.apps.kortix.com"
+          for attempt in $(seq 1 30); do
+            answer="$({
+              curl --silent --show-error --get \
+                --header 'accept: application/dns-json' \
+                --data-urlencode "name=$host" \
+                --data-urlencode 'type=A' \
+                'https://cloudflare-dns.com/dns-query'
+            })"
+            if jq -e 'any(.Answer[]?; .type == 1)' <<<"$answer" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "::error::$host did not resolve after 5 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          status="$({
+            curl --silent --show-error \
+              --dump-header "$headers" \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              "https://$host/"
+          })"
+          echo "HTTP status: $status"
+          grep -Ei '^x-kortix-app-environment:' "$headers" || true
+          jq -c . "$body" || true
+          test "$status" = 404
+          tr -d '\r' < "$headers" | grep -Eiq '^x-kortix-app-environment: dev$'
+          tr -d '\r' < "$headers" | grep -Eiq '^content-security-policy:.*frame-ancestors'
+          tr -d '\r' < "$headers" | grep -Fq 'https://*.kortix.com'
+          if tr -d '\r' < "$headers" | grep -Eiq '^x-frame-options:'; then
+            echo "::error::Apps response contains X-Frame-Options."
+            exit 1
+          fi
+          jq -e '.error == "App not found"' "$body"

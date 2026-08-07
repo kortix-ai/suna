@@ -36,7 +36,7 @@ import type {
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
-import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
+import { qk, useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { GenerationControlsPanel } from './generation-controls';
@@ -829,7 +829,7 @@ export function GatewayRouting({
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
                       queryClient.invalidateQueries({
-                        queryKey: ['project-model-picker', projectId],
+                        queryKey: qk.project.modelPicker(projectId),
                       }),
                     ]);
                     successToast('Routing policy saved');

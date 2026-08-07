@@ -34,6 +34,7 @@ function baseConfig(): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -102,6 +103,30 @@ async function postEnv(
 }
 
 describe('env route — project-secret delta forces respawn, not dispose', () => {
+  it('a secret capability catalog change forces a respawn', async () => {
+    const { opencode, calls } = fakeOpencode()
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+      KORTIX_PROJECT_SECRET_NAMES: '',
+      KORTIX_SECRET_CAPABILITIES: '{"version":1,"capabilities":[]}',
+    } as NodeJS.ProcessEnv)
+    const app = buildTestApp(opencode, store)
+
+    const { status } = await postEnv(app, {
+      revision: 'rev-1',
+      env: {},
+      names: [],
+      opencodeEnv: {
+        KORTIX_SECRET_CAPABILITIES:
+          '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}',
+      },
+      refreshModels: true,
+    })
+
+    expect(status).toBe(200)
+    expect(calls).toEqual([{ mustRespawn: true }])
+  })
+
   it('a project-secret CHANGE (value moved) forces a respawn', async () => {
     const { opencode, calls } = fakeOpencode()
     // Boot store already has API_KEY=v1.
@@ -177,6 +202,35 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(json.changed).toBe(true)
     expect(calls).toHaveLength(1)
     expect(calls[0]!.mustRespawn).toBe(true)
+  })
+
+  it('removes a revoked project secret from the daemon environment', async () => {
+    const name = 'LIVE_REVOKE_TEST_KEY'
+    const previous = process.env[name]
+    process.env[name] = 'boot-value'
+
+    try {
+      const { opencode } = fakeOpencode()
+      const store = createProjectEnvStore({
+        KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+        KORTIX_PROJECT_SECRET_NAMES: name,
+        [name]: 'boot-value',
+      } as NodeJS.ProcessEnv)
+      const app = buildTestApp(opencode, store)
+
+      const { status } = await postEnv(app, {
+        revision: 'rev-2',
+        env: {},
+        names: [],
+        refreshModels: true,
+      })
+
+      expect(status).toBe(200)
+      expect(process.env[name]).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    }
   })
 
   it('a pure MODEL change (no project-secret delta) keeps the dispose fast path', async () => {

@@ -21,6 +21,13 @@ interface SandboxResourceSpec {
   diskGb?: number;
 }
 
+export interface AppBuildContext {
+  /** Validated and extracted App source. Absent for an OCI base image. */
+  sourceDir?: string;
+  /** Normalized non-secret specification baked into the deployment image. */
+  runtimeSpec: Record<string, unknown>;
+}
+
 export interface BuildableTemplate {
   /** Snapshot name the provider should write under. */
   snapshotName: string;
@@ -51,7 +58,9 @@ export interface BuildableTemplate {
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
   /** Selects the fixed platform meta-agent runtime instead of the full layer. */
-  runtimeProfile?: 'standard' | 'meta';
+  runtimeProfile?: 'standard' | 'meta' | 'app';
+  /** Required when runtimeProfile is app. */
+  appContext?: AppBuildContext;
   /**
    * Per-project COLD warm: bake the project's repo checkout into /workspace at
    * build time. Threaded straight to `stageBuildContext` (or, on the

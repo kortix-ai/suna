@@ -30,7 +30,12 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { type ProjectConfigSummary, updateProjectDefaultAgent } from '@kortix/sdk';
+import {
+  getProjectDetail,
+  type ProjectConfigSummary,
+  updateProjectDefaultAgent,
+} from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -49,10 +54,6 @@ import {
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 
 import { AgentDetailAside } from './agent-detail-aside';
 import { type AgentMode, filterAgents } from './agent-filter';
@@ -101,7 +102,11 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   // configuration editor (`paneOverride`) — a pane, not a modal on a modal.
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const detailQuery = useQuery(projectDetailQuery(projectId));
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
   const config = detailQuery.data?.config ?? null;
 
   const agents = useMemo(() => toArray(config?.agents), [config]);
@@ -382,10 +387,11 @@ function DefaultAgentSelector({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
       successToast(`${result.default_agent} is now the project default`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
-        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
-      ]);
+      // One invalidation, not two: the project CONFIG is a `select` projection
+      // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
+      // its own fetch. The retired standalone `['project-config', id]` slot no
+      // longer exists, so a second call for it would invalidate nothing.
+      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
   });

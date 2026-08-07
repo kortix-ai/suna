@@ -68,7 +68,9 @@ import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  contract,
   migrateStash,
+  qk,
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
@@ -134,12 +136,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
       return getProjectDetail(projectId);
     },
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { data: accountState } = useAccountState({
@@ -157,11 +160,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    staleTime: 10_000,
     refetchOnWindowFocus: false,
+    ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
@@ -253,7 +256,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // query that /start never touches, so opening a session left the dot stale
       // until a manual refresh. Refresh the list once the runtime switches in so
       // the status flips to running on its own.
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 
@@ -771,12 +774,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
-    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
-      'project',
-      'session-sandbox',
-      projectId,
-      sessionId,
-    ]);
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>(
+      qk.project.sessionSandbox(projectId, sessionId),
+    );
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 

@@ -19,7 +19,12 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq, type SQL } from 'drizzle-orm';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  assertProjectCapability,
+  loadProjectForUser,
+  projectCapabilityAllowed,
+} from '../lib/access';
 import { metadataMerge } from '../lib/metadata-merge';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
@@ -62,6 +67,11 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAgentSessionWorkspaceAllowsRepository(
+    c,
+    loaded.row.accountId,
+    projectId,
+  );
 
   await db
     .update(projects)
@@ -96,6 +106,11 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAgentSessionWorkspaceAllowsRepository(
+    c,
+    loaded.row.accountId,
+    projectId,
+  );
 
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];

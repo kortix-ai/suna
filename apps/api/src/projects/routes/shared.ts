@@ -1,38 +1,46 @@
-import { pauseComputeSession, reopenComputeForSandbox } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
 import type {
   ProjectSessionSandbox,
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
+import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import {
+  pauseComputeSession,
+  reopenComputeForSandbox,
+} from '../../billing/services/compute-metering';
+import { type SandboxProviderName, config } from '../../config';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, json } from '../../openapi';
-import { getProvider, type SandboxStatus } from '../../platform/providers';
+import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
-import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
+import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { sandboxSlugFromSessionMetadata } from '../lib/session-sandbox-metadata';
+import {
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
-import { inspectSandboxRuntime } from '../runtime-inspection';
 import {
+  RUNTIME_IDENTITY_UNAVAILABLE,
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
   markInPlaceRuntimeRecoveryAccepted,
   preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
-  RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 import {
-  hasRuntimeReadinessClock,
   RUNTIME_READINESS_CLOCK_KEYS,
+  hasRuntimeReadinessClock,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
+import { RUNTIME_WAKE_GRACE_MS } from '../session-lifecycle/runtime-wake-fence';
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
@@ -126,64 +134,83 @@ export async function resumeStoppedSandbox(row: {
   void provider
     .start(externalId)
     .then(async () => {
-    await db
-      .update(sessionSandboxes)
-      .set({
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'runtimeWakeStartedAt' - 'runtimeWakeId' - 'runtimeWakeProviderStatus' - 'runtimeWakeError' - 'runtimeWakeFailedAt'`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, row.sandboxId),
-          eq(sessionSandboxes.externalId, externalId),
-          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
-        ),
-      )
-      .catch((err) =>
-          console.warn(`[runtime-identity] failed to clear wake fence for ${row.sessionId}:`, err),
-      );
+      const [completedWake] = await db
+        .update(sessionSandboxes)
+        .set({
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'runtimeWakeStartedAt' - 'runtimeWakeId' - 'runtimeWakeProviderStatus' - 'runtimeWakeError' - 'runtimeWakeFailedAt'`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            eq(sessionSandboxes.externalId, externalId),
+            eq(sessionSandboxes.status, 'active'),
+            sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+          ),
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId })
+        .catch((err) => {
+          console.warn(`[runtime-identity] failed to clear wake fence for ${row.sessionId}:`, err);
+          return [] as Array<{ sandboxId: string }>;
+        });
+      if (!completedWake) {
+        // A real stop won while start() was in flight. The first provider.stop()
+        // can finish before this late start, so enforce the user's stopped state
+        // once more after start() resolves.
+        await provider
+          .stop(externalId)
+          .catch((err) =>
+            console.warn(
+              `[projects] failed to re-stop cancelled wake ${externalId} for session ${row.sessionId}:`,
+              err,
+            ),
+          );
+      }
     })
     .catch(async (err) => {
-    console.warn(
-      `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
-      err,
-    );
-    // Never retire or replace an established identity based on a provider
-    // start error. Revert this exact fenced wake so a later explicit open can
-    // retry the original sandbox in place.
-    await db
-      .update(sessionSandboxes)
-      .set({
-        status: 'stopped',
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeWakeError: isMissingRuntimeError(err) ? 'missing' : 'start_failed', runtimeWakeFailedAt: new Date().toISOString() })}::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, row.sandboxId),
-          eq(sessionSandboxes.externalId, externalId),
-          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
-        ),
-      )
-      .catch(() => {});
-    await db
-      .update(projectSessions)
-      .set({ status: 'stopped', updatedAt: new Date() })
-      .where(eq(projectSessions.sessionId, row.sessionId))
-      .catch(() => {});
-    // The meter was opened optimistically above, BEFORE provider.start() had
-    // resolved. This branch is the proof it never came up, so the window must
-    // close here — reverting the two status rows and leaving the meter running
-    // is how a box that failed to start in 134ms went on accruing wall-clock
-    // (observed in prod 2026-07-29). The billing-invariant sweep would also
-    // catch it, but a leak this deterministic should not wait for a sweep.
-    await pauseComputeSession(row.sandboxId).catch((pauseErr) =>
       console.warn(
-        `[projects] compute pause after failed wake failed for ${row.sandboxId}:`,
-        pauseErr,
-      ),
-    );
-  });
+        `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
+        err,
+      );
+      // Never retire or replace an established identity based on a provider
+      // start error. Revert this exact fenced wake so a later explicit open can
+      // retry the original sandbox in place.
+      const [revertedWake] = await db
+        .update(sessionSandboxes)
+        .set({
+          status: 'stopped',
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeWakeError: isMissingRuntimeError(err) ? 'missing' : 'start_failed', runtimeWakeFailedAt: new Date().toISOString() })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            eq(sessionSandboxes.externalId, externalId),
+            eq(sessionSandboxes.status, 'active'),
+            sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+          ),
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId })
+        .catch(() => []);
+      if (!revertedWake) return;
+      await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: new Date() })
+        .where(eq(projectSessions.sessionId, row.sessionId))
+        .catch(() => {});
+      // The meter was opened optimistically above, BEFORE provider.start() had
+      // resolved. This branch is the proof it never came up, so the window must
+      // close here — reverting the two status rows and leaving the meter running
+      // is how a box that failed to start in 134ms went on accruing wall-clock
+      // (observed in prod 2026-07-29). The billing-invariant sweep would also
+      // catch it, but a leak this deterministic should not wait for a sweep.
+      await pauseComputeSession(row.sandboxId).catch((pauseErr) =>
+        console.warn(
+          `[projects] compute pause after failed wake failed for ${row.sandboxId}:`,
+          pauseErr,
+        ),
+      );
+    });
   return true;
 }
 
@@ -244,6 +271,7 @@ export async function allocateRuntimeOnOpen(
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
+  const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
 
   allocateSessionRuntime({
     sessionId,
@@ -270,8 +298,13 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
+    beforeActive: rehydrate
+      ? (externalId) =>
+          rehydrateSessionChat({ sessionId, externalId, provider: providerName, spec: rehydrate })
+      : undefined,
   });
 }
 
@@ -297,7 +330,7 @@ export function sessionRuntimeUrlPath(externalId: string): string {
 
 const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
-const STALE_RUNTIME_WAKE_MS = 90 * 1000;
+const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 const STALE_OPENCODE_READY_MS = 5 * 60 * 1000;
 
 function parseTimestampMs(value: unknown): number | null {
@@ -621,21 +654,21 @@ export async function openSession(args: {
       .getStatus(row.externalId)
       .catch(() => 'unknown' as const);
     if (stoppedProviderStatus !== 'removed' || !provider.recoverInPlace) {
-    await resumeStoppedSandbox({
-      sandboxId: row.sandboxId,
-      sessionId: row.sessionId,
-      accountId: row.accountId,
-      provider: row.provider,
-      externalId: row.externalId,
-      metadata: row.metadata as Record<string, unknown> | null,
-    });
-    const [resumed] = await db
-      .select()
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
-      .limit(1);
-    if (resumed) row = resumed;
-  }
+      await resumeStoppedSandbox({
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        accountId: row.accountId,
+        provider: row.provider,
+        externalId: row.externalId,
+        metadata: row.metadata as Record<string, unknown> | null,
+      });
+      const [resumed] = await db
+        .select()
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+        .limit(1);
+      if (resumed) row = resumed;
+    }
   }
 
   // No usable box → provision on open (or report a terminal state).
@@ -856,8 +889,8 @@ export async function openSession(args: {
         sandbox: null,
         opencode_session_id: null,
         reason: 'runtime_recovery_cancelled',
-    };
-  }
+      };
+    }
     row = finalized;
   }
   const runningExternalId = row.externalId;
