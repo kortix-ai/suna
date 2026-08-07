@@ -73,7 +73,11 @@ describe('freshness contracts', () => {
   // future entity has to earn it against this bar, not inherit it by vibe.
   test('volatile is still the sharpest tier, for whatever earns it next', () => {
     expect(contract('volatile').staleTime).toBe(5_000);
-    const claimants = Object.entries(FRESHNESS).filter(([, tier]) => tier === 'volatile');
-    expect(claimants).toEqual([]);
+    // Widened deliberately: `FRESHNESS` is `as const`, so with no claimant its
+    // value type no longer includes 'volatile' and the comparison below is a
+    // TS2367 against the narrowed union. The runtime check still earns its
+    // keep — add a `volatile` entity and this goes red.
+    const tiers = Object.entries(FRESHNESS) as [string, FreshnessTier][];
+    expect(tiers.filter(([, tier]) => tier === 'volatile')).toEqual([]);
   });
 });
