@@ -89,13 +89,31 @@ function AppPreview({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  if (!app.active_deployment_id || !url) {
+  if (!app.active_deployment_id) {
     return (
       <div
         className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
         data-testid="app-preview-empty"
       >
-        {accessError ? 'You do not have access to preview this App.' : 'Deploy to see a live preview.'}
+        Deploy to see a live preview.
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div
+        className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
+        data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}
+      >
+        {accessError ? (
+          'You do not have access to preview this App.'
+        ) : (
+          <span className="flex items-center gap-2">
+            <Loading className="size-4 shrink-0" />
+            Preparing preview
+          </span>
+        )}
       </div>
     );
   }

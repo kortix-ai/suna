@@ -158,9 +158,11 @@ Create an authenticated browser link through the CLI:
 kortix apps access-link storefront --json
 ```
 
-The response contains `access_session.url` and `access_session.expires_at`.
-Treat the exchange URL as a secret. Its first request sets the App-host cookie
-and redirects to the same path without the token.
+The response contains `app.url`, `access_session.url`, and
+`access_session.expires_at`. The exchange URL is valid for five minutes. Treat
+it as a secret. Its first request sets the eight-hour App-host cookie and
+redirects to the same path without the token. Create a fresh link for each
+independent browser profile or cookie jar.
 
 ## Archive rules
 
@@ -219,6 +221,11 @@ building, provisioning, checking, starting, failed, cancelled, and budget
 states. Machine clients receive `202 app_starting` with `Retry-After: 3` during
 a transient cold start. A healthy App never exposes `app_stopped` or an
 unavailable cold-start state.
+
+Browser navigations receive branded HTML with the same `202` status and a
+three-second refresh while starting. The Apps UI lives at
+`/projects/<project-id>/apps`. Its iframe uses an authenticated App access
+session and wakes a suspended private App.
 
 Each cold start checks the active `kortix-appd` version. If it is old, Kortix
 queues one immutable replacement asynchronously. The active deployment keeps

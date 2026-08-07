@@ -14,7 +14,11 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { getProvider } from '../platform/providers';
 import { db } from '../shared/db';
-import { createAppArtifactUploadUrl, MAX_ARCHIVE_BYTES } from './artifacts';
+import {
+  AppArtifactStorageUnavailableError,
+  createAppArtifactUploadUrl,
+  MAX_ARCHIVE_BYTES,
+} from './artifacts';
 import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-worker';
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
@@ -379,7 +383,7 @@ projectsApp.openapi(
         z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
       ]) } } },
     },
-    responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404) },
+    responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -394,7 +398,15 @@ projectsApp.openapi(
       }).returning();
       return c.json({ artifact: serializeArtifact(artifact!), upload: null }, 201);
     }
-    const upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
+    let upload: Awaited<ReturnType<typeof createAppArtifactUploadUrl>>;
+    try {
+      upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
+    } catch (error) {
+      if (error instanceof AppArtifactStorageUnavailableError) {
+        return c.json({ error: error.message }, 503);
+      }
+      throw error;
+    }
     const [artifact] = await db.insert(appArtifacts).values({
       artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
       status: 'uploading', objectPath: upload.objectPath,

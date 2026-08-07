@@ -192,6 +192,24 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(app?.desiredState).toBe('running');
   });
 
+  test('a confirmed provider-stop signal forces provider start under the wake lease', async () => {
+    const loaded = await seedStoppedRuntime();
+    let startCalls = 0;
+    let ensureCalls = 0;
+    const hosting = {
+      start: async () => { startCalls += 1; },
+      ensureRunning: async () => { ensureCalls += 1; },
+      waitUntilReady: async () => readyStatus(),
+      stop: async () => {},
+    } as unknown as AppHostingProvider;
+
+    const runtime = await ensureAppRuntimeRunning(loaded, hosting, { forceProviderStart: true });
+
+    expect(runtime.status).toBe('running');
+    expect(startCalls).toBe(1);
+    expect(ensureCalls).toBe(0);
+  });
+
   test('a manual stop during provider readiness wins and cannot be overwritten by the wake owner', async () => {
     const loaded = await seedStoppedRuntime();
     const readinessStarted = deferred<void>();

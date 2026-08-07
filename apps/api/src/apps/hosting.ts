@@ -152,7 +152,14 @@ export class AppHostingProvider {
 
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {
     const runtimeProvider = this.dependencies.runtimeProvider(provider);
-    await runtimeProvider.start(externalId);
+    try {
+      await runtimeProvider.start(externalId);
+    } catch (error) {
+      // Concurrent cold requests can both observe the provider-stopped signal.
+      // Treat an already-running provider as a successful idempotent start.
+      const status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+      if (status !== 'running') throw error;
+    }
     await this.waitForProviderRunning(runtimeProvider, externalId);
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }

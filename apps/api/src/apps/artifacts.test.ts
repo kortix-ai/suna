@@ -8,6 +8,7 @@ import {
   appArtifactObjectPath,
   extractAppArchive,
   inspectAppArchive,
+  retryAppArtifactStorage,
   validateArchiveEntry,
 } from './artifacts';
 
@@ -18,6 +19,37 @@ afterEach(async () => {
 });
 
 describe('App artifacts', () => {
+  test('retries transient storage control-plane failures with bounded backoff', async () => {
+    const delays: number[] = [];
+    let calls = 0;
+
+    const result = await retryAppArtifactStorage(
+      async () => {
+        calls += 1;
+        if (calls < 3) throw new Error('storage unavailable');
+        return 'signed-upload-url';
+      },
+      async (delay) => { delays.push(delay); },
+    );
+
+    expect(result).toBe('signed-upload-url');
+    expect(calls).toBe(3);
+    expect(delays).toEqual([100, 250]);
+  });
+
+  test('stops artifact storage retries after three failed attempts', async () => {
+    let calls = 0;
+
+    await expect(retryAppArtifactStorage(
+      async () => {
+        calls += 1;
+        throw new Error('storage unavailable');
+      },
+      async () => {},
+    )).rejects.toThrow('storage unavailable');
+    expect(calls).toBe(3);
+  });
+
   test('keeps source archives within the managed Supabase Storage limit', () => {
     expect(MAX_ARCHIVE_BYTES).toBe(50 * 1024 * 1024);
   });

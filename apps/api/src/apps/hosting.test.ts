@@ -129,6 +129,26 @@ describe('AppHostingProvider', () => {
     expect(appRuntimeStarts).toEqual(['box-1', 'box-1']);
   });
 
+  test('treats a provider start conflict as success when the runtime is already running', async () => {
+    const events: string[] = [];
+    const runtime = {
+      start: async () => {
+        events.push('start');
+        throw new Error('Sandbox is already started');
+      },
+      getStatus: async () => {
+        events.push('status');
+        return 'running' as const;
+      },
+      ensureAppRuntimeStarted: async () => { events.push('appd'); },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+
+    await hosting.start('daytona', 'box-1');
+
+    expect(events).toEqual(['start', 'status', 'status', 'appd']);
+  });
+
   test('waits for provider running state before starting appd after a cold wake', async () => {
     const events: string[] = [];
     const statuses = ['stopped', 'unknown', 'running'] as const;
@@ -211,7 +231,7 @@ describe('AppHostingProvider', () => {
     const hosting = new AppHostingProvider({
       runtimeProvider: () => runtime,
       controlSecret: secret,
-      fetch: async () => responses.shift()!,
+      fetch: (async () => responses.shift()!) as unknown as typeof globalThis.fetch,
       sleep: async () => {},
     });
 

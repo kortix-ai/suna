@@ -212,6 +212,32 @@ export function appPublicUnavailableResponse(
   return appPublicStatusResponse(request, app, { status: 'starting' });
 }
 
+/**
+ * Provider ingress can trail appd readiness for the first request after a
+ * resume. Hide that provider-only 502 behind the normal cold-start contract.
+ * A warm App owns its HTTP status, including intentional application 502s.
+ */
+export function appColdStartUpstreamResponse(
+  request: Request,
+  app: { name: string },
+  coldStart: boolean,
+  upstreamStatus: number,
+): Response | null {
+  return coldStart && upstreamStatus === 502
+    ? appPublicUnavailableResponse(request, app)
+    : null;
+}
+
+export function appProviderStoppedResponse(
+  provider: SandboxProviderName,
+  status: number,
+  body: string,
+): boolean {
+  return provider === 'daytona' && status === 400 && (
+    body.includes('no IP address found') || body.includes('failed to get runner info')
+  );
+}
+
 export function appPublicBudgetResponse(
   request: Request,
   app: { name: string },
@@ -506,6 +532,7 @@ export function appRuntimeNeedsWake(
 export async function ensureAppRuntimeRunning(
   loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
   hosting: AppHostingProvider,
+  options: { forceProviderStart?: boolean } = {},
 ) {
   let app = loaded.app;
   if (app.desiredState !== 'running') {
@@ -542,7 +569,8 @@ export async function ensureAppRuntimeRunning(
 
   try {
     const provider = leased.provider as SandboxProviderName;
-    await hosting.ensureRunning(provider, leased.externalId);
+    if (options.forceProviderStart) await hosting.start(provider, leased.externalId);
+    else await hosting.ensureRunning(provider, leased.externalId);
     await hosting.waitUntilReady(provider, leased.externalId, leased.runtimeId, 120_000);
 
     // A manual stop can win while the provider is starting. The desired state
@@ -699,7 +727,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
       console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
     });
   }
-  let runtime;
+  let runtime: typeof loaded.runtime;
   try {
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
   } catch (error) {
@@ -719,19 +747,83 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     markComputeSessionAlive(runtime.runtimeId, now),
   ]);
 
-  const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
-  const upstreamUrl = `${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`;
-  let upstream: Response;
-  try {
-    upstream = await fetch(upstreamUrl, {
+  const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
+  const fetchUpstream = async () => {
+    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
+    const upstreamUrl = `${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`;
+    return fetch(upstreamUrl, {
       method: request.method,
       headers: appUpstreamHeaders(request, ingress.headers, matched.publicHost),
-      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+      body: replayableRequest ? undefined : request.body,
       redirect: 'manual',
       duplex: 'half',
     } as RequestInit);
-  } catch {
+  };
+  const recoverProviderRuntime = async (forceProviderStart: boolean) => {
+    runtime = await ensureAppRuntimeRunning({
+      ...loaded,
+      runtime: {
+        ...runtime,
+        status: 'stopped',
+        idleDeadlineAt: null,
+      },
+    }, hosting, { forceProviderStart });
+  };
+  const startingResponse = async () => {
+    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
+      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
     return appPublicUnavailableResponse(request, state.app);
+  };
+
+  let upstream: Response;
+  let recoveredProvider = false;
+  try {
+    upstream = await fetchUpstream();
+  } catch {
+    try {
+      await recoverProviderRuntime(false);
+      recoveredProvider = true;
+      if (!replayableRequest) return startingResponse();
+      upstream = await fetchUpstream();
+    } catch {
+      return startingResponse();
+    }
+  }
+
+  if (upstream.status === 400) {
+    const body = await upstream.clone().text().catch(() => '');
+    if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, body)) {
+      await upstream.body?.cancel().catch(() => {});
+      if (coldStart) return startingResponse();
+      try {
+        await recoverProviderRuntime(true);
+        recoveredProvider = true;
+        if (!replayableRequest) return startingResponse();
+        upstream = await fetchUpstream();
+      } catch {
+        return startingResponse();
+      }
+      if (upstream.status === 400) {
+        const retryBody = await upstream.clone().text().catch(() => '');
+        if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, retryBody)) {
+          await upstream.body?.cancel().catch(() => {});
+          return startingResponse();
+        }
+      }
+    }
+  }
+
+  const coldStartResponse = appColdStartUpstreamResponse(
+    request,
+    state.app,
+    coldStart || recoveredProvider,
+    upstream.status,
+  );
+  if (coldStartResponse) {
+    await upstream.body?.cancel().catch(() => {});
+    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
+      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+    return coldStartResponse;
   }
 
   const responseHeaders = appPublicResponseHeaders(upstream.headers);
@@ -756,11 +848,17 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
       markComputeSessionAlive(runtime.runtimeId, at),
     ]);
   }, 30_000);
-  void upstream.body.pipeTo(stream.writable).finally(() => {
-    clearInterval(renew);
-    void db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
-      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
-  });
+  void upstream.body
+    .pipeTo(stream.writable)
+    // Browser navigation can cancel the response during a refresh. The client
+    // already owns that failure, so consume it instead of emitting an
+    // unhandled rejection from this fire-and-forget stream.
+    .catch(() => {})
+    .finally(() => {
+      clearInterval(renew);
+      void db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
+        .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+    });
   return new Response(stream.readable, {
     status: upstream.status,
     statusText: upstream.statusText,

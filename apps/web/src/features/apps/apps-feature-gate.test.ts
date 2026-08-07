@@ -35,7 +35,19 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 test('a suspended App preview issues the request that wakes its active deployment', () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(view).toContain('if (!app.active_deployment_id || !url)');
-  expect(view).not.toContain("if (!app.active_deployment_id || !url || app.desired_state === 'stopped')");
+  expect(view).toContain('if (!app.active_deployment_id)');
+  expect(view).toContain('if (!url)');
+  expect(view).toContain('src={url}');
+  expect(view).toContain('data-testid="app-live-preview"');
+  expect(view).not.toContain("app.desired_state === 'stopped'");
   expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
+});
+
+test('an active App never looks undeployed while its signed preview URL loads', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(view).toContain('if (!app.active_deployment_id)');
+  expect(view).toContain("data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}");
+  expect(view).toContain('Preparing preview');
+  expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });

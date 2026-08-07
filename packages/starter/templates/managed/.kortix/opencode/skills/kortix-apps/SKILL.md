@@ -11,7 +11,8 @@ deployment with a stable URL. Kortix selects and operates the sandbox provider.
 ## Preflight
 
 1. Run `pwd` and inspect the intended source directory before deploying.
-2. Run `kortix projects info --json` to confirm the selected project.
+2. Run `kortix projects info --json` to confirm the selected project. Read its
+   identifier from `project_id`.
 3. If Apps is disabled, ask a project manager to enable the Experimental Apps
    feature. API and CLI execution are project-gated.
 4. Do not create an empty App identity first. `kortix apps deploy` creates the
@@ -108,10 +109,12 @@ Create a short-lived authenticated browser link without changing the policy:
 kortix apps access-link <app> --json
 ```
 
-Read `access_session.url` and `access_session.expires_at` from the JSON. The URL
-contains a scoped one-time exchange token. Do not publish it, commit it, or put
-it in logs. The first request exchanges it for an App-host cookie and redirects
-to the same path without the token.
+Read the stable URL from `app.url`. Read the signed URL and expiry from
+`access_session.url` and `access_session.expires_at`. The signed URL is valid for
+five minutes. Treat it as a password until it expires. Do not publish it, commit
+it, or put it in logs. The first request exchanges it for an eight-hour
+App-host cookie and redirects to the same path without the token. Create a fresh
+link for each independent browser profile or cookie jar.
 
 ## Verify
 
@@ -123,7 +126,8 @@ Do not stop at a `ready` status.
    kortix apps show <slug> --json
    ```
 
-2. Fetch the stable URL. For a private App, create an authenticated link with
+2. Read the stable URL from `app.url` in the `deploy`, `show`, or `access-link`
+   JSON result. Fetch it. For a private App, create an authenticated link with
    `kortix apps access-link <slug> --json`, follow redirects, and retain the
    response cookie. Assert status `200`, the expected body marker, and the
    content type.
@@ -131,22 +135,39 @@ Do not stop at a `ready` status.
    in the returned HTML. Resolve the relative URL against the stable App URL and
    fetch that hashed JavaScript or CSS asset. Assert status `200` and its content
    type. Do not guess the hashed filename.
-4. For an SPA, fetch a client route and confirm it returns the SPA entrypoint.
+4. For an SPA, fetch a client route. Confirm it returns the same root marker and
+   hashed entry asset as `/`. Byte equality is also valid when the server does
+   not inject per-request content.
 5. For a service, fetch its readiness endpoint and one real application route.
 6. For non-public Apps, fetch the stable URL without credentials and confirm it
    returns `401` before testing authorized access.
-7. Run `kortix apps stop <slug>`. Create a new access link when the old link has
-   expired. Request the authenticated stable URL without running `start`. Follow
-   the redirect and keep its cookie. Poll for up to 120 seconds until the final
-   response is `200`. A machine response can return `202` with `Retry-After`
-   while the provider resumes. A browser lifecycle page refreshes itself. The
-   body must never expose `app_stopped`, `App not found`, or temporary
-   unavailability copy.
+7. Run `kortix apps stop <slug> --json`. The command returns only after the
+   provider stop call and runtime-state write complete. Confirm
+   `desired_state` is `stopped`. Request the stable URL with the existing
+   App-host cookie without running `start`.
+   Poll for up to 120 seconds until the final response is `200`. A machine
+   response can return `202` with `Retry-After: 3` while the provider resumes.
+   A browser navigation receives the same `202` with branded HTML and a
+   three-second refresh. The body must never expose `app_stopped`, `App not
+   found`, `temporarily unavailable`, or `App is temporarily unavailable`.
 8. Re-read `kortix apps show <slug> --json`. Confirm the active deployment did
-   not change during a normal wake unless Kortix completed a background runtime
-   refresh.
-9. Confirm the Apps page shows the live preview and active version in both light
-   and dark mode. Confirm the iframe request wakes a suspended private App.
+   not change during a normal wake. If it changed, require the new active
+   deployment to be `ready`, `actor_type: system`, `source_session_id: null`,
+   and to reuse the prior `artifact_id`, `source_kind`, and `hosting_provider`.
+   Those fields identify a background runtime refresh.
+9. Reuse a browser profile that is already signed in to Kortix as the App user.
+   If none exists, sign in through `/auth`; in repository E2E tests, use the
+   shared authenticated-browser helper. Do not open the Apps page yet. Attach
+   App-host response capture first. Stop the App and confirm the JSON state.
+   Then open `/projects/<project-id>/apps`. The Apps page calls the SDK access
+   session endpoint, assigns its signed URL to the iframe, and exchanges it for
+   an App-host cookie in that browser profile. Target the cross-origin frame
+   through frame-aware browser automation. Confirm the page shows the live
+   preview and active version in both light and dark mode. For App document
+   responses, allow `202` while starting and require the final response to be
+   `200`; reject every `5xx`. Assert the iframe body marker. Inspect every
+   captured lifecycle body for the forbidden strings from step 7. Do not accept
+   a screenshot without DOM and network assertions.
 
 ## Diagnose
 

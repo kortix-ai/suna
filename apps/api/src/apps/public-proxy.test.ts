@@ -9,6 +9,8 @@ const {
   appPublicBudgetResponse,
   appPublicResponseHeaders,
   appPublicStatusResponse,
+  appColdStartUpstreamResponse,
+  appProviderStoppedResponse,
   appRuntimeNeedsWake,
   appEdgeSignature,
   appUpstreamHeaders,
@@ -98,12 +100,14 @@ describe('Apps public edge', () => {
   test('exchanges local access links into an iframe-compatible partitioned cookie', async () => {
     const app = {
       appId: '11111111-1111-4111-8111-111111111111',
+      accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       projectId: '22222222-2222-4222-8222-222222222222',
       createdBy: '33333333-3333-4333-8333-333333333333',
       name: 'Local private App',
       accessMode: 'private',
       accessPasswordHash: null,
       accessRevision: 4,
+      updatedAt: new Date('2026-08-07T19:01:00.000Z'),
     };
     const token = createAppAccessToken({
       appId: app.appId,
@@ -335,6 +339,40 @@ describe('Apps public edge', () => {
     expect(html).not.toContain('temporarily unavailable');
     expect(html).not.toContain('app_unavailable');
     expect(html).toContain('http-equiv="refresh"');
+  });
+
+  test('converts only a cold-wake ingress 502 into the branded starting response', async () => {
+    const request = new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
+      headers: { accept: 'text/html' },
+    });
+
+    const coldResponse = appColdStartUpstreamResponse(
+      request,
+      { name: 'Storefront' },
+      true,
+      502,
+    );
+    expect(coldResponse?.status).toBe(202);
+    expect(coldResponse?.headers.get('retry-after')).toBe('3');
+    const html = await coldResponse?.text();
+    expect(html).toContain('Starting Storefront');
+    expect(html).not.toContain('temporarily unavailable');
+
+    expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, false, 502)).toBeNull();
+    expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, true, 500)).toBeNull();
+    expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, true, 404)).toBeNull();
+  });
+
+  test('classifies only Daytona provider-stopped 400 responses as wake signals', () => {
+    expect(appProviderStoppedResponse(
+      'daytona',
+      400,
+      'bad request: failed to resolve container IP: no IP address found. Is the Sandbox started?',
+    )).toBe(true);
+    expect(appProviderStoppedResponse('daytona', 400, 'failed to get runner info')).toBe(true);
+    expect(appProviderStoppedResponse('daytona', 400, 'application validation failed')).toBe(false);
+    expect(appProviderStoppedResponse('platinum', 400, 'no IP address found')).toBe(false);
+    expect(appProviderStoppedResponse('daytona', 502, 'no IP address found')).toBe(false);
   });
 
   test('allows Apps to render inside Kortix while preserving the rest of the upstream CSP', () => {
