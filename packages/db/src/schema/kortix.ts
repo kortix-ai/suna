@@ -3003,6 +3003,7 @@ export const appDeployments = kortixSchema.table(
     startedAt: timestamp('started_at', { withTimezone: true }),
     readyAt: timestamp('ready_at', { withTimezone: true }),
     failedAt: timestamp('failed_at', { withTimezone: true }),
+    createdBy: uuid('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

@@ -155,6 +155,8 @@ export interface AppDeployment {
   started_at: string | null;
   ready_at: string | null;
   failed_at: string | null;
+  /** User whose deployment request resolved personal project-secret overrides. */
+  created_by: string;
   created_at: string;
   updated_at: string;
 }

@@ -165,6 +165,7 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     started_at: row.startedAt?.toISOString() ?? null,
     ready_at: row.readyAt?.toISOString() ?? null,
     failed_at: row.failedAt?.toISOString() ?? null,
+    created_by: row.createdBy,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -393,7 +394,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+    const loaded = await authorizedProject(c, projectId, true);
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const app = await scopedApp(projectId, appId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
@@ -413,6 +415,7 @@ projectsApp.openapi(
       const [row] = await tx.insert(appDeployments).values({
         appId, artifactId: artifact.artifactId, version, status: 'queued',
         sourceKind: source.kind, hostingProvider: body.provider ?? null,
+        createdBy: loaded.userId,
         runtimeVersion: APP_RUNTIME_VERSION,
         buildSpec: {
           source,

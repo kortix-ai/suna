@@ -77,6 +77,7 @@ CREATE TABLE "kortix"."app_deployments" (
 	"started_at" timestamp with time zone,
 	"ready_at" timestamp with time zone,
 	"failed_at" timestamp with time zone,
+	"created_by" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "app_deployments_status_check" CHECK ("kortix"."app_deployments"."status" IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled')),

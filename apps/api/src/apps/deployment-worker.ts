@@ -315,7 +315,7 @@ export async function driveAppDeployment(
 
     const availableSecrets = await listResolvedProjectSecrets(
       context.app.projectId,
-      context.artifact.createdBy ?? context.app.createdBy,
+      context.deployment.createdBy,
     );
     let runtimeEnvironment;
     try {
@@ -385,7 +385,7 @@ export async function driveAppDeployment(
         provider,
         runtimeId,
         accountId: context.app.accountId,
-        userId: context.app.createdBy ?? context.artifact.createdBy ?? context.app.accountId,
+        userId: context.deployment.createdBy,
         name: `app-${context.app.routeKey}-v${context.deployment.version}`,
         snapshotName,
         machine: {
@@ -417,7 +417,7 @@ export async function driveAppDeployment(
       await startComputeSession({
         sandboxId: runtimeId,
         accountId: context.app.accountId,
-        actorUserId: context.app.createdBy,
+        actorUserId: context.deployment.createdBy,
         provider,
         spec: {
           cpuCores: context.app.cpuCores,

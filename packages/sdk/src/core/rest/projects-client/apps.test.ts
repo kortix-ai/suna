@@ -17,6 +17,7 @@ import {
   stopApp,
   updateApp,
   uploadAppArtifactArchive,
+  type AppDeployment,
 } from './apps';
 
 type Call = { url: string; method: string; body: unknown; headers: Headers };
@@ -45,6 +46,11 @@ beforeEach(() => {
 });
 
 const last = () => calls.at(-1)!;
+
+test('AppDeployment exposes the immutable deploying actor', () => {
+  const deployment = { created_by: 'user-1' } as AppDeployment;
+  expect(deployment.created_by).toBe('user-1');
+});
 
 test('Apps CRUD uses the project-scoped API contract', async () => {
   const app = {

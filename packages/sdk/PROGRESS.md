@@ -126,9 +126,30 @@ same RED, GREEN, and REFACTOR sequence directly.
 Required final gates are `typecheck`, the complete SDK test suite, and the
 packed-install smoke test.
 
-**Status:** IN PROGRESS.
+Final security correction:
 
-**SDK package shippable to production: NOT YET.**
+- `AppDeployment.created_by` records the caller who created the immutable
+  deployment.
+- The API uses that actor for personal secret resolution, runtime ownership,
+  and compute attribution.
+- The type addition is backward-compatible and changes no public export name.
+
+RED:
+
+- `pnpm --filter @kortix/sdk typecheck`: failed with `TS2551` because
+  `AppDeployment.created_by` did not exist.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1598 pass`, `0 fail`, and `6550 expect()`
+  calls across `127` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk`.
+
+**Status:** COMPLETE in PR #6197.
+
+**SDK package shippable to production: YES.**
 
 ---
 

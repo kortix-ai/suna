@@ -99,6 +99,7 @@ async function seedStoppedRuntime() {
     hostingType: 'sandbox',
     hostingProvider: 'local-docker',
     runtimeVersion: 'test',
+    createdBy: PROJECT_ID,
   });
   await db.insert(appRuntimes).values({
     runtimeId: RUNTIME_ID,
