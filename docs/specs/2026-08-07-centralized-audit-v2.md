@@ -77,8 +77,10 @@ idle, abort, and error transitions.
 ## Query surfaces
 
 - Account API: cursor-paginated canonical events with strict filters.
-- Project API: the same event shape filtered by `project_id`.
-- Session API: the same event shape ordered by `session_sequence`.
+- Project API: the same event shape filtered by `project_id`; aggregate access
+  requires `project.members.manage` because rows can include private-session metadata.
+- Session API: the same event shape ordered by `session_sequence`; access uses
+  `project.session.read` plus the established session-visibility check.
 - Export API: resumable CSV and JSONL pages with `next_cursor` and `complete`.
 - SDK: one framework-free typed contract for all three scopes.
 - CLI: `audit ls`, `audit project`, `audit session`, and resumable `audit export`.

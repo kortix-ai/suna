@@ -602,7 +602,13 @@ computer tunnel operations. Events carry project and session scope, actor and
 initiator identity, action phase, correlation identifiers, redacted summaries,
 digests, and a per-session integrity chain.
 
-**Reading it** (needs `audit.read` + the `auditAccess` entitlement):
+**Reading it:**
+
+- Account-wide logs and exports need `audit.read` plus the `auditAccess`
+  entitlement.
+- Project-wide logs need `project.members.manage` plus the `auditAccess`
+  entitlement because they can include private-session metadata.
+- A session log needs `project.session.read` and visibility of that session.
 
 - **UI:** `/accounts/{id}?tab=audit` — filters for project, session, actor, source,
   phase, result, resource, action, and time. CSV and JSONL exports automatically

@@ -1068,6 +1068,8 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/audit
 // Canonical project slice. It returns the same event contract and cursor as
 // the account log, with project_id bound server-side to the authorized project.
+// This aggregate oversight surface can include private-session metadata, so it
+// requires the project-members management capability instead of session read.
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -1097,7 +1099,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AuditListSchema, 'Canonical project audit page'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 403, 404),
     },
   }),
   // biome-ignore lint/suspicious/noExplicitAny: Current OpenAPI response unions require the established untyped route-handler boundary.
@@ -1110,7 +1112,7 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
     const denied = await requireEntitlement(c, loaded.row.accountId, 'auditAccess');
     if (denied) return denied;

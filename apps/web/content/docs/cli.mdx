@@ -465,7 +465,10 @@ lists are newest first. A session timeline is ordered by its monotonic
 Filters: `--actor`, `--actor-type`, `--project`, `--session`, `--source`,
 `--phase`, `--outcome`, `--action`, `--resource-type`, `--request-id`,
 `--correlation-id`, `--query`, `--since`, `--until`, `--cursor`, and `--limit`.
-Reading requires `audit.read` and the account's `auditAccess` entitlement.
+Account lists and exports require `audit.read` and the account's `auditAccess`
+entitlement. Project-wide lists require `project.members.manage` because they can
+include private-session metadata. Session reconstruction requires
+`project.session.read` and visibility of that session.
 
 ### Roles
 
