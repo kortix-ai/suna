@@ -12,8 +12,8 @@ import { C, help, pad, status } from "../style.ts";
 
 const HELP = help`Usage: kortix goals <subcommand> [options]
 
-Inspect and drive the autonomous goals declared in the project's goals/*.md
-files. Use observe to record a metric value. Use push to request a goal run.
+Inspect and drive the autonomous goals declared in the project manifest.
+Use observe to record a metric value. Use push to request a goal run.
 
 Subcommands:
   ls [--json]            List declared goals and parse errors.
@@ -348,7 +348,7 @@ function renderGoalList(
   errors: Array<{ slug: string; path: string; error: string }>,
 ): void {
   if (goals.length === 0) {
-    process.stdout.write("No goals declared in goals/*.md.\n");
+    process.stdout.write("No goals declared in the project manifest.\n");
   } else {
     const slugWidth = Math.max(4, ...goals.map((goal) => goal.slug.length));
     const statusWidth = Math.max(6, ...goals.map((goal) => goal.status.length));
