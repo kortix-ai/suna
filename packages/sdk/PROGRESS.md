@@ -12,6 +12,31 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `agi-kernel-liveness-policy` claim
+
+Claimed scope:
+
+- Add worker registration, semantic progress, and idempotent no-progress contracts.
+- Expose prompt delivery state and every serialized liveness field through the project facade.
+- Preserve all existing public names and keep the package version unchanged.
+
+RED/GREEN/REFACTOR evidence:
+
+- Deliberate test-first redo: saved the final `tasks.ts` and `kortix.ts` implementations outside the repository, restored both implementation files to `HEAD`, and kept the final REST-client and facade tests.
+- RED: `bun test src/core/rest/projects-client/tasks.test.ts src/core/client/kortix.test.ts` produced `81 pass, 2 fail, 1 error`. The facade received `registerWorker` as `undefined`; the REST test failed module loading because `settleNoProgressProjectTask` was not exported.
+- Reapplied only the saved implementations.
+- GREEN focused: the same two-file command produced `86 pass, 0 fail` with 310 assertions.
+- `pnpm typecheck`: exit 0. This runs core plus `examples/tsconfig.json` typechecks.
+- `bun test src/public-surface.test.ts src/public-type-surface.test.ts`: `2 pass, 0 fail`; both committed snapshots match.
+- `pnpm test`: `1599 pass, 0 fail` across 127 files with 6,567 assertions.
+- `pnpm smoke:install`: packed `@kortix/sdk`, `@kortix/llm-catalog`, and `@kortix/executor-sdk`; Node ESM import and construction passed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `agi-kernel-goals-tasks` completion
 
 Added the framework-free, project-scoped goal and generated-task control plane.

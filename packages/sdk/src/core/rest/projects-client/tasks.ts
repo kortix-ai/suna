@@ -32,6 +32,21 @@ export interface ProjectTask {
   claim_session_id: string | null;
   claimed_at: string | null;
   claim_expires_at: string | null;
+  liveness_worker_session_id: string | null;
+  liveness_coordinator_session_id: string | null;
+  liveness_worker_contract: ProjectTaskWorkerContract | null;
+  liveness_started_at: string | null;
+  liveness_deadline_at: string | null;
+  liveness_iterations_admitted: number;
+  no_progress_settlements: number;
+  continuation_consumed_at: string | null;
+  last_progress_at: string | null;
+  last_progress_ref: string | null;
+  last_no_progress_settlement_id: string | null;
+  last_no_progress_action: 'continuation_queued' | 'blocked_escalation_queued' | null;
+  last_no_progress_command_id: string | null;
+  escalated_at: string | null;
+  liveness_blocker: string | null;
   result: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -72,6 +87,60 @@ export interface CompleteProjectTaskInput {
 export interface BlockProjectTaskInput {
   session_id: string;
   blocker: string;
+}
+
+/** Immutable server-enforced bounds for one task worker. */
+export interface ProjectTaskWorkerContract {
+  max_wall_seconds: number;
+  max_tokens: number;
+  max_cost_usd: number;
+  max_iterations: number;
+}
+
+export interface RegisterProjectTaskWorkerInput {
+  session_id: string;
+  worker_session_id: string;
+  contract: ProjectTaskWorkerContract;
+  prompt: string;
+}
+
+export interface RegisterProjectTaskWorkerResponse {
+  task: ProjectTask;
+  worker: { session_id: string; command_id: string; state: 'queued' | 'drained' };
+  contract: ProjectTaskWorkerContract;
+}
+
+export interface RecordProjectTaskProgressInput {
+  session_id: string;
+  worker_session_id: string;
+  ref: string;
+}
+
+export interface RecordProjectTaskProgressResponse {
+  task: ProjectTask;
+  action: 'recorded';
+}
+
+export interface SettleNoProgressProjectTaskInput {
+  session_id: string;
+  worker_session_id: string;
+  settlement_id: string;
+  reason: string;
+}
+
+export interface SettleNoProgressProjectTaskResponse {
+  action: 'continuation_queued' | 'blocked_escalation_queued';
+  command_id: string;
+  measured_usage: {
+    total_cost: number;
+    input_tokens: number;
+    output_tokens: number;
+    cached_tokens: number;
+    cache_write_tokens: number;
+    total_tokens: number;
+    request_count: number;
+  };
+  task: ProjectTask;
 }
 
 function taskPath(projectId: string, taskId?: string): string {
@@ -126,4 +195,38 @@ export async function blockProjectTask(
   return unwrap(
     await backendApi.post<{ task: ProjectTask }>(`${taskPath(projectId, taskId)}/block`, input),
   );
+}
+
+
+/** Register immutable worker bounds and enqueue its initial prompt atomically. */
+export async function registerProjectTaskWorker(
+  projectId: string,
+  taskId: string,
+  input: RegisterProjectTaskWorkerInput,
+) {
+  return unwrap(await backendApi.post<RegisterProjectTaskWorkerResponse>(
+    `${taskPath(projectId, taskId)}/worker`, input,
+  ));
+}
+
+/** Record semantic progress for the authenticated task worker. */
+export async function recordProjectTaskProgress(
+  projectId: string,
+  taskId: string,
+  input: RecordProjectTaskProgressInput,
+) {
+  return unwrap(await backendApi.post<RecordProjectTaskProgressResponse>(
+    `${taskPath(projectId, taskId)}/progress`, input,
+  ));
+}
+
+/** Atomically consume the only continuation or block and escalate. */
+export async function settleNoProgressProjectTask(
+  projectId: string,
+  taskId: string,
+  input: SettleNoProgressProjectTaskInput,
+) {
+  return unwrap(await backendApi.post<SettleNoProgressProjectTaskResponse>(
+    `${taskPath(projectId, taskId)}/no-progress`, input,
+  ));
 }

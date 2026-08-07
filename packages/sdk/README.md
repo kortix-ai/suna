@@ -198,6 +198,37 @@ await project.tasks.complete(task.task_id, {
 A settled or idle worker session is not task completion. The worker must make an
 explicit terminal task transition with verifier evidence.
 
+Register a spawned worker before its first prompt. The transaction persists the
+bounds and the initial prompt. `worker.state` reports whether the API drained the
+prompt immediately or left it in the durable outbox.
+
+```ts
+const registration = await project.tasks.registerWorker(task.task_id, {
+  session_id: coordinatorSessionId,
+  worker_session_id: workerSessionId,
+  prompt: "Implement the task and cite verifier evidence.",
+  contract: {
+    max_wall_seconds: 900,
+    max_tokens: 50_000,
+    max_cost_usd: 2.5,
+    max_iterations: 8,
+  },
+});
+console.log(registration.worker.state); // "drained" or "queued"
+
+await project.tasks.recordProgress(task.task_id, {
+  session_id: coordinatorSessionId,
+  worker_session_id: workerSessionId,
+  ref: "commit:abc123",
+});
+await project.tasks.settleNoProgress(task.task_id, {
+  session_id: coordinatorSessionId,
+  worker_session_id: workerSessionId,
+  settlement_id: "worker-turn-1",
+  reason: "The worker settled without terminal evidence.",
+});
+```
+
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults. A per-call choice

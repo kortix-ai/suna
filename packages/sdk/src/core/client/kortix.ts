@@ -524,6 +524,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.completeProjectTask(projectId, ...a),
         block: (...a: DropFirst<Parameters<typeof P.blockProjectTask>>) =>
           P.blockProjectTask(projectId, ...a),
+        registerWorker: (...a: DropFirst<Parameters<typeof P.registerProjectTaskWorker>>) =>
+          P.registerProjectTaskWorker(projectId, ...a),
+        recordProgress: (...a: DropFirst<Parameters<typeof P.recordProjectTaskProgress>>) =>
+          P.recordProjectTaskProgress(projectId, ...a),
+        settleNoProgress: (...a: DropFirst<Parameters<typeof P.settleNoProgressProjectTask>>) =>
+          P.settleNoProgressProjectTask(projectId, ...a),
       },
 
       files: {

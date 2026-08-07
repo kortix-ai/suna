@@ -7,6 +7,9 @@ import {
   createProjectTask,
   getProjectTask,
   listProjectTasks,
+  recordProjectTaskProgress,
+  registerProjectTaskWorker,
+  settleNoProgressProjectTask,
 } from './tasks';
 
 let calls: Array<{ url: string; method: string; body?: unknown }> = [];
@@ -96,5 +99,44 @@ test('task claim and terminal transitions carry session ownership and evidence',
     url: 'http://test.local/projects/project-1/tasks/task-2/block',
     method: 'POST',
     body: { session_id: 'session-2', blocker: 'Human approval is required' },
+  });
+});
+
+
+test('worker registration, progress, and no-progress use separate durable contracts', async () => {
+  await registerProjectTaskWorker('project-1', 'task-1', {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    prompt: 'Implement and verify the bounded task.',
+    contract: {
+      max_wall_seconds: 900,
+      max_tokens: 50_000,
+      max_cost_usd: 2.5,
+      max_iterations: 8,
+    },
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/worker', method: 'POST',
+    body: expect.objectContaining({ worker_session_id: 'worker-session', prompt: 'Implement and verify the bounded task.' }),
+  });
+
+  await recordProjectTaskProgress('project-1', 'task-1', {
+    session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/progress', method: 'POST',
+    body: { session_id: 'coordinator-session', worker_session_id: 'worker-session', ref: 'commit:abc123' },
+  });
+
+  await settleNoProgressProjectTask('project-1', 'task-1', {
+    session_id: 'coordinator-session', worker_session_id: 'worker-session', settlement_id: 'settlement-1',
+    reason: 'Worker settled without verifier evidence or a delivered blocker',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/no-progress', method: 'POST',
+    body: {
+      session_id: 'coordinator-session', worker_session_id: 'worker-session', settlement_id: 'settlement-1',
+      reason: 'Worker settled without verifier evidence or a delivered blocker',
+    },
   });
 });

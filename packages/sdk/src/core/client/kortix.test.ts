@@ -1531,3 +1531,23 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
   // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
   expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });
+
+
+test('project tasks facade exposes worker liveness mutations', async () => {
+  const tasks = kortix.project('PID123').tasks;
+  expect(typeof tasks.registerWorker).toBe('function');
+  expect(typeof tasks.recordProgress).toBe('function');
+  expect(typeof tasks.settleNoProgress).toBe('function');
+
+  await tasks.registerWorker('TASK1', {
+    session_id: 'COORDINATOR',
+    worker_session_id: 'WORKER',
+    prompt: 'Perform the bounded task.',
+    contract: { max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5, max_iterations: 8 },
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/tasks/TASK1/worker',
+    method: 'POST',
+    body: expect.objectContaining({ worker_session_id: 'WORKER' }),
+  });
+});
