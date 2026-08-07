@@ -17,6 +17,8 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import {
   copyFile,
   cp,
+  chmod,
+  readdir,
   mkdir,
   mkdtemp,
   rename,
@@ -71,6 +73,10 @@ const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
+const appdBinPath = () => process.env.KORTIX_APPD_BIN_PATH
+  || resolve(REPO_ROOT, 'apps/kortix-app-runtime/dist/kortix-appd-linux-amd64');
+const appCaddyBinPath = () => process.env.KORTIX_APP_CADDY_BIN_PATH
+  || resolve(REPO_ROOT, 'apps/kortix-app-runtime/dist/caddy-linux-amd64');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -92,6 +98,68 @@ export interface StagedContext {
   composedPath: string;
   /** Basename of the Dockerfile (for `-f`). */
   dockerfileName: string;
+}
+
+/**
+ * Stage one provider-neutral Kortix App build context. The user's Dockerfile
+ * remains the base. This function adds only the supervisor, ingress binary,
+ * and immutable non-secret runtime specification. Provider credentials and App
+ * secrets never enter the build context.
+ */
+export async function stageAppBuildContext(
+  snapshotName: string,
+  userDockerfile: string,
+  appContext: { sourceDir?: string; runtimeSpec: Record<string, unknown> },
+): Promise<StagedContext> {
+  const appdPath = appdBinPath();
+  const caddyPath = appCaddyBinPath();
+  await assertExists(appdPath, 'KORTIX_APPD_BIN_PATH');
+  await assertExists(caddyPath, 'KORTIX_APP_CADDY_BIN_PATH');
+
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-app-snap-'));
+  try {
+    if (appContext.sourceDir) {
+      const entries = await readdir(appContext.sourceDir);
+      if (entries.includes('.kortix-app-runtime')) {
+        throw new Error('App source contains reserved path .kortix-app-runtime');
+      }
+      for (const entry of entries) {
+        await cp(join(appContext.sourceDir, entry), join(contextDir, entry), {
+          recursive: true,
+          preserveTimestamps: true,
+        });
+      }
+    }
+
+    const runtimeDir = join(contextDir, '.kortix-app-runtime');
+    await mkdir(runtimeDir, { recursive: true });
+    await copyFile(appdPath, join(runtimeDir, 'kortix-appd'));
+    await copyFile(caddyPath, join(runtimeDir, 'caddy'));
+    await chmod(join(runtimeDir, 'kortix-appd'), 0o755);
+    await chmod(join(runtimeDir, 'caddy'), 0o755);
+    await writeFileFs(
+      join(runtimeDir, 'app.json'),
+      `${JSON.stringify(appContext.runtimeSpec, null, 2)}\n`,
+      { mode: 0o644 },
+    );
+
+    const dockerfileName = '.kortix-app.Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    const composed = `${userDockerfile.trimEnd()}\n\n` +
+      `# Kortix Apps runtime ${snapshotName}\n` +
+      'COPY .kortix-app-runtime/kortix-appd /kortix/bin/kortix-appd\n' +
+      'COPY .kortix-app-runtime/caddy /kortix/bin/caddy\n' +
+      'COPY .kortix-app-runtime/app.json /kortix/config/app.json\n' +
+      'ENV KORTIX_APP_SPEC_PATH=/kortix/config/app.json\n' +
+      'EXPOSE 7331 8080\n' +
+      'ENTRYPOINT ["/kortix/bin/kortix-appd"]\n';
+    await writeComposedDockerfile(composedPath, composed);
+    console.info(`[apps] ${snapshotName}: App build context staged at ${contextDir}`);
+    return { contextDir, composedPath, dockerfileName };
+  } catch (error) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 /**

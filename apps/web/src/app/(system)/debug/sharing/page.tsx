@@ -11,6 +11,7 @@ import { useState } from 'react';
 
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import type { ProjectAccessResponse } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 const DEMO_PROJECT = 'demo';
 const DEMO_ACCESS: ProjectAccessResponse = {
@@ -83,7 +84,7 @@ const DEMO_ACCESS: ProjectAccessResponse = {
 };
 
 const client = new QueryClient();
-client.setQueryData(['project-access', DEMO_PROJECT], DEMO_ACCESS);
+client.setQueryData(qk.project.access(DEMO_PROJECT), DEMO_ACCESS);
 
 function Panel({ title }: { title: string }) {
   const [value, setValue] = useState<SharingSelection>({ mode: 'members', memberIds: ['u2'], groupIds: [] });

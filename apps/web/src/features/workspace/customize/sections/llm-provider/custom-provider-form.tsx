@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { upsertProjectSecret } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
@@ -101,7 +101,7 @@ export function CustomProviderForm({
     },
     onSuccess: (result) => {
       setSavedSnippet(result);
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),

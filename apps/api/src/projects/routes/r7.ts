@@ -59,7 +59,7 @@ import {
   findAvailableWarmProjectSession,
   withWarmProjectSessionLock,
 } from '../lib/warm-session-store';
-import { refreshWarmSessionWorkspace } from '../lib/warm-session-workspace';
+import { prepareReusedWarmSession } from '../lib/warm-session-refresh';
 import {
   createWarmProjectSessionCoordinator,
   WarmProjectSessionError,
@@ -352,12 +352,23 @@ projectsApp.openapi(
           return sendSessionCreateError(c, requiredConnectionError(missing));
         }
       }
-      const workspaceRefresh = ensured.reused
-        ? await refreshWarmSessionWorkspace(
-            loaded.row,
-            ensured.session.sessionId,
-          )
-        : { status: 'skipped' as const };
+      const warmRefresh = ensured.reused
+        ? await prepareReusedWarmSession({
+            project: loaded.row,
+            accountId: loaded.row.accountId,
+            sessionId: ensured.session.sessionId,
+          })
+        : {
+            workspace: { status: 'skipped' as const },
+            config: { status: 'current' as const },
+          };
+      if (warmRefresh.config.status === 'failed') {
+        console.warn('[warm-session] failed to update compiled agent config', {
+          projectId,
+          sessionId: ensured.session.sessionId,
+          reason: warmRefresh.config.reason,
+        });
+      }
       return c.json(
         {
           session: serializeSession(ensured.session, {
@@ -365,7 +376,7 @@ projectsApp.openapi(
             canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
           }),
           reused: ensured.reused,
-          workspace_refresh: workspaceRefresh,
+          workspace_refresh: warmRefresh.workspace,
         },
         200,
       );
@@ -2219,7 +2230,12 @@ projectsApp.openapi(
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
     const [running, latest] = await Promise.all([
       readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({ projectId, accountId: loaded.row.accountId, baseRef }),
+      latestAgentConfigEtag({
+        projectId,
+        accountId: loaded.row.accountId,
+        sessionId,
+        baseRef,
+      }),
     ]);
     return c.json({
       base_ref: baseRef,

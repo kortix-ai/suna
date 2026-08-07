@@ -1,4 +1,4 @@
-import { commitManifest, loadManifestForEdit } from '../projects/index';
+import { commitManifest, loadManifestForEdit } from '../projects/lib/triggers';
 
 export type ManifestMutationResult =
   | { ok: true; commitMessage: string | null }
@@ -23,7 +23,7 @@ function isRevisionConflict(result: ManifestCommitResult): boolean {
 export async function mutateManifestWithRetry(
   project: ManifestProject,
   operation: string,
-  mutate: (manifest: EditableManifest) => ManifestMutationResult,
+  mutate: (manifest: EditableManifest) => ManifestMutationResult | Promise<ManifestMutationResult>,
 ): Promise<ManifestCommitResult> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let manifest: EditableManifest;
@@ -37,7 +37,7 @@ export async function mutateManifestWithRetry(
       };
     }
 
-    const change = mutate(manifest);
+    const change = await mutate(manifest);
     if (!change.ok) return change;
     if (change.commitMessage === null) return { ok: true };
 

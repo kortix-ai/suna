@@ -392,6 +392,15 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(first.env[BROKER_KEY]).toStartWith('test_broker_KXS1');
     expect(first.env[BROKER_KEY]).not.toContain(BROKER_VALUE);
     expect(first.names).toEqual([BROKER_KEY]);
+    expect(first.capabilities.capabilities).toEqual([
+      {
+        identifier: BROKER_IDENT,
+        delivery: 'https_broker',
+        command: `kortix secrets call ${BROKER_IDENT} <https-url> [options]`,
+      },
+    ]);
+    expect(first.capabilitiesJson).not.toContain(BROKER_VALUE);
+    expect(first.capabilitiesJson).not.toContain(first.env[BROKER_KEY]!);
 
     const second = await listProjectSecretsSnapshotForUser(
       ctx.projectId,
@@ -486,6 +495,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     );
     expect(snapshot.env[BROKER_KEY]).toBeUndefined();
     expect(snapshot.names).not.toContain(BROKER_KEY);
+    expect(snapshot.capabilities.capabilities).toEqual([]);
   });
 });
 

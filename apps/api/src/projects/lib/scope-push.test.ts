@@ -17,22 +17,6 @@ import * as realSecretGrant from './secret-grant';
 
 process.env.KORTIX_URL = 'https://api.example.com';
 
-// `getProvider('daytona')` throws when DAYTONA_API_KEY is unset (the unit suite
-// runs off fake env). `llmGatewayBaseUrlForProvider` calls it when the gateway
-// is on, so stub the provider to a no-validate shim. Spread the real module:
-// `mock.module` replaces it WHOLESALE, so a stub that lists exports by hand
-// deletes every export it omits. `await import` (not top-level) so it loads
-// AFTER the process.env write above — the barrel pulls in config, which reads
-// env once.
-const realProviders = await import('../../platform/providers');
-mock.module('../../platform/providers', () => ({
-  ...realProviders,
-  getProvider: (name: string) =>
-    name === 'daytona'
-      ? { sandboxFacingApiOrigin: () => 'http://kortix-api:8008' }
-      : realProviders.getProvider(name as never),
-}));
-
 let posted: Array<{
   revision?: string;
   env?: Record<string, string>;

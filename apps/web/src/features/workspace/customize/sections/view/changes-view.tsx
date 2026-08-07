@@ -24,7 +24,8 @@ import { useCommits } from '@/features/project-files/hooks/use-commits';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { getProject, type ProjectCommit } from '@kortix/sdk';
+import { getProjectDetail, type ProjectCommit } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
@@ -266,12 +267,21 @@ function ListSkeleton({ rows = 6 }: { rows?: number }) {
 // ---------------------------------------------------------------------------
 
 export function ChangesView({ projectId }: { projectId: string }) {
+  // Reads the SAME qk.project.detail(projectId) entry customize-panel.tsx
+  // already mounts whenever the panel is open (this view only renders while
+  // that panel is open — see customize-panel.tsx's `detail` query). A
+  // `select` projection over that shared key, not a private per-view key:
+  // sharing the key means this is a cache hit, not a second `getProject`
+  // request for data the parent already holds. (This view is not wired into
+  // the panel's switch today — see customize-checkpoints.test.ts — so this
+  // has no live runtime effect yet, but keeps the key family consistent.)
   const projectQuery = useQuery({
-    queryKey: ['projects', projectId, 'meta'],
-    queryFn: () => getProject(projectId),
-    staleTime: 60_000,
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    select: (detail) => detail.project.default_branch,
+    ...contract('config'),
   });
-  const defaultBranch = projectQuery.data?.default_branch ?? '';
+  const defaultBranch = projectQuery.data ?? '';
   // Apply/Dismiss/Reopen assert project.gitops.push server-side; a read-only role
   // (gitops.read but not gitops.push) still SEES the change list + diffs, just no
   // action buttons that would 403. Fails safe: false until the probe resolves.

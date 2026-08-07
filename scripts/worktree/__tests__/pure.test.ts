@@ -124,6 +124,8 @@ describe('launch envs', () => {
     expect(env.LLM_GATEWAY_PROXY_PORT).toBe(String(ports.gateway));
     expect(env.GATEWAY_INTERNAL_TOKEN).toBe(DEV_GATEWAY_INTERNAL_TOKEN);
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
+    expect(env.KORTIX_APPS_LOCAL).toBe('true');
+    expect(env.KORTIX_APPS_LOCAL_PORT).toBe(String(ports.api));
   });
 
   test('worktrees do not pin a sandbox provider over dotenv or shell configuration', () => {

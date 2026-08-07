@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { qk } from '@kortix/sdk/react';
 import { CheckIcon as Check, LockIcon as Lock, UsersIcon as Users } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -183,7 +184,7 @@ export function ConnectorConnectionGateDialog() {
         queryKey: ['connections', projectId],
       });
       void queryClient.invalidateQueries({
-        queryKey: ['project-connectors', projectId],
+        queryKey: qk.project.connectors(projectId),
       });
       void queryClient.invalidateQueries({
         queryKey: ['session-scope-catalog', projectId],

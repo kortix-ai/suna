@@ -33,7 +33,7 @@ import {
   type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk';
-import { useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -87,17 +87,17 @@ export function AgentDetailAside({
  */
 function AgentAssignments({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const grantsQuery = useQuery({
-    queryKey: ['project-resource-grants', projectId],
+    queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
     enabled: canManage,
     retry: false,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   // Live capability gate: even if the grants cache still holds data from when the
   // viewer was a manager, a now-non-manager never sees it.
@@ -141,9 +141,9 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
  */
 function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const { data: providers } = useRuntimeProviders();
@@ -262,9 +262,9 @@ function AgentScopeCard({
 }) {
   const queryClient = useQueryClient();
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
 
@@ -281,16 +281,16 @@ function AgentScopeCard({
   }, [agentName, scope.env, scope.connectors]);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
     enabled: canManage,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
     enabled: canManage,
-    staleTime: 30_000,
+    ...contract('config'),
   });
 
   const secretOptions = useMemo(() => {
@@ -311,7 +311,7 @@ function AgentScopeCard({
     onSuccess: () => {
       successToast(`Scope updated for ${agentName}`);
       // Refetch the project config so the committed scope (this card's source) updates.
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
   });

@@ -40,4 +40,17 @@ describe('session runtime context boundaries', () => {
       mergeSessionSandboxEnv({ OTHER: 'base' }, { KORTIX_SESSION_CONTEXT: 'invented' }),
     ).toEqual({ OTHER: 'base' });
   });
+
+  test('trusted internal extras cannot shadow or invent the secret capability catalog', () => {
+    const catalog = '{"version":1,"capabilities":[]}';
+    expect(
+      mergeSessionSandboxEnv(
+        { KORTIX_SECRET_CAPABILITIES: catalog },
+        { KORTIX_SECRET_CAPABILITIES: '{"forged":true}' },
+      ),
+    ).toEqual({ KORTIX_SECRET_CAPABILITIES: catalog });
+    expect(
+      mergeSessionSandboxEnv({}, { KORTIX_SECRET_CAPABILITIES: '{"forged":true}' }),
+    ).toEqual({});
+  });
 });

@@ -184,6 +184,8 @@ describe('reloadDetail', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
+    opencode_reload: null,
+    turn_ended: null,
   } as const;
 
   test('claims the agent changed ONLY for "updated"', () => {
@@ -233,6 +235,8 @@ describe('reloadNeedsAttention', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
+    opencode_reload: null,
+    turn_ended: null,
   } as const;
 
   test('the three success outcomes are NOT warnings', () => {
@@ -253,5 +257,68 @@ describe('reloadNeedsAttention', () => {
     expect(
       reloadNeedsAttention({ ...base, applied: false, agent_files: 'updated' }),
     ).toBe(true);
+  });
+});
+
+/**
+ * Telling the user their turn was stopped.
+ *
+ * Marko, on the call: the reload restarts the runtime and "the whole opencode
+ * session is going to stop", so the command has to say so — and Ino: "so he has
+ * to continue, right." The turn already ended cleanly; what was missing was
+ * anyone saying it had, which made the agent look like it gave up.
+ */
+describe('turn-ended notice', () => {
+  const applied = {
+    applied: true as const,
+    previous_etag: 'aaaa',
+    etag: 'bbbb',
+    repo_refreshed: true,
+    commit_sha: null,
+    opencode_reload: 'restarted' as const,
+    agent_files: 'updated' as const,
+  };
+
+  test('says the turn stopped AND what to do about it', () => {
+    const out = reloadDetail({ ...applied, turn_ended: true });
+    expect(out).toContain('was stopped');
+    // The actionable half. "Your turn was stopped" alone leaves the user
+    // staring at a session wondering whether to retry.
+    expect(out).toContain('send a message to continue');
+  });
+
+  test('keeps the outcome sentence in front of it', () => {
+    // The reload result is still the primary fact; the interruption is context.
+    const out = reloadDetail({ ...applied, turn_ended: true });
+    expect(out.indexOf('Reloaded.')).toBeLessThan(out.indexOf('was stopped'));
+  });
+
+  test('says NOTHING when no turn was interrupted', () => {
+    expect(reloadDetail({ ...applied, turn_ended: false })).not.toContain('was stopped');
+  });
+
+  test('says nothing when the box could not tell', () => {
+    // null is "unknown", not "nothing happened". Claiming a turn was stopped
+    // when one finished normally sends the user chasing work that completed.
+    expect(reloadDetail({ ...applied, turn_ended: null })).not.toContain('was stopped');
+  });
+
+  test('appends to every applied outcome, not just the happy one', () => {
+    for (const agent_files of ['updated', 'already-current', 'not-applicable', 'kept-yours'] as const) {
+      expect(reloadDetail({ ...applied, agent_files, turn_ended: true })).toContain(
+        'send a message to continue',
+      );
+    }
+  });
+
+  test('a refusal never claims a turn was stopped', () => {
+    // Nothing was applied, so nothing was interrupted — even if the flag lied.
+    const out = reloadDetail({
+      ...applied,
+      applied: false,
+      reason: 'session is mid-turn',
+      turn_ended: true,
+    } as never);
+    expect(out).not.toContain('was stopped');
   });
 });

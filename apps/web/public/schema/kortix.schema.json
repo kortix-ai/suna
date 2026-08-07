@@ -1710,7 +1710,183 @@
               ]
             }
           },
-          "apps": false,
+          "apps": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^/|(^|/)\\.\\.($|/)"
+                  }
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "static",
+                    "bundle",
+                    "dockerfile",
+                    "oci_image"
+                  ]
+                },
+                "image": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "dockerfile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^/|(^|/)\\.\\.($|/)"
+                  }
+                },
+                "command": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535,
+                  "not": {
+                    "enum": [
+                      7331,
+                      8080
+                    ]
+                  }
+                },
+                "root": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^/|(^|/)\\.\\.($|/)"
+                  }
+                },
+                "output_dir": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^/|(^|/)\\.\\.($|/)"
+                  }
+                },
+                "install_command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "build_command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "spa": {
+                  "type": "boolean"
+                },
+                "readiness_path": {
+                  "type": "string",
+                  "pattern": "^/"
+                },
+                "idle_timeout_seconds": {
+                  "type": "integer",
+                  "minimum": 120,
+                  "maximum": 86400
+                },
+                "monthly_budget_usd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "resources": {
+                  "type": "object",
+                  "properties": {
+                    "cpu": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 64
+                    },
+                    "memory_gb": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 512
+                    },
+                    "disk_gb": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2048
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "env": {
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Z_][A-Z0-9_]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "secrets": {
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Z_][A-Z0-9_]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "dockerfile",
+                          "oci_image"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "command",
+                      "port"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "oci_image"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "image"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
           "channels": false
         },
         "additionalProperties": true,

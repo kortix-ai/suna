@@ -26,10 +26,15 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  loadProjectForUser,
+  assertProjectCapability,
+} from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
@@ -275,6 +280,7 @@ projectsApp.openapi(
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     projectRow = loaded.row;
   } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
     const accountId = (c as any).get('accountId') as string | undefined;
@@ -283,7 +289,10 @@ projectsApp.openapi(
       return c.json({ error: 'clone credentials require a sandbox token' }, 403);
     }
     const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+      })
       .from(sessionSandboxes)
       .where(and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -294,6 +303,15 @@ projectsApp.openapi(
       .limit(1);
     if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+    if (
+      !(await sessionWorkspaceAllowsRepositoryAccess({
+        sessionId: sandbox.sessionId,
+        accountId,
+        projectId,
+      }))
+    ) {
+      return c.json({ error: 'sandbox workspace does not allow repository access' }, 403);
     }
     const [row] = await db
       .select()

@@ -12,6 +12,213 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `remove-local-docker`
+
+User-directed hard removal of the live `local-docker` sandbox provider.
+
+SDK scope:
+
+- Remove `local-docker` from the published `AppHostingProvider` union.
+- Add a compile-time regression assertion for the exact remaining provider set.
+- Preserve every published export name and the SDK package version.
+- Run RED, GREEN, and the complete SDK gates.
+
+The required `tdd` skill was unavailable in this session. This work used the
+required RED, GREEN, and REFACTOR sequence directly.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1716 pass`, `0 fail`, and `6817 expect()`
+  calls across `135` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed
+  `@kortix/sdk` and `@kortix/executor-sdk` imported and constructed in Node ESM.
+- Public export names and the package version are unchanged.
+- `AppHostingProvider` is exactly `daytona | platinum | e2b`.
+
+The removed string-literal union member is an intentional breaking public API
+change. It cannot publish as the current `0.12.6` patch release. The release
+train must classify it as a breaking SDK release before production publishing.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
+### 2026-08-07 — session `apps-query-key-integration` claim
+
+No **Now** task claimed. This is a narrow integration fix after merging current
+`main` into the Apps acceptance branch.
+
+Scope:
+
+- Add `qk.project.apps(projectId)` for the existing Apps list cache entry.
+- Replace the Apps UI's hand-written `project-apps` query key.
+- Preserve every published export name and the SDK package version.
+- Run RED, GREEN, full SDK gates, and the frontend lint/build gate.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Focused tests failed in `4` places before the implementation: missing
+  `qk.project.apps`, missing `qk.project.appDeployments`, the legacy literal
+  guard, and the Apps invalidation expectations.
+
+GREEN:
+
+- Focused query-key, guard, and Apps hook tests: `66 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1711 pass`, `0 fail`, and `6804 expect()`
+  calls across `135` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed SDK and
+  compatibility adapter imported and constructed.
+- Apps UI SDK-boundary test: `1 pass`, `0 fail`.
+- `pnpm --dir apps/web exec eslint src --quiet`: exit `0`.
+
+`projectAppsKey` and `appDeploymentsKey` keep their published names and now
+delegate to `qk`. The SDK package version and public export names are unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-07 — session `client-cache-unification` — guard hardening + 4 review follow-ups
+
+Closes the regression-prevention gap the fix-wave entry below left open, plus
+four follow-ups that entry recorded. No new capability.
+
+- **The `query-key-literals.test.ts` guard is now default-DENY.** The
+  enumerated `project-(detail|sessions|secrets|model-picker)` ban list failed
+  OPEN twice, both times on a literal the migration had just removed:
+  `['project-session', …]` (SINGULAR — what `session-title-sync.ts:25` and
+  `use-canonical-opencode-session.ts:64` hand-typed) and
+  `['project-triggers', …]`. Verified against the old pattern: it caught the
+  four named families and MISSED both. A ban list can only cover mistakes
+  someone already made, so the polarity is inverted — every
+  `project`/`projects`/`project-<family>` array literal is a violation, plus
+  `qk`'s own `'kx'` root, with three documented exemptions
+  (`project-providers`, `project-change-requests`, `project-manager`; the last
+  is a `Set` of agent names, not a key). This also deletes the
+  alternation-ordering trap the old pattern had. Comment-only lines are
+  skipped because several files here quote removed literals in prose; a
+  trailing comment does not launder a code line. Proven RED by reintroducing
+  9 literals into `use-project-secrets.ts` one at a time, each reverted:
+  `project-detail`, `project-session`, `project-sessions`, `project-secrets`,
+  `project-triggers`, `project-model-picker`, `project-policies`, `projects`,
+  `kx` — 9/9 caught.
+- **NEW `useProjectSession` — one contract and one fetcher for
+  `qk.project.session(id, sid)`.** The fix wave unified that entry's KEY and
+  left its CONTRACT split three ways: `use-canonical-opencode-session.ts` set
+  a bare `staleTime: 10_000` and `{ showErrors: false }` while
+  `session-files-panel.tsx` and `session-changes-shared.tsx` used
+  `contract('inventory')` with the default. Both halves were mount-order
+  dependent — `staleTime` is per-OBSERVER, and `queryFn` is per-ENTRY with the
+  first observer installing it, so whether a failed read toasted depended on
+  which surface mounted first. `showErrors: false` wins for all three:
+  every failure path is already a silent fallback the UI never surfaces
+  (`resolveSessionPin` treats a missing pin as "still resolving", both panels
+  fall back to `base_ref = 'main'`), and `showErrors` is a presentation flag
+  that changes neither request nor response, so it cannot justify separate
+  keys the way `scope` does for `qk.project.sessions`. `enabled` stays
+  per-call-site — it decides whether a surface subscribes, not what the shared
+  entry holds. Additive export; both public-surface snapshots re-recorded and
+  proven additive by set-diff (`removed: []`, `added: ["useProjectSession"]`).
+- **`FRESHNESS.sandboxes` `volatile` → `config`; `FRESHNESS.gateway`
+  `volatile` → `inventory`.** Both were tiered on what they are CALLED.
+  `sandboxes` is not live sandbox health — `listProjectSandboxes` is
+  `GET /projects/:id/sandboxes` returning `SandboxTemplatesResponse`, the same
+  call `sandboxTemplates` makes and already tiers `config`; live health is
+  `getProjectSandboxHealth` under a separate `apps/web` key with its own
+  adaptive `refetchInterval`. Its pre-migration window was 60s and all three
+  of its mutations invalidate the key. Gateway aggregates accumulate from
+  traffic (so not `config`) but are aggregates over a `days` window (so not
+  `volatile`); `inventory` is exactly their pre-migration 30s. Since
+  `contract()` sets `refetchOnMount: true`, `volatile` was refetching the
+  sandbox catalog on every project landing and five analytics queries on every
+  Customize → Gateway open. `volatile` now has NO claimant — kept, because
+  `FreshnessTier` is a published string-literal union and removing a member is
+  breaking, with the bar for the next claimant written into its doc comment.
+  8 `apps/web` call sites moved.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1680 pass`, `0 fail`, `6614 expect()` calls
+  across `130` files (was `1671` / `129` at the start of this session).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `bun test` `4629 pass` / `0 fail` (`426` files); `tsc --noEmit`
+  21-line known baseline unchanged, none in a touched file; `eslint src` 0
+  errors, 0 `Never hand-type an entity key` hits.
+
+**Discovered, NOT fixed (audit only, requested):** `use-change-requests.ts`'s
+`changeRequestsKey` = `['project-change-requests', id, status]` and
+`apps/web`'s `changeRequestKeys.list` =
+`['project-files','change-requests',id,'list',status]` hold the **same data** —
+`apps/web/src/features/project-files/api/change-requests.ts:40-45`'s
+`fetchChangeRequests` is a one-line passthrough to this package's
+`listChangeRequests`, i.e. the same `GET /projects/:id/change-requests?status=`
+and the same `{ change_requests: ChangeRequest[] }`. Not a LIVE duplicate:
+nothing in-repo imports the SDK hook (both `apps/web` call sites use the local
+`(status, options)` signature; `apps/mobile` has a THIRD implementation at
+`lib/projects/hooks.ts:729` keyed `['change-requests', id, status]`). It is a
+latent duplicate and a published-API trap — an external consumer mounting
+`useChangeRequests` from `@kortix/sdk/react` beside `apps/web`'s panel gets two
+entries and two poll loops. The SDK hook also spreads no `contract(...)`, so it
+inherits the host's global defaults.
+
+**Status:** COMPLETE.
+### 2026-08-07 — session `no-timeout-toasts` claim
+
+No **Now** task claimed. This is a user-directed timeout error-UX correction.
+
+Claimed scope:
+
+- Keep the API and SDK request deadlines as resource-safety boundaries.
+- Prevent client request deadlines and typed API request-deadline responses from
+  invoking the host's global error handler.
+- Preserve typed errors for callers that own explicit, actionable error UI.
+- Verify the background session-audit path and the complete SDK package gates.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- SDK deadline-policy coverage failed three assertions before the transport
+  classified client and API deadlines as silent.
+- Web coverage failed before `timeout-toast-policy.ts` existed and classified
+  `TIMEOUT` as `toast`.
+- API coverage failed before the response exposed `code: 'request_deadline'`.
+
+GREEN after rebasing onto `origin/main`:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- Full SDK suite: `1714 pass`, `0 fail`, and `6808 expect()` calls across `135`
+  files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk`.
+- Focused SDK transport suite: `29 pass`, `0 fail`.
+- Focused API deadline suite: `16 pass`, `0 fail`.
+- Focused web timeout-policy and session-create suite: `12 pass`, `0 fail`.
+- Complete web suite: `4814 pass`, `0 fail`.
+- API typecheck and focused web ESLint: exit `0`.
+- Authenticated HTTP proof against a local API with
+  `REQUEST_DEADLINE_MS=1`: HTTP `503`, `Retry-After: 10`, and
+  `code: 'request_deadline'` in the response body.
+
+No published SDK export changed. The package version was not edited.
+
+**Status:** COMPLETE in commit `9c5d9dc11d`.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `sdk-connectors-unified` claim
 
 No **Now** task claimed. This is the user-directed final SDK consolidation.
@@ -33,12 +240,491 @@ Claimed scope:
 The required `tdd` skill is unavailable in this session. This work will use the
 same RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+RED, GREEN, REFACTOR:
 
-**SDK package shippable to production: NOT YET.**
+- Added failing REST, facade, React-hook, and public-surface tests before the
+  corresponding SDK implementations.
+- Added the framework-free Apps transport and direct project-bound facade.
+- Added the React query hooks only after the framework-free client passed.
+- Regenerated both public-surface snapshots after reviewing the additive names.
+
+Final evidence:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`; core and examples compile.
+- `pnpm --filter @kortix/sdk test`: `1597 pass`, `0 fail`, and
+  `6549 expect()` calls across `127` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk` in Node ESM.
+- The public surface adds Apps names only. No published name was removed or
+  renamed. The SDK version remains release-managed at `0.3.0`.
+
+**Status:** COMPLETE in commit `966335ad2a`.
+
+**SDK package shippable to production: YES.**
 
 ---
 
+### 2026-08-07 — session `client-cache-unification` — whole-branch review fix wave (BLOCKED → fixed)
+
+Fixed all four items from the FINAL WHOLE-BRANCH REVIEW entry below (the review
+itself stays as the historical record just under this entry).
+
+- **C1 (Critical) — `packages/sdk/src/react` migrated onto `qk`.** Fixed every
+  file the review named plus two it didn't (found by sweeping the whole
+  directory for the same literal families): `use-canonical-opencode-session.ts`
+  (the REAL populator of the per-session Kortix row — `session-title-sync.ts`'s
+  reads were dead without this one too) and `use-model-defaults.ts:76`'s
+  `invalidateQueries`. `use-opencode-events/helpers.ts`'s
+  `refetchKortixSessionMirrors` took a `projectId` param (threaded from
+  `useKortixRouteProjectId()` in `index.ts` → `handle-event.ts`) instead of the
+  old bare "any project" prefix — no `qk` member expresses "sessions, any
+  project" without also reaching every OTHER project-scoped family for every
+  project, so the correct fix narrows to the route's own project rather than
+  inventing an over-broad one. `providers.ts`'s `project-detail` duplicate now
+  shares `qk.project.detail(id)` (dedup, not just a key swap) and picked up
+  `contract('config')` to match every other reader of that entry — same for
+  `use-project-models.ts`, `use-model-enablement.ts`, `use-project-secrets.ts`,
+  `use-gateway-catalog-sync.ts` (all now `qk.project.secrets`/`modelPicker`
+  readers, all aligned to `contract('config')` so they can't disagree about
+  freshness on a key they now share). Deliberately OUT of scope, documented:
+  `project-providers`, `gateway-routing-policy`, `model-defaults` — hand-typed
+  identically on both `apps/web` and the SDK side, so no divergence exists
+  there (unlike the four migrated families); `use-change-requests.ts`'s
+  `project-change-requests` family — a genuinely different feature (Kortix PR
+  layer) that happens to share a name prefix with `apps/web`'s unrelated
+  `project-files`-rooted change-request keys; flagged in Discovered-this-session
+  below, not touched.
+  Guard: `query-key-literals.test.ts` — a `bun test` that walks
+  `src/react/**/*.{ts,tsx}` (excluding `query-keys.ts`, the definition) and
+  fails on a hand-typed `project-detail`/`sessions`/`secrets`/`model-picker`
+  array literal. Chosen over an eslint config for this package because
+  `packages/sdk` has none and adding one for a single rule was judged out of
+  proportion (per the review's own framing) — this runs inside the existing
+  `bun test` gate instead, no new tooling. Proven to fail: reintroduced the
+  banned literal into `use-project-secrets.ts`, ran the guard, watched it name
+  the exact file:line, reverted. Scoped to the four named families, not
+  `apps/web`'s broader `/^projects?(-[a-z-]+)?$/` net — `project-change-requests`
+  above would false-flag a broader pattern.
+- **C1 also closed a second gap while migrating `use-project-triggers.ts`:**
+  `settings-view.tsx:550` and (found while checking for the SAME literal
+  elsewhere so the fix wouldn't split one working cache entry into two)
+  `schedule-view.tsx:548` both hand-typed `['project-triggers', projectId]`
+  locally instead of calling the SDK hook. Added `qk.project.triggers(id)`,
+  made `projectTriggersKey` delegate to it, migrated both call sites plus
+  `use-project-triggers.ts` itself, all now `contract('config')`.
+- **I3 (Important) — `refetchOnMount` flipped to `true` globally**
+  (`apps/web/src/app/react-query-provider.tsx:44`). Full apps/web suite (4619
+  tests) run before and after: 1 failure, unrelated (a source-scan test
+  asserting the SDK's OLD `use-model-defaults.ts` literal text — fixed as part
+  of the C1 migration, not a behavioral regression from the flip itself). Zero
+  tests depended on the old `false` default's behavior.
+- **I1 (Important) — `as const` eslint evasion closed.** Added
+  `TSAsExpression`-mediated sibling selectors for both `queryKey:`-property
+  rules (family + `'kx'` root) and the positional-call rule. Probed against
+  the exact matrix the review specified: `['project-detail', id] as const` as
+  a `queryKey` → ERROR; `setQueryData([...] as const, v)` → ERROR;
+  `['session-costs','projects','x'] as const` → still PASSES (anchoring
+  survives); all three pre-existing non-`as const` cases still ERROR.
+- **M1 (Minor) — `query-keys.ts`'s `modelPicker` doc comment corrected.** Was
+  "dead", is live at 5 call sites (now migrated, so also no longer a
+  same-family-different-key situation).
+
+GATES:
+  `pnpm --filter @kortix/sdk typecheck`: exit 0.
+  `bun test --isolate src`: 1658 pass, 0 fail, 6577 expect() calls, 129 files
+    (up from Task 13's 1645/126 — new: `query-key-literals.test.ts`,
+    `use-opencode-events/helpers.test.ts`, `use-project-triggers.test.ts`,
+    plus assertions added to `query-keys.test.ts`/`provider-refresh.test.ts`/
+    `use-project-secrets.test.ts`/`session-title-sync.test.ts`).
+  `pnpm --filter @kortix/sdk run smoke:install`: exit 0.
+  `apps/web`: `bun test` — 4619 pass, 0 fail, 17938 expect() calls, 426 files.
+    `npx eslint src` — 0 errors (481 pre-existing `react-hooks/*` warnings,
+    unrelated), `grep -c "Never hand-type an entity key"` → 0.
+    `npx tsc --noEmit` — 21 error lines, byte-identical to the Task 13
+    baseline (zero new).
+
+**SDK package shippable to production: YES.**
+
+Discovered this session (not fixed, flagged for later):
+  `packages/sdk/src/react/use-change-requests.ts`'s `project-change-requests`
+  family and `apps/web/src/features/project-files/hooks/use-change-requests.ts`
+  (a DIFFERENT file, `project-files`-rooted keys) share a name but are two
+  separate features (Kortix-native PR layer vs. git file-diff browsing) —
+  worth a dedicated pass to confirm neither is secretly reading the other's
+  data, but out of scope for this fix wave (not part of the review's four
+  items, not caught by its acceptance grep).
+
+---
+
+### 2026-08-06 — session `client-cache-unification` — Task 10: migrate the remaining 26 `project*` families
+
+Task 10 of `docs/superpowers/plans/2026-08-06-client-cache-unification.md`
+(`.superpowers/sdd/2026-08-06-client-cache-unification/task-10-brief.md`,
+`task-10-report.md`). The largest task in the plan: ~98 literal
+`queryKey: ['project...'` declarations across `apps/web/src`, plus their
+writes and invalidations, migrated onto `qk`.
+
+**`packages/sdk` changes** (this package's share of the task):
+
+- `query-keys.ts`: added `qk.project.summary(id)` (bare `getProject`,
+  deliberately NOT folded onto `detail(id)` — different endpoint, different
+  shape), `session`'s new `sessionSandbox(id, sessionId)` child (an orphaned
+  pre-existing invalidation slot, migrated verbatim, not fixed), `connectors`'
+  `connectorConfig(id, slug)`, `access`'s `accessRequests`/`pendingInvites`/
+  `groupGrants`/`resourceGrants` children, `files(id)` + `fileSource(id,
+  path)`, `executorPolicies(id)` (a SIBLING of `policies(id)`, not nested —
+  see finding below), `config`'s `modelPicker(id)`, `sandboxes`' `
+  sandboxTemplates(id)` child, and nine `gateway*` children
+  (`gatewayOverview`/`Series`/`Breakdown`/`Sessions`/`Errors`/`Logs`/`Log`/
+  `Budgets`/`Keys`). TDD: 6 new tests written first against the missing
+  members (RED — `TypeError: qk.project.executorPolicies is not a function`
+  etc.), then implemented (GREEN, 46 pass in `query-keys.test.ts`).
+- `query-contracts.ts`: added `FRESHNESS` entries for every new entity.
+- `use-project-config.ts`: **dedup, not just a rename.** It used to fetch
+  `getProjectDetail` under its own standalone `['project-config', id]` key —
+  flagged in the SDD ledger's Task 5 entry
+  (`.superpowers/sdd/2026-08-06-client-cache-unification/progress.md`,
+  "so it double-fetches against qk.project.detail once wired"). Now rides
+  the shared `qk.project.detail(id)` entry via a `select` projection, the
+  same entry `useProjectName`, `projectDetailQuery()`, and every Customize
+  capability page already share. This also let two `apps/web` call sites drop
+  a now-redundant explicit invalidation next to a broader `invalidateProject`
+  call that already covered it once `detail(id)` absorbed the config read.
+
+**Critical finding — a live collision, the exact class Tasks 8/9 hit:**
+`['project-policies', id]` was shared by TWO unrelated endpoints pre-migration:
+`listPolicies(accountId, { scopeId })` (account IAM role policies,
+`members-view.tsx`, 2 sites) and `listProjectPolicies(id)` (executor sandbox
+tool-execution allow/deny rules, `/executor/projects/:id/policies`,
+`policies-panel.tsx`, 1 site — rendered inside the SAME Customize surface via
+`connectors-view.tsx`). Whichever fetch resolved last silently overwrote the
+other's cache entry with an incompatible shape. Split into `qk.project.policies`
+(IAM) and `qk.project.executorPolicies` (sandbox rules) — siblings, not nested,
+so invalidating one never reaches the other. Same reasoning applied
+preemptively to `listProjectGroupGrants` vs `listProjectResourceGrants` (two
+different endpoints that were about to collide the same way once folded onto
+one family name) — split into `groupGrants`/`resourceGrants`.
+
+**`session-sandbox` (3 `apps/web` invalidation sites + 1 `getQueryData` read)
+is dead pre-existing code** — no site anywhere `useQuery`s or `setQueryData`s
+it, confirmed by grep and by git-log -S across the whole history of the read
+site. Migrated verbatim to `qk.project.sessionSandbox(id, sessionId)` rather
+than folded onto `qk.project.session(id, sessionId)`, because THIS task wires
+`session(id, sessionId)` to a REAL live query (`getProjectSession`, previously
+zero production callers per Task 9's report) — sharing the slot would make
+these dead invalidations start firing against real session data.
+
+**`apps/web`'s `use-change-requests.ts` deliberately NOT folded onto `qk`:**
+5 of its sites (`['project-files', 'change-requests'/'branches'/'commits'/
+'version-diff', id]`) are prefix invalidations into an already-correct,
+already-established local key ecosystem (`changeRequestKeys`/`branchKeys`/
+`commitKeys`, rooted at the literal `'project-files'`) that predates this
+plan and is orthogonal to it. The brief's table row for `project-files`
+assumed a bare 2-element key that does not exist at any of the 5 real sites;
+folding them onto `qk.project.files(id)` (a disjoint root) would have
+silently zeroed their invalidation reach. Wired onto the existing local
+factories instead (added a `project(id)` prefix member to `changeRequestKeys`
+and `commitKeys`, reused `branchKeys.list`), preserving identical reach.
+Full reasoning and the family→fetcher→shape table are in the SDD task-10
+report.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1628 pass`, `0 fail`, `6522 expect()` calls
+  across `125` files (up from Task 9's `1623`/`125` — the +5 delta is the new
+  `query-keys.test.ts` assertions net of one file unchanged).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `npx tsc --noEmit` — 21 error lines, byte-identical to the
+  documented baseline (zero new). `bun test` (full repo) — `4603 pass`,
+  `0 fail`, `17907 expect()` calls across `425` files. `eslint` on all 52
+  changed `apps/web` files — `0 errors`, `41` pre-existing `react-hooks/*`
+  warnings.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 2: session id vs scope literal collision, made structurally impossible
+
+Fix round 2 on Task 9, following round 1 immediately below. Round 1 gave
+`sessions(id, scope)` and `sessionsScope(id)` their own shapes but left
+`sessions(id, scope) = [...sessionsScope(id), scope]` and
+`session(id, sessionId) = [...sessionsScope(id), sessionId]` as the SAME
+shape — `sessionsScope(id)` plus exactly one segment, distinguished only by
+the segment's value. A session id equal to the string `'visible'` or
+`'project'` would collide byte-for-byte with a scoped list. Session ids are
+`crypto.randomUUID()` client-side and rejected server-side otherwise
+(`apps/api/src/projects/lib/sessions.ts`, UUID v4 regex), so this was
+unreachable in practice — but that protection lives in a different package
+with no link back to this file: safety by external invariant, not by
+construction. This file's own top comment already rejects that standard for
+the `'kx'`-vs-`'kortix'` root choice; the same standard now applies here.
+
+**Fix**, `src/react/query-keys.ts`: `sessions(id, scope)` gained a literal
+`'list'` segment — `[...sessionsScope(id), 'list', scope]` — making it
+structurally longer than `session(id, sessionId)` for every possible session
+id. The collision is now unrepresentable, not merely improbable. `session()`
+and `messages()` are unchanged. `sessionsScope(id)` (the invalidation
+prefix) is unchanged and still strictly prefixes the new `sessions(...)`
+shape (verified by test, not assumed).
+
+**Tests**, `src/react/query-keys.test.ts` (TDD: 3 new assertions written
+against the round-1 factory first, confirmed RED — the exact adversarial
+pair `sessions(id, 'project')` / `session(id, 'project')` compared equal,
+and the length assertion failed with both at length 5 — then GREEN after
+adding the `'list'` segment): `sessions(id)` vs `session(id, 'visible')`
+differ; `sessions(id, 'project')` vs `session(id, 'project')` differ (the
+exact adversarial pair named in the finding); and a general length
+assertion — `sessions(id, scope).length > session(id, anySessionId).length`
+for `anySessionId` in `['visible', 'project', 's1', crypto.randomUUID()]` —
+proving no session id value, not just the two obvious literals, can ever
+equalize the two shapes.
+
+GREEN (all three SDK gates):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1623 pass`, `0 fail`, `6484 expect()` calls
+  across `125` files (up from round 1's `1620`/`125` — 3 new assertions, no
+  new test file). The coordinator flagged a known isolation flake,
+  `session-costs.test.ts:389`, that fails only under the full run — it did
+  NOT appear this run; 0 fail, no exceptions.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `version` field: confirmed untouched (`git diff --stat packages/sdk/package.json` empty).
+
+Downstream `apps/web`: confirmed NO web file needed editing — every call
+site goes through the factory, and the extra `'list'` segment is internal to
+`sessions()`'s output. `npx tsc --noEmit | grep -v test.each` byte-identical
+to the round-1 baseline (`diff` confirmed, 21 error lines, all
+pre-existing); `bun test src/features/workspace src/features/review-center
+src/app`: `1063 pass`, `0 fail`, unchanged from round 1.
+
+**Status:** COMPLETE (Task 9 fix round 2 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-06 — session `client-cache-unification` — Task 9 fix round 1: scope missing from `qk.project.sessions`
+
+Fix for a defect a review caught in Task 9 (`docs/superpowers/plans/2026-08-06-client-cache-unification.md`,
+`.superpowers/sdd/2026-08-06-client-cache-unification/task-9-report.md`). Task 9
+collapsed two web query keys (`['project-sessions', id]` and
+`['project-session-inventory', id]`) onto `qk.project.sessions(id)`. That was
+correct for 13 of 14 read sites, but one —
+`apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx`
+— calls `listProjectSessions(id, { scope: 'project' })`, the manager-only
+**unfiltered full inventory**
+(`core/rest/projects-client/sessions.ts`, `apps/api/src/projects/lib/session-inventory.ts`).
+That is a DIFFERENT server request than the default `scope: 'visible'` every
+other site uses, not a client-side filter of the same response. The original
+`sessions(id)` key omitted `scope` entirely, so both requests wrote into ONE
+cache slot: whichever resolved last silently overwrote what the other
+scope's readers saw. The general rule this violated: **anything that changes
+the response must be part of the query key.**
+
+**Fix**, `src/react/query-keys.ts`:
+
+- `sessions(id, scope: 'visible' | 'project' = 'visible')` — scope is now
+  part of the key. The zero-arg call (`sessions(id)`) still works and still
+  means the default scope, so the 13 default-scope call sites in `apps/web`
+  needed no change; the one `scope: 'project'` site now calls
+  `qk.project.sessions(projectId, 'project')`.
+- `sessionsScope(id)` — new invalidation-only prefix
+  (`[...scope(id), 'sessions']`, one level above the scope segment).
+  `sessions(id)` and `sessions(id, 'project')` are SIBLINGS under it, not
+  parent/child, so every INVALIDATION site had to move from `sessions(id)` to
+  this prefix or the scope it didn't touch would go silently stale after a
+  rename/delete/restart/stop/share. Enumerated and fixed all 15 invalidation
+  call sites in `apps/web` (full list in the task-9 report addendum).
+- `session(id, sessionId)` / `messages(id, sessionId)` now nest under the
+  scope-LESS `sessionsScope(id)` prefix instead of under a specific
+  `sessions(id, scope)` slot — a session is not owned by whichever list scope
+  discovered it, so its own cache entry does not carry a scope segment
+  either. This is a considered nesting decision, not a fallout: the
+  alternative (nesting under one scope's key) would make an individual
+  session's cache entry only reachable through ONE of the two list scopes.
+
+`rename-session-modal.tsx`'s optimistic write is a documented exception:
+`cancelQueries`/`setQueryData`/`getQueryData` keep targeting the exact
+default-scope `sessions(projectId)` key (that's the only cache entry it has
+a row to paint over), while its `onSettled` invalidation moved to the
+`sessionsScope` prefix so the 'project'-scoped inventory page — never painted
+optimistically — still catches up via a real refetch.
+
+`schedule-view.tsx`'s two `pinnableSessions` queries were re-checked under
+the new shape: both call `listProjectSessions(projectId)` with no options
+(default scope), so they correctly stay on the zero-arg `sessions(projectId)`
+form — no scope segment needed.
+
+**Tests**, `src/react/query-keys.test.ts` (TDD: written against the OLD
+factory first, confirmed RED — `qk.project.sessionsScope is not a function`,
+and `sessions(id)` equal to `sessions(id, 'project')` — then GREEN after the
+factory change): `sessions(id)` defaults to `'visible'`; `sessions(id)` and
+`sessions(id, 'project')` are different keys; `sessionsScope(id)` strictly
+prefixes both scoped forms and is itself never equal to either; every
+project-scoped key (including both new forms) stays prefixed by
+`qk.project.scope(id)`; `session`/`messages` nest under `sessionsScope`, not
+under one specific scope. The `qk` vs `kortixKeys` disjointness tests and the
+Task 3/5 tests (`invalidate-project.test.ts`, which reads/writes
+`qk.project.sessions(ID)` at its default scope) needed no changes and stayed
+green throughout.
+
+GREEN (all three SDK gates, this fix round):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1620 pass`, `0 fail`, `6476 expect()` calls
+  across `125` files (up from Task 6's `1609`/`125` — this round added 5 new
+  assertions to `query-keys.test.ts`, no new test file).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarball
+  imported and constructed `createKortix` from Node ESM.
+- `public-surface.test.ts` + `public-type-surface.test.ts`: `2 pass`, `0
+  fail`, no snapshot drift — `sessionsScope` is a new property on the
+  already-exported `qk` const (the snapshot records top-level identifiers,
+  not nested member shapes), and the `sessions` signature change is a
+  backward-compatible optional-parameter widening. No re-recording needed.
+  `version` field not touched.
+- Downstream `apps/web`: `npx tsc --noEmit | grep -v test.each` byte-identical
+  to the pre-fix baseline (21 error lines, all pre-existing/documented);
+  `bun test src/features/workspace src/features/review-center src/app`:
+  `1063 pass`, `0 fail` (unchanged from before the fix); `eslint` on every
+  changed file: `0 errors`.
+
+**Status:** COMPLETE (Task 9 fix round 1 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-06 — session `client-cache-unification` — Tasks 3–6 completion
+
+Consolidated entry for Tasks 3 through 6 of the `client-cache-unification` plan
+(`docs/superpowers/plans/2026-08-06-client-cache-unification.md`). Tasks 4 and
+5's briefs restricted their commits to code files only, so neither left a
+`PROGRESS.md` entry. This entry closes that gap and records everything the
+plan shipped through Task 6.
+
+Task by task:
+
+- **Task 3** — `packages/sdk/src/react/query-keys.ts`: the `qk`
+  project/projects query-key factory plus `ProjectScopeKey` and
+  `ProjectsListKey`. `qk.project.scope(id)` is an invalidation-only prefix;
+  every project-scoped key nests under it. `qk` roots at `'kx'`, not
+  `'kortix'` — re-rooted in `d6e3d481b7` after the first commit
+  (`ecdb5e9c02`) used `'kortix'`. `kortixKeys` (`use-kortix-master.ts:276-279`)
+  already owns `['kortix', 'projects']` / `['kortix', 'projects', id]`; had
+  `qk` also rooted at `'kortix'`, `kortixKeys.projects()` — already used as an
+  `invalidateQueries` prefix at `use-kortix-master.ts:371,384` — would
+  prefix-match every key `qk` produces too, since TanStack matches query keys
+  by prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
+  can ever reach into the other's cache entries on invalidation.
+- **Task 4** — `packages/sdk/src/react/query-contracts.ts`: one
+  `FreshnessTier` per entity (`'live' | 'config' | 'inventory' | 'volatile'`),
+  `contract(tier)` returning `{ staleTime, gcTime: 30 * 60_000,
+  refetchOnMount: false }`, and the `FRESHNESS` map pinning 14 entities to
+  exactly one tier each (`as const satisfies Record<string, FreshnessTier>`,
+  so a new entity added without a tier is a compile error). Commit
+  `8f4d8a1021`.
+- **Task 5** — `packages/sdk/src/react/use-project-name.ts` +
+  `invalidate-project.ts`: `useProjectName(projectId)`, the one accessor for a
+  project's display name (`data?.project?.name`, no `??` fallback to another
+  cache — this is what closes the two-titles bug, where the switcher read the
+  projects list and the project home read the detail, and the two caches
+  could disagree); `invalidateProject` (whole-scope invalidation via
+  `qk.project.scope`); `invalidateProjectIdentity` (invalidates the list AND
+  detail entries together, since a project's name lives in both);
+  `writeProjectNameOptimistically` (paints a rename into both caches before
+  the round-trip settles). Commit `d1e29a200f`.
+- **Task 6** (this entry's trigger) — `packages/sdk/src/react/index.ts`:
+  `export * from './query-keys'`, `'./query-contracts'`,
+  `'./use-project-name'`, `'./invalidate-project'`. Makes `qk`, `contract`,
+  `FRESHNESS`, `FreshnessTier`, `ProjectScopeKey`, `ProjectsListKey`,
+  `useProjectName`, `invalidateProject`, `invalidateProjectIdentity`, and
+  `writeProjectNameOptimistically` importable from `@kortix/sdk/react` for the
+  first time. Checked every name against the full `./react` barrel, including
+  `use-kortix-master.ts`'s `kortixKeys` — no collision.
+
+Tripwires (`AGENTS.md:311`), run before any edit and again after:
+
+- `bun test --isolate src/index.isomorphic.test.ts src/package-exports.test.ts`:
+  `72 pass`, `0 fail`. `./react` is an existing subpath — adding files
+  underneath it needed no `package.json` `exports` / `publishConfig.exports` /
+  `SUBPATH_TIERS` edit.
+
+GREEN (Task 6 gates):
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1609 pass`, `0 fail`, `6455 expect()`
+  calls across `125` files (same counts as Task 5's completion — Task 6 adds
+  no new test file, only barrel wiring).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and constructed `createKortix` from Node ESM.
+
+Wiring the four modules into the barrel made their exports reachable from
+`./react` for the first time, so `public-surface.snapshot.json` and
+`public-type-surface.snapshot.json` both drifted — 7 new runtime names, 10 new
+type-level names (the extra 3 are type-only: `FreshnessTier`,
+`ProjectScopeKey`, `ProjectsListKey`). Every line in both diffs is `+ added —
+additive, fine`; nothing removed or renamed. Re-recorded with
+`UPDATE_SURFACE_SNAPSHOT=1` and `UPDATE_TYPE_SURFACE_SNAPSHOT=1` and reviewed
+by hand before committing. The `version` field was not touched throughout
+Tasks 3–6.
+
+**Status:** COMPLETE (Tasks 3–6 of `client-cache-unification`).
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-06 — session `client-cache-unification` — Task 3 claim
+
+Claiming Task 3 of the `client-cache-unification` plan
+(`docs/superpowers/plans/2026-08-06-client-cache-unification.md`): the `qk`
+query-key factory.
+
+Scope:
+
+- Add `packages/sdk/src/react/query-keys.ts` — one additive module exporting
+  `qk` (a project/projects query-key factory) plus the `ProjectScopeKey` and
+  `ProjectsListKey` types.
+- `qk.project.scope(id)` is an invalidation prefix, never a query key itself;
+  every project-scoped key nests under it.
+- Distinct from `kortixKeys` in `use-kortix-master.ts` (the Kortix-Master
+  multi-server surface) — not extended, not imported, not renamed.
+- Not wired into `react/index.ts` in this task — that export wiring belongs to
+  Task 6.
+- No published name changes. No `version` bump.
+
+Added `packages/sdk/src/react/query-keys.ts`, exporting `qk`, `ProjectScopeKey`,
+and `ProjectsListKey`. `qk.project.scope(id)` returns `['kortix', 'project', id]`
+as an invalidation-only prefix; every other `qk.project.*` member spreads it and
+appends a segment, so `invalidateQueries({ queryKey: qk.project.scope(id) })`
+provably reaches the whole subtree. `qk.projects.list(accountId?)` partitions by
+account and is not nested under any project scope. The module is standalone —
+not re-exported from `react/index.ts` (Task 6's job) — so it has zero effect on
+the public surface snapshot.
+
+RED:
+
+- `bun test --isolate src/react/query-keys.test.ts`: `0 pass`, `1 fail`,
+  `error: Cannot find module './query-keys'`.
+
+GREEN:
+
+- `bun test --isolate src/react/query-keys.test.ts`: `6 pass`, `0 fail`,
+  `22 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1577 pass`, `0 fail`, `6394 expect()`
+  calls across `123` files (above the documented `1069`/`71` baseline).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; the packed tarball
+  imported and `createKortix` constructed successfully.
+
+The public surface is unchanged — `query-keys.ts` is not imported anywhere yet.
+The `version` field was not touched.
+
+**Status:** COMPLETE (Task 3 of `client-cache-unification`).
 ### 2026-08-06 — session `connector-compat-removal` completion
 
 No **Now** task claimed. This is the second phase of the user-directed connector
@@ -84,6 +770,52 @@ functions, connector-authorization entity aliases, legacy binding identifiers,
 and legacy email-installation fields.
 
 **Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-07 — session `kortix-apps` claim
+
+No **Now** task claimed. This is the user-directed Kortix Apps implementation.
+
+Claimed SDK scope:
+
+- Add the framework-free Apps REST contract and public types.
+- Expose the canonical project surface at `kortix.project(projectId).apps`.
+- Support artifact upload, deployment creation, inspection, logs, rollback,
+  start, stop, and removal through the existing `getToken` seam.
+- Keep provider selection server-side and preserve every published SDK name.
+- Add the SDK documentation, executable example, and public-surface snapshots.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+same RED, GREEN, and REFACTOR sequence directly.
+
+Required final gates are `typecheck`, the complete SDK test suite, and the
+packed-install smoke test.
+
+Final security correction:
+
+- `AppDeployment.created_by` records the caller who created the immutable
+  deployment.
+- The API uses that actor for personal secret resolution, runtime ownership,
+  and compute attribution.
+- The type addition is backward-compatible and changes no public export name.
+
+RED:
+
+- `pnpm --filter @kortix/sdk typecheck`: failed with `TS2551` because
+  `AppDeployment.created_by` did not exist.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1598 pass`, `0 fail`, and `6550 expect()`
+  calls across `127` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed tarballs
+  imported and constructed `@kortix/sdk` and `@kortix/executor-sdk`.
+
+**Status:** COMPLETE in PR #6197.
 
 **SDK package shippable to production: YES.**
 
@@ -459,6 +1191,58 @@ Required SDK gates are typecheck, the full test suite, and packed-install smoke.
 **Status:** IN PROGRESS.
 
 **SDK package shippable to production: NOT YET.**
+
+### 2026-08-07 — session `apps-experimental-gate` completion
+
+The Apps project gate remains additive. The existing Apps SDK surface keeps all
+published names. `AppDeployment` now exposes immutable `created_by`,
+`source_session_id`, and `actor_type` provenance returned by the API.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1597 pass`, `2 skip`, `0 fail`, and
+  `6547 expect()` calls across `127` files.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`; the packed SDK imported
+  and `createKortix` constructed successfully.
+- `bun test src/core/rest/projects-client/apps.test.ts`: `5 pass`, `0 fail`.
+
+No public export name changed. The package version remains untouched.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+The complete Apps deployment matrix is a platform acceptance gate. It is not an
+SDK package gate and remains pending until the merged Dev deployment is live.
+
+### 2026-08-07 — session `apps-experimental-gate` completion
+
+Implemented:
+
+- Added the additive `apps` key to `ExperimentalFeatureKey`.
+- Added project-contract coverage for `experimental.apps`.
+- Kept the existing Apps SDK client and React surface unchanged.
+
+Required gates:
+
+```text
+$ pnpm --filter @kortix/sdk typecheck
+exit 0
+
+$ pnpm --filter @kortix/sdk test
+1597 pass
+2 skip
+0 fail
+
+$ pnpm --filter @kortix/sdk run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+install smoke test passed
+```
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ---
 
@@ -6757,5 +7541,112 @@ would now fail to compile. Flagging rather than burying it.
 **Status:** COMPLETE (uncommitted — left in the working tree on branch
 `trial-entitlements` at the requester's instruction, so no claim commit was
 made; this entry is the handoff record).
+
+**SDK package shippable to production: YES.**
+||||||| f398f755c2
+
+### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
+
+Additive, host-driven. `apps/web`'s connectors catalogue was rebuilt to paginate
+by scroll, and its foot states "Showing 192 of 2,713 connectors". Discover
+already publishes `total` on every page; Pipedream did not, so the Easy Connect
+source — the one **most** projects get, since `connectors_api_discover` defaults
+false — could only ever quote what it had already fetched. A page that says
+"192" under a catalogue of 2,713 reads as a catalogue of 192.
+
+Pipedream's `/apps` response carries `page_info.total_count` and the API was
+discarding it. Change is one optional field, end to end:
+
+- `apps/api/src/connectors/pipedream.ts` — `listApps` returns
+  `total: data.page_info?.total_count`; `listApps` and `browsePipedreamApps`
+  signatures widened. The route is a passthrough (`c.json(result)`), so nothing
+  there changed.
+- `packages/sdk/.../projects-client/connectors.ts` — `total?: number` on
+  `listPipedreamApps`'s response type.
+
+**Optional, not required.** An API build older than this one omits the field;
+callers fall back to their loaded count rather than quoting a total they cannot
+back up. Per the safe/breaking table, an added optional field is additive.
+
+It is an upper bound, not an exact figure, and the code says so: Pipedream counts
+before `isPipedreamOAuthApp` filters utility apps out of each page. Still far
+closer to the truth than the loaded count.
+
+RED, then GREEN. Two tests added to `connectors.test.ts` (`surfaces the catalogue
+total the API reports`, `tolerates an API build that reports no total`). Both were
+watched failing first — the failure is a **typecheck** failure, not a runtime one,
+because the SDK function is a pass-through and `bun test` never sees the type:
+
+```
+src/core/rest/projects-client/connectors.test.ts(523,17): error TS2339: Property 'total' does not exist on type '{ apps: PipedreamApp[]; nextCursor?: string | undefined; hasMore: boolean; }'.
+src/core/rest/projects-client/connectors.test.ts(531,17): error TS2339: Property 'total' does not exist on type '{ apps: PipedreamApp[]; nextCursor?: string | undefined; hasMore: boolean; }'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1584 pass`, `2 skip`, `3 fail`,
+  `6451 expect()` across `124` files. **The 3 failures are pre-existing and
+  unrelated** — `fetchCostExportCsv …`, `catalog uses the project-scoped route …`,
+  `attachment upload sends raw bytes …`. Verified by `git stash` → same 3 failures,
+  `1582 pass`. This change moved the count `1582 → 1584` and the failures not at
+  all. Not fixed here: they are outside this task, and burying them under an
+  unrelated change is worse than reporting them.
+- `pnpm --filter @kortix/sdk run smoke:install`: **FAILS**, pre-existing.
+  `src/index.ts(136,11): error TS18046: 'error' is of type 'unknown'` inside the
+  throwaway smoke project, with `WARN Local package.json exists, but node_modules
+  missing`. Identical failure on a stashed tree, so it is the harness in this
+  worktree, not the tarball.
+
+**Not covered by a test:** that the live Pipedream `/apps` response actually
+carries `page_info.total_count` for this deployment's project. The field is read
+optionally and every consumer falls back, so the failure mode is the old
+behaviour rather than a break.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES** — for this change. The 3 red tests
+and the red `smoke:install` predate it and are unrelated; they are someone's open
+work, and this change neither causes nor clears them.
+
+### 2026-08-07 — session `apps-experimental-gate` claim
+
+Scope:
+
+- Add the additive `apps` experimental feature key to the public project contract.
+- Keep the existing Apps SDK surface unchanged.
+- Gate API, CLI, and web discovery and execution on the selected project's effective flag.
+
+The required `tdd` skill is unavailable in this session. The work uses the same
+RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+### 2026-08-07 — session `no-timeout-toasts` completion
+
+Kept both request-safety deadlines. Added the stable API wire code
+`request_deadline`. The SDK normalizes typed and legacy API deadline responses,
+returns typed client `TIMEOUT` errors, and does not invoke the host global error
+handler for either class. The web host rejects these deadlines before telemetry
+or toast processing. The shared toast helper also rejects exact Kortix deadline
+messages when a direct caller has discarded the typed code. Unrelated `503`
+failures and third-party timeout messages remain visible.
+
+Verification after rebasing onto `origin/main`:
+
+- SDK typecheck: exit `0`.
+- SDK suite: `1714 pass`, `0 fail`, `6808 expect()` calls, `135` files.
+- SDK packed-install smoke: exit `0`.
+- API focused suite: `16 pass`, `0 fail`; API typecheck: exit `0`.
+- Web focused suite: `12 pass`, `0 fail`; complete suite: `4814 pass`, `0 fail`;
+  focused ESLint: exit `0`.
+- Authenticated local HTTP request with a 1 ms server deadline: HTTP `503`,
+  `Retry-After: 10`, and JSON `code: 'request_deadline'`.
+
+No SDK export or version changed.
+
+**Status:** COMPLETE in commit `9c5d9dc11d`.
 
 **SDK package shippable to production: YES.**

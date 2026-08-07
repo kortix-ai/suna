@@ -105,14 +105,50 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         const configDir = syncConfigDir
           ? await syncOpencodeConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
           : undefined
-        if (!skipRestart) await opencode.restart()
+        // Verified swap, not a kill-then-hope restart: boot the new opencode,
+        // prove it serves, and only then retire the running one. A config that
+        // cannot boot leaves the session on the opencode it already had.
+        // `?verify_fail=1` — fault injection for the reload's SAFETY path.
+        //
+        // The decline branch (candidate does not boot → keep the running
+        // opencode, report why) cannot otherwise be reached on a real box: the
+        // API validates agent configs against opencode's schema before they
+        // reach a sandbox, so no supported input produces one that fails to
+        // start. Without this the branch is provable only in unit tests.
+        //
+        // Safe to expose. Its entire effect is the reload DECLINING — the same
+        // outcome the mechanism produces on a genuine failure. The session
+        // keeps the opencode it already had, nothing is destroyed, and the
+        // response says plainly that the config did not take.
+        const reload = skipRestart
+          ? null
+          : await opencode.reloadVerified({ forceFail: c.req.query('verify_fail') === '1' })
         return c.json({
+          // The repo work succeeded either way; `reload.outcome` carries whether
+          // the new config actually took. Reporting ok:false here would hide a
+          // successful pull behind a reload that safely declined to swap.
           ok: true,
           repo: {
             before: repo.before,
             after: repo.after,
           },
           ...(configDir ? { config_dir: configDir } : {}),
+          ...(reload
+            ? {
+                reload: {
+                  outcome: reload.outcome,
+                  ...(reload.outcome === 'swapped'
+                    ? {
+                        port: reload.port,
+                        pid: reload.pid,
+                        // Whether the swap interrupted work someone was waiting
+                        // on. null = could not tell; never report that as false.
+                        turn_ended: reload.turnEnded,
+                      }
+                    : { reason: reload.reason }),
+                },
+              }
+            : {}),
           opencode: opencode.getState(),
           opencode_pid: opencode.getPid(),
         })

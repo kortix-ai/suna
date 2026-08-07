@@ -282,6 +282,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   test('tracks only the first-party kortix-* skill directories', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
+      'kortix-apps',
       'kortix-computer',
       'kortix-connectors',
       'kortix-marketplace',

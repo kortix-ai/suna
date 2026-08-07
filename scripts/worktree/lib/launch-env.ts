@@ -14,6 +14,8 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
   return {
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
+    KORTIX_APPS_LOCAL: 'true',
+    KORTIX_APPS_LOCAL_PORT: String(ports.api),
     KORTIX_URL: opts.kortixUrl || `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,

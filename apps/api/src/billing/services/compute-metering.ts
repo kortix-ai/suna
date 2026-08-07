@@ -20,7 +20,14 @@
 // hook can never silently accrue 24h+ of uncharged compute.
 
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { creditAccounts, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import {
+  appDeployments,
+  appRuntimes,
+  apps,
+  creditAccounts,
+  sandboxComputeSessions,
+  sessionSandboxes,
+} from '@kortix/db';
 import { config } from '../../config';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
@@ -62,12 +69,13 @@ export interface StartComputeOpts {
   provider?: ProviderName;
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
+  workloadType?: 'session' | 'app';
+  appRuntimeId?: string | null;
 }
 
 /**
  * Compute the cost (in USD, pre-balance-deduction) for a window.
- * Hosted providers use one public customer rate. local-docker uses zero rates
- * because it runs on operator-owned hardware.
+ * All supported providers use one public customer rate.
  */
 export function calculateComputeCost(
   spec: SandboxSpec,
@@ -114,6 +122,8 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     gpuCount: opts.spec.gpuCount ?? 0,
     state: 'active',
     metadata: (opts.metadata ?? {}) as Record<string, unknown>,
+    workloadType: opts.workloadType ?? 'session',
+    appRuntimeId: opts.appRuntimeId ?? null,
   }).catch(async (err) => {
     if ((err as { code?: string })?.code !== '23505') throw err;
     return getOpenComputeSession(opts.sandboxId);
@@ -424,6 +434,95 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
     .limit(limit);
 }
 
+/**
+ * App equivalent of selectMissingComputeCandidates(). An App runtime is
+ * billable only while it is the active deployment, its desired state is
+ * running, and the runtime row itself is running.
+ */
+export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+  return db
+    .select({
+      sandboxId: appRuntimes.runtimeId,
+      accountId: appRuntimes.accountId,
+      provider: appRuntimes.provider,
+      externalId: appRuntimes.externalId,
+      cpuCores: apps.cpuCores,
+      memoryGb: apps.memoryGb,
+      diskGb: apps.diskGb,
+      appId: apps.appId,
+      deploymentId: appDeployments.deploymentId,
+    })
+    .from(appRuntimes)
+    .innerJoin(appDeployments, eq(appDeployments.deploymentId, appRuntimes.deploymentId))
+    .innerJoin(
+      apps,
+      and(
+        eq(apps.appId, appDeployments.appId),
+        eq(apps.activeDeploymentId, appDeployments.deploymentId),
+      ),
+    )
+    .innerJoin(
+      creditAccounts,
+      and(
+        eq(creditAccounts.accountId, appRuntimes.accountId),
+        inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
+      ),
+    )
+    .leftJoin(
+      sandboxComputeSessions,
+      and(
+        eq(sandboxComputeSessions.sandboxId, appRuntimes.runtimeId),
+        isNull(sandboxComputeSessions.endedAt),
+      ),
+    )
+    .where(and(
+      eq(appRuntimes.status, 'running'),
+      eq(apps.desiredState, 'running'),
+      isNull(apps.deletedAt),
+      isNull(sandboxComputeSessions.id),
+    ))
+    .orderBy(asc(appRuntimes.createdAt))
+    .limit(limit);
+}
+
+export async function reconcileMissingAppComputeSessions(
+  limit = RECONCILE_MISSING_BATCH_SIZE,
+): Promise<ReconcileMissingComputeResult> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { checked: 0, reconciled: 0, errors: 0 };
+
+  const rows = await selectMissingAppComputeCandidates(limit);
+  let reconciled = 0;
+  let errors = 0;
+  for (const row of rows) {
+    try {
+      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      if (status !== 'running') continue;
+      const opened = await startComputeSession({
+        sandboxId: row.sandboxId,
+        accountId: row.accountId,
+        provider: row.provider as ProviderName,
+        spec: {
+          cpuCores: row.cpuCores,
+          memoryGb: row.memoryGb,
+          diskGb: row.diskGb,
+          gpuCount: 0,
+        },
+        workloadType: 'app',
+        appRuntimeId: row.sandboxId,
+        metadata: { appId: row.appId, deploymentId: row.deploymentId, reconciled: true },
+      });
+      if (opened) reconciled += 1;
+    } catch (err) {
+      errors += 1;
+      console.error(
+        `[compute-metering] reconcile-missing App failed for runtime ${row.sandboxId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return { checked: rows.length, reconciled, errors };
+}
+
 export async function reconcileMissingComputeSessions(
   limit = RECONCILE_MISSING_BATCH_SIZE,
 ): Promise<ReconcileMissingComputeResult> {
@@ -497,10 +596,16 @@ export async function tickRunningComputeCharges(): Promise<{ settled: number; re
     }
   }
 
-  const { reconciled } = await reconcileMissingComputeSessions().catch((err) => {
-    console.error('[compute-metering] reconcile-missing pass failed:', err);
-    return { checked: 0, reconciled: 0, errors: 0 };
-  });
+  const [sessionResult, appResult] = await Promise.all([
+    reconcileMissingComputeSessions().catch((err) => {
+      console.error('[compute-metering] reconcile-missing session pass failed:', err);
+      return { checked: 0, reconciled: 0, errors: 0 };
+    }),
+    reconcileMissingAppComputeSessions().catch((err) => {
+      console.error('[compute-metering] reconcile-missing App pass failed:', err);
+      return { checked: 0, reconciled: 0, errors: 0 };
+    }),
+  ]);
 
-  return { settled, reconciled };
+  return { settled, reconciled: sessionResult.reconciled + appResult.reconciled };
 }

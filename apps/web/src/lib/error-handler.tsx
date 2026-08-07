@@ -1,12 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
-import { isBillingEnabled } from '@/lib/config';
 import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
+import { isBillingEnabled } from '@/lib/config';
+import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import * as Sentry from '@sentry/nextjs';
-import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 import type { BillingState } from '@kortix/sdk';
+import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
+import * as Sentry from '@sentry/nextjs';
 
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
@@ -162,6 +163,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     console.error('API Error:', error, context);
   }
 
+  if (isSilentTimeoutError(error)) {
+    return;
+  }
+
   // Report server errors (5xx) and genuine network failures to Better Stack via
   // Sentry. 4xx errors are expected (auth, validation) and don't need alerting.
   //
@@ -204,12 +209,8 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // still reports — only the typed deadline message the API's
   // `RequestDeadlineHTTPException` emits is excluded.
   const errorMessage = typeof error?.message === 'string' ? error.message : '';
-  const isServerDeadline503 =
-    status === 503 && isServerDeadlineNoiseMessage(errorMessage);
-  if (
-    (status >= 500 && !isServerDeadline503) ||
-    error?.code === 'NETWORK_ERROR'
-  ) {
+  const isServerDeadline503 = status === 503 && isServerDeadlineNoiseMessage(errorMessage);
+  if ((status >= 500 && !isServerDeadline503) || error?.code === 'NETWORK_ERROR') {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
@@ -265,7 +266,8 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       message: v2Message ?? '',
       balance: v2Balance,
       accountId: v2AccountId,
-      billingModel: typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
+      billingModel:
+        typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
       hasSubscription:
         typeof v2Detail?.has_subscription === 'boolean' ? v2Detail.has_subscription : undefined,
       // The unambiguous state (billing-state.ts). Preferred over `code`, which

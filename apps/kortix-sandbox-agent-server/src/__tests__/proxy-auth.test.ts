@@ -29,6 +29,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -61,6 +62,9 @@ function fakeOpencode(
     getState: () => state,
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
+    // Health reports this so the API's PTY proxy can follow opencode across a
+    // reload swap. Omitting it made every /kortix/health assertion 500.
+    getActivePort: () => 4096,
     restart: async () => hooks.restart?.(),
     // The env route calls reloadConfig now, which applies config in place via
     // dispose and falls back to restart. Both land here so a test counting
@@ -68,6 +72,13 @@ function fakeOpencode(
     reloadConfig: async () => {
       hooks.restart?.()
       return 'restarted' as const
+    },
+    // The refresh route now performs a VERIFIED swap: boot the new opencode,
+    // prove it serves, then retire the old one. Lands on the same hook so a
+    // test counting "was opencode replaced" keeps counting exactly that.
+    reloadVerified: async () => {
+      hooks.restart?.()
+      return { outcome: 'swapped' as const, port: 4097, pid: null }
     },
   } as unknown as Opencode
 }

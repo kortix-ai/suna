@@ -11,6 +11,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 0,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/tmp',
     projectTarget: '/tmp',

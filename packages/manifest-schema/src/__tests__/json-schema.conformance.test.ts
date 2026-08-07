@@ -678,11 +678,11 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
-    name: 'v2: retired apps section is rejected',
+    name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
-    valid: false,
+    valid: true,
     input:
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n',
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  site:\n    path: .\n    type: static\n    readiness_path: /\n',
   },
 ];
 

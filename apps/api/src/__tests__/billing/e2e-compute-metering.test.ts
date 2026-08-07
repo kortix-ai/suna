@@ -360,6 +360,5 @@ describe('compute metering — cost calculation', () => {
       calculateComputeCost(SPEC, 3600, 'daytona'),
       8,
     );
-    expect(calculateComputeCost(SPEC, 3600, 'local-docker')).toBe(0);
   });
 });

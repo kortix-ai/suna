@@ -46,6 +46,7 @@ import {
   listAccounts,
   listProjectsForAccount,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { FolderPlusIcon as FolderPlus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -160,10 +161,10 @@ export default function ProjectsPage() {
   const activeAccountId = activeAccount?.account_id ?? null;
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', activeAccountId],
+    queryKey: qk.projects.list(activeAccountId ?? undefined),
     queryFn: () => listProjectsForAccount(activeAccountId || undefined),
     enabled: !!user && !!activeAccountId,
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
 
   const canCreateProjects =
@@ -182,14 +183,15 @@ export default function ProjectsPage() {
   );
 
   // In "all" view we fetch projects for every account. These reuse the exact
-  // same ['projects', accountId] cache keys as the single-account query above,
-  // so toggling between views is instant once each account has loaded once.
+  // same qk.projects.list(accountId) cache keys as the single-account query
+  // above, so toggling between views is instant once each account has loaded
+  // once.
   const allAccountQueries = useQueries({
     queries: viewAll
       ? accounts.map((a) => ({
-          queryKey: ['projects', a.account_id],
+          queryKey: qk.projects.list(a.account_id),
           queryFn: () => listProjectsForAccount(a.account_id),
-          staleTime: 20_000,
+          ...contract('inventory'),
         }))
       : [],
   });
@@ -284,7 +286,12 @@ export default function ProjectsPage() {
             return;
           }
           writeLastProjectId(user?.id, project.project_id);
-          queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
+          // qk.projects.scope(), not the precise per-account form: a
+          // low-frequency mutation like this can afford to reach every
+          // account's list (and the accountless slot the marketplace picker
+          // reads), the same reach the old bare projects-literal prefix
+          // match had.
+          queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
           router.replace(`/projects/${project.project_id}`);
         })
         .catch((err) => {
@@ -340,7 +347,14 @@ export default function ProjectsPage() {
         suppressAutoProjectAfterDelete();
       }
       if (readLastProjectId(user?.id) === projectId) clearLastProjectId();
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // qk.projects.scope(), not the precise per-account form: for a
+      // single-account user the archived project's account IS the primary
+      // account the accountless qk.projects.list() slot resolves to, so a
+      // precise invalidation here would leave the marketplace picker's
+      // cached list showing the archived project until gcTime evicts it.
+      // Archiving is rare — over-invalidating a few extra account lists
+      // costs nothing measurable.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
       successToast(name ? `"${name}" archived` : 'Project archived');
       setArchiveTarget(null);

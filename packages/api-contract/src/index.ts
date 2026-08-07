@@ -54,6 +54,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
+  apps: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 
@@ -78,16 +79,8 @@ export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/**
- * Every sandbox provider the current platform can select or emit.
- *
- * 'local-docker' (hyphenated) is EXPERIMENTAL — same-machine Docker
- * containers, see apps/api/src/platform/providers/local-docker.ts. It is a
- * deliberately DIFFERENT identifier from the retired 'local_docker'
- * (underscore) single-instance provider ripped out in 9cbf57dda — the schema
- * test suite asserts the old identifier stays rejected.
- */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
+/** Every sandbox provider the current platform can select or emit. */
+export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 

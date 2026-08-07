@@ -44,10 +44,7 @@ import { EntityList } from '@/components/shared/EntityList';
 import { useSearch } from '@/lib/utils/search';
 import { useAvailableModels } from '@/lib/models';
 import type { Agent, Model } from '@/api/types';
-import {
-  AppBubble,
-  ConnectionsPageContent,
-} from '@/components/settings/ConnectionsPage';
+import { ConnectionsPageContent } from '@/components/settings/ConnectionsPage';
 import { ComposioAppsContent } from '@/components/settings/connections/ComposioAppsList';
 import { ComposioAppDetailContent } from '@/components/settings/connections/ComposioAppDetail';
 import { ComposioConnectorContent } from '@/components/settings/connections/ComposioConnector';

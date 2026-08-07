@@ -64,7 +64,6 @@ const PROVIDER_LABEL: Record<string, string> = {
   daytona: 'Daytona',
   platinum: 'Platinum',
   e2b: 'E2B',
-  'local-docker': 'Local Docker',
 };
 
 export function formatSandboxProvider(provider: string): string {

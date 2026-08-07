@@ -53,18 +53,7 @@ box.
   project repos. Recommended, standard choices: [Daytona](https://www.daytona.io/)
   (the default) or [Platinum](https://www.platinum.dev/), Kortix's own microVM
   sandbox provider. [E2B](https://e2b.dev/) is also supported. Any of these
-  need just an API key, settable after first boot with `kortix self-host
-  configure`.
-  - **Alternative: `local-docker` (EXPERIMENTAL — not recommended for
-    production).** Listed last in the provider picker. Runs sandboxes as
-    plain Docker containers on THIS SAME machine — no cloud provider account
-    needed, just the host's own Docker socket (mounted into `kortix-api`
-    automatically when you pick it). It is same-machine only: not
-    horizontally scalable, no multi-node scheduling, no per-container disk
-    quotas yet, and noticeably slower than the other providers because it
-    builds sandbox images locally on this machine. Good for evaluation only;
-    pick Daytona or Platinum for anything that needs to scale beyond one
-    host or run in production.
+  need an API key, settable after first boot with `kortix self-host configure`.
 - **Not required to get started:** SMTP. A fresh install auto-confirms email
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
@@ -271,7 +260,7 @@ same box or a new one.
 | `kortix self-host version` | Show the running version, the configured channel, and whether a newer release is available. |
 | `kortix self-host stop` / `restart` | Stop / restart the stack. |
 | `kortix self-host status` | Container status (`docker compose ps`). |
-| `kortix self-host doctor` | Validate local Docker tooling and the rendered Compose config. Non-mutating. |
+| `kortix self-host doctor` | Validate Docker tooling and the rendered Compose config. Non-mutating. |
 | `kortix self-host logs [service]` | Tail Compose logs. |
 | `kortix self-host open` | Open the dashboard in a browser. |
 | `kortix self-host env ls [--show]` | Show every persistent value, grouped by service; secrets masked by default (`--show` reveals). |

@@ -14,7 +14,12 @@ import {
   renderMetrics,
   metricsEnabled,
 } from './lib/metrics';
-import { getDiagnosticFields, getRequestContext, runWithContext, setContextField } from './lib/request-context';
+import {
+  getDiagnosticFields,
+  getRequestContext,
+  runWithContext,
+  setContextField,
+} from './lib/request-context';
 import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
@@ -40,7 +45,10 @@ import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
-import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import {
+  isDaytonaRateLimitError,
+  primeDaytonaRateLimitClassifier,
+} from './shared/daytona-rate-limit';
 import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
@@ -89,10 +97,14 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
@@ -122,10 +134,15 @@ process.on('unhandledRejection', (reason: unknown) => {
     // which is exactly what took prod down on 2026-06-18. Record it locally and
     // drop it. See logger.ts isLoggingTransportError.
     if (isLoggingTransportError(`${err.message}\n${err.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport rejection', { error: err.message });
+      appLogger.localError('Dropped logging-transport rejection', {
+        error: err.message,
+      });
       return;
     }
-    appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
+    appLogger.error('Unhandled promise rejection', {
+      error: err.message,
+      stack: err.stack,
+    });
     captureException(err, { handler: 'unhandledRejection' });
   } catch {
     // never let the crash guard itself crash the process
@@ -153,8 +170,7 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
-const UUID_PATH_SEGMENT_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -296,7 +312,10 @@ app.use('*', async (c, next) => {
   // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
   // logs, so a failing/degraded probe stays fully visible).
   const isHealthProbe =
-    path === '/health' || path === '/v1/health' || path.endsWith('/health/live') || path.endsWith('/health/ready');
+    path === '/health' ||
+    path === '/v1/health' ||
+    path.endsWith('/health/live') ||
+    path.endsWith('/health/ready');
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
@@ -433,7 +452,11 @@ const livenessHandler = (c: any) => {
   if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
     // 503 → kubelet liveness fails → the pod is restarted (auto-recovery).
     return c.json(
-      { status: 'degraded', event_loop_lag_ms: lag, threshold_ms: MAX_EVENT_LOOP_LAG_MS },
+      {
+        status: 'degraded',
+        event_loop_lag_ms: lag,
+        threshold_ms: MAX_EVENT_LOOP_LAG_MS,
+      },
       503,
     );
   }
@@ -606,8 +629,13 @@ app.openapi(
     summary: 'Update the maintenance config (admin only)',
     ...auth,
     middleware: [supabaseAuth] as const,
-    request: { body: { content: { 'application/json': { schema: MaintenanceSchema } } } },
-    responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
+    request: {
+      body: { content: { 'application/json': { schema: MaintenanceSchema } } },
+    },
+    responses: {
+      200: json(MaintenanceSchema, 'Updated config'),
+      ...errors(403, 503),
+    },
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
@@ -624,7 +652,11 @@ app.openapi(
     };
     await db
       .insert(platformSettings)
-      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .values({
+        key: MAINTENANCE_KEY,
+        value: maintenanceConfig,
+        updatedAt: new Date(),
+      })
       .onConflictDoUpdate({
         target: platformSettings.key,
         set: { value: maintenanceConfig, updatedAt: new Date() },
@@ -660,7 +692,9 @@ app.openapi(
     tags: ['system'],
     summary: 'Submit a public demo request (emails an internal notification)',
     middleware: [createDemoRequestRateLimitMiddleware()] as const,
-    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    request: {
+      body: { content: { 'application/json': { schema: DemoRequestSchema } } },
+    },
     responses: {
       200: json(
         z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
@@ -703,7 +737,9 @@ app.openapi(
     path: '/v1/prewarm',
     tags: ['system'],
     summary: 'No-op pre-warm (frontend fires this on login)',
-    responses: { 200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok') },
+    responses: {
+      200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok'),
+    },
   }),
   (c: any) => c.json({ success: true }),
 );
@@ -958,7 +994,11 @@ app.onError((err, c) => {
     });
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'sandbox provider is temporarily rate-limited', status: 503 },
+      {
+        error: true,
+        message: 'sandbox provider is temporarily rate-limited',
+        status: 503,
+      },
       503,
     );
   }
@@ -986,7 +1026,11 @@ app.onError((err, c) => {
     });
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+      {
+        error: true,
+        message: 'git mirror is temporarily unavailable',
+        status: 503,
+      },
       503,
     );
   }
@@ -1014,16 +1058,23 @@ app.onError((err, c) => {
   // error and fall through to the generic capture below, so unexpected
   // failures stay loud. See shared/daytona-transient.ts.
   if (isDaytonaTransientProviderError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`, {
-      method,
-      path,
-      errorType: 'DaytonaError',
-      errorName: err.name,
-      statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
-    });
+    appLogger.warn(
+      `${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'sandbox provider is temporarily unavailable', status: 503 },
+      {
+        error: true,
+        message: 'sandbox provider is temporarily unavailable',
+        status: 503,
+      },
       503,
     );
   }
@@ -1062,6 +1113,10 @@ app.onError((err, c) => {
       status: err.status,
     };
 
+    if (isRequestDeadlineHTTPException(err)) {
+      response.code = err.code;
+    }
+
     // Add Retry-After header for 503s (sandbox waking up)
     if (err.status === 503) {
       c.header('Retry-After', '10');
@@ -1088,8 +1143,7 @@ app.onError((err, c) => {
     // follow-up (raise the shadow pooler's `pool_size` / move to transaction
     // mode) is a human-owned external action recorded in the sweep ledger.
     // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
-    const databaseMessage =
-      databaseError.causeMessage ?? databaseError.outerMessage;
+    const databaseMessage = databaseError.causeMessage ?? databaseError.outerMessage;
     const isPoolExhaustion = isSentryIgnoredError(
       databaseError.causeName ?? databaseError.outerName,
       databaseMessage,
@@ -1272,6 +1326,8 @@ async function startSingletonWorkers() {
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
   startProviderTransitionWorker();
+  startAppDeploymentWorker();
+  startAppIdleReaper();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1285,6 +1341,8 @@ async function stopSingletonWorkers() {
   stopProjectMaintenance();
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
+  stopAppDeploymentWorker();
+  stopAppIdleReaper();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }
@@ -1421,6 +1479,26 @@ export default {
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
     const host = req.headers.get('host') || '';
+    if (resolveAppRequest(req, url)) {
+      server.timeout(req, 0);
+      if (isWsUpgrade) {
+        const prepared = await prepareAppWsUpgrade(req, url);
+        if (!prepared.ok) {
+          return new Response(JSON.stringify({ error: prepared.message }), {
+            status: prepared.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const upgraded = server.upgrade(req, { data: prepared.data });
+        if (upgraded) return undefined;
+        return new Response(JSON.stringify({ error: 'App WebSocket upgrade failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const appResponse = await handleAppPublicRequest(req);
+      if (appResponse) return appResponse;
+    }
     if (parsePreviewSubdomain(host)) {
       server.timeout(req, 0);
       // WS-on-subdomain isn't wired yet (agent server's port-proxy is
@@ -1428,7 +1506,9 @@ export default {
       // gracefully instead of timing out.
       if (isWsUpgrade) {
         return new Response(
-          JSON.stringify({ error: 'WebSocket upgrade on preview subdomain not implemented' }),
+          JSON.stringify({
+            error: 'WebSocket upgrade on preview subdomain not implemented',
+          }),
           { status: 501, headers: { 'Content-Type': 'application/json' } },
         );
       }
@@ -1529,6 +1609,10 @@ export default {
         previewWsHandlers.open(ws as any);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.open(ws as any);
+        return;
+      }
       // No other WS upgrades are accepted.
       try {
         ws.close(1011, 'unsupported websocket upgrade');
@@ -1547,6 +1631,10 @@ export default {
         previewWsHandlers.message(ws as any, message);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.message(ws as any, message);
+        return;
+      }
     },
 
     close(ws: { data: any }) {
@@ -1556,6 +1644,10 @@ export default {
       }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.close(ws as any);
+        return;
+      }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.close(ws as any);
         return;
       }
     },

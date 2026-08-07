@@ -306,23 +306,58 @@ export function sectionTitle(key: string): string {
 }
 
 /**
+ * The sections one item belongs to — the single definition of membership, used
+ * both to build the buckets and to count a category without building them.
+ *
+ * Categories are trimmed and blank ones are dropped before anything else.
+ * `categories: ['']` is not hypothetical — `Malwarebytes` ships exactly that in
+ * the live catalogue, and a plain `length > 0` check would accept the empty
+ * string as a category and render a section under a blank heading. Trimming
+ * also stops `' data'` and `'data '` from forking one category into two
+ * adjacent sections. An item left with nothing after that is genuinely
+ * uncategorized and lands in `Other`.
+ *
+ * A `Set` over the MAPPED keys, not the raw names: `project-management` and
+ * `task-management` are two distinct raw categories that both fold into
+ * Productivity, and an app claiming both would otherwise render twice in that
+ * grid under two identical React keys.
+ */
+export function sectionKeysForEntry(categories: readonly string[]): Set<string> {
+  const named = categories
+    .map((category) => category.trim())
+    .filter((category) => category.length > 0)
+    .map(sectionKeyForCategory);
+  return named.length > 0 ? new Set(named) : new Set([OTHER]);
+}
+
+/**
+ * How many of `items` a section holds, without bucketing the rest.
+ *
+ * Shares `sectionKeysForEntry` with `groupIntoSections`, so the count that
+ * decides whether to fetch another page and the grid that page fills can never
+ * disagree about what is in a category. Counting with a second, hand-written
+ * membership rule is how a page ends up fetching forever against a target the
+ * grid has already met.
+ */
+export function countInSection<T>(
+  items: readonly T[],
+  getCategories: (item: T) => readonly string[],
+  section: string,
+): number {
+  let count = 0;
+  for (const item of items) {
+    if (sectionKeysForEntry(getCategories(item)).has(section)) count++;
+  }
+  return count;
+}
+
+/**
  * Bucket catalog items into browse sections, in `CURATED_SECTIONS` order.
  *
  * Items are duplicated across the sections they claim on purpose — that is how
  * a browse surface works, and `DiscoverConnector.categories` is genuinely
- * multi-valued. What must NOT duplicate is one item inside one section, which
- * is why the `Set` is taken over the MAPPED section keys rather than the raw
- * names: `project-management` and `task-management` are two distinct raw
- * categories that both fold into Productivity, and an app claiming both would
- * otherwise render twice in that grid under two identical React keys.
- *
- * Categories are trimmed and blank ones are dropped before anything else.
- * `categories: ['']` is not hypothetical — `Malwarebytes` ships exactly that
- * in the live catalogue, and a plain `cats.length > 0` check would accept the
- * empty string as a category and render a section under a blank heading.
- * Trimming also stops `' data'` and `'data '` from forking one category into
- * two adjacent sections. An item left with nothing after that is genuinely
- * uncategorized and lands in `Other`.
+ * multi-valued. What must NOT duplicate is one item inside one section;
+ * `sectionKeysForEntry` owns that rule and the blank-category handling.
  *
  * Sorting is rank first, size second. Curated ranks are unique, so the size
  * rule can never reorder them — it orders only the uncurated tail, which is
@@ -334,12 +369,7 @@ export function groupIntoSections<T>(
 ): Array<{ category: string; items: T[] }> {
   const buckets = new Map<string, T[]>();
   for (const item of items) {
-    const named = getCategories(item)
-      .map((category) => category.trim())
-      .filter((category) => category.length > 0)
-      .map(sectionKeyForCategory);
-    const keys = named.length > 0 ? new Set(named) : new Set([OTHER]);
-    for (const key of keys) {
+    for (const key of sectionKeysForEntry(getCategories(item))) {
       const bucket = buckets.get(key);
       if (bucket) bucket.push(item);
       else buckets.set(key, [item]);

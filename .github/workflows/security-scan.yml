@@ -16,6 +16,7 @@ on:
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"
+      - "apps/kortix-app-runtime/**"
       - ".github/workflows/security-scan.yml"
       - ".gitleaks.toml"
   workflow_dispatch:

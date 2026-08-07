@@ -511,6 +511,26 @@ test('listPipedreamApps GETs with q + cursor as query params when given', async 
   expect(result.nextCursor).toBe('c2');
 });
 
+test('listPipedreamApps surfaces the catalogue total the API reports', async () => {
+  // The browse UI states "Showing 192 of 2,713" against this number. Without
+  // it a paged surface can only ever quote what it has already fetched, which
+  // reads as a catalogue of 192.
+  nextResponse = {
+    status: 200,
+    body: { apps: [], total: 2713, nextCursor: 'c2', hasMore: true },
+  };
+  const result = await listPipedreamApps('P1');
+  expect(result.total).toBe(2713);
+});
+
+test('listPipedreamApps tolerates an API build that reports no total', async () => {
+  // The field is additive, so an older deployment omits it. Callers fall back
+  // to the loaded count; what must not happen is a throw or a `NaN`.
+  nextResponse = { status: 200, body: { apps: [], hasMore: false } };
+  const result = await listPipedreamApps('P1');
+  expect(result.total).toBeUndefined();
+});
+
 test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
   await listDiscoverConnectors('P1', 'notion admin', '48');

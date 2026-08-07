@@ -1,4 +1,40 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+
+/**
+ * Outcome of a verified reload.
+ *
+ * `kept-old` is a SUCCESSFUL outcome of the safety mechanism, not a crash: the
+ * new config could not boot, so the running opencode was left alone. Callers
+ * must surface it as a failed reload with the reason, never as a plain error —
+ * the session is still healthy and the user needs to know their change did not
+ * take effect and why.
+ */
+/**
+ * How a config reload was applied, and what it cost.
+ *
+ * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
+ * config in place and interrupts nothing.
+ */
+export interface ReloadConfigResult {
+  how: 'disposed' | 'restarted' | 'kept-old'
+  turnEnded: boolean | null
+}
+
+export type VerifiedReloadResult =
+  | {
+      outcome: 'swapped'
+      port: number
+      pid: number | null
+      /**
+       * Did the swap stop a turn someone was waiting on?
+       *
+       * `null` = could not tell (no finalize hook, or opencode never came back
+       * in time to ask). Never collapse null to false — "we don't know" and
+       * "nothing was interrupted" produce different things said to the user.
+       */
+      turnEnded: boolean | null
+    }
+  | { outcome: 'kept-old'; reason: string }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -12,6 +48,10 @@ import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import {
+  SECRET_CAPABILITIES_ENV_NAME,
+  writeSecretCapabilitiesInstruction,
+} from './secret-capabilities'
 
 const READY_POLL_MS = 100
 /** How long the post-respawn turn finalize waits for opencode to answer again.
@@ -55,6 +95,7 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
   OPENCODE_AUTH_JSON_SECRET,
   'KORTIX_OPENCODE_DENY_ENV',
+  SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
 /** Does this env delta need a full respawn rather than a dispose? */
@@ -113,7 +154,10 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(
   env: NodeJS.ProcessEnv,
-  opts: { injectedSkillsDir?: string | null } = {},
+  opts: {
+    injectedSkillsDir?: string | null
+    secretCapabilitiesInstructionPath?: string | null
+  } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_CLI_TOKEN
   const apiUrl = env.KORTIX_API_URL
@@ -160,7 +204,18 @@ export async function buildOpencodeConfigContent(
   // box with no project config (the platform meta sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
-  if (!hasConnectorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig && !injectedSkillsDir)
+  const secretCapabilitiesInstructionPath =
+    opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
+      ? opts.secretCapabilitiesInstructionPath
+      : null
+  if (
+    !hasConnectorMcp &&
+    !hasLlmGateway &&
+    !isSlackSession &&
+    !hasCompiledAgentConfig &&
+    !injectedSkillsDir &&
+    !secretCapabilitiesInstructionPath
+  )
     return undefined
 
   let base: Record<string, unknown> = {}
@@ -184,6 +239,15 @@ export async function buildOpencodeConfigContent(
     }
   }
   const out: Record<string, unknown> = { ...base }
+
+  if (secretCapabilitiesInstructionPath) {
+    const instructions = Array.isArray(out.instructions)
+      ? out.instructions.filter((item): item is string => typeof item === 'string')
+      : []
+    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
+      ? instructions
+      : [...instructions, secretCapabilitiesInstructionPath]
+  }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
   // config already declares; never clobber.
@@ -534,9 +598,16 @@ const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-openc
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
-  opts: { configPath?: string; injectedSkillsDir?: string | null } = {},
+  opts: {
+    configPath?: string
+    injectedSkillsDir?: string | null
+    secretCapabilitiesInstructionPath?: string | null
+  } = {},
 ): Promise<string | null> {
-  const content = await buildOpencodeConfigContent(env, { injectedSkillsDir: opts.injectedSkillsDir })
+  const content = await buildOpencodeConfigContent(env, {
+    injectedSkillsDir: opts.injectedSkillsDir,
+    secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+  })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
   mkdirSync(dirname(configPath), { recursive: true })
@@ -973,10 +1044,32 @@ export type Opencode = {
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
-  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<'disposed' | 'restarted'>
+  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
+  /**
+   * Boot the new opencode, verify it serves, then swap and retire the old one.
+   * Never leaves the session without an opencode.
+   */
+  /**
+   * @param opts.forceFail Fault injection — treat the candidate as failed to
+   * boot even though it started. The only way to exercise the decline path on
+   * a real box: the API validates agent configs against opencode's schema
+   * before they ever reach a sandbox, so no supported input can produce a
+   * config that fails to start.
+   */
+  reloadVerified(opts?: { forceFail?: boolean }): Promise<VerifiedReloadResult>
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
+  /**
+   * The port opencode is listening on RIGHT NOW.
+   *
+   * It moves: a verified reload boots the replacement on the idle half of the
+   * port pair and promotes it, so the live port alternates. Anything outside
+   * this process that needs to reach opencode directly — the API's PTY
+   * WebSocket proxy is the live case, since the daemon cannot carry a WS — has
+   * to ask rather than assume 4096.
+   */
+  getActivePort(): number
   getBinaryPath(): string | null
   getState(): OpencodeState
   markReady(): void
@@ -984,6 +1077,8 @@ export type Opencode = {
 
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
+  binaryPathOverride?: string
+  configPathOverride?: string
   /**
    * opencode died without anyone asking it to, and has just been respawned.
    *
@@ -997,7 +1092,16 @@ export interface OpencodeSupervisorOptions {
    * It reports the fact and main.ts finalizes the orphaned turn, the same way
    * boot already does when it adopts a root whose last turn never completed.
    */
-  onUnplannedRespawn?: () => void
+  /**
+   * Runs once opencode is serving again after it was replaced.
+   *
+   * Resolves TRUE when it actually aborted an incomplete turn — i.e. the
+   * replacement really did stop work someone was waiting on. That is the only
+   * honest basis for telling a user "your turn was stopped, continue": a
+   * pre-flight "is a turn running?" check races the turn finishing on its own,
+   * and would say it to people whose work completed normally.
+   */
+  onUnplannedRespawn?: () => void | Promise<boolean | void>
 }
 
 export function createOpencodeSupervisor(
@@ -1010,6 +1114,7 @@ export function createOpencodeSupervisor(
   let currentOpencodeConfigDir = opencodeConfigDir
   let currentProjectEnv = projectEnv
   let child: ChildProcess | null = null
+  let activePort = cfg.opencodeInternalPort
   let binaryPath: string | null = null
   let stopping = false
   let restartDelayMs = 500
@@ -1039,7 +1144,25 @@ export function createOpencodeSupervisor(
     } catch {}
   }
 
-  async function spawnChild(bin: string) {
+  /**
+   * Spawn an opencode.
+   *
+   * `port` defaults to the live half of the port pair and `supervise` to true —
+   * that is the ordinary child, the one `child` points at and the one whose
+   * exit triggers an automatic respawn.
+   *
+   * A verified reload passes the STANDBY port and `supervise: false` to boot a
+   * candidate alongside the running one. An unsupervised candidate must not
+   * touch `child`, must not flip `state`, and must not schedule a respawn when
+   * it exits: it is on trial, and a candidate that dies is a verdict, not an
+   * outage.
+   */
+  async function spawnChild(
+    bin: string,
+    opts: { port?: number; supervise?: boolean } = {},
+  ): Promise<ChildProcess> {
+    const port = opts.port ?? activePort
+    const supervise = opts.supervise !== false
     sweepBunExtractions()
     try {
       mkdirSync(OPENCODE_HOME, { recursive: true })
@@ -1075,8 +1198,18 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
+    let secretCapabilitiesInstructionPath: string | null = null
+    try {
+      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     const configPath = await writeKortixOpencodeConfig(baseEnv, {
+      configPath: options.configPathOverride,
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      secretCapabilitiesInstructionPath,
     })
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
@@ -1084,16 +1217,10 @@ export function createOpencodeSupervisor(
     }
     startupMark('runtime-config-ready')
 
-    const args = [
-      'serve',
-      '--port',
-      String(currentCfg.opencodeInternalPort),
-      '--hostname',
-      '127.0.0.1',
-    ]
+    const args = ['serve', '--port', String(port), '--hostname', '127.0.0.1']
 
     const cwd = ensureCwdExists()
-    logger.info('[opencode] spawning', { bin, port: currentCfg.opencodeInternalPort, cwd })
+    logger.info('[opencode] spawning', { bin, port, cwd, supervise })
     // detached: true makes opencode the leader of its own process group, so
     // stop()/restart() can SIGTERM/SIGKILL the whole group (-pid) instead of
     // just this direct child. Without it, a grandchild opencode forks itself
@@ -1110,19 +1237,68 @@ export function createOpencodeSupervisor(
     })
     proc.once('spawn', () => startupMark('runtime-process-spawned'))
 
+    proc.on('error', (err) => {
+      logger.error('[opencode] spawn error', err)
+    })
+
+    if (supervise) {
+      child = proc
+      superviseChild(proc)
+    }
+    return proc
+  }
+
+  /**
+   * Wire the auto-respawn contract onto a child.
+   *
+   * Split out of spawnChild so a promoted candidate gets exactly the same
+   * supervision the ordinary child has — a candidate promoted without this
+   * would die silently and never come back.
+   */
+  function superviseChild(proc: ChildProcess) {
     proc.on('exit', (code, signal) => {
       logger.warn('[opencode] child exited', { code, signal })
+      if (child !== proc) {
+        logger.info('[opencode] retired child exit ignored', { pid: proc.pid })
+        return
+      }
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
       scheduleUnplannedRespawn()
     })
+  }
 
-    proc.on('error', (err) => {
-      logger.error('[opencode] spawn error', err)
+  /**
+   * Signal a process GROUP and resolve once it is gone (or the hard-kill
+   * deadline passes). Extracted from stop() so the verified reload can retire
+   * the old opencode with the same discipline.
+   */
+  function killProcessGroup(proc: ChildProcess, signal: NodeJS.Signals): Promise<void> {
+    const killGroup = (sig: NodeJS.Signals) => {
+      if (proc.pid) {
+        try {
+          process.kill(-proc.pid, sig)
+          return
+        } catch {}
+      }
+      proc.kill(sig)
+    }
+    return new Promise<void>((resolve) => {
+      if (proc.exitCode !== null || proc.signalCode !== null) return resolve()
+      proc.once('exit', () => resolve())
+      try {
+        killGroup(signal)
+      } catch {
+        return resolve()
+      }
+      setTimeout(() => {
+        try {
+          killGroup('SIGKILL')
+        } catch {}
+        resolve()
+      }, 5_000).unref()
     })
-
-    child = proc
   }
 
   function markReady() {
@@ -1178,8 +1354,123 @@ export function createOpencodeSupervisor(
     }, delay)
   }
 
-  async function checkReady(): Promise<boolean> {
-    return probeOpencodeSessionApi(`http://127.0.0.1:${currentCfg.opencodeInternalPort}`, currentCfg.projectTarget, 2_000)
+  /** How long a candidate opencode gets to start serving before we give up. */
+  const VERIFY_READY_TIMEOUT_MS = 90_000
+
+  /**
+   * Reload the config by BOOTING THE NEW OPENCODE FIRST.
+   *
+   * The old path was `stop()` then `start()`: kill the only opencode, then hope
+   * the replacement comes up. When it did not — a config the new build rejects,
+   * a bad agent file, a dependency install that fails — the session was left
+   * with no opencode at all, and the reload had destroyed the very thing it was
+   * supposed to update.
+   *
+   * So: spawn the candidate on the idle port, prove it actually serves the
+   * session API, promote that exact process, and only then retire the old one.
+   * If it never comes up, the old opencode remains active.
+   *
+   * The swap is a port trade, not a port allocation. Both halves are fixed at
+   * startup and both are blocked in the web proxy's self-port set; picking an
+   * ephemeral port would leave the live one unguarded (see config.ts).
+   *
+   * Existing streams end when the old process retires. New requests route to
+   * the promoted process before retirement starts.
+   */
+  /**
+   * Prove the new config actually BOOTS, without touching the running opencode.
+   *
+   * Spawns a candidate on the idle port while the live one keeps serving and
+   * waits for the real session API. A successful result owns a live process;
+   * the caller must either promote it or retire it.
+   */
+  async function verifyCandidateBoots(
+    opts: { forceFail?: boolean } = {},
+  ): Promise<
+    | { ok: true; candidate: ChildProcess; port: number }
+    | { ok: false; reason: string }
+  > {
+    if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet' }
+    if (stopping) return { ok: false, reason: 'supervisor is shutting down' }
+
+    const candidatePort = activePort === currentCfg.opencodeInternalPort
+      ? currentCfg.opencodeStandbyPort
+      : currentCfg.opencodeInternalPort
+    let candidate: ChildProcess
+    try {
+      candidate = await spawnChild(binaryPath, { port: candidatePort, supervise: false })
+    } catch (err) {
+      return { ok: false, reason: `could not spawn candidate: ${(err as Error).message}` }
+    }
+
+    // Fault injection (see the `verify_fail` note on POST /kortix/refresh).
+    // Deliberately applied AFTER the real spawn and probe, not instead of them:
+    // the point is to exercise the ACTUAL decline path — candidate spawned,
+    // candidate retired, incumbent untouched — rather than a shortcut that
+    // proves only the plumbing.
+    const candidateReady = await probeUntilReady(candidatePort, VERIFY_READY_TIMEOUT_MS, candidate)
+    const ready = candidateReady && !opts.forceFail
+    if (!ready) {
+      await killProcessGroup(candidate, 'SIGTERM').catch(() => {})
+      logger.warn('[opencode] candidate never became ready; keeping the running instance', {
+        candidatePort,
+      })
+      return { ok: false, reason: 'the new opencode did not start; the previous one is still running' }
+    }
+    logger.info('[opencode] candidate config verified', { candidatePort })
+    return { ok: true, candidate, port: candidatePort }
+  }
+
+  /**
+   * Poll the real session API until the candidate serves it.
+   *
+   * Same probe the ordinary readiness check uses, for the reason it documents:
+   * opencode binds its port seconds before the project directory is usable, so
+   * a plain TCP or health check would call a half-open process "ready" and we
+   * would swap onto something that cannot answer a prompt.
+   *
+   * Gives up early if the candidate dies — no point waiting out the full
+   * timeout on a process that already exited.
+   */
+  async function probeUntilReady(
+    port: number,
+    timeoutMs: number,
+    proc: ChildProcess,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (stopping) return false
+      if (proc.exitCode !== null || proc.signalCode !== null) return false
+      if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)) {
+        return true
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    return false
+  }
+
+  /**
+   * Close the turn the retired opencode took with it, and report whether there
+   * was one. Returns null when it could not be determined.
+   */
+  async function finalizeAfterReplacement(): Promise<boolean | null> {
+    if (!options.onUnplannedRespawn) return null
+    const ready = await waitUntilReady(RESPAWN_FINALIZE_TIMEOUT_MS)
+    if (!ready) {
+      logger.warn('[opencode] replaced but never became ready; orphaned turn left as-is')
+      return null
+    }
+    try {
+      const ended = await options.onUnplannedRespawn()
+      return ended === true
+    } catch (err) {
+      logger.warn('[opencode] post-swap finalize hook threw', { err: (err as Error).message })
+      return null
+    }
+  }
+
+  async function checkReady(port = activePort): Promise<boolean> {
+    return probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)
   }
 
   /**
@@ -1202,7 +1493,9 @@ export function createOpencodeSupervisor(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
-    const written = await writeKortixOpencodeConfig(baseEnv).catch((err) => {
+    const written = await writeKortixOpencodeConfig(baseEnv, {
+      configPath: options.configPathOverride,
+    }).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
       })
@@ -1211,7 +1504,7 @@ export function createOpencodeSupervisor(
     if (!written) return false
     try {
       const res = await fetch(
-        `http://127.0.0.1:${currentCfg.opencodeInternalPort}/global/dispose`,
+        `http://127.0.0.1:${activePort}/global/dispose`,
         { method: 'POST', signal: AbortSignal.timeout(15_000) },
       )
       // Content-type matters: the SPA catch-all also answers 200, so a status
@@ -1267,7 +1560,12 @@ export function createOpencodeSupervisor(
     const interval = state === 'ok' ? READY_LIVENESS_MS : READY_POLL_MS
     readinessTimer = setTimeout(async () => {
       if (stopping) return
-      const ready = await checkReady()
+      const probedPort = activePort
+      const ready = await checkReady(probedPort)
+      if (probedPort !== activePort) {
+        scheduleReadinessProbe()
+        return
+      }
       if (ready) {
         markReady()
       } else if (state !== 'starting') {
@@ -1281,7 +1579,7 @@ export function createOpencodeSupervisor(
     async start() {
       stopping = false
       state = 'starting'
-      const bin = await detectOpencodeBinary()
+      const bin = options.binaryPathOverride ?? await detectOpencodeBinary()
       if (!bin) {
         logger.warn('[opencode] binary not found on PATH (and /usr/local/bin/opencode-kortix missing); daemon will continue, opencode reports as starting')
         state = 'starting'
@@ -1404,20 +1702,84 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
-    async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<'disposed' | 'restarted'> {
+    async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
       // Some settings are not IN the config file — they shape the child's
       // PROCESS env at spawn, and a dispose cannot re-run that. The provider-key
       // deny-list is the live case: `withoutDeniedProviderEnv` strips native
       // keys when the child is spawned, so disposing after a gateway-mode
       // toggle would leave those keys exactly as they were — routing around the
       // gateway's budgets and logging, or failing to restore BYOK.
-      if (!opts.mustRespawn && (await tryDisposeReload())) return 'disposed'
-      await this.restart()
-      return 'restarted'
+      // A dispose re-reads the config in place — same process, no turn lost.
+      if (!opts.mustRespawn && (await tryDisposeReload())) {
+        return { how: 'disposed', turnEnded: false }
+      }
+      // Verified swap instead of the old kill-then-hope restart. A config that
+      // cannot boot now leaves the running opencode in place and reports why,
+      // rather than taking the session down with it.
+      const result = await this.reloadVerified()
+      if (result.outcome === 'kept-old') {
+        logger.warn('[opencode] reload kept the previous instance', { reason: result.reason })
+        // Nothing was replaced, so nothing was interrupted.
+        return { how: 'kept-old', turnEnded: false }
+      }
+      // No finalize here: reloadVerified() owns it now, so /kortix/refresh —
+      // which calls it directly — stops stranding the turn it interrupts.
+      return { how: 'restarted', turnEnded: result.turnEnded }
+    },
+
+    /** Promote the verified process before retiring the previous process. */
+    async reloadVerified(opts: { forceFail?: boolean } = {}): Promise<VerifiedReloadResult> {
+      const proven = await verifyCandidateBoots(opts)
+      if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason }
+
+      const previous = child
+      const previousPort = activePort
+      activePort = proven.port
+      child = proven.candidate
+      superviseChild(proven.candidate)
+      if (proven.candidate.exitCode !== null || proven.candidate.signalCode !== null) {
+        child = previous
+        activePort = previousPort
+        return {
+          outcome: 'kept-old',
+          reason: 'the verified opencode exited before promotion; the previous one is still running',
+        }
+      }
+      markReady()
+      if (previous) await killProcessGroup(previous, 'SIGTERM').catch(() => {})
+      logger.info('[opencode] candidate promoted', {
+        port: activePort,
+        pid: proven.candidate.pid,
+        previousPort,
+        previousPid: previous?.pid ?? null,
+      })
+
+      // Finalize HERE, not in reloadConfig.
+      //
+      // A turn ends only when opencode emits session.idle/session.error over
+      // SSE. The process we just retired emits neither, so its last assistant
+      // message stays incomplete and every client streaming it spins forever.
+      // reloadConfig used to own this, which left `/kortix/refresh` — the one
+      // route that calls reloadVerified directly — stranding the turn it
+      // interrupted. Retiring the process and closing its turn belong together.
+      const turnEnded = await finalizeAfterReplacement()
+
+      return {
+        outcome: 'swapped',
+        port: activePort,
+        pid: this.getPid(),
+        turnEnded,
+      }
     },
 
     reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
       currentCfg = nextCfg
+      if (
+        activePort !== nextCfg.opencodeInternalPort &&
+        activePort !== nextCfg.opencodeStandbyPort
+      ) {
+        activePort = nextCfg.opencodeInternalPort
+      }
       currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
       state = 'starting'
@@ -1431,8 +1793,12 @@ export function createOpencodeSupervisor(
       return child?.pid ?? null
     },
 
+    getActivePort() {
+      return activePort
+    },
+
     getInternalUrl() {
-      return `http://127.0.0.1:${currentCfg.opencodeInternalPort}`
+      return `http://127.0.0.1:${activePort}`
     },
 
     getBinaryPath() {

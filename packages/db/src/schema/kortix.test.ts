@@ -29,6 +29,11 @@ import {
   sandboxMembers,
   kortixApiKeys,
   sandboxComputeSessions,
+  apps,
+  appArtifacts,
+  appDeployments,
+  appRuntimes,
+  appDeploymentEvents,
   creditAccounts,
   creditLedger,
   usageEvents,
@@ -79,7 +84,7 @@ describe('kortix enums', () => {
 
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
-    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b', 'local-docker']);
+    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -221,6 +226,46 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('Kortix Apps schema', () => {
+  test('stores stable app routing and an atomic active deployment pointer', () => {
+    expect(getTableConfig(apps).name).toBe('apps');
+    expect(columnNames(apps)).toEqual(expect.arrayContaining([
+      'app_id',
+      'project_id',
+      'route_key',
+      'desired_state',
+      'active_deployment_id',
+      'idle_timeout_seconds',
+      'monthly_budget_usd',
+    ]));
+    expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
+  });
+
+  test('stores immutable artifacts and deployment versions', () => {
+    expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
+    expect(getTableConfig(appDeployments).name).toBe('app_deployments');
+    expect(columnNames(appDeployments)).toEqual(expect.arrayContaining([
+      'created_by',
+      'source_session_id',
+      'actor_type',
+    ]));
+    expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
+  });
+
+  test('stores provider runtimes and append-only deployment events', () => {
+    expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
+    expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
+    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('attributes compute windows to App runtimes', () => {
+    expect(columnNames(sandboxComputeSessions)).toEqual(expect.arrayContaining([
+      'workload_type',
+      'app_runtime_id',
+    ]));
   });
 });
 

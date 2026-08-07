@@ -19,7 +19,12 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  assertProjectCapability,
+  loadProjectForUser,
+  loadVisibleSession,
+} from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -765,6 +770,7 @@ projectsApp.openapi(
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -822,6 +828,7 @@ projectsApp.openapi(
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);

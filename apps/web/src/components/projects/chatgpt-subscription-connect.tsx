@@ -36,7 +36,7 @@ import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
@@ -57,9 +57,9 @@ export function isChatGptSubscriptionConnected(secretNames: Set<string>): boolea
 
 export function useChatGptSubscriptionConnected(projectId: string, enabled = true) {
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
     enabled: enabled && !!projectId,
   });
 
@@ -165,7 +165,7 @@ export function ChatGptSubscriptionConnect({
         if (res.status === 'success') {
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
           return;

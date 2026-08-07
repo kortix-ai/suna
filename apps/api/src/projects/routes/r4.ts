@@ -64,6 +64,7 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
+import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import {
   finalizePipedreamConnectionAuthorization,
@@ -131,10 +132,8 @@ import {
   loadEmailInstallConnectionId,
 } from '../lib/session-connector-bindings';
 import {
-  commitManifest,
   draftToSpec,
   fireGitTrigger,
-  loadManifestForEdit,
   loadTriggersForResponse,
   markGitTriggerFired,
   parseTriggerDraft,
@@ -1102,28 +1101,29 @@ projectsApp.openapi(
       }
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-
-    if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
-      return c.json(
-        {
-          error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
-        },
-        409,
-      );
-    }
-
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-    const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
-    if ('error' in result) {
+    let committedManifest: ParsedManifest | undefined;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${draft.slug} was being created`,
+      (manifest) => {
+        if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
+          return {
+            ok: false,
+            error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
+            status: 409,
+          };
+        }
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: add trigger ${draft.slug}` };
+      },
+    );
+    if (!result.ok) {
       return c.json({ error: result.error }, result.status as 400 | 409 | 502);
     }
-    await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
+    if (!committedManifest) throw new Error('trigger create completed without a manifest');
+    await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -1224,58 +1224,64 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
     );
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-    if (touchesManifest) {
-      // Merge the patch onto the current spec so callers can send partial bodies
-      // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-      const base = specToBody(current);
-      // Setting a `session_key` is itself the opt-in to keyed sessions (see
-      // parseTriggerDraft). The merge base always carries an explicit
-      // `session_mode`, which would outvote a caller that sent ONLY a key — so
-      // drop it and let the key decide. An explicit mode in the patch still wins.
-      const patchesKey = 'session_key' in body || 'sessionKey' in body;
-      const patchesMode = 'session_mode' in body || 'sessionMode' in body;
-      if (patchesKey && !patchesMode) delete base.session_mode;
-      const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
-      if ('error' in draft) return c.json({ error: draft.error }, 400);
+    let committedManifest: ParsedManifest | undefined;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being updated`,
+      async (manifest) => {
+        const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
+        if (!current) return { ok: false, error: 'Not found', status: 404 };
+        if (!touchesManifest) return { ok: true, commitMessage: null };
 
-      // A `pinned` trigger may only target a session that belongs to THIS project.
-      if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-        const [pinned] = await db
-          .select({ sessionId: projectSessions.sessionId })
-          .from(projectSessions)
-          .where(
-            and(
-              eq(projectSessions.sessionId, draft.pinnedSessionId),
-              eq(projectSessions.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (!pinned) {
-          return c.json(
-            { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
-            400,
-          );
+        // Merge the patch onto the current spec so callers can send partial bodies
+        // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
+        const base = specToBody(current);
+        // Setting a `session_key` is itself the opt-in to keyed sessions (see
+        // parseTriggerDraft). The merge base always carries an explicit
+        // `session_mode`, which would outvote a caller that sent ONLY a key — so
+        // drop it and let the key decide. An explicit mode in the patch still wins.
+        const patchesKey = 'session_key' in body || 'sessionKey' in body;
+        const patchesMode = 'session_mode' in body || 'sessionMode' in body;
+        if (patchesKey && !patchesMode) delete base.session_mode;
+        const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
+        if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+
+        // A `pinned` trigger may only target a session that belongs to THIS project.
+        if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+          const [pinned] = await db
+            .select({ sessionId: projectSessions.sessionId })
+            .from(projectSessions)
+            .where(
+              and(
+                eq(projectSessions.sessionId, draft.pinnedSessionId),
+                eq(projectSessions.projectId, projectId),
+              ),
+            )
+            .limit(1);
+          if (!pinned) {
+            return {
+              ok: false,
+              error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.`,
+              status: 400,
+            };
+          }
         }
-      }
 
-      const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-      const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
-      if ('error' in result) {
-        return c.json({ error: result.error }, result.status as 400 | 409 | 502);
-      }
-      await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: update trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    }
+    if (touchesManifest) {
+      if (!committedManifest) throw new Error('trigger update completed without a manifest');
+      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -1316,20 +1322,20 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid slug' }, 400);
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const next = removeTriggerFromManifest(manifest, slug);
-    const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being deleted`,
+      (manifest) => {
+        if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
+          return { ok: false, error: 'Not found', status: 404 };
+        }
+        const next = removeTriggerFromManifest(manifest, slug);
+        manifest.raw = next.raw;
+        return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
     }
 
     // Drop runtime state too — a re-created trigger of the same slug should

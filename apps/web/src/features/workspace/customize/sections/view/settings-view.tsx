@@ -53,8 +53,13 @@ import {
   type ProjectDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
+import {
+  renameOnError,
+  renameOnMutate,
+  renameOnSettled,
+} from '@/hooks/projects/project-rename-cache';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
   applySandboxProviderResult,
@@ -67,9 +72,9 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;
@@ -85,7 +90,12 @@ export function SettingsView({ projectId }: { projectId: string }) {
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
       successToast('Project archived');
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // qk.projects.scope(): for a single-account user the archived
+      // project's account IS the primary account qk.projects.list() (no
+      // args) resolves to, so a precise invalidation would leave the
+      // marketplace picker showing the archived project until gcTime
+      // evicts it. Archiving is rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
@@ -186,9 +196,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
   const branchesQuery = useQuery({
-    queryKey: ['project-branches', project.project_id],
+    queryKey: qk.project.branches(project.project_id),
     queryFn: () => listProjectBranches(project.project_id),
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const branchNames = Array.from(
     new Set([
@@ -217,9 +227,13 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
+      // qk.projects.scope(): reaches every account's list (and the
+      // accountless slot the marketplace picker reads), restoring the reach
+      // the old bare projects-literal prefix match had. Repo-settings edits
+      // are rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -381,13 +395,17 @@ function ExperimentalFeatureRow({
     mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
     onSettled: () => setPendingValue(null),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', projectId], updated);
+      queryClient.setQueryData(qk.project.summary(projectId), updated);
       queryClient.setQueryData<ProjectDetail | undefined>(
-        ['project-detail', projectId],
+        qk.project.detail(projectId),
         (current) => (current ? { ...current, project: updated } : current),
       );
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void invalidateProject(queryClient, projectId);
+      // Only projectId is passed down to this row, not the owning
+      // account_id, so this can't target one qk.projects.list(accountId)
+      // entry — qk.projects.scope() is the shared prefix every list form
+      // (every account's, plus the accountless slot) lives under.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       if (feature.key === 'llm_gateway') {
         refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
       }
@@ -457,9 +475,16 @@ function SandboxProviderRow({
         // and refresh the project once it settles so the now-active provider shows.
         void pollSandboxProviderTransition(project.project_id, {
           onSettled: (state) => {
-            queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
-            queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
-            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            // invalidateProject() reaches qk.project.scope(project.project_id),
+            // which qk.project.summary(project.project_id) nests under — so it
+            // already covers the bare-project row too; no separate summary
+            // invalidation needed here.
+            void invalidateProject(queryClient, project.project_id);
+            // qk.projects.scope(): restores the reach the old bare
+            // projects-literal prefix match had. A sandbox-provider switch
+            // is rare — over-invalidating a few extra account lists costs
+            // nothing measurable.
+            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
             const status = state?.latest?.status;
             if (status === 'activated') {
               successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
@@ -522,11 +547,13 @@ function TriggersActivationCard({
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
-  const queryKey = ['project-triggers', projectId];
+  // Same entity/fetcher `ScheduleView` (components/projects/schedule-view.tsx)
+  // reads — both must share this key or a pause/resume here goes unseen there.
+  const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
@@ -710,11 +737,19 @@ function GeneralProjectCard({
       updateProject(project.project_id, {
         name: nextName,
       }),
+    // Paint the new name in the same frame it's typed, snapshotting what it
+    // overwrote so a REJECTED rename can put it back. `renameOnMutate` /
+    // `renameOnError` / `renameOnSettled` are shared with
+    // `edit-project-modal.tsx` so the two rename paths cannot drift.
+    onMutate: (nextName) => renameOnMutate(queryClient, project.project_id, nextName),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
+    onError: (error: Error, _nextName, context) => {
+      renameOnError(queryClient, project.project_id, context);
+      errorToast(error.message || 'Failed to update project');
+    },
+    onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
 
   const { mutate, isPending } = mutation;

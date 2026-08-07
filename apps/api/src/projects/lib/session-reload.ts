@@ -30,12 +30,20 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { projects, sessionSandboxes } from '@kortix/db';
+import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
-import { agentConfigEtag, resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import {
+  agentConfigEtag,
+  resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
+} from './compile-agent-config';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
+import {
+  workspaceModeAllowsFullRepository,
+  workspaceModeFromSessionMetadata,
+} from './session-sandbox-metadata';
 
 const SANDBOX_SERVICE_PORT = 8000;
 
@@ -112,6 +120,30 @@ export interface SessionReloadResult {
    * classified real successes as warnings and vice versa.
    */
   agent_files: ReloadAgentFiles;
+  /**
+   * How the box applied the new config, when it said.
+   *
+   * `kept-old` is the verified swap declining: the daemon booted the new
+   * opencode, it never started serving, so the previous one was left running.
+   * The push landed and the config did NOT take — which is a FAILED reload with
+   * a healthy session, a combination `applied` alone cannot express.
+   *
+   * `null` means the box did not say (a daemon older than the verified swap, or
+   * no reload was needed) — never "it worked".
+   */
+  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null;
+  /**
+   * Did the reload stop a turn the user was waiting on?
+   *
+   * Reported by the box AFTER the fact — it is true only when the finalize
+   * actually aborted an incomplete turn. A pre-flight "is a turn running?"
+   * check would race the turn finishing and tell people their work was
+   * interrupted when it completed normally.
+   *
+   * `null` = the box did not say. Never render that as "nothing was
+   * interrupted"; say nothing instead.
+   */
+  turn_ended: boolean | null;
   /** Present when nothing was applied. */
   reason?: string;
 }
@@ -125,8 +157,31 @@ export interface SessionReloadResult {
  * brought forward: the etag moved, opencode kept reading the working tree, and
  * the user was told the opposite.
  */
+/**
+ * The sentence appended when the reload STOPPED work someone was waiting on.
+ *
+ * Marko asked for this on the call: the reload restarts the runtime and "the
+ * whole opencode session is going to stop", so the command has to say so and
+ * the user has to know they must continue. Until now the turn simply ended —
+ * cleanly, so nothing spun, but silently, so it looked like the agent gave up.
+ *
+ * Only appended on a definite `true`. `null` means the box could not tell, and
+ * inventing "your turn was stopped" for a turn that finished normally is worse
+ * than saying nothing.
+ */
+const TURN_ENDED_SENTENCE =
+  'The turn that was running was stopped — send a message to continue.';
+
+function withTurnNotice(sentence: string, result: SessionReloadResult): string {
+  return result.turn_ended === true ? `${sentence} ${TURN_ENDED_SENTENCE}` : sentence;
+}
+
 export function reloadDetail(result: SessionReloadResult): string {
   if (!result.applied) return `Nothing to apply: ${result.reason ?? 'unchanged'}.`;
+  return withTurnNotice(reloadOutcomeSentence(result), result);
+}
+
+function reloadOutcomeSentence(result: SessionReloadResult): string {
   switch (result.agent_files) {
     case 'updated':
       return 'Reloaded. The next prompt runs the new config.';
@@ -234,17 +289,30 @@ export async function readSandboxConfigState(input: {
 export async function latestAgentConfigEtag(input: {
   projectId: string;
   accountId: string;
+  sessionId?: string;
   baseRef?: string | null;
 }): Promise<string | null> {
-  const [project] = await db
-    .select({
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-    })
-    .from(projects)
-    .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
-    .limit(1);
+  const [[project], [session]] = await Promise.all([
+    db
+      .select({
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
+      .from(projects)
+      .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
+      .limit(1),
+    input.sessionId
+      ? db
+          .select({
+            agentName: projectSessions.agentName,
+            metadata: projectSessions.metadata,
+          })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, input.sessionId))
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
   if (!project?.defaultBranch) return null;
   const gitProject: GitBackedProject = {
     projectId: input.projectId,
@@ -256,9 +324,12 @@ export async function latestAgentConfigEtag(input: {
   // Without this, `stale: false` is answerable from a cache that predates the
   // very commit the caller is asking about.
   invalidateProjectMirror(input.projectId);
-  const compiled = await resolveCompiledAgentConfigForSession(gitProject, input.baseRef).catch(
-    () => null,
-  );
+  const compiled = await (
+    !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+    session?.agentName
+      ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
+      : resolveCompiledAgentConfigForSession(gitProject, input.baseRef)
+  ).catch(() => null);
   return agentConfigEtag(compiled);
 }
 
@@ -305,6 +376,8 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: null,
       agent_files: 'unknown',
+      opencode_reload: null,
+      turn_ended: null,
       reason: 'no reachable sandbox',
     };
   }
@@ -322,6 +395,8 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: before.commitSha,
       agent_files: 'unknown',
+      opencode_reload: null,
+      turn_ended: null,
       reason:
         before.turnInFlight === true
           ? 'session is mid-turn'
@@ -356,6 +431,7 @@ export async function reloadSessionConfig(input: {
   const latest = await latestAgentConfigEtag({
     projectId: input.projectId,
     accountId: input.accountId,
+    sessionId: input.sessionId,
     baseRef: input.baseRef,
   });
 
@@ -372,7 +448,16 @@ export async function reloadSessionConfig(input: {
       synced: configDirSynced,
       reason: configDirReason,
     }),
-    ...(push.applied ? {} : { reason: push.reason ?? 'agent config unchanged' }),
+    opencode_reload: push.opencodeReload ?? null,
+    turn_ended: push.opencodeTurnEnded ?? null,
+    ...(push.applied
+      ? push.opencodeReload === 'kept-old'
+        ? {
+            reason:
+              'the new opencode did not start, so the session kept the config it was already running',
+          }
+        : {}
+      : { reason: push.reason ?? 'agent config unchanged' }),
   };
 }
 

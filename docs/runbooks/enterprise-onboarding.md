@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 1 | **A VPS or cloud VM** (recommended) with Docker Engine + Compose plugin installed | Kortix self-host is one generic Docker Compose system; runs on any Linux VPS, EC2, Droplet, bare metal | Minimum: 4 vCPU / 8 GB RAM / 50 GB disk for evaluation; size up for production. `scripts/kortix-selfhost-up.sh` installs Docker on a fresh Linux box. |
 | 2 | **A public domain** pointed at the box's public IP (A/AAAA records for `<domain>` + `api.<domain>`) | Turns on the bundled Caddy reverse proxy + ACME TLS; required for agent sandboxes to call back to the API | No domain = Cloudflare tunnel fallback (ephemeral URL, evaluation only, not production). |
-| 3 | **A sandbox provider API key** — Daytona (default), Platinum, or E2B | Agent sessions run in cloud sandbox VMs outside the customer's network; they call back to the Kortix API over the public internet | Daytona is the recommended default. `local-docker` is experimental, not for production. |
+| 3 | **A sandbox provider API key** — Daytona (default), Platinum, or E2B | Agent sessions run in cloud sandbox VMs outside the customer's network; they call back to the Kortix API over the public internet | Daytona is the recommended default. |
 | 4 | **Managed-git credentials** — a GitHub PAT or GitHub App | The platform creates project repos under the customer's org | `MANAGED_GIT_PROVIDER=github` + `MANAGED_GIT_GITHUB_TOKEN` + `MANAGED_GIT_GITHUB_OWNER`. |
 | 5 | **(Optional) SMTP credentials** — host/port/user/pass, admin sender | Enables magic-link sign-in + email verification; fresh installs auto-confirm signups and lead with password auth, so SMTP can come later | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_ADMIN_EMAIL`, `SMTP_SENDER_NAME`. |
 | 6 | **(Enterprise) IdP metadata** — Entra ID / Okta / Google / custom SAML | SAML SSO + SCIM (group→role mapping, automated user provisioning). SAML capability is on by default; the enterprise IAM surface unlocks with the entitlement | See `docs/ENTRA_SSO_SCIM_SETUP.md` for the full walkthrough. |
@@ -68,7 +68,7 @@
 
 ## v1 limitations (document, set expectations)
 
-- **Sandboxes** = Daytona (or Platinum/E2B) via egress — cloud sandbox VMs outside the customer's network. Single-tenant on-box sandboxes (`local-docker`) are experimental, not for production.
+- **Sandboxes** = Daytona (or Platinum/E2B) via egress — cloud sandbox VMs outside the customer's network.
 - **Availability** = one host. RTO = snapshot restore (documented drill). RPO ≈ 1h (hourly snapshots) or whatever cadence the customer configures.
 - **Rollback** = `kortix self-host update --release <previous-version>` (or re-run `Promote Self-Host Stable` with an older version). The auto-updater's `flock` + per-service start-first swap means a failed swap never aborts the rest of the rollout — a degraded outcome self-heals on the next run.
 
