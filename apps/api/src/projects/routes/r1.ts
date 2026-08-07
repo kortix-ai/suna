@@ -1,6 +1,6 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
-import { assertAgentScopeExact, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -1005,15 +1005,20 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // This endpoint hands back a RAW git push credential. project.write is
-  // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
-  // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
-  // can withhold it, and the agent fold requires it in the token's grant.
+  // This endpoint returns a raw upstream provider credential. No runtime
+  // principal may receive one, even when an old token carries `kortixCli: all`
+  // or an explicit push grant. Runtime Git writes go only through the Kortix
+  // smart-HTTP proxy, where the task-bound request fence remains enforceable.
+  if (isProjectSessionPrincipal(c)) {
+    return c.json(
+      {
+        error: 'Runtime principals cannot export upstream Git credentials. Push through git_origin_url.',
+        code: 'runtime_git_credential_export_denied',
+      },
+      403,
+    );
+  }
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
-  // The CR-open alias is intentionally valid for CR orchestration. This raw
-  // provider-token export requires the literal push grant and denies meta even
-  // for stale unrestricted tokens.
-  assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);

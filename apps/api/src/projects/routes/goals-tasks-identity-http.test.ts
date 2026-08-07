@@ -5,6 +5,7 @@ const TASK_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 let authType: 'pat' | 'supabase' = 'pat';
 let authenticatedSessionId: string | null = 'authenticated-session';
+let workerState: 'not_worker' | 'spawned_unbound' | 'bound' = 'not_worker';
 
 function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
   const now = new Date('2026-08-07T12:00:00.000Z');
@@ -65,6 +66,10 @@ mock.module('../generated-state-store', () => ({
   claimProjectTask: claimTask,
   transitionProjectTask: transitionTask,
   recordProjectGoalObservation: recordObservation,
+  projectTaskWorkerAdmissionState: async () => workerState,
+  getProjectTaskWorkerBinding: async () => workerState === 'bound'
+    ? { taskId: TASK_ID, status: 'doing' as const }
+    : null,
 }));
 
 mock.module('../../shared/db', () => ({
@@ -131,6 +136,7 @@ function post(suffix: 'claim' | 'done' | 'block', sessionId: string) {
 beforeEach(() => {
   authType = 'pat';
   authenticatedSessionId = 'authenticated-session';
+  workerState = 'not_worker';
   claimTask.mockClear();
   transitionTask.mockClear();
   recordObservation.mockClear();
@@ -170,5 +176,40 @@ describe('goal observation HTTP identity binding', () => {
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
+  });
+});
+
+describe('worker task-control confinement', () => {
+  test('a spawned-unbound worker cannot claim task authority', async () => {
+    workerState = 'spawned_unbound';
+    const response = await post('claim', 'authenticated-session');
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+    expect(claimTask).toHaveBeenCalledTimes(0);
+  });
+
+  test('a bound worker cannot create another task', async () => {
+    workerState = 'bound';
+    const response = await projectsApp.request(`/${PROJECT_ID}/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        goal_slug: 'ship-kernel', title: 'Unauthorized coordination', origin: 'worker',
+      }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+  });
+
+  test('a bound worker cannot write goal observations', async () => {
+    workerState = 'bound';
+    const response = await projectsApp.request(`/${PROJECT_ID}/goals/ship-kernel/observations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ metric: 'latency', value: 1, source: 'test' }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+    expect(recordObservation).toHaveBeenCalledTimes(0);
   });
 });

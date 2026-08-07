@@ -18,6 +18,7 @@
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import { randomUUID } from 'node:crypto';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
@@ -35,6 +36,9 @@ import {
 } from './parse';
 import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
+import { db } from '../shared/db';
+import { acquireProjectTaskGitWrite, settleProjectTaskGitWrite } from '../projects/generated-state-store';
+import { TaskGitWriteNotAdmittedError, runTaskWorkerGitWrite } from './task-write-fence';
 import { loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
 
@@ -56,6 +60,7 @@ const gitResponses = {
   },
   403: { description: 'Token not authorized for the requested scope' },
   404: { description: 'Project not found' },
+  409: { description: 'Task worker already has a live receive-pack request' },
   502: { description: 'No upstream configured / upstream unreachable' },
 } as const;
 
@@ -125,28 +130,48 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   // fetch streamer to the global uncaught handler (Better Stack `df7a31d4…`).
   // Pack streams (POST upload/receive-pack) stay streamed: large / non-idempotent.
   const isIdempotentGet = method === 'GET' || method === 'HEAD';
-  let res: Response;
-  try {
+  const fetchUpstream = async (signal?: AbortSignal): Promise<Response> => {
     if (isIdempotentGet) {
-      res = await fetchUpstreamBuffered(target, {
+      return fetchUpstreamBuffered(target, {
         method,
         headers,
         redirect: 'manual',
+        signal,
         // @ts-ignore — Bun extension: don't decompress the git smart-HTTP body.
         decompress: false,
       });
-    } else {
-      res = await fetch(target, {
-        method,
-        headers,
-        body: c.req.raw.body,
-        redirect: 'manual',
-        // @ts-ignore — Bun extensions: stream the request body, don't decompress.
-        duplex: 'half',
-        decompress: false,
+    }
+    return fetch(target, {
+      method,
+      headers,
+      body: c.req.raw.body,
+      redirect: 'manual',
+      signal,
+      // @ts-ignore — Bun extensions: stream the request body, don't decompress.
+      duplex: 'half',
+      decompress: false,
+    });
+  };
+
+  let res: Response;
+  try {
+    if (suffix === '/git-receive-pack' && auth.taskWorkerSessionId) {
+      const requestId = randomUUID();
+      res = await runTaskWorkerGitWrite({
+        projectId,
+        workerSessionId: auth.taskWorkerSessionId,
+        requestId,
+        acquire: (input) => acquireProjectTaskGitWrite(db, input),
+        settle: (input) => settleProjectTaskGitWrite(db, input),
+        execute: (signal) => fetchUpstream(signal),
       });
+    } else {
+      res = await fetchUpstream();
     }
   } catch (err) {
+    if (err instanceof TaskGitWriteNotAdmittedError) {
+      return c.text('task worker Git write is already in flight or no longer active', 409);
+    }
     console.warn(`[git-proxy] upstream fetch failed for ${projectId}:`, err);
     return c.text('git upstream unreachable', 502);
   }

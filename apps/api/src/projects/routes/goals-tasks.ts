@@ -16,6 +16,8 @@ import {
   registerProjectTaskWorker,
   settleProjectTaskNoProgress,
   getProjectTask,
+  getProjectTaskWorkerBinding,
+  projectTaskWorkerAdmissionState,
   listProjectGoalObservations,
   listProjectTasks,
   recordProjectGoalObservation,
@@ -374,6 +376,27 @@ function serviceErrorResponse(c: Context, error: unknown) {
   throw error;
 }
 
+async function taskWorkerControlDenial(
+  c: Context,
+  operation: 'control' | 'own_task',
+  taskId?: string,
+): Promise<{ error: string; code: 'task_worker_control_denied' } | null> {
+  const sessionId = callerKortixSessionId(c);
+  if (!sessionId) return null;
+  const state = await projectTaskWorkerAdmissionState(db, sessionId);
+  if (state === 'not_worker') return null;
+  if (operation === 'own_task' && state === 'bound') {
+    const binding = await getProjectTaskWorkerBinding(db, sessionId);
+    if (binding && binding.taskId === taskId && binding.status === 'doing') return null;
+  }
+  return {
+    error: state === 'spawned_unbound'
+      ? 'A spawned worker must bind before task effects and cannot coordinate tasks'
+      : 'A task worker can mutate only its own doing task and cannot coordinate other tasks',
+    code: 'task_worker_control_denied',
+  };
+}
+
 // Goals are authored declarations from the default-branch manifest. Runtime
 // task and observation state never changes these responses.
 projectsApp.openapi(
@@ -471,6 +494,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
 
     let manifest: Awaited<ReturnType<typeof readManifest>>;
     try {
@@ -582,6 +607,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_GOAL_WRITE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
 
     let sessionId: string | null;
     try {
@@ -739,6 +766,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
     const goals = await loadGoals(loaded.row);
     if (!goals.specs.some((goal) => goal.slug === body.goal_slug)) {
       return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
@@ -822,6 +851,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
     try {
       const task = await claimTaskForProject(
         {
@@ -872,6 +903,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'own_task', taskId);
+    if (workerDenial) return c.json(workerDenial, 403);
     try {
       const task = await completeTaskForProject(
         {
@@ -923,6 +956,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TASK_WRITE,
     );
+    const workerDenial = await taskWorkerControlDenial(c, 'own_task', taskId);
+    if (workerDenial) return c.json(workerDenial, 403);
     try {
       const task = await blockTaskForProject(
         {
@@ -974,6 +1009,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
       return c.json({ error: 'A project session can register workers only for its own claim', code: 'session_identity_mismatch' }, 403);
@@ -1044,6 +1081,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
       return c.json({ error: 'A project session can record progress only for its own claim', code: 'session_identity_mismatch' }, 403);
@@ -1084,6 +1123,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TASK_WRITE);
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
     const authenticatedSessionId = callerKortixSessionId(c);
     if (authenticatedSessionId && authenticatedSessionId !== body.session_id) {
       return c.json({ error: 'A project session can settle only its own claim', code: 'session_identity_mismatch' }, 403);

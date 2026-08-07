@@ -1,5 +1,6 @@
 import type { Database } from '@kortix/db';
 import {
+  accountTokens,
   projectGoalObservations,
   projectSessions,
   projects,
@@ -327,6 +328,38 @@ export class TaskTransitionConflictError extends Error {
   }
 }
 
+export class TaskGitWriteInFlightError extends Error {
+  readonly code = 'TASK_GIT_WRITE_IN_FLIGHT' as const;
+
+  constructor(readonly taskId: string, readonly leaseExpiresAt: Date) {
+    super(`task ${taskId} has a Git write in flight until ${leaseExpiresAt.toISOString()}`);
+    this.name = 'TaskGitWriteInFlightError';
+  }
+}
+
+function noLiveTaskGitWrite(now: Date) {
+  return or(
+    isNull(projectTasks.gitWriteRequestId),
+    lte(projectTasks.gitWriteLeaseExpiresAt, now),
+  );
+}
+
+async function revokeWorkerSessionTokens(
+  database: Pick<Database, 'update'>,
+  workerSessionId: string,
+  accountId: string,
+  now: Date,
+): Promise<void> {
+  await database.update(accountTokens).set({
+    status: 'revoked',
+    revokedAt: now,
+  }).where(and(
+    eq(accountTokens.sessionId, workerSessionId),
+    eq(accountTokens.accountId, accountId),
+    eq(accountTokens.status, 'active'),
+  ));
+}
+
 /**
  * Atomically change task status only when the supplied session owns a live claim.
  * Done and blocked transitions release the claim in the same UPDATE.
@@ -351,7 +384,13 @@ export async function transitionProjectTask(
       .set({
         status: input.status,
         ...(input.result === undefined ? {} : { result: input.result }),
-        ...(clearsClaim ? { claimSessionId: null, claimedAt: null, claimExpiresAt: null } : {}),
+        ...(clearsClaim ? {
+          claimSessionId: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+          gitWriteRequestId: null,
+          gitWriteLeaseExpiresAt: null,
+        } : {}),
         updatedAt: input.now,
       })
       .where(
@@ -360,6 +399,7 @@ export async function transitionProjectTask(
           eq(projectTasks.taskId, input.taskId),
           eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
           gt(projectTasks.claimExpiresAt, input.now),
+          ...(clearsClaim ? [noLiveTaskGitWrite(input.now)] : []),
         ),
       )
       .returning();
@@ -371,6 +411,15 @@ export async function transitionProjectTask(
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
     if (!project) throw new Error(`project ${input.projectId} disappeared during task transition`);
+    // The worker's bearer authority ends in the same transaction as its task.
+    // The stop command may take seconds to drain; no API or connector call may
+    // remain authorized during that delay.
+    await revokeWorkerSessionTokens(
+      tx,
+      row.livenessWorkerSessionId,
+      project.accountId,
+      input.now,
+    );
     await tx
       .insert(sessionLifecycleCommands)
       .values({
@@ -393,6 +442,14 @@ export async function transitionProjectTask(
 
   const current = await getProjectTask(database, input);
   if (!current) return null;
+  if (
+    clearsClaim &&
+    current.gitWriteRequestId &&
+    current.gitWriteLeaseExpiresAt &&
+    current.gitWriteLeaseExpiresAt > input.now
+  ) {
+    throw new TaskGitWriteInFlightError(current.taskId, current.gitWriteLeaseExpiresAt);
+  }
   throw new TaskTransitionConflictError({
     projectId: input.projectId,
     taskId: input.taskId,
@@ -543,8 +600,8 @@ export async function registerProjectTaskWorker(
         .set({
           metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(
             'task_liveness_binding_status', 'bound',
-            'task_liveness_bound_task_id', ${input.taskId},
-            'task_liveness_bound_at', ${input.now.toISOString()}
+            'task_liveness_bound_task_id', ${sql`${input.taskId}::text`},
+            'task_liveness_bound_at', ${sql`${input.now.toISOString()}::text`}
           )`,
           updatedAt: input.now,
         })
@@ -683,6 +740,7 @@ const PROJECT_TASK_DATE_KEYS = [
   'livenessStartedAt',
   'livenessDeadlineAt',
   'livenessAdmissionExpiresAt',
+  'gitWriteLeaseExpiresAt',
   'livenessLastSweptAt',
   'continuationConsumedAt',
   'lastProgressAt',
@@ -799,6 +857,14 @@ export async function settleProjectTaskNoProgress(
 
     const exceeded = exceededWorkerBounds(task, input.measuredUsage, input.now);
     const escalates = exceeded != null || task.continuationConsumedAt != null;
+    if (
+      escalates &&
+      task.gitWriteRequestId &&
+      task.gitWriteLeaseExpiresAt &&
+      task.gitWriteLeaseExpiresAt > input.now
+    ) {
+      throw new TaskGitWriteInFlightError(task.taskId, task.gitWriteLeaseExpiresAt);
+    }
     const action = escalates ? 'blocked_escalation_queued' as const : 'continuation_queued' as const;
     const idempotencyKey = escalates
       ? `task-escalate:${input.taskId}:${input.settlementId}`
@@ -842,10 +908,15 @@ export async function settleProjectTaskNoProgress(
         claimSessionId: null,
         claimedAt: null,
         claimExpiresAt: null,
+        gitWriteRequestId: null,
+        gitWriteLeaseExpiresAt: null,
       } : { continuationConsumedAt: input.now }),
       updatedAt: input.now,
     }).where(and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId))).returning();
     if (!updated) throw new Error('locked task disappeared during liveness settlement');
+    if (escalates) {
+      await revokeWorkerSessionTokens(tx, input.workerSessionId, input.accountId, input.now);
+    }
     const [settlement] = await tx.insert(projectTaskNoProgressSettlements).values({
       projectId: input.projectId,
       taskId: input.taskId,
@@ -930,6 +1001,64 @@ export async function projectTaskWorkerIsBound(
   workerSessionId: string,
 ): Promise<boolean> {
   return Boolean(await getProjectTaskWorkerBinding(database, workerSessionId));
+}
+
+/**
+ * Acquire the one durable receive-pack lease for a doing task worker.
+ *
+ * The lease expires at the immutable worker wall deadline. A crashed proxy can
+ * therefore block terminalization only until the task must stop. The single
+ * conditional UPDATE is the cross-replica mutex; there is no memory lock and no
+ * database transaction held across the upstream network request.
+ */
+export async function acquireProjectTaskGitWrite(
+  database: Database,
+  input: { projectId: string; workerSessionId: string; requestId: string; now: Date },
+): Promise<{
+  taskId: string;
+  requestId: string;
+  leaseExpiresAt: Date;
+} | null> {
+  assertValidDate(input.now, 'now');
+  const [admitted] = await database.update(projectTasks).set({
+    gitWriteRequestId: input.requestId,
+    gitWriteLeaseExpiresAt: sql`${projectTasks.livenessDeadlineAt}`,
+    updatedAt: input.now,
+  }).where(and(
+    eq(projectTasks.projectId, input.projectId),
+    eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+    eq(projectTasks.status, 'doing'),
+    gt(projectTasks.livenessDeadlineAt, input.now),
+    noLiveTaskGitWrite(input.now),
+  )).returning({
+    taskId: projectTasks.taskId,
+    requestId: projectTasks.gitWriteRequestId,
+    leaseExpiresAt: projectTasks.gitWriteLeaseExpiresAt,
+  });
+  if (!admitted?.requestId || !admitted.leaseExpiresAt) return null;
+  return {
+    taskId: admitted.taskId,
+    requestId: admitted.requestId,
+    leaseExpiresAt: admitted.leaseExpiresAt,
+  };
+}
+
+/** Clear only the matching receive-pack request. Late settlement is harmless. */
+export async function settleProjectTaskGitWrite(
+  database: Database,
+  input: { projectId: string; workerSessionId: string; requestId: string; now: Date },
+): Promise<boolean> {
+  assertValidDate(input.now, 'now');
+  const [settled] = await database.update(projectTasks).set({
+    gitWriteRequestId: null,
+    gitWriteLeaseExpiresAt: null,
+    updatedAt: input.now,
+  }).where(and(
+    eq(projectTasks.projectId, input.projectId),
+    eq(projectTasks.livenessWorkerSessionId, input.workerSessionId),
+    eq(projectTasks.gitWriteRequestId, input.requestId),
+  )).returning({ taskId: projectTasks.taskId });
+  return Boolean(settled);
 }
 
 export const TASK_LIVENESS_ADMISSION_LEASE_POLICY = 'worker_deadline' as const;
@@ -1109,6 +1238,8 @@ async function finalizeTaskLiveness(
       claimExpiresAt: null,
       livenessAdmissionId: null,
       livenessAdmissionExpiresAt: null,
+      gitWriteRequestId: null,
+      gitWriteLeaseExpiresAt: null,
       updatedAt: input.now,
     }).where(and(
       eq(projectTasks.taskId, task.taskId),
@@ -1116,8 +1247,10 @@ async function finalizeTaskLiveness(
       ...(input.expectedAdmissionId
         ? [eq(projectTasks.livenessAdmissionId, input.expectedAdmissionId)]
         : []),
+      noLiveTaskGitWrite(input.now),
     )).returning();
     if (!blocked) return false;
+    await revokeWorkerSessionTokens(tx, task.livenessWorkerSessionId!, input.accountId, input.now);
     await tx.insert(sessionLifecycleCommands).values([
       {
         commandType: 'stop_session', source: 'cli', status: 'queued' as const,

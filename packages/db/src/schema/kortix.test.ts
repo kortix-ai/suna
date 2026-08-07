@@ -415,6 +415,8 @@ describe('generated project state tables', () => {
       'liveness_iterations_admitted',
       'liveness_admission_id',
       'liveness_admission_expires_at',
+      'git_write_request_id',
+      'git_write_lease_expires_at',
       'liveness_last_swept_at',
       'no_progress_settlements',
       'continuation_consumed_at',
@@ -435,6 +437,21 @@ describe('generated project state tables', () => {
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_liveness_sweep');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_claim_session');
     expect(indexNames(projectTasks)).toContain('idx_project_tasks_active_liveness_coordinator');
+  });
+
+  test('task Git write leases require one doing bound worker and fit its deadline', () => {
+    const checks = getTableConfig(projectTasks).checks;
+    const names = checks.map((candidate) => candidate.name);
+    expect(names).toContain('project_tasks_git_write_lease_pair');
+    expect(names).toContain('project_tasks_git_write_lease_within_worker_deadline');
+    expect(names).toContain('project_tasks_git_write_requires_doing_worker');
+    const worker = checks.find(
+      (candidate) => candidate.name === 'project_tasks_git_write_requires_doing_worker',
+    );
+    const sql = new PgDialect().sqlToQuery(worker!.value).sql;
+    expect(sql).toContain(`= 'doing'`);
+    expect(sql).toContain('liveness_worker_session_id');
+    expect(sql).toContain('liveness_deadline_at');
   });
 
   test('worker contracts cannot exceed server-owned platform ceilings', () => {

@@ -38,6 +38,15 @@ describe('isProjectSessionPrincipal', () => {
       isProjectSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
     ).toBe(true);
   });
+
+  test('recognizes a stale agent grant even when the session id is absent', () => {
+    expect(
+      isProjectSessionPrincipal(context({
+        authType: 'pat',
+        agentGrant: { agent: 'worker', kortixCli: 'all', connectors: 'all' },
+      })),
+    ).toBe(true);
+  });
 });
 
 describe('grantFromLoadedAgents — resolution rule', () => {

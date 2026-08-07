@@ -878,6 +878,9 @@ export const projectTasks = kortixSchema.table(
     /** Durable single-request gateway fence. Cleared only by its matching request. */
     livenessAdmissionId: text('liveness_admission_id'),
     livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
+    /** Durable single receive-pack fence. It expires at the immutable worker deadline. */
+    gitWriteRequestId: text('git_write_request_id'),
+    gitWriteLeaseExpiresAt: timestamp('git_write_lease_expires_at', { withTimezone: true }),
     /** Rotation cursor for starvation-free recurring bounded-worker sweeps. */
     livenessLastSweptAt: timestamp('liveness_last_swept_at', { withTimezone: true }),
     noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
@@ -963,6 +966,22 @@ export const projectTasks = kortixSchema.table(
     check(
       'project_tasks_liveness_admission_within_deadline',
       sql`${table.livenessAdmissionExpiresAt} is null or ${table.livenessAdmissionExpiresAt} <= ${table.livenessDeadlineAt}`,
+    ),
+    check(
+      'project_tasks_git_write_lease_pair',
+      sql`num_nonnulls(${table.gitWriteRequestId}, ${table.gitWriteLeaseExpiresAt}) in (0, 2)`,
+    ),
+    check(
+      'project_tasks_git_write_lease_within_worker_deadline',
+      sql`${table.gitWriteLeaseExpiresAt} is null or ${table.gitWriteLeaseExpiresAt} <= ${table.livenessDeadlineAt}`,
+    ),
+    check(
+      'project_tasks_git_write_requires_doing_worker',
+      sql`${table.gitWriteRequestId} is null or (
+        ${table.status} = 'doing'
+        and ${table.livenessWorkerSessionId} is not null
+        and ${table.livenessDeadlineAt} is not null
+      )`,
     ),
     check(
       'project_tasks_liveness_deadline_after_start',

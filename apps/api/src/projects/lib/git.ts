@@ -617,7 +617,13 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow }
+  | {
+      ok: true;
+      project: ProjectRow;
+      /** Present only for a task-bound worker. The receive-pack route must
+       * acquire the PostgreSQL task-row write lease before contacting upstream. */
+      taskWorkerSessionId?: string;
+    }
   | { ok: false; status: number; message: string };
 
 /**
@@ -687,6 +693,7 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
+    let taskWorkerSessionId: string | undefined;
     if (scope === 'write' && (result.agentGrant || result.sessionId)) {
       // Every agent/session PAT must carry the immutable grant and authorize
       // the exact raw-push leaf. This includes pre-migration agent PATs that
@@ -703,6 +710,7 @@ export async function authorizeGitProxy(
         if (workerBinding && workerBinding.status !== 'doing') {
           return { ok: false, status: 403, message: 'terminal task workers cannot push' };
         }
+        if (workerBinding) taskWorkerSessionId = result.sessionId;
       }
     }
     if (result.accountId !== project.accountId) {
@@ -712,7 +720,7 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project };
+    return { ok: true, project, ...(taskWorkerSessionId ? { taskWorkerSessionId } : {}) };
   }
 
   if (isKortixToken(token)) {

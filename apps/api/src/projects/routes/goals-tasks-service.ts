@@ -27,7 +27,8 @@ export function mapGeneratedStateError(
   if (
     code !== 'TASK_CLAIM_CONFLICT' &&
     code !== 'TASK_TRANSITION_CONFLICT' &&
-    code !== 'TASK_LIVENESS_CONFLICT'
+    code !== 'TASK_LIVENESS_CONFLICT' &&
+    code !== 'TASK_GIT_WRITE_IN_FLIGHT'
   )
     return null;
   return {

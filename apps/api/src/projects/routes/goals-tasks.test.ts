@@ -137,7 +137,12 @@ describe('goals/tasks service boundaries', () => {
   });
 
   test('maps live claim and transition conflicts to HTTP 409', () => {
-    for (const code of ['TASK_CLAIM_CONFLICT', 'TASK_TRANSITION_CONFLICT']) {
+    for (const code of [
+      'TASK_CLAIM_CONFLICT',
+      'TASK_TRANSITION_CONFLICT',
+      'TASK_LIVENESS_CONFLICT',
+      'TASK_GIT_WRITE_IN_FLIGHT',
+    ]) {
       expect(mapGeneratedStateError(Object.assign(new Error('claimed'), { code }))).toEqual({
         status: 409,
         code: code.toLowerCase(),

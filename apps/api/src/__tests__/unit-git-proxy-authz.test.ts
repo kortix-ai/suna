@@ -255,7 +255,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
 
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
 
-    expect(res.ok).toBe(true);
+    expect(res).toMatchObject({ ok: true, taskWorkerSessionId: 'session-1' });
   });
 
   test('a PAT on another account passes when the user holds the git capability', async () => {

@@ -557,6 +557,27 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.git_origin_url).toBeTruthy();
   });
 
+  test('git-token denies a runtime principal even when its immutable grant includes raw push', async () => {
+    (globalThis as any)[TEST_AUTH_KEY] = {
+      userId: USER_ID,
+      userEmail: 'agent@example.test',
+      authType: 'pat',
+      sessionId: '00000000-0000-4000-a000-000000000301',
+      agentGrant: { agent: 'worker', connectors: 'all', kortixCli: 'all', env: 'all' },
+    };
+
+    const res = await createApp().request(`/v1/projects/${PROJECT_ID}/git-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('runtime_git_credential_export_denied');
+    expect(JSON.stringify(body)).not.toContain(PUSH_TOKEN);
+  });
+
   test('rejects an explicit account the caller has no membership in', async () => {
     canonicalMembership = false;
 

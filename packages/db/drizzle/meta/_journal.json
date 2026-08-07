@@ -323,6 +323,20 @@
       "when": 1786073087440,
       "tag": "20260807032447_claim_covers_liveness",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786073367907,
+      "tag": "20260807032927_task_git_write_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786073785163,
+      "tag": "20260807033625_task_git_write_requires_doing_worker",
+      "breakpoints": true
     }
   ]
 }
