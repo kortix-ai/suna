@@ -15,7 +15,7 @@ mkdir -p "${runtime_dir}/dist"
 
 # Keep the ingress binary reproducible. The Go checksum database verifies the
 # module contents. Provider build contexts consume this exact staged binary.
-CADDY_VERSION="v2.10.2"
+CADDY_VERSION="v2.11.4"
 build_gopath="$(mktemp -d)"
 trap 'rm -rf "${build_gopath}"' EXIT
 GOMODCACHE="$(go env GOMODCACHE)" GOPATH="${build_gopath}" \

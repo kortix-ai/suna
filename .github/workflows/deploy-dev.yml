@@ -54,6 +54,7 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - 'apps/kortix-app-runtime/**'
               - 'apps/kortix-sandbox-agent-server/**'
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
