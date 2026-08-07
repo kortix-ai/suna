@@ -1,3 +1,5 @@
+-- Migration: task_git_write_confirmed_settlement
+-- Generated snapshot state is paired with packages/db/drizzle/meta.
 -- A client-side abort is not proof that receive-pack stopped mutating refs.
 -- Preserve a durable live/settled state and reconcile crashed requests after a
 -- post-deadline grace window. Bound workers can update only their session ref.

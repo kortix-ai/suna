@@ -344,6 +344,13 @@
       "when": 1786075628958,
       "tag": "20260807040708_terminal_task_live_fence_invariant",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786079955165,
+      "tag": "20260807051915_task_git_write_confirmed_settlement",
+      "breakpoints": true
     }
   ]
 }

@@ -33,7 +33,7 @@ describe('task Git write fence migrations', () => {
 
   test('upgrades expiry into confirmed settlement plus remote reconciliation', async () => {
     const migration = await Bun.file(
-      join(migrations, '20260807060000000_task_git_write_confirmed_settlement.sql'),
+      join(migrations, '20260807051915174_task_git_write_confirmed_settlement.sql'),
     ).text();
     expect(migration).toContain('ADD COLUMN git_write_state varchar(16)');
     expect(migration).toContain("git_write_state IN ('live', 'settled')");
