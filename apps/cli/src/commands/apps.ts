@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { AppBlockV2 } from '@kortix/manifest-schema';
@@ -438,6 +438,19 @@ export async function archiveAppDirectory(source: string, includeNodeModules: bo
   };
 }
 
+export async function readAppArchive(source: string): Promise<Uint8Array> {
+  const file = await open(source, 'r');
+  try {
+    const sourceStats = await file.stat();
+    if (!sourceStats.isFile()) {
+      throw new Error('Source archive must be a regular file');
+    }
+    return new Uint8Array(await file.readFile());
+  } finally {
+    await file.close();
+  }
+}
+
 async function waitForDeployment(
   apps: AppsHandle,
   appId: string,
@@ -544,7 +557,7 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
           bytes = archived.bytes;
           cleanup = archived.cleanup;
         } else if (/\.(?:tar\.gz|tgz)$/i.test(sourcePath!)) {
-          bytes = new Uint8Array(await readFile(sourcePath!));
+          bytes = await readAppArchive(sourcePath!);
           inferenceRoot = process.cwd();
         } else {
           throw new Error('Source must be a directory, .tar.gz, or .tgz archive');

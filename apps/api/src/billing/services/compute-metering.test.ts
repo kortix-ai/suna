@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, sessionSandboxes } from '@kortix/db';
+import { appRuntimes } from '@kortix/db';
 import * as realProviders from '../../platform/providers';
 
 let billingEnabled = true;

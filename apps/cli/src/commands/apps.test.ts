@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
-import { archiveAppDirectory, loadManifestAppDefaults } from './apps';
+import { archiveAppDirectory, loadManifestAppDefaults, readAppArchive } from './apps';
 
 const temporaryRoots: string[] = [];
 
@@ -12,6 +12,17 @@ afterEach(async () => {
 });
 
 describe('Kortix Apps archive packaging', () => {
+  test('reads a prebuilt archive through one checked file handle', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kortix-app-archive-test-'));
+    temporaryRoots.push(root);
+    const archivePath = join(root, 'app.tar.gz');
+    const expected = new Uint8Array([31, 139, 8, 0]);
+    await writeFile(archivePath, expected);
+
+    expect(await readAppArchive(archivePath)).toEqual(expected);
+    await expect(readAppArchive(root)).rejects.toThrow('regular file');
+  });
+
   test('applies project ignore files and mandatory secret/control exclusions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kortix-app-pack-test-'));
     temporaryRoots.push(root);
