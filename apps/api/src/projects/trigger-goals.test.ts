@@ -77,6 +77,7 @@ describe('goal manifest parsing and trigger desugaring', () => {
       name: 'Goal push: Launch the product',
       type: 'cron',
       agent: META_AGENT_NAME,
+      platformMetaGoalPush: true,
       enabled: true,
       cron: '0 0 9 * * *',
       timezone: 'Europe/Berlin',
@@ -155,6 +156,25 @@ describe('goal manifest parsing and trigger desugaring', () => {
 
     expect(loaded.errors).toEqual([]);
     expect(loaded.specs[0]!.agent).toBe('worker');
+    expect(loaded.specs[0]!.platformMetaGoalPush).toBeUndefined();
+  });
+
+  test('treats explicit meta as the reserved platform goal coordinator', () => {
+    const loaded = extractTriggers(
+      manifest(`  - slug: coordinated
+    title: Coordinated
+    done_when: Done
+    status: active
+    push: "0 0 9 * * *"
+    agent: meta
+`),
+    );
+
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs[0]).toMatchObject({
+      agent: META_AGENT_NAME,
+      platformMetaGoalPush: true,
+    });
   });
 
   test('reports an explicit-trigger collision and does not overwrite either spec silently', () => {

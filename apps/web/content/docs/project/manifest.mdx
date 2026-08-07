@@ -275,8 +275,15 @@ goals:
 | `status` | yes | — | `active`, `achieved`, `paused`, or `abandoned`. |
 | `push` | no | — | Non-empty cron expression. Only an active goal with `push` gets scheduled. |
 | `timezone` | no | `UTC` | IANA time-zone name used to evaluate `push`. |
-| `agent` | no | platform `meta` agent | Agent slug used by the generated push trigger. |
+| `agent` | no | platform `meta` agent | Use `meta`, or name an enabled agent declared under `agents:`. Any other slug fails manifest validation. |
 | `metrics` | no | `[]` | Metric declarations used to classify observations. |
+
+Omitting `agent` selects the reserved platform `meta` coordinator. Explicit
+`agent: meta` has the same meaning and does not require an `agents.meta`
+declaration. A generated goal push can launch `meta` while the general
+`experimental.meta_agent` project flag is off. This exception applies only to
+the generated `kortix-goal-push-*` trigger. Manual and arbitrary `meta` session
+requests still require the project flag.
 
 Status is explicit authored state:
 

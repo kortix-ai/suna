@@ -1219,6 +1219,67 @@ ${triggers}
     expect(result.errorPaths).toEqual([]);
   });
 
+  test('rejects a valid goal agent slug that is not declared', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: delegated
+    title: Delegated
+    done_when: Done
+    status: active
+    agent: ghost`),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errorPaths).toContain('goals[0].agent');
+  });
+
+  test('rejects a goal agent that is declared but disabled', () => {
+    const result = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+  paused:
+    enabled: false
+goals:
+  - slug: delegated
+    title: Delegated
+    done_when: Done
+    status: active
+    agent: paused
+`);
+
+    expect(result.valid).toBe(false);
+    expect(result.errorPaths).toContain('goals[0].agent');
+  });
+
+  test('allows the reserved platform meta agent explicitly without declaring it', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: coordinated
+    title: Coordinated
+    done_when: Done
+    status: active
+    agent: meta`),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errorPaths).toEqual([]);
+  });
+
+  test('allows an omitted goal agent for the reserved platform meta coordinator', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: coordinated
+    title: Coordinated
+    done_when: Done
+    status: active`),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errorPaths).toEqual([]);
+  });
+
   test.each([
     ['missing slug', '    title: T\n    done_when: Done\n    status: active', 'goals[0].slug'],
     [

@@ -92,7 +92,7 @@ import {
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
-  projectMetaAgentEnabled,
+  platformMetaAgentEnabledForSession,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 
@@ -543,6 +543,8 @@ export async function createProjectSession(input: {
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
+  /** Trusted server-only proof that this create came from a platform-meta goal push. */
+  platformMetaGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
   /**
@@ -705,11 +707,15 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
-  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  // The meta coordinator is a per-project experimental opt-in for general
+  // session requests. Generated goal pushes are the only flag-free path: the
+  // internal server-only capability narrowly proves that this session is
+  // advancing a declared goal.
+  const metaAgentEnabled = platformMetaAgentEnabledForSession(
+    project.metadata,
+    requestedAgent,
+    input.platformMetaGoalPush === true,
+  );
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves

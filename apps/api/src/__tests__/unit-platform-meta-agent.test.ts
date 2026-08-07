@@ -6,6 +6,7 @@ import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
+  platformMetaAgentEnabledForSession,
   projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
@@ -108,4 +109,28 @@ describe('platform meta agent', () => {
     expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
     expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
   });
+
+  test('enables meta only for a trusted generated goal push when the project flag is off', () => {
+    expect(platformMetaAgentEnabledForSession(null, 'meta', true)).toBe(true);
+    expect(
+      platformMetaAgentEnabledForSession(
+        { experimental: { meta_agent: false } },
+        'meta',
+        true,
+      ),
+    ).toBe(true);
+  });
+
+  test('keeps arbitrary and forged meta requests gated off by default', () => {
+    expect(platformMetaAgentEnabledForSession(null, 'meta', false)).toBe(false);
+    expect(platformMetaAgentEnabledForSession(null, 'worker', true)).toBe(false);
+    expect(
+      platformMetaAgentEnabledForSession(
+        { experimental: { meta_agent: true } },
+        'meta',
+        false,
+      ),
+    ).toBe(true);
+  });
+
 });

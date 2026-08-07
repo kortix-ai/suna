@@ -16,6 +16,7 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
     metadata: command.metadata,
+    platformMetaGoalPush: command.platformMetaGoalPush,
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,
     mayManageSystemConnections: command.mayManageSystemConnections,

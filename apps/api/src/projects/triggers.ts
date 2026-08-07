@@ -104,6 +104,8 @@ export interface GitTriggerSpec {
   type: GitTriggerType;
   /** Agent name (default: "default"). */
   agent: string;
+  /** Server-owned provenance for a trigger synthesized from `goals[].push`. */
+  platformMetaGoalPush?: true;
   /**
    * Model for this trigger's runs (wire form `provider/model`), or null for
    * "Default" — resolve the chain at fire time (agent → project → account →
@@ -537,6 +539,9 @@ function goalSpecToTrigger(goal: GitGoalSpec): GitTriggerSpec {
     name: `Goal push: ${goal.title}`,
     type: 'cron',
     agent: goal.agent ?? META_AGENT_NAME,
+    ...(goal.agent && goal.agent !== META_AGENT_NAME
+      ? {}
+      : { platformMetaGoalPush: true as const }),
     model: null,
     enabled: true,
     promptTemplate: buildGoalPushPrompt(goal),

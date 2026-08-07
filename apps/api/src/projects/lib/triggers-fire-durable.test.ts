@@ -168,4 +168,49 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     expect(createCalls).toHaveLength(1);
     expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
   });
+
+  test('a generated goal push carries the narrow session identity that enables platform meta', async () => {
+    await fireGitTrigger({
+      spec: {
+        ...baseSpec,
+        slug: 'kortix-goal-push-grow-revenue',
+        agent: 'meta',
+        platformMetaGoalPush: true,
+        sessionMode: 'reuse',
+      } as never,
+      project,
+      payload: {},
+      renderedPrompt: 'advance the goal',
+      source: 'cron',
+    });
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      source: 'trigger:cron',
+      body: { agent_name: 'meta' },
+      platformMetaGoalPush: true,
+      metadata: {
+        trigger_kind: 'git',
+        trigger_slug: 'kortix-goal-push-grow-revenue',
+      },
+    });
+  });
+
+  test('a generated-looking explicit trigger does not receive trusted goal-push provenance', async () => {
+    await fireGitTrigger({
+      spec: {
+        ...baseSpec,
+        slug: 'kortix-goal-push-forged',
+        agent: 'meta',
+        sessionMode: 'fresh',
+      } as never,
+      project,
+      payload: {},
+      renderedPrompt: 'not a declared goal push',
+      source: 'manual',
+    });
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({ platformMetaGoalPush: false });
+  });
 });

@@ -1045,6 +1045,7 @@ export async function fireGitTrigger(input: {
     // make them project-visible so the whole team can find them.
     visibility: 'project',
     request: input.request,
+    platformMetaGoalPush: spec.platformMetaGoalPush === true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: input.idempotencyKey ?? null,
     body: {

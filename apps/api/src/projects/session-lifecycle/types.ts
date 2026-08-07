@@ -53,6 +53,8 @@ export interface CreateSessionCommand {
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
+  /** Trusted server-only proof that this create came from a platform-meta goal push. */
+  platformMetaGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
   request?: RequestAuditContext;
@@ -75,6 +77,8 @@ export interface QueuedCreateSessionPayload {
   /** Absent on commands persisted before principal type was added. */
   requestingPrincipalType?: 'human' | 'service_account';
   metadata?: Record<string, unknown>;
+  /** Trusted server-only proof that this create came from a platform-meta goal push. */
+  platformMetaGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;

@@ -116,6 +116,8 @@ export function validateGoalsV2(
   node: unknown,
   path: string,
   triggerNode: unknown,
+  agentNames: string[],
+  disabledAgentNames: string[],
   issues: ManifestIssue[],
 ): void {
   if (node === undefined || node === null) return;
@@ -223,10 +225,23 @@ export function validateGoalsV2(
     }
 
     if (entry.agent !== undefined) {
-      if (typeof entry.agent !== 'string' || !SLUG_RE.test(entry.agent.trim())) {
+      const agent = typeof entry.agent === 'string' ? entry.agent.trim() : '';
+      if (!SLUG_RE.test(agent)) {
         issues.push({
           path: `${where}.agent`,
           message: 'agent must be a valid non-empty agent slug.',
+          severity: 'error',
+        });
+      } else if (agent !== 'meta' && !agentNames.includes(agent)) {
+        issues.push({
+          path: `${where}.agent`,
+          message: `agent "${agent}" does not match an enabled declared agent in \`agents\`; omit it or use \`meta\` for the reserved platform coordinator.`,
+          severity: 'error',
+        });
+      } else if (agent !== 'meta' && disabledAgentNames.includes(agent)) {
+        issues.push({
+          path: `${where}.agent`,
+          message: `agent "${agent}" is declared with \`enabled: false\` and cannot advance a goal.`,
           severity: 'error',
         });
       }

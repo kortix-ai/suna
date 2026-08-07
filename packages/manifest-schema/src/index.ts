@@ -293,7 +293,7 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  validateGoalsV2(parsed.goals, 'goals', parsed.triggers, issues);
+  validateGoalsV2(parsed.goals, 'goals', parsed.triggers, agentNames, disabledNames, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */

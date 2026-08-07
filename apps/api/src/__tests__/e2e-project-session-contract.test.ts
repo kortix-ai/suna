@@ -989,6 +989,31 @@ describe('project session API contract', () => {
     };
   }
 
+  test('ignores forged goal-trigger metadata when the meta feature flag is off', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+        platformMetaGoalPush: true,
+        metadata: {
+          source: 'trigger:cron',
+          trigger_kind: 'git',
+          trigger_slug: 'kortix-goal-push-forged',
+        },
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_META_AGENT');
+  });
+
   test('creates an omitted-agent session with the meta REST runtime', async () => {
     enableMetaAgent();
     const app = createApp();

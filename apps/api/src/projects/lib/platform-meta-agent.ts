@@ -20,6 +20,24 @@ export function projectMetaAgentEnabled(metadata: unknown): boolean {
   return resolveExperimentalFeature(metadata, 'meta_agent');
 }
 
+/**
+ * Enable the platform coordinator for one session.
+ *
+ * The project flag remains the general opt-in. A generated goal push is the
+ * only flag-free path. An internal server-only capability and explicit `meta`
+ * target prove that this session advances a goal. Request body metadata never enables this path.
+ */
+export function platformMetaAgentEnabledForSession(
+  projectMetadata: unknown,
+  requestedAgent: string | null,
+  trustedGoalPush: boolean,
+): boolean {
+  return (
+    projectMetaAgentEnabled(projectMetadata) ||
+    (requestedAgent === META_AGENT_NAME && trustedGoalPush)
+  );
+}
+
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {
     ...config,
