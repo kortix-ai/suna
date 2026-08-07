@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RegisteredFlow } from '../src/core/flow';
 import { partitionParallelFlows } from '../src/core/lanes';
 import { mapWithConcurrency } from '../src/core/concurrency';
+import { formatFlowProgress } from '../src/core/progress';
 
 function registeredFlow(
   id: string,
@@ -40,5 +41,24 @@ describe('ke2e parallel lanes', () => {
 
     expect(maxActive).toBe(2);
     expect(results).toEqual([30, 10, 20, 40]);
+  });
+
+  it('renders bounded per-flow completion diagnostics', () => {
+    expect(
+      formatFlowProgress(
+        {
+          id: 'SESS-1',
+          domain: 'sessions',
+          tags: [],
+          status: 'fail',
+          reason: 'flow SESS-1 exceeded 120000ms',
+          durationMs: 240_123,
+          attempts: 2,
+          steps: [],
+        },
+        17,
+        375,
+      ),
+    ).toBe('[17/375] FAIL SESS-1 240.1s attempts=2 — flow SESS-1 exceeded 120000ms');
   });
 });
