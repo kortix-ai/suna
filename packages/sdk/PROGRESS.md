@@ -12,6 +12,96 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-07 — session `client-cache-unification` — guard hardening + 4 review follow-ups
+
+Closes the regression-prevention gap the fix-wave entry below left open, plus
+four follow-ups that entry recorded. No new capability.
+
+- **The `query-key-literals.test.ts` guard is now default-DENY.** The
+  enumerated `project-(detail|sessions|secrets|model-picker)` ban list failed
+  OPEN twice, both times on a literal the migration had just removed:
+  `['project-session', …]` (SINGULAR — what `session-title-sync.ts:25` and
+  `use-canonical-opencode-session.ts:64` hand-typed) and
+  `['project-triggers', …]`. Verified against the old pattern: it caught the
+  four named families and MISSED both. A ban list can only cover mistakes
+  someone already made, so the polarity is inverted — every
+  `project`/`projects`/`project-<family>` array literal is a violation, plus
+  `qk`'s own `'kx'` root, with three documented exemptions
+  (`project-providers`, `project-change-requests`, `project-manager`; the last
+  is a `Set` of agent names, not a key). This also deletes the
+  alternation-ordering trap the old pattern had. Comment-only lines are
+  skipped because several files here quote removed literals in prose; a
+  trailing comment does not launder a code line. Proven RED by reintroducing
+  9 literals into `use-project-secrets.ts` one at a time, each reverted:
+  `project-detail`, `project-session`, `project-sessions`, `project-secrets`,
+  `project-triggers`, `project-model-picker`, `project-policies`, `projects`,
+  `kx` — 9/9 caught.
+- **NEW `useProjectSession` — one contract and one fetcher for
+  `qk.project.session(id, sid)`.** The fix wave unified that entry's KEY and
+  left its CONTRACT split three ways: `use-canonical-opencode-session.ts` set
+  a bare `staleTime: 10_000` and `{ showErrors: false }` while
+  `session-files-panel.tsx` and `session-changes-shared.tsx` used
+  `contract('inventory')` with the default. Both halves were mount-order
+  dependent — `staleTime` is per-OBSERVER, and `queryFn` is per-ENTRY with the
+  first observer installing it, so whether a failed read toasted depended on
+  which surface mounted first. `showErrors: false` wins for all three:
+  every failure path is already a silent fallback the UI never surfaces
+  (`resolveSessionPin` treats a missing pin as "still resolving", both panels
+  fall back to `base_ref = 'main'`), and `showErrors` is a presentation flag
+  that changes neither request nor response, so it cannot justify separate
+  keys the way `scope` does for `qk.project.sessions`. `enabled` stays
+  per-call-site — it decides whether a surface subscribes, not what the shared
+  entry holds. Additive export; both public-surface snapshots re-recorded and
+  proven additive by set-diff (`removed: []`, `added: ["useProjectSession"]`).
+- **`FRESHNESS.sandboxes` `volatile` → `config`; `FRESHNESS.gateway`
+  `volatile` → `inventory`.** Both were tiered on what they are CALLED.
+  `sandboxes` is not live sandbox health — `listProjectSandboxes` is
+  `GET /projects/:id/sandboxes` returning `SandboxTemplatesResponse`, the same
+  call `sandboxTemplates` makes and already tiers `config`; live health is
+  `getProjectSandboxHealth` under a separate `apps/web` key with its own
+  adaptive `refetchInterval`. Its pre-migration window was 60s and all three
+  of its mutations invalidate the key. Gateway aggregates accumulate from
+  traffic (so not `config`) but are aggregates over a `days` window (so not
+  `volatile`); `inventory` is exactly their pre-migration 30s. Since
+  `contract()` sets `refetchOnMount: true`, `volatile` was refetching the
+  sandbox catalog on every project landing and five analytics queries on every
+  Customize → Gateway open. `volatile` now has NO claimant — kept, because
+  `FreshnessTier` is a published string-literal union and removing a member is
+  breaking, with the bar for the next claimant written into its doc comment.
+  8 `apps/web` call sites moved.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `bun test --isolate src`: `1680 pass`, `0 fail`, `6614 expect()` calls
+  across `130` files (was `1671` / `129` at the start of this session).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`.
+- `apps/web`: `bun test` `4629 pass` / `0 fail` (`426` files); `tsc --noEmit`
+  21-line known baseline unchanged, none in a touched file; `eslint src` 0
+  errors, 0 `Never hand-type an entity key` hits.
+
+**Discovered, NOT fixed (audit only, requested):** `use-change-requests.ts`'s
+`changeRequestsKey` = `['project-change-requests', id, status]` and
+`apps/web`'s `changeRequestKeys.list` =
+`['project-files','change-requests',id,'list',status]` hold the **same data** —
+`apps/web/src/features/project-files/api/change-requests.ts:40-45`'s
+`fetchChangeRequests` is a one-line passthrough to this package's
+`listChangeRequests`, i.e. the same `GET /projects/:id/change-requests?status=`
+and the same `{ change_requests: ChangeRequest[] }`. Not a LIVE duplicate:
+nothing in-repo imports the SDK hook (both `apps/web` call sites use the local
+`(status, options)` signature; `apps/mobile` has a THIRD implementation at
+`lib/projects/hooks.ts:729` keyed `['change-requests', id, status]`). It is a
+latent duplicate and a published-API trap — an external consumer mounting
+`useChangeRequests` from `@kortix/sdk/react` beside `apps/web`'s panel gets two
+entries and two poll loops. The SDK hook also spreads no `contract(...)`, so it
+inherits the host's global defaults.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-07 — session `client-cache-unification` — whole-branch review fix wave (BLOCKED → fixed)
 
 Fixed all four items from the FINAL WHOLE-BRANCH REVIEW entry below (the review
