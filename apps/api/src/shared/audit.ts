@@ -1,6 +1,6 @@
-import type { Context, Next } from 'hono';
-import { auditEvents, type Database } from '@kortix/db';
 import { createHash } from 'node:crypto';
+import { type Database, auditEvents } from '@kortix/db';
+import type { Context, Next } from 'hono';
 import { getRequestContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
@@ -217,7 +217,10 @@ const MAX_AUDIT_COLLECTION_ITEMS = 100;
 const MAX_AUDIT_RECORD_BYTES = 64 * 1024;
 
 function sha256(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value) ?? 'null').digest('hex');
+  // lgtm[js/insufficient-password-hash] This digest fingerprints audit content. It never verifies passwords.
+  return createHash('sha256')
+    .update(JSON.stringify(value) ?? 'null')
+    .digest('hex');
 }
 
 function isContentKey(key: string): boolean {
@@ -267,10 +270,7 @@ function sanitizeAuditValue(value: unknown, key = '', depth = 0): unknown {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .slice(0, MAX_AUDIT_COLLECTION_ITEMS)
-      .map(([childKey, child]) => [
-        childKey,
-        sanitizeAuditValue(child, childKey, depth + 1),
-      ]),
+      .map(([childKey, child]) => [childKey, sanitizeAuditValue(child, childKey, depth + 1)]),
   );
 }
 

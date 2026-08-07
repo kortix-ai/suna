@@ -43,7 +43,7 @@ import {
   projectSessionConnectorBindings,
   serviceAccounts,
 } from '@kortix/db';
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { config } from '../../config';
