@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // The module only ever issues raw SQL, so the assertions below are about the
 // STATEMENT SHAPE — which is the whole safety argument: an extend must contain
@@ -26,7 +27,7 @@ function render(query: unknown): string {
   return '';
 }
 
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {

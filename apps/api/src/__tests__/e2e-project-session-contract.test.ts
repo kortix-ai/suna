@@ -1270,7 +1270,11 @@ describe('project session API contract', () => {
       sandboxId: SESSION_ID,
       sessionId: SESSION_ID,
       externalId: 'platinum-cancelled-wake',
-      metadata: { stopReason: 'manual', stoppedBy: USER_ID },
+      // Top-level, not nested in `metadata`: the patch sets `stopReason` from
+      // the required field AFTER spreading `metadata`, so a nested one is
+      // overwritten and `JSON.stringify` drops the resulting undefined.
+      stopReason: 'manual',
+      metadata: { stoppedBy: USER_ID },
     });
     releaseProviderStart?.();
     await flushUntil(() => providerStopCalls === 1);

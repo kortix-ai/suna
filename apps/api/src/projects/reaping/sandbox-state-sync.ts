@@ -16,6 +16,7 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import { db } from '../../shared/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
 export function mergeMetadata(patch: Record<string, unknown>) {
@@ -26,7 +27,9 @@ export interface StoppedStateWrite {
   sandboxId: string;
   sessionId: string;
   externalId: string | null;
-  /** Extra keys to record about WHY it stopped. Merged, never assigned. */
+  /** WHY this box parked. Required — the classification query groups on it. */
+  stopReason: StopReason;
+  /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
   now?: Date;
 }
@@ -63,7 +66,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       err instanceof Error ? err.message : err,
     ),
   );
-  const patch = { ...(write.metadata ?? {}) };
+  const patch = { ...(write.metadata ?? {}), stopReason: write.stopReason, stoppedAt: now.toISOString() };
   await db.transaction(async (tx) => {
     await tx
       .update(sessionSandboxes)
@@ -74,6 +77,11 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
         // resolves after this transaction, its fenced completion write loses
         // and the resume path stops the provider again. This makes an explicit
         // user stop win both orderings of the start/stop race.
+        //
+        // `patch` always carries stopReason + stoppedAt, so this is never an
+        // empty merge: the wake keys are dropped AND the reason is recorded in
+        // one statement. Still a MERGE, never a whole-object assign — a
+        // concurrent writer's lastAliveAt lives in this column too.
         metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
           - 'runtimeWakeStartedAt'
           - 'runtimeWakeId'
@@ -117,6 +125,7 @@ export async function reconcileSandboxStoppedByExternalId(
     sandboxId: row.sandboxId,
     sessionId: row.sessionId,
     externalId,
+    stopReason: 'provider_reconcile',
     now,
   });
   return true;
@@ -145,7 +154,7 @@ export async function reconcileSandboxRemovedByExternalId(
     .limit(1);
   if (!row) return false;
   if (!row.externalId) return false;
-  await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
+  await preserveEstablishedRuntime(row, 'provider_webhook_removed', 'provider_removed', now);
   // The box is GONE at the provider — unlike an idle stop, nothing can wake it,
   // so its connector token is now a bearer credential with no owner. Nothing
   // else ever expires these (no expiresAt, exempt from PAT idle-revoke).

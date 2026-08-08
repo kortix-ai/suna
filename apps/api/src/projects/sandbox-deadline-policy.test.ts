@@ -4,12 +4,11 @@
 // Every case below is a bug that shipped in the first cut of this design and was
 // caught by review, so each one names the failure it prevents rather than the
 // branch it covers.
-//
-// `mock.module` is process-global in bun — run this file on its own.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../config', () => mockConfigModule());
 
 const {
   ABSOLUTE_RUN_CAP_MS,

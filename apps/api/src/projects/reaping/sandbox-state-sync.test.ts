@@ -7,13 +7,11 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // SELECTed moments earlier, dropping whatever a concurrent writer had put there
 // in between, and the money-critical "settle the meter before flipping the
 // status" order was carried by a comment repeated in each copy.
-//
-// Mocks are process-global (`mock.module`) — run this file in its own
-// `bun test <file>` invocation, same caveat as ../sandbox-reaper.test.ts.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+import { mockConfigModule } from './test-support/mock-config';
 
 type UpdateCall = {
   table: unknown;
@@ -26,12 +24,10 @@ let updateCalls: UpdateCall[] = [];
 let cacheInvalidations: string[] = [];
 let selectedRows: any[] = [];
 let revokedTokens: Array<{ sessionId: string; accountId: string }> = [];
-let preserveCalls: Array<{ sandboxId: string; reason: string }> = [];
+let preserveCalls: Array<{ sandboxId: string; reason: string; stopReason: string }> = [];
 let inTransaction = false;
 
-mock.module('../../config', () => ({
-  config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
-}));
+mock.module('../../config', () => mockConfigModule());
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
@@ -89,8 +85,12 @@ mock.module('../../repositories/account-tokens', () => ({
 }));
 
 mock.module('../runtime-identity', () => ({
-  preserveEstablishedRuntime: async (row: { sandboxId: string }, reason: string) => {
-    preserveCalls.push({ sandboxId: row.sandboxId, reason });
+  preserveEstablishedRuntime: async (
+    row: { sandboxId: string },
+    reason: string,
+    stopReason: string,
+  ) => {
+    preserveCalls.push({ sandboxId: row.sandboxId, reason, stopReason });
     return row;
   },
 }));
@@ -124,6 +124,7 @@ const write = {
   sandboxId: 'sb-1',
   sessionId: 'sess-1',
   externalId: 'ext-1',
+  stopReason: 'deadline_expired' as const,
   now: NOW,
 };
 
@@ -183,10 +184,17 @@ describe('applyStoppedState', () => {
     expect(sandboxUpdate()?.updates.status).toBe('stopped');
   });
 
-  test('no caller patch writes no metadata at all', async () => {
+  // stopReason is now required on every write, so the metadata merge is never
+  // empty even when the caller has no extra patch of its own — it always
+  // carries at least stopReason + stoppedAt.
+  test('no caller patch still merges stopReason and stoppedAt', async () => {
     await applyStoppedState(write);
 
     const rendered = describeSql(sandboxUpdate()?.updates.metadata);
+    expect(rendered).toContain('deadline_expired');
+    expect(rendered).toContain('stoppedAt');
+    // The same statement also DROPS the in-flight wake keys, so a committed
+    // stop wins the start/stop race in both orderings.
     expect(rendered).toContain('runtimeWakeId');
     expect(rendered).toContain('runtimeWakeStartedAt');
   });
@@ -195,10 +203,15 @@ describe('applyStoppedState', () => {
   // whatever a concurrent writer put in the column in between — the
   // `runtimeWakeId` wake fence (projects/routes/shared.ts) and, one table over,
   // the `lastAliveAt` stamp the compute clamp bills against.
+  //
+  // The fixture deliberately avoids a `stopReason` key inside `metadata` here:
+  // `write.stopReason` (top-level, required) always wins over one nested in
+  // `metadata` — see the precedence test below — so putting it here would
+  // read as though the nested value mattered when it never lands.
   test('REGRESSION: the caller patch is MERGED into jsonb, never assigned', async () => {
     await applyStoppedState({
       ...write,
-      metadata: { stopReason: 'manual', stoppedBy: 'user-1' },
+      metadata: { stoppedBy: 'user-1' },
     });
 
     const metadata = sandboxUpdate()?.updates.metadata;
@@ -211,10 +224,10 @@ describe('applyStoppedState', () => {
   });
 
   test('the caller patch is the whole merge', async () => {
-    await applyStoppedState({ ...write, metadata: { stopReason: 'manual' } });
+    await applyStoppedState({ ...write, metadata: { customField: 'x' } });
 
     const rendered = describeSql(sandboxUpdate()?.updates.metadata);
-    expect(rendered).toContain('stopReason');
+    expect(rendered).toContain('customField');
   });
 
   test('drops the proxy cache, and tolerates a row with no external id', async () => {
@@ -296,8 +309,53 @@ describe('reconcileSandboxRemovedByExternalId', () => {
     ];
 
     expect(await reconcileSandboxRemovedByExternalId('ext-1', NOW)).toBe(true);
-    expect(preserveCalls).toEqual([{ sandboxId: 'sb-1', reason: 'provider_webhook_removed' }]);
+    // A webhook `removed` is one of the three genuine provider-removal signals
+    // (this, the reaper's status poll, and a /start status check that came back
+    // `removed`), so it is one of the shapes allowed to stamp `provider_removed`.
+    // Every other preserve path (failed wake, failed restart, stalled provision)
+    // stamps its own reason — see stop-reason.ts.
+    expect(preserveCalls).toEqual([
+      { sandboxId: 'sb-1', reason: 'provider_webhook_removed', stopReason: 'provider_removed' },
+    ]);
     expect(revokedTokens).toEqual([{ sessionId: 'sess-1', accountId: 'acct-1' }]);
+  });
+});
+
+describe('applyStoppedState — stopReason', () => {
+  test('merges the reason into the sandbox metadata patch', async () => {
+    // (state is reset by the file's top-level beforeEach, run before every test)
+    await applyStoppedState({
+      sandboxId: 'sb-1',
+      sessionId: 'se-1',
+      externalId: 'ext-1',
+      stopReason: 'deadline_expired',
+    });
+    const update = sandboxUpdate();
+    expect(update).toBeDefined();
+    // The write must be a jsonb MERGE, never a whole-object assign — a concurrent
+    // writer's runtimeWakeId / lastAliveAt live in the same column.
+    expect(update!.updates.metadata).toBeDefined();
+    // `updates.metadata` is a drizzle SQL AST (circular via its column/table
+    // refs) — describeSql renders it to text the same way every other test in
+    // this file asserts against it; a raw JSON.stringify throws on the cycle.
+    expect(describeSql(update!.updates.metadata)).toContain('deadline_expired');
+  });
+
+  // The top-level field is the one source of truth for WHY a box parked. A
+  // caller-supplied `metadata.stopReason` (e.g. an older copy-pasted patch)
+  // must never leak into the write — only the required top-level value can.
+  test('the top-level stopReason wins over a conflicting metadata.stopReason', async () => {
+    await applyStoppedState({
+      sandboxId: 'sb-1',
+      sessionId: 'se-1',
+      externalId: 'ext-1',
+      stopReason: 'run_cap',
+      metadata: { stopReason: 'manual' },
+    });
+
+    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
+    expect(rendered).toContain('run_cap');
+    expect(rendered).not.toContain('manual');
   });
 });
 

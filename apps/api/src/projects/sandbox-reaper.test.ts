@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -116,17 +117,18 @@ function isVisitStamp(call: { updates: Record<string, unknown> }): boolean {
 const rowUpdates = () => updateCalls.filter((c) => !isVisitStamp(c));
 const visitStamps = () => updateCalls.filter(isVisitStamp);
 
-// Mock config (the only field used is KORTIX_SANDBOX_AUTOSTOP_MINUTES) so the
-// test doesn't import the real config, which calls process.exit on incomplete
-// local env. Run this file in its own `bun test <file>` invocation (as CI does)
-// so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({
-  config: {
+// Mock config so the test doesn't import the real config, which calls
+// process.exit on incomplete local env. Uses the COMPLETE module stand-in:
+// `mock.module` is process-global in bun, so a factory returning only `{ config }`
+// strips every other named export (e.g. SANDBOX_VERSION) for every sibling suite
+// in the same process — which is what made this whole directory unrunnable.
+mock.module('../config', () =>
+  mockConfigModule({
     KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
     KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
     ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
-  },
-}));
+  }),
+);
 
 mock.module('../shared/db', () => ({
   db: {

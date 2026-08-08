@@ -78,7 +78,8 @@ export async function stopSession(input: {
     sandboxId: sandbox.sandboxId,
     sessionId,
     externalId: sandbox.externalId,
-    metadata: { stoppedAt: now.toISOString(), stoppedBy: userId, stopReason: 'manual' },
+    stopReason: 'manual',
+    metadata: { stoppedBy: userId },
     now,
   });
 
