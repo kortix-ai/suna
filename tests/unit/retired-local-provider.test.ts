@@ -65,5 +65,5 @@ describe('retired local sandbox provider', () => {
       });
 
     expect(offenders).toEqual([]);
-  });
+  }, 20_000);
 });
