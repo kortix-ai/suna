@@ -33,6 +33,8 @@ import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const providerTemplateBuildEnabled =
+  process.env.E2E_ENABLE_SANDBOX_TEMPLATE_BUILD === "1";
 const password = "E2eSandboxTpl123!";
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
@@ -76,6 +78,7 @@ test.describe("12 — Sandbox templates UI", () => {
   let session: AuthSession;
   let projectId: string;
   let accountId: string;
+  let customTemplateId: string | null = null;
 
   test.beforeAll(async () => {
     const email = `e2e-sbx-${Date.now()}@kortix.test`;
@@ -105,6 +108,13 @@ test.describe("12 — Sandbox templates UI", () => {
 
   test.afterAll(async () => {
     if (projectId && session) {
+      if (customTemplateId) {
+        await api(
+          session.access_token,
+          "DELETE",
+          `/projects/${projectId}/sandbox-templates/${customTemplateId}`,
+        ).catch(() => {});
+      }
       await api(session.access_token, "DELETE", `/projects/${projectId}`).catch(
         () => {},
       );
@@ -166,6 +176,10 @@ test.describe("12 — Sandbox templates UI", () => {
   test("clicking Rebuild on a project template calls the API and does not crash", async ({
     page,
   }) => {
+    test.skip(
+      !providerTemplateBuildEnabled,
+      "Set E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1 to create and delete real provider snapshots.",
+    );
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
     const customSlug = `e2e-image-${Date.now()}`;
@@ -183,6 +197,7 @@ test.describe("12 — Sandbox templates UI", () => {
     expect(created.json?.template_id).toBeTruthy();
     if (!created.json) throw new Error("template creation returned no body");
     const templateId = created.json.template_id;
+    customTemplateId = templateId;
 
     // Capture rebuild POSTs as they happen — armed before navigation so we
     // never miss the response between fixture setup and the actual click.
@@ -210,10 +225,13 @@ test.describe("12 — Sandbox templates UI", () => {
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
-    const rebuildButton = page.getByRole("button", { name: /^Rebuild$/i });
-    await expect(
-      page.getByText(customSlug, { exact: true }).first(),
-    ).toBeVisible({
+    const templateRow = page
+      .getByRole("listitem")
+      .filter({ hasText: customSlug });
+    const rebuildButton = templateRow.getByRole("button", {
+      name: /^Rebuild$/i,
+    });
+    await expect(templateRow.getByText(customSlug, { exact: true })).toBeVisible({
       timeout: 15_000,
     });
     await expect(rebuildButton).toBeEnabled({ timeout: 15_000 });

@@ -104,6 +104,11 @@ pnpm dev
 pnpm test -- --browser-only
 ```
 
+The regular browser lane excludes provider-mutating journeys. Set
+`E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1` only for the dedicated sandbox-template
+journey. That journey creates and deletes its own product snapshot. The
+Platinum CI worker remains a separate infrastructure sandbox.
+
 ## SDK tests
 
 SDK tests stay in `packages/sdk`. They protect the published package contract
