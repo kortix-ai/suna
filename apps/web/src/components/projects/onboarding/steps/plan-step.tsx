@@ -26,10 +26,25 @@ import { SelectionRow, StepShell } from '../step-shell';
 
 type PlanChoice = 'kortix' | 'byok' | 'later';
 
-export function PlanStep({ onContinue }: { onContinue: () => void }) {
+/**
+ * `projectId` is passed explicitly, never inferred. `useModelConnectionGate`
+ * falls back to the `[id]` route segment, and this step also renders on `/new`
+ * (`app/(app)/new`), which has none — an inferred project is `null` there, so
+ * `modal` is `null` and `openConnectProvider` opens nothing while
+ * `handleContinue` never reaches `onContinue()`. This step passes no `onSkip`
+ * to `StepShell`, so its primary button is the only control: an inferred id
+ * strands the user on step 5 of 6.
+ */
+export function PlanStep({
+  projectId,
+  onContinue,
+}: {
+  projectId?: string;
+  onContinue: () => void;
+}) {
   const { data: providers } = useRuntimeProviders();
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
-    useModelConnectionGate(flattenModels(providers));
+    useModelConnectionGate(flattenModels(providers), { projectId });
   const [choice, setChoice] = useState<PlanChoice | null>(null);
 
   // Nothing opens until Continue. This is the whole point of the step.

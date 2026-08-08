@@ -69,3 +69,42 @@ describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
     expect(shellSource).not.toContain('onCompleted');
   });
 });
+
+/**
+ * THE skip contract. Skipping STAMPS `metadata.onboarding_completed_at`,
+ * exactly like finishing.
+ *
+ * It used to leave the project unstamped, on the theory that the project
+ * shell's own copy of this wizard would catch the user on a later visit. That
+ * premise is false: `/new`'s wizard has already warmed the SAME
+ * `qk.project.detail(id)` entry the shell reads, so on arrival at
+ * `/projects/<id>` the shell's copy sees `hydrated: true, status: 'pending'`
+ * and opens IMMEDIATELY — with no `onSkip`, `showCloseButton={false}`,
+ * `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
+ * worse than not skipping.
+ */
+describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () => {
+  test('skip routes through the same completeThenNotify path as finishing', () => {
+    expect(code).toMatch(
+      /const skip = useCallback\(\s*\(\)\s*=>\s*completeThenNotify\(\(\)\s*=>\s*onboarding\.complete\(\),\s*onSkip\),/,
+    );
+  });
+
+  test('the skip control fires the stamping path, never the raw prop', () => {
+    // Guard the guard before slicing: `indexOf` returns -1 when the marker is
+    // absent, and `slice(-1)` is a non-empty one-character string that would
+    // pass every assertion below.
+    expect(code).toContain('{onSkip && (');
+    const skipBlock = code.slice(code.indexOf('{onSkip && ('));
+    expect(skipBlock).toContain('onClick={skip}');
+    expect(code).not.toContain('onClick={onSkip}');
+  });
+
+  // Both exits stamp, so both must go through the swallow in
+  // `completeThenNotify` — a failed PATCH must never seal the user into a
+  // modal that has no close button.
+  test('both exits are wrapped — neither calls onboarding.complete() bare', () => {
+    expect(code.match(/completeThenNotify\(/g)?.length).toBe(2);
+    expect(code).not.toMatch(/const skip = useCallback\(\(\) => onboarding\.complete\(\)/);
+  });
+});

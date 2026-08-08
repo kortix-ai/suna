@@ -31,7 +31,9 @@ describe('completeThenNotify', () => {
   });
 
   test('does not reject when completion rejects', async () => {
-    expect(
+    // `await` is load-bearing: without it the assertion resolves after the test
+    // has already returned, and this passes even if the rejection propagates.
+    await expect(
       completeThenNotify(() => Promise.reject(new Error('stamp failed')), undefined),
     ).resolves.toBeUndefined();
   });

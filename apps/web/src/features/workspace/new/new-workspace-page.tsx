@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
@@ -11,7 +12,9 @@ import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
@@ -28,6 +31,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { isBillingEnabled } from '@/lib/config';
 import { listAccounts } from '@kortix/sdk';
 
 /**
@@ -189,165 +193,212 @@ export function NewWorkspacePage() {
         </p>
       </header>
 
-      {/* The form <-> ProvisionProgress swap's ONE transition — see the
-          `SWAP_IN`/`SWAP_OUT` doc comment above. `mode="wait"`, not a true
-          overlap: the two states are different heights, so a moment with
+      {/* The onboarding param OWNS this page. `/new?onboarding=<id>` means the
+          workspace already exists, so neither the create form nor
+          `ProvisionProgress` has anything left to say — and on a reload the
+          create hook restarts at `status: 'idle'`, which used to paint the live
+          form (Name input, `autoFocus`, fully interactive) in the window before
+          `getProjectDetail` settles. A user who reloaded mid-onboarding could
+          type into it, and if `['accounts']` resolved first, Enter fired a
+          SECOND `runCreate`.
+
+          Inside the gate: the form <-> ProvisionProgress swap's ONE transition
+          — see the `SWAP_IN`/`SWAP_OUT` doc comment above. `mode="wait"`, not a
+          true overlap: the two states are different heights, so a moment with
           neither mounted reads better than both visible at once at two
           different rhythms. `initial={false}` — the form must not fade in on
           first paint, only on the swap back from the panel. */}
-      <AnimatePresence mode="wait" initial={false}>
-        {submitting ? (
-          <m.div
-            key="creating"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: SWAP_IN }}
-            exit={{ opacity: 0, transition: SWAP_OUT }}
-          >
-            <ProvisionProgress workspaceName={state.name.trim()} current={phase} />
-          </m.div>
-        ) : (
-          <m.div
-            key="form"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: SWAP_IN }}
-            exit={{ opacity: 0, transition: SWAP_OUT }}
-          >
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setTouched(true);
-                if (!canSubmit) return;
-                void create(state);
-              }}
+      {!onboardingProjectId && (
+        <AnimatePresence mode="wait" initial={false}>
+          {submitting ? (
+            <m.div
+              key="creating"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: SWAP_IN }}
+              exit={{ opacity: 0, transition: SWAP_OUT }}
             >
-              {state.templateId && (
-                <p className="text-muted-foreground text-center text-xs">
-                  This workspace will be seeded from the template you picked.
-                </p>
-              )}
+              <ProvisionProgress workspaceName={state.name.trim()} current={phase} />
+            </m.div>
+          ) : (
+            <m.div
+              key="form"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: SWAP_IN }}
+              exit={{ opacity: 0, transition: SWAP_OUT }}
+            >
+              <form
+                className="flex flex-col gap-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setTouched(true);
+                  if (!canSubmit) return;
+                  void create(state);
+                }}
+              >
+                {state.templateId && (
+                  <p className="text-muted-foreground text-center text-xs">
+                    This workspace will be seeded from the template you picked.
+                  </p>
+                )}
 
-              <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
-                <Label htmlFor="workspace-name">Name</Label>
-                {/* `items-start`, not `items-center`: the icon trigger and the
-                    input are both 9 units tall today, so it reads identically
-                    either way, and it stays correct if the input ever grows a
-                    second line beneath it (the create modal's own row uses the
-                    same rule). */}
-                <div className="flex items-start gap-2">
-                  <ProjectIconField
-                    value={state.icon}
-                    onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
-                    onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <Input
-                      id="workspace-name"
-                      autoFocus
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      value={state.name}
-                      onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
-                      onBlur={() => setTouched(true)}
-                      placeholder="my-agi-company"
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
-                      aria-invalid={nameError ? true : undefined}
-                      aria-describedby={nameError ? 'workspace-name-error' : undefined}
+                <div className="bg-popover flex flex-col gap-1.5 rounded-md border px-4 py-5">
+                  <Label htmlFor="workspace-name">Name</Label>
+                  {/* `items-start`, not `items-center`: the icon trigger and the
+                      input are both 9 units tall today, so it reads identically
+                      either way, and it stays correct if the input ever grows a
+                      second line beneath it (the create modal's own row uses the
+                      same rule). */}
+                  <div className="flex items-start gap-2">
+                    <ProjectIconField
+                      value={state.icon}
+                      onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
+                      onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
                     />
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        id="workspace-name"
+                        autoFocus
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        value={state.name}
+                        onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
+                        onBlur={() => setTouched(true)}
+                        placeholder="my-agi-company"
+                        maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                        aria-invalid={nameError ? true : undefined}
+                        aria-describedby={nameError ? 'workspace-name-error' : undefined}
+                      />
+                    </div>
                   </div>
-                </div>
-                {nameError ? (
-                  <p id="workspace-name-error" className="text-destructive text-xs">
-                    {nameError}
-                  </p>
-                ) : null}
-
-                <AccountPicker
-                  accounts={creatableAccounts}
-                  value={state.accountId}
-                  onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-                />
-                {/* `isSubmittable`'s `accountCount < 1` floor already disables
-                    the button here — this note is what stops that disabled
-                    button from being unexplained. Gated on
-                    `!accountsQuery.isLoading` so it cannot flash true during
-                    the load window, when `creatableAccounts` is `[]` for
-                    every user regardless of their real access. Plain muted
-                    text in the field group's own flow, same treatment as
-                    `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
-                    second card. */}
-                {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
-                  <p className="text-muted-foreground text-xs">
-                    You need owner or admin access in an account to create a workspace.
-                  </p>
-                ) : null}
-
-                <AdvancedFields state={state} onChange={setState} />
-              </div>
-
-              <Button type="submit" disabled={!canSubmit} className="w-full">
-                Create workspace
-              </Button>
-              {/* Form-level, not a field error: every failure `messageFor`
-                  (`use-create-workspace.ts`) maps — 403 wrong-account, 400
-                  bad name, a managed-git-unavailable 503, a retryable 502, or
-                  a generic retry hint — is about the SUBMIT, not one input,
-                  so it sits below the button rather than inside the card.
-                  `role="alert"` announces it the moment `status` flips to
-                  `'error'`, matching the a11y treatment already on the name
-                  field.
-
-                  The retry control is gated on `canRetry`
-                  (`useCreateWorkspace`, derived from `isRetryableError`), not
-                  just `status === 'error'`: the managed-git-unavailable 503
-                  is a server configuration state, not a transient one, and
-                  `retry` — which reuses the SAME idempotency key rather than
-                  minting a new one — can never turn that into a success.
-                  Offering it anyway would waste the user's time on a click
-                  that cannot work. Styled to match the page's one other
-                  secondary control (`Log out`, above) — `variant="ghost"
-                  size="sm"` with the identical `text-muted-foreground
-                  hover:text-foreground` treatment — rather than introducing a
-                  third button weight beside the primary submit and that
-                  one. */}
-              {status === 'error' && createError ? (
-                <div role="alert" className="flex flex-col items-center gap-1.5">
-                  <p className="text-destructive text-center text-xs">{createError}</p>
-                  {canRetry ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={retry}
-                    >
-                      Try again
-                    </Button>
+                  {nameError ? (
+                    <p id="workspace-name-error" className="text-destructive text-xs">
+                      {nameError}
+                    </p>
                   ) : null}
+
+                  <AccountPicker
+                    accounts={creatableAccounts}
+                    value={state.accountId}
+                    onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+                  />
+                  {/* `isSubmittable`'s `accountCount < 1` floor already disables
+                      the button here — this note is what stops that disabled
+                      button from being unexplained. Gated on
+                      `!accountsQuery.isLoading` so it cannot flash true during
+                      the load window, when `creatableAccounts` is `[]` for
+                      every user regardless of their real access. Plain muted
+                      text in the field group's own flow, same treatment as
+                      `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
+                      second card. */}
+                  {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      You need owner or admin access in an account to create a workspace.
+                    </p>
+                  ) : null}
+
+                  <AdvancedFields state={state} onChange={setState} />
                 </div>
-              ) : null}
-            </form>
-          </m.div>
-        )}
-      </AnimatePresence>
 
-      {/* Onboarding runs HERE, not on the workspace page. The wizard is a
-          fullscreen portal, so it covers the completed ProvisionProgress panel
-          that stays mounted behind it (a successful create never clears
-          `status`, by design).
+                <Button type="submit" disabled={!canSubmit} className="w-full">
+                  Create workspace
+                </Button>
+                {/* Form-level, not a field error: every failure `messageFor`
+                    (`use-create-workspace.ts`) maps — 403 wrong-account, 400
+                    bad name, a managed-git-unavailable 503, a retryable 502, or
+                    a generic retry hint — is about the SUBMIT, not one input,
+                    so it sits below the button rather than inside the card.
+                    `role="alert"` announces it the moment `status` flips to
+                    `'error'`, matching the a11y treatment already on the name
+                    field.
 
-          Completing stamps `metadata.onboarding_completed_at`, so the copy of
-          this wizard mounted on the project shell self-gates to `completed`
-          and renders nothing when we arrive. Skipping deliberately does NOT
-          stamp — that shell copy then catches the user on a later visit, which
-          is the whole safety net behind letting them skip at all. */}
+                    The retry control is gated on `canRetry`
+                    (`useCreateWorkspace`, derived from `isRetryableError`), not
+                    just `status === 'error'`: the managed-git-unavailable 503
+                    is a server configuration state, not a transient one, and
+                    `retry` — which reuses the SAME idempotency key rather than
+                    minting a new one — can never turn that into a success.
+                    Offering it anyway would waste the user's time on a click
+                    that cannot work. Styled to match the page's one other
+                    secondary control (`Log out`, above) — `variant="ghost"
+                    size="sm"` with the identical `text-muted-foreground
+                    hover:text-foreground` treatment — rather than introducing a
+                    third button weight beside the primary submit and that
+                    one. */}
+                {status === 'error' && createError ? (
+                  <div role="alert" className="flex flex-col items-center gap-1.5">
+                    <p className="text-destructive text-center text-xs">{createError}</p>
+                    {canRetry ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={retry}
+                      >
+                        Try again
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </form>
+            </m.div>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* The way into the workspace, always. The gate above means the page has
+          no other content while the param is set, and the wizard is `null`
+          until `getProjectDetail` settles — or forever, if that query errored.
+          The workspace has already been created and paid for, so a state with
+          no route into it is not one this page is allowed to reach. This sits
+          in normal flow rather than behind a readiness check because the wizard
+          is a fullscreen portal: whenever it mounts, it covers this. */}
+      {onboardingProjectId && (
+        <div className="flex flex-col items-center gap-3">
+          <Loading className="size-4" />
+          <Link
+            href={`/projects/${encodeURIComponent(onboardingProjectId)}`}
+            className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4"
+          >
+            Go to workspace
+          </Link>
+        </div>
+      )}
+
+      {/* Onboarding runs HERE, not on the workspace page.
+
+          BOTH exits stamp `metadata.onboarding_completed_at`, so the copy of
+          this wizard mounted on the project shell self-gates to `completed` and
+          renders nothing when we arrive. Skipping stamps too: this wizard has
+          already warmed the SAME `qk.project.detail(id)` entry the shell reads,
+          so an unstamped project meant the shell's copy — which has no skip
+          control and cannot be dismissed — reopened the instant the user
+          landed. Skipping was strictly worse than not skipping.
+
+          `key` on the project: `index`, `domain` and the survey `answers` are
+          plain `useState` inside the wizard, none keyed on the project, so a
+          change of id on a mounted instance would PATCH workspace A's answers
+          onto workspace B.
+
+          `encodeURIComponent` on the way out mirrors `onboardingPath` on the
+          way in — asymmetric encoding builds a broken URL for any id carrying a
+          character that is not URL-safe. */}
       {onboardingProjectId && (
         <ProjectOnboardingWizard
+          key={onboardingProjectId}
           projectId={onboardingProjectId}
-          onCompleted={() => router.replace(`/projects/${onboardingProjectId}`)}
-          onSkip={() => router.replace(`/projects/${onboardingProjectId}`)}
+          onCompleted={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
+          onSkip={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
         />
       )}
+
+      {/* The plan step's "See plans" option calls `openUpgrade()`, which needs a
+          mounted `GlobalUpgradeModal` to answer it. `AppProviders` — the only
+          other host — is mounted by `project-shell.tsx` and the share page,
+          never by `app/(app)/layout.tsx`, so on `/new` billing can be enabled
+          with no host at all and that option is a dead click. Same flag and
+          same line as `app-providers.tsx:139`. */}
+      {isBillingEnabled() && <GlobalUpgradeModal />}
     </main>
   );
 }

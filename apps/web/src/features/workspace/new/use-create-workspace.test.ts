@@ -536,19 +536,20 @@ describe('runCreate: the full create() orchestration', () => {
     expect(entered).toEqual(['created-nav']);
   });
 
-  // The whole point of the change: a create must NOT stamp the new project
-  // onboarded. Stamping is what made the wizard render `null` on arrival, so
-  // if this seam ever comes back the feature is silently dead again.
+  // A create must NOT stamp the new project onboarded — stamping is what made
+  // the wizard render `null` on arrival. The guard against the stamping seam
+  // coming back is `CreateOrchestrationClient` not declaring it, which `tsc`
+  // enforces at every call site; this test proves the orchestration runs to
+  // completion through the seams that client DOES declare.
   test('does not mark the new project onboarded', async () => {
     const client = { ...noopClient(), runCreateAttempt: async () => fakeProject('created') };
-    expect(Object.keys(client)).not.toContain('stampOnboardingComplete');
-    expect(Object.keys(client)).not.toContain('getExistingProjectCount');
-    await runCreate(
+    const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
       [OWNER_ACCOUNT],
       'user-1',
       client,
     );
+    expect(result.ok).toBe(true);
   });
 
   test('a non-retryable failure never touches the cache, the cookie, or onboarding', async () => {

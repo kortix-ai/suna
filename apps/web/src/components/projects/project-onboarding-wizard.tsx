@@ -91,11 +91,11 @@ export function ProjectOnboardingWizard({
    */
   onCompleted?: () => void;
   /**
-   * When supplied, renders a "Skip for now" control. Skipping does NOT stamp
-   * the project onboarded, so the project shell's own copy of this wizard
-   * still catches the user on a later visit. Absent on the project shell,
-   * where there is nowhere to skip TO — the wizard is already the thing
-   * standing between the user and their workspace.
+   * When supplied, renders a "Skip for now" control. Skipping STAMPS the
+   * project onboarded, exactly like finishing — see `skip` below for why the
+   * "leave it unstamped and catch them later" design could not work. Absent on
+   * the project shell, where there is nowhere to skip TO: the wizard is already
+   * the thing standing between the user and their workspace.
    */
   onSkip?: () => void;
 }) {
@@ -187,6 +187,19 @@ export function ProjectOnboardingWizard({
     [onboarding, onCompleted],
   );
 
+  // Skipping STAMPS, exactly like finishing. It used to leave the project
+  // unstamped on the theory that the project shell's copy of this wizard would
+  // "catch the user later" — but that copy reads the SAME `qk.project.detail`
+  // entry this one just warmed, so it reopened the instant the user landed,
+  // with no skip control, `showCloseButton={false}`,
+  // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
+  // worse than not skipping. Stamping is what makes "Skip for now" mean what it
+  // says.
+  const skip = useCallback(
+    () => completeThenNotify(() => onboarding.complete(), onSkip),
+    [onboarding, onSkip],
+  );
+
   // Picking a starting point on the finish step seeds the project-home composer
   // and closes the wizard in one action. `composer-prefill-store` is the
   // existing one-shot handoff (project-home consumes and clears it on mount) —
@@ -248,7 +261,7 @@ export function ProjectOnboardingWizard({
                   variant="ghost"
                   size="sm"
                   className="text-muted-foreground hover:text-foreground ml-auto"
-                  onClick={onSkip}
+                  onClick={skip}
                 >
                   Skip for now
                 </Button>
@@ -309,7 +322,7 @@ export function ProjectOnboardingWizard({
                     {stepId === 'slack' && (
                       <SlackStep projectId={projectId} onContinue={next} onSkip={next} />
                     )}
-                    {stepId === 'plan' && <PlanStep onContinue={next} />}
+                    {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
                     {stepId === 'done' && (
                       <DoneStep
                         useCase={answers.use_case ?? null}

@@ -90,13 +90,24 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
   });
 
   test('the retry control reuses the Log out treatment — no third button weight', () => {
-    // `Log out` (top-right) is the page's one existing secondary control:
+    // `Log out` (top-right) is the page's original secondary control:
     // variant="ghost" size="sm" className="text-muted-foreground
     // hover:text-foreground". The retry control must match that exact
-    // color/weight treatment rather than inventing a third style (e.g. a
-    // bare underlined link or a full-contrast button).
+    // color/weight treatment rather than inventing another style (e.g. a
+    // full-contrast button).
+    const alertStart = page.indexOf('role="alert"');
+    expect(alertStart).toBeGreaterThan(0);
+    const containerStart = page.lastIndexOf('<div', alertStart);
+    const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
+    // Assert it ON the retry control, not just somewhere in the file — the
+    // count below cannot tell which element carries the treatment.
+    expect(region).toContain('text-muted-foreground hover:text-foreground');
+
+    // Three users of the ONE treatment: `Log out`, `Try again`, and the
+    // onboarding escape link (`Go to workspace`, rendered while
+    // `?onboarding=<id>` owns the page). Every quiet control here shares it.
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
-    expect(treatmentMatches).toHaveLength(2);
+    expect(treatmentMatches).toHaveLength(3);
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
