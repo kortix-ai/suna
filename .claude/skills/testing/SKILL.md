@@ -83,6 +83,8 @@ Keep the test command unchanged. GitHub Actions invokes
 - Stream the worker log through the Platinum file API.
 - Download `tests/test-results` before deleting the sandbox.
 - Delete the sandbox in an unconditional cleanup path.
+- Retry transient provider failures with bounded backoff.
+- Fail the workflow when sandbox deletion exhausts its retry budget.
 - Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
 
 Do not add CI-only test logic. Change `pnpm test` when local and CI behavior

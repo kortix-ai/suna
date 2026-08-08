@@ -3,9 +3,13 @@ import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
+  PlatinumHttpError,
   buildPlatinumTemplateSpec,
   buildWorkerScript,
+  isRetryablePlatinumError,
   platinumWorkerLaunchCommand,
+  retryPlatinumOperation,
+  selectReusablePlatinumTemplate,
   platinumTemplateName,
   validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
@@ -69,6 +73,35 @@ describe('Platinum CI worker plan', () => {
     expect(command).toContain('</dev/null');
     expect(command).not.toContain('nohup');
     expect(command).not.toMatch(/&\s*$/);
+  });
+
+  test('reuses the exact ready or building content-addressed template', () => {
+    expect(selectReusablePlatinumTemplate([
+      { id: 'failed', name: 'kortix-ci-v2-other', state: 'failed' },
+      { id: 'ready', name: 'kortix-ci-v2-target', state: 'ready' },
+    ], 'kortix-ci-v2-target')?.id).toBe('ready');
+    expect(selectReusablePlatinumTemplate([
+      { id: 'failed', name: 'kortix-ci-v2-target', state: 'failed' },
+    ], 'kortix-ci-v2-target')).toBeNull();
+  });
+
+  test('retries only transient provider failures with bounded attempts', async () => {
+    let calls = 0;
+    const delays: number[] = [];
+    const result = await retryPlatinumOperation({
+      label: 'test',
+      attempts: 4,
+      sleep: async (delay) => { delays.push(delay); },
+      operation: async () => {
+        calls += 1;
+        if (calls < 3) throw new PlatinumHttpError('gateway timeout', 504);
+        return 'ok';
+      },
+    });
+    expect(result).toBe('ok');
+    expect(calls).toBe(3);
+    expect(delays).toEqual([1_000, 2_000]);
+    expect(isRetryablePlatinumError(new PlatinumHttpError('bad request', 400))).toBe(false);
   });
 
   test('rejects values that could alter the Git fetch command', () => {

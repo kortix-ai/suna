@@ -12,6 +12,9 @@ const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 20 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
+const API_MAX_ATTEMPTS = 6;
+const CLEANUP_MAX_ATTEMPTS = 8;
+const TRANSIENT_STATUS_CODES = new Set([502, 503, 504, 524]);
 
 export interface PlatinumCiInput {
   apiUrl: string;
@@ -36,12 +39,67 @@ export interface PlatinumTemplateSpec {
   size_mb: number;
 }
 
-interface PlatinumTemplate {
+export interface PlatinumTemplate {
   id: string;
   name?: string;
   state?: string;
   build_logs?: string;
   buildLogs?: string;
+}
+
+export class PlatinumHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'PlatinumHttpError';
+  }
+}
+
+export function isRetryablePlatinumError(error: unknown): boolean {
+  if (error instanceof PlatinumHttpError) return TRANSIENT_STATUS_CODES.has(error.status);
+  if (error instanceof SyntaxError) return false;
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(message);
+}
+
+export function platinumRetryDelayMs(attempt: number): number {
+  return Math.min(15_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+}
+
+export async function retryPlatinumOperation<T>(input: {
+  label: string;
+  operation: () => Promise<T>;
+  attempts?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<T> {
+  const attempts = input.attempts ?? API_MAX_ATTEMPTS;
+  const sleep = input.sleep ?? Bun.sleep;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await input.operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts || !isRetryablePlatinumError(error)) throw error;
+      const delayMs = platinumRetryDelayMs(attempt);
+      console.warn(
+        `[platinum-ci] retry label=${input.label} attempt=${attempt + 1}/${attempts} delay_ms=${delayMs} error=${String(error)}`,
+      );
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
+
+export function selectReusablePlatinumTemplate(
+  templates: PlatinumTemplate[],
+  name: string,
+): PlatinumTemplate | null {
+  return templates.find((template) =>
+    template.name === name && ['ready', 'building'].includes(String(template.state ?? '').toLowerCase())
+  ) ?? null;
 }
 
 interface PlatinumSandbox {
@@ -249,44 +307,78 @@ class PlatinumApi {
     this.headers = { authorization: `Bearer ${apiKey}` };
   }
 
-  async json<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.base}${path}`, {
-      ...init,
-      headers: {
-        ...this.headers,
-        ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(init.headers ?? {}),
-      },
-      signal: init.signal ?? AbortSignal.timeout(310_000),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`Platinum ${init.method ?? 'GET'} ${path} -> ${response.status}: ${text}`);
-    return (text ? JSON.parse(text) : null) as T;
+  async json<T>(
+    path: string,
+    init: RequestInit = {},
+    retryOptions: { attempts?: number; retry?: boolean } = {},
+  ): Promise<T> {
+    const method = String(init.method ?? 'GET').toUpperCase();
+    const headers = {
+      ...this.headers,
+      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(init.headers ?? {}),
+    };
+    const retryable = retryOptions.retry ?? (
+      ['GET', 'PUT', 'DELETE'].includes(method) || new Headers(headers).has('idempotency-key')
+    );
+    const operation = async () => {
+      const response = await fetch(`${this.base}${path}`, {
+        ...init,
+        headers,
+        signal: init.signal ?? AbortSignal.timeout(310_000),
+      });
+      const body = await response.text();
+      if (!response.ok) {
+        throw new PlatinumHttpError(`Platinum ${method} ${path} -> ${response.status}: ${body}`, response.status);
+      }
+      return (body ? JSON.parse(body) : null) as T;
+    };
+    return retryable
+      ? retryPlatinumOperation({
+          label: `${method} ${path}`,
+          operation,
+          attempts: retryOptions.attempts,
+        })
+      : operation();
   }
 
   async write(path: string, data: string, mode = '0644'): Promise<void> {
-    const response = await fetch(
-      `${this.base}/v1/sandboxes/${path.split(':', 1)[0]}/files?path=${encodeURIComponent(path.slice(path.indexOf(':') + 1))}&mode=${mode}`,
-      {
-        method: 'PUT',
-        headers: this.headers,
-        body: data,
-        signal: AbortSignal.timeout(60_000),
+    await retryPlatinumOperation({
+      label: 'PUT sandbox file',
+      operation: async () => {
+        const response = await fetch(
+          `${this.base}/v1/sandboxes/${path.split(':', 1)[0]}/files?path=${encodeURIComponent(path.slice(path.indexOf(':') + 1))}&mode=${mode}`,
+          {
+            method: 'PUT',
+            headers: this.headers,
+            body: data,
+            signal: AbortSignal.timeout(60_000),
+          },
+        );
+        if (!response.ok) {
+          throw new PlatinumHttpError(`Platinum file write -> ${response.status}: ${await response.text()}`, response.status);
+        }
       },
-    );
-    if (!response.ok) throw new Error(`Platinum file write -> ${response.status}: ${await response.text()}`);
+    });
   }
 
   async read(sandboxId: string, path: string, offset?: number, limit?: number): Promise<Uint8Array> {
     const query = new URLSearchParams({ path });
     if (offset !== undefined) query.set('offset', String(offset));
     if (limit !== undefined) query.set('limit', String(limit));
-    const response = await fetch(`${this.base}/v1/sandboxes/${sandboxId}/files?${query}`, {
-      headers: this.headers,
-      signal: AbortSignal.timeout(60_000),
+    return retryPlatinumOperation({
+      label: `GET sandbox file ${path}`,
+      operation: async () => {
+        const response = await fetch(`${this.base}/v1/sandboxes/${sandboxId}/files?${query}`, {
+          headers: this.headers,
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!response.ok) {
+          throw new PlatinumHttpError(`Platinum file read ${path} -> ${response.status}: ${await response.text()}`, response.status);
+        }
+        return new Uint8Array(await response.arrayBuffer());
+      },
     });
-    if (!response.ok) throw new Error(`Platinum file read ${path} -> ${response.status}: ${await response.text()}`);
-    return new Uint8Array(await response.arrayBuffer());
   }
 }
 
@@ -313,6 +405,15 @@ async function ensureTemplate(
   api: PlatinumApi,
   spec: PlatinumTemplateSpec,
 ): Promise<PlatinumTemplate> {
+  const existing = selectReusablePlatinumTemplate(
+    await api.json<PlatinumTemplate[]>(`/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`),
+    spec.name,
+  );
+  if (existing) {
+    console.log(`[platinum-ci] template=${spec.name} cache=hit id=${existing.id}`);
+    return waitForTemplate(api, existing);
+  }
+  console.log(`[platinum-ci] template=${spec.name} cache=miss`);
   const queued = await api.json<PlatinumTemplate>('/v1/templates/from-spec', {
     method: 'POST',
     body: JSON.stringify(spec),
@@ -414,10 +515,19 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
   const cleanup = async () => {
     if (!sandboxId) return;
     try {
-      await api.json(`/v1/sandboxes/${sandboxId}`, { method: 'DELETE' });
+      try {
+        await api.json(
+          `/v1/sandboxes/${sandboxId}`,
+          { method: 'DELETE', signal: AbortSignal.timeout(30_000) },
+          { attempts: CLEANUP_MAX_ATTEMPTS },
+        );
+      } catch (error) {
+        if (!(error instanceof PlatinumHttpError && error.status === 404)) throw error;
+      }
       console.log(`[platinum-ci] deleted sandbox=${sandboxId}`);
     } catch (error) {
       console.error(`[platinum-ci] sandbox cleanup failed: ${String(error)}`);
+      throw error;
     }
     sandboxId = '';
   };

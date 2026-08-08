@@ -55,6 +55,10 @@ streams `kortix-test.log`, downloads `tests/test-results`, and deletes the
 sandbox. The worker auto-stops after 15 idle minutes if workflow cancellation
 prevents immediate deletion.
 
+The control client retries `502`, `503`, `504`, `524`, timeouts, and connection
+resets with bounded exponential backoff. Sandbox deletion uses eight attempts.
+A failed deletion fails the workflow and keeps the exact sandbox ID in the log.
+
 ## Product flows
 
 `tests/spec/end-to-end.md` is the human-readable contract. Each contract has a
