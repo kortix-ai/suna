@@ -6,7 +6,7 @@ import {
   PROVISION_IN_FLIGHT_CODE,
   setAdminBypass,
 } from './api-client';
-import { ApiError } from './api/errors';
+import { ApiError, featureDisabledKey, isFeatureDisabledError } from './api/errors';
 import { configureKortix } from './config';
 
 afterEach(() => {
@@ -815,6 +815,36 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       expect(onErrorCalls).toBe(1);
     } finally {
       restore();
+    }
+  });
+});
+
+describe('makeRequest surfaces the body `code` on a 403 feature_disabled gate', () => {
+  test('ApiError.code is the body code, not the HTTP status', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: 'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+          code: 'feature_disabled',
+          feature: 'apps',
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch;
+    configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+    try {
+      const { error } = await backendApi.get('/projects/p1/apps', { showErrors: false });
+
+      expect(error).toBeInstanceOf(ApiError);
+      const apiError = error as ApiError;
+      expect(apiError.status).toBe(403);
+      // `403` here would mean the body's code lost to the status fallback.
+      expect(apiError.code).toBe('feature_disabled');
+      expect(isFeatureDisabledError(apiError)).toBe(true);
+      expect(featureDisabledKey(apiError)).toBe('apps');
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });

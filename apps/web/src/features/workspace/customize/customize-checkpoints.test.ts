@@ -37,7 +37,7 @@ describe('Customize information architecture', () => {
     const connect = railGroups({
       tunnelEnabled: false,
       marketplaceEnabled: false,
-      llmGatewayAvailable: true,
+      llmGatewayEnabled: true,
       voiceEnabled: false,
       reviewEnabled: false,
     }).find((g) => g.label === 'Connect');

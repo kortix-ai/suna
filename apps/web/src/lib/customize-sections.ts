@@ -37,6 +37,7 @@ export type CustomizeSection =
   | 'voice'
   | 'sandbox'
   | 'settings'
+  | 'feature-flags'
   | 'upgrade';
 
 /**
@@ -68,6 +69,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'voice',
   'sandbox',
   'settings',
+  'feature-flags',
   'upgrade',
 ];
 

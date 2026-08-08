@@ -31,12 +31,73 @@ required RED, GREEN, and REFACTOR sequence directly.
 Verification after merging current `origin/main`:
 
 - `pnpm --filter @kortix/sdk typecheck`: exit `0`, including examples.
-- `pnpm --filter @kortix/sdk test`: `1769 pass`, `0 fail`, and `7522 expect()`
-  calls across `141` files.
+- `pnpm --filter @kortix/sdk test`: `1787 pass`, `0 fail`, and `7567 expect()`
+  calls across `142` files.
 - `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed
   `@kortix/sdk` and `@kortix/executor-sdk` imported and constructed in Node ESM.
 - Public Workspace names are additive. No Project export was removed or renamed.
 - The SDK package version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-08 — session `feature-flags-web`
+
+Backlog **B48** — canonical feature-flag naming plus one gating primitive, so the
+SDK matches `@kortix/api-contract`'s `FeatureFlag*` family and every host stops
+hand-rolling `project?.experimental?.<key> === true`.
+
+SDK scope (additive only — **0 removals, 0 renames**):
+
+- `core/rest/projects-client/projects.ts`: `FeatureFlagKey`, `FeatureFlagStability`
+  (`experimental | beta | stable`), `FeatureFlagView`, the runtime
+  `FEATURE_FLAG_KEYS`, and `updateFeatureFlag` on the CANONICAL
+  `PATCH /projects/:id/features`. `ExperimentalFeatureKey` / `ExperimentalFeatureView`
+  are now `@deprecated` aliases; `updateExperimentalFeature` **keeps its
+  `/experimental` wire path** on purpose — consumers pinned to an older deployed
+  API only have that route, so re-pointing it would break them.
+- `core/http/api/errors.ts`: `FEATURE_DISABLED_CODE`, `FeatureDisabledError`,
+  `isFeatureDisabledError`, `featureDisabledKey`, re-exported from the root barrel
+  and `./api-client`. Verified the pre-existing behaviour rather than assuming it:
+  `api-client.ts` already lets a body `code` win over the `String(status)`
+  fallback — a new test pins it against a real mocked 403 gate body.
+- `react/use-feature-flag.ts`: `useFeatureFlag(projectId, key)` → `{enabled, isLoading}`,
+  reading the shared `qk.project.detail(id)` entry with a `=== true` fail-closed
+  read. One line added to `react/index.ts`.
+- `core/client/kortix.ts`: `project(id).updateFeatureFlag(...)` beside the
+  deprecated `updateExperimentalFeature`.
+
+No new subpath, so `exports`, `publishConfig.exports`, and `SUBPATH_TIERS` are
+unchanged. Version untouched.
+
+TDD: every change had its failing test first and was watched fail —
+`Export named 'FEATURE_FLAG_KEYS' not found in module '…/projects.ts'`,
+`Export named 'isFeatureDisabledError' not found in module '…/errors.ts'`, and
+`Cannot find module './use-feature-flag'`. The three new source-contract tests in
+`apps/web` were mutation-checked (removing the `stable` badge arm, weakening the
+customize-write fail-closed guard, and un-filtering `sidebar-right` each turned
+them red).
+
+Verification:
+
+- `bun run test`: `1777 pass`, `0 fail`, `6965 expect()` calls across `139` files.
+- `bun run typecheck`: exit `0` for the package and examples.
+- `bun run smoke:install`: packed `@kortix/sdk` + `@kortix/executor-sdk`,
+  installed the tarballs, imported and constructed in Node ESM — pass.
+- Both surface snapshots re-recorded: `11` and `20` insertions, **0 deletions**.
+- Downstream: `apps/web` `tsc --noEmit` clean apart from the documented
+  `test.each` baseline; `apps/whitelabel-demo` `tsc --noEmit` exit `0` and
+  `sdk-boundary` `0 violations`; `apps/mobile` `tsc --noEmit` error set is
+  **byte-identical** before and after this change (verified by stashing
+  `packages/sdk` and diffing the sorted output) — its failures are pre-existing
+  and unrelated.
+
+Discovered, not fixed (see *Discovered this session*): `apps/mobile` and
+`apps/whitelabel-demo` still render off the deprecated `ExperimentalFeatureView`
+alias and label the surface "Experimental". They compile unchanged because the
+alias and the widened stability union are both backwards-compatible, but their
+copy is now inconsistent with the platform's naming.
 
 **Status:** COMPLETE.
 
@@ -1755,6 +1816,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | **DONE 2026-08-01** — session `sdk-project-glyph-icon`; implementation `3ce3e5f1f`; typecheck exit 0, full suite 1374 pass / 0 fail across 116 files, packed-install smoke pass, both brief mutations killed via typecheck (see session log) |
 | B46 | **Expose session agent-config freshness and reload.** A session's agent behaviour is compiled from git once, at provision, and frozen into the sandbox env — so merging an agent change never reaches an open session. The API grew `GET /v1/projects/:id/sessions/:sid/config` and `POST .../reload` (`apps/api/src/projects/routes/r7.ts:2170,2223`) and the CLI grew `kortix sessions reload` (`apps/cli/src/commands/sessions.ts:213`), but the SDK had neither, so `apps/web` could not offer it at all — and `apps/web/src/sdk-boundary-baseline.json` forbids reaching past `@kortix/sdk`. | `grep -rn "sessions/.*/reload" packages/sdk/src` → nothing but the unrelated sandbox-runtime `/kortix/services/system/reload`. Additive: `getProjectSessionConfigState`, `reloadProjectSessionConfig`, `SessionConfigState`, `SessionReloadResult`, plus `session().configState()` / `session().reloadConfig()` on the facade. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1416 pass / 1 fail across 117 files (the single failure, `fetchCostExportCsv`, is PRE-EXISTING — it passes in isolation and fails identically at 1410/1 on a clean tree, a cross-file `configureKortix` token leak); packed-install smoke pass; surface snapshots re-recorded and reviewed as **purely additive, 0 removals** |
 | B47 | **A reload reported success while the agent kept running the old prompt.** `SessionReloadResult` exposed `applied` (the compiled config was pushed) but nothing about whether the agent files opencode actually READS were updated — and those came apart in production. Verified on dev: marker present in `~/.config/kortix-opencode.json`, absent from opencode's `/config` and `/agent`, because `OPENCODE_CONFIG_DIR` points into the session's working tree and its `.md` files win. | Additive: `config_dir_synced?: boolean | null` and `config_dir_reason?: string` on `SessionReloadResult`. Tri-state on purpose — `false` is a deliberate refusal (the session edited its own agent files), `null` is an older daemon that could not say. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1419 pass / 1 fail across 117 files (the failure, `fetchCostExportCsv`, is PRE-EXISTING — passes in isolation, fails identically on a clean tree); packed-install smoke pass; type snapshot re-recorded and reviewed as **purely additive, 0 removals** |
+| B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -1763,6 +1825,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 | Date       | Session                  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Where                                                                                                             |
 | ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-08-08 | `feature-flags-web`      | **`apps/mobile` and `apps/whitelabel-demo` still say "Experimental" for the whole feature-flag system.** Both render the catalog off the deprecated `ExperimentalFeatureView` alias, call `updateExperimentalFeature` (the legacy `/experimental` route), and label the section "Experimental" — the platform now calls the system "Feature flags" and treats experimental/beta/stable as a per-flag stability badge. They compile unchanged (alias + widened union are both backwards-compatible) so nothing is broken, but the copy and the route are now behind the web app. Neither was redesigned in this session by instruction. | `apps/mobile/components/pages/SettingsNavPage.tsx:268,314-318`, `apps/mobile/lib/projects/hooks.ts:216-225`, `apps/whitelabel-demo/src/app/projects/[id]/settings/page.tsx:223-278` |
 | 2026-07-30 | `bugbash-model-resilience` | **Any ACP send failure replaces the whole chat surface with the page-level "OpenCode failed to load" card.** `executeSend`'s catch patches `error` onto the controller snapshot, `useSession` republishes it as `runtimeError`, and `apps/web`'s session page renders `InlineSessionError` + Restart INSTEAD of `SessionLayout`/`SessionChat` for it. Model-not-found is now recovered before it can reach that path, but a gateway 500 or a provider error on a send still nukes a healthy session's transcript and composer. The send failure is ALREADY surfaced inline as `sendError`; the controller should not also mark the runtime dead | `packages/sdk/src/core/acp/session-controller.ts:575-589` (patch `error`), `packages/sdk/src/react/use-session.ts:884` (`runtimeSessionError`), `apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:775-800` (full-page card) |
 | 2026-07-30 | `bugbash-model-picker`   | **An explicit model pick has nowhere to persist on a composer with no `sessionId` and no loaded agent** (project home). `setModel` writes the per-agent slot only `if (currentAgent)` and the per-session slot only `if (scopedSessionModelKey)`; with neither it writes `visibility` + `recent` only, both of which lose to `serverDefaultKey` in the read chain — so the picker trigger never moves. Verified in a real browser: after clicking "Claude Sonnet 4.6" on `/projects/<id>`, `localStorage['opencode-model-store-v1']` held only `user` + `recent`, no `selectedModel`/`sessionModel`, and the trigger stayed on the platform default. The read chain's own comment (`:470`) claims selection "must NOT depend on a loaded agent", which the write side does not honour | `packages/sdk/src/react/use-opencode-local.ts:512-545` (write), `:443-459` (read) |
 | 2026-07-10 | `01AzJBSa`               | The original plan's "bump to `0.3.0`" is **impossible** — `version` is inert and `latest` on npm is `0.9.100`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `scripts/stage-npm-publish.mjs:32`                                                                                |
@@ -7749,7 +7812,6 @@ would now fail to compile. Flagging rather than burying it.
 made; this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
-||||||| f398f755c2
 
 ### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
 

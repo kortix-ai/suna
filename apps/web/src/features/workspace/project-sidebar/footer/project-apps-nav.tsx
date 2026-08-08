@@ -2,8 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { useIsMobile } from '@/hooks/utils';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { GlobeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -15,7 +15,7 @@ export function ProjectAppsNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const appsGate = useAppsFeatureEnabled(projectId);
+  const appsGate = useFeatureFlag(projectId, 'apps');
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);

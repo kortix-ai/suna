@@ -144,7 +144,7 @@ import {
   syncConnectors,
   updateConnectionCredential,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -284,15 +284,12 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     queryFn: () => listConnectors(projectId),
     staleTime: 10_000,
   });
-  const projectQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
-  const emailChannelEnabled = projectQuery.data?.project?.experimental?.agentmail_email === true;
-  const discoverEnabled =
-    projectQuery.data?.project?.experimental?.connectors_api_discover === true;
+  // One gating primitive. `useFeatureFlag` fetches the same
+  // `qk.project.detail(projectId)` entry the hand-rolled query here used to,
+  // with the same `=== true` fail-closed read.
+  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
+  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
   // READ vs WRITE: the section is visible to project.connector.read, but every
   // mutating control (rename/remove/reconnect/credentials/permissions/channels/

@@ -134,3 +134,4 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './invalidate-project';
 export * from './workspace-compat';
+export * from './use-feature-flag';
