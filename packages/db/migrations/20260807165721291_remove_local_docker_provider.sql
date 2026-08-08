@@ -53,12 +53,6 @@ $provider_guard$;--> statement-breakpoint
 DROP TRIGGER IF EXISTS trg_session_sandbox_identity_immutable
   ON kortix.session_sandboxes;--> statement-breakpoint
 
--- Retire the pre-project namespace compatibility view. Historical local and
--- hosted databases can still have this view even though current migrations and
--- application code no longer create or read it. The view depends on
--- project_sessions.sandbox_provider and blocks the enum rewrite below.
-DROP VIEW IF EXISTS kortix.workspace_sessions;--> statement-breakpoint
-
 -- mixed-version-safe: managed deployments never enable the retired provider,
 -- and the guard proves that no durable row uses it. Self-host updates stop the
 -- old API before migrations run, so no old process can insert the value after

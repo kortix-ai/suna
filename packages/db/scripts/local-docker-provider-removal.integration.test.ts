@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
+import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 
 const dockerAvailable =
   Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
@@ -76,7 +77,8 @@ const PRE_MIGRATION_SCHEMA = `
 `;
 
 describe.skipIf(!dockerAvailable)('retired local provider migration — real PostgreSQL', () => {
-  let migration = '';
+let migration = '';
+let cleanupRuntimeMigrations = () => {};
 
   beforeAll(async () => {
     const started = Bun.spawnSync([
@@ -108,13 +110,10 @@ describe.skipIf(!dockerAvailable)('retired local provider migration — real Pos
     }
     if (!ready) throw new Error('Disposable PostgreSQL did not become ready');
 
+    const runtime = materializeMigrationRuntimeDirectory(resolve(import.meta.dir, '..', 'migrations'));
+    cleanupRuntimeMigrations = runtime.cleanup;
     migration = await Bun.file(
-      resolve(
-        import.meta.dir,
-        '..',
-        'migrations',
-        '20260807165721291_remove_local_docker_provider.sql',
-      ),
+      resolve(runtime.path, '20260807165721291_remove_local_docker_provider.sql'),
     ).text();
   }, 30_000);
 
@@ -123,6 +122,7 @@ describe.skipIf(!dockerAvailable)('retired local provider migration — real Pos
   });
 
   afterAll(() => {
+    cleanupRuntimeMigrations();
     Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
