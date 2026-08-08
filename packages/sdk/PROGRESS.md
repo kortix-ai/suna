@@ -12,6 +12,24 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-08 — session `workspace-refactor-revival` claim
+
+No **Now** task claimed. This is the user-directed reconciliation of the
+Projects-to-Workspaces compatibility refactor with current `origin/main`.
+
+SDK scope:
+
+- Preserve every published Project export and add Workspace names only through
+  compatible aliases and additive APIs.
+- Reconcile the branch with the current framework-free core and thin-host rules.
+- Do not edit the SDK package version.
+- Run RED, GREEN, full SDK gates, and real API, CLI, and web verification.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
 ### 2026-08-08 — session `apps-retired-provider-scanner`
 
 The final PR cadence found the retired-provider id as a literal in one SDK
