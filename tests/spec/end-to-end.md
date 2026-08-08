@@ -739,7 +739,7 @@ supplied scope field without restarting the session.
 `MKTP-3` `POST /projects/:projectId/marketplace/install {id}` → `write` → 201 `{commit_sha,branch,file_count,installed[],capabilities}` (resolves the catalog item + transitive bundle deps, commits its files + `registry-lock.json` to the default branch). Missing/unknown id → 400; missing project / `NONMEMBER` → 404/403. Legacy alias: `/registry/install`.
 `MKTP-4` `GET /projects/:projectId/marketplace` → `read` → 200 `{installed:[{name,type,source,installed_at,file_count}]}` (from `registry-lock.json`; migrates legacy `skills-lock.json`); missing project → 404. Legacy alias: `/registry`.
 `MKTP-5` `DELETE /projects/:projectId/marketplace/:name` → `write` → 200 `{ok,removed,commit_sha,branch,file_count}` (removes the item's files + lock entry in one commit to the default branch); item not installed → 404; missing project / `NONMEMBER` → 404/403. Legacy alias: `/registry/:name`.
-`EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` → 200 with `experimental`/`experimental_features` in body; unknown feature → 400; non-bool enabled → 400; `enabled:null` clears the override → 200.
+`EXP-1` `PATCH /projects/:id/features {feature,enabled}` (canonical) and `PATCH /projects/:id/experimental` (deprecated alias, same handler) → 200 with `experimental`/`experimental_features` in body; unknown flag → 400; non-bool enabled → 400; `enabled:null` clears the override → 200; archived project → 404 with metadata unchanged. Flag-gated routes reject with `403 {code:'feature_disabled', feature}` when their flag is off.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
@@ -787,15 +787,23 @@ specification, runtime lifecycle, billing attribution, and atomic active
 deployment pointer. The provider remains an implementation detail.
 
 `APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
-`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. A project writer creates a
-unique lower-case slug and machine policy; list/get return the stable public URL
-and active deployment pointer; patch updates mutable policy; delete is soft and
-removes the App from subsequent reads. Invalid slugs → 400; `NONMEMBER` → 403.
+`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
+feature flag, off by default: a member of a flag-off project gets
+`403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
+then enables the flag via `PATCH /projects/:projectId/features` and proceeds. A
+project writer creates a unique lower-case slug and machine policy; list/get
+return the stable public URL and active deployment pointer; patch updates
+mutable policy; delete is soft and removes the App from subsequent reads.
+Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
 `POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
 or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
-awaiting archive. `POST …/:appId/deployments` requires a ready artifact and an
+awaiting archive. The flow enables the `apps` feature flag first (off by
+default). Access policy — `GET/PATCH …/:appId/access` read and persist the
+mode; `restricted` without any member or group → 400; `project` persists and
+reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
+member. `POST …/:appId/deployments` requires a ready artifact and an
 exact source-kind match. Deployment list/detail/logs expose durable state.
 Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active

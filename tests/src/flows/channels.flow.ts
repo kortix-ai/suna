@@ -132,6 +132,8 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status(403);
+      r.body().has("$.code", "feature_disabled");
+      r.body().has("$.feature", "agentmail_email");
     });
     await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
       const r = await ctx.client
@@ -637,9 +639,10 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL). Teams is a per-project experimental
-// feature (#5908): disabled projects 404 before any validation, and once the
-// `teams` experiment is on, a bad tenant id is rejected with 400.
+// CHN-T3 — Teams connect (manage ACL). Teams is a per-project feature flag
+// (#5908): disabled projects get the standard 403 feature_disabled before any
+// validation, and once the `teams` flag is on, a bad tenant id is rejected
+// with 400.
 flow(
   "CHN-T3",
   {
@@ -648,11 +651,13 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER, teams experiment off (default) → 404", async () => {
+    await ctx.step("OWNER, teams flag off (default) → 403 feature_disabled", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
-      r.status(404);
+      r.status(403);
+      r.body().has("$.code", "feature_disabled");
+      r.body().has("$.feature", "teams");
     });
     const own = await ctx.fixtures.project();
     await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {

@@ -190,6 +190,9 @@ function catalogFor(p: ConnectorPrincipal): CatalogConnector[] {
 }
 
 const deps: ConnectorRouterDeps = {
+  // Flag-gated routes (discover/*) are exercised here; the flag itself has its
+  // own unit coverage, so this fake reports every flag on.
+  featureFlagEnabled: async () => true,
   resolvePrincipal: async (c) => {
     const u = c.req.header('x-test-user');
     return u ? principalFor(u) : null;

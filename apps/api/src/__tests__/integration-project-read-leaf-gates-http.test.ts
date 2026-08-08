@@ -28,6 +28,10 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'leaf-gate-http-test-project',
     repoUrl: 'https://example.com/leaf-gate-http-test.git',
+    // Flag-gated routes in CASES / SEND_PRIMITIVE_CASES (review/*,
+    // channels/teams/*) reject with 403 `feature_disabled` when off. Turn them
+    // on so this suite measures the LEAF gate, not the flag.
+    metadata: { experimental: { review_center: true, teams: true } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -208,9 +212,10 @@ const SEND_PRIMITIVE_CASES: Case[] = [
   },
   {
     // Teams consent-card upload drives the project bot to SEND into the
-    // customer's Teams channel — the same send primitive as Slack upload; the
-    // capability assert runs before the per-project `teams` feature check, so
-    // the 403 fires regardless of whether Teams is enabled for the project.
+    // customer's Teams channel — the same send primitive as Slack upload. The
+    // capability assert runs BEFORE the per-project `teams` flag check, so the
+    // IAM 403 fires regardless; the fixture enables `teams` so the pass cases
+    // are not masked by the flag's own 403 `feature_disabled`.
     name: 'teams file upload consent card',
     leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     path: () => `/v1/projects/${PROJECT}/channels/teams/file/upload`,

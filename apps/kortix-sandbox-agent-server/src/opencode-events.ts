@@ -101,14 +101,16 @@ export function startOpencodeEventLoop(
       const { value, done } = await reader.read()
       if (done) return
       buf += decoder.decode(value, { stream: true })
-      // SSE frames are separated by a blank line.
-      let idx = buf.indexOf('\n\n')
-      while (idx !== -1) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        idx = buf.indexOf('\n\n')
+      // SSE permits LF and CRLF line endings. OpenCode can emit CRLF frames,
+      // including when the delimiter spans reader chunks, so retain the raw
+      // buffer and consume the complete delimiter returned by the match.
+      let boundary = /\r?\n\r?\n/.exec(buf)
+      while (boundary?.index !== undefined) {
+        const frame = buf.slice(0, boundary.index)
+        buf = buf.slice(boundary.index + boundary[0].length)
+        boundary = /\r?\n\r?\n/.exec(buf)
         const dataLines = frame
-          .split('\n')
+          .split(/\r?\n/)
           .filter((l) => l.startsWith('data:'))
           .map((l) => l.slice(5).trim())
           .filter(Boolean)

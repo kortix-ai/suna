@@ -140,6 +140,7 @@ function buildRouter(throwFromCreate = false): {
 } {
   let createConnectorCalls = 0;
   const deps: ConnectorRouterDeps = {
+    featureFlagEnabled: async () => true,
     resolvePrincipal: async (c) => {
       const u = c.req.header('x-test-user');
       return u ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;
@@ -260,6 +261,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     // invalid_source_address envelope — it surfaces as a 500 (the path the
     // production app.onError → captureException → Sentry would take).
     const deps: ConnectorRouterDeps = {
+      featureFlagEnabled: async () => true,
       resolvePrincipal: async () => null,
       resolveProjectPrincipal: async () => null,
       makeGatewayDeps: (() => ({} as unknown)) as ConnectorRouterDeps['makeGatewayDeps'],
