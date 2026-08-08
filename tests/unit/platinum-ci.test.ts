@@ -7,6 +7,7 @@ import {
   buildPlatinumTemplateSpec,
   buildWorkerScript,
   isRetryablePlatinumError,
+  observePlatinumWorker,
   platinumWorkerLaunchCommand,
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
@@ -50,6 +51,7 @@ describe('Platinum CI worker plan', () => {
     });
 
     expect(script).toContain("'pnpm' 'test' '--' '--full'");
+    expect(script).toContain('set -euo pipefail');
     expect(script).toContain("fetch --depth=1 origin 'refs/pull/6260/head'");
     expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
     expect(script).toContain('nohup pnpm dev');
@@ -109,6 +111,42 @@ describe('Platinum CI worker plan', () => {
       new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500),
     )).toBe(true);
     expect(isRetryablePlatinumError(new PlatinumHttpError('internal bug', 500))).toBe(false);
+  });
+
+  test('polls worker completion independently from optional log streaming', async () => {
+    let now = 0;
+    let statusChecks = 0;
+    let logChecks = 0;
+    const output: string[] = [];
+    const warnings: string[] = [];
+    const result = await observePlatinumWorker({
+      startedAt: 0,
+      timeoutMs: 100,
+      pollMs: 1,
+      now: () => now,
+      sleep: async (delay) => { now += delay; },
+      checkExitCode: async () => {
+        statusChecks += 1;
+        return statusChecks === 3 ? 0 : null;
+      },
+      statLog: async () => {
+        logChecks += 1;
+        if (logChecks < 3) {
+          throw new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500);
+        }
+        return { size: 4 };
+      },
+      readLog: async () => new TextEncoder().encode('done'),
+      write: (chunk) => { output.push(chunk); },
+      warn: (message) => { warnings.push(message); },
+    });
+
+    expect(result).toBe(0);
+    expect(statusChecks).toBe(3);
+    expect(logChecks).toBe(3);
+    expect(output.join('')).toBe('done');
+    expect(warnings).toContainEqual(expect.stringContaining('incremental log unavailable'));
+    expect(warnings).toContainEqual(expect.stringContaining('incremental log streaming recovered'));
   });
 
   test('rejects values that could alter the Git fetch command', () => {

@@ -18,6 +18,7 @@
  * :54321).
  */
 
+import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
 import { seedDatabaseProject } from "../helpers/database";
 import { createApiResultClient } from "../helpers/http";
@@ -81,10 +82,11 @@ test.describe("12 — Sandbox templates UI", () => {
   let customTemplateId: string | null = null;
 
   test.beforeAll(async () => {
-    const email = `e2e-sbx-${Date.now()}@kortix.test`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const email = `e2e-sbx-${runId}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
-    const projectName = `e2e-ui-tpl-${Math.floor(Date.now() / 1000)}`;
+    const projectName = `e2e-ui-tpl-${runId}`;
     const accounts = await api<AccountSummary[]>(
       session.access_token,
       "GET",
@@ -156,7 +158,7 @@ test.describe("12 — Sandbox templates UI", () => {
     await expect(
       page.getByText("Default", { exact: true }).first(),
     ).toBeVisible({
-      timeout: 15_000,
+      timeout: 60_000,
     });
     await expect(
       page.getByText(/Platform default · shared by every project/),

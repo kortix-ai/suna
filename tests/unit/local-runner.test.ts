@@ -50,6 +50,9 @@ describe("local test runner", () => {
       ["package-quality"],
     ]);
     expect(plan.stages[0]?.[0]?.command.slice(-2)).toEqual(["--api-workers", "4"]);
+    expect(plan.lanes.find((lane) => lane.name === "browser")?.env).toEqual({
+      E2E_BROWSER_WORKERS: "2",
+    });
   });
 
   it("runs browser journeys through the same root command", () => {

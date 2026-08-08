@@ -129,6 +129,19 @@ interface FileStat {
   size?: number;
 }
 
+export interface PlatinumWorkerObserverInput {
+  startedAt: number;
+  checkExitCode: () => Promise<number | null>;
+  statLog: () => Promise<FileStat | null>;
+  readLog: (offset: number, limit: number) => Promise<Uint8Array>;
+  timeoutMs?: number;
+  pollMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  write?: (chunk: string) => void;
+  warn?: (message: string) => void;
+}
+
 interface WorkerMetadata {
   provider: 'platinum';
   sandboxId: string;
@@ -232,7 +245,7 @@ export function buildWorkerScript(input: {
   const testCommand = command.map(shellQuote).join(' ');
   const needsWeb = input.testArgs.includes('--full') || input.testArgs.includes('--browser-only');
   return `#!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 ROOT=/workspace/suna
 LOG=/workspace/kortix-test.log
@@ -375,7 +388,13 @@ class PlatinumApi {
     });
   }
 
-  async read(sandboxId: string, path: string, offset?: number, limit?: number): Promise<Uint8Array> {
+  async read(
+    sandboxId: string,
+    path: string,
+    offset?: number,
+    limit?: number,
+    attempts?: number,
+  ): Promise<Uint8Array> {
     const query = new URLSearchParams({ path });
     if (offset !== undefined) query.set('offset', String(offset));
     if (limit !== undefined) query.set('limit', String(limit));
@@ -391,6 +410,7 @@ class PlatinumApi {
         }
         return new Uint8Array(await response.arrayBuffer());
       },
+      attempts,
     });
   }
 }
@@ -434,20 +454,32 @@ async function ensureTemplate(
   return waitForTemplate(api, queued);
 }
 
-async function exec(api: PlatinumApi, sandboxId: string, command: string[]): Promise<PlatinumExecResult['result']> {
+async function exec(
+  api: PlatinumApi,
+  sandboxId: string,
+  command: string[],
+  retry = false,
+): Promise<PlatinumExecResult['result']> {
   const response = await api.json<PlatinumExecResult>(`/v1/sandboxes/${sandboxId}/exec`, {
     method: 'POST',
     body: JSON.stringify({ cmd: command, timeout_ms: 300_000 }),
-  });
+  }, { retry });
   if (response.error) throw new Error(response.error);
   if (response.result?.error) throw new Error(response.result.error);
   return response.result;
 }
 
-async function stat(api: PlatinumApi, sandboxId: string, path: string): Promise<FileStat | null> {
+async function stat(
+  api: PlatinumApi,
+  sandboxId: string,
+  path: string,
+  attempts?: number,
+): Promise<FileStat | null> {
   try {
     return await api.json<FileStat>(
       `/v1/sandboxes/${sandboxId}/files/stat?path=${encodeURIComponent(path)}`,
+      {},
+      { attempts },
     );
   } catch (error) {
     if (String(error).includes('-> 404:')) return null;
@@ -455,34 +487,96 @@ async function stat(api: PlatinumApi, sandboxId: string, path: string): Promise<
   }
 }
 
+function shouldReportObservationFailure(count: number): boolean {
+  return count === 1 || count % 10 === 0;
+}
+
+export async function observePlatinumWorker(input: PlatinumWorkerObserverInput): Promise<number> {
+  let offset = 0;
+  const decoder = new TextDecoder();
+  const now = input.now ?? Date.now;
+  const sleep = input.sleep ?? Bun.sleep;
+  const write = input.write ?? ((chunk: string) => process.stdout.write(chunk));
+  const warn = input.warn ?? console.warn;
+  const timeoutMs = input.timeoutMs ?? WORKER_TIMEOUT_MS;
+  const pollMs = input.pollMs ?? POLL_MS;
+  const deadline = input.startedAt + timeoutMs;
+  let statusFailures = 0;
+  let logFailures = 0;
+
+  while (now() < deadline) {
+    let exitCode: number | null = null;
+    try {
+      exitCode = await input.checkExitCode();
+      if (statusFailures > 0) {
+        warn(`[platinum-ci] worker status polling recovered after ${statusFailures} failure(s)`);
+        statusFailures = 0;
+      }
+    } catch (error) {
+      if (!isRetryablePlatinumError(error)) throw error;
+      statusFailures += 1;
+      if (shouldReportObservationFailure(statusFailures)) {
+        warn(`[platinum-ci] worker status unavailable failures=${statusFailures} error=${String(error)}`);
+      }
+    }
+
+    try {
+      const log = await input.statLog();
+      const size = Number(log?.size ?? 0);
+      while (size > offset) {
+        const length = Math.min(LOG_CHUNK_BYTES, size - offset);
+        const bytes = await input.readLog(offset, length);
+        if (bytes.byteLength === 0) break;
+        write(decoder.decode(bytes, { stream: true }));
+        offset += bytes.byteLength;
+      }
+      if (logFailures > 0) {
+        warn(`[platinum-ci] incremental log streaming recovered after ${logFailures} failure(s)`);
+        logFailures = 0;
+      }
+    } catch (error) {
+      logFailures += 1;
+      if (shouldReportObservationFailure(logFailures)) {
+        warn(`[platinum-ci] incremental log unavailable failures=${logFailures} error=${String(error)}`);
+      }
+    }
+
+    if (exitCode !== null) return exitCode;
+    await sleep(pollMs);
+  }
+  throw new Error(`Platinum worker exceeded ${timeoutMs}ms`);
+}
+
+async function readWorkerExitCode(
+  api: PlatinumApi,
+  sandboxId: string,
+): Promise<number | null> {
+  const result = await exec(api, sandboxId, [
+    'bash',
+    '-lc',
+    'if [[ -f /workspace/kortix-test.exit ]]; then cat /workspace/kortix-test.exit; else exit 3; fi',
+  ], true);
+  if (result?.exit_code === 3) return null;
+  if ((result?.exit_code ?? 0) !== 0) {
+    throw new Error(`Platinum worker status check failed: ${result?.stderr ?? ''}`);
+  }
+  const exitCode = Number(String(result?.stdout ?? '').trim());
+  if (!Number.isInteger(exitCode)) throw new Error('Platinum worker wrote an invalid exit code');
+  return exitCode;
+}
+
 async function streamWorker(
   api: PlatinumApi,
   sandboxId: string,
   startedAt: number,
 ): Promise<number> {
-  let offset = 0;
-  const decoder = new TextDecoder();
-  const deadline = startedAt + WORKER_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const log = await stat(api, sandboxId, '/workspace/kortix-test.log');
-    const size = Number(log?.size ?? 0);
-    while (size > offset) {
-      const length = Math.min(LOG_CHUNK_BYTES, size - offset);
-      const bytes = await api.read(sandboxId, '/workspace/kortix-test.log', offset, length);
-      process.stdout.write(decoder.decode(bytes));
-      offset += bytes.byteLength;
-    }
-
-    const status = await stat(api, sandboxId, '/workspace/kortix-test.exit');
-    if (status) {
-      const bytes = await api.read(sandboxId, '/workspace/kortix-test.exit');
-      const exitCode = Number(decoder.decode(bytes).trim());
-      if (!Number.isInteger(exitCode)) throw new Error('Platinum worker wrote an invalid exit code');
-      return exitCode;
-    }
-    await Bun.sleep(POLL_MS);
-  }
-  throw new Error(`Platinum worker ${sandboxId} exceeded ${WORKER_TIMEOUT_MS}ms`);
+  return observePlatinumWorker({
+    startedAt,
+    checkExitCode: () => readWorkerExitCode(api, sandboxId),
+    statLog: () => stat(api, sandboxId, '/workspace/kortix-test.log', 1),
+    readLog: (offset, limit) =>
+      api.read(sandboxId, '/workspace/kortix-test.log', offset, limit, 1),
+  });
 }
 
 async function downloadArtifacts(
@@ -490,7 +584,9 @@ async function downloadArtifacts(
   sandboxId: string,
   root: string,
 ): Promise<void> {
-  if (!(await stat(api, sandboxId, '/workspace/kortix-test-results.tar.gz'))) return;
+  if (!(await stat(api, sandboxId, '/workspace/kortix-test-results.tar.gz'))) {
+    throw new Error('Platinum worker did not produce the required test-results artifact');
+  }
   const bytes = await api.read(sandboxId, '/workspace/kortix-test-results.tar.gz');
   const outputDir = resolve(root, 'tests/test-results');
   const archive = resolve(outputDir, 'platinum-worker.tar.gz');

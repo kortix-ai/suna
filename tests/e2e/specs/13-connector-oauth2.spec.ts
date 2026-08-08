@@ -84,9 +84,14 @@ test.describe("13 — Custom connector OAuth2", () => {
     });
     await dismissOnboarding(page);
 
-    // A user opens the standalone Connectors surface from the project home.
-    // Connectors no longer lives inside the Customize overlay.
-    await page.getByRole("button", { name: /^Connectors$/i }).click();
+    // A user opens the standalone Connectors surface from the sidebar. This is
+    // a real link, so navigation also works before client hydration completes.
+    const connectorsLink = page.getByRole("link", { name: /^Customize$/i });
+    await expect(connectorsLink).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/connectors`,
+    );
+    await connectorsLink.click();
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/connectors$`),
     );

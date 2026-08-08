@@ -4,6 +4,12 @@ const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 // Lets CI browser tests pass through Vercel deployment protection (SSO) on staging.
 const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const configuredWorkers = Number.parseInt(process.env.E2E_BROWSER_WORKERS ?? '', 10);
+const workers = Number.isFinite(configuredWorkers) && configuredWorkers > 0
+  ? configuredWorkers
+  : process.env.CI
+    ? 2
+    : 4;
 
 export default defineConfig({
   testDir: './e2e/specs',
@@ -13,7 +19,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : 4,
+  workers,
   reporter: [['list'], ['html', { open: 'never', outputFolder: '../test-results/html' }]],
   outputDir: '../test-results/artifacts',
   use: {

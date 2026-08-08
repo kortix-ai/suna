@@ -10,6 +10,7 @@ export interface LocalTestLane {
   name: string;
   command: string[];
   cwd?: string;
+  env?: Record<string, string>;
 }
 
 export interface LocalTestPlan {
@@ -80,6 +81,10 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       ...flows,
       command: [...flows.command, "--api-workers", "4"],
     };
+    const fullBrowser: LocalTestLane = {
+      ...browser,
+      env: { E2E_BROWSER_WORKERS: "2" },
+    };
     const packageQuality: LocalTestLane = {
       name: "package-quality",
       command: ["bun", "tests/bin/package-quality.ts"],
@@ -89,7 +94,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       runnerUnit,
       routeCoverage,
       worktreeUnit,
-      browser,
+      fullBrowser,
       packageQuality,
     ];
     return {
@@ -99,7 +104,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // containers. Give it an exclusive stage. Browser and four REST workers
       // can share the already-running product stack without starving either.
       stages: [
-        [fullFlows, runnerUnit, routeCoverage, worktreeUnit, browser],
+        [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser],
         [packageQuality],
       ],
     };
@@ -149,7 +154,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
   console.log(`\n[test] START ${lane.name}: ${lane.command.join(" ")}`);
   try {
-    let env = process.env;
+    let env = { ...process.env, ...(lane.env ?? {}) };
     if (lane.name === "browser") {
       const topology = resolveLocalTopology(root);
       const supabase = await readLocalSupabaseEnvironment(topology);
@@ -165,7 +170,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         throw new Error("local Supabase environment is incomplete");
       }
       env = {
-        ...process.env,
+        ...env,
         E2E_BASE_URL: webUrl,
         E2E_API_URL: topology.apiUrl,
         E2E_SUPABASE_URL: supabase.API_URL,
