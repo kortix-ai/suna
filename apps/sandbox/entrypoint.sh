@@ -26,6 +26,10 @@ esac
 export PATH
 
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
+  # The daemon persists OpenCode audit batches and session pins here. Images
+  # create this directory at build time. Repair it here because some providers
+  # replace /run or discard the image USER before starting the entrypoint.
+  install -d -o kortix -g kortix -m 0700 /var/run/kortix
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.
   grep -q " /dev/shm " /proc/mounts \
