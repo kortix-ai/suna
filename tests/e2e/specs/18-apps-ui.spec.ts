@@ -1,4 +1,4 @@
-import { type Page, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
@@ -9,7 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -17,28 +17,6 @@ const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_UR
 const password = 'E2eAppsUi123!';
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
-
-async function dismissOnboarding(page: Page): Promise<void> {
-  await page.waitForTimeout(2_000);
-  for (let step = 0; step < 12; step += 1) {
-    const onboarding = page.getByRole('dialog').last();
-    if (!(await onboarding.isVisible().catch(() => false))) break;
-    const skip = onboarding.getByRole('button', { name: /^(Skip|Not now|Maybe later)/i }).last();
-    if (await skip.isVisible().catch(() => false)) {
-      await skip.click();
-    } else {
-      const primary = onboarding
-        .getByRole('button', {
-          name: /^(Continue|Done|Open project|Start building|Get started)$/i,
-        })
-        .last();
-      if (!(await primary.isVisible().catch(() => false))) break;
-      await primary.click();
-    }
-    await page.waitForTimeout(250);
-  }
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-}
 
 interface AccountSummary {
   account_id: string;

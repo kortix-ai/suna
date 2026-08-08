@@ -29,7 +29,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -50,6 +50,7 @@ interface TemplateCreateResult {
 
 async function openSandboxSection(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await dismissOnboarding(page);
   await page.getByRole('button', { name: /^Settings$/i }).click();
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
   const sandboxHeading = page.getByRole('heading', { name: /Sandbox templates/i });

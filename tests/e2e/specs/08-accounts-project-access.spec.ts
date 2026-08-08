@@ -8,7 +8,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -104,25 +104,21 @@ async function createProjectForAccessTest(
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
 }
 
-async function dismissProjectOnboarding(page: Page) {
-  const onboarding = page.getByRole('dialog', { name: /Project onboarding/i });
-  if (!(await onboarding.isVisible({ timeout: 5_000 }).catch(() => false))) return;
-  await onboarding.getByRole('button', { name: /Skip onboarding/i }).click();
-  await expect(onboarding).toHaveCount(0, { timeout: 10_000 });
-}
-
 async function openCustomizeSection(
   page: Page,
   projectId: string,
   section: string,
   heading: RegExp,
 ) {
-  await page.goto(`/projects/${projectId}/customize/${section}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await dismissOnboarding(page);
+  await page.getByRole('button', { name: /^Settings$/i }).click();
   const dialog = page.getByRole('dialog', { name: /Customize/i });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   const targetHeading = page.getByRole('heading', { name: heading });
   if (!(await targetHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    await dialog.getByRole('button', { name: new RegExp(`^${section}$`, 'i') }).click();
+    const label = section === 'members' ? 'Members' : 'Settings';
+    await dialog.getByRole('button', { name: new RegExp(`^${label}$`, 'i') }).click();
   }
   await expect(targetHeading).toBeVisible({ timeout: 30_000 });
   return dialog;
@@ -345,6 +341,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
+    await dismissOnboarding(page);
     await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute(
       'href',
       '/projects',
@@ -352,7 +349,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByRole('button', { name: 'New session' }).first()).toBeVisible();
     await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Set up project/i }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Customize' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Settings' }).first()).toBeVisible();
     if (!ownerSession.user.email) throw new Error('owner session has no email');
     await expect(page.getByText(ownerSession.user.email)).toBeVisible();
     await expect(
@@ -362,8 +359,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByText('Secrets', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Triggers', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Tunnel', { exact: true })).toHaveCount(0);
-    await dismissProjectOnboarding(page);
-    await page.getByRole('button', { name: 'Customize' }).first().click();
+    await page.getByRole('button', { name: 'Settings' }).first().click();
     await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
     await expect(
       page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]'),

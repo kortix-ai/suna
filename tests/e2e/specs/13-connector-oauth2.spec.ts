@@ -9,7 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -72,9 +72,11 @@ test.describe('13 — Custom connector OAuth2', () => {
     );
     await selectAccountForUi(page, accountId);
     await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+    await dismissOnboarding(page);
     await page.getByRole('link', { name: /^Customize$/i }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/connectors$`));
-    await page.getByRole('tab', { name: /^Custom$/ }).click();
+    await page.getByRole('button', { name: /^Add a custom connector$/i }).click();
+    await expect(page.getByRole('dialog', { name: /^Add a custom connector$/i })).toBeVisible();
 
     const authSelect = page.getByRole('combobox', { name: /^Auth$/ });
     await authSelect.click();
