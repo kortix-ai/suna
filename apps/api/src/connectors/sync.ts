@@ -20,7 +20,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
@@ -208,7 +208,7 @@ export async function reconcileChannelConnectors(
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
 
-    const emailEnabled = resolveExperimentalFeature(row.metadata, 'agentmail_email');
+    const emailEnabled = resolveFeatureFlag(row.metadata, 'agentmail_email');
     if (removed?.platform === 'email' || !emailEnabled) {
       await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
     }

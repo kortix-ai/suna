@@ -24,6 +24,24 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
+    await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
+      const response = await owner.get("/v1/projects/:projectId/apps", {
+        params: projectParams,
+      });
+      response.status(403);
+      response.body().has("$.code", "feature_disabled");
+      response.body().has("$.feature", "apps");
+    });
+
+    await ctx.step("enable the apps flag (canonical /features route)", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
+
     await ctx.step("list starts empty", async () => {
       const response = await owner.get("/v1/projects/:projectId/apps", {
         params: projectParams,
@@ -137,6 +155,16 @@ flow(
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
+
+    await ctx.step("enable the apps flag", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
+
     const slug = ctx.fixtures
       .name("deploy")
       .toLowerCase()

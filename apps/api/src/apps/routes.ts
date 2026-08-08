@@ -28,7 +28,7 @@ import { AppBudgetExceededError } from './budget';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { requireFeatureFlag } from '../feature-flags/gate';
 import {
   appAccessibleToUser,
   appAccessSessionUrl,
@@ -198,9 +198,19 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
   return 'human';
 }
 
+/**
+ * Membership + capability + `apps` flag, in that order. Returns the loaded
+ * project on success, or the Response the route must return:
+ *   • 404 — the project does not exist or the caller is not a member (a
+ *     non-member must not be able to distinguish the two).
+ *   • 403 `feature_disabled` — the caller IS a member, but the project has the
+ *     `apps` flag off. A member already knows the project exists, so the honest
+ *     "turn it on in Settings" answer beats a misleading 404.
+ * A capability denial still throws (403) from assertProjectCapability.
+ */
 async function authorizedProject(c: any, projectId: string, write = false) {
   const loaded = await loadProjectForUser(c, projectId, write ? 'write' : 'read');
-  if (!loaded) return null;
+  if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
   await assertProjectCapability(
     c,
     loaded.userId,
@@ -208,7 +218,8 @@ async function authorizedProject(c: any, projectId: string, write = false) {
     projectId,
     write ? PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE : PROJECT_ACTIONS.PROJECT_GITOPS_READ,
   );
-  if (!resolveExperimentalFeature(loaded.row.metadata, 'apps')) return null;
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
+  if (gate) return gate;
   return loaded;
 }
 
@@ -229,7 +240,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     const rows = await db.select().from(apps)
       .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
       .orderBy(desc(apps.createdAt));
@@ -253,7 +265,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     const row = await scopedApp(projectId, appId);
     return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
   },
@@ -276,7 +289,7 @@ projectsApp.openapi(
   async (c: any) => {
     const { projectId, appId } = c.req.param();
     const loaded = await authorizedProject(c, projectId, true);
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded instanceof Response) return loaded;
     const current = await scopedApp(projectId, appId);
     if (!current) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
@@ -319,7 +332,7 @@ projectsApp.openapi(
   async (c: any) => {
     const { projectId, appId } = c.req.param();
     const loaded = await authorizedProject(c, projectId);
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded instanceof Response) return loaded;
     const row = await scopedApp(projectId, appId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
@@ -352,7 +365,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await authorizedProject(c, projectId, true);
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const slug = body.slug.toLowerCase();
     if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
@@ -388,7 +401,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await authorizedProject(c, projectId, true);
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const artifactId = randomUUID();
     if (body.kind === 'oci_image') {
@@ -427,7 +440,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, artifactId } = c.req.param();
-    if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId, true);
+    if (gate instanceof Response) return gate;
     const body = c.req.valid('json');
     const [artifact] = await db.update(appArtifacts).set({
       status: 'uploaded', sha256: body.sha256, sizeBytes: body.size_bytes, updatedAt: new Date(),
@@ -448,7 +462,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     const row = await scopedApp(projectId, appId);
     return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
   },
@@ -469,7 +484,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId, true);
+    if (gate instanceof Response) return gate;
     const body = c.req.valid('json');
     const [row] = await db.update(apps).set({
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
@@ -492,7 +508,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId, true);
+    if (gate instanceof Response) return gate;
     const row = await scopedApp(projectId, appId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     const runtimes = await db.select().from(appRuntimes)
@@ -527,7 +544,7 @@ projectsApp.openapi(
   async (c: any) => {
     const { projectId, appId } = c.req.param();
     const loaded = await authorizedProject(c, projectId, true);
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded instanceof Response) return loaded;
     const app = await scopedApp(projectId, appId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
@@ -573,7 +590,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
     const rows = await db.select().from(appDeployments).where(eq(appDeployments.appId, appId)).orderBy(desc(appDeployments.version));
     return c.json({ deployments: rows.map(serializeDeployment) });
@@ -588,7 +606,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId, deploymentId } = c.req.param();
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
     const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId))).limit(1);
     if (!deployment) return c.json({ error: 'Not found' }, 404);
@@ -608,7 +627,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId, deploymentId } = c.req.param();
-    if (!(await authorizedProject(c, projectId))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId);
+    if (gate instanceof Response) return gate;
     if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
     const [deployment] = await db.select().from(appDeployments).where(and(
       eq(appDeployments.deploymentId, deploymentId),
@@ -655,7 +675,8 @@ for (const action of ['start', 'stop'] as const) {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+      const gate = await authorizedProject(c, projectId, true);
+      if (gate instanceof Response) return gate;
       const app = await scopedApp(projectId, appId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
@@ -717,7 +738,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    if (!(await authorizedProject(c, projectId, true))) return c.json({ error: 'Not found' }, 404);
+    const gate = await authorizedProject(c, projectId, true);
+    if (gate instanceof Response) return gate;
     const app = await scopedApp(projectId, appId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const { deployment_id: deploymentId } = c.req.valid('json');

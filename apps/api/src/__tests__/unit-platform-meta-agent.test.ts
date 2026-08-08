@@ -79,7 +79,7 @@ describe('platform meta agent', () => {
     });
   });
 
-  test('is gated on the meta_agent experimental flag, default off', () => {
+  test('is gated on the meta_agent feature flag, default off', () => {
     expect(projectMetaAgentEnabled(null)).toBe(false);
     expect(projectMetaAgentEnabled({})).toBe(false);
     expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);

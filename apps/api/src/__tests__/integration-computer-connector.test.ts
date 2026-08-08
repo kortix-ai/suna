@@ -130,7 +130,7 @@ describe('computer connector — real DB e2e', () => {
 
   test('synth is a REGULAR connector — a connected machine alone materializes it, no agent_tunnel flag', async () => {
     if (!seeded) return;
-    // Clear the experimental flag entirely: the connector no longer depends on
+    // Clear the feature flag entirely: the connector no longer depends on
     // it (it's machine-driven like the Slack channel connector). Previously this
     // returned []; now the connected machine alone is enough.
     await db

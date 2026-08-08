@@ -12,7 +12,7 @@
  * relay is the credential, and per-machine auth/scope is the tunnel permission
  * layer.
  *
- * NOT gated by the per-project `agent_tunnel` experimental flag: a machine can
+ * NOT gated by the per-project `agent_tunnel` feature flag: a machine can
  * only exist when the platform tunnel service is on (the tunnel routes are
  * `config.TUNNEL_ENABLED`-gated), so machine-presence already implies platform
  * support. The `agent_tunnel` flag now only gates the dedicated Computers
@@ -75,7 +75,7 @@ function alreadyDeclared(declared: ConnectorSpec[]): boolean {
  * A single synthetic `computer` ConnectorSpec when this project's account has a
  * connected machine — never written to git, never shadowing an explicit
  * declaration. Returns `[]` otherwise. A machine that has connected at least
- * once is the only gate (no experimental flag): it's a regular connector,
+ * once is the only gate (no feature flag): it's a regular connector,
  * materialized like Slack. A tunnel row that has never completed a handshake
  * (never online, ever) does not count — see the module doc for why.
  */

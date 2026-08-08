@@ -3,12 +3,12 @@ import {
   META_SANDBOX_SLUG,
 } from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
-import { resolveExperimentalFeature } from '../../experimental/features';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import type { ProjectConfigSummary } from '../git/types';
 
-/** Per-project opt-in for the platform coordinator (Customize → Experimental). */
+/** Per-project opt-in for the platform coordinator (Settings → Feature flags). */
 export function projectMetaAgentEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'meta_agent');
+  return resolveFeatureFlag(metadata, 'meta_agent');
 }
 
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {

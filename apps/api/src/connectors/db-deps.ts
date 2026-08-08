@@ -39,6 +39,7 @@ import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/vo
 import { readTranscriptForAgent } from '../channels/voice/transcript-read';
 import { kortixSay } from '../channels/voice/utterance';
 import { config } from '../config';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import type { ChannelPlatform } from '../projects/connectors';
@@ -1292,6 +1293,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   resolveProjectPrincipal,
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
+  featureFlagEnabled: projectFeatureFlagEnabled,
   resolveAdmin,
   resolveReader,
   resolveSecretReader,
