@@ -791,6 +791,14 @@ deployment pointer. The provider remains an implementation detail.
 unique lower-case slug and machine policy; list/get return the stable public URL
 and active deployment pointer; patch updates mutable policy; delete is soft and
 removes the App from subsequent reads. Invalid slugs → 400; `NONMEMBER` → 403.
+The same flow owns `GET/PATCH .../:appId/access` and
+`POST .../:appId/access-session`, which read, update, and mint the App access
+contract.
+
+Every `/v1/projects` flow in this specification also covers its canonical
+`/v1/workspaces` route. The Workspace facade delegates to the same handler and
+maps Project response keys to Workspace response keys. Coverage expands each
+Project flow declaration onto its Workspace twin.
 
 `APP-2` Artifact and deployment boundaries —
 `POST /projects/:projectId/apps/artifacts` registers an immutable archive upload

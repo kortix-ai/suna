@@ -40,6 +40,16 @@ function normalize(method: string, path: string): string {
   return `${method.toUpperCase()} ${segs.join("/")}`;
 }
 
+export function workspaceCompatibilityRoute(
+  method: string,
+  path: string,
+): string | null {
+  if (path !== "/v1/projects" && !path.startsWith("/v1/projects/")) {
+    return null;
+  }
+  return normalize(method, path.replace("/v1/projects", "/v1/workspaces"));
+}
+
 function parseRouteString(raw: string): Route | null {
   const m = raw.trim().match(/^([A-Za-z]+)\s+(\/\S*)$/);
   if (!m) return null;
@@ -65,7 +75,16 @@ async function readBaseline(): Promise<Baseline> {
 }
 
 function allowSet(entries: AllowEntry[]): Set<string> {
-  return new Set(entries.map((e) => normalize(e.method, e.path)));
+  const routes = new Set<string>();
+  for (const entry of entries) {
+    routes.add(normalize(entry.method, entry.path));
+    const workspaceRoute = workspaceCompatibilityRoute(
+      entry.method,
+      entry.path,
+    );
+    if (workspaceRoute) routes.add(workspaceRoute);
+  }
+  return routes;
 }
 
 export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> {
@@ -94,6 +113,16 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
       }
       const key = normalize(parsed.method, parsed.path);
       declared.set(key, [...(declared.get(key) ?? []), f.id]);
+      const workspaceRoute = workspaceCompatibilityRoute(
+        parsed.method,
+        parsed.path,
+      );
+      if (workspaceRoute && manifestSet.has(workspaceRoute)) {
+        declared.set(workspaceRoute, [
+          ...(declared.get(workspaceRoute) ?? []),
+          f.id,
+        ]);
+      }
     }
   }
 
