@@ -32,8 +32,8 @@ describe('Channels view — connect in place', () => {
     expect(channelsSource).toContain('useDisconnectEmail');
   });
 
-  test('keeps Email behind the experimental flag and uses the reserved inbox slug', () => {
-    expect(channelsSource).toContain('agentmail_email');
+  test('keeps Email behind its feature flag and uses the reserved inbox slug', () => {
+    expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
     expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
     expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
   });
@@ -94,7 +94,11 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
   });
 
   test('keeps Teams behind the per-project `teams` experimental flag, exactly like Email', () => {
-    expect(channelsSource).toContain("projectQuery.data?.experimental?.teams === true");
+    expect(channelsSource).toContain("const teamsFlag = useFeatureFlag(projectId, 'teams');");
+    expect(channelsSource).toContain('const teamsChannelEnabled = teamsFlag.enabled;');
+    // The view used to read the flag off the project SUMMARY query, one hop
+    // shallower than every sibling. That divergence is gone.
+    expect(channelsSource).not.toContain('?.experimental?.');
     expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);
     expect(channelsSource).toMatch(/teamsChannelEnabled \? \([\s\S]{0,200}<TeamsChannelPanel/);
     // One gate only — the old `mode.enabled` row check is gone.

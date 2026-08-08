@@ -162,7 +162,19 @@ function startSystemSkillsServer() {
   return `http://127.0.0.1:${server.port}`;
 }
 
-function startAppsServer(appsEnabled = true) {
+/** The API's one feature-flag gate body — 403 `{ error, code, feature }` from
+ *  `featureDisabledBody('apps')` in apps/api/src/feature-flags/gate.ts. Copied
+ *  verbatim so the test asserts the real wire shape, not a paraphrase. */
+const APPS_FEATURE_DISABLED_BODY = {
+  error: 'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+  code: 'feature_disabled',
+  feature: 'apps',
+};
+
+/** `serverGate: true` keeps the project row reporting the flag ON while every
+ *  `/apps` route rejects with the server's gate — the case a client-side
+ *  pre-check cannot catch (flag turned off between the two calls). */
+function startAppsServer(appsEnabled = true, serverGate = false) {
   let appAccessMode = 'private';
   let appAccessRevision = 1;
   const app = {
@@ -203,6 +215,9 @@ function startAppsServer(appsEnabled = true) {
           name: 'Apps Test',
           experimental: { apps: appsEnabled },
         });
+      }
+      if (serverGate && url.pathname.startsWith('/v1/projects/proj_e2e/apps')) {
+        return Response.json(APPS_FEATURE_DISABLED_BODY, { status: 403 });
       }
       if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'GET') {
         return Response.json({ apps: [{ ...app, access_mode: appAccessMode, access_revision: appAccessRevision }] });
@@ -766,8 +781,34 @@ describe('kortix CLI black-box behavior', () => {
     const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
     expect(listed.code).toBe(1);
     expect(listed.stdout).not.toContain('No Apps deployed');
-    expect(listed.stderr).toContain('Apps is not enabled for this project');
+    // The pre-check says exactly what the server's gate says, so the user reads
+    // one sentence whichever side rejects.
+    expect(listed.stderr).toContain(
+      'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+    );
+    expect(listed.stderr).not.toContain('Experimental');
     expect(requests.every((request) => request.path === '/v1/projects/proj_e2e')).toBe(true);
+  }, 20_000);
+
+  test("a raw 403 feature_disabled from the API surfaces the server's message verbatim", async () => {
+    // The project row still reports the flag ON — only the server gate rejects,
+    // so this exercises `surfaceApiError`, not the client-side pre-check.
+    const apiBase = startAppsServer(true, true);
+    const configFile = writeConfig(apiBase, true);
+    const env = { KORTIX_CONFIG_FILE: configFile };
+
+    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+
+    expect(listed.code).toBe(1);
+    expect(listed.stderr).toContain(APPS_FEATURE_DISABLED_BODY.error);
+    // Never the generic 403 prose — a role problem the user does not have.
+    expect(listed.stderr).not.toContain('you may not have permission');
+    expect(listed.stderr).not.toContain('HTTP 403');
+    expect(listed.stdout).not.toContain('No Apps deployed');
+    expect(requests.map((request) => [request.method, request.path])).toEqual([
+      ['GET', '/v1/projects/proj_e2e'],
+      ['GET', '/v1/projects/proj_e2e/apps'],
+    ]);
   }, 20_000);
 
   test('tunnel is no longer a top-level command', async () => {

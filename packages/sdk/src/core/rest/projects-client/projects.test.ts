@@ -3,7 +3,11 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
+  FEATURE_FLAG_KEYS,
   type ExperimentalFeatureKey,
+  type ExperimentalFeatureView,
+  type FeatureFlagKey,
+  type FeatureFlagView,
   type KortixProject,
   type ProjectInput,
   type ProvisionProjectInput,
@@ -12,6 +16,8 @@ import {
   getProjectDetail,
   provisionProject,
   provisionProjectWithToken,
+  updateExperimentalFeature,
+  updateFeatureFlag,
   updateProject,
 } from './projects';
 
@@ -533,4 +539,103 @@ test('a project response with a null icon_glyph reaches the caller as null', asy
   const project = await updateProject('proj-1', { icon_glyph: null });
 
   expect(project.icon_glyph).toBeNull();
+});
+
+// ── Feature flags (canonical naming) ────────────────────────────────────────
+//
+// The platform calls the system "Feature flags"; `Experimental*` survives only
+// as a deprecated alias family. These pin the canonical names, the runtime key
+// list (which lets other packages assert they have not drifted from the SDK),
+// and the two DIFFERENT wire paths the two functions must keep using.
+
+test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
+  const expected: FeatureFlagKey[] = [
+    'agent_tunnel',
+    'agentmail_email',
+    'apps',
+    'connectors_api_discover',
+    'llm_gateway',
+    'marketplace',
+    'meta_agent',
+    'review_center',
+    'teams',
+    'voice',
+  ];
+  expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
+  expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
+});
+
+test('FEATURE_FLAG_KEYS members are assignable to FeatureFlagKey', () => {
+  // A compile-time assertion with a runtime witness: if the runtime list and
+  // the hand-written union drift, this stops typechecking.
+  const keys: readonly FeatureFlagKey[] = FEATURE_FLAG_KEYS;
+  const one: FeatureFlagKey = 'review_center';
+  expect(keys).toContain(one);
+});
+
+test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
+  const stabilities: FeatureFlagView['stability'][] = ['experimental', 'beta', 'stable'];
+  expect(stabilities).toHaveLength(3);
+});
+
+test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () => {
+  const key: ExperimentalFeatureKey = 'apps';
+  const legacy: ExperimentalFeatureView = {
+    key,
+    name: 'Apps',
+    description: 'x',
+    stability: 'stable',
+    available: true,
+    enabled: false,
+    overridden: false,
+  };
+  const canonical: FeatureFlagView = legacy;
+  expect(canonical.key).toBe('apps');
+});
+
+async function captureFeatureCall(
+  run: () => Promise<unknown>,
+): Promise<{ url: string; method?: string; body: string; parsed: Record<string, unknown> }> {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let request: { url: string; method?: string; body: string } | undefined;
+  globalThis.fetch = mock(async (target: RequestInfo | URL, init?: RequestInit) => {
+    request = { url: String(target), method: init?.method, body: String(init?.body ?? '') };
+    return new Response(JSON.stringify({ project_id: 'proj-1', name: 'Flagged' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await run();
+
+  expect(request).toBeDefined();
+  return { ...request!, parsed: JSON.parse(request!.body || '{}') as Record<string, unknown> };
+}
+
+test('updateFeatureFlag PATCHes the canonical /features route', async () => {
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'review_center', true));
+
+  expect(sent.method).toBe('PATCH');
+  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
+  expect(sent.parsed).toEqual({ feature: 'review_center', enabled: true });
+});
+
+test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'voice', null));
+
+  // Both halves matter: `parsed.enabled === null` alone passes when the key was
+  // dropped; `'enabled' in parsed` alone passes when the value was rewritten.
+  expect('enabled' in sent.parsed).toBe(true);
+  expect(sent.parsed.enabled).toBeNull();
+  expect(sent.body).toContain('"enabled":null');
+});
+
+test('updateExperimentalFeature keeps its legacy /experimental wire path', async () => {
+  // Older deployed APIs only serve `/experimental`. Repointing this alias at
+  // the canonical route would break every consumer pinned to an old server.
+  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'apps', false));
+
+  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
+  expect(sent.parsed).toEqual({ feature: 'apps', enabled: false });
 });

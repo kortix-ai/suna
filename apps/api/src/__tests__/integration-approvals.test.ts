@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
+  auditEvents,
   connectorCalls,
   projectMembers,
   projectSessions,
@@ -18,13 +19,10 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import {
-  metadataClearSubtreeKey,
-  metadataMergeSubtree,
-} from '../projects/lib/metadata-merge';
 import { getCreditAccount, setDemoEnterprise } from '../billing/repositories/credit-accounts';
 import { config } from '../config';
 import { app } from '../index';
+import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -32,6 +30,8 @@ import { db } from '../shared/db';
 const minted: string[] = [];
 const execIds: string[] = [];
 const SESSION = crypto.randomUUID();
+const CHAIN_SESSION = crypto.randomUUID();
+const CHAIN_PROJECT = crypto.randomUUID();
 let ctx: { projectId: string; accountId: string; userId: string } | null = null;
 let secret = '';
 let humanToken = '';
@@ -56,6 +56,7 @@ beforeAll(async () => {
     select p.project_id, p.account_id, m.user_id
     from kortix.projects p
     join kortix.account_members m on m.account_id = p.account_id and m.account_role = 'owner'
+    where p.status = 'active'
     limit 1`)) as unknown as Array<{ project_id: string; account_id: string; user_id: string }>;
   const r = rows[0];
   if (!r) return;
@@ -170,7 +171,7 @@ beforeAll(async () => {
     .update(projects)
     .set({ metadata: metadataMergeSubtree('experimental', { review_center: true }) })
     .where(eq(projects.projectId, ctx.projectId));
-});
+}, 30_000);
 
 afterAll(async () => {
   if (ctx) {
@@ -187,7 +188,15 @@ afterAll(async () => {
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`set local kortix.audit_maintenance = 'on'`);
+    await tx
+      .delete(auditEvents)
+      .where(sql`${auditEvents.sessionId} in (${SESSION}, ${CHAIN_SESSION})`);
+  });
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, CHAIN_SESSION));
+  await db.delete(projects).where(eq(projects.projectId, CHAIN_PROJECT));
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
   if (ctx && humanUserId) {
@@ -224,7 +233,7 @@ afterAll(async () => {
     });
   }
   if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
-});
+}, 30_000);
 
 async function seedPending(argsPreviewComplete = true): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
@@ -269,6 +278,92 @@ const patPost = (path: string, body: unknown) =>
   });
 
 describe('approvals inbox + resolution', () => {
+  test('session reconstruction includes integrity-linked events with partial request context', async () => {
+    if (!ctx) return;
+    await db.insert(projects).values({
+      projectId: CHAIN_PROJECT,
+      accountId: ctx.accountId,
+      name: 'audit-chain-test',
+      repoUrl: 'https://example.test/audit-chain-test.git',
+    });
+    await db.insert(projectSessions).values({
+      sessionId: CHAIN_SESSION,
+      accountId: ctx.accountId,
+      projectId: CHAIN_PROJECT,
+      branchName: 'audit-chain-test',
+      createdBy: ctx.userId,
+      visibility: 'private',
+    });
+    const chainId = crypto.randomUUID();
+    const sourceRecordIds = ['first', 'auth', 'skills', 'last'].map(
+      (suffix) => `${chainId}:${suffix}`,
+    );
+    const inserted = await db
+      .insert(auditEvents)
+      .values([
+        {
+          accountId: ctx.accountId,
+          projectId: CHAIN_PROJECT,
+          sessionId: CHAIN_SESSION,
+          action: 'test.session_chain.first',
+          resourceType: 'test',
+          sourceLedger: 'integration_test',
+          sourceRecordId: sourceRecordIds[0],
+        },
+        {
+          accountId: null,
+          projectId: CHAIN_PROJECT,
+          sessionId: CHAIN_SESSION,
+          action: 'auth.login.success',
+          resourceType: 'session',
+          sourceLedger: 'integration_test',
+          sourceRecordId: sourceRecordIds[1],
+        },
+        {
+          accountId: ctx.accountId,
+          projectId: null,
+          sessionId: CHAIN_SESSION,
+          action: 'GET /v1/skills',
+          resourceType: 'skill',
+          sourceLedger: 'integration_test',
+          sourceRecordId: sourceRecordIds[2],
+        },
+        {
+          accountId: ctx.accountId,
+          projectId: CHAIN_PROJECT,
+          sessionId: CHAIN_SESSION,
+          action: 'test.session_chain.last',
+          resourceType: 'test',
+          sourceLedger: 'integration_test',
+          sourceRecordId: sourceRecordIds[3],
+        },
+      ])
+      .returning({ eventId: auditEvents.eventId });
+
+    const response = await patGet(
+      `/v1/projects/${CHAIN_PROJECT}/sessions/${CHAIN_SESSION}/audit?limit=1000`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      events: Array<{
+        event_id: string;
+        source_record_id: string | null;
+        integrity_previous_hash: string | null;
+        integrity_hash: string | null;
+      }>;
+    };
+    const projected = body.events.filter((event) =>
+      sourceRecordIds.includes(event.source_record_id ?? ''),
+    );
+
+    expect(projected.map((event) => event.event_id)).toEqual(
+      inserted.map((event) => event.eventId),
+    );
+    expect(projected[1]?.integrity_previous_hash).toBe(projected[0]?.integrity_hash);
+    expect(projected[2]?.integrity_previous_hash).toBe(projected[1]?.integrity_hash);
+    expect(projected[3]?.integrity_previous_hash).toBe(projected[2]?.integrity_hash);
+  });
+
   test('pending → inbox → approve → resolved (leaves inbox) → re-approve 409 → audit shows approver', async () => {
     if (!ctx) {
       console.warn('[integration] no project/owner in local DB — skipping');
