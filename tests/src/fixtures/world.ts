@@ -28,6 +28,7 @@ import { grantEphemeralPlatformAdmin } from './platform-admin';
 import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
 import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
+import { createLocalGitRepository } from './local-git';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -126,11 +127,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   ): Promise<CreatedProject> {
     const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
     const accountId = opts?.accountId ?? owner.accountId!;
-    if (canCreateDatabaseProject && !opts?.seed && !opts?.managedGit) {
+    if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
+      const localRepository =
+        env.target === 'local' && (opts?.seed || opts?.managedGit)
+          ? await createLocalGitRepository(name)
+          : null;
+      if (localRepository) {
+        stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
+      }
       const project = await createDatabaseProject(env, {
         accountId,
         userId: owner.userId!,
         name,
+        repoUrl: localRepository?.repoUrl,
       });
       databaseProjectCount++;
       databaseProjectIds.add(project.id);
@@ -152,29 +161,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     name: (slug) => `e2e-${runId}-${slug}`,
     sharedProject() {
       if (!sharedProjectPromise) {
-        sharedProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
-          managedProjectCount++;
-          sharedStack.push('project', id);
-          return { id, name: `e2e-${runId}-shared` } as CreatedProject;
-        })();
+        sharedProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared`,
+          managedGit: true,
+        });
       }
       return sharedProjectPromise;
     },
     sharedSeededProject() {
       if (!sharedSeededProjectPromise) {
-        sharedSeededProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, {
-            name: `e2e-${runId}-shared-seeded`,
-            seed_starter: true,
-          });
-          managedProjectCount++;
-          sharedStack.push('project', id);
-          return {
-            id,
-            name: `e2e-${runId}-shared-seeded`,
-          } as CreatedProject;
-        })();
+        sharedSeededProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared-seeded`,
+          seed: true,
+        });
       }
       return sharedSeededProjectPromise;
     },

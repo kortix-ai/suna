@@ -1,11 +1,25 @@
 # Kortix Test Suite
 
-All tests for the Kortix platform, centralised in one place.
+`tests/` is the source of truth for black-box API and CLI product flows.
+Each flow has a stable ID and a natural-language contract in
+`spec/end-to-end.md`. The implementation uses HTTP and real CLI processes. It
+does not import API handlers.
+
+SDK unit and integration tests stay in `packages/sdk`. Browser tests stay in
+`tests/e2e`. Those suites use framework-specific assertions and do not belong
+in the language-agnostic REST runner.
 
 ## Quick Start
 
 ```bash
 cd suna
+
+# Fast local API + CLI product flows
+pnpm test:flows
+
+# One domain or flow
+pnpm test:flows -- --domain system,access
+pnpm test:flows -- --id ACC-4
 
 # Playwright E2E
 pnpm --filter @kortix/tests test:e2e
@@ -13,9 +27,38 @@ pnpm --filter @kortix/tests test:e2e
 # Browser tests only (stack already running)
 pnpm --filter @kortix/tests test:e2e:browser
 
-# Everything
-pnpm --filter @kortix/tests test
 ```
+
+## Local Flow Runner
+
+`pnpm test:flows` is the default developer test loop. It performs these actions:
+
+1. Reuse local Supabase when it is running. Start it when it is absent.
+2. Apply pending `packages/db` migrations to that local database. The loopback-only
+   migration mode tolerates ledger order created by switching between worktrees.
+3. Reuse the worktree API and gateway when both health checks pass.
+4. Otherwise start only the API and gateway on the worktree ports.
+5. Run all local-capable REST and CLI flows with one attempt and 4-16 API workers.
+6. Stop only the processes that the runner started.
+7. Write `test-results/<runId>/results.json` and `report.html`.
+
+The local profile disables Stripe, managed GitHub repositories, cloud sandboxes,
+email delivery, Cloudflare tunnels, schedulers, external marketplace sources,
+and live `models.dev` refreshes. Flows that require those capabilities do not
+silently skip. The runner records each one in `excludedFlows` in `results.json`.
+Any selected failure, skip, or todo returns exit code `1`.
+
+Local project fixtures insert rows in local PostgreSQL and create temporary bare
+Git repositories. This keeps repository flows real without network calls.
+
+Use `--no-start` to require an already-running API, gateway, and Supabase:
+
+```bash
+pnpm test:flows -- --no-start
+```
+
+Use `bun tests/bin/ke2e.ts run` only for deployed targets with explicit
+`KE2E_*` credentials and capabilities.
 
 ## Structure
 
@@ -25,6 +68,10 @@ tests/
   playwright.config.ts    # unified Playwright config
   tsconfig.json
   README.md
+
+  spec/end-to-end.md       # Natural-language flow contracts and stable IDs
+  src/flows/*.flow.ts      # Black-box REST and CLI flow implementations
+  src/core/                # Runner, reports, local profile, and concurrency
 
   e2e/                    # End-to-end Playwright + Gate 5 verification
     specs/                #   Playwright specs (run in order)
@@ -53,6 +100,13 @@ tests/
 ```
 
 ## Test Categories
+
+### API and CLI flows (`tests/src/flows/`)
+
+These flows cover product behavior from authentication through accounts,
+members, invites, billing boundaries, projects, sessions, Git, and CLI commands.
+`spec/end-to-end.md` describes each flow from input through final observable
+result. `bun tests/bin/ke2e.ts coverage` verifies the route-to-flow mapping.
 
 ### Playwright E2E Specs (`tests/e2e/specs/`)
 
@@ -90,6 +144,7 @@ dotenvx run -f apps/api/.env -f apps/web/.env -- \
 ## pnpm Scripts
 
 ```bash
+pnpm test:flows                                         # Local API + CLI flows
 pnpm --filter @kortix/tests test                         # Playwright
 pnpm --filter @kortix/tests test:e2e                     # Playwright
 pnpm --filter @kortix/tests test:e2e:browser             # Playwright only

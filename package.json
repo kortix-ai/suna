@@ -30,6 +30,7 @@
     "test": "pnpm -r --if-present test",
     "test:packages": "pnpm --filter \"./packages/**\" --if-present test",
     "test:apps": "pnpm --filter \"./apps/**\" --if-present test",
+    "test:flows": "dotenvx run -f apps/api/.env -- bun tests/bin/ke2e.ts local",
     "test:suite": "pnpm --filter @kortix/tests test",
     "lint:biome": "biome check .",
     "lint:biome:fix": "biome check --write .",
