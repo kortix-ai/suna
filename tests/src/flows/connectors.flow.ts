@@ -303,12 +303,21 @@ flow(
   {
     domain: 'connectors',
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/connectors/projects/:projectId/discover/connectors',
       'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    await ctx.step('project admin enables direct catalogue discovery', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'connectors_api_discover', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('project admin browses the direct catalogue', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
