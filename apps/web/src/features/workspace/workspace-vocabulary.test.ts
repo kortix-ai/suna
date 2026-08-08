@@ -11,10 +11,17 @@ import { join } from 'node:path';
  * Scope is deliberately the four surfaces this project authored. The rest of
  * the app still says "Project" in ~20 places, several of them a genuinely
  * different concept (a project/account SCOPE TIER, e.g.
- * `connector-profile-modal.tsx`'s `<SelectItem value="project">Project</SelectItem>`)
- * — see task-24-report.md for the enumerated list and judgment on each.
- * Widening this guard to the whole app would make those scope-tier selectors
- * fail a check they were never wrong under.
+ * `roles-tab.tsx`'s `<SelectItem value="project">Project</SelectItem>` paired
+ * with `value="account">Account`) — see task-24-report.md for the enumerated
+ * list and judgment on each. Widening this guard to the whole app would make
+ * those scope-tier selectors fail a check they were never wrong under.
+ *
+ * Two describe blocks, deliberately paired: the first asserts ABSENCE (no
+ * "Project" leaks back in); the second asserts PRESENCE (the "Workspace"
+ * copy is actually still there). Absence checks alone cannot distinguish
+ * "renders Workspace" from "renders nothing" — a regression that deletes a
+ * label, breaks a conditional so a branch never mounts, or blanks a string
+ * would leave every absence check green.
  */
 const SURFACES = [
   'project-sidebar/workspace-switcher.tsx',
@@ -69,4 +76,53 @@ describe('workspace vocabulary', () => {
       expect(code).not.toContain('Organisation');
     });
   }
+});
+
+/**
+ * The block above is pure absence — it cannot tell "says Workspace" apart
+ * from "says nothing at all". A regression that deletes the rendered label,
+ * breaks a conditional so it never mounts, or blanks a string would leave
+ * every test above green. Each surface gets a paired presence check on the
+ * exact copy it is supposed to render, read from the file rather than
+ * reconstructed from memory (note the real ellipsis character, `…`, not
+ * three periods, in the two surfaces that use one).
+ */
+describe('workspace vocabulary: each surface actually renders its Workspace copy', () => {
+  test('workspace-switcher.tsx renders the search placeholder, the create item, and the empty state', () => {
+    const code = stripComments(
+      readFileSync(
+        join(import.meta.dir, 'project-sidebar/workspace-switcher.tsx'),
+        'utf8',
+      ),
+    );
+    expect(code).toContain('Find workspace…');
+    expect(code).toContain('Create a workspace…');
+    expect(code).toContain('No workspaces yet');
+  });
+
+  test('new-workspace-page.tsx renders the page heading', () => {
+    const code = stripComments(
+      readFileSync(join(import.meta.dir, 'new/new-workspace-page.tsx'), 'utf8'),
+    );
+    expect(code).toContain('Create a workspace');
+  });
+
+  test('advanced-fields.tsx renders the managed-repository description', () => {
+    const code = stripComments(
+      readFileSync(join(import.meta.dir, 'new/advanced-fields.tsx'), 'utf8'),
+    );
+    expect(code).toContain(
+      'Kortix creates and manages a private repository for this workspace.',
+    );
+  });
+
+  test('account-picker.tsx renders the Account field label', () => {
+    const code = stripComments(
+      readFileSync(join(import.meta.dir, 'new/account-picker.tsx'), 'utf8'),
+    );
+    // The full element, not a bare `.toContain('Account')` — this file also
+    // imports `KortixAccount`, so a bare substring check would keep passing
+    // even if the rendered `<Label>` itself were deleted.
+    expect(code).toContain('<Label htmlFor="workspace-account">Account</Label>');
+  });
 });
