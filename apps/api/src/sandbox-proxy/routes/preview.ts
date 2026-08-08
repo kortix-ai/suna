@@ -5,6 +5,7 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
+import { checkPromptAgentDeclared } from '../../projects/lib/prompt-agent-declared';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
@@ -484,6 +485,57 @@ async function agentSwitchRefusal(
 }
 
 /**
+ * Refuse a turn naming an agent the project never declared, or 503 when we
+ * could not establish the declared set.
+ *
+ * 403 rather than 409: this is not a state conflict the caller can resolve by
+ * starting a new session — the name is not one this project has. 503 for
+ * `unresolved`, matching the connector pre-flight: failing to ESTABLISH the
+ * answer must not read as approval, and a client retries a 503 while it never
+ * retries a 4xx.
+ */
+async function undeclaredAgentRefusal(
+  record: { projectId: string },
+  requestedAgent: string | null,
+  sandboxId: string,
+  origin?: string,
+): Promise<Response | null> {
+  const verdict = await checkPromptAgentDeclared({
+    projectId: record.projectId,
+    requestedAgent,
+  });
+  if (verdict.ok) return null;
+
+  if (verdict.kind === 'unresolved') {
+    console.warn(
+      `[PREVIEW] Could not resolve declared agents for ${sandboxId}: ${verdict.detail}`,
+    );
+    return jsonProxyError(
+      {
+        error: 'Could not verify the requested agent against this project.',
+        code: 'AGENT_DECLARATION_UNRESOLVED',
+      },
+      503,
+      origin,
+    );
+  }
+
+  console.warn(
+    `[PREVIEW] Refused prompt on ${sandboxId}: agent '${verdict.agent}' is not declared by this project`,
+  );
+  return jsonProxyError(
+    {
+      error: `The agent '${verdict.agent}' is not declared in this project.`,
+      message: `The agent '${verdict.agent}' is not declared in this project.`,
+      code: 'AGENT_NOT_DECLARED',
+      requested_agent: verdict.agent,
+    },
+    403,
+    origin,
+  );
+}
+
+/**
  * The refusal body, or null to let the turn through.
  *
  * The shape is byte-identical to what session CREATE returns for the same two
@@ -896,6 +948,13 @@ export async function forwardToSandbox(
     // caller who may not run it should be able to enumerate by asking.
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
     if (unauthorized) return unauthorized;
+    // Before the connector gate for the same reason the authorization check is:
+    // the gate's refusal enumerates the agent's required connectors, and an
+    // agent this project never declared should not be able to answer questions
+    // about itself. See prompt-agent-declared.ts for why this cannot be folded
+    // into agentSwitchRefusal.
+    const undeclared = await undeclaredAgentRefusal(record, promptAgent, sandboxId, origin);
+    if (undeclared) return undeclared;
     const refusal = await connectorGateRefusal(record, promptAgent, origin);
     if (refusal) return refusal;
   }
