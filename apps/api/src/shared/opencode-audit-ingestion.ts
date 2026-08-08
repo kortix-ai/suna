@@ -68,6 +68,12 @@ const SUMMARY_KEYS = new Set([
   'delivery',
 ]);
 
+// These keys are structural wrappers in the OpenCode event contract. A
+// compromised sandbox can otherwise put a prompt or provider response in a
+// primitive `message`, `error`, or `part` value and pass the general string
+// allowlist. Keep only their recursively allowlisted object shape.
+const STRUCTURAL_WRAPPER_KEYS = new Set(['session', 'message', 'part', 'info', 'error', 'state']);
+
 type AuditInsert = typeof auditEvents.$inferInsert;
 
 export interface OpenCodeAuditScope {
@@ -144,6 +150,12 @@ function sanitizeSummary(
     const result: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(candidate as Record<string, unknown>)) {
       if (!SUMMARY_KEYS.has(key)) fail(index, `has a disallowed ${field} key: ${key}`);
+      if (STRUCTURAL_WRAPPER_KEYS.has(key)) {
+        if (child && typeof child === 'object' && !Array.isArray(child)) {
+          result[key] = visit(child, depth + 1);
+        }
+        continue;
+      }
       result[key] = visit(child, depth + 1);
     }
     return result;

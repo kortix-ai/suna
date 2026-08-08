@@ -81,6 +81,27 @@ describe('OpenCode canonical audit relay', () => {
     expect(JSON.stringify(event)).not.toContain('private-credential');
   });
 
+  test('drops primitive structural wrappers before writing or sending an event', () => {
+    const event = sanitizeOpenCodeEvent({
+      type: 'message.updated',
+      properties: {
+        sessionID: 'ses_wrappers',
+        message: 'private prompt body',
+        error: 'provider echoed raw output',
+        part: 'raw tool input',
+        info: 'private message metadata',
+      },
+    });
+    expect(event).not.toBeNull();
+    if (!event) throw new Error('expected sanitizable OpenCode event');
+    expect(event.input_summary).toEqual({ sessionID: 'ses_wrappers' });
+    const persisted = JSON.stringify(event);
+    expect(persisted).not.toContain('private prompt body');
+    expect(persisted).not.toContain('provider echoed raw output');
+    expect(persisted).not.toContain('raw tool input');
+    expect(persisted).not.toContain('private message metadata');
+  });
+
   test('classifies the real OpenCode message.part.updated tool lifecycle shape', () => {
     const event = sanitizeOpenCodeEvent({
       type: 'message.part.updated',

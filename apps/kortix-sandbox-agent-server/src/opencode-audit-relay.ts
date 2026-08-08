@@ -116,6 +116,7 @@ const SAFE_KEYS = new Set([
   'mode',
   'delivery',
 ]);
+const STRUCTURAL_WRAPPER_KEYS = new Set(['session', 'message', 'part', 'info', 'error', 'state']);
 
 const EVENT_FIELDS = new Set([
   'event_id',
@@ -148,6 +149,10 @@ function isSafePersistedSummary(value: unknown, depth = 0): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 4) return false;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     if (!SAFE_KEYS.has(key)) return false;
+    if (STRUCTURAL_WRAPPER_KEYS.has(key)) {
+      if (!isSafePersistedSummary(child, depth + 1)) return false;
+      continue;
+    }
     if (child === null || typeof child === 'boolean') continue;
     if (typeof child === 'number' && Number.isFinite(child)) continue;
     if (typeof child === 'string' && child.length <= 512 && !SECRET_VALUE.test(child)) continue;
@@ -238,6 +243,12 @@ function structuralSummary(value: unknown, depth = 0): Record<string, unknown> {
   if (!value || typeof value !== 'object' || depth > 3) return {};
   const result: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (STRUCTURAL_WRAPPER_KEYS.has(key)) {
+      if (child && typeof child === 'object' && !Array.isArray(child)) {
+        result[key] = structuralSummary(child, depth + 1);
+      }
+      continue;
+    }
     if (SAFE_KEYS.has(key)) {
       if (Array.isArray(child)) result[key] = { count: child.length };
       else if (child && typeof child === 'object')

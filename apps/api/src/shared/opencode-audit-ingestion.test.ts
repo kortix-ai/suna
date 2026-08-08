@@ -203,6 +203,31 @@ describe('parseOpenCodeAuditBatch', () => {
     ).toThrow('credential-shaped input_summary value');
   });
 
+  test('drops primitive wrapper values that can contain prompts or provider errors', () => {
+    const parsed = parseOpenCodeAuditBatch(
+      {
+        events: [
+          event({
+            input_summary: {
+              sessionID: 'ses_test',
+              message: 'private prompt body',
+              error: 'provider echoed raw output',
+              part: 'raw tool input',
+              info: 'private message metadata',
+            },
+          }),
+        ],
+      },
+      scope,
+    );
+    expect(parsed.values[0]?.inputSummary).toEqual({ sessionID: 'ses_test' });
+    const persisted = JSON.stringify(parsed.values[0]);
+    expect(persisted).not.toContain('private prompt body');
+    expect(persisted).not.toContain('provider echoed raw output');
+    expect(persisted).not.toContain('raw tool input');
+    expect(persisted).not.toContain('private message metadata');
+  });
+
   test('stores only the origin for URL-shaped summary values', () => {
     const parsed = parseOpenCodeAuditBatch(
       {
