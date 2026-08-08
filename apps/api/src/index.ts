@@ -94,6 +94,7 @@ import {
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
 } from './projects';
+import { workspacesApp } from './workspaces';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -818,6 +819,7 @@ registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG S
 // session and cannot present session auth.
 app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/workspaces', workspacesApp); // Canonical Workspace namespace.
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
