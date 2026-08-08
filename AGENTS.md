@@ -213,7 +213,7 @@ these as standing rules whenever you touch the data/runtime layer:
 > **published npm package** with its own hard rules that have no analogue
 > elsewhere in this repo: **TDD is mandatory** (failing test first — invoke the
 > `tdd` skill — and every turn ends with the gates run, the real output pasted,
-> and an explicit shippable YES/NO/NOT YET); exported names (including *types*)
+> and an explicit shippable YES/NO/NOT YET); exported names (including _types_)
 > are a public API contract and renaming one is a breaking change; the `version`
 > field is inert and must never be bumped by hand; adding an export requires
 > three synchronized edits; and the framework-free core is enforced by a static
@@ -225,7 +225,7 @@ these as standing rules whenever you touch the data/runtime layer:
   through its public surface — not hand-rolled or duplicated in a host. If you
   need something the SDK doesn't expose, add it to the SDK.
 - **One client per host.** Create it once via `createKortix({ backendUrl,
-  getToken })` and read everything through `@kortix/sdk` + `@kortix/sdk/react`.
+getToken })` and read everything through `@kortix/sdk` + `@kortix/sdk/react`.
   Auth is just `getToken` — an API key / PAT for programmatic use, or a Supabase
   JWT for the logged-in web app. Hosts never instantiate a second client.
 - **A whole session is one hook.** `useSession(projectId, sessionId)` owns the
@@ -289,6 +289,7 @@ mocked internals when a real surface exists.
   bury the actionable testing path in a paragraph.
 
 ### The stack (already wired)
+
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
@@ -315,47 +316,59 @@ localhost:8008/v1/health`, `lsof -iTCP:3000 -sTCP:LISTEN`.
 > don't bypass them. Full procedure: the **dotenvx-secrets** skill.
 
 ### Authenticating to the live API (for scripts/tests)
+
 Mint a real JWT against local Supabase, then call the API with it:
+
 1. `SUPABASE_SERVICE_ROLE_KEY` lives in `apps/api/.env`; the anon key
    (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) in `apps/web/.env`.
 2. Create a confirmed user: `POST 127.0.0.1:54321/auth/v1/admin/users`
    (`apikey` + `Authorization: Bearer <service_role>`, body
    `{email,password,email_confirm:true}`).
 3. Password-grant for the token: `POST
-   127.0.0.1:54321/auth/v1/token?grant_type=password` (`apikey: <anon>`).
+127.0.0.1:54321/auth/v1/token?grant_type=password` (`apikey: <anon>`).
 4. Call the API: `Authorization: Bearer <access_token>` against
    `localhost:8008/v1` (e.g. `/accounts`, `/projects/provision`,
    `/projects/:id/sessions`, `/p/<ext>/8000/...`).
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
-### End-to-end harnesses
-- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
-- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
-- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
-- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+### One local testing system
 
-### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
-- `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
-  **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`).
-- **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
-  written yet) and does **not** gate PRs, promotes, or deploys right now. The
-  intended end-state is test-as-source-of-truth (touch an API contract → update
-  `tests/spec/end-to-end.md` + add/adjust the flow + keep `ke2e coverage` green),
-  but treat that as aspirational guidance until the suite is complete and turned on.
-  See the `ke2e-tests` skill for how it works.
-- Run: `cd tests && bun bin/ke2e.ts run --domain system,access` (public, no creds);
-  auth'd domains need `KE2E_OWNER_EMAIL/PASSWORD` + `KE2E_LIVE_CONFIRM=1`. Open
-  `test-results/<runId>/report.html` for every request/response.
-- Regenerate the route manifest after adding/removing routes:
-  `bun run apps/api/scripts/dump-routes.ts`.
-- Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
-  flows that boot sandboxes have generous timeouts; run long checks in the background.
+- `pnpm test` is the only repository-level test command. It runs local REST and
+  CLI flows, SDK tests, runner unit tests, and route coverage concurrently.
+- `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
+- `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
+- `pnpm test -- --browser-only` runs Playwright browser journeys. Start
+  `pnpm dev` first.
+- `pnpm test -- --full` adds browser journeys and every app/package test. Start
+  `pnpm dev` first.
+- Every root run writes lane and total timings to
+  `tests/test-results/local/benchmark-<timestamp>.json`.
+
+### Product flow source of truth
+
+- `tests/spec/end-to-end.md` contains the natural-language contract and stable
+  flow IDs.
+- `tests/src/flows/*.flow.ts` implements the contracts through HTTP and real CLI
+  processes. Do not import API handlers.
+- Write each `ctx.step()` as a complete action and observable result. Cover
+  setup, authentication, action, read-back proof, negative paths, and cleanup.
+- Keep every flow's `meta.routes` synchronized with
+  `tests/spec/routes.generated.json`. Regenerate the manifest with
+  `bun run apps/api/scripts/dump-routes.ts` after route changes.
+- The local profile uses local Supabase, PostgreSQL, API, gateway, and bare Git
+  repositories. It excludes Stripe, cloud sandboxes, managed GitHub repositories,
+  and external email delivery explicitly.
+- Use Playwright only for browser-visible behavior. API-only assertions belong
+  in REST flows. SDK tests remain in `packages/sdk`.
+- Do not add another cross-cutting test harness, Makefile lane, contract suite,
+  Testcontainers suite, load suite, mutation suite, visual suite, accessibility
+  suite, or ad hoc smoke script under `tests/`.
+- Read `tests/README.md` and the repository `testing` skill before changing the
+  test system.
 
 ### Release topology — dev, staging, prod
+
 - **`main` = dev trunk.** It is the repo default branch and deploys to
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
@@ -376,6 +389,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
+
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
   `/auth` form, or inject the Supabase session).
@@ -388,6 +402,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
 
 ### Frontend type/lint gate
+
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
   `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
   `features/file-viewer/preview-fit.test.tsx`,

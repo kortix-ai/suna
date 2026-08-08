@@ -10,36 +10,35 @@
  *   ke2e gc [--older-than 2h] [--dry-run]
  *   ke2e report <results.json>
  */
-import { resolve } from "node:path";
-import { allFlows } from "../src/core/flow";
-import { discoverFlows, runSuite } from "../src/core/runner";
-import { renderStepSummary, writeResults } from "../src/core/report";
-import { describeEnv, loadEnv } from "../src/core/env";
-import { log } from "../src/core/log";
-import { runCoverage } from "../src/coverage/check-coverage";
-import { writeCatalog } from "../src/core/catalog";
-import { writeAllureResults, writeAllureFromResults } from "../src/core/allure";
-import { writeUiData } from "../src/core/ui-data";
-import { runGc } from "../src/fixtures/gc";
-import { localEnvironmentOverrides, localRunExitCode } from "../src/core/local-profile";
+import { resolve } from 'node:path';
+import { writeCatalog } from '../src/core/catalog';
+import { describeEnv, loadEnv } from '../src/core/env';
+import { allFlows } from '../src/core/flow';
+import { localEnvironmentOverrides, localRunExitCode } from '../src/core/local-profile';
 import {
-  ensureLocalMigrations,
-  ensureLocalSupabase,
-  ensureLocalStack,
-  resolveLocalTopology,
   type LocalStackHandle,
   type LocalSupabaseHandle,
-} from "../src/core/local-stack";
+  ensureLocalMigrations,
+  ensureLocalStack,
+  ensureLocalSupabase,
+  resolveLocalTopology,
+} from '../src/core/local-stack';
+import { log } from '../src/core/log';
+import { renderStepSummary, writeResults } from '../src/core/report';
+import { discoverFlows, runSuite } from '../src/core/runner';
+import { writeUiData } from '../src/core/ui-data';
+import { runCoverage } from '../src/coverage/check-coverage';
+import { runGc } from '../src/fixtures/gc';
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
   const _: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith("--")) {
+    if (a.startsWith('--')) {
       const key = a.slice(2);
       const next = argv[i + 1];
-      if (next && !next.startsWith("--")) {
+      if (next && !next.startsWith('--')) {
         flags[key] = next;
         i++;
       } else flags[key] = true;
@@ -49,141 +48,141 @@ function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string 
 }
 
 function list(v: string | boolean | undefined): string[] | undefined {
-  if (typeof v !== "string") return undefined;
-  return v.split(",").map((s) => s.trim()).filter(Boolean);
+  if (typeof v !== 'string') return undefined;
+  return v
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function newRunId(): string {
-  const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const r = Math.random().toString(36).slice(2, 8);
   return `${process.env.GITHUB_RUN_ID ?? ts}-${r}`;
 }
 
 async function main(): Promise<number> {
   const { _, flags } = parseArgs(process.argv.slice(2));
-  const cmd = _[0] ?? "run";
+  const cmd = _[0] ?? 'run';
 
-  if (cmd === "list") {
+  if (cmd === 'list') {
     await discoverFlows();
     const flows = allFlows().sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     for (const f of flows) {
-      const t = (f.meta.tags ?? []).join(",");
+      const t = (f.meta.tags ?? []).join(',');
       console.log(`${f.id.padEnd(12)} ${f.meta.domain.padEnd(16)} ${t}`);
     }
     console.log(`\n${flows.length} flows`);
     return 0;
   }
 
-  if (cmd === "coverage") {
+  if (cmd === 'coverage') {
     const ok = await runCoverage({
-      updateBaseline: !!flags["update-baseline"],
+      updateBaseline: !!flags['update-baseline'],
       json: !!flags.json,
     });
     return ok ? 0 : 1;
   }
 
-  if (cmd === "catalog") {
-    const out = (flags.out as string) ?? resolve(import.meta.dir, "../test-results/catalog.html");
+  if (cmd === 'catalog') {
+    const out = (flags.out as string) ?? resolve(import.meta.dir, '../test-results/catalog.html');
     const cat = await writeCatalog(out);
     log.info(`catalog → ${out}`);
-    log.info(`${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`);
+    log.info(
+      `${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`,
+    );
     return 0;
   }
 
-  if (cmd === "ui-data") {
-    const dir = (flags.out as string) ?? resolve(import.meta.dir, "../ui/data");
+  if (cmd === 'ui-data') {
+    const dir = (flags.out as string) ?? resolve(import.meta.dir, '../ui/data');
     const r = await writeUiData(dir);
     log.info(`ui data → ${dir}`);
     log.info(`${r.flows} flows (${r.passed} passed, ${r.skipped} gated/skipped)`);
     return 0;
   }
 
-  if (cmd === "allure") {
-    const out = (flags.out as string) ?? resolve(import.meta.dir, "../test-results/allure-results");
-    const from = typeof flags.from === "string" ? resolve(flags.from) : undefined;
-    const r = from ? await writeAllureFromResults(from, out) : await writeAllureResults(out);
-    log.info(`allure-results → ${out}`);
-    log.info(`${r.flows} flows (${r.passed} passed, ${r.failed} failed, ${r.skipped} skipped)`);
-    log.info(log.dim(from ? "real run results" : "catalog preview — pass --from <results.json> for real run data"));
+  if (cmd === 'gc') {
+    await runGc({ olderThan: (flags['older-than'] as string) ?? '2h', dryRun: !!flags['dry-run'] });
     return 0;
   }
 
-  if (cmd === "gc") {
-    await runGc({ olderThan: (flags["older-than"] as string) ?? "2h", dryRun: !!flags["dry-run"] });
-    return 0;
-  }
-
-  if (cmd === "report") {
+  if (cmd === 'report') {
     const file = _[1];
-    if (!file) throw new Error("usage: ke2e report <results.json>");
+    if (!file) throw new Error('usage: ke2e report <results.json>');
     const jsonPath = resolve(file);
     const data = JSON.parse(await Bun.file(jsonPath).text());
-    const out = jsonPath.replace(/\.json$/, ".html");
+    const out = jsonPath.replace(/\.json$/, '.html');
     writeResults(data, jsonPath, out);
     log.info(`report → ${out}`);
     return 0;
   }
 
-  const localCommand = cmd === "local";
+  const localCommand = cmd === 'local';
   let localStack: LocalStackHandle | null = null;
   let localSupabase: LocalSupabaseHandle | null = null;
   try {
     if (localCommand) {
-      const root = resolve(import.meta.dir, "../..");
+      const root = resolve(import.meta.dir, '../..');
       const topology = resolveLocalTopology(root);
       log.info(
         log.bold(
-          `local stack ${topology.worktreeName ? `worktree=${topology.worktreeName}` : "primary"} ` +
+          `local stack ${topology.worktreeName ? `worktree=${topology.worktreeName}` : 'primary'} ` +
             `api=${topology.apiUrl}`,
         ),
       );
-      localSupabase = await ensureLocalSupabase(topology, { autoStart: !flags["no-start"] });
+      localSupabase = await ensureLocalSupabase(topology, { autoStart: !flags['no-start'] });
       const supabase = localSupabase.environment;
       await ensureLocalMigrations(topology, supabase);
       localStack = await ensureLocalStack(topology, {
-        autoStart: !flags["no-start"],
+        autoStart: !flags['no-start'],
         supabase,
       });
-      Object.assign(process.env, localEnvironmentOverrides({ worktree: topology.marker, supabase }));
+      Object.assign(
+        process.env,
+        localEnvironmentOverrides({ worktree: topology.marker, supabase }),
+      );
       log.info(
         log.dim(
           localStack.started
-            ? "local stack started by ke2e; it will stop after the run"
-            : "reusing the running local stack",
+            ? 'local stack started by ke2e; it will stop after the run'
+            : 'reusing the running local stack',
         ),
       );
     }
 
     const env = loadEnv();
     const runId = newRunId();
-    (globalThis as any).__KE2E_RUN_ID__ = runId;
-    const outDir = (flags.out as string) ?? resolve(import.meta.dir, "../test-results", runId);
+    (globalThis as typeof globalThis & { __KE2E_RUN_ID__: string }).__KE2E_RUN_ID__ = runId;
+    const outDir = (flags.out as string) ?? resolve(import.meta.dir, '../test-results', runId);
     const gitSha = process.env.GITHUB_SHA ?? (await gitShaLocal());
 
     log.info(log.bold(`ke2e run ${runId}`));
     log.info(log.dim(describeEnv(env)));
 
     const result = await runSuite({
-      profile: localCommand ? "local" : "all",
+      profile: localCommand ? 'local' : 'all',
       ids: list(flags.id),
       domains: list(flags.domain),
       tags: list(flags.tag),
-      grep: typeof flags.grep === "string" ? flags.grep : undefined,
+      grep: typeof flags.grep === 'string' ? flags.grep : undefined,
       workers: flags.workers ? Number(flags.workers) : undefined,
-      apiWorkers: flags["api-workers"] ? Number(flags["api-workers"]) : undefined,
-      sandboxWorkers: flags["sandbox-workers"] ? Number(flags["sandbox-workers"]) : undefined,
+      apiWorkers: flags['api-workers'] ? Number(flags['api-workers']) : undefined,
+      sandboxWorkers: flags['sandbox-workers'] ? Number(flags['sandbox-workers']) : undefined,
       smoke: !!flags.smoke,
       runId,
       gitSha,
     });
 
-    const jsonPath = resolve(outDir, "results.json");
-    const htmlPath = resolve(outDir, "report.html");
+    const jsonPath = resolve(outDir, 'results.json');
+    const htmlPath = resolve(outDir, 'report.html');
     writeResults(result, jsonPath, htmlPath);
 
     const s = result.summary;
-    log.info("");
-    log.info(`${log.bold("results")}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`);
+    log.info('');
+    log.info(
+      `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
+    );
     log.info(log.dim(`report → ${htmlPath}`));
 
     if (process.env.GITHUB_STEP_SUMMARY) {
@@ -193,11 +192,11 @@ async function main(): Promise<number> {
     return localCommand ? localRunExitCode(s) : s.failed > 0 ? 1 : 0;
   } finally {
     if (localStack?.started) {
-      log.info(log.dim("stopping the local stack started by ke2e"));
+      log.info(log.dim('stopping the local stack started by ke2e'));
       await localStack.stop();
     }
     if (localSupabase?.started) {
-      log.info(log.dim("stopping local Supabase started by ke2e"));
+      log.info(log.dim('stopping local Supabase started by ke2e'));
       await localSupabase.stop();
     }
   }
@@ -205,7 +204,7 @@ async function main(): Promise<number> {
 
 async function gitShaLocal(): Promise<string | null> {
   try {
-    const p = Bun.spawn(["git", "rev-parse", "--short", "HEAD"], { stdout: "pipe" });
+    const p = Bun.spawn(['git', 'rev-parse', '--short', 'HEAD'], { stdout: 'pipe' });
     return (await new Response(p.stdout).text()).trim() || null;
   } catch {
     return null;

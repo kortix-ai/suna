@@ -801,6 +801,5 @@ Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
 back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
-specified by each route. The full ready-deployment, public HTTP, streaming,
-WebSocket, idle-stop, cold-wake, budget, rollback, and log path is exercised by
-`tests/e2e/scripts/apps-local-smoke.ts` against the real API and runtime.
+specified by each route. `APP-2` exercises these boundaries through the real
+HTTP API.

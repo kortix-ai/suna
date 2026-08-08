@@ -7,9 +7,8 @@
  * rejection (401/403/404/400) or a redaction — nothing here provisions a
  * sandbox or spends credits.
  *
- * Ported in INTENT (not code) from the old reference tree under
- * tests/security-audit/ + tests/e2e/ — the original mock/unit security checks
- * become real over-the-wire requests here.
+ * These flows replace the former mock security suites with real over-the-wire
+ * requests.
  *
  * Boundary source of truth: apps/api/src/middleware/auth.ts
  *   - apiKeyAuth / supabaseAuth / combinedAuth: missing/garbage/expired bearer
@@ -173,7 +172,7 @@ flow(
         .as(ctx.P.OWNER)
         .post('/v1/accounts/tokens', { name: ctx.fixtures.name('sec-b-revoke') });
       r.status(201).body().exists('$.secret_key').exists('$.token_id');
-      const j = r.json<any>();
+      const j = r.json<{ secret_key: string; token_id: string }>();
       secret = j.secret_key;
       tokenId = j.token_id;
     });
@@ -291,7 +290,7 @@ flow(
           { params: { projectId: projA.id } },
         );
       r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
-      const j = r.json<any>();
+      const j = r.json<{ secret_key: string; token_id: string }>();
       secret = j.secret_key;
       tokenId = j.token_id;
     });
@@ -518,7 +517,7 @@ flow(
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
       r.status(200).body().exists('$.events');
-      const events = r.json<any>()?.events;
+      const events = r.json<{ events?: unknown[] }>()?.events;
       if (!Array.isArray(events) || events.length === 0) {
         throw new Error('SEC-H: expected at least one audit event after a state-changing mutation');
       }

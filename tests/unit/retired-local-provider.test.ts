@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -50,6 +50,7 @@ function sourceFiles(): Array<{ absolute: string; path: string }> {
 describe('retired local sandbox provider', () => {
   it('has no live code, test, CLI, SDK, web, or documentation surface', () => {
     const offenders = sourceFiles()
+      .filter(({ absolute }) => existsSync(absolute))
       .filter(({ path }) => !excludedFiles.has(path))
       .filter(({ path }) => !excludedPrefixes.some((prefix) => path.startsWith(prefix)))
       .flatMap(({ absolute, path }) => {

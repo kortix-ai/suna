@@ -15,7 +15,6 @@
     "test:workspace-search": "node --experimental-strip-types --test src/features/files/search/workspace-search-core.test.mts",
     "test:e2e": "bash ./scripts/run-e2e.sh",
     "test:e2e:ui": "bash ./scripts/run-e2e.sh --ui",
-    "test:e2e:full": "bash ../../tests/e2e/scripts/run-full-self-hosted-e2e.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "cp node_modules/@embedpdf/pdfium/dist/pdfium.wasm public/pdfium.wasm 2>/dev/null || true",

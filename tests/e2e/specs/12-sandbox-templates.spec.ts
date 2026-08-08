@@ -18,7 +18,9 @@
  * :54321).
  */
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
+import { seedDatabaseProject } from '../helpers/database';
+import { createApiResultClient } from '../helpers/http';
 import {
   type AuthSession,
   type AuthUser,
@@ -27,8 +29,6 @@ import {
   installBrowserSession,
   signIn,
 } from '../helpers/session-auth';
-import { createApiResultClient } from '../helpers/http';
-import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -42,7 +42,10 @@ interface AccountSummary {
   is_primary_owner?: boolean;
   account_role?: 'owner' | 'admin' | 'member';
 }
-interface TemplateCreateResult { template_id: string; slug: string }
+interface TemplateCreateResult {
+  template_id: string;
+  slug: string;
+}
 
 async function openSandboxSection(page: Page, projectId: string) {
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
@@ -66,17 +69,15 @@ test.describe('12 — Sandbox templates UI', () => {
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
     const projectName = `e2e-ui-tpl-${Math.floor(Date.now() / 1000)}`;
-    const accounts = await api<AccountSummary[]>(
-      session.access_token,
-      'GET',
-      '/accounts',
-    );
+    const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
     const personalAccount = accounts.json?.find(
-      (account) => account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+      (account) =>
+        account.personal_account || account.is_primary_owner || account.account_role === 'owner',
     );
     expect(personalAccount?.account_id).toBeTruthy();
-    projectId = seedSelfHostedProject({
-      accountId: personalAccount!.account_id,
+    if (!personalAccount) throw new Error('test user has no personal account');
+    projectId = seedDatabaseProject({
+      accountId: personalAccount.account_id,
       userId: user.id,
       name: projectName,
     });
@@ -101,16 +102,25 @@ test.describe('12 — Sandbox templates UI', () => {
     expect(platformDefault?.source).toBe('platform');
   });
 
-  test('Sandbox panel renders the platform default row without runtime errors', async ({ page }) => {
+  test('Sandbox panel renders the platform default row without runtime errors', async ({
+    page,
+  }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
+    await installBrowserSession(
+      page,
+      session,
+      `/projects/${projectId}/customize/sandbox`,
+      password,
+    );
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
     // Platform default row: "Default" name + "default" slug code chip.
-    await expect(page.getByText('Default', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Default', { exact: true }).first()).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.locator('code', { hasText: 'default' }).first()).toBeVisible();
 
     // At least one state badge rendered (Ready / Building / Pulling / Not built yet / Error).
@@ -122,7 +132,9 @@ test.describe('12 — Sandbox templates UI', () => {
     expect(pageErrors, `client errors: ${pageErrors.join(' | ')}`).toEqual([]);
   });
 
-  test('clicking Rebuild on a project template calls the API and does not crash', async ({ page }) => {
+  test('clicking Rebuild on a project template calls the API and does not crash', async ({
+    page,
+  }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
     const customSlug = `e2e-image-${Date.now()}`;
@@ -138,7 +150,8 @@ test.describe('12 — Sandbox templates UI', () => {
     );
     expect(created.status).toBe(201);
     expect(created.json?.template_id).toBeTruthy();
-    const templateId = created.json!.template_id;
+    if (!created.json) throw new Error('template creation returned no body');
+    const templateId = created.json.template_id;
 
     // Capture rebuild POSTs as they happen — armed before navigation so we
     // never miss the response between fixture setup and the actual click.
@@ -152,7 +165,12 @@ test.describe('12 — Sandbox templates UI', () => {
       }
     });
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
+    await installBrowserSession(
+      page,
+      session,
+      `/projects/${projectId}/customize/sandbox`,
+      password,
+    );
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
@@ -164,7 +182,8 @@ test.describe('12 — Sandbox templates UI', () => {
 
     // Wait up to 30s for the template build POST to land — toast feedback gives the
     // user the cue too, but for the assertion we watch the network.
-    await expect.poll(() => seenRebuildStatuses.length, { timeout: 30_000, intervals: [500] })
+    await expect
+      .poll(() => seenRebuildStatuses.length, { timeout: 30_000, intervals: [500] })
       .toBeGreaterThan(0);
     expect(seenRebuildStatuses[0]).toBe(202);
 

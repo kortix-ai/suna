@@ -81,7 +81,7 @@ for (let i = 0; i < 50; i++) {
 }
 ```
 
-(Full version: `tests/performance/session-start/daytona-spike-repro.mjs`.)
+Use the script above for a fresh provider benchmark.
 
 ## Impact on us
 

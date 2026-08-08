@@ -1,12 +1,17 @@
-import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { type Page, expect, test } from '@playwright/test';
+import { seedDatabaseProject } from '../helpers/database';
 import { authHeaders, createApiJsonClient, createApiStatusClient } from '../helpers/http';
-import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
-import { seedSelfHostedProject } from '../helpers/self-host';
+import {
+  type AuthSession,
+  createAuthUser,
+  installBrowserSession,
+  signIn,
+} from '../helpers/session-auth';
 import { selectAccountForUi } from '../helpers/ui';
 
-const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
-const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
+const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
+const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const password = 'E2eAccountAccess123!';
 const api = createApiJsonClient(apiBase);
 const apiStatus = createApiStatusClient(apiBase);
@@ -87,7 +92,7 @@ async function createProjectForAccessTest(
   const body = await response.text();
   if (response.status === 201) return JSON.parse(body) as ProjectSummary;
   if (response.status === 409 && body.includes('GitHub App installation required')) {
-    const projectId = seedSelfHostedProject({ accountId, userId: ownerUserId, name, repoUrl });
+    const projectId = seedDatabaseProject({ accountId, userId: ownerUserId, name, repoUrl });
     return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
   }
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
@@ -122,9 +127,7 @@ function byEmail(members: ProjectAccessMember[], email: string) {
 }
 
 function toGitHubWebUrl(repoUrl: string): string {
-  return repoUrl
-    .replace(/^git@github\.com:/, 'https://github.com/')
-    .replace(/\.git$/, '');
+  return repoUrl.replace(/^git@github\.com:/, 'https://github.com/').replace(/\.git$/, '');
 }
 
 test.describe('08 — Accounts, invites, and project access', () => {
@@ -155,7 +158,11 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const ownerSession = await signIn(ownerEmail, authOptions);
     const memberSession = await signIn(memberEmail, authOptions);
 
-    const ownerInitialAccounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
+    const ownerInitialAccounts = await api<AccountSummary[]>(
+      ownerSession.access_token,
+      'GET',
+      '/accounts',
+    );
     const ownerPersonalAccount = ownerInitialAccounts.find(
       (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
     );
@@ -191,9 +198,14 @@ test.describe('08 — Accounts, invites, and project access', () => {
     );
     expect(pendingInvite.status).toBe('pending');
     expect(pendingInvite.invite_id).toBeTruthy();
-    const accountInviteId = pendingInvite.invite_id!;
+    if (!pendingInvite.invite_id) throw new Error('pending invite has no invite_id');
+    const accountInviteId = pendingInvite.invite_id;
 
-    const memberAccounts = await api<AccountSummary[]>(memberSession.access_token, 'GET', '/accounts');
+    const memberAccounts = await api<AccountSummary[]>(
+      memberSession.access_token,
+      'GET',
+      '/accounts',
+    );
     expect(memberAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
     const project = await createProjectForAccessTest(
@@ -221,8 +233,17 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/projects?account_id=${account.account_id}`,
     );
     expect(memberProjectsBeforeGrant).toEqual([]);
-    expect(await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`)).toBe(403);
-    expect(await apiStatus(memberSession.access_token, 'POST', `/projects/${project.project_id}/sessions`, {})).toBe(403);
+    expect(
+      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+    ).toBe(403);
+    expect(
+      await apiStatus(
+        memberSession.access_token,
+        'POST',
+        `/projects/${project.project_id}/sessions`,
+        {},
+      ),
+    ).toBe(403);
 
     const accessBeforeGrant = await api<ProjectAccessResponse>(
       ownerSession.access_token,
@@ -258,16 +279,29 @@ test.describe('08 — Accounts, invites, and project access', () => {
     // agent chat (this previously 403'd, which made the floor project role useless).
     // It reaches provider validation just like an owner — an invalid provider is a
     // 400, NOT the old role 403 (and avoids actually provisioning a sandbox here).
-    expect(await apiStatus(memberSession.access_token, 'POST', `/projects/${project.project_id}/sessions`, { provider: 'justavps' })).toBe(400);
+    expect(
+      await apiStatus(
+        memberSession.access_token,
+        'POST',
+        `/projects/${project.project_id}/sessions`,
+        { provider: 'justavps' },
+      ),
+    ).toBe(400);
     // ...but it still cannot customize the project.
-    expect(await apiStatus(memberSession.access_token, 'PATCH', `/projects/${project.project_id}`, { name: 'blocked' })).toBe(403);
+    expect(
+      await apiStatus(memberSession.access_token, 'PATCH', `/projects/${project.project_id}`, {
+        name: 'blocked',
+      }),
+    ).toBe(403);
 
     await api<{ ok: true }>(
       ownerSession.access_token,
       'DELETE',
       `/projects/${project.project_id}/access/${member.id}`,
     );
-    expect(await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`)).toBe(403);
+    expect(
+      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+    ).toBe(403);
 
     const promoted = await api<{ account_role: AccountRole }>(
       ownerSession.access_token,
@@ -292,19 +326,27 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/accounts/${account.account_id}/members/${member.id}`,
       { role: 'member' },
     );
-    expect(await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`)).toBe(403);
+    expect(
+      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+    ).toBe(403);
 
     await installBrowserSession(page, ownerSession, `/projects/${project.project_id}`, password);
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
-    await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute('href', '/projects');
+    await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute(
+      'href',
+      '/projects',
+    );
     await expect(page.getByRole('button', { name: 'New session' }).first()).toBeVisible();
     await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Set up project/i }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Customize' }).first()).toBeVisible();
-    await expect(page.getByText(ownerSession.user.email!)).toBeVisible();
-    await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
+    if (!ownerSession.user.email) throw new Error('owner session has no email');
+    await expect(page.getByText(ownerSession.user.email)).toBeVisible();
+    await expect(
+      page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]'),
+    ).toHaveCount(0);
     await expect(page.getByText('Terminal', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Secrets', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Triggers', { exact: true })).toHaveCount(0);
@@ -312,7 +354,9 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await dismissProjectOnboarding(page);
     await page.getByRole('button', { name: 'Customize' }).first().click();
     await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
-    await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
+    await expect(
+      page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]'),
+    ).toHaveCount(0);
     expect(projectRepoWebUrl).toContain('github.com/kortix-ai/');
 
     await selectAccountForUi(page, account.account_id);
@@ -325,9 +369,10 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
     await expect(page.getByText(/Pending invites/i)).toBeVisible();
-    const uiInviteResponse = page.waitForResponse((response) =>
-      response.url().includes(`/v1/accounts/${account.account_id}/members`) &&
-      response.request().method() === 'POST',
+    const uiInviteResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/v1/accounts/${account.account_id}/members`) &&
+        response.request().method() === 'POST',
     );
     await page.getByRole('button', { name: 'Invite member' }).click();
     await expect(page.getByRole('dialog', { name: 'Invite member' })).toBeVisible();
@@ -341,22 +386,37 @@ test.describe('08 — Accounts, invites, and project access', () => {
 
     await createAuthUser(uiInvitedEmail, authOptions);
     const uiInvitedSession = await signIn(uiInvitedEmail, authOptions);
-    const uiInvitedAccounts = await api<AccountSummary[]>(uiInvitedSession.access_token, 'GET', '/accounts');
+    const uiInvitedAccounts = await api<AccountSummary[]>(
+      uiInvitedSession.access_token,
+      'GET',
+      '/accounts',
+    );
     expect(uiInvitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
     await selectAccountForUi(page, account.account_id);
-    const settingsDialog = await openCustomizeSection(page, project.project_id, 'settings', /^Settings$/i);
+    const settingsDialog = await openCustomizeSection(
+      page,
+      project.project_id,
+      'settings',
+      /^Settings$/i,
+    );
     const githubLink = settingsDialog.getByRole('link', { name: /Open on GitHub/i });
     await expect(githubLink).toBeVisible();
     await expect(githubLink).toHaveAttribute('href', projectRepoWebUrl);
 
-    const membersDialog = await openCustomizeSection(page, project.project_id, 'members', /Project members/i);
+    const membersDialog = await openCustomizeSection(
+      page,
+      project.project_id,
+      'members',
+      /Project members/i,
+    );
     await membersDialog.getByLabel('Email').fill(memberEmail);
     await membersDialog.locator('#invite-role').click();
     await page.getByRole('option', { name: /User/i }).click();
-    const accessInvite = page.waitForResponse((response) =>
-      response.url().includes(`/v1/projects/${project.project_id}/access/invite`) &&
-      response.request().method() === 'POST',
+    const accessInvite = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/v1/projects/${project.project_id}/access/invite`) &&
+        response.request().method() === 'POST',
     );
     await membersDialog.getByRole('button', { name: /^Invite$/i }).click();
     expect((await accessInvite).status()).toBe(200);
@@ -385,9 +445,10 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     if (page.url().includes(`/invites/${accountInviteId}`)) {
       await expect(page.getByText(/Team account/i)).toBeVisible();
-      const acceptAccountInviteResponse = page.waitForResponse((response) =>
-        response.url().includes(`/v1/account-invites/${accountInviteId}/accept`) &&
-        response.request().method() === 'POST',
+      const acceptAccountInviteResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes(`/v1/account-invites/${accountInviteId}/accept`) &&
+          response.request().method() === 'POST',
       );
       await page.getByRole('button', { name: 'Accept' }).click();
       expect((await acceptAccountInviteResponse).status()).toBe(200);
@@ -395,7 +456,11 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page).toHaveURL(new RegExp(`/accounts/${account.account_id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
-    const invitedAccounts = await api<AccountSummary[]>(invitedSession.access_token, 'GET', '/accounts');
+    const invitedAccounts = await api<AccountSummary[]>(
+      invitedSession.access_token,
+      'GET',
+      '/accounts',
+    );
     expect(invitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
     const finalMembers = await api<AccountMember[]>(
@@ -403,9 +468,15 @@ test.describe('08 — Accounts, invites, and project access', () => {
       'GET',
       `/accounts/${account.account_id}/members`,
     );
-    expect(finalMembers.some((item) => item.email === memberEmail && item.account_role === 'member')).toBe(true);
-    expect(finalMembers.some((item) => item.email === invitedEmail && item.account_role === 'member')).toBe(true);
-    expect(finalMembers.some((item) => item.email === uiInvitedEmail && item.account_role === 'member')).toBe(true);
+    expect(
+      finalMembers.some((item) => item.email === memberEmail && item.account_role === 'member'),
+    ).toBe(true);
+    expect(
+      finalMembers.some((item) => item.email === invitedEmail && item.account_role === 'member'),
+    ).toBe(true);
+    expect(
+      finalMembers.some((item) => item.email === uiInvitedEmail && item.account_role === 'member'),
+    ).toBe(true);
 
     await api<{ ok: true }>(ownerSession.access_token, 'DELETE', `/projects/${project.project_id}`);
 

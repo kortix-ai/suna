@@ -16,14 +16,10 @@ function step(name: string): string {
 
 describe('release workflow timeout contract', () => {
   it('gives the complete live API suite enough time to finish', () => {
-    expect(step('API flow suite')).toContain('timeout-minutes: 90');
+    expect(step('Run deployed REST and CLI flows')).toContain('timeout-minutes: 100');
   });
 
-  it('bounds AWS report authentication independently of the release gate', () => {
-    const awsAuth = step('AWS auth for report publish');
-
-    expect(awsAuth).toContain('timeout-minutes: 2');
-    expect(awsAuth).toContain('action-timeout-s: 60');
-    expect(awsAuth).toContain('retry-max-attempts: 3');
+  it('gives browser journeys an independent timeout', () => {
+    expect(step('Run deployed browser journeys')).toContain('timeout-minutes: 45');
   });
 });
