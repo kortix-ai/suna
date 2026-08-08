@@ -5,12 +5,26 @@ description: "How Kortix end-to-end API tests work and the mandatory test-as-sou
 
 # ke2e — test as source of truth
 
-Kortix has **one** end-to-end test suite at `suna/tests/` (the `ke2e` runner). It is
-black-box: it hits a **real, deployed API over HTTP** (`staging-api.kortix.com`,
-`dev-api.kortix.com`, local `localhost:8008/v1`, or prod) with **live services** (real Daytona, GitHub, Stripe
-test-mode, LLM) — no mocking, no in-process app. Every test maps **1:1** to a stable
+Kortix has **one** black-box API and CLI flow suite at `suna/tests/` (the `ke2e`
+runner). It hits an API over HTTP and starts CLI commands as real processes. It
+does not mock or import the API application. Every test maps **1:1** to a stable
 flow ID in `tests/spec/end-to-end.md`. A coverage gate makes that mapping enforceable,
 so the spec + tests stay the source of truth for what the API does.
+
+The runner has two profiles:
+
+- `pnpm test:flows` is the fast local developer profile. It starts or reuses
+  local Supabase, applies pending `packages/db` migrations through the loopback-only
+  cross-worktree mode, then starts or reuses the API and gateway. It uses local
+  PostgreSQL and bare Git fixtures. It excludes
+  cloud sandboxes, managed GitHub, Stripe, email, and funded LLM flows explicitly
+  in `results.json`. A selected skip or todo fails.
+- `bun tests/bin/ke2e.ts run` targets local or deployed APIs with the capabilities
+  configured through `KE2E_*`. Deployed runs can use real Daytona, GitHub,
+  Stripe test-mode, and LLM services.
+
+SDK tests remain in `packages/sdk`. Playwright browser tests remain in
+`tests/e2e`. Do not duplicate those framework-specific suites in `ke2e`.
 
 > **WIP — NOT yet enforced.** The suite is still being built out and does not gate PRs,
 > promotes, or deploys yet. The workflow below is the **intended** end-state; follow it
@@ -49,18 +63,27 @@ individually in the HTML report.
 // tests/src/flows/secrets.flow.ts
 import { flow } from "../core/flow";
 
-flow("SEC-2b", {
-  domain: "secrets",
-  tags: ["secrets"],
-  routes: ["POST /v1/projects/:id/secrets"],
-}, async (ctx) => {
-  const p = await ctx.fixtures.project();              // run-scoped, auto-torn-down
-  await ctx.step("reserved name rejected", async () => {
-    const r = await ctx.client.as(ctx.P.M_MANAGER)
-      .post("/v1/projects/:id/secrets", { name: "KORTIX_X", value: "v" }, { params: { id: p.id } });
-    r.status(400);
-  });
-});
+flow(
+  "SEC-2b",
+  {
+    domain: "secrets",
+    tags: ["secrets"],
+    routes: ["POST /v1/projects/:id/secrets"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project(); // run-scoped, auto-torn-down
+    await ctx.step("reserved name rejected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.M_MANAGER)
+        .post(
+          "/v1/projects/:id/secrets",
+          { name: "KORTIX_X", value: "v" },
+          { params: { id: p.id } },
+        );
+      r.status(400);
+    });
+  },
+);
 ```
 
 - **Auth** is principal-driven: `ctx.client.as(ctx.P.OWNER)`, `ctx.P.M_VIEWER`, `ctx.P.ANON`, etc.
@@ -81,6 +104,9 @@ flow("SEC-2b", {
 ## Running
 
 ```
+pnpm test:flows                              # fast local API + CLI flows
+pnpm test:flows -- --domain system,access   # filtered local run
+pnpm test:flows -- --id ACC-4               # one local flow
 cd suna/tests
 bun bin/ke2e.ts list                       # all flows + domains
 bun bin/ke2e.ts run --domain system,access # public — no creds needed

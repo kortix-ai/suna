@@ -36,6 +36,7 @@ export async function createDatabaseProject(
     accountId: string;
     userId: string;
     name: string;
+    repoUrl?: string | null;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
@@ -59,11 +60,11 @@ export async function createDatabaseProject(
            $1::uuid,
            $2::uuid,
            $4,
-           'https://ke2e.invalid/' || $1::text || '.git',
+           COALESCE($5, 'https://ke2e.invalid/' || $1::text || '.git'),
            'main',
            'kortix.yaml',
            'active'::kortix.project_status,
-           '{"ke2e":{"database_only":true}}'::jsonb
+           '{"ke2e":{"database_only":true},"experimental":{"apps":true}}'::jsonb
          )
          RETURNING project_id
        )
@@ -81,7 +82,7 @@ export async function createDatabaseProject(
          'manager'::kortix.project_role,
          $3::uuid
        FROM inserted_project`,
-      [projectId, input.accountId, input.userId, input.name],
+      [projectId, input.accountId, input.userId, input.name, input.repoUrl ?? null],
     );
   } finally {
     await client.end();

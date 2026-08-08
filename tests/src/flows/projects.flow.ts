@@ -143,9 +143,16 @@ flow(
 );
 
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
-  // Not tracked: this flow deletes it itself.
-  const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
-  const id = r0.json<any>().project_id;
+  // Local uses a database fixture so deletion remains hermetic. Remote targets
+  // provision a managed repository and then archive it through the same route.
+  const id =
+    ctx.env.target === "local"
+      ? (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id
+      : (
+          await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", {
+            name: ctx.fixtures.name("del"),
+          })
+        ).json<any>().project_id;
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);

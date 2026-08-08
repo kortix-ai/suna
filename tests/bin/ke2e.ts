@@ -4,6 +4,7 @@
  *
  *   ke2e run [--domain d] [--id ID] [--tag t] [--grep s] [--workers N]
  *            [--api-workers N] [--sandbox-workers N] [--smoke]
+ *   ke2e local [same filters] [--no-start]
  *   ke2e list
  *   ke2e coverage
  *   ke2e gc [--older-than 2h] [--dry-run]
@@ -20,6 +21,15 @@ import { writeCatalog } from "../src/core/catalog";
 import { writeAllureResults, writeAllureFromResults } from "../src/core/allure";
 import { writeUiData } from "../src/core/ui-data";
 import { runGc } from "../src/fixtures/gc";
+import { localEnvironmentOverrides, localRunExitCode } from "../src/core/local-profile";
+import {
+  ensureLocalMigrations,
+  ensureLocalSupabase,
+  ensureLocalStack,
+  resolveLocalTopology,
+  type LocalStackHandle,
+  type LocalSupabaseHandle,
+} from "../src/core/local-stack";
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
   const _: string[] = [];
@@ -49,7 +59,7 @@ function newRunId(): string {
   return `${process.env.GITHUB_RUN_ID ?? ts}-${r}`;
 }
 
-async function main() {
+async function main(): Promise<number> {
   const { _, flags } = parseArgs(process.argv.slice(2));
   const cmd = _[0] ?? "run";
 
@@ -61,7 +71,7 @@ async function main() {
       console.log(`${f.id.padEnd(12)} ${f.meta.domain.padEnd(16)} ${t}`);
     }
     console.log(`\n${flows.length} flows`);
-    return;
+    return 0;
   }
 
   if (cmd === "coverage") {
@@ -69,7 +79,7 @@ async function main() {
       updateBaseline: !!flags["update-baseline"],
       json: !!flags.json,
     });
-    process.exit(ok ? 0 : 1);
+    return ok ? 0 : 1;
   }
 
   if (cmd === "catalog") {
@@ -77,7 +87,7 @@ async function main() {
     const cat = await writeCatalog(out);
     log.info(`catalog → ${out}`);
     log.info(`${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`);
-    return;
+    return 0;
   }
 
   if (cmd === "ui-data") {
@@ -85,7 +95,7 @@ async function main() {
     const r = await writeUiData(dir);
     log.info(`ui data → ${dir}`);
     log.info(`${r.flows} flows (${r.passed} passed, ${r.skipped} gated/skipped)`);
-    return;
+    return 0;
   }
 
   if (cmd === "allure") {
@@ -95,12 +105,12 @@ async function main() {
     log.info(`allure-results → ${out}`);
     log.info(`${r.flows} flows (${r.passed} passed, ${r.failed} failed, ${r.skipped} skipped)`);
     log.info(log.dim(from ? "real run results" : "catalog preview — pass --from <results.json> for real run data"));
-    return;
+    return 0;
   }
 
   if (cmd === "gc") {
     await runGc({ olderThan: (flags["older-than"] as string) ?? "2h", dryRun: !!flags["dry-run"] });
-    return;
+    return 0;
   }
 
   if (cmd === "report") {
@@ -111,46 +121,86 @@ async function main() {
     const out = jsonPath.replace(/\.json$/, ".html");
     writeResults(data, jsonPath, out);
     log.info(`report → ${out}`);
-    return;
+    return 0;
   }
 
-  // run
-  const env = loadEnv();
-  const runId = newRunId();
-  (globalThis as any).__KE2E_RUN_ID__ = runId;
-  const outDir = (flags.out as string) ?? resolve(import.meta.dir, "../test-results", runId);
-  const gitSha = process.env.GITHUB_SHA ?? (await gitShaLocal());
+  const localCommand = cmd === "local";
+  let localStack: LocalStackHandle | null = null;
+  let localSupabase: LocalSupabaseHandle | null = null;
+  try {
+    if (localCommand) {
+      const root = resolve(import.meta.dir, "../..");
+      const topology = resolveLocalTopology(root);
+      log.info(
+        log.bold(
+          `local stack ${topology.worktreeName ? `worktree=${topology.worktreeName}` : "primary"} ` +
+            `api=${topology.apiUrl}`,
+        ),
+      );
+      localSupabase = await ensureLocalSupabase(topology, { autoStart: !flags["no-start"] });
+      const supabase = localSupabase.environment;
+      await ensureLocalMigrations(topology, supabase);
+      localStack = await ensureLocalStack(topology, {
+        autoStart: !flags["no-start"],
+        supabase,
+      });
+      Object.assign(process.env, localEnvironmentOverrides({ worktree: topology.marker, supabase }));
+      log.info(
+        log.dim(
+          localStack.started
+            ? "local stack started by ke2e; it will stop after the run"
+            : "reusing the running local stack",
+        ),
+      );
+    }
 
-  log.info(log.bold(`ke2e run ${runId}`));
-  log.info(log.dim(describeEnv(env)));
+    const env = loadEnv();
+    const runId = newRunId();
+    (globalThis as any).__KE2E_RUN_ID__ = runId;
+    const outDir = (flags.out as string) ?? resolve(import.meta.dir, "../test-results", runId);
+    const gitSha = process.env.GITHUB_SHA ?? (await gitShaLocal());
 
-  const result = await runSuite({
-    ids: list(flags.id),
-    domains: list(flags.domain),
-    tags: list(flags.tag),
-    grep: typeof flags.grep === "string" ? flags.grep : undefined,
-    workers: flags.workers ? Number(flags.workers) : undefined,
-    apiWorkers: flags["api-workers"] ? Number(flags["api-workers"]) : undefined,
-    sandboxWorkers: flags["sandbox-workers"] ? Number(flags["sandbox-workers"]) : undefined,
-    smoke: !!flags.smoke,
-    runId,
-    gitSha,
-  });
+    log.info(log.bold(`ke2e run ${runId}`));
+    log.info(log.dim(describeEnv(env)));
 
-  const jsonPath = resolve(outDir, "results.json");
-  const htmlPath = resolve(outDir, "report.html");
-  writeResults(result, jsonPath, htmlPath);
+    const result = await runSuite({
+      profile: localCommand ? "local" : "all",
+      ids: list(flags.id),
+      domains: list(flags.domain),
+      tags: list(flags.tag),
+      grep: typeof flags.grep === "string" ? flags.grep : undefined,
+      workers: flags.workers ? Number(flags.workers) : undefined,
+      apiWorkers: flags["api-workers"] ? Number(flags["api-workers"]) : undefined,
+      sandboxWorkers: flags["sandbox-workers"] ? Number(flags["sandbox-workers"]) : undefined,
+      smoke: !!flags.smoke,
+      runId,
+      gitSha,
+    });
 
-  const s = result.summary;
-  log.info("");
-  log.info(`${log.bold("results")}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`);
-  log.info(log.dim(`report → ${htmlPath}`));
+    const jsonPath = resolve(outDir, "results.json");
+    const htmlPath = resolve(outDir, "report.html");
+    writeResults(result, jsonPath, htmlPath);
 
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    await Bun.write(process.env.GITHUB_STEP_SUMMARY, renderStepSummary(result));
+    const s = result.summary;
+    log.info("");
+    log.info(`${log.bold("results")}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`);
+    log.info(log.dim(`report → ${htmlPath}`));
+
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      await Bun.write(process.env.GITHUB_STEP_SUMMARY, renderStepSummary(result));
+    }
+
+    return localCommand ? localRunExitCode(s) : s.failed > 0 ? 1 : 0;
+  } finally {
+    if (localStack?.started) {
+      log.info(log.dim("stopping the local stack started by ke2e"));
+      await localStack.stop();
+    }
+    if (localSupabase?.started) {
+      log.info(log.dim("stopping local Supabase started by ke2e"));
+      await localSupabase.stop();
+    }
   }
-
-  process.exit(s.failed > 0 ? 1 : 0);
 }
 
 async function gitShaLocal(): Promise<string | null> {
@@ -162,7 +212,11 @@ async function gitShaLocal(): Promise<string | null> {
   }
 }
 
-main().catch((err) => {
-  log.error(String(err?.stack ?? err));
-  process.exit(2);
-});
+main()
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((err) => {
+    log.error(String(err?.stack ?? err));
+    process.exitCode = 2;
+  });

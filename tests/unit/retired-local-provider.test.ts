@@ -18,7 +18,13 @@ const scannedExtensions = new Set([
   '.yaml',
   '.yml',
 ]);
-const excludedPrefixes = ['packages/db/drizzle/meta/', 'packages/db/migrations/'];
+const excludedPrefixes = [
+  'packages/db/drizzle/meta/',
+  'packages/db/migrations/',
+  // Generated black-box reports contain captured API response history. They
+  // are evidence, not a shipped source or documentation surface.
+  'tests/test-results/',
+];
 const excludedFiles = new Set([
   // Historical decision record. It documents why the provider was removed and
   // why smolVM is not its replacement on ordinary VPS hosts.

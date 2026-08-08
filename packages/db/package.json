@@ -18,6 +18,7 @@
     "db:check": "bunx drizzle-kit check",
     "db:studio": "bunx drizzle-kit studio",
     "migrate": "bun scripts/migrate.ts up",
+    "migrate:local": "bun scripts/migrate.ts local-up",
     "migrate:status": "bun scripts/migrate.ts status",
     "migrate:down": "bun scripts/migrate.ts down",
     "migrate:fake": "bun scripts/migrate.ts fake",
