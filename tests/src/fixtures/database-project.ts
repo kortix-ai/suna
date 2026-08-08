@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import type { Env } from '../core/env';
-import type { CreatedProject } from '../core/types';
+import { randomUUID } from "node:crypto";
+import type { Env } from "../core/env";
+import type { CreatedProject } from "../core/types";
 
 interface ProjectDb {
   query(text: string, values?: unknown[]): Promise<unknown>;
@@ -10,8 +10,9 @@ interface ProjectDb {
 export type OpenProjectDb = (databaseUrl: string) => Promise<ProjectDb>;
 
 async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
-  const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-  const { Client } = await import('pg');
+  const local =
+    databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+  const { Client } = await import("pg");
   const client = new Client({
     connectionString: databaseUrl,
     ssl: local ? false : { rejectUnauthorized: false },
@@ -21,11 +22,15 @@ async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
 }
 
 function assertDatabaseFixtureAllowed(env: Env, action: string): string {
-  if (env.target === 'prod') {
-    throw new Error(`refusing to ${action} a database-only project against production`);
+  if (env.target === "prod") {
+    throw new Error(
+      `refusing to ${action} a database-only project against production`,
+    );
   }
   if (!env.databaseUrl) {
-    throw new Error('KE2E_DATABASE_URL is required for database-only project fixtures');
+    throw new Error(
+      "KE2E_DATABASE_URL is required for database-only project fixtures",
+    );
   }
   return env.databaseUrl;
 }
@@ -40,7 +45,7 @@ export async function createDatabaseProject(
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'create');
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "create");
   const projectId = randomUUID();
   const client = await open(databaseUrl);
   try {
@@ -64,7 +69,7 @@ export async function createDatabaseProject(
            'main',
            'kortix.yaml',
            'active'::kortix.project_status,
-           '{"ke2e":{"database_only":true},"experimental":{"apps":true}}'::jsonb
+           '{"ke2e":{"database_only":true},"experimental":{"apps":true},"onboarding_completed_at":"2026-01-01T00:00:00.000Z"}'::jsonb
          )
          RETURNING project_id
        )
@@ -82,7 +87,13 @@ export async function createDatabaseProject(
          'manager'::kortix.project_role,
          $3::uuid
        FROM inserted_project`,
-      [projectId, input.accountId, input.userId, input.name, input.repoUrl ?? null],
+      [
+        projectId,
+        input.accountId,
+        input.userId,
+        input.name,
+        input.repoUrl ?? null,
+      ],
     );
   } finally {
     await client.end();
@@ -99,7 +110,7 @@ export async function createDatabaseSession(
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'create a session for');
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "create a session for");
   const sessionId = randomUUID();
   const client = await open(databaseUrl);
   try {
@@ -131,7 +142,7 @@ export async function deleteDatabaseProject(
   projectId: string,
   open: OpenProjectDb = openProjectDb,
 ): Promise<void> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'delete');
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
   try {
     await client.query(

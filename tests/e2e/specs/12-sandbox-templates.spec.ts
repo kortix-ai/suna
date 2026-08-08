@@ -18,9 +18,9 @@
  * :54321).
  */
 
-import { type Page, expect, test } from '@playwright/test';
-import { seedDatabaseProject } from '../helpers/database';
-import { createApiResultClient } from '../helpers/http';
+import { type Page, expect, test } from "@playwright/test";
+import { seedDatabaseProject } from "../helpers/database";
+import { createApiResultClient } from "../helpers/http";
 import {
   type AuthSession,
   type AuthUser,
@@ -28,12 +28,12 @@ import {
   deleteAuthUser,
   installBrowserSessionDirect,
   signIn,
-} from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+} from "../helpers/session-auth";
+import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
 
-const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
-const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const password = 'E2eSandboxTpl123!';
+const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
+const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const password = "E2eSandboxTpl123!";
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
@@ -41,7 +41,7 @@ interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
   is_primary_owner?: boolean;
-  account_role?: 'owner' | 'admin' | 'member';
+  account_role?: "owner" | "admin" | "member";
 }
 interface TemplateCreateResult {
   template_id: string;
@@ -49,19 +49,27 @@ interface TemplateCreateResult {
 }
 
 async function openSandboxSection(page: Page, projectId: string) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
-  await page.getByRole('button', { name: /^Settings$/i }).click();
-  await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
-  const sandboxHeading = page.getByRole('heading', { name: /Sandbox templates/i });
-  if (!(await sandboxHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    await page.getByRole('button', { name: /^Sandbox templates$/i }).click();
+  await page.getByRole("button", { name: /^Settings/i }).click();
+  await expect(page.getByRole("dialog", { name: /Customize/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  const sandboxHeading = page.getByRole("heading", {
+    name: /Sandbox templates/i,
+  });
+  if (
+    !(await sandboxHeading.isVisible({ timeout: 5_000 }).catch(() => false))
+  ) {
+    await page.getByRole("button", { name: /^Sandbox templates$/i }).click();
   }
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), { timeout: 30_000 });
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), {
+    timeout: 30_000,
+  });
   await expect(sandboxHeading).toBeVisible({ timeout: 30_000 });
 }
 
-test.describe('12 — Sandbox templates UI', () => {
+test.describe("12 — Sandbox templates UI", () => {
   test.setTimeout(180_000);
 
   let user: AuthUser;
@@ -74,13 +82,19 @@ test.describe('12 — Sandbox templates UI', () => {
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
     const projectName = `e2e-ui-tpl-${Math.floor(Date.now() / 1000)}`;
-    const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+    const accounts = await api<AccountSummary[]>(
+      session.access_token,
+      "GET",
+      "/accounts",
+    );
     const personalAccount = accounts.json?.find(
       (account) =>
-        account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+        account.personal_account ||
+        account.is_primary_owner ||
+        account.account_role === "owner",
     );
     expect(personalAccount?.account_id).toBeTruthy();
-    if (!personalAccount) throw new Error('test user has no personal account');
+    if (!personalAccount) throw new Error("test user has no personal account");
     accountId = personalAccount.account_id;
     projectId = seedDatabaseProject({
       accountId,
@@ -91,33 +105,37 @@ test.describe('12 — Sandbox templates UI', () => {
 
   test.afterAll(async () => {
     if (projectId && session) {
-      await api(session.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+      await api(session.access_token, "DELETE", `/projects/${projectId}`).catch(
+        () => {},
+      );
     }
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
 
-  test('sandboxes API returns platform default before opening the panel', async () => {
+  test("sandboxes API returns platform default before opening the panel", async () => {
     const { status, json } = await api<{
       items: Array<{ slug: string; is_default: boolean; source: string }>;
       default_slug: string | null;
-    }>(session.access_token, 'GET', `/projects/${projectId}/sandbox-templates`);
+    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
     expect(status).toBe(200);
-    expect(json?.default_slug).toBe('default');
-    const platformDefault = json?.items.find((t) => t.is_default && t.slug === 'default');
-    expect(platformDefault, 'platform default must be present').toBeTruthy();
-    expect(platformDefault?.source).toBe('platform');
+    expect(json?.default_slug).toBe("default");
+    const platformDefault = json?.items.find(
+      (t) => t.is_default && t.slug === "default",
+    );
+    expect(platformDefault, "platform default must be present").toBeTruthy();
+    expect(platformDefault?.source).toBe("platform");
   });
 
-  test('Sandbox panel renders the platform default row without runtime errors', async ({
+  test("Sandbox panel renders the platform default row without runtime errors", async ({
     page,
   }) => {
     const pageErrors: string[] = [];
-    page.on('pageerror', (err) => pageErrors.push(err.message));
+    page.on("pageerror", (err) => pageErrors.push(err.message));
 
     await installBrowserSessionDirect(
       page,
       session,
-      '/favicon.png',
+      "/favicon.png",
       authOptions,
     );
     await selectAccountForUi(page, accountId);
@@ -125,48 +143,58 @@ test.describe('12 — Sandbox templates UI', () => {
     pageErrors.length = 0;
 
     // Platform default row: "Default" name + "default" slug code chip.
-    await expect(page.getByText('Default', { exact: true }).first()).toBeVisible({
+    await expect(
+      page.getByText("Default", { exact: true }).first(),
+    ).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.locator('code', { hasText: 'default' }).first()).toBeVisible();
+    await expect(
+      page.getByText(/Platform default · shared by every project/),
+    ).toBeVisible();
 
     // At least one state badge rendered (Ready / Building / Pulling / Not built yet / Error).
-    const stateBadge = page.locator(
-      ':is(span:has-text("Ready"), span:has-text("Not built yet"), span:has-text("Building"), span:has-text("Pulling"), span:has-text("Error"))',
-    );
-    await expect(stateBadge.first()).toBeVisible({ timeout: 15_000 });
+    const platformRow = page
+      .getByRole("listitem")
+      .filter({ hasText: "Platform default" });
+    await expect(platformRow).toContainText("Daytona");
+    await expect(platformRow).toContainText("Platinum");
+    await expect(platformRow).toContainText("Ready");
 
-    expect(pageErrors, `client errors: ${pageErrors.join(' | ')}`).toEqual([]);
+    expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
-  test('clicking Rebuild on a project template calls the API and does not crash', async ({
+  test("clicking Rebuild on a project template calls the API and does not crash", async ({
     page,
   }) => {
     const pageErrors: string[] = [];
-    page.on('pageerror', (err) => pageErrors.push(err.message));
+    page.on("pageerror", (err) => pageErrors.push(err.message));
     const customSlug = `e2e-image-${Date.now()}`;
     const created = await api<TemplateCreateResult>(
       session.access_token,
-      'POST',
+      "POST",
       `/projects/${projectId}/sandbox-templates`,
       {
         slug: customSlug,
-        name: 'E2E image template',
-        image: 'kortix/kortix-sandbox:selfhost-local',
+        name: "E2E image template",
+        image: "kortix/kortix-sandbox:selfhost-local",
       },
     );
     expect(created.status).toBe(201);
     expect(created.json?.template_id).toBeTruthy();
-    if (!created.json) throw new Error('template creation returned no body');
+    if (!created.json) throw new Error("template creation returned no body");
     const templateId = created.json.template_id;
 
     // Capture rebuild POSTs as they happen — armed before navigation so we
     // never miss the response between fixture setup and the actual click.
     const seenRebuildStatuses: number[] = [];
-    page.on('response', (res) => {
+    page.on("response", (res) => {
       if (
-        res.url().includes(`/projects/${projectId}/sandbox-templates/${templateId}/build`) &&
-        res.request().method() === 'POST'
+        res
+          .url()
+          .includes(
+            `/projects/${projectId}/sandbox-templates/${templateId}/build`,
+          ) &&
+        res.request().method() === "POST"
       ) {
         seenRebuildStatuses.push(res.status());
       }
@@ -175,26 +203,35 @@ test.describe('12 — Sandbox templates UI', () => {
     await installBrowserSessionDirect(
       page,
       session,
-      '/favicon.png',
+      "/favicon.png",
       authOptions,
     );
     await selectAccountForUi(page, accountId);
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
-    const templateRow = page.locator('li', { hasText: customSlug });
-    await expect(templateRow).toBeVisible({ timeout: 15_000 });
-    const rebuildButton = templateRow.getByRole('button', { name: /^Rebuild$/i });
+    const rebuildButton = page.getByRole("button", { name: /^Rebuild$/i });
+    await expect(
+      page.getByText(customSlug, { exact: true }).first(),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(rebuildButton).toBeEnabled({ timeout: 15_000 });
     await rebuildButton.click();
 
     // Wait up to 30s for the template build POST to land — toast feedback gives the
     // user the cue too, but for the assertion we watch the network.
     await expect
-      .poll(() => seenRebuildStatuses.length, { timeout: 30_000, intervals: [500] })
+      .poll(() => seenRebuildStatuses.length, {
+        timeout: 30_000,
+        intervals: [500],
+      })
       .toBeGreaterThan(0);
     expect(seenRebuildStatuses[0]).toBe(202);
 
-    expect(pageErrors, `client errors after Rebuild: ${pageErrors.join(' | ')}`).toEqual([]);
+    expect(
+      pageErrors,
+      `client errors after Rebuild: ${pageErrors.join(" | ")}`,
+    ).toEqual([]);
   });
 });

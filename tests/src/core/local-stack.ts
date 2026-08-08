@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { LocalSupabaseEnvironment, LocalWorktreeConfig } from "./local-profile";
+import {
+  LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+  type LocalSupabaseEnvironment,
+  type LocalWorktreeConfig,
+} from "./local-profile";
 
 interface WorktreeMarker extends LocalWorktreeConfig {
   path: string;
@@ -193,6 +197,19 @@ export async function localApiHealthy(apiUrl: string): Promise<boolean> {
   }
 }
 
+export async function localApiAcceptsFlowKey(apiUrl: string): Promise<boolean> {
+  try {
+    const origin = apiUrl.replace(/\/v1\/?$/, "");
+    const response = await fetch(`${origin}/metrics`, {
+      headers: { authorization: `Bearer ${LOCAL_FLOW_INTERNAL_SERVICE_KEY}` },
+      signal: AbortSignal.timeout(2_000),
+    });
+    return response.status === 200 || response.status === 404;
+  } catch {
+    return false;
+  }
+}
+
 export async function localGatewayHealthy(gatewayUrl: string): Promise<boolean> {
   try {
     const response = await fetch(`${gatewayUrl}/health/live`, {
@@ -211,6 +228,11 @@ export async function ensureLocalStack(
   const gatewayUrl = `http://127.0.0.1:${topology.marker?.ports.gateway ?? 8090}`;
   const apiWasHealthy = await localApiHealthy(topology.apiUrl);
   const gatewayWasHealthy = await localGatewayHealthy(gatewayUrl);
+  if (apiWasHealthy && !(await localApiAcceptsFlowKey(topology.apiUrl))) {
+    throw new Error(
+      `local API at ${topology.apiUrl} does not use the test-safe local configuration; restart it with pnpm dev or pnpm worktree start`,
+    );
+  }
   if (apiWasHealthy && gatewayWasHealthy) {
     return { started: false, stop: async () => {} };
   }
@@ -230,11 +252,12 @@ export async function ensureLocalStack(
   const owned: Bun.Subprocess[] = [];
   const api = apiWasHealthy
     ? null
-    : Bun.spawn(["bun", "run", "src/index.ts"], {
+    : Bun.spawn(["bun", "--no-env-file", "run", "src/index.ts"], {
         cwd: join(topology.root, "apps/api"),
         env: {
           ...process.env,
           ENV_MODE: "local",
+          INTERNAL_KORTIX_ENV: "dev",
           KORTIX_LOCAL_DEV: "1",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
@@ -247,11 +270,24 @@ export async function ensureLocalStack(
           DATABASE_URL: DB_URL,
           SUPABASE_URL: API_URL,
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+          API_KEY_SECRET: "local-flow-runner-api-key-secret",
+          INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
           SCHEDULER_ENABLED: "false",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
+          KORTIX_WORKERS_ENABLED: "false",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",
+          ALLOWED_SANDBOX_PROVIDERS: "daytona",
+          DAYTONA_API_KEY: "local-test-provider-disabled",
+          DAYTONA_SERVER_URL: "http://127.0.0.1:1",
+          DAYTONA_TARGET: "local-test-provider-disabled",
+          STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
+          STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+          PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",
+          SLACK_CLIENT_ID: "local-flow-runner-disabled",
+          SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
+          SLACK_SIGNING_SECRET: "local-flow-runner-disabled",
           LLM_GATEWAY_ENABLED: "true",
           LLM_GATEWAY_BASE_URL: "",
           LLM_GATEWAY_PROXY_PORT: String(gatewayPort),

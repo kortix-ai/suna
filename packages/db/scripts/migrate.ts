@@ -23,10 +23,13 @@ import { join } from 'node:path';
  */
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
+import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
 import {
   migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
+import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 import { migrationCheckOrder } from './migration-target';
@@ -233,7 +236,7 @@ async function main() {
       },
     });
     if (repaired) {
-      console.log('[migrate] reconciled renamed sandbox deadline migration records.');
+      console.log('[migrate] reconciled renamed migration records.');
     }
   };
 
@@ -249,11 +252,31 @@ async function main() {
   try {
     switch (cmd) {
       case 'up':
-      case 'local-up':
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
         await applyPendingMigrations();
         return;
+      case 'local-up': {
+        await autoBaselineIfNeeded(base, databaseUrl);
+        const warmIndexRepair = await repairLocalWarmSessionIndex(databaseUrl);
+        if (warmIndexRepair.repaired) {
+          console.warn(
+            `[migrate] repaired local warm-session index; discarded ${warmIndexRepair.discardedDuplicates} duplicate row(s).`,
+          );
+        }
+        if (await repairLocalAuditV2Ledger(databaseUrl, MIGRATIONS_DIR)) {
+          console.warn('[migrate] recorded the complete untracked local audit-v2 schema.');
+        }
+        const invalidIndexes = await dropLocalInvalidIndexes(databaseUrl);
+        if (invalidIndexes.length > 0) {
+          console.warn(
+            `[migrate] dropped invalid local indexes for migration retry: ${invalidIndexes.join(', ')}.`,
+          );
+        }
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      }
       case 'bootstrap':
         // Fresh-DB convenience for self-host: prereqs → then `up`.
         await selfHostBootstrapIfFresh(databaseUrl);

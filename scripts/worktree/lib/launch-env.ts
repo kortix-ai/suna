@@ -1,6 +1,8 @@
 import { DEV_GATEWAY_INTERNAL_TOKEN, type Ports } from './ports';
 import type { SlotCreds } from './supabase';
 
+export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = 'local-flow-runner-internal-service-key';
+
 export interface ApiLaunchOpts {
   /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
   kortixUrl?: string;
@@ -27,6 +29,8 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     DATABASE_URL: c.dbUrl,
     SUPABASE_URL: c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
+    ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
+    INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
     // Billing is opt-in. --billing exposes local routes. --stripe also injects
     // a live webhook secret. STRIPE_SECRET_KEY comes from the local .env.

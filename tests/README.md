@@ -2,12 +2,13 @@
 
 `pnpm test` is the only repository-level test command.
 
-The default run executes four lanes concurrently:
+The default run executes five lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
 2. `@kortix/sdk` tests in `packages/sdk`.
 3. Test-runner unit tests.
 4. API route coverage.
+5. Worktree-tool unit and contract tests.
 
 The REST runner is language-agnostic at the product boundary. It sends HTTP
 requests and starts the compiled CLI as a process. It never imports API route
@@ -38,6 +39,21 @@ tests/test-results/local/benchmark-<timestamp>.json
 
 The file contains the Git SHA, total duration, lane duration, command, and exit
 code.
+
+## Platinum CI workers
+
+GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
+tests. The workflow starts an ephemeral Platinum sandbox and runs the same
+`pnpm test -- --full` command inside it.
+
+The template name includes the `pnpm-lock.yaml` hash. The template contains the
+pinned Node, Bun, pnpm, Docker, Chromium, and pnpm-store state. A lockfile change
+creates one new template. Other commits reuse it.
+
+The worker fetches the requested public Git ref and verifies its full SHA. It
+streams `kortix-test.log`, downloads `tests/test-results`, and deletes the
+sandbox. The worker auto-stops after 15 idle minutes if workflow cancellation
+prevents immediate deletion.
 
 ## Product flows
 
@@ -104,6 +120,10 @@ package command documented in `packages/sdk/AGENTS.md`.
 5. Run the narrow flow first.
 6. Run `pnpm test` before handoff.
 7. Run `pnpm test -- --full` for broad refactors or release work.
+
+Full mode also builds, dry-packs, and install-smokes every publishable npm
+package before it runs all package and app tests. This keeps published-package
+contracts in the same local and Platinum command.
 
 Keep co-located package tests for pure logic and internal invariants. Do not add
 a second cross-cutting harness, Makefile lane, Pact suite, Testcontainers suite,

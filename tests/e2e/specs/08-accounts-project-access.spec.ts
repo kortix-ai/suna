@@ -1,24 +1,28 @@
-import { randomUUID } from 'node:crypto';
-import { type Page, expect, test } from '@playwright/test';
-import { seedDatabaseProject } from '../helpers/database';
-import { authHeaders, createApiJsonClient, createApiStatusClient } from '../helpers/http';
+import { randomUUID } from "node:crypto";
+import { type Page, expect, test } from "@playwright/test";
+import { seedDatabaseProject } from "../helpers/database";
+import {
+  authHeaders,
+  createApiJsonClient,
+  createApiStatusClient,
+} from "../helpers/http";
 import {
   type AuthSession,
   createAuthUser,
   installBrowserSessionDirect,
   signIn,
-} from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+} from "../helpers/session-auth";
+import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
 
-const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
-const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const password = 'E2eAccountAccess123!';
+const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
+const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const password = "E2eAccountAccess123!";
 const api = createApiJsonClient(apiBase);
 const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'member';
+type AccountRole = "owner" | "admin" | "member";
+type ProjectRole = "manager" | "editor" | "member";
 
 interface AccountSummary {
   account_id: string;
@@ -35,7 +39,7 @@ interface ProjectSummary {
   repo_url: string;
   default_branch: string;
   manifest_path: string;
-  status: 'active' | 'archived';
+  status: "active" | "archived";
   project_role: ProjectRole | null;
   effective_project_role: ProjectRole | null;
 }
@@ -48,7 +52,7 @@ interface AccountMember {
 }
 
 interface InviteResult {
-  status: 'added' | 'pending';
+  status: "added" | "pending";
   user_id?: string;
   invite_id?: string;
   email: string;
@@ -80,28 +84,45 @@ async function createProjectForAccessTest(
   repoUrl: string,
 ): Promise<ProjectSummary> {
   const response = await fetch(`${apiBase}/projects`, {
-    method: 'POST',
+    method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({
       account_id: accountId,
       name,
       repo_url: repoUrl,
-      default_branch: 'main',
+      default_branch: "main",
     }),
   });
   const body = await response.text();
-  if (response.status === 201) return JSON.parse(body) as ProjectSummary;
-  if (response.status === 409 && body.includes('GitHub App installation required')) {
+  let project: ProjectSummary;
+  if (response.status === 201) {
+    project = JSON.parse(body) as ProjectSummary;
+  } else if (
+    response.status === 409 &&
+    body.includes("GitHub App installation required")
+  ) {
     const projectId = seedDatabaseProject({
       accountId,
       userId: ownerUserId,
       name,
       repoUrl,
-      projectRole: 'manager',
+      projectRole: "manager",
     });
-    return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
+    project = await api<ProjectSummary>(token, "GET", `/projects/${projectId}`);
+  } else {
+    throw new Error(
+      `Expected 201/409 from ${response.url}, got ${response.status}: ${body}`,
+    );
   }
-  throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
+  await api<ProjectSummary>(
+    token,
+    "PATCH",
+    `/projects/${project.project_id}/onboarding`,
+    {
+      completed: true,
+    },
+  );
+  return project;
 }
 
 async function openCustomizeSection(
@@ -110,39 +131,50 @@ async function openCustomizeSection(
   section: string,
   heading: RegExp,
 ) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
-  await page.getByRole('button', { name: /^Settings$/i }).click();
-  const dialog = page.getByRole('dialog', { name: /Customize/i });
+  await page.getByRole("button", { name: /^Settings/i }).click();
+  const dialog = page.getByRole("dialog", { name: /Customize/i });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
-  const targetHeading = page.getByRole('heading', { name: heading });
+  const targetHeading = page.getByRole("heading", { name: heading });
   if (!(await targetHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    const label = section === 'members' ? 'Members' : 'Settings';
-    await dialog.getByRole('button', { name: new RegExp(`^${label}$`, 'i') }).click();
+    const label = section === "members" ? "Members" : "Settings";
+    await dialog
+      .getByRole("button", { name: new RegExp(`^${label}$`, "i") })
+      .click();
   }
   await expect(targetHeading).toBeVisible({ timeout: 30_000 });
   return dialog;
 }
 
 function byEmail(members: ProjectAccessMember[], email: string) {
-  return members.find((member) => member.email?.toLowerCase() === email.toLowerCase());
+  return members.find(
+    (member) => member.email?.toLowerCase() === email.toLowerCase(),
+  );
 }
 
 function toGitHubWebUrl(repoUrl: string): string {
-  return repoUrl.replace(/^git@github\.com:/, 'https://github.com/').replace(/\.git$/, '');
+  return repoUrl
+    .replace(/^git@github\.com:/, "https://github.com/")
+    .replace(/\.git$/, "");
 }
 
-test.describe('08 — Accounts, invites, and project access', () => {
+test.describe("08 — Accounts, invites, and project access", () => {
   test.setTimeout(300_000);
 
-  test('API and web enforce account roles plus project-scoped access', async ({ page }) => {
+  test("API and web enforce account roles plus project-scoped access", async ({
+    page,
+  }) => {
     const pageErrors: string[] = [];
     const serverErrors: string[] = [];
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    page.on('response', (response) => {
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("response", (response) => {
       const status = response.status();
       const url = response.url();
-      if (status >= 500 && (url.includes('/v1/accounts') || url.includes('/v1/projects'))) {
+      if (
+        status >= 500 &&
+        (url.includes("/v1/accounts") || url.includes("/v1/projects"))
+      ) {
         serverErrors.push(`${status} ${url}`);
       }
     });
@@ -162,53 +194,59 @@ test.describe('08 — Accounts, invites, and project access', () => {
 
     const ownerInitialAccounts = await api<AccountSummary[]>(
       ownerSession.access_token,
-      'GET',
-      '/accounts',
+      "GET",
+      "/accounts",
     );
     const ownerPersonalAccount = ownerInitialAccounts.find(
-      (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      (item) =>
+        item.personal_account ||
+        item.is_primary_owner ||
+        item.account_role === "owner",
     );
     expect(ownerPersonalAccount).toBeTruthy();
-    await api<AccountSummary[]>(memberSession.access_token, 'GET', '/accounts');
+    await api<AccountSummary[]>(memberSession.access_token, "GET", "/accounts");
 
     const account = await api<AccountSummary>(
       ownerSession.access_token,
-      'POST',
-      '/accounts',
+      "POST",
+      "/accounts",
       { name: accountName },
       201,
     );
     expect(account.name).toBe(accountName);
-    expect(account.account_role).toBe('owner');
+    expect(account.account_role).toBe("owner");
 
     const addedMember = await api<InviteResult>(
       ownerSession.access_token,
-      'POST',
+      "POST",
       `/accounts/${account.account_id}/members`,
-      { email: memberEmail, role: 'member' },
+      { email: memberEmail, role: "member" },
       201,
     );
-    expect(addedMember.status).toBe('added');
+    expect(addedMember.status).toBe("added");
     expect(addedMember.user_id).toBe(member.id);
 
     const pendingInvite = await api<InviteResult>(
       ownerSession.access_token,
-      'POST',
+      "POST",
       `/accounts/${account.account_id}/members`,
-      { email: invitedEmail, role: 'member' },
+      { email: invitedEmail, role: "member" },
       201,
     );
-    expect(pendingInvite.status).toBe('pending');
+    expect(pendingInvite.status).toBe("pending");
     expect(pendingInvite.invite_id).toBeTruthy();
-    if (!pendingInvite.invite_id) throw new Error('pending invite has no invite_id');
+    if (!pendingInvite.invite_id)
+      throw new Error("pending invite has no invite_id");
     const accountInviteId = pendingInvite.invite_id;
 
     const memberAccounts = await api<AccountSummary[]>(
       memberSession.access_token,
-      'GET',
-      '/accounts',
+      "GET",
+      "/accounts",
     );
-    expect(memberAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
+    expect(
+      memberAccounts.some((item) => item.account_id === account.account_id),
+    ).toBe(true);
 
     const project = await createProjectForAccessTest(
       ownerSession.access_token,
@@ -218,30 +256,36 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `https://github.com/kortix-ai/e2e-${runId}.git`,
     );
     expect(project.name).toBe(initialProjectName);
-    expect(project.project_role).toBe('manager');
-    expect(project.effective_project_role).toBe('manager');
+    expect(project.project_role).toBe("manager");
+    expect(project.effective_project_role).toBe("manager");
     const projectRepoWebUrl = toGitHubWebUrl(project.repo_url);
 
     const ownerProjects = await api<ProjectSummary[]>(
       ownerSession.access_token,
-      'GET',
+      "GET",
       `/projects?account_id=${account.account_id}`,
     );
-    expect(ownerProjects.map((item) => item.project_id)).toContain(project.project_id);
+    expect(ownerProjects.map((item) => item.project_id)).toContain(
+      project.project_id,
+    );
 
     const memberProjectsBeforeGrant = await api<ProjectSummary[]>(
       memberSession.access_token,
-      'GET',
+      "GET",
       `/projects?account_id=${account.account_id}`,
     );
     expect(memberProjectsBeforeGrant).toEqual([]);
     expect(
-      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+      await apiStatus(
+        memberSession.access_token,
+        "GET",
+        `/projects/${project.project_id}`,
+      ),
     ).toBe(403);
     expect(
       await apiStatus(
         memberSession.access_token,
-        'POST',
+        "POST",
         `/projects/${project.project_id}/sessions`,
         {},
       ),
@@ -249,34 +293,40 @@ test.describe('08 — Accounts, invites, and project access', () => {
 
     const accessBeforeGrant = await api<ProjectAccessResponse>(
       ownerSession.access_token,
-      'GET',
+      "GET",
       `/projects/${project.project_id}/access`,
     );
     expect(accessBeforeGrant.can_manage).toBe(true);
-    expect(byEmail(accessBeforeGrant.members, memberEmail)?.project_role).toBeNull();
-    expect(byEmail(accessBeforeGrant.members, memberEmail)?.effective_project_role).toBeNull();
+    expect(
+      byEmail(accessBeforeGrant.members, memberEmail)?.project_role,
+    ).toBeNull();
+    expect(
+      byEmail(accessBeforeGrant.members, memberEmail)?.effective_project_role,
+    ).toBeNull();
 
     const memberGrant = await api<ProjectAccessMember>(
       ownerSession.access_token,
-      'PUT',
+      "PUT",
       `/projects/${project.project_id}/access/${member.id}`,
-      { role: 'member' },
+      { role: "member" },
     );
-    expect(memberGrant.project_role).toBe('member');
-    expect(memberGrant.effective_project_role).toBe('member');
+    expect(memberGrant.project_role).toBe("member");
+    expect(memberGrant.effective_project_role).toBe("member");
 
     const memberProjectsAfterGrant = await api<ProjectSummary[]>(
       memberSession.access_token,
-      'GET',
+      "GET",
       `/projects?account_id=${account.account_id}`,
     );
-    expect(memberProjectsAfterGrant.map((item) => item.project_id)).toEqual([project.project_id]);
+    expect(memberProjectsAfterGrant.map((item) => item.project_id)).toEqual([
+      project.project_id,
+    ]);
     const readableProject = await api<ProjectSummary>(
       memberSession.access_token,
-      'GET',
+      "GET",
       `/projects/${project.project_id}`,
     );
-    expect(readableProject.effective_project_role).toBe('member');
+    expect(readableProject.effective_project_role).toBe("member");
     // A plain member is the floor *usable* role: it can start sessions and use the
     // agent chat (this previously 403'd, which made the floor project role useless).
     // It reaches provider validation just like an owner — an invalid provider is a
@@ -284,52 +334,65 @@ test.describe('08 — Accounts, invites, and project access', () => {
     expect(
       await apiStatus(
         memberSession.access_token,
-        'POST',
+        "POST",
         `/projects/${project.project_id}/sessions`,
-        { provider: 'justavps' },
+        { provider: "justavps" },
       ),
     ).toBe(400);
     // ...but it still cannot customize the project.
     expect(
-      await apiStatus(memberSession.access_token, 'PATCH', `/projects/${project.project_id}`, {
-        name: 'blocked',
-      }),
+      await apiStatus(
+        memberSession.access_token,
+        "PATCH",
+        `/projects/${project.project_id}`,
+        {
+          name: "blocked",
+        },
+      ),
     ).toBe(403);
 
     await api<{ ok: true }>(
       ownerSession.access_token,
-      'DELETE',
+      "DELETE",
       `/projects/${project.project_id}/access/${member.id}`,
     );
     expect(
-      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+      await apiStatus(
+        memberSession.access_token,
+        "GET",
+        `/projects/${project.project_id}`,
+      ),
     ).toBe(403);
 
     const promoted = await api<{ account_role: AccountRole }>(
       ownerSession.access_token,
-      'PATCH',
+      "PATCH",
       `/accounts/${account.account_id}/members/${member.id}`,
-      { role: 'admin' },
+      { role: "admin" },
     );
-    expect(promoted.account_role).toBe('admin');
+    expect(promoted.account_role).toBe("admin");
 
     const adminUpdate = await api<ProjectSummary>(
       memberSession.access_token,
-      'PATCH',
+      "PATCH",
       `/projects/${project.project_id}`,
       { name: `${initialProjectName} Admin` },
     );
-    expect(adminUpdate.effective_project_role).toBe('manager');
+    expect(adminUpdate.effective_project_role).toBe("manager");
     expect(adminUpdate.name).toBe(`${initialProjectName} Admin`);
 
     await api<{ account_role: AccountRole }>(
       ownerSession.access_token,
-      'PATCH',
+      "PATCH",
       `/accounts/${account.account_id}/members/${member.id}`,
-      { role: 'member' },
+      { role: "member" },
     );
     expect(
-      await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
+      await apiStatus(
+        memberSession.access_token,
+        "GET",
+        `/projects/${project.project_id}`,
+      ),
     ).toBe(403);
 
     await installBrowserSessionDirect(
@@ -339,36 +402,53 @@ test.describe('08 — Accounts, invites, and project access', () => {
       authOptions,
     );
     await selectAccountForUi(page, account.account_id);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
-    await dismissOnboarding(page);
-    await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute(
-      'href',
-      '/projects',
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.project_id}$`),
     );
-    await expect(page.getByRole('button', { name: 'New session' }).first()).toBeVisible();
-    await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: /Set up project/i }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Settings' }).first()).toBeVisible();
-    if (!ownerSession.user.email) throw new Error('owner session has no email');
+    await dismissOnboarding(page);
+    await expect(
+      page.getByRole("link", { name: "Project home" }).first(),
+    ).toHaveAttribute("href", `/projects/${project.project_id}`);
+    await expect(
+      page.getByRole("button", { name: "Switch project" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "New session" }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Sessions", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Settings" }).first(),
+    ).toBeVisible();
+    if (!ownerSession.user.email) throw new Error("owner session has no email");
     await expect(page.getByText(ownerSession.user.email)).toBeVisible();
     await expect(
-      page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]'),
+      page.locator(
+        'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
+      ),
     ).toHaveCount(0);
-    await expect(page.getByText('Terminal', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Secrets', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Triggers', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Tunnel', { exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Settings' }).first().click();
-    await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
+    await expect(page.getByText("Terminal", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Secrets", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Triggers", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Tunnel", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Settings" }).first().click();
     await expect(
-      page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]'),
+      page.getByRole("dialog", { name: /Customize/i }),
+    ).toBeVisible();
+    await expect(
+      page.locator(
+        'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
+      ),
     ).toHaveCount(0);
-    expect(projectRepoWebUrl).toContain('github.com/kortix-ai/');
+    expect(projectRepoWebUrl).toContain("github.com/kortix-ai/");
 
     await selectAccountForUi(page, account.account_id);
-    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await expect(
+      page.getByRole("heading", { name: "Projects", exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(accountName).first()).toBeVisible();
 
     await installBrowserSessionDirect(
@@ -377,78 +457,101 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/accounts/${account.account_id}`,
       authOptions,
     );
-    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Members", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("complementary").getByText(accountName, { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
-    await expect(page.getByText(/Pending invites/i)).toBeVisible();
+    await expect(page.getByText(/Invited · 1/i)).toBeVisible();
     const uiInviteResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/v1/accounts/${account.account_id}/members`) &&
-        response.request().method() === 'POST',
+        response.request().method() === "POST",
     );
-    await page.getByRole('button', { name: 'Invite member' }).click();
-    await expect(page.getByRole('dialog', { name: 'Invite member' })).toBeVisible();
-    await page.getByLabel('Email').fill(uiInvitedEmail);
+    await page.getByRole("button", { name: "Invite", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Invite members" }),
+    ).toBeVisible();
+    await page.getByLabel("Emails").fill(uiInvitedEmail);
     await page
-      .getByRole('dialog', { name: 'Invite member' })
-      .getByRole('button', { name: 'Invite' })
+      .getByRole("dialog", { name: "Invite members" })
+      .getByRole("button", { name: "Invite", exact: true })
       .click();
     expect((await uiInviteResponse).status()).toBe(201);
-    await expect(page.getByText(uiInvitedEmail)).toBeVisible();
+    await expect(page.getByText(uiInvitedEmail, { exact: true })).toBeVisible();
 
     await createAuthUser(uiInvitedEmail, authOptions);
     const uiInvitedSession = await signIn(uiInvitedEmail, authOptions);
     const uiInvitedAccounts = await api<AccountSummary[]>(
       uiInvitedSession.access_token,
-      'GET',
-      '/accounts',
+      "GET",
+      "/accounts",
     );
-    expect(uiInvitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
+    expect(
+      uiInvitedAccounts.some((item) => item.account_id === account.account_id),
+    ).toBe(true);
 
     await selectAccountForUi(page, account.account_id);
     const settingsDialog = await openCustomizeSection(
       page,
       project.project_id,
-      'settings',
+      "settings",
       /^Settings$/i,
     );
-    const githubLink = settingsDialog.getByRole('link', { name: /Open on GitHub/i });
+    const githubLink = settingsDialog.getByRole("link", {
+      name: /View on GitHub/i,
+    });
     await expect(githubLink).toBeVisible();
-    await expect(githubLink).toHaveAttribute('href', projectRepoWebUrl);
+    await expect(githubLink).toHaveAttribute("href", projectRepoWebUrl);
 
     const membersDialog = await openCustomizeSection(
       page,
       project.project_id,
-      'members',
+      "members",
       /Project members/i,
     );
-    await membersDialog.getByLabel('Email').fill(memberEmail);
-    await membersDialog.locator('#invite-role').click();
-    await page.getByRole('option', { name: /^Member$/i }).click();
+    await membersDialog.getByRole("tab", { name: /^Invite/i }).click();
+    await membersDialog.getByLabel("Emails").fill(memberEmail);
+    await membersDialog.locator("#invite-role").click();
+    await page.getByRole("option", { name: /^Member$/i }).click();
     const accessInvite = page.waitForResponse(
       (response) =>
-        response.url().includes(`/v1/projects/${project.project_id}/access/invite`) &&
-        response.request().method() === 'POST',
+        response
+          .url()
+          .includes(`/v1/projects/${project.project_id}/access/invite`) &&
+        response.request().method() === "POST",
     );
-    await membersDialog.getByRole('button', { name: /^Invite$/i }).click();
+    await membersDialog.getByRole("button", { name: /^Invite$/i }).click();
     expect((await accessInvite).status()).toBe(200);
-    const memberAccessRow = membersDialog.locator('li').filter({ hasText: memberEmail }).first();
+    await membersDialog.getByRole("tab", { name: /^People$/i }).click();
+    const memberAccessRow = membersDialog
+      .locator("li")
+      .filter({ hasText: memberEmail })
+      .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    await expect(memberAccessRow.getByRole('combobox')).toContainText('Member');
+    await expect(memberAccessRow.getByRole("combobox")).toContainText("Member");
 
-    await installBrowserSessionDirect(page, memberSession, '/projects', authOptions);
+    await installBrowserSessionDirect(
+      page,
+      memberSession,
+      "/projects",
+      authOptions,
+    );
     await selectAccountForUi(page, account.account_id);
-    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await dismissOnboarding(page);
     await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
 
     await api<{ ok: true }>(
       ownerSession.access_token,
-      'DELETE',
+      "DELETE",
       `/projects/${project.project_id}/access/${member.id}`,
     );
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
-    await expect(page.getByText(/No projects yet/i)).toBeVisible();
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
     const invitedSession = await signIn(invitedEmail, authOptions);
@@ -459,43 +562,66 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/invites/${accountInviteId}`,
       authOptions,
     );
-    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     if (page.url().includes(`/invites/${accountInviteId}`)) {
+      await expect(page.getByText(accountName, { exact: true })).toBeVisible();
       await expect(page.getByText(/Team account/i)).toBeVisible();
       const acceptAccountInviteResponse = page.waitForResponse(
         (response) =>
-          response.url().includes(`/v1/account-invites/${accountInviteId}/accept`) &&
-          response.request().method() === 'POST',
+          response
+            .url()
+            .includes(`/v1/account-invites/${accountInviteId}/accept`) &&
+          response.request().method() === "POST",
       );
-      await page.getByRole('button', { name: 'Accept' }).click();
+      await page.getByRole("button", { name: "Accept" }).click();
       expect((await acceptAccountInviteResponse).status()).toBe(200);
     }
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.account_id}`));
-    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects(?:\/start)?$/);
+    await page.goto(`/accounts/${account.account_id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(
+      page.getByRole("heading", { name: "Members", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("complementary").getByText(accountName, { exact: true }),
+    ).toBeVisible();
 
     const invitedAccounts = await api<AccountSummary[]>(
       invitedSession.access_token,
-      'GET',
-      '/accounts',
+      "GET",
+      "/accounts",
     );
-    expect(invitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
+    expect(
+      invitedAccounts.some((item) => item.account_id === account.account_id),
+    ).toBe(true);
 
     const finalMembers = await api<AccountMember[]>(
       ownerSession.access_token,
-      'GET',
+      "GET",
       `/accounts/${account.account_id}/members`,
     );
     expect(
-      finalMembers.some((item) => item.email === memberEmail && item.account_role === 'member'),
+      finalMembers.some(
+        (item) => item.email === memberEmail && item.account_role === "member",
+      ),
     ).toBe(true);
     expect(
-      finalMembers.some((item) => item.email === invitedEmail && item.account_role === 'member'),
+      finalMembers.some(
+        (item) => item.email === invitedEmail && item.account_role === "member",
+      ),
     ).toBe(true);
     expect(
-      finalMembers.some((item) => item.email === uiInvitedEmail && item.account_role === 'member'),
+      finalMembers.some(
+        (item) =>
+          item.email === uiInvitedEmail && item.account_role === "member",
+      ),
     ).toBe(true);
 
-    await api<{ ok: true }>(ownerSession.access_token, 'DELETE', `/projects/${project.project_id}`);
+    await api<{ ok: true }>(
+      ownerSession.access_token,
+      "DELETE",
+      `/projects/${project.project_id}`,
+    );
 
     expect(serverErrors).toEqual([]);
     expect(pageErrors).toEqual([]);

@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: Root test mode.
+        required: false
+        default: full
+        type: string
+      artifact-name:
+        description: Uploaded artifact name.
+        required: true
+        type: string
+      retention-days:
+        description: Artifact retention in days.
+        required: false
+        default: 14
+        type: number
+    secrets:
+      PLATINUM_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  platinum:
+    name: Platinum worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    env:
+      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL || 'https://api.platinum.dev' }}
+      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+      PLATINUM_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLATINUM_TEST_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+      TEST_MODE: ${{ inputs.mode }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.PLATINUM_TEST_SHA }}
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Run the root test command on Platinum
+        run: |
+          set -euo pipefail
+          case "$TEST_MODE" in
+            core) bun tests/bin/platinum-ci.ts ;;
+            full) bun tests/bin/platinum-ci.ts --full ;;
+            browser) bun tests/bin/platinum-ci.ts --browser-only ;;
+            *) echo "::error::Invalid test mode: $TEST_MODE"; exit 2 ;;
+          esac
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention-days }}

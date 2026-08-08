@@ -335,7 +335,8 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 ### One local testing system
 
 - `pnpm test` is the only repository-level test command. It runs local REST and
-  CLI flows, SDK tests, runner unit tests, and route coverage concurrently.
+  CLI flows, SDK tests, runner unit tests, route coverage, and worktree tests
+  concurrently.
 - `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. Start
@@ -346,6 +347,10 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   `pnpm worktree start <name> --billing` before browser or full tests.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
+- GitHub Actions runs `pnpm test -- --full` inside an ephemeral Platinum
+  sandbox through `.github/workflows/test.yml`. CI must fetch and verify the
+  exact SHA, upload `tests/test-results`, and delete the sandbox.
+- The Platinum CI worker is infrastructure only. Do not add CI-only test logic.
 
 ### Product flow source of truth
 

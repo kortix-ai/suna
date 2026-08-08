@@ -44,6 +44,17 @@ export class ResourceStack {
           params: { projectId: r.meta?.projectId, id: r.id },
         });
         break;
+      case "sandbox-template":
+        await this.admin.del(
+          "/v1/projects/:projectId/sandbox-templates/:templateId",
+          {
+            params: {
+              projectId: r.meta?.projectId,
+              templateId: r.id,
+            },
+          },
+        );
+        break;
       case "project":
         await this.admin.del("/v1/projects/:id", { params: { id: r.id }, query: { purge: true } });
         break;

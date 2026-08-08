@@ -45,6 +45,9 @@ pnpm test -- --browser-only    # Browser only; pnpm dev must be running
 pnpm test -- --full            # Browser plus all app/package tests; pnpm dev required
 ```
 
+Full mode also builds, dry-packs, and install-smokes publishable npm packages.
+Do not replace this package contract with a separate CI workflow.
+
 For an isolated worktree, start its stack with
 `pnpm worktree start <name> --billing`. This exposes local billing routes
 without requiring Stripe webhook forwarding.
@@ -65,3 +68,22 @@ work.
 
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
+
+## Run CI on Platinum
+
+Keep the test command unchanged. GitHub Actions invokes
+`bun tests/bin/platinum-ci.ts`, and the Platinum worker runs `pnpm test` or
+`pnpm test -- --full` at the exact requested SHA.
+
+- Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
+- Bake Node, Bun, pnpm, Docker, Chromium, and the pnpm store into the template.
+- Fetch the public pull-request or branch ref inside the sandbox.
+- Verify the full 40-character SHA before installing or testing.
+- Use an ephemeral 8 vCPU, 16 GiB RAM, 50 GiB disk worker.
+- Stream the worker log through the Platinum file API.
+- Download `tests/test-results` before deleting the sandbox.
+- Delete the sandbox in an unconditional cleanup path.
+- Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
+
+Do not add CI-only test logic. Change `pnpm test` when local and CI behavior
+must change together.

@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
-import { requireEnvValue } from './env';
+import { requireEnvValue } from "./env";
 
 function escapeSql(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/'/g, "''");
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "''");
 }
 
 interface SeedProjectOptions {
@@ -12,12 +12,16 @@ interface SeedProjectOptions {
   userId: string;
   name: string;
   repoUrl?: string;
-  projectRole?: 'manager' | 'editor' | 'member';
+  projectRole?: "manager" | "editor" | "member";
 }
 
 export function runDatabaseSql(sql: string): void {
-  const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env.local', 'apps/api/.env');
-  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
+  const databaseUrl = requireEnvValue(
+    "DATABASE_URL",
+    "apps/api/.env.local",
+    "apps/api/.env",
+  );
+  execFileSync("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", sql]);
 }
 
 export function seedDatabaseProject({
@@ -25,10 +29,11 @@ export function seedDatabaseProject({
   userId,
   name,
   repoUrl,
-  projectRole = 'editor',
+  projectRole = "editor",
 }: SeedProjectOptions): string {
   const projectId = randomUUID();
-  const projectRepoUrl = repoUrl ?? `https://github.com/kortix-ai/browser-${projectId}.git`;
+  const projectRepoUrl =
+    repoUrl ?? `https://github.com/kortix-ai/browser-${projectId}.git`;
   runDatabaseSql(`
 insert into kortix.projects (
   project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata
@@ -40,7 +45,7 @@ insert into kortix.projects (
   'main',
   'kortix.yaml',
   'active',
-  '{"browser_test":true}'::jsonb
+  '{"browser_test":true,"onboarding_completed_at":"2026-01-01T00:00:00.000Z"}'::jsonb
 );
 
 insert into kortix.project_members (

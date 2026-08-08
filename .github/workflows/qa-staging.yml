@@ -9,43 +9,12 @@ concurrency:
   group: qa-staging
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
-  browser:
-    name: browser journeys
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      E2E_BASE_URL: https://staging.kortix.com
-      E2E_API_URL: https://staging-api.kortix.com/v1
-      E2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      E2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      E2E_ADMIN_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
-      E2E_ADMIN_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - name: Install workspace dependencies
-        run: corepack enable pnpm && pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --dir tests exec playwright install --with-deps chromium
-      - name: Run browser journeys
-        run: cd tests && bun run test:browser
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: qa-staging-browser
-          path: tests/test-results/**
-          retention-days: 30
+  full:
+    name: full local suite
+    uses: ./.github/workflows/test.yml
+    with:
+      mode: full
+      artifact-name: qa-staging-results
+      retention-days: 30
+    secrets: inherit

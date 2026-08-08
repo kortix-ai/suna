@@ -1,20 +1,24 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
-import { createApiJsonClient } from '../helpers/http';
+import { loadEnv } from "../../src/core/env";
+import {
+  createDatabaseProject,
+  deleteDatabaseProject,
+} from "../../src/fixtures/database-project";
+import { createApiJsonClient } from "../helpers/http";
 import {
   createAuthUser,
   deleteAuthUser,
   installBrowserSessionDirect,
   signIn,
-} from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+} from "../helpers/session-auth";
+import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
 
-const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
-const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
-const password = 'E2eAppsUi123!';
+const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
+const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const databaseUrl =
+  process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+const password = "E2eAppsUi123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
@@ -33,12 +37,12 @@ interface AppResponse {
   desired_state: string;
 }
 
-test.describe('18 — Kortix Apps UI', () => {
-  test('shows experimental Apps and renders a read-only deployment index', async ({
+test.describe("18 — Kortix Apps UI", () => {
+  test("shows experimental Apps and renders a read-only deployment index", async ({
     context,
     page,
   }, testInfo) => {
-    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
     test.setTimeout(180_000);
 
     const runId = Date.now().toString(36);
@@ -50,31 +54,41 @@ test.describe('18 — Kortix Apps UI', () => {
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
     const appsCreateRequests: string[] = [];
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    page.on('response', (response) => {
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("response", (response) => {
       if (
         response.status() >= 500 &&
-        response.url().includes('/v1/projects/') &&
-        response.url().includes('/apps')
+        response.url().includes("/v1/projects/") &&
+        response.url().includes("/apps")
       ) {
         appsServerErrors.push(
           `${response.status()} ${response.request().method()} ${response.url()}`,
         );
       }
     });
-    page.on('request', (request) => {
-      if (request.method() === 'POST' && request.url().endsWith(`/v1/projects/${projectId}/apps`)) {
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        request.url().endsWith(`/v1/projects/${projectId}/apps`)
+      ) {
         appsCreateRequests.push(request.url());
       }
     });
 
     try {
-      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const accounts = await api<AccountSummary[]>(
+        session.access_token,
+        "GET",
+        "/accounts",
+      );
       const account = accounts.find(
-        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+        (item) =>
+          item.personal_account ||
+          item.is_primary_owner ||
+          item.account_role === "owner",
       );
       expect(account).toBeTruthy();
-      if (!account) throw new Error('test user has no personal account');
+      if (!account) throw new Error("test user has no personal account");
 
       const project = await createDatabaseProject(env, {
         accountId: account.account_id,
@@ -83,30 +97,41 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       projectId = project.id;
 
-      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-      await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await installBrowserSessionDirect(
+        page,
+        session,
+        "/favicon.png",
+        authOptions,
+      );
       await selectAccountForUi(page, account.account_id);
 
       await page.goto(`/projects/${project.id}/apps`, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
-      await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
-      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Apps", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("main").getByText("Experimental", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("No Apps deployed", { exact: true }),
+      ).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
-        'POST',
+        "POST",
         `/projects/${project.id}/apps`,
-        { slug: `seed-${runId}`, name: 'Seed App' },
+        { slug: `seed-${runId}`, name: "Seed App" },
         201,
       );
       const seededUrl = new URL(seeded.url);
-      if (env.target === 'local') {
+      if (env.target === "local") {
         expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
-        const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
+        const environmentPrefix = env.target === "prod" ? "prod" : env.target;
         expect(seededUrl.hostname).toMatch(
           new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
         );
@@ -114,70 +139,96 @@ test.describe('18 — Kortix Apps UI', () => {
 
       const listResponse = page.waitForResponse(
         (response) =>
-          response.request().method() === 'GET' &&
+          response.request().method() === "GET" &&
           response.url().endsWith(`/v1/projects/${project.id}/apps`),
       );
       await page.goto(`/projects/${project.id}/apps`, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: "domcontentloaded",
       });
       expect((await listResponse).status()).toBe(200);
 
       // First-run onboarding can remount after the feature mutation.
       await dismissOnboarding(page);
 
-      await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
-      await expect(page.getByText('Deploy from a terminal', { exact: true })).toBeVisible();
-      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
-      await expect(page.getByText('kortix apps deploy .', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
-      await expect(page.getByRole('dialog', { name: 'Create App' })).toHaveCount(0);
+      await expect(
+        page.getByRole("heading", { name: "Apps", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Deploy from a terminal", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("main").getByText("Experimental", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("kortix apps deploy .", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "New App" })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByRole("dialog", { name: "Create App" }),
+      ).toHaveCount(0);
 
-      const seededRow = page.getByRole('listitem', {
-        name: 'Seed App App',
+      const seededRow = page.getByRole("listitem", {
+        name: "Seed App App",
       });
       await expect(seededRow).toBeVisible();
-      await expect(seededRow.getByText(seeded.url, { exact: true })).toBeVisible();
-      await expect(seededRow.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
-      await expect(seededRow.getByText('Deploy to see a live preview.')).toBeVisible();
+      await expect(
+        seededRow.getByText(seeded.url, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        seededRow.getByRole("button", { name: "Suspend App" }),
+      ).toBeDisabled();
+      await expect(
+        seededRow.getByText("Deploy to see a live preview."),
+      ).toBeVisible();
 
-      const copy = seededRow.getByRole('button', { name: 'Copy code' });
+      const copy = seededRow.getByRole("button", { name: "Copy code" });
       await copy.click();
-      await expect(seededRow.getByRole('button', { name: 'Copied' })).toBeVisible();
+      await expect(
+        seededRow.getByRole("button", { name: "Copied" }),
+      ).toBeVisible();
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toBe(`kortix apps deploy . --app ${seeded.app_id}`);
 
-      await seededRow.getByRole('button', { name: 'Show versions' }).click();
-      await expect(seededRow.getByText('No deployments yet.')).toBeVisible();
+      await seededRow.getByRole("button", { name: "Show versions" }).click();
+      await expect(seededRow.getByText("No deployments yet.")).toBeVisible();
 
-      await page.evaluate(() => localStorage.setItem('theme', 'light'));
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.locator('html')).toHaveClass(/light/);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await page.evaluate(() => localStorage.setItem("theme", "light"));
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.locator("html")).toHaveClass(/light/);
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       await page.screenshot({
-        path: testInfo.outputPath('apps-light.png'),
+        path: testInfo.outputPath("apps-light.png"),
         fullPage: true,
       });
 
-      await page.evaluate(() => localStorage.setItem('theme', 'dark'));
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.locator('html')).toHaveClass(/dark/);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await page.evaluate(() => localStorage.setItem("theme", "dark"));
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.locator("html")).toHaveClass(/dark/);
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       await page.screenshot({
-        path: testInfo.outputPath('apps-dark.png'),
+        path: testInfo.outputPath("apps-dark.png"),
         fullPage: true,
       });
 
       await page.setViewportSize({ width: 390, height: 844 });
-      await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Apps", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "New App" })).toHaveCount(
+        0,
+      );
+      await expect(page.getByText("Seed App", { exact: true })).toBeVisible();
       expect(
-        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
       ).toBe(true);
       await page.screenshot({
-        path: testInfo.outputPath('apps-narrow-dark.png'),
+        path: testInfo.outputPath("apps-narrow-dark.png"),
         fullPage: true,
       });
 
@@ -185,7 +236,8 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(appsServerErrors).toEqual([]);
       expect(appsCreateRequests).toEqual([]);
     } finally {
-      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (projectId)
+        await deleteDatabaseProject(env, projectId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

@@ -47,9 +47,7 @@ Never write a plaintext secret into a tracked file. Full procedure: the
 This repo has one local-first test system. See **[tests/README.md](./tests/README.md)**
 and the **[`testing` skill](./.claude/skills/testing/SKILL.md)**.
 
-**THE RULE:** every change that touches behaviour ships with tests in the same change. CI enforces
-it — the `tests-required` gate fails any PR that changes source under `apps/**` or `packages/**`
-without changing a test (override with the `no-tests-needed` label for formatting/docs-only PRs).
+**THE RULE:** every change that touches behaviour ships with tests in the same change.
 
 Run tests from the repository root:
 
@@ -73,7 +71,7 @@ sync. `bun tests/bin/ke2e.ts coverage` fails on any uncovered or unknown route.
 **Unit-test expectation:** when you add or change an exported function/class/module in any
 `apps/**` or `packages/**` package, add or update a co-located `*.test.ts` next to it
 (`bun:test`). Every package has a `test` script. Run one package with
-`pnpm --filter <name> test`. The `package-tests` workflow runs them on every PR.
+`pnpm --filter <name> test`. The root `--full` mode runs every package test.
 
 Run tests before pushing:
 
@@ -91,5 +89,5 @@ pnpm test -- --full
 - [ ] No `.only(` / focused tests committed (the gate rejects them).
 - [ ] Mocks are at the boundary and reset per test; no real production data or credentials.
 
-CI reuses the same flow, SDK, unit, route-coverage, and browser commands with
-environment-specific orchestration. A red required check blocks the merge.
+CI runs `pnpm test -- --full` inside an ephemeral Platinum sandbox. A red
+required check blocks the merge.

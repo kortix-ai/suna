@@ -1004,11 +1004,11 @@ flow(
   { domain: 'connectors', routes: ['POST /v1/projects/:projectId/connect-requests'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step('missing slug → 400', async () => {
+    await ctx.step("missing slug → 400, or 501 when Pipedream is disabled", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post('/v1/projects/:projectId/connect-requests', {}, { params: { projectId: p.id } });
-      r.status(400);
+      r.status([400, 501]);
     });
     await ctx.step("unconnected slug → 404 (or 501 if Pipedream isn't configured)", async () => {
       const r = await ctx.client

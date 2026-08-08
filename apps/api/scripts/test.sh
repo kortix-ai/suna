@@ -25,6 +25,7 @@ case "$mode" in
     if [ "${COVERAGE:-}" = "1" ]; then
       cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
     fi
+    test_timeout="${KORTIX_TEST_TIMEOUT_MS:-5000}"
     # --env-file=scripts/test.env, NOT dotenvx: the unit suite is hermetic. It runs
     # off a committed plaintext file of fake values, so it behaves identically
     # on a laptop with no decryption key and on a CI runner that must never be
@@ -40,7 +41,7 @@ case "$mode" in
     # the flag is required explicitly. Without it, cross-file mock.module()
     # collisions are order-dependent and can silently pass or fail depending
     # on which files happen to run adjacently.
-    exec bun test --isolate --env-file=scripts/test.env $cov $files
+    exec bun test --isolate --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
     ;;
   *)
     echo "usage: test.sh [default|integration|live]" >&2

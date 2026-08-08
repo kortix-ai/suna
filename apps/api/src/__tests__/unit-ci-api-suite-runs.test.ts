@@ -5,23 +5,28 @@ import { join } from 'node:path';
 const repoRoot = join(import.meta.dir, '../../../..');
 const read = (rel: string) => readFileSync(join(repoRoot, rel), 'utf8');
 
-const workflow = read('.github/workflows/package-tests.yml');
+const workflow = read('.github/workflows/test.yml');
+const packageQuality = read('tests/bin/package-quality.ts');
 const testScript = read('apps/api/scripts/test.sh');
 const envTest = read('apps/api/scripts/test.env');
 
-const apiJob = workflow.slice(workflow.indexOf('\n  api:'));
+const platinumJob = workflow.slice(workflow.indexOf('\n  platinum:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('no step in the api job is gated on a secret being present', () => {
-    const gated = apiJob
-      .split('\n')
-      .filter((line) => /^\s+if:/.test(line))
-      .filter((line) => /secrets\.|env\.[A-Z0-9_]+\s*[=!]=/.test(line));
-    expect(gated).toEqual([]);
+  test('the reusable workflow runs the root suite on an exact-SHA Platinum worker', () => {
+    expect(platinumJob).toContain('bun tests/bin/platinum-ci.ts --full');
+    expect(platinumJob).toContain('PLATINUM_TEST_SHA:');
+    expect(platinumJob).toContain('PLATINUM_TEST_REF:');
   });
 
-  test('the api job never receives the dotenvx master key', () => {
-    expect(apiJob).not.toContain('DOTENV_PRIVATE_KEY:');
+  test('the Platinum job never receives the dotenvx master key', () => {
+    expect(platinumJob).not.toContain('DOTENV_PRIVATE_KEY:');
+  });
+
+  test('full mode reaches every package and app test through package-quality', () => {
+    expect(packageQuality).toContain('"./packages/**"');
+    expect(packageQuality).toContain('"./apps/**"');
+    expect(packageQuality).toContain('KORTIX_TEST_TIMEOUT_MS: "15000"');
   });
 
   test('the unit suite runs off the committed fake env, not dotenvx', () => {

@@ -40,6 +40,8 @@ const PRE_MIGRATION_SCHEMA = `
     session_id text PRIMARY KEY,
     sandbox_provider kortix.sandbox_provider NOT NULL DEFAULT 'daytona'
   );
+  CREATE VIEW kortix.workspace_sessions AS
+    SELECT session_id, sandbox_provider FROM kortix.project_sessions;
   CREATE TABLE kortix.session_sandboxes (
     sandbox_id uuid PRIMARY KEY,
     external_id text,
@@ -162,6 +164,8 @@ describe.skipIf(!dockerAvailable)('retired local provider migration — real Pos
            AND NOT tgisinternal;
       `).output.trim(),
     ).toBe('1');
+
+    expect(psql(`SELECT to_regclass('kortix.workspace_sessions');`).output.trim()).toBe('');
   });
 
   test('fails closed and names every table that still contains retired rows', () => {

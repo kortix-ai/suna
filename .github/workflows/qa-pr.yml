@@ -9,32 +9,12 @@ concurrency:
   group: qa-pr-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
-  fast:
-    name: local core
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - name: Install workspace dependencies
-        run: corepack enable pnpm && pnpm install --frozen-lockfile
-      - name: Run deterministic test lanes
-        run: |
-          pnpm --filter @kortix/sdk test
-          pnpm --dir tests test:unit
-          bun tests/bin/ke2e.ts coverage
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: qa-pr-results
-          path: tests/test-results/**
-          retention-days: 14
+  full:
+    name: full local suite
+    uses: ./.github/workflows/test.yml
+    with:
+      mode: full
+      artifact-name: qa-pr-results
+      retention-days: 14
+    secrets: inherit

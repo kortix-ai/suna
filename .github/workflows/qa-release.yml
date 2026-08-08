@@ -5,100 +5,17 @@ on:
     branches: [prod]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
-    inputs:
-      api_base_url:
-        description: "Staging API base URL including /v1"
-        required: false
-        type: string
-      web_base_url:
-        description: "Staging frontend URL"
-        required: false
-        type: string
-      gateway_base_url:
-        description: "Staging LLM gateway origin"
-        required: false
-        type: string
 
 concurrency:
   group: qa-release-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   full-suite:
     name: full suite + quality gates
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    env:
-      API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
-      WEB_BASE_URL_INPUT: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
-      GATEWAY_BASE_URL_INPUT: ${{ inputs.gateway_base_url || vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
-      KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
-      KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-      KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-      KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-      KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
-      KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
-      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-      KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
-      KE2E_PROVISION_CONCURRENCY: 1
-      KE2E_PROVISION_MIN_INTERVAL_MS: 5000
-      KE2E_PROVISION_RATE_LIMIT_DELAY_MS: 180000
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      E2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      E2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      E2E_ADMIN_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
-      E2E_ADMIN_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - name: Guard staging targets
-        run: |
-          set -euo pipefail
-          api="${API_BASE_URL_INPUT%/}"
-          web="${WEB_BASE_URL_INPUT%/}"
-          gateway="${GATEWAY_BASE_URL_INPUT%/}"
-          case "$api" in https://staging-api.kortix.com/v1) ;; *) echo "::error::Invalid staging API target: $api"; exit 1 ;; esac
-          case "$web" in https://staging.kortix.com) ;; *) echo "::error::Invalid staging web target: $web"; exit 1 ;; esac
-          case "$gateway" in https://gateway-staging.kortix.com) ;; *) echo "::error::Invalid staging gateway target: $gateway"; exit 1 ;; esac
-          {
-            echo "KE2E_API_URL=$api"
-            echo "KE2E_BASE_URL=$web"
-            echo "KE2E_GATEWAY_URL=$gateway"
-            echo "KE2E_TARGET=staging"
-            echo "KE2E_LIVE_CONFIRM=ci"
-            echo "E2E_API_URL=$api"
-            echo "E2E_BASE_URL=$web"
-          } >> "$GITHUB_ENV"
-      - name: Install workspace dependencies
-        run: corepack enable pnpm && pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --dir tests exec playwright install --with-deps chromium
-      - name: Run app and package tests
-        run: pnpm --filter './packages/**' --filter './apps/**' --if-present test
-      - name: Verify route coverage
-        run: bun tests/bin/ke2e.ts coverage
-      - name: Run deployed REST and CLI flows
-        timeout-minutes: 100
-        run: bun tests/bin/ke2e.ts run
-      - name: Run deployed browser journeys
-        timeout-minutes: 45
-        run: cd tests && bun run test:browser
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: release-qa-results
-          path: tests/test-results/**
-          retention-days: 90
+    uses: ./.github/workflows/test.yml
+    with:
+      mode: full
+      artifact-name: release-qa-results
+      retention-days: 90
+    secrets: inherit

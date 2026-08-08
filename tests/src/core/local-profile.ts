@@ -9,6 +9,7 @@ export const EXTERNAL_CAPABILITIES = new Set<Capability>([
   "stripe",
   "funded",
 ]);
+export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = "local-flow-runner-internal-service-key";
 
 export interface LocalWorktreeConfig {
   ports: {
@@ -59,7 +60,7 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     KE2E_DATABASE_URL: supabase.DB_URL,
     KE2E_SUPABASE_ANON_KEY: supabase.ANON_KEY,
     KE2E_SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
-    KE2E_INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY ?? "",
+    KE2E_INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     KE2E_LIVE_CONFIRM: "local",
     KE2E_LOCAL_BILLING_ENABLED: "1",
     KE2E_CAP_DAYTONA: "0",
