@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v4';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v5';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -10,6 +10,7 @@ export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 20 * 60_000;
+const WARM_PREPARE_TIMEOUT_MS = 20 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
 const API_MAX_ATTEMPTS = 6;
@@ -35,8 +36,8 @@ export interface PlatinumTemplateSpec {
   steps: Array<
     | { op: 'run'; cmd: string }
     | { op: 'env'; key: string; value: string }
-    | { op: 'kernel_modules'; profile: 'container' }
   >;
+  entrypoint: string;
   default_cpu: number;
   default_ram_mb: number;
   default_disk_gb: number;
@@ -112,6 +113,7 @@ export function selectReusablePlatinumTemplate(
 interface PlatinumSandbox {
   id: string;
   state?: string;
+  via?: 'restore' | 'cold-boot';
 }
 
 interface PlatinumExecResult {
@@ -153,6 +155,8 @@ interface WorkerMetadata {
   command: string[];
   templateDurationMs: number;
   sandboxCreateDurationMs: number;
+  sandboxVia: 'restore' | 'cold-boot' | 'unknown';
+  warmPrepareDurationMs: number;
   workerDurationMs: number;
   totalDurationMs: number;
   exitCode: number;
@@ -182,12 +186,41 @@ export function platinumTemplateName(lockHash: string): string {
   return `kortix-ci-${PLATINUM_CI_TEMPLATE_VERSION}-${lockHash.slice(0, 16)}`;
 }
 
+export function platinumBaseTemplateName(lockHash: string): string {
+  return `${platinumTemplateName(lockHash)}-base`;
+}
+
+function platinumWarmEntrypoint(): string {
+  return [
+    'set -eux',
+    'exec >>/workspace/kortix-template-warm.log 2>&1',
+    'cd /workspace/suna',
+    'rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock',
+    'for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done',
+    'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
+    'dockerd_pid=$!',
+    'for _ in $(seq 1 180); do docker info >/dev/null 2>&1 && break; sleep 1; done',
+    'docker info >/dev/null',
+    'pnpm exec supabase start',
+    'image_count="$(docker image ls -q | sort -u | wc -l)"',
+    'test "$image_count" -gt 0',
+    'docker image ls --digests',
+    'pnpm exec supabase stop --no-backup',
+    'kill -TERM "$dockerd_pid"',
+    'for _ in $(seq 1 60); do kill -0 "$dockerd_pid" 2>/dev/null || break; sleep 1; done',
+    '! kill -0 "$dockerd_pid" 2>/dev/null',
+    'rm -f /var/run/docker.pid /var/run/docker.sock',
+    'printf "images=%s\\n" "$image_count" > /workspace/.kortix-ci-warm-ready',
+    'exec sleep infinity',
+  ].join(' && ');
+}
+
 export function buildPlatinumTemplateSpec(input: {
   lockHash: string;
   repository: string;
   cacheSha: string;
 }): PlatinumTemplateSpec {
-  const name = platinumTemplateName(input.lockHash);
+  const name = platinumBaseTemplateName(input.lockHash);
   const cacheCommand = [
     'set -eux',
     'mkdir -p /workspace /root/.cache/ms-playwright',
@@ -200,19 +233,8 @@ export function buildPlatinumTemplateSpec(input: {
     'cd /workspace/suna',
     'corepack enable',
     'pnpm install --frozen-lockfile',
-    'pnpm --dir tests exec playwright install chromium',
-    'for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done',
-    "sh -c 'nohup dockerd --host=unix:///var/run/docker.sock >/tmp/kortix-template-dockerd.log 2>&1 &'",
-    'for _ in $(seq 1 180); do docker info >/dev/null 2>&1 && break; sleep 1; done',
-    'docker info >/dev/null',
-    'pnpm exec supabase start >/tmp/kortix-template-supabase.log 2>&1',
-    'test "$(docker image ls -q | sort -u | wc -l)" -gt 0',
-    'pnpm exec supabase stop --no-backup >/dev/null',
+    'pnpm --dir tests exec playwright install --with-deps chromium',
     'rm -rf /workspace/suna/tests/test-results',
-    "sh -c 'pkill -TERM dockerd || true'",
-    'for _ in $(seq 1 60); do pgrep dockerd >/dev/null || break; sleep 1; done',
-    'test -z "$(pgrep dockerd || true)"',
-    'rm -f /var/run/docker.pid /var/run/docker.sock',
   ].join(' && ');
 
   return {
@@ -220,7 +242,6 @@ export function buildPlatinumTemplateSpec(input: {
     version: '1.0.0',
     base_image: PLATINUM_CI_NODE_IMAGE,
     steps: [
-      { op: 'kernel_modules', profile: 'container' },
       {
         op: 'run',
         cmd: [
@@ -236,10 +257,30 @@ export function buildPlatinumTemplateSpec(input: {
       { op: 'run', cmd: cacheCommand },
       { op: 'env', key: 'KORTIX_PLATINUM_CI_TEMPLATE', value: name },
     ],
+    entrypoint: platinumWarmEntrypoint(),
     default_cpu: 8,
     default_ram_mb: 16_384,
     default_disk_gb: 50,
     size_mb: 20_480,
+  };
+}
+
+export function buildPlatinumWarmTemplateRequest(lockHash: string): {
+  name: string;
+  capture_condition: { cmd: string; timeoutSec: number };
+  default_cpu: number;
+  default_ram_mb: number;
+  default_disk_gb: number;
+} {
+  return {
+    name: platinumTemplateName(lockHash),
+    capture_condition: {
+      cmd: 'test -s /workspace/.kortix-ci-warm-ready',
+      timeoutSec: WARM_PREPARE_TIMEOUT_MS / 1000,
+    },
+    default_cpu: 8,
+    default_ram_mb: 16_384,
+    default_disk_gb: 50,
   };
 }
 
@@ -272,7 +313,7 @@ finish() {
   local code="$1"
   set +e
   mkdir -p "$ROOT/tests/test-results/platinum"
-  for source in "$LOG" "$DEV_LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log; do
+  for source in "$LOG" "$DEV_LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log; do
     if [[ -f "$source" ]]; then
       cp "$source" "$ROOT/tests/test-results/platinum/$(basename "$source")"
     fi
@@ -480,6 +521,53 @@ async function ensureTemplate(
   return waitForTemplate(api, queued);
 }
 
+async function ensureWarmTemplate(
+  api: PlatinumApi,
+  base: PlatinumTemplate,
+  lockHash: string,
+): Promise<PlatinumTemplate> {
+  const name = platinumTemplateName(lockHash);
+  const existing = selectReusablePlatinumTemplate(
+    await api.json<PlatinumTemplate[]>(`/v1/templates?name=${encodeURIComponent(name)}&limit=20`),
+    name,
+  );
+  if (existing) {
+    console.log(`[platinum-ci] template=${name} cache=hit id=${existing.id}`);
+    return waitForTemplate(api, existing);
+  }
+  console.log(`[platinum-ci] template=${name} cache=miss parent=${base.id}`);
+  const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
+    method: 'POST',
+    body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
+  });
+  return waitForTemplate(api, derived);
+}
+
+async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
+  const deadline = Date.now() + WARM_PREPARE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (await stat(api, sandboxId, '/workspace/.kortix-ci-warm-ready', 1)) {
+      const marker = new TextDecoder().decode(
+        await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
+      ).trim();
+      console.log(`[platinum-ci] warm_sandbox_ready=1 ${marker}`);
+      return;
+    }
+    await Bun.sleep(POLL_MS);
+  }
+  let warmLog = '';
+  try {
+    warmLog = new TextDecoder().decode(
+      await api.read(sandboxId, '/workspace/kortix-template-warm.log', undefined, undefined, 1),
+    );
+  } catch {
+    // The log is optional. The missing marker is the authoritative failure.
+  }
+  throw new Error(
+    `Platinum sandbox ${sandboxId} did not become warm within ${WARM_PREPARE_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
+  );
+}
+
 async function exec(
   api: PlatinumApi,
   sandboxId: string,
@@ -667,11 +755,14 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
   console.log(`[platinum-ci] template=${templateSpec.name}`);
 
   const templateStartedAt = Date.now();
-  const template = await ensureTemplate(api, templateSpec);
+  const baseTemplate = await ensureTemplate(api, templateSpec);
+  const template = await ensureWarmTemplate(api, baseTemplate, hash);
   const templateDurationMs = Date.now() - templateStartedAt;
 
   let sandboxId = '';
   let sandboxCreateDurationMs = 0;
+  let sandboxVia: WorkerMetadata['sandboxVia'] = 'unknown';
+  let warmPrepareDurationMs = 0;
   let workerDurationMs = 0;
   let exitCode = 1;
   const cleanup = async () => {
@@ -727,11 +818,16 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       },
     );
     sandboxId = sandbox.id;
+    sandboxVia = sandbox.via ?? 'unknown';
     sandboxCreateDurationMs = Date.now() - createStartedAt;
     if (String(sandbox.state).toLowerCase() !== 'running') {
       throw new Error(`Platinum worker ${sandbox.id} returned state=${sandbox.state}`);
     }
-    console.log(`[platinum-ci] sandbox=${sandboxId} state=running`);
+    console.log(`[platinum-ci] sandbox=${sandboxId} state=running via=${sandboxVia}`);
+
+    const warmStartedAt = Date.now();
+    await waitForWarmSandbox(api, sandboxId);
+    warmPrepareDurationMs = Date.now() - warmStartedAt;
 
     const workerScript = buildWorkerScript(input);
     await api.write(`${sandboxId}:/workspace/run-kortix-tests.sh`, workerScript, '0755');
@@ -753,13 +849,15 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       provider: 'platinum',
       sandboxId,
       templateId: template.id,
-      templateName: templateSpec.name,
+      templateName: platinumTemplateName(hash),
       repository: input.repository,
       ref: input.ref,
       gitSha: input.sha,
       command: ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])],
       templateDurationMs,
       sandboxCreateDurationMs,
+      sandboxVia,
+      warmPrepareDurationMs,
       workerDurationMs,
       totalDurationMs: Date.now() - totalStartedAt,
       exitCode,
@@ -771,7 +869,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       `${JSON.stringify(metadata, null, 2)}\n`,
     );
     console.log(
-      `[platinum-ci] exit=${exitCode} worker_ms=${workerDurationMs} total_ms=${metadata.totalDurationMs}`,
+      `[platinum-ci] exit=${exitCode} warm_ms=${warmPrepareDurationMs} worker_ms=${workerDurationMs} total_ms=${metadata.totalDurationMs}`,
     );
     return exitCode;
   } finally {

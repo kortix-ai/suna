@@ -46,24 +46,28 @@ GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
 tests. The workflow starts an ephemeral Platinum sandbox and runs the same
 `pnpm test -- --full` command inside it.
 
-The template name includes the `pnpm-lock.yaml` hash. The template contains the
-pinned Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and pre-pulled
-Supabase images. It keeps a warm `/workspace/suna` checkout at the template
-build SHA. A lockfile change creates one new template. Other commits reuse it.
+The template name includes the `pnpm-lock.yaml` hash. Platinum first builds a
+base OCI template with pinned Node, Bun, pnpm, Docker, Chromium, linked
+`node_modules`, and a warm `/workspace/suna` checkout. Platinum then derives a
+stateful template from that base. The stateful capture boots nested Docker,
+pulls the exact Supabase images, removes the temporary Supabase database, and
+captures the prepared disk. A lockfile change creates one new pair. Other
+commits reuse it.
 
 The worker fetches the requested ref into that warm checkout. It force-checks
 out the exact SHA and runs `pnpm install --offline --frozen-lockfile`. It starts
-the baked Docker data plane and creates a fresh Supabase database from current
-migrations. Source changes do not require a template rebuild.
+dockerd against the captured image store. `pnpm dev` creates a fresh Supabase
+database from current migrations without registry pulls. Source changes do not
+require a template rebuild.
 
-The template requests Platinum's `kernel_modules/container` profile. The worker
-loads the container module set before it starts dockerd. This profile is
-infrastructure for the same local test command. It does not change test logic.
+The capture and worker load the required container modules before they start
+dockerd. This infrastructure does not change test logic.
 
-The worker fetches the requested public Git ref and verifies its full SHA. It
-streams `kortix-test.log`, downloads `tests/test-results`, and deletes the
-sandbox. The worker auto-stops after 15 idle minutes if workflow cancellation
-prevents immediate deletion.
+The worker logs whether Platinum used `via=restore` or `via=cold-boot`. It waits
+for the warm marker before it runs tests. It fetches the requested public Git
+ref and verifies its full SHA. It streams `kortix-test.log`, downloads
+`tests/test-results`, and deletes the sandbox. The worker auto-stops after 15
+idle minutes if workflow cancellation prevents immediate deletion.
 
 The control client retries `502`, `503`, `504`, `524`, the provider's transient
 `500 operation was aborted` response, timeouts, and connection resets. It uses

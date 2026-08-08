@@ -76,12 +76,15 @@ Keep the test command unchanged. GitHub Actions invokes
 `pnpm test -- --full` at the exact requested SHA.
 
 - Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
-- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and pre-pulled
-  Supabase images into the template.
+- Build one OCI base and one stateful derived template per lockfile hash.
+- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and the warm
+  checkout into the base.
+- Pre-pull Supabase images during the stateful capture. Remove the temporary
+  database before capture.
 - Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
   it, then validate the lockfile with an offline install.
-- Request Platinum's `kernel_modules/container` profile and load the required
-  modules before starting dockerd.
+- Load the required container modules before starting dockerd.
+- Record `via=restore` or `via=cold-boot` for every worker benchmark.
 - Fetch the public pull-request or branch ref inside the sandbox.
 - Verify the full 40-character SHA before installing or testing.
 - Use an ephemeral 8 vCPU, 16 GiB RAM, 50 GiB disk worker.

@@ -5,9 +5,11 @@ import {
   PLATINUM_CI_PNPM_VERSION,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
+  buildPlatinumWarmTemplateRequest,
   buildWorkerScript,
   isRetryablePlatinumError,
   observePlatinumWorker,
+  platinumBaseTemplateName,
   platinumWorkerLaunchCommand,
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
@@ -20,14 +22,15 @@ const lockHash = 'b'.repeat(64);
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v4-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v5-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v5-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
       cacheSha: sha,
     });
 
-    expect(spec.name).toBe(platinumTemplateName(lockHash));
+    expect(spec.name).toBe(platinumBaseTemplateName(lockHash));
     expect(spec.base_image).toBe(PLATINUM_CI_NODE_IMAGE);
     expect(spec.default_cpu).toBe(8);
     expect(spec.default_ram_mb).toBe(16_384);
@@ -35,11 +38,21 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
-    expect(JSON.stringify(spec.steps)).toContain('playwright install chromium');
+    expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
     expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
-    expect(JSON.stringify(spec.steps)).toContain('supabase start');
-    expect(JSON.stringify(spec.steps)).toContain('supabase stop --no-backup');
-    expect(spec.steps).toContainEqual({ op: 'kernel_modules', profile: 'container' });
+    expect(spec.entrypoint).toContain('supabase start');
+    expect(spec.entrypoint).toContain('supabase stop --no-backup');
+    expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');
+    expect(buildPlatinumWarmTemplateRequest(lockHash)).toEqual({
+      name: platinumTemplateName(lockHash),
+      capture_condition: {
+        cmd: 'test -s /workspace/.kortix-ci-warm-ready',
+        timeoutSec: 1_200,
+      },
+      default_cpu: 8,
+      default_ram_mb: 16_384,
+      default_disk_gb: 50,
+    });
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
     }
