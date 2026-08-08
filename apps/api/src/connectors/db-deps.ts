@@ -45,6 +45,7 @@ import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
 import { loadProjectForUser } from '../projects/lib/access';
 import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector-authorization-strategy';
+import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
 import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import {
   canonicalConnectorAlias,
@@ -776,13 +777,19 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
     c.req.header('X-Kortix-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
+  const agentGrant = sessionIdentity.sessionId
+    ? await reconcileStoredSessionAgentGrant({
+        projectId: result.projectId,
+        sessionId: sessionIdentity.sessionId,
+      })
+    : (result.agentGrant ?? null);
   return {
     userId: result.userId,
     accountId: result.accountId,
     projectId: result.projectId,
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(result.userId),
-    agentGrant: result.agentGrant ?? null,
+    agentGrant,
   };
 }
 
@@ -837,13 +844,21 @@ async function resolveProjectPrincipal(
   );
   if (!sessionIdentity.ok) return null;
 
+  const storedAgentGrant = (c.get('agentGrant') as ConnectorPrincipal['agentGrant']) ?? null;
+  const agentGrant = sessionIdentity.sessionId
+    ? await reconcileStoredSessionAgentGrant({
+        projectId,
+        sessionId: sessionIdentity.sessionId,
+      })
+    : storedAgentGrant;
+
   return {
     userId,
     accountId,
     projectId,
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(userId),
-    agentGrant: (c.get('agentGrant') as ConnectorPrincipal['agentGrant']) ?? null,
+    agentGrant,
   };
 }
 
