@@ -16,6 +16,7 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
+  | 'system:refine-cadence'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
