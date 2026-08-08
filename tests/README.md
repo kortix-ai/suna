@@ -47,8 +47,14 @@ tests. The workflow starts an ephemeral Platinum sandbox and runs the same
 `pnpm test -- --full` command inside it.
 
 The template name includes the `pnpm-lock.yaml` hash. The template contains the
-pinned Node, Bun, pnpm, Docker, Chromium, and pnpm-store state. A lockfile change
-creates one new template. Other commits reuse it.
+pinned Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and pre-pulled
+Supabase images. It keeps a warm `/workspace/suna` checkout at the template
+build SHA. A lockfile change creates one new template. Other commits reuse it.
+
+The worker fetches the requested ref into that warm checkout. It force-checks
+out the exact SHA and runs `pnpm install --offline --frozen-lockfile`. It starts
+the baked Docker data plane and creates a fresh Supabase database from current
+migrations. Source changes do not require a template rebuild.
 
 The template requests Platinum's `kernel_modules/container` profile. The worker
 loads the container module set before it starts dockerd. This profile is

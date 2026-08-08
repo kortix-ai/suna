@@ -76,7 +76,10 @@ Keep the test command unchanged. GitHub Actions invokes
 `pnpm test -- --full` at the exact requested SHA.
 
 - Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
-- Bake Node, Bun, pnpm, Docker, Chromium, and the pnpm store into the template.
+- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and pre-pulled
+  Supabase images into the template.
+- Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
+  it, then validate the lockfile with an offline install.
 - Request Platinum's `kernel_modules/container` profile and load the required
   modules before starting dockerd.
 - Fetch the public pull-request or branch ref inside the sandbox.

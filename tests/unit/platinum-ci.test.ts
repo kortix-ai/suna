@@ -20,7 +20,7 @@ const lockHash = 'b'.repeat(64);
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v3-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v4-bbbbbbbbbbbbbbbb');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -36,6 +36,9 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install chromium');
+    expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
+    expect(JSON.stringify(spec.steps)).toContain('supabase start');
+    expect(JSON.stringify(spec.steps)).toContain('supabase stop --no-backup');
     expect(spec.steps).toContainEqual({ op: 'kernel_modules', profile: 'container' });
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
@@ -53,6 +56,8 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain("'pnpm' 'test' '--' '--full'");
     expect(script).toContain('set -euo pipefail');
     expect(script).toContain("fetch --depth=1 origin 'refs/pull/6260/head'");
+    expect(script).toContain('pnpm install --offline --frozen-lockfile');
+    expect(script).not.toContain('rm -rf "$ROOT"');
     expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
     expect(script).toContain('nohup pnpm dev');
     expect(script).toContain('modprobe "$module"');

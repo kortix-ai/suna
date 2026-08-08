@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v3';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v4';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -190,17 +190,29 @@ export function buildPlatinumTemplateSpec(input: {
   const name = platinumTemplateName(input.lockHash);
   const cacheCommand = [
     'set -eux',
-    'mkdir -p /opt/kortix /workspace /root/.cache/ms-playwright',
-    'git init /tmp/suna-cache',
-    'git -C /tmp/suna-cache remote add origin https://github.com/' + input.repository + '.git',
-    'git -C /tmp/suna-cache fetch --depth=1 origin ' + input.cacheSha,
-    'git -C /tmp/suna-cache checkout --detach FETCH_HEAD',
-    'test "$(git -C /tmp/suna-cache rev-parse HEAD)" = "' + input.cacheSha + '"',
-    'cd /tmp/suna-cache',
+    'mkdir -p /workspace /root/.cache/ms-playwright',
+    'rm -rf /workspace/suna',
+    'git init /workspace/suna',
+    'git -C /workspace/suna remote add origin https://github.com/' + input.repository + '.git',
+    'git -C /workspace/suna fetch --depth=1 origin ' + input.cacheSha,
+    'git -C /workspace/suna checkout --detach FETCH_HEAD',
+    'test "$(git -C /workspace/suna rev-parse HEAD)" = "' + input.cacheSha + '"',
+    'cd /workspace/suna',
     'corepack enable',
     'pnpm install --frozen-lockfile',
     'pnpm --dir tests exec playwright install chromium',
-    'rm -rf /tmp/suna-cache',
+    'for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done',
+    "sh -c 'nohup dockerd --host=unix:///var/run/docker.sock >/tmp/kortix-template-dockerd.log 2>&1 &'",
+    'for _ in $(seq 1 180); do docker info >/dev/null 2>&1 && break; sleep 1; done',
+    'docker info >/dev/null',
+    'pnpm exec supabase start >/tmp/kortix-template-supabase.log 2>&1',
+    'test "$(docker image ls -q | sort -u | wc -l)" -gt 0',
+    'pnpm exec supabase stop --no-backup >/dev/null',
+    'rm -rf /workspace/suna/tests/test-results',
+    "sh -c 'pkill -TERM dockerd || true'",
+    'for _ in $(seq 1 60); do pgrep dockerd >/dev/null || break; sleep 1; done',
+    'test -z "$(pgrep dockerd || true)"',
+    'rm -f /var/run/docker.pid /var/run/docker.sock',
   ].join(' && ');
 
   return {
@@ -275,11 +287,11 @@ echo "[platinum-ci] ref=${input.ref}"
 echo "[platinum-ci] expected_sha=${input.sha}"
 echo "[platinum-ci] command=${command.join(' ')}"
 
-rm -rf "$ROOT"
-git init "$ROOT"
-git -C "$ROOT" remote add origin ${shellQuote(`https://github.com/${input.repository}.git`)}
+test -d "$ROOT/.git"
+git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
 git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}
-git -C "$ROOT" checkout --detach FETCH_HEAD
+git -C "$ROOT" checkout --detach --force FETCH_HEAD
+git -C "$ROOT" clean -ffd
 actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
 if [[ "$actual_sha" != ${shellQuote(input.sha)} ]]; then
   echo "[platinum-ci] expected ${input.sha}, got $actual_sha" >&2
@@ -289,7 +301,7 @@ echo "[platinum-ci] exact_sha=$actual_sha"
 
 cd "$ROOT"
 corepack enable
-pnpm install --frozen-lockfile
+pnpm install --offline --frozen-lockfile
 
 for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
   modprobe "$module"
@@ -579,14 +591,41 @@ async function readWorkerExitCode(
   return exitCode;
 }
 
+async function readWorkerExitCodeFile(
+  api: PlatinumApi,
+  sandboxId: string,
+): Promise<number | null> {
+  const status = await stat(api, sandboxId, '/workspace/kortix-test.exit', 1);
+  if (!status) return null;
+  const bytes = await api.read(sandboxId, '/workspace/kortix-test.exit', undefined, undefined, 1);
+  const exitCode = Number(new TextDecoder().decode(bytes).trim());
+  if (!Number.isInteger(exitCode)) throw new Error('Platinum worker wrote an invalid exit code');
+  return exitCode;
+}
+
 async function streamWorker(
   api: PlatinumApi,
   sandboxId: string,
   startedAt: number,
 ): Promise<number> {
+  let fileStatusFailures = 0;
   return observePlatinumWorker({
     startedAt,
-    checkExitCode: () => readWorkerExitCode(api, sandboxId),
+    checkExitCode: async () => {
+      try {
+        const exitCode = await readWorkerExitCodeFile(api, sandboxId);
+        fileStatusFailures = 0;
+        return exitCode;
+      } catch (error) {
+        if (!isRetryablePlatinumError(error)) throw error;
+        fileStatusFailures += 1;
+        if (fileStatusFailures % 20 !== 0) throw error;
+        console.warn(
+          `[platinum-ci] status file unavailable ${fileStatusFailures} times; using exec fallback`,
+        );
+        return readWorkerExitCode(api, sandboxId);
+      }
+    },
     statLog: () => stat(api, sandboxId, '/workspace/kortix-test.log', 1),
     readLog: (offset, limit) =>
       api.read(sandboxId, '/workspace/kortix-test.log', offset, limit, 1),
