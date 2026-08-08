@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
 import { and, eq, sql, inArray, isNull } from 'drizzle-orm';
 import {
   auditEvents,
+  auditSessionSequences,
   projects,
   projectSecrets,
   projectSessionSecretHandles,
@@ -67,8 +68,11 @@ beforeAll(async () => {
     accountId: ctx.accountId,
     name: `Secret delivery test ${SUFFIX}`,
     repoUrl: resolve(import.meta.dir, '../../../..'),
-    defaultBranch: 'HEAD',
-    manifestPath: 'packages/starter/templates/base/kortix.yaml',
+    // This suite tests session allowlist and secret-delivery composition. An
+    // ungoverned project resolves the same unrestricted agent grant without a
+    // Git checkout, which keeps the real-DB assertions deterministic.
+    defaultBranch: '',
+    manifestPath: '',
   });
 
   // Two identifiers, SAME key — the headline secrets-v2 scenario.
@@ -186,11 +190,20 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ctx) return;
-  await db
-    .delete(auditEvents)
-    .where(
-      and(eq(auditEvents.projectId, ctx.projectId), eq(auditEvents.sessionId, BROKER_SESSION)),
-    );
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`set local kortix.audit_maintenance = 'on'`);
+    await tx.delete(auditEvents).where(eq(auditEvents.projectId, ctx!.projectId));
+    await tx
+      .delete(auditSessionSequences)
+      .where(
+        inArray(auditSessionSequences.sessionId, [
+          SESSION_ID,
+          PRINCIPAL_SESSION,
+          VEYRIS_SESSION,
+          BROKER_SESSION,
+        ]),
+      );
+  });
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, VEYRIS_SESSION));
@@ -392,6 +405,15 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(first.env[BROKER_KEY]).toStartWith('test_broker_KXS1');
     expect(first.env[BROKER_KEY]).not.toContain(BROKER_VALUE);
     expect(first.names).toEqual([BROKER_KEY]);
+    expect(first.capabilities.capabilities).toEqual([
+      {
+        identifier: BROKER_IDENT,
+        delivery: 'https_broker',
+        command: `kortix secrets call ${BROKER_IDENT} <https-url> [options]`,
+      },
+    ]);
+    expect(first.capabilitiesJson).not.toContain(BROKER_VALUE);
+    expect(first.capabilitiesJson).not.toContain(first.env[BROKER_KEY]!);
 
     const second = await listProjectSecretsSnapshotForUser(
       ctx.projectId,
@@ -486,6 +508,9 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     );
     expect(snapshot.env[BROKER_KEY]).toBeUndefined();
     expect(snapshot.names).not.toContain(BROKER_KEY);
+    const capabilities = snapshot.capabilities.capabilities;
+    expect(capabilities.some((capability) => capability.identifier === UNSCOPED)).toBe(true);
+    expect(capabilities.some((capability) => capability.identifier === BROKER_IDENT)).toBe(false);
   });
 });
 

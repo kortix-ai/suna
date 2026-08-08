@@ -85,7 +85,9 @@ export async function apiKeyAuth(c: Context, next: Next) {
   const result = await validateSecretKey(token);
 
   if (!result.isValid) {
-    console.warn(`[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`);
+    console.warn(
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+    );
     auditLoginFail({
       c,
       reason: result.error ?? 'invalid_api_key',
@@ -222,7 +224,10 @@ export async function supabaseAuth(c: Context, next: Next) {
     // marks in provider_events instead of dying with the sandbox. Write-only
     // telemetry about the caller's OWN boot, and the handler re-checks that the
     // token's sandboxId matches the session it claims to be reporting for.
-    path.endsWith('/boot-timeline');
+    path.endsWith('/boot-timeline') ||
+    // The runtime relay sends redacted OpenCode lifecycle events for its own
+    // session. The handler re-checks sandbox, account, project, and session.
+    path.endsWith('/audit/events');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -506,10 +511,13 @@ export async function combinedAuth(c: Context, next: Next) {
       });
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
     }
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      accountId: result.accountId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        accountId: result.accountId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -543,10 +551,13 @@ export async function combinedAuth(c: Context, next: Next) {
   // 3. Try Supabase JWT — fast path: local verification (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: local.userId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: local.userId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -588,7 +599,10 @@ export async function combinedAuth(c: Context, next: Next) {
   // JWKS not yet loaded — fall back to network getUser() call
   try {
     const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
     if (error || !user) {
       auditLoginFail({
@@ -599,10 +613,13 @@ export async function combinedAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: user.id,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: user.id,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',

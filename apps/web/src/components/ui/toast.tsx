@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
+import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
 import { cn } from '@/lib/utils';
 import {
   CheckCircleIcon as GoCheckCircleFill,
@@ -200,6 +201,8 @@ export const loadingToast = <T,>(
 };
 
 export const errorToast = (message: string, options?: ToastOptions) => {
+  if (isSilentTimeoutMessage(message)) return;
+
   const isMobile = window.innerWidth <= 768;
 
   toast.custom(

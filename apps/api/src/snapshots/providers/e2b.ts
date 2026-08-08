@@ -7,6 +7,7 @@ import {
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   stageBuildContext,
+  stageAppBuildContext,
   stageMetaBuildContext,
 } from '../build-context';
 import { shortLivedObservation } from '../observation-cache';
@@ -77,7 +78,9 @@ class E2BAdapter implements SandboxProviderAdapter {
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const context =
-      input.runtimeProfile === 'meta'
+      input.runtimeProfile === 'app'
+        ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
+        : input.runtimeProfile === 'meta'
         ? await stageMetaBuildContext()
         : await stageBuildContext(
             input.snapshotName,

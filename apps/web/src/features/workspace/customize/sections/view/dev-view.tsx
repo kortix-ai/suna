@@ -32,14 +32,15 @@ import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;

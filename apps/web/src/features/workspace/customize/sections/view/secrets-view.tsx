@@ -81,7 +81,7 @@ import {
   setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -151,23 +151,23 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
+  const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const normalized = useMemo(() => normalizeResponse(secretsQuery.data), [secretsQuery.data]);
@@ -791,7 +791,7 @@ function SecretDialog({
       return null;
     },
     onMutate: async (plan) => {
-      const queryKey = ['project-secrets', projectId] as const;
+      const queryKey = qk.project.secrets(projectId);
       await queryClient.cancelQueries({ queryKey });
       const context = beginOptimisticProjectSecretSave(queryClient, queryKey, plan.optimistic);
       onOpenChange(false);
@@ -799,27 +799,27 @@ function SecretDialog({
     },
     onSuccess: (result, plan) => {
       if (result) {
-        queryClient.setQueryData<ProjectSecretsCache>(['project-secrets', projectId], (cache) =>
+        queryClient.setQueryData<ProjectSecretsCache>(qk.project.secrets(projectId), (cache) =>
           cache ? applyProjectSecretResponse(cache, result) : cache,
         );
       }
       successToast(`Saved ${plan.finalIdentifier}`);
       resetForm();
       onSaved();
-      queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
     onError: (err: Error, _plan, context) => {
       rollbackOptimisticProjectSecretSave(
         queryClient,
-        ['project-secrets', projectId],
+        qk.project.secrets(projectId),
         context?.previous,
       );
       onOpenChange(true);
       errorToast(err.message || 'Failed to save secret');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 

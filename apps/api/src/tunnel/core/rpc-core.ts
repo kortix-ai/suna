@@ -12,16 +12,21 @@
  * too: they resolve a machine selector → tunnelId (scoped to the account) and
  * delegate to `executeTunnelRpc`. See docs/specs/computer-connector.md.
  */
-import { eq } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
+import {
+  type TunnelCapability,
+  TunnelErrorCode,
+  TunnelMethods,
+  TunnelRelayError,
+} from 'agent-tunnel';
+import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { TunnelRelayError, TunnelMethods, TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
-import { checkPermission } from './permission-checker';
-import { writeAuditLog, buildRequestSummary } from './audit-logger';
 import { notifyPermissionRequest } from '../routes/permission-requests';
+import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
+import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
+import { checkPermission } from './permission-checker';
 import { tunnelRateLimiter } from './rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from './scope-validator';
-import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
 
 /** Outcome of a single relayed tunnel RPC. The route + the connector each map this. */
 export type TunnelRpcOutcome =
@@ -66,7 +71,12 @@ export async function executeTunnelRpc(input: {
 
   const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
   if (!rpcRateCheck.allowed) {
-    return { ok: false, kind: 'rate_limited', retryAfterMs: rpcRateCheck.retryAfterMs, message: 'Rate limit exceeded' };
+    return {
+      ok: false,
+      kind: 'rate_limited',
+      retryAfterMs: rpcRateCheck.retryAfterMs,
+      message: 'Rate limit exceeded',
+    };
   }
 
   if (!method || typeof method !== 'string') {
@@ -88,11 +98,16 @@ export async function executeTunnelRpc(input: {
   if (!permCheck.allowed) {
     const permReqRateCheck = tunnelRateLimiter.check('permRequest', accountId);
     if (!permReqRateCheck.allowed) {
-      return { ok: false, kind: 'rate_limited', retryAfterMs: permReqRateCheck.retryAfterMs, message: 'Too many permission requests' };
+      return {
+        ok: false,
+        kind: 'rate_limited',
+        retryAfterMs: permReqRateCheck.retryAfterMs,
+        message: 'Too many permission requests',
+      };
     }
 
     const scopeValidation = validateScopeInput(capability, params);
-    const requestedScope = scopeValidation.valid ? (scopeValidation.sanitized || params) : params;
+    const requestedScope = scopeValidation.valid ? scopeValidation.sanitized || params : params;
 
     const [request] = await db
       .insert(tunnelPermissionRequests)
@@ -116,8 +131,20 @@ export async function executeTunnelRpc(input: {
   }
 
   const startTime = Date.now();
+  const auditLogId = await startAuditLog({
+    tunnelId,
+    accountId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorUserId: input.actorUserId,
+    actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
+    capability,
+    operation: method,
+    requestSummary: buildRequestSummary(method, params),
+  });
+  let result: unknown;
   try {
-    const result = await relayRpcToConnectedAgent({
+    result = await relayRpcToConnectedAgent({
       tunnelId,
       accountId,
       method,
@@ -126,43 +153,45 @@ export async function executeTunnelRpc(input: {
         permissionId: permCheck.permissionId,
       },
     });
-
-    writeAuditLog({
-      tunnelId,
-      accountId,
-      projectId: input.projectId,
-      sessionId: input.sessionId,
-      actorUserId: input.actorUserId,
-      actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
-      capability,
-      operation: method,
-      requestSummary: buildRequestSummary(method, params),
-      success: true,
-      durationMs: Date.now() - startTime,
-      bytesTransferred: estimateBytes(result),
-    });
-
-    return { ok: true, result };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorCode = err instanceof TunnelRelayError ? err.code : TunnelErrorCode.LOCAL_ERROR;
 
-    writeAuditLog({
-      tunnelId,
-      accountId,
-      capability,
-      operation: method,
-      requestSummary: buildRequestSummary(method, params),
-      success: false,
-      durationMs: Date.now() - startTime,
-      errorMessage,
-    });
+    try {
+      await finishAuditLog(auditLogId, {
+        success: false,
+        durationMs: Date.now() - startTime,
+        errorMessage,
+      });
+    } catch (auditError) {
+      // The durable started row remains pending. Do not replace the original
+      // relay error or cause a caller to misclassify the external operation.
+      console.error('[tunnel-audit] failed to persist terminal failure', auditError);
+    }
 
     const httpStatus: 500 | 502 | 504 =
-      errorCode === TunnelErrorCode.NOT_CONNECTED ? 502 : errorCode === TunnelErrorCode.TIMEOUT ? 504 : 500;
+      errorCode === TunnelErrorCode.NOT_CONNECTED
+        ? 502
+        : errorCode === TunnelErrorCode.TIMEOUT
+          ? 504
+          : 500;
 
     return { ok: false, kind: 'error', code: errorCode, httpStatus, message: errorMessage };
   }
+
+  try {
+    await finishAuditLog(auditLogId, {
+      success: true,
+      durationMs: Date.now() - startTime,
+      bytesTransferred: estimateBytes(result),
+    });
+  } catch (auditError) {
+    // The remote action already completed. Returning an error here can cause a
+    // destructive caller retry. Preserve the durable started row and alert.
+    console.error('[tunnel-audit] failed to persist terminal success', auditError);
+  }
+
+  return { ok: true, result };
 }
 
 function estimateBytes(result: unknown): number {
@@ -197,17 +226,25 @@ export async function listAccountComputers(accountId: string): Promise<ComputerM
     name: r.name,
     online: isTunnelConnectionLive(r),
     capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
-    platform: (r.machineInfo as Record<string, unknown> | null)?.platform as string | null ?? null,
+    platform:
+      ((r.machineInfo as Record<string, unknown> | null)?.platform as string | null) ?? null,
   }));
 }
 
 type ResolveResult = { ok: true; tunnelId: string } | { ok: false; message: string };
 
 /** Resolve a machine selector (id or name) → tunnelId, scoped to the account. */
-async function resolveComputerTunnel(accountId: string, selector: string | null): Promise<ResolveResult> {
+async function resolveComputerTunnel(
+  accountId: string,
+  selector: string | null,
+): Promise<ResolveResult> {
   const machines = await listAccountComputers(accountId);
   if (machines.length === 0) {
-    return { ok: false, message: 'No machines are connected to this account. Connect one in Computers (or run `kortix tunnel`).' };
+    return {
+      ok: false,
+      message:
+        'No machines are connected to this account. Connect one in Computers (or run `kortix tunnel`).',
+    };
   }
   if (selector) {
     const byId = machines.find((m) => m.id === selector);
@@ -215,16 +252,28 @@ async function resolveComputerTunnel(accountId: string, selector: string | null)
     const byName = machines.filter((m) => m.name.toLowerCase() === selector.toLowerCase());
     if (byName.length === 1) return { ok: true, tunnelId: byName[0]!.id };
     if (byName.length > 1) {
-      return { ok: false, message: `Multiple machines are named "${selector}" — pass the id from list_computers instead.` };
+      return {
+        ok: false,
+        message: `Multiple machines are named "${selector}" — pass the id from list_computers instead.`,
+      };
     }
-    return { ok: false, message: `No machine matches "${selector}". Available: ${machines.map((m) => m.name).join(', ')}.` };
+    return {
+      ok: false,
+      message: `No machine matches "${selector}". Available: ${machines.map((m) => m.name).join(', ')}.`,
+    };
   }
   const online = machines.filter((m) => m.online);
   if (online.length === 1) return { ok: true, tunnelId: online[0]!.id };
   if (online.length === 0) {
-    return { ok: false, message: `No machine is online. Connected: ${machines.map((m) => m.name).join(', ')}. Bring one online and retry.` };
+    return {
+      ok: false,
+      message: `No machine is online. Connected: ${machines.map((m) => m.name).join(', ')}. Bring one online and retry.`,
+    };
   }
-  return { ok: false, message: `Multiple machines are online (${online.map((m) => m.name).join(', ')}). Pass "computer" (name or id) to choose one.` };
+  return {
+    ok: false,
+    message: `Multiple machines are online (${online.map((m) => m.name).join(', ')}). Pass "computer" (name or id) to choose one.`,
+  };
 }
 
 /** Outcome of a `computer` connector call, mapped onto a CallResult by the gateway. */
@@ -268,10 +317,17 @@ export async function executeComputerCall(input: {
 
   if (outcome.ok) return { ok: true, data: outcome.result };
   if (outcome.kind === 'permission_required') {
-    return { ok: false, kind: 'permission_required', requestId: outcome.requestId, message: outcome.message };
+    return {
+      ok: false,
+      kind: 'permission_required',
+      requestId: outcome.requestId,
+      message: outcome.message,
+    };
   }
   if (outcome.kind === 'rate_limited') {
-    const retry = outcome.retryAfterMs ? ` (retry in ${Math.ceil(outcome.retryAfterMs / 1000)}s)` : '';
+    const retry = outcome.retryAfterMs
+      ? ` (retry in ${Math.ceil(outcome.retryAfterMs / 1000)}s)`
+      : '';
     return { ok: false, kind: 'error', message: `${outcome.message}${retry}` };
   }
   return { ok: false, kind: 'error', message: outcome.message };

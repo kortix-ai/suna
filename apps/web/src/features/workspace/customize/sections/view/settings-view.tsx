@@ -45,21 +45,18 @@ import {
   listProjectBranches,
   listProjectTriggers,
   setProjectTriggersActivation,
-  updateExperimentalFeature,
   updateProject,
-  updateProjectSandboxProvider,
-  type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
-  type SandboxProviderName,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
-import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
-  applySandboxProviderResult,
-  pollSandboxProviderTransition,
-} from './sandbox-provider-result';
+  renameOnError,
+  renameOnMutate,
+  renameOnSettled,
+} from '@/hooks/projects/project-rename-cache';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function SettingsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -67,15 +64,16 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager';
   // Real per-leaf write cap: a custom role granted project.write edits the
-  // general controls (name/repo/experimental) without being a full manager.
+  // general controls (name/repo) without being a full manager. Feature flags
+  // moved to their own section and gate on project.customize.write there.
   // The mutating routes assert project.write, so a READ-only role sees the
   // section read-only. Archive/danger-zone stays manager-only below.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
@@ -85,7 +83,12 @@ export function SettingsView({ projectId }: { projectId: string }) {
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
       successToast('Project archived');
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // qk.projects.scope(): for a single-account user the archived
+      // project's account IS the primary account qk.projects.list() (no
+      // args) resolves to, so a precise invalidation would leave the
+      // marketplace picker showing the archived project until gcTime
+      // evicts it. Archiving is rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
@@ -125,7 +128,6 @@ export function SettingsView({ projectId }: { projectId: string }) {
               <TriggersActivationCard projectId={projectId} canManage={canEdit} />
             </section>
           )}
-          <ExperimentalCard project={project} canManage={canEdit} />
           {canManage && (
             <section className="space-y-4">
               <Label>
@@ -186,9 +188,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
   const branchesQuery = useQuery({
-    queryKey: ['project-branches', project.project_id],
+    queryKey: qk.project.branches(project.project_id),
     queryFn: () => listProjectBranches(project.project_id),
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const branchNames = Array.from(
     new Set([
@@ -217,9 +219,13 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
       updateProject(project.project_id, patch),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
+      // qk.projects.scope(): reaches every account's list (and the
+      // accountless slot the marketplace picker reads), restoring the reach
+      // the old bare projects-literal prefix match had. Repo-settings edits
+      // are rare — over-invalidating costs nothing.
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -314,206 +320,6 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   );
 }
 
-function ExperimentalCard({ project, canManage }: { project: KortixProject; canManage: boolean }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const features = (project.experimental_features ?? []).filter((f) => f.available);
-  const [expanded, setExpanded] = useState(false);
-
-  if (features.length === 0) return null;
-
-  return (
-    <section className="space-y-4">
-      <Label>
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextExperimentalWIPcb2304ee',
-        )}
-      </Label>
-      <Disclosure
-        open={expanded}
-        onOpenChange={setExpanded}
-        variant="outline"
-        className="group bg-popover overflow-hidden"
-      >
-        <DisclosureTrigger className="px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-foreground text-sm font-medium">
-              {features.length} feature{features.length === 1 ? '' : 's'}
-            </p>
-            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-              Early-access capabilities that may change or be removed.
-            </p>
-          </div>
-        </DisclosureTrigger>
-        <DisclosureContent contentClassName="border-border border-t">
-          <div className="divide-border divide-y">
-            {features.map((feature) => (
-              <ExperimentalFeatureRow
-                key={feature.key}
-                projectId={project.project_id}
-                feature={feature}
-                canManage={canManage}
-              />
-            ))}
-            <SandboxProviderRow project={project} canManage={canManage} />
-          </div>
-        </DisclosureContent>
-      </Disclosure>
-    </section>
-  );
-}
-
-function ExperimentalFeatureRow({
-  projectId,
-  feature,
-  canManage,
-}: {
-  projectId: string;
-  feature: ExperimentalFeatureView;
-  canManage: boolean;
-}) {
-  const queryClient = useQueryClient();
-  // Show the intended position while the request is in flight. `feature.enabled`
-  // only reflects server state, so without this the switch does not move at all
-  // until the mutation resolves and a slow request looks like a frozen toggle.
-  const [pendingValue, setPendingValue] = useState<boolean | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
-    onSettled: () => setPendingValue(null),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(['project', projectId], updated);
-      queryClient.setQueryData<ProjectDetail | undefined>(
-        ['project-detail', projectId],
-        (current) => (current ? { ...current, project: updated } : current),
-      );
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      if (feature.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
-      }
-    },
-    onError: (error: Error) => errorToast(error.message || `Failed to update ${feature.name}`),
-  });
-
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-foreground text-sm font-medium">{feature.name}</p>
-          <Badge variant={feature.stability === 'beta' ? 'beta' : 'highlight'} size="sm">
-            {feature.stability === 'beta' ? 'Beta' : 'Experimental'}
-          </Badge>
-        </div>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {mutation.isPending ? <Loading className="text-muted-foreground size-3.5" /> : null}
-        <Switch
-          checked={pendingValue ?? feature.enabled}
-          disabled={!canManage || mutation.isPending}
-          onCheckedChange={(v) => {
-            setPendingValue(v);
-            mutation.mutate(v);
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// Per-project sandbox-provider pin — rendered as a row INSIDE the Experimental list.
-// Overrides the platform's weighted distribution for THIS project only (e.g. put one
-// project on Platinum even when the fleet is mostly Daytona). Options come from the
-// project payload (`available_sandbox_providers` = the usable set). Hidden only when
-// no provider is usable.
-const AUTO_PROVIDER = '__auto__';
-function SandboxProviderRow({
-  project,
-  canManage,
-}: {
-  project: KortixProject;
-  canManage: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const available = project.available_sandbox_providers ?? [];
-  const current = project.default_sandbox_provider ?? null;
-  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
-
-  const mutation = useMutation({
-    mutationFn: (next: SandboxProviderName | null) =>
-      updateProjectSandboxProvider(project.project_id, next),
-    onSuccess: (result, next) => {
-      // FIX-L: the PATCH returns EITHER the updated project (immediate) OR a
-      // preparation object (the prepare branch — a switch to a different enabled
-      // provider). Write the project cache ONLY for the immediate result; a
-      // preparation is a transition, not a project, and must not clobber the
-      // cached project shape.
-      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
-      if (kind === 'preparation') {
-        successToast(
-          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
-        );
-        // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
-        // and refresh the project once it settles so the now-active provider shows.
-        void pollSandboxProviderTransition(project.project_id, {
-          onSettled: (state) => {
-            queryClient.invalidateQueries({ queryKey: ['project', project.project_id] });
-            queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
-            queryClient.invalidateQueries({ queryKey: ['projects'] });
-            const status = state?.latest?.status;
-            if (status === 'activated') {
-              successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
-            } else if (status === 'failed') {
-              errorToast(state?.latest?.label || 'Sandbox provider switch failed');
-            }
-          },
-        });
-      }
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
-  });
-
-  if (available.length === 0) return null;
-
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-foreground text-sm font-medium">Sandbox provider</p>
-          <Badge variant="highlight" size="sm">
-            Experimental
-          </Badge>
-        </div>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          Pin this project to a specific sandbox provider, overriding the platform default. New
-          sessions here run on the chosen provider — “Automatic” follows the platform default.
-        </p>
-      </div>
-      <Select
-        value={current ?? AUTO_PROVIDER}
-        onValueChange={(v) =>
-          mutation.mutate(
-            v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
-          )
-        }
-        disabled={!canManage || mutation.isPending}
-      >
-        <SelectTrigger className="w-40 shrink-0">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
-          {available.map((p) => (
-            <SelectItem key={p} value={p}>
-              {label(p)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
 function TriggersActivationCard({
   projectId,
   canManage,
@@ -522,11 +328,13 @@ function TriggersActivationCard({
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
-  const queryKey = ['project-triggers', projectId];
+  // Same entity/fetcher `ScheduleView` (components/projects/schedule-view.tsx)
+  // reads — both must share this key or a pause/resume here goes unseen there.
+  const queryKey = qk.project.triggers(projectId);
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
@@ -710,11 +518,19 @@ function GeneralProjectCard({
       updateProject(project.project_id, {
         name: nextName,
       }),
+    // Paint the new name in the same frame it's typed, snapshotting what it
+    // overwrote so a REJECTED rename can put it back. `renameOnMutate` /
+    // `renameOnError` / `renameOnSettled` are shared with
+    // `edit-project-modal.tsx` so the two rename paths cannot drift.
+    onMutate: (nextName) => renameOnMutate(queryClient, project.project_id, nextName),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
+    onError: (error: Error, _nextName, context) => {
+      renameOnError(queryClient, project.project_id, context);
+      errorToast(error.message || 'Failed to update project');
+    },
+    onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
 
   const { mutate, isPending } = mutation;

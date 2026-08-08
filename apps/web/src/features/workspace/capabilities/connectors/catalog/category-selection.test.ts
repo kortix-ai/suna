@@ -99,24 +99,20 @@ describe('catalogCategoryKeys', () => {
 /**
  * The rules above are inert unless the components actually read them, and both
  * regressions are one plausible-looking edit away: re-deriving the option list
- * inside `CategorySelect`, or taking `category` at face value in the grid.
+ * inside the filter control, or taking `category` at face value in the grid.
  */
 describe('the page wires the filter to one derivation', () => {
-  test('the option list is derived once and handed to both consumers', () => {
+  test('the category vocabulary is derived exactly once', () => {
+    // There is no filter control any more — "View all" opens a category and
+    // Back leaves it — so this list has exactly one consumer:
+    // `resolveActiveCategory`, deciding whether an open category still exists
+    // in the entries on screen. It is still derived in one place, because a
+    // second derivation is what let two surfaces disagree about which
+    // categories exist.
     expect(page).toContain('const availableCategories = useMemo(');
     expect(page).toContain('catalogCategoryKeys(catalog.entries');
-    expect(page).toContain('categories={availableCategories}');
     expect(page).toContain('availableCategories={availableCategories}');
-  });
-
-  test('CategorySelect no longer groups entries itself', () => {
-    // Its own `groupIntoSections` call is what let the dropdown and the grid
-    // disagree about which categories exist.
-    const start = browse.indexOf('export function CategorySelect');
-    const end = browse.indexOf('function CatalogAffordance');
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    expect(browse.slice(start, end)).not.toContain('groupIntoSections');
+    expect(browse.match(/catalogCategoryKeys/g)).toBeNull();
   });
 
   test('the grid resolves the category instead of trusting it', () => {
@@ -130,8 +126,8 @@ describe('the page wires the filter to one derivation', () => {
   });
 
   test('starting a search clears the category rather than hiding it', () => {
-    // The `Select` unmounts while a search runs, so a category left applied is
-    // one the user can neither see nor undo.
+    // The rail unmounts while a search runs, so a category left applied is one
+    // the user can neither see nor undo.
     expect(page).toContain('if (next.trim().length > 0) setCategory(ALL_CATEGORIES);');
     expect(page).toContain('onChange={(event) => onQueryChange(event.target.value)}');
     // Every path that writes the query must funnel through `onQueryChange`, so

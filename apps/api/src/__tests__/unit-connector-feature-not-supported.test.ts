@@ -36,6 +36,7 @@ const ALICE = 'user-alice';
 /** Minimal deps: an admin always resolves, but NO optional capability is
  *  wired — so every `!deps.X` guard in the admin routes fires. */
 const deps: ConnectorRouterDeps = {
+  featureFlagEnabled: async () => true,
   resolvePrincipal: async (c) => {
     const u = c.req.header('x-test-user');
     return u ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;

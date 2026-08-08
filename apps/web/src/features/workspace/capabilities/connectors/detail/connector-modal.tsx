@@ -8,6 +8,7 @@ import {
   setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
+import { useProjectAccountId } from '@kortix/sdk/react';
 import { CheckIcon, KeyIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -36,7 +37,6 @@ import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
 } from '@/features/workspace/capabilities/connectors/connector-identity';
-import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -220,7 +220,7 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
-  // `accountId` rides the ['project-detail'] cache the connectors page
+  // `accountId` rides the qk.project.detail(id) cache the connectors page
   // already filled, so the connections probe resolves on the modal's first
   // render instead of after its own getProject round-trip.
   const accountId = useProjectAccountId(projectId);

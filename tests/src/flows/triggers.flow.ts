@@ -3,6 +3,7 @@
  * Trigger create commits the project manifest (a real git commit).
  */
 import { flow } from '../core/flow';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
   'TRG-1',
@@ -175,16 +176,9 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'enable enterprise-demo (entitles this account for custom-role writes)',
+      'platform admin enables enterprise-demo (entitles this account for custom-role writes)',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .put(
-            '/v1/accounts/:accountId/iam/enterprise-demo',
-            { enabled: true },
-            { params: { accountId: team.id } },
-          );
-        r.status(200).body().has('$.enabled', true);
+        await enableEnterpriseDemo(ctx, team.id);
       },
     );
 

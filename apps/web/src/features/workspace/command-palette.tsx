@@ -37,14 +37,13 @@ import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import {
-  type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
-  getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
@@ -52,7 +51,7 @@ import {
 } from '@kortix/sdk';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -86,7 +85,6 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
-import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
@@ -411,33 +409,31 @@ export function CommandPalette() {
     null;
   const activeAccountId = activeAccount?.account_id ?? null;
   const { data: projectsList } = useQuery({
-    queryKey: ['projects', activeAccountId],
+    queryKey: qk.projects.list(activeAccountId ?? undefined),
     queryFn: () => listProjectsForAccount(activeAccountId || undefined),
     enabled: open && !!activeAccountId,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const { data: projectSessionsList } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!),
     enabled: open && !!projectId,
-    staleTime: 15_000,
+    ...contract('inventory'),
   });
 
-  const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: open && !!projectId,
-    staleTime: 60_000,
-  });
-  const isExperimentalEnabled = useCallback(
-    (key: ExperimentalFeatureKey) => {
-      const project = projectDetail?.project;
-      if (!project) return false;
-      if (key === 'llm_gateway') return isLlmGatewayAvailable(project);
-      return project.experimental?.[key] === true;
-    },
-    [projectDetail],
-  );
+  // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
+  // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
+  // never survive a flag its rail item does not. Fail-closed: unresolved detail
+  // ⇒ every flag reads false.
+  //
+  // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
+  // panel rendered nothing unless it was ENABLED — a palette entry that opened
+  // a blank pane. It now follows enablement like every other flag.
+  // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
+  // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
+  // capabilities like `enableProjects`), a different concept from the
+  // per-project feature flags this gates on.
+  const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
   // Only for the persisted selection state (session agent, per-agent model,
@@ -584,8 +580,7 @@ export function CommandPalette() {
         if (item.requiresBilling && !billingEnabled) return false;
         if (item.requiresSession && !currentSessionId) return false;
         if (item.requiresProject && !projectId) return false;
-        if (item.requiresExperimental && !isExperimentalEnabled(item.requiresExperimental))
-          return false;
+        if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;
         return true;
       })
       .map((item) =>
@@ -593,7 +588,7 @@ export function CommandPalette() {
           ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
           : item,
       );
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, isExperimentalEnabled]);
+  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;

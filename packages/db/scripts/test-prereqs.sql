@@ -17,6 +17,16 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon')         
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN;  END IF; END $$;
 
+-- Supabase installs pgcrypto in the `extensions` schema. Audit integrity and
+-- privacy functions qualify extensions.digest(), so the vanilla PostgreSQL
+-- migration harness must reproduce that platform prerequisite.
+DO $prereq$ BEGIN
+  CREATE SCHEMA IF NOT EXISTS extensions;
+  CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE '[test-prereqs] extensions is platform-owned — using it as-is';
+END $prereq$;
+
 -- Supabase Auth stubs (signatures only — FKs/policies just need them to resolve).
 -- Wrapped so it is NON-CLOBBERING + permission-safe: on a real Supabase DB the
 -- connecting role usually can't write into the platform-owned `auth` schema

@@ -73,8 +73,12 @@ describe('BYOK managed failover entitlement', () => {
 
   test('the failover is gated on the entitlement, not on the literal free tier', () => {
     const src = code();
-    expect(src).toContain('mayUseManagedModels');
-    expect(src).toContain('!accountIsFreeTierForModels(tier)');
+    // The entitlement predicate is the shared resolver
+    // (accountMayUseManagedModels via the resolveCachedManagedModels
+    // re-export) — never a tier-string comparison. It carries the trial
+    // overlay and the operator managed_models_override.
+    expect(src).toMatch(/mayUseManagedModels = await resolveCachedManagedModels\(/);
+    expect(src).toContain('export const resolveCachedManagedModels = accountMayUseManagedModels');
     // The regression shape: returning the managed candidates under isFreeTier.
     expect(src).not.toMatch(/return isFreeTier[\s\S]{0,120}byokFallbackCandidates/);
   });
@@ -87,9 +91,15 @@ describe('BYOK managed failover entitlement', () => {
     expect(src).toMatch(/markup: isFreeTier \? 0 : PLATFORM_FEE_MARKUP/);
   });
 
-  test('self-hosted keeps the failover', () => {
+  test('self-hosted keeps the failover', async () => {
     // Billing disabled means no tiers at all; withdrawing the fallback there
-    // would break self-hosted turns that currently survive a key error.
-    expect(code()).toContain('!config.KORTIX_BILLING_INTERNAL_ENABLED ||');
+    // would break self-hosted turns that currently survive a key error. The
+    // guarantee lives inside the shared resolver now: billing off → entitled.
+    const entitlementsSrc = await Bun.file(
+      new URL('../../billing/services/entitlements.ts', import.meta.url).pathname,
+    ).text();
+    expect(entitlementsSrc).toMatch(
+      /accountMayUseManagedModels[\s\S]{0,400}if \(!config\.KORTIX_BILLING_INTERNAL_ENABLED\) return true;/,
+    );
   });
 });

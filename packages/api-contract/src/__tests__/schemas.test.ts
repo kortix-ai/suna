@@ -4,6 +4,8 @@ import {
   ConnectionSchema,
   ConnectionMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
+  FEATURE_FLAG_KEYS,
+  FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
   OkResponseSchema,
   OAuth2ApplicationInputSchema,
@@ -112,6 +114,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
       meta_agent: false,
+      apps: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -258,27 +261,20 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    // The RETIRED single-instance provider ('local_docker', underscore) stays
-    // rejected — a genuinely different identifier from the new EXPERIMENTAL
-    // 'local-docker' (hyphen) provider below.
-    expect(() =>
-      ProjectSchema.parse(
-        projectFixture({
-          available_sandbox_providers: ['daytona', 'local_docker'],
-        }),
-      ),
-    ).toThrow();
-  });
-
-  test('accepts the EXPERIMENTAL local-docker (hyphenated) sandbox provider', () => {
-    expect(() =>
-      ProjectSchema.parse(
-        projectFixture({
-          default_sandbox_provider: 'local-docker',
-          available_sandbox_providers: ['local-docker'],
-        }),
-      ),
-    ).not.toThrow();
+    const retiredProviders = [
+      ['local', 'docker'].join('_'),
+      ['local', 'docker'].join('-'),
+    ];
+    for (const retiredProvider of retiredProviders) {
+      expect(() =>
+        ProjectSchema.parse(
+          projectFixture({
+            default_sandbox_provider: retiredProvider,
+            available_sandbox_providers: [retiredProvider],
+          }),
+        ),
+      ).toThrow();
+    }
   });
 
   test('rejects an unknown status', () => {
@@ -473,7 +469,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b', 'local-docker']) {
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -630,8 +626,8 @@ describe('envelopes', () => {
     ).not.toThrow();
   });
 
-  test('experimental keys stay in sync with the map schema', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
+  test('feature flag keys stay in sync with the map schema', () => {
+    expect(FEATURE_FLAG_KEYS).toEqual([
       'agent_tunnel',
       'marketplace',
       'connectors_api_discover',
@@ -641,7 +637,17 @@ describe('envelopes', () => {
       'llm_gateway',
       'review_center',
       'meta_agent',
+      'apps',
     ]);
+  });
+
+  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
+    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
+  });
+
+  test('stability admits stable — a settled feature can still ship behind a flag', () => {
+    expect(FeatureFlagStabilitySchema.options).toEqual(['experimental', 'beta', 'stable']);
+    expect(FeatureFlagStabilitySchema.options).toContain('stable');
   });
 
   test('sharing intent normalizes readonly member lists', () => {

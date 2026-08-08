@@ -117,19 +117,6 @@ export interface RenderComposeOptions {
    * container because the official cloudflared image ships no shell at all.
    */
   namedTunnelConfigured?: boolean;
-  /**
-   * Whether the operator selected the EXPERIMENTAL `local-docker` sandbox
-   * provider (ALLOWED_SANDBOX_PROVIDERS includes it — see
-   * configureConnections() in commands/self-host.ts). Only then does
-   * kortix-api get the host's Docker socket mounted in (root-equivalent host
-   * access) and LOCAL_DOCKER_NETWORK pointed at this Compose project's own
-   * default network, so sandbox containers created by the provider
-   * (apps/api/src/platform/providers/local-docker.ts) are reachable by
-   * Docker DNS name. Omitted entirely — not merely unset — for every other
-   * provider, so a Daytona/Platinum/E2B instance never grants kortix-api
-   * Docker access it doesn't need.
-   */
-  localDockerConfigured?: boolean;
 }
 
 /**
@@ -184,6 +171,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   const kong = services['supabase-kong'];
   if (kong) {
     kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+    // Kong defaults to one nginx worker per visible CPU. Large VPS hosts and
+    // Docker Desktop can expose many CPUs while this service keeps a 384 MiB
+    // memory limit, which makes the worker set OOM-loop after startup. Two
+    // workers keep the local control plane responsive within that limit.
+    const kongEnv = { ...asRecord(kong.environment) } as Record<string, string>;
+    kongEnv.KONG_NGINX_WORKER_PROCESSES ||= '2';
+    kong.environment = kongEnv;
     // Upstream declares `depends_on: studio: condition: service_healthy` —
     // but Kong here runs fully declarative (KONG_DATABASE=off, its routes
     // come from the mounted kong.yml), so it has no runtime dependency on
@@ -204,6 +198,16 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   }
   const auth = services['supabase-auth'];
   if (auth) {
+    // A fresh GoTrue database currently applies 69 migrations before the
+    // health endpoint listens. Upstream allows only three failed probes and no
+    // start period, which marks first boot unhealthy on slower VPS hosts even
+    // though GoTrue completes normally. Successful probes still end this
+    // window immediately; the larger budget only changes the failure deadline.
+    auth.healthcheck = {
+      ...asRecord(auth.healthcheck),
+      retries: 24,
+      start_period: '120s',
+    };
     // GoTrue silently no-ops EVERY per-IP rate limit (email/SMS/OTP sent,
     // token refresh, anonymous sign-ins, ...) when GOTRUE_RATE_LIMIT_HEADER
     // is unset — see performRateLimitingWithHeader() in supabase/auth: "If no
@@ -224,6 +228,19 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     authEnv.GOTRUE_RATE_LIMIT_OTP ||= '30';
     authEnv.GOTRUE_RATE_LIMIT_ANONYMOUS_USERS ||= '30';
     auth.environment = authEnv;
+  }
+  for (const serviceName of ['supabase-analytics', 'supabase-storage']) {
+    const service = services[serviceName];
+    if (!service) continue;
+    // Logflare and Storage also initialize database state on first boot. Keep
+    // the upstream probes and intervals, but allow the same four-minute cold
+    // start budget as Auth. This prevents Compose from aborting a healthy but
+    // slow first boot on ordinary VPS hardware.
+    service.healthcheck = {
+      ...asRecord(service.healthcheck),
+      retries: 24,
+      start_period: '120s',
+    };
   }
   const database = services['supabase-db'];
   if (database) {
@@ -275,28 +292,6 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
     services[name] = rawService as YamlRecord;
-  }
-
-  // local-docker (EXPERIMENTAL) is opt-in, same shape as the Caddy/cloudflared
-  // blocks below: mutate the already-parsed kortix-api service object rather
-  // than baking a static (always-present) block into kortix-compose.yml, so a
-  // non-local-docker instance's rendered compose never even mentions the
-  // Docker socket.
-  if (options.localDockerConfigured) {
-    const api = services['kortix-api'];
-    if (api) {
-      const existingVolumes = Array.isArray(api.volumes) ? api.volumes : [];
-      api.volumes = [...existingVolumes, '/var/run/docker.sock:/var/run/docker.sock'];
-      const existingEnv = isRecord(api.environment) ? api.environment : {};
-      api.environment = {
-        ...existingEnv,
-        // Sandbox containers land on THIS Compose project's own default
-        // network (the same one every other service here joins), so
-        // kortix-api reaches them by Docker DNS name
-        // (http://kortix-sb-<id>:<port> — see local-docker.ts).
-        LOCAL_DOCKER_NETWORK: `${composeProject}_default`,
-      };
-    }
   }
 
   // The Caddy reverse-proxy/TLS service is opt-in: it only makes sense (and

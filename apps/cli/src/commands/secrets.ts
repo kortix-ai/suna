@@ -41,10 +41,12 @@ Subcommands:
                                     Use \`KEY=-\` to read VALUE from stdin.
     --identifier <id>               Store under an explicit identifier (a second
     --id <id>                       value under the same KEY). One KEY=VALUE only.
-  request NAME [NAME …]             Mint a short-lived link for a human to
+  request NAME [NAME …]             Mint a link (valid 7 days) for a human to
                                     ENTER the value(s) — never pasted into
                                     chat. Surface the URL (web: fill-in
-                                    modal, Slack: tappable link).
+                                    modal, Slack: tappable link). Reuse a live
+                                    link across runs — do not re-mint/re-post
+                                    while one is unexpired.
                                     --scope runtime|connector  --expires <min>
   sync                              Force a re-push of all project secrets to
                                     this session's sandbox. Use after setting
@@ -750,9 +752,19 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
       `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. The value is never pasted into chat.${C.reset}\n` +
-      `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
+      `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
+      `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
   );
   return 0;
+}
+
+export function describeLinkValidity(expiresAtIso: string, nowMs: number): string {
+  const expiresMs = Date.parse(expiresAtIso);
+  if (Number.isNaN(expiresMs) || expiresMs <= nowMs) return 'an unknown window';
+  const minutes = Math.round((expiresMs - nowMs) / 60_000);
+  if (minutes >= 2 * 24 * 60) return `${Math.round(minutes / (24 * 60))} days`;
+  if (minutes >= 2 * 60) return `${Math.round(minutes / 60)} hours`;
+  return `${Math.max(minutes, 1)} minute${minutes === 1 ? '' : 's'}`;
 }
 
 async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {

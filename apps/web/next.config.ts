@@ -286,6 +286,20 @@ const nextConfig = (): NextConfig => ({
 
   // Performance optimizations
   experimental: {
+    // Next 16 gives a dynamic page segment a client-cache TTL of 0, so every
+    // navigation to a route under `projects/[id]/layout.tsx` (which awaits
+    // cookies(), making the whole subtree dynamic) discards the segment and
+    // repaints its `loading.tsx`. Returning to a tab you visited ten seconds
+    // ago cost a full server roundtrip and a full-page skeleton.
+    //
+    // `prefetch={true}` cannot fix this: with a `loading.js` present, prefetch
+    // only covers layout-to-boundary and the TTL stays in the `dynamic` bucket
+    // (node_modules/next/dist/docs/01-app/02-guides/prefetching.md:61).
+    //
+    // 300s is safe here because every page under `projects/[id]` is a client
+    // component — its RSC payload references a chunk and carries no rendered
+    // data. Page data comes from React Query under its own contract.
+    staleTimes: { dynamic: 300, static: 300 },
     // Trust proxied dev/preview origins for Server Actions so the email
     // sign-in (and every other action) isn't rejected as a CSRF mismatch
     // (see ALLOWED_PROXY_ORIGINS above for the rationale).

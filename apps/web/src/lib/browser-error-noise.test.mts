@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isCanvasImageDataOOMNoise,
   isClientRequestTimeoutMessage,
   isConnectionClosedNoise,
   isDocumentStateNotFoundNoise,
@@ -3413,7 +3414,53 @@ const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
   "TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
   "Unhandled promise rejection: TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
+  // Gecko / Firefox DOM-binding wording — the FIFTH engine variant of this
+  // null-WebGL-context crash class, surfaced via a DIFFERENT code path from
+  // SpiderMonkey's engine TypeError (`can't access property "<m>"<…>`) above.
+  // When the WebGL2 context is null/invalid, Firefox's DOM bindings throw on
+  // the method call itself with the canonical Gecko DOM-API shape
+  // `<Interface>.<method>: Argument 1 is not an object.`. Better Stack pattern
+  // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
+  // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
+  // (post-v0.12.5, release e2540c341c6f43536a7cf0e0b51599e9928f055c),
+  // call site `setupPositionAttribute` in chunk
+  // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
+  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // Android 17 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The `getSupportedExtensions` sibling is pinned
+  // preemptively — same class, Firefox may emit it too. The
+  // `WebGL2RenderingContext.<method>:` prefix is Gecko's DOM-binding marker
+  // (never first-party app code), so the message-only contract (no chunk-frame
+  // anchor, no first-party negative guard) applies — same as the other engine
+  // variants. Note: `stripErrorWrappers`'s `[A-Za-z]+Error:` regex does NOT
+  // strip the `WebGL2RenderingContext.<method>:` prefix (it contains a `.`), so
+  // the `TypeError: ` / `Unhandled promise rejection: ` wrappers are stripped
+  // and the pattern is matched verbatim by `.includes()`.
+  'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  // The wrapper forms a Sentry/runtime capture path may prefix the Gecko
+  // DOM-binding message with. `stripErrorWrappers` strips the `TypeError: `
+  // and `Unhandled promise rejection: ` / `Unhandled promise rejection:
+  // TypeError: ` prefixes; the `WebGL2RenderingContext.<method>:` prefix is NOT
+  // stripped (it is not a typed-error prefix), so the underlying pattern still
+  // matches verbatim.
+  'TypeError: WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  'Unhandled promise rejection: TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
 ]
+
+// The exact production event from Better Stack pattern
+// fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a — the
+// Gecko/Firefox DOM-binding wording of the Paper Shaders null-WebGL-context
+// crash class (call site `setupPositionAttribute`, chunk
+// `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, Firefox 152 on
+// Android 17, marketing homepage). Pinned as a regression test so this exact
+// production wording never pages Better Stack again.
+const PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE =
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.'
 
 test('classifies every Paper Shaders null-context WebGL message as noise', () => {
   for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
@@ -3473,10 +3520,13 @@ test('does NOT suppress a real app TypeError with a different null-property name
   // `Cannot read properties of null (reading '<name>')` SHAPE but with an
   // app-property name, not a WebGL2 API method — it must keep reporting so a
   // real null-deref regression is never hidden by the Paper Shaders guard.
-  // Covers all four engine wordings (V8, old JSC, SpiderMonkey/Firefox,
-  // modern JSC) so the Firefox `can't access property "<m>"` pattern and the
-  // modern-JSC `null is not an object (evaluating '<expr>')` pattern can't
-  // swallow a real first-party null-deref with a non-WebGL property name.
+  // Covers all five engine/DOM-binding wordings (V8, old JSC,
+  // SpiderMonkey/Firefox, modern JSC, Gecko/Firefox DOM-binding) so the Firefox
+  // `can't access property "<m>"` pattern, the modern-JSC `null is not an
+  // object (evaluating '<expr>')` pattern, AND the Gecko
+  // `WebGL2RenderingContext.<m>: Argument 1 is not an object.` pattern can't
+  // swallow a real first-party null-deref with a non-WebGL property / method
+  // name.
   const realAppNullDerefMessages = [
     "Cannot read properties of null (reading 'map')",
     "Cannot read properties of null (reading 'length')",
@@ -3498,6 +3548,12 @@ test('does NOT suppress a real app TypeError with a different null-property name
     "null is not an object (evaluating 'this.gl.someOtherMethod')",
     "null is not an object (evaluating 'foo.bar')",
     "TypeError: null is not an object (evaluating 'this.gl.unsupportedMethod')",
+    // A Gecko-style DOM-binding message with a NON-WebGL2 interface / method —
+    // same `Argument 1 is not an object.` SHAPE but NOT the
+    // `WebGL2RenderingContext.<method>` anchor — must keep reporting so the
+    // Gecko pattern can't swallow a real first-party DOM-API null-deref.
+    'CanvasRenderingContext2D.fillRect: Argument 1 is not an object.',
+    'WebGL2RenderingContext.someOtherMethod: Argument 1 is not an object.',
   ]
   for (const message of realAppNullDerefMessages) {
     assert.equal(
@@ -3529,6 +3585,70 @@ test('does NOT suppress a real app TypeError with a different null-property name
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
     )
   }
+})
+
+// Regression test pinning the EXACT production event from Better Stack pattern
+// fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a — the
+// Gecko/Firefox DOM-binding wording of the Paper Shaders null-WebGL-context
+// crash class. The event reached Sentry as an UNCAUGHT `onunhandledrejection`
+// (`handled:false`) from Firefox 152 on Android 17 on the marketing homepage
+// (`https://kortix.com/`), post-v0.12.5, with call site `setupPositionAttribute`
+// in chunk `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`. Before this
+// fix, the `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an
+// object.` wording was NOT in `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS`
+// (which covered V8, old JSC, SpiderMonkey, and modern JSC only), so the
+// event paged Better Stack. This test pins the exact message + the production
+// chunk frame so the Gecko DOM-binding wording is classified as noise by the
+// matcher, the runtime gate, AND the Sentry `beforeSend` gate — and a future
+// recurrence of this exact production event never pages Better Stack again.
+test('regression: Gecko/Firefox DOM-binding Paper Shaders null-context crash is suppressed (BS pattern fd773de2…)', () => {
+  // The exact production message (no wrapper prefix — the raw Sentry
+  // `exception.values[].value`).
+  assert.equal(
+    isPaperShaderNullContextNoise(PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE),
+    true,
+    'expected the exact Gecko production message to be classified as Paper Shaders null-context noise',
+  )
+  // The runtime (window.onerror / onunhandledrejection) gate must suppress it.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE }),
+    true,
+    'expected runtime gate to suppress the Gecko production message',
+  )
+  // The Sentry `beforeSend` gate must suppress it — both WITH the production
+  // chunk frame (the actual prod stack shape) and frameless (the message-only
+  // contract means no chunk-frame anchor is required).
+  const productionChunkFrame = {
+    filename: 'app:///_next/static/immutable/chunks/24zv25pg_k-nz.js',
+  }
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [productionChunkFrame] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the Gecko production message with the production chunk frame',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the Gecko production message even without a chunk frame (message-only contract)',
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -8009,6 +8129,212 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
       }),
       false,
       `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Canvas `getImageData` out-of-memory noise (BS b4b43847…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event (V8/Chrome wording).
+const CANVAS_GETIMAGEDATA_OOM_MESSAGE =
+  "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation"
+
+// A minified third-party canvas library chunk frame — the call site file from
+// the production event (`app:///_next/static/chunks/0fl4m2af7bsiq.js`). No
+// resolved first-party `apps/web/src/…` source, so the negative guard does NOT
+// fire. Represents the production event's frame shape.
+const CANVAS_OOM_PROD_CHUNK_FRAME = 'app:///_next/static/chunks/0fl4m2af7bsiq.js'
+
+// The two production stack frames (both minified third-party canvas library
+// chunk frames — NO resolved first-party `apps/web/src/…` source). The call
+// site function is `Image.<anonymous>` (the `addEventListener` callback the
+// third-party library registered).
+const CANVAS_OOM_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: CANVAS_OOM_PROD_CHUNK_FRAME, function: 'Image.<anonymous>' },
+  { filename: 'app:///_next/static/chunks/0fl4m2af7bsiq.js', function: '?' },
+]
+
+// The canonical capture-path forms: raw, `RangeError:` prefix, and stacked
+// `Unhandled promise rejection: RangeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const CANVAS_OOM_CAPTURE_FORMS = [
+  CANVAS_GETIMAGEDATA_OOM_MESSAGE,
+  `RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+  `Unhandled promise rejection: RangeError: ${CANVAS_GETIMAGEDATA_OOM_MESSAGE}`,
+]
+
+test('classifies every Canvas getImageData OOM capture form as noise (no first-party frame)', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    // Matcher-level: message alone (frameless — still noise because the message
+    // is the browser's canonical OOM wording and is specific enough).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message }),
+      true,
+      `expected "${message}" to be classified as Canvas getImageData OOM noise`,
+    )
+    // Matcher-level: with a minified chunk frame (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({
+        message,
+        frames: [{ filename: CANVAS_OOM_PROD_CHUNK_FRAME }],
+      }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    // Matcher-level: with a window.onerror filename (no first-party source).
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the production Canvas getImageData OOM Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b4b43847…, release
+  // v0.12.4, request URL https://kortix.com/ (marketing homepage), mechanism
+  // auto.browser.browserapierrors.addEventListener (UNCAUGHT, handled:false),
+  // call site function Image.<anonymous>, call site file
+  // app:///_next/static/chunks/0fl4m2af7bsiq.js, 2 minified chunk frames.
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              mechanism: {
+                type: 'auto.browser.browserapierrors.addEventListener',
+                handled: false,
+              },
+              stacktrace: { frames: CANVAS_OOM_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless Canvas getImageData OOM Sentry event (no first-party frame to preserve)', () => {
+  for (const value of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Canvas getImageData OOM via the runtime (window.onerror) gate', () => {
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: CANVAS_OOM_PROD_CHUNK_FRAME }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a Canvas getImageData OOM whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code called
+  // `getImageData()` and the browser ran out of memory — a real first-party
+  // OOM regression, actionable to fix (e.g. shrink the canvas, guard the
+  // allocation, or drop the call on low-memory devices). This is the negative
+  // guard that distinguishes actionable first-party code regressions from the
+  // third-party-library noise class.
+  const realAppFrames: Array<Array<{ filename: unknown; function?: unknown }>> = [
+    [{ filename: 'app:///apps/web/src/features/marketing/hyper-logo.ts', function: 'samplePixels' }],
+    [{ filename: 'apps/web/src/lib/canvas/pixel-reader.ts', function: 'readRegion' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+      assert.equal(
+        isCanvasImageDataOOMNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of CANVAS_OOM_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/canvas/pixel-reader.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the exact OOM suffix (over-match guard)', () => {
+  // The `Out of memory at ImageData creation` suffix is part of the anchor —
+  // a different `getImageData` failure (e.g. a different DOM exception, or a
+  // different allocation reason) must keep reporting so the matcher does not
+  // over-match a real first-party canvas bug.
+  for (const message of [
+    // A different `getImageData` DOM exception (e.g. index out of range).
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Index is not in the allowed range.",
+    // A different OOM wording without the `ImageData creation` suffix.
+    "Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory.",
+    // A different Canvas 2D method entirely.
+    "Failed to execute 'putImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation",
+    // A near-worded first-party throw (no `Failed to execute` DOM prefix).
+    'Out of memory at ImageData creation',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-OOM RangeError (over-match guard on the RangeError type)', () => {
+  // The matcher anchors on the EXACT `getImageData` OOM message, NOT on the
+  // `RangeError` type. A generic `RangeError: Maximum call stack size
+  // exceeded.` (the iOS-WebKit stack-overflow class, handled by
+  // `isUnresolvableStackOverflowNoise`) or a first-party `RangeError` keeps
+  // reporting unless it matches the exact canvas OOM wording.
+  for (const message of [
+    'Maximum call stack size exceeded.',
+    'RangeError: Maximum call stack size exceeded.',
+    'Array length must be finite.',
+  ]) {
+    assert.equal(
+      isCanvasImageDataOOMNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
     )
   }
 })

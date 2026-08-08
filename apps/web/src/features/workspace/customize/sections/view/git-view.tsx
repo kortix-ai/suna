@@ -9,6 +9,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowClockwiseIcon as RefreshCw,
@@ -177,9 +178,9 @@ function SummaryRow({
 export function GitView({ projectId }: { projectId: string }) {
   const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
 
   return (

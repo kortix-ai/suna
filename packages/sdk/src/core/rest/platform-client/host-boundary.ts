@@ -296,6 +296,10 @@ export interface AccountAuditExport {
   filename: string | null;
   capped: boolean;
   rowCount: string | null;
+  /** True when this page reached the end of the matching export. */
+  complete?: boolean;
+  /** Pass this as `cursor` to resume when complete is false. */
+  nextCursor?: string | null;
 }
 
 export async function downloadAccountAudit(
@@ -308,6 +312,7 @@ export async function downloadAccountAudit(
     session_id?: string;
     actor_type?: 'human' | 'agent' | 'service_account' | 'system';
     source?: string;
+    phase?: string;
     outcome?: 'success' | 'failure' | 'denied' | 'pending';
     request_id?: string;
     correlation_id?: string;
@@ -315,6 +320,8 @@ export async function downloadAccountAudit(
     since?: string;
     until?: string;
     q?: string;
+    cursor?: string;
+    limit?: number;
   },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
@@ -325,6 +332,7 @@ export async function downloadAccountAudit(
   if (query.session_id) params.set('session_id', query.session_id);
   if (query.actor_type) params.set('actor_type', query.actor_type);
   if (query.source) params.set('source', query.source);
+  if (query.phase) params.set('phase', query.phase);
   if (query.outcome) params.set('outcome', query.outcome);
   if (query.request_id) params.set('request_id', query.request_id);
   if (query.correlation_id) params.set('correlation_id', query.correlation_id);
@@ -332,6 +340,8 @@ export async function downloadAccountAudit(
   if (query.since) params.set('since', query.since);
   if (query.until) params.set('until', query.until);
   if (query.q) params.set('q', query.q);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit != null) params.set('limit', String(query.limit));
   const response = await fetch(
     `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
     {
@@ -348,6 +358,8 @@ export async function downloadAccountAudit(
     filename: response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null,
     capped: response.headers.get('x-audit-capped') === 'true',
     rowCount: response.headers.get('x-audit-row-count'),
+    complete: response.headers.get('x-audit-complete') !== 'false',
+    nextCursor: response.headers.get('x-audit-next-cursor') || null,
   };
 }
 

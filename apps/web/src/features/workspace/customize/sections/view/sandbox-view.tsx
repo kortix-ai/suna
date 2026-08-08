@@ -41,6 +41,7 @@ import {
   getProject,
   listProjectSnapshots,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   CaretDownIcon as ChevronDown,
@@ -65,7 +66,6 @@ import {
   SandboxTemplateProviderModeBadge,
 } from './sandbox-provider-coverage';
 
-const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
 const TEMPLATE_SKELETON_ROWS = [
   'sandbox-template-skeleton-1',
   'sandbox-template-skeleton-2',
@@ -474,7 +474,7 @@ function TemplateRow({
     mutationFn: () => buildSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Rebuild started for "${template.name}"`);
-      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
@@ -482,8 +482,8 @@ function TemplateRow({
     mutationFn: () => deleteSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Deleted "${template.name}"`);
-      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
-      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       setConfirmDelete(false);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
@@ -612,18 +612,18 @@ function TemplateRow({
 
 export function SandboxView({ projectId }: { projectId: string }) {
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const canManage = projectQuery.data?.effective_project_role === 'manager';
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const snapshotsQuery = useQuery({
-    queryKey: SNAPSHOTS_QUERY_KEY(projectId),
+    queryKey: qk.project.snapshots(projectId),
     queryFn: () => listProjectSnapshots(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;

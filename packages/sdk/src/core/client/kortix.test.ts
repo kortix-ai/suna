@@ -14,16 +14,19 @@ beforeEach(() => {
       method: opts.method ?? 'GET',
       body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
     });
-    return new Response(JSON.stringify({
-      ok: true,
-      secrets: [],
-      candidates: [],
-      sessions: [],
-      connector_bindings: {},
-    }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        secrets: [],
+        candidates: [],
+        sessions: [],
+        connector_bindings: {},
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   }) as unknown as typeof fetch;
 });
 
@@ -46,6 +49,36 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   await kortix.project('PID123').secrets.list();
   expect(last().url).toContain('/projects/PID123/secrets');
   expect(last().method).toBe('GET');
+});
+
+test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  expect(typeof apps.list).toBe('function');
+  expect(typeof apps.create).toBe('function');
+  expect(typeof apps.get).toBe('function');
+  expect(typeof apps.update).toBe('function');
+  expect(typeof apps.remove).toBe('function');
+  expect(typeof apps.artifacts.register).toBe('function');
+  expect(typeof apps.artifacts.uploadArchive).toBe('function');
+  expect(typeof apps.artifacts.finalize).toBe('function');
+  expect(typeof apps.deployments.create).toBe('function');
+  expect(typeof apps.deployments.list).toBe('function');
+  expect(typeof apps.deployments.get).toBe('function');
+  expect(typeof apps.deployments.logs).toBe('function');
+  expect(typeof apps.start).toBe('function');
+  expect(typeof apps.stop).toBe('function');
+  expect(typeof apps.rollback).toBe('function');
+
+  await apps.deployments.create('APP1', {
+    artifact_id: 'ART1',
+    source: { kind: 'static' },
+  });
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments',
+    body: { artifact_id: 'ART1', source: { kind: 'static' } },
+  });
 });
 
 test('project(id).connectors exposes the complete connector data plane', async () => {
@@ -296,8 +329,10 @@ test('project(id).channels covers slack, email and voice', async () => {
   expect(last().method).toBe('PUT');
 });
 
-test('project(id) omits the retired hosted-app surface', () => {
-  expect('apps' in (kortix.project('PID123') as object)).toBe(false);
+test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
+  const handle = kortix.project('PID123') as unknown as Record<string, unknown>;
+  expect('apps' in handle).toBe(true);
+  expect('deployments' in handle).toBe(false);
 });
 
 test('project(id).modelDefaults gets/sets/clears the default model', async () => {
@@ -628,6 +663,14 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   await kortix.accounts.audit.webhooks.remove('ACC1', 'WH1');
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).audit and session(id).audit expose canonical cursor pagination', async () => {
+  await kortix.project('PID123').audit({ phase: 'completed', cursor: 'CUR1' });
+  expect(last().url).toContain('/projects/PID123/audit?phase=completed&cursor=CUR1');
+
+  await kortix.session('PID123', 'SID456').audit(50, { cursor: '42|EVENT' });
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');
 });
 
 // ── setup links / manifest validate / git token / slack files / meet speak /

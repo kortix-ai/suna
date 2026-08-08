@@ -16,6 +16,7 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({ db: {} }));
 
 let previewLinkCalls: number[] = [];
+let processCommands: Array<{ command: string; timeout: number | undefined }> = [];
 let previewLinkImpl: (port: number) => Promise<unknown> = async (port) => {
   previewLinkCalls.push(port);
   return { url: 'https://preview.example.com', token: 'tok' };
@@ -26,6 +27,14 @@ mock.module('../../shared/daytona', () => ({
     create: async () => ({
       id: 'sbx-eager-1',
       getPreviewLink: (port: number) => previewLinkImpl(port),
+    }),
+    get: async () => ({
+      process: {
+        executeCommand: async (command: string, _cwd?: string, _env?: Record<string, string>, timeout?: number) => {
+          processCommands.push({ command, timeout });
+          return { exitCode: 0, result: 'started' };
+        },
+      },
     }),
   }),
   archiveDaytonaSandboxById: async () => ({ ok: true }),
@@ -98,4 +107,14 @@ test('provisioning does not wait on the warm — create resolves before the link
     previewLinkCalls.push(port);
     return { url: 'https://preview.example.com', token: 'tok' };
   };
+});
+
+test('App workload bootstrap starts kortix-appd through the Daytona toolbox', async () => {
+  processCommands = [];
+
+  await new DaytonaProvider().ensureAppRuntimeStarted('sbx-eager-1');
+
+  expect(processCommands).toHaveLength(1);
+  expect(processCommands[0]?.command).toBe('/kortix/bin/kortix-appd --daemon');
+  expect(processCommands[0]?.timeout).toBe(15);
 });

@@ -22,14 +22,17 @@ export function isReservedSandboxEnvName(name: string): boolean {
   );
 }
 
+export function isSandboxSecretEnvNameAllowed(name: string): boolean {
+  return !NEVER_IN_SANDBOX.has(name) && !isReservedSandboxEnvName(name);
+}
+
 export function sanitizeSandboxEnv(env: Record<string, string>): {
   env: Record<string, string>;
   names: string[];
 } {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(env)) {
-    if (NEVER_IN_SANDBOX.has(name)) continue;
-    if (isReservedSandboxEnvName(name)) continue;
+    if (!isSandboxSecretEnvNameAllowed(name)) continue;
     out[name] = value;
   }
   return { env: out, names: Object.keys(out).sort() };

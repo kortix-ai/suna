@@ -63,7 +63,6 @@ const VARIANTS: { id: Variant; label: string; group: string }[] = [
   { group: 'Stopped', id: 'stopped', label: 'Stopped instance' },
 
   { group: 'Unreachable', id: 'unreachable', label: 'Cloud' },
-  { group: 'Unreachable', id: 'unreachable-local', label: 'Local Docker' },
 ];
 
 export default function DebugConnectingPage() {
@@ -283,16 +282,6 @@ function renderVariant(
           error={{
             message:
               "Can't reach this instance. It may be starting up or temporarily offline. Retrying automatically…",
-          }}
-        />
-      );
-    case 'unreachable-local':
-      return (
-        <ConnectingScreen
-          labelOverride="local-sandbox"
-          error={{
-            message:
-              "Can't reach the local Docker sandbox. Make sure Docker is running and the container has started.",
           }}
         />
       );

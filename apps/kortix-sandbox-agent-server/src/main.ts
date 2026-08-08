@@ -30,6 +30,13 @@ import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import {
+  OPENCODE_SESSION_PIN_PATH,
+  resolveOpenCodeAuditSpoolPath,
+  writeOpenCodeSeedBakedPin,
+  writeOpenCodeSessionPin,
+} from './runtime-state'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import {
@@ -46,11 +53,6 @@ import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
 
-// Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
-// Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
-// prompts into the same opencode conversation instead of opening a fresh
-// session with no context.
-export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
   'mimo-v2.5-free',
@@ -155,7 +157,10 @@ async function main() {
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -165,6 +170,7 @@ async function main() {
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })
@@ -303,8 +309,7 @@ async function main() {
           // existing, so writing the marker first guarantees every fork that
           // inherits the pin also inherits the marker (else it can't rotate).
           markSeedBakedSession(session.id)
-          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          writeOpenCodeSessionPin(session.id)
           bootMark('seed-opencode-session')
           logger.info('[seed] pre-created root opencode session', { sessionId: session.id })
         }
@@ -383,8 +388,48 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const auditRelay = createAuditRelay(
+    async (events) => {
+      const ctx = sandboxRelayContext(auditRelayToken(process.env))
+      if (!ctx) throw new Error('audit relay context is unavailable')
+      const response = await fetch(
+        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+          body: JSON.stringify({ events }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      )
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+      }
+    },
+    { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
+  )
+  const flushAuditRelay = () => {
+    void auditRelay.stop().catch((error) =>
+      logger.warn('[opencode-events] audit relay shutdown flush failed', {
+        err: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+  process.once('SIGTERM', flushAuditRelay)
+  process.once('SIGINT', flushAuditRelay)
+  const onEvent = (event: { type?: string; properties?: unknown }) => {
+    try {
+      auditRelay.enqueue(event)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      bootState.auditRelayError = message
+      logger.error('[opencode-events] audit relay persistence failed; runtime is unhealthy', {
+        err: message,
+      })
+    }
+  }
   const onQuestionAsked = (req: QuestionRequest) => {
-    void relayQuestionToApi(req, cfg).catch((err) =>
+    void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
@@ -410,7 +455,7 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -580,7 +625,10 @@ async function runWarmSeedMode(
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -590,6 +638,7 @@ async function runWarmSeedMode(
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })
@@ -620,8 +669,7 @@ async function runWarmSeedMode(
           // existing, so writing the marker first guarantees every fork that
           // inherits the pin also inherits the marker (else it can't rotate).
           markSeedBakedSession(session.id)
-          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          writeOpenCodeSessionPin(session.id)
           bootMark('seed-opencode-session')
           logger.info('[seed] pre-created + pinned root opencode session', { sessionId: session.id })
         }
@@ -922,8 +970,7 @@ export async function finalizeOrphanedTurn(
  *  file (the in-sandbox source of truth read by abort/relay/turn-end). */
 function pinOpencodeSessionFile(sessionId: string): void {
   try {
-    mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-    writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
+    writeOpenCodeSessionPin(sessionId)
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
@@ -934,8 +981,7 @@ function pinOpencodeSessionFile(sessionId: string): void {
  *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
 function markSeedBakedSession(sessionId: string): void {
   try {
-    mkdirSync(dirname(OPENCODE_SEED_BAKED_PIN_PATH), { recursive: true })
-    writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, sessionId, 'utf8')
+    writeOpenCodeSeedBakedPin(sessionId)
   } catch (err) {
     logger.warn('[seed] failed to write seed-baked session marker', err)
   }
@@ -1228,18 +1274,21 @@ type SandboxRelayContext = {
 // The control-plane callback context for every project session. The sandbox
 // credential can call the sandbox-identity turn-stream route. This callback is
 // safe for web, CLI, Slack, Teams, and email sessions.
-function sandboxRelayContext(): SandboxRelayContext | null {
+function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
   // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (
-    process.env.KORTIX_CLI_TOKEN ||
-    process.env.KORTIX_SANDBOX_TOKEN ||
-    process.env.KORTIX_TOKEN ||
-    ''
-  ).trim()
+  const token =
+    tokenOverride !== undefined
+      ? (tokenOverride ?? '')
+      : (
+          process.env.KORTIX_CLI_TOKEN ||
+          process.env.KORTIX_SANDBOX_TOKEN ||
+          process.env.KORTIX_TOKEN ||
+          ''
+        ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {
@@ -1276,7 +1325,11 @@ function slackRelayContext(): SandboxRelayContext | null {
 // answers `question.asked` interactively over opencode's own SSE, and
 // auto-answering it here is the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
-async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+async function relayQuestionToApi(
+  req: QuestionRequest,
+  cfg: Config,
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+): Promise<void> {
   // EVERY session, not just Slack ones.
   //
   // This used to take `slackRelayContext()`, which returns null without
@@ -1348,7 +1401,7 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     'wait for an answer here; finish this turn now. Next time, just ask with ' +
     '`slack send` rather than the question tool.)'
   const answers: string[][] = req.questions.map(() => [sentinel])
-  const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
+  const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
       method: 'POST',

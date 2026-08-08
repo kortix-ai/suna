@@ -14,6 +14,7 @@ import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './ses
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import type { Auth } from '../api/auth.ts';
+import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
@@ -123,7 +124,9 @@ Subcommands:
                                     sandbox — the way to pick up a merged
                                     agent change without starting over.
                                     Restarts the agent runtime, so it refuses
-                                    mid-turn unless you pass --force.
+                                    mid-turn unless you pass --force — which
+                                    asks first, because it ends the running
+                                    turn. -y/--yes skips the prompt.
                                     --no-repo skips the git pull.
                                     --status only reports whether the session
                                     is behind, changing nothing. --json.
@@ -737,6 +740,25 @@ async function sessionsReload(
   }
   const json = args.includes('--json');
   const statusOnly = args.includes('--status');
+  const force = args.includes('--force');
+  const assumeYes = args.includes('--yes') || args.includes('-y');
+  // `--force` exists to reload DURING a turn, so it ends work the user is
+  // waiting on. The web asks before doing that; the CLI did not, and the only
+  // warning lived in `--help` — read once, months before the command that
+  // actually kills the turn. Same wording as the web confirm on purpose.
+  //
+  // Skipped for --json and --yes: both mean "no human here". A prompt in a
+  // script hangs forever instead of failing, which is worse than not asking.
+  if (force && !assumeYes && !json) {
+    process.stdout.write(
+      `${status.warn("Reloading restarts the runtime, which ends the turn that's running right now.")}\n` +
+        `  Whatever the agent is part-way through will be lost, and you will have to send a message to continue.\n`,
+    );
+    if (!(await confirm('Reload anyway?', false))) {
+      process.stdout.write(`${status.info('Left the session alone.')}\n`);
+      return 0;
+    }
+  }
   const located = await locateSessionAnywhere(
     sessionId,
     opts,
@@ -790,7 +812,7 @@ async function sessionsReload(
       detail: string;
     }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
-      force: args.includes('--force'),
+      force,
     });
     if (json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

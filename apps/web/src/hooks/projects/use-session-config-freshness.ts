@@ -27,7 +27,7 @@ import {
   type SessionReloadResult,
   sessionStartKey,
 } from '@kortix/sdk';
-import { clearRuntimeEnsureGuard } from '@kortix/sdk/react';
+import { clearRuntimeEnsureGuard, qk } from '@kortix/sdk/react';
 
 /**
  * How long a freshness answer is trusted before a window-focus refetch will
@@ -53,14 +53,12 @@ export function sessionConfigKey(projectId?: string, sessionId?: string) {
  * What, if anything, the UI should say.
  *
  * Deliberately NOT a boolean and deliberately without an `ok` member: the only
- * two things worth rendering are "you are behind" and "we could not check".
- * Everything else — current, still loading, nothing to compare, box asleep —
+ * thing worth rendering is "you are behind". Everything else — current,
+ * still loading, an inconclusive check, nothing to compare, box asleep —
  * collapses to `hidden`, because a session that is fine should cost zero chrome.
  */
 export type SessionConfigNotice =
-  | { kind: 'hidden' }
-  | { kind: 'stale'; running: string; latest: string }
-  | { kind: 'unverified' };
+  { kind: 'hidden' } | { kind: 'stale'; running: string; latest: string };
 
 /**
  * Pure, so the branch order is testable without a DOM or a network.
@@ -81,20 +79,10 @@ export function sessionConfigNotice(state: SessionConfigState | undefined): Sess
       latest: state.latest_etag ?? '—',
     };
   }
-  if (state.stale === false) return { kind: 'hidden' };
-  // From here down `stale` is null and we are deciding whether the user can do
-  // anything about it.
-  //
-  // A sleeping sandbox is not a problem to report: nothing is running the wrong
-  // config because nothing is running. It wakes with the latest.
-  if (!state.sandbox_reachable) return { kind: 'hidden' };
-  // Nothing compiles — a v1 `kortix.toml` project. The concept does not apply,
-  // so saying anything would invent a problem.
-  if (state.latest_etag === null) return { kind: 'hidden' };
-  // The box is up and the config compiles, but the box did not say what it is
-  // running: a sandbox provisioned before this shipped. Worth surfacing, since
-  // a reload is exactly the fix.
-  return { kind: 'unverified' };
+  // `false` is current. `null` is inconclusive: the sandbox is sleeping, the
+  // project has no compiled config, or an older runtime cannot report an etag.
+  // None is an error, and none warrants persistent UI.
+  return { kind: 'hidden' };
 }
 
 /**
@@ -181,9 +169,13 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
     // accident.
     retry: false,
     mutationFn: (vars: { force?: boolean } = {}) =>
-      // `refresh_repo` is left to the server default (true). "Reload" means
-      // "catch this session up", and that includes the workspace.
-      reloadProjectSessionConfig(projectId, sessionId, vars.force ? { force: true } : {}),
+      // This web action is named "Reload config", so it only reloads config.
+      // Repository refresh remains an explicit CLI operation. This prevents a
+      // low-priority UI action from changing the project checkout.
+      reloadProjectSessionConfig(projectId, sessionId, {
+        refresh_repo: false,
+        ...(vars.force ? { force: true } : {}),
+      }),
     onSuccess: (result: SessionReloadResult) => {
       // It landed — whatever refusal opened the dialog is answered.
       setBusyReason(null);
@@ -208,9 +200,9 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId, sessionId),
       });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     // Defining `onError` here REPLACES the provider's default mutation
     // `onError`, which is what keeps a 409 from also raising a generic toast.

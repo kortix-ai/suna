@@ -146,7 +146,7 @@ export function userDockerfileForTemplate(
  * add is a warm-up, not a correctness step, so their absence changes nothing
  * about whether the image BUILDS.
  */
-export function composeLocalDockerfile(userDockerfile: string, opts: { layer: boolean }): string {
+export function composeSandboxDockerfile(userDockerfile: string, opts: { layer: boolean }): string {
   const user = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
   if (!opts.layer) return `${user}\n`;
   return `${user}\n${kortixToolchainLayer({
@@ -244,7 +244,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
     return 2;
   }
 
-  const composed = composeLocalDockerfile(user.text, { layer: flags.layer });
+  const composed = composeSandboxDockerfile(user.text, { layer: flags.layer });
 
   // `--print` is the no-side-effects mode: hand back the exact bytes that would
   // be fed to `docker build` (pipe it into your own build, diff it, read it) and

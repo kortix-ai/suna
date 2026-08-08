@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // applyStoppedState — the single writer for "this sandbox is parked".
 //
 // The procedure used to be copy-pasted three times (reaper idle stop, reaper
@@ -9,13 +10,16 @@
 //
 // Mocks are process-global (`mock.module`) — run this file in its own
 // `bun test <file>` invocation, same caveat as ../sandbox-reaper.test.ts.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 
-type UpdateCall = { table: unknown; updates: Record<string, unknown>; inTransaction: boolean };
+type UpdateCall = {
+  table: unknown;
+  updates: Record<string, unknown>;
+  inTransaction: boolean;
+};
 
 let events: string[] = [];
 let updateCalls: UpdateCall[] = [];
@@ -25,7 +29,9 @@ let revokedTokens: Array<{ sessionId: string; accountId: string }> = [];
 let preserveCalls: Array<{ sandboxId: string; reason: string }> = [];
 let inTransaction = false;
 
-mock.module('../../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../../config', () => ({
+  config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
+}));
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
@@ -180,7 +186,9 @@ describe('applyStoppedState', () => {
   test('no caller patch writes no metadata at all', async () => {
     await applyStoppedState(write);
 
-    expect(sandboxUpdate()?.updates.metadata).toBeUndefined();
+    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
+    expect(rendered).toContain('runtimeWakeId');
+    expect(rendered).toContain('runtimeWakeStartedAt');
   });
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
@@ -236,6 +244,40 @@ describe('reconcileSandboxStoppedByExternalId', () => {
     expect(await reconcileSandboxStoppedByExternalId('ext-1', NOW)).toBe(false);
     expect(updateCalls).toEqual([]);
   });
+
+  test('a fresh wake fence defers a transient provider-stopped observation', async () => {
+    selectedRows = [
+      {
+        sandboxId: 'sb-1',
+        sessionId: 'sess-1',
+        status: 'active',
+        metadata: {
+          runtimeWakeId: 'wake-1',
+          runtimeWakeStartedAt: new Date(NOW.getTime() - 5_000).toISOString(),
+        },
+      },
+    ];
+
+    expect(await reconcileSandboxStoppedByExternalId('ext-1', NOW)).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  test('an expired wake fence does not hide a provider-stopped sandbox', async () => {
+    selectedRows = [
+      {
+        sandboxId: 'sb-1',
+        sessionId: 'sess-1',
+        status: 'active',
+        metadata: {
+          runtimeWakeId: 'wake-1',
+          runtimeWakeStartedAt: new Date(NOW.getTime() - 120_000).toISOString(),
+        },
+      },
+    ];
+
+    expect(await reconcileSandboxStoppedByExternalId('ext-1', NOW)).toBe(true);
+    expect(events).toContain('pause:sb-1');
+  });
 });
 
 describe('reconcileSandboxRemovedByExternalId', () => {
@@ -286,6 +328,6 @@ describe('the ended_at single-writer invariant', () => {
       }))
       .filter((entry) => entry.hits > 0);
 
-    expect(writers).toEqual([{ file: 'billing/services/compute-metering.ts', hits: 1 }]);
+    expect(writers).toEqual([{ file: 'billing/repositories/compute-sessions.ts', hits: 2 }]);
   });
 });

@@ -130,6 +130,13 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   'llm-api': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  // Feature flags — any member SEES which flags this project runs; only
+  // project.customize.write may flip one. That is the leaf the API asserts on
+  // `PATCH /projects/:id/features`, so the toggle gates on exactly it.
+  'feature-flags': {
+    read: PROJECT_ACTIONS.PROJECT_READ,
+    write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  },
   // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
   // repo and opens a CR — the session itself asserts the real leaves; visibility
   // follows settings (editor+ via customize.write in isCustomizeSectionVisible).

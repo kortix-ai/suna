@@ -1,9 +1,9 @@
-import { config, type SandboxProviderName } from '../../config';
-import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { isAlreadyNotRunning } from '../reaping/policy';
+import { type SandboxProviderName, config } from '../../config';
+import { getProvider } from '../../platform/providers';
+import { db } from '../../shared/db';
+import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 
 /**
@@ -55,7 +55,7 @@ export async function stopSession(input: {
   try {
     await provider.stop(sandbox.externalId);
   } catch (err) {
-    if (!isAlreadyNotRunning(err)) {
+    if (!isAlreadyNotRunning(err) && !isLifecycleTransitionInProgress(err)) {
       return {
         status: 502,
         body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },

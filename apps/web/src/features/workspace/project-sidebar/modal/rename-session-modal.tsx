@@ -15,6 +15,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -52,7 +53,13 @@ export function RenameSessionModal({
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
 
-  const sessionsQueryKey = ['project-sessions', projectId];
+  // The optimistic write below targets the DEFAULT ('visible') scope only —
+  // that is the scope every reader except the manager-only inventory page
+  // uses, and the only one this component has a cached row to paint over.
+  // `onSettled`'s invalidation, further down, uses the sessionsScope PREFIX
+  // instead, so the 'project'-scoped inventory page (never painted
+  // optimistically) still catches up via a real refetch.
+  const sessionsQueryKey = qk.project.sessions(projectId);
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => {
@@ -87,8 +94,10 @@ export function RenameSessionModal({
     onSettled: () => {
       // The server stays authoritative: this refetch reconciles the cache
       // with reality even though onSuccess already wrote the response, e.g.
-      // if another tab changed the session in between.
-      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+      // if another tab changed the session in between. The PREFIX, not
+      // `sessionsQueryKey`: a rename has to reach every scope, not just the
+      // default one this component wrote to optimistically.
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
   });
 

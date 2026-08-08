@@ -58,8 +58,8 @@ describe('session navigation loading boundaries', () => {
     // constant's value and its use rather than one inlined literal.
     expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
     expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
-    expect(projectAccessSource).not.toContain("queryKey: ['project-access', projectId]");
-    expect(projectHomeSource).not.toContain("queryKey: ['project-access', projectId]");
+    expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
+    expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
     expect(projectHomeSource).toContain('const PROJECT_SETUP_TILES');
   });

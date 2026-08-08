@@ -341,6 +341,39 @@ async function driveConnectorSdk(): Promise<void> {
   );
 }
 
+async function driveExistingSessionGrantRefresh(): Promise<void> {
+  const stale = await createAccountToken({
+    accountId,
+    userId,
+    projectId,
+    sessionId,
+    name: `Connector Session stale grant ${sessionId.slice(0, 8)}`,
+    agentGrant: {
+      agent: 'kortix',
+      kortixCli: 'all',
+      connectors: [],
+      env: 'all',
+    },
+  });
+  const originalToken = agentToken;
+  agentToken = stale.secretKey;
+  try {
+    await expectCli(
+      'existing session catalog reconciles a stale same-agent grant without a new session',
+      ['connectors', 'ls', '--session', sessionId],
+      { stdout: new RegExp(FIXTURE_SLUG) },
+    );
+    await expectCli(
+      'existing session calls the newly granted connector with the unchanged token',
+      ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"hot-grant-agent-token"}'],
+      { stdout: /hot-grant-agent-token/ },
+    );
+  } finally {
+    agentToken = originalToken;
+    await db.delete(accountTokens).where(eq(accountTokens.tokenId, stale.tokenId));
+  }
+}
+
 async function driveExecutorCompatibilityAdapter(): Promise<void> {
   const client = createExecutorClient({
     apiUrl: API,
@@ -493,6 +526,7 @@ async function commandMatrix(): Promise<void> {
   );
 
   await seedCallableAction();
+  await driveExistingSessionGrantRefresh();
   await driveConnectorSdk();
   await driveExecutorCompatibilityAdapter();
   const inheritedCatalog = await expectCli(

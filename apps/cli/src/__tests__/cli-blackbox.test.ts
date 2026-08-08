@@ -27,7 +27,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let requests: Array<{ method: string; path: string; authorization: string | null; body?: unknown }> = [];
 
-function writeConfig(apiBase: string): string {
+function writeConfig(apiBase: string, defaultProject = false): string {
   const path = join(tmp, 'config.json');
   writeFileSync(
     path,
@@ -41,6 +41,13 @@ function writeConfig(apiBase: string): string {
           user_email: 'user@example.test',
           account_id: 'account_1',
           logged_in_at: '2026-01-01T00:00:00.000Z',
+          ...(defaultProject ? {
+            default_project: {
+              project_id: 'proj_e2e',
+              account_id: 'account_1',
+              name: 'Apps Test',
+            },
+          } : {}),
         },
       },
     }),
@@ -148,6 +155,143 @@ function startSystemSkillsServer() {
           body,
           references: [],
         });
+      }
+      return Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  return `http://127.0.0.1:${server.port}`;
+}
+
+/** The API's one feature-flag gate body — 403 `{ error, code, feature }` from
+ *  `featureDisabledBody('apps')` in apps/api/src/feature-flags/gate.ts. Copied
+ *  verbatim so the test asserts the real wire shape, not a paraphrase. */
+const APPS_FEATURE_DISABLED_BODY = {
+  error: 'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+  code: 'feature_disabled',
+  feature: 'apps',
+};
+
+/** `serverGate: true` keeps the project row reporting the flag ON while every
+ *  `/apps` route rejects with the server's gate — the case a client-side
+ *  pre-check cannot catch (flag turned off between the two calls). */
+function startAppsServer(appsEnabled = true, serverGate = false) {
+  let appAccessMode = 'private';
+  let appAccessRevision = 1;
+  const app = {
+    app_id: 'app_1',
+    account_id: 'account_1',
+    project_id: 'proj_e2e',
+    slug: 'demo',
+    name: 'Demo',
+    url: 'https://dev-demo-route.apps.kortix.com',
+    access_mode: appAccessMode,
+    access_revision: appAccessRevision,
+    desired_state: 'running',
+    active_deployment_id: null,
+    machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
+    idle_timeout_seconds: 300,
+    monthly_budget_usd: 5,
+    last_request_at: null,
+    created_at: '2026-08-07T00:00:00.000Z',
+    updated_at: '2026-08-07T00:00:00.000Z',
+  };
+  server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      const url = new URL(req.url);
+      const body = req.method === 'GET' || req.method === 'HEAD'
+        ? undefined
+        : await req.json().catch(() => undefined);
+      requests.push({
+        method: req.method,
+        path: `${url.pathname}${url.search}`,
+        authorization: req.headers.get('authorization'),
+        body,
+      });
+      if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'GET') {
+        return Response.json({
+          project_id: 'proj_e2e',
+          account_id: 'account_1',
+          name: 'Apps Test',
+          experimental: { apps: appsEnabled },
+        });
+      }
+      if (serverGate && url.pathname.startsWith('/v1/projects/proj_e2e/apps')) {
+        return Response.json(APPS_FEATURE_DISABLED_BODY, { status: 403 });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'GET') {
+        return Response.json({ apps: [{ ...app, access_mode: appAccessMode, access_revision: appAccessRevision }] });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'POST') {
+        return Response.json(app, { status: 201 });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1' && req.method === 'GET') {
+        return Response.json({ ...app, access_mode: appAccessMode, access_revision: appAccessRevision });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access' && req.method === 'GET') {
+        return Response.json({
+          mode: 'private',
+          revision: 1,
+          member_ids: [],
+          group_ids: [],
+          password_configured: false,
+        });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access' && req.method === 'PATCH') {
+        appAccessMode = String((body as Record<string, unknown>)?.mode ?? appAccessMode);
+        appAccessRevision += 1;
+        return Response.json({
+          ...(body as Record<string, unknown>),
+          revision: appAccessRevision,
+          member_ids: (body as Record<string, unknown>)?.member_ids ?? [],
+          group_ids: (body as Record<string, unknown>)?.group_ids ?? [],
+          password_configured: false,
+        });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access-session' && req.method === 'POST') {
+        return Response.json({
+          url: 'https://dev-demo-route.apps.kortix.com/?__kortix_access=signed-test-token',
+          expires_at: '2026-08-07T01:00:00.000Z',
+        });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/artifacts' && req.method === 'POST') {
+        return Response.json({
+          artifact: {
+            artifact_id: 'artifact_1',
+            project_id: 'proj_e2e',
+            kind: 'oci_image',
+            status: 'ready',
+            image_reference: 'ghcr.io/kortix/demo:1',
+            sha256: null,
+            size_bytes: null,
+            media_type: null,
+            error: null,
+            created_at: '2026-08-07T00:00:00.000Z',
+          },
+          upload: null,
+        }, { status: 201 });
+      }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/deployments' && req.method === 'POST') {
+        return Response.json({
+          deployment_id: 'deployment_1',
+          app_id: 'app_1',
+          artifact_id: 'artifact_1',
+          version: 1,
+          status: 'queued',
+          source_kind: 'oci_image',
+          hosting_type: 'sandbox',
+          hosting_provider: 'daytona',
+          runtime_spec: {},
+          build_spec: {},
+          error_code: null,
+          error: null,
+          attempt_count: 0,
+          started_at: null,
+          ready_at: null,
+          failed_at: null,
+          created_at: '2026-08-07T00:00:00.000Z',
+          updated_at: '2026-08-07T00:00:00.000Z',
+        }, { status: 202 });
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -465,14 +609,207 @@ describe('kortix CLI black-box behavior', () => {
     }
   });
 
-  test('hosted app deployment command is absent', async () => {
-    const help = await runCli(['--help']);
-    expect(help.stdout).not.toContain('apps <subcommand>');
+  test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
+    const unscopedHelp = await runCli(['--help']);
+    expect(unscopedHelp.stdout).toContain('apps <subcommand>');
+    expect(unscopedHelp.stdout).toContain('Experimental: deploy serverless Apps');
 
-    const result = await runCli(['apps', 'ls'], tmp);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('unknown command `apps`');
-  });
+    const apiBase = startAppsServer();
+    const configFile = writeConfig(apiBase, true);
+
+    const help = await runCli(['--help'], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(help.stdout).toContain('apps <subcommand>');
+
+    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e', '--json'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
+    expect(listed.code).toBe(0);
+    expect(JSON.parse(listed.stdout).apps[0]).toMatchObject({ app_id: 'app_1', slug: 'demo' });
+
+    const deployed = await runCli([
+      'apps',
+      'deploy',
+      '--app',
+      'demo',
+      '--image',
+      'ghcr.io/kortix/demo:1',
+      '--command',
+      '["node","server.js"]',
+      '--port',
+      '3000',
+      '--provider',
+      'daytona',
+      '--access',
+      'password',
+      '--password',
+      'test-password-123',
+      '--no-wait',
+      '--project',
+      'proj_e2e',
+      '--json',
+    ], tmp, { KORTIX_CONFIG_FILE: configFile });
+
+    expect(deployed.code).toBe(0);
+    expect(JSON.parse(deployed.stdout)).toMatchObject({
+      app: { app_id: 'app_1' },
+      deployment: { deployment_id: 'deployment_1', status: 'queued' },
+    });
+    expect(requests.map((request) => [request.method, request.path])).toEqual([
+      ['GET', '/v1/projects/proj_e2e'],
+      ['GET', '/v1/projects/proj_e2e/apps'],
+      ['GET', '/v1/projects/proj_e2e'],
+      ['GET', '/v1/projects/proj_e2e/apps'],
+      ['PATCH', '/v1/projects/proj_e2e/apps/app_1/access'],
+      ['GET', '/v1/projects/proj_e2e/apps/app_1'],
+      ['POST', '/v1/projects/proj_e2e/apps/artifacts'],
+      ['POST', '/v1/projects/proj_e2e/apps/app_1/deployments'],
+    ]);
+    expect(requests[4]?.body).toEqual({ mode: 'password', password: 'test-password-123' });
+    expect(requests[6]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
+    expect(requests[7]?.body).toEqual({
+      artifact_id: 'artifact_1',
+      source: {
+        kind: 'oci_image',
+        image: 'ghcr.io/kortix/demo:1',
+        command: ['node', 'server.js'],
+        port: 3000,
+      },
+      provider: 'daytona',
+    });
+
+    const retiredProviderId = ['local', 'docker'].join('-');
+    const retiredProvider = await runCli([
+      'apps',
+      'deploy',
+      '--app',
+      'demo',
+      '--image',
+      'ghcr.io/kortix/demo:1',
+      '--command',
+      '["node","server.js"]',
+      '--port',
+      '3000',
+      '--provider',
+      retiredProviderId,
+      '--no-wait',
+      '--project',
+      'proj_e2e',
+    ], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(retiredProvider.code).toBe(1);
+    expect(retiredProvider.stderr).toContain('--provider must be daytona, platinum, or e2b');
+
+    const access = await runCli([
+      'apps',
+      'access',
+      'demo',
+      '--mode',
+      'restricted',
+      '--members',
+      '11111111-1111-4111-8111-111111111111',
+      '--groups',
+      '22222222-2222-4222-8222-222222222222',
+      '--project',
+      'proj_e2e',
+      '--json',
+    ], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(access.code).toBe(0);
+    expect(JSON.parse(access.stdout).access).toMatchObject({
+      mode: 'restricted',
+      revision: 3,
+      member_ids: ['11111111-1111-4111-8111-111111111111'],
+      group_ids: ['22222222-2222-4222-8222-222222222222'],
+    });
+    expect(JSON.parse(access.stdout).app).toMatchObject({
+      access_mode: 'restricted',
+      access_revision: 3,
+    });
+    expect(requests.at(-2)).toMatchObject({
+      method: 'PATCH',
+      path: '/v1/projects/proj_e2e/apps/app_1/access',
+      body: {
+        mode: 'restricted',
+        member_ids: ['11111111-1111-4111-8111-111111111111'],
+        group_ids: ['22222222-2222-4222-8222-222222222222'],
+      },
+    });
+    expect(requests.at(-1)).toMatchObject({
+      method: 'GET',
+      path: '/v1/projects/proj_e2e/apps/app_1',
+    });
+
+    const accessLink = await runCli([
+      'apps',
+      'access-link',
+      'demo',
+      '--project',
+      'proj_e2e',
+      '--json',
+    ], tmp, { KORTIX_CONFIG_FILE: configFile });
+    expect(accessLink.code).toBe(0);
+    expect(JSON.parse(accessLink.stdout)).toEqual({
+      app: expect.objectContaining({ app_id: 'app_1', slug: 'demo' }),
+      access_session: {
+        url: 'https://dev-demo-route.apps.kortix.com/?__kortix_access=signed-test-token',
+        expires_at: '2026-08-07T01:00:00.000Z',
+      },
+    });
+    expect(requests.at(-2)).toMatchObject({
+      method: 'GET',
+      path: '/v1/projects/proj_e2e/apps',
+    });
+    expect(requests.at(-1)).toMatchObject({
+      method: 'POST',
+      path: '/v1/projects/proj_e2e/apps/app_1/access-session',
+    });
+  }, 20_000);
+
+  test('Apps help stays discoverable but operations reject a project with Apps disabled', async () => {
+    const apiBase = startAppsServer(false);
+    const configFile = writeConfig(apiBase, true);
+    const env = { KORTIX_CONFIG_FILE: configFile };
+
+    const landing = await runCli(['--help'], tmp, env);
+    expect(landing.code).toBe(0);
+    expect(landing.stdout).toContain('apps <subcommand>');
+    expect(landing.stdout).toContain('Experimental: deploy serverless Apps');
+
+    const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('Usage: kortix apps');
+    expect(help.stdout).toContain('private (default), project, restricted, public, or password');
+
+    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+    expect(listed.code).toBe(1);
+    expect(listed.stdout).not.toContain('No Apps deployed');
+    // The pre-check says exactly what the server's gate says, so the user reads
+    // one sentence whichever side rejects.
+    expect(listed.stderr).toContain(
+      'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+    );
+    expect(listed.stderr).not.toContain('Experimental');
+    expect(requests.every((request) => request.path === '/v1/projects/proj_e2e')).toBe(true);
+  }, 20_000);
+
+  test("a raw 403 feature_disabled from the API surfaces the server's message verbatim", async () => {
+    // The project row still reports the flag ON — only the server gate rejects,
+    // so this exercises `surfaceApiError`, not the client-side pre-check.
+    const apiBase = startAppsServer(true, true);
+    const configFile = writeConfig(apiBase, true);
+    const env = { KORTIX_CONFIG_FILE: configFile };
+
+    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+
+    expect(listed.code).toBe(1);
+    expect(listed.stderr).toContain(APPS_FEATURE_DISABLED_BODY.error);
+    // Never the generic 403 prose — a role problem the user does not have.
+    expect(listed.stderr).not.toContain('you may not have permission');
+    expect(listed.stderr).not.toContain('HTTP 403');
+    expect(listed.stdout).not.toContain('No Apps deployed');
+    expect(requests.map((request) => [request.method, request.path])).toEqual([
+      ['GET', '/v1/projects/proj_e2e'],
+      ['GET', '/v1/projects/proj_e2e/apps'],
+    ]);
+  }, 20_000);
 
   test('tunnel is no longer a top-level command', async () => {
     const help = await runCli(['--help']);

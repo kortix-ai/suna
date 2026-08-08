@@ -313,9 +313,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
         P.callConnector<T>(projectId, ...a),
       /** Upload bytes for use by a later connector call. */
-      uploadAttachment: (
-        ...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>
-      ) => P.uploadConnectorAttachment(projectId, ...a),
+      uploadAttachment: (...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>) =>
+        P.uploadConnectorAttachment(projectId, ...a),
     };
   }
 
@@ -343,6 +342,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return {
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
       detail: () => P.getProjectDetail(projectId),
+      /** Canonical project-scoped audit timeline. */
+      audit: (options?: Parameters<typeof P.listProjectAudit>[1]) =>
+        P.listProjectAudit(projectId, options),
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
@@ -350,6 +352,42 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
+
+      /** Provider-neutral serverless Apps owned by this project. */
+      apps: {
+        list: () => P.listApps(projectId),
+        create: (input: Parameters<typeof P.createApp>[1]) => P.createApp(projectId, input),
+        get: (appId: string) => P.getApp(projectId, appId),
+        update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
+        access: {
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
+            P.createAppAccessSession(projectId, ...a),
+        },
+        remove: (appId: string) => P.deleteApp(projectId, appId),
+        artifacts: {
+          register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
+            P.registerAppArtifact(projectId, input),
+          uploadArchive: (...a: DropFirst<Parameters<typeof P.uploadAppArtifactArchive>>) =>
+            P.uploadAppArtifactArchive(projectId, ...a),
+          finalize: (...a: DropFirst<Parameters<typeof P.finalizeAppArtifact>>) =>
+            P.finalizeAppArtifact(projectId, ...a),
+        },
+        deployments: {
+          create: (...a: DropFirst<Parameters<typeof P.createAppDeployment>>) =>
+            P.createAppDeployment(projectId, ...a),
+          list: (appId: string) => P.listAppDeployments(projectId, appId),
+          get: (...a: DropFirst<Parameters<typeof P.getAppDeployment>>) =>
+            P.getAppDeployment(projectId, ...a),
+          logs: (...a: DropFirst<Parameters<typeof P.getAppDeploymentLogs>>) =>
+            P.getAppDeploymentLogs(projectId, ...a),
+        },
+        start: (appId: string) => P.startApp(projectId, appId),
+        stop: (appId: string) => P.stopApp(projectId, appId),
+        rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
+          P.rollbackApp(projectId, ...a),
+      },
 
       /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
       tokens: {
@@ -634,7 +672,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      /** Toggle a feature flag (Customize → Feature flags). Pass `enabled: null` to clear the override. */
+      updateFeatureFlag: (...a: DropFirst<Parameters<typeof P.updateFeatureFlag>>) =>
+        P.updateFeatureFlag(projectId, ...a),
+
+      /** @deprecated Renamed to `updateFeatureFlag`. Keeps the legacy `/experimental` wire path for older deployed APIs. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
       ) => P.updateExperimentalFeature(projectId, ...a),
@@ -828,7 +870,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           throw new ApiError(
             'Session sandbox has no external_id — cannot resolve its runtime URL',
             {
-            code: 'RUNTIME_UNAVAILABLE',
+              code: 'RUNTIME_UNAVAILABLE',
             },
           );
         }
@@ -918,7 +960,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
       /** Per-session audit trail of connector-gated agent actions. */
-      audit: (limit?: number, options?: { showErrors?: boolean }) =>
+      audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
