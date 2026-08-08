@@ -124,6 +124,26 @@ describe('AdvancedFields: honest failure for GitHub sources', () => {
     expect(code).not.toContain('buildProvisionPayload');
     expect(code).not.toContain('/provision');
   });
+
+  // Final-review FIX 5: picking `github-create` rendered a present-tense
+  // claim ("Kortix creates a private repository in your GitHub account.")
+  // that the form then silently refused — `canSubmit` requires
+  // `source === 'managed'` — with the honest disclaimer appearing only AFTER
+  // the user had already committed to the choice. Task 12 removed exactly
+  // this pattern one field up ("offering any other account would be a choice
+  // that can only fail"); the fix here is the same reasoning applied to the
+  // Select: mark the two unsupported options `disabled` so the constraint is
+  // visible BEFORE selection, not after.
+  test('FIX 5: the two unsupported sources are disabled in the Select — the constraint is visible before picking, not only in the note after', () => {
+    const selectBlock = code.slice(code.indexOf('<SelectContent'), code.indexOf('</SelectContent>'));
+    expect(selectBlock).toContain('<SelectItem');
+    expect(selectBlock).toContain("disabled={source !== 'managed'}");
+  });
+
+  test('the explanatory note stays — disabling the option does not remove the honest failure copy', () => {
+    expect(code).toContain('<GitHubSourceNote');
+    expect(code).toContain('Only Kortix-managed repositories can be created here for now');
+  });
 });
 
 describe('AdvancedFields: exports', () => {

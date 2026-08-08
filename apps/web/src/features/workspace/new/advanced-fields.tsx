@@ -108,7 +108,13 @@ export function AdvancedFields({
             </SelectTrigger>
             <SelectContent>
               {(Object.keys(SOURCE_LABELS) as RepositorySource[]).map((source) => (
-                <SelectItem key={source} value={source}>
+                // `github-create`/`github-import` need inputs `/provision`
+                // does not accept (see `GitHubSourceNote`'s doc comment
+                // above) — `canSubmit` already refuses them. Disabling the
+                // option here makes that constraint visible BEFORE the user
+                // picks it, not only in the note that used to appear after —
+                // same reasoning Task 12 applied one field up.
+                <SelectItem key={source} value={source} disabled={source !== 'managed'}>
                   {SOURCE_LABELS[source]}
                 </SelectItem>
               ))}
