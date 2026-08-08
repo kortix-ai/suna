@@ -800,7 +800,10 @@ Invalid slugs → 400; `NONMEMBER` → 403.
 `POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
 or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
 awaiting archive. The flow enables the `apps` feature flag first (off by
-default). `POST …/:appId/deployments` requires a ready artifact and an
+default). Access policy — `GET/PATCH …/:appId/access` read and persist the
+mode; `restricted` without any member or group → 400; `project` persists and
+reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
+member. `POST …/:appId/deployments` requires a ready artifact and an
 exact source-kind match. Deployment list/detail/logs expose durable state.
 Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling

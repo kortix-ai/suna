@@ -149,6 +149,9 @@ flow(
       "POST /v1/projects/:projectId/apps/:appId/rollback",
       "POST /v1/projects/:projectId/apps/:appId/start",
       "POST /v1/projects/:projectId/apps/:appId/stop",
+      "GET /v1/projects/:projectId/apps/:appId/access",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
     ],
   },
   async (ctx) => {
@@ -180,6 +183,41 @@ flow(
     const appId = created.json<any>().app_id as string;
     const appParams = { ...projectParams, appId };
     let artifactId = "";
+
+    await ctx.step("access policy reads back a mode", async () => {
+      const response = await owner.get(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { params: appParams },
+      );
+      response.status(200).body().exists("$.mode");
+    });
+
+    await ctx.step("restricted access requires at least one principal", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted" },
+        { params: appParams },
+      );
+      response.status(400);
+    });
+
+    await ctx.step("project-wide access persists and read-back agrees", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "project" },
+        { params: appParams },
+      );
+      response.status(200).body().has("$.mode", "project");
+    });
+
+    await ctx.step("member access-session returns a signed URL", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: appParams },
+      );
+      response.status(200).body().exists("$.url").exists("$.expires_at");
+    });
 
     await ctx.step("register immutable OCI artifact", async () => {
       const response = await owner.post(
