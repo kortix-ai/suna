@@ -3412,7 +3412,53 @@ const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
   "TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
   "Unhandled promise rejection: TypeError: null is not an object (evaluating 'this.gl.getAttribLocation')",
+  // Gecko / Firefox DOM-binding wording — the FIFTH engine variant of this
+  // null-WebGL-context crash class, surfaced via a DIFFERENT code path from
+  // SpiderMonkey's engine TypeError (`can't access property "<m>"<…>`) above.
+  // When the WebGL2 context is null/invalid, Firefox's DOM bindings throw on
+  // the method call itself with the canonical Gecko DOM-API shape
+  // `<Interface>.<method>: Argument 1 is not an object.`. Better Stack pattern
+  // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
+  // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
+  // (post-v0.12.5, release e2540c341c6f43536a7cf0e0b51599e9928f055c),
+  // call site `setupPositionAttribute` in chunk
+  // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
+  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // Android 17 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The `getSupportedExtensions` sibling is pinned
+  // preemptively — same class, Firefox may emit it too. The
+  // `WebGL2RenderingContext.<method>:` prefix is Gecko's DOM-binding marker
+  // (never first-party app code), so the message-only contract (no chunk-frame
+  // anchor, no first-party negative guard) applies — same as the other engine
+  // variants. Note: `stripErrorWrappers`'s `[A-Za-z]+Error:` regex does NOT
+  // strip the `WebGL2RenderingContext.<method>:` prefix (it contains a `.`), so
+  // the `TypeError: ` / `Unhandled promise rejection: ` wrappers are stripped
+  // and the pattern is matched verbatim by `.includes()`.
+  'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  // The wrapper forms a Sentry/runtime capture path may prefix the Gecko
+  // DOM-binding message with. `stripErrorWrappers` strips the `TypeError: `
+  // and `Unhandled promise rejection: ` / `Unhandled promise rejection:
+  // TypeError: ` prefixes; the `WebGL2RenderingContext.<method>:` prefix is NOT
+  // stripped (it is not a typed-error prefix), so the underlying pattern still
+  // matches verbatim.
+  'TypeError: WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  'Unhandled promise rejection: TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
 ]
+
+// The exact production event from Better Stack pattern
+// fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a — the
+// Gecko/Firefox DOM-binding wording of the Paper Shaders null-WebGL-context
+// crash class (call site `setupPositionAttribute`, chunk
+// `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, Firefox 152 on
+// Android 17, marketing homepage). Pinned as a regression test so this exact
+// production wording never pages Better Stack again.
+const PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE =
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.'
 
 test('classifies every Paper Shaders null-context WebGL message as noise', () => {
   for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
@@ -3472,10 +3518,13 @@ test('does NOT suppress a real app TypeError with a different null-property name
   // `Cannot read properties of null (reading '<name>')` SHAPE but with an
   // app-property name, not a WebGL2 API method — it must keep reporting so a
   // real null-deref regression is never hidden by the Paper Shaders guard.
-  // Covers all four engine wordings (V8, old JSC, SpiderMonkey/Firefox,
-  // modern JSC) so the Firefox `can't access property "<m>"` pattern and the
-  // modern-JSC `null is not an object (evaluating '<expr>')` pattern can't
-  // swallow a real first-party null-deref with a non-WebGL property name.
+  // Covers all five engine/DOM-binding wordings (V8, old JSC,
+  // SpiderMonkey/Firefox, modern JSC, Gecko/Firefox DOM-binding) so the Firefox
+  // `can't access property "<m>"` pattern, the modern-JSC `null is not an
+  // object (evaluating '<expr>')` pattern, AND the Gecko
+  // `WebGL2RenderingContext.<m>: Argument 1 is not an object.` pattern can't
+  // swallow a real first-party null-deref with a non-WebGL property / method
+  // name.
   const realAppNullDerefMessages = [
     "Cannot read properties of null (reading 'map')",
     "Cannot read properties of null (reading 'length')",
@@ -3497,6 +3546,12 @@ test('does NOT suppress a real app TypeError with a different null-property name
     "null is not an object (evaluating 'this.gl.someOtherMethod')",
     "null is not an object (evaluating 'foo.bar')",
     "TypeError: null is not an object (evaluating 'this.gl.unsupportedMethod')",
+    // A Gecko-style DOM-binding message with a NON-WebGL2 interface / method —
+    // same `Argument 1 is not an object.` SHAPE but NOT the
+    // `WebGL2RenderingContext.<method>` anchor — must keep reporting so the
+    // Gecko pattern can't swallow a real first-party DOM-API null-deref.
+    'CanvasRenderingContext2D.fillRect: Argument 1 is not an object.',
+    'WebGL2RenderingContext.someOtherMethod: Argument 1 is not an object.',
   ]
   for (const message of realAppNullDerefMessages) {
     assert.equal(
@@ -3528,6 +3583,70 @@ test('does NOT suppress a real app TypeError with a different null-property name
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
     )
   }
+})
+
+// Regression test pinning the EXACT production event from Better Stack pattern
+// fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a — the
+// Gecko/Firefox DOM-binding wording of the Paper Shaders null-WebGL-context
+// crash class. The event reached Sentry as an UNCAUGHT `onunhandledrejection`
+// (`handled:false`) from Firefox 152 on Android 17 on the marketing homepage
+// (`https://kortix.com/`), post-v0.12.5, with call site `setupPositionAttribute`
+// in chunk `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`. Before this
+// fix, the `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an
+// object.` wording was NOT in `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS`
+// (which covered V8, old JSC, SpiderMonkey, and modern JSC only), so the
+// event paged Better Stack. This test pins the exact message + the production
+// chunk frame so the Gecko DOM-binding wording is classified as noise by the
+// matcher, the runtime gate, AND the Sentry `beforeSend` gate — and a future
+// recurrence of this exact production event never pages Better Stack again.
+test('regression: Gecko/Firefox DOM-binding Paper Shaders null-context crash is suppressed (BS pattern fd773de2…)', () => {
+  // The exact production message (no wrapper prefix — the raw Sentry
+  // `exception.values[].value`).
+  assert.equal(
+    isPaperShaderNullContextNoise(PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE),
+    true,
+    'expected the exact Gecko production message to be classified as Paper Shaders null-context noise',
+  )
+  // The runtime (window.onerror / onunhandledrejection) gate must suppress it.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE }),
+    true,
+    'expected runtime gate to suppress the Gecko production message',
+  )
+  // The Sentry `beforeSend` gate must suppress it — both WITH the production
+  // chunk frame (the actual prod stack shape) and frameless (the message-only
+  // contract means no chunk-frame anchor is required).
+  const productionChunkFrame = {
+    filename: 'app:///_next/static/immutable/chunks/24zv25pg_k-nz.js',
+  }
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [productionChunkFrame] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the Gecko production message with the production chunk frame',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_GECKO_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the Gecko production message even without a chunk frame (message-only contract)',
+  )
 })
 
 // ---------------------------------------------------------------------------
