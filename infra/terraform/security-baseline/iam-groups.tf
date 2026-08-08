@@ -55,11 +55,6 @@ resource "aws_iam_policy" "mfa_self_manage" {
           "iam:UpdateLoginProfile", "iam:CreateLoginProfile", "iam:DeleteLoginProfile"
         ],
         Resource = "arn:aws:iam::${local.account_id}:user/$${aws:username}"
-      },
-      {
-        Sid      = "ReadAccountSummary", Effect = "Allow",
-        Action   = ["iam:GetAccountSummary", "iam:GetAccountPasswordPolicy"],
-        Resource = "*"
       }
     ]
   })
@@ -80,11 +75,6 @@ resource "aws_iam_policy" "ses_send_only" {
         Sid      = "SendEmail", Effect = "Allow",
         Action   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail", "ses:SendBounce"],
         Resource = ["arn:aws:ses:*:${local.account_id}:identity/*"]
-      },
-      {
-        Sid      = "ListConfig", Effect = "Allow",
-        Action   = ["ses:ListIdentities", "ses:DescribeConfigurationSet", "ses:GetIdentityVerificationAttributes"],
-        Resource = "*"
       }
     ]
   })
