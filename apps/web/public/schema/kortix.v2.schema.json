@@ -847,38 +847,6 @@
       }
     },
     "apps": false,
-    "refine": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "every_turns": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10000
-        },
-        "warmup_turns": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000
-        },
-        "max_per_session_per_day": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 96
-        },
-        "agents": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1
-        }
-      },
-      "additionalProperties": true
-    },
     "channels": false
   },
   "additionalProperties": true,

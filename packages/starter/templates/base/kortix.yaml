@@ -95,10 +95,16 @@ agents:
   harness-reflector:
     # Continual-harness reflector: refines the shared harness (prompts,
     # sub-agents, skills/tools, memory — memory curation is its fourth
-    # pass) from session evidence. Scoped specialist: reads session
-    # digests, opens — never merges — a harness CR. No connectors, no
-    # project secrets.
+    # pass) from session evidence. Fans out session-reviewer sub-agents,
+    # one per recent session, then opens — never merges — a harness CR.
+    # No connectors, no project secrets.
     kortix_cli: [project.cr.open, project.session.read]
+
+  session-reviewer:
+    # Read-only sub-agent of the harness-reflector: deep-reviews ONE
+    # session's full history and reports failure-signature findings.
+    # Never edits, never opens CRs.
+    kortix_cli: [project.session.read]
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial
@@ -160,26 +166,6 @@ triggers:
   #   prompt: |
   #     Slack event from {{ headers.user_agent }}.
   #     User said: {{ body.text }}
-
-# ─── Mid-session refinement ──────────────────────────────────────────────
-# Continual-harness cadence for RUNNING sessions: every `every_turns`
-# assistant turns (after `warmup_turns`), the platform delivers a
-# refinement prompt into the session itself. The agent pauses its task,
-# runs the four-pass protocol from the `kortix-harness-refinement` skill
-# over its own recent turns, applies harness edits in place (they take
-# effect on its next turn — no restart), commits them to the session
-# branch, keeps ONE `harness: …` change request updated toward main, and
-# resumes its task. Complementary to the cross-session `harness-reflector`
-# trigger above.
-#
-# Disabled by default — flip `enabled: true` to opt the project in.
-#
-# refine:
-#   enabled: true
-#   every_turns: 25        # deliver a refinement prompt every N assistant turns
-#   warmup_turns: 10       # never before the session's first N turns
-#   max_per_session_per_day: 6   # hard cap per session per UTC day
-#   agents: [kortix]       # only sessions running these agents (default: [default_agent])
 
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack

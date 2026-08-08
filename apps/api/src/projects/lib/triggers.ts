@@ -43,7 +43,6 @@ import {
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
-import { refineSweepEnabled, refineSweepIntervalMs, runProjectRefineSweep } from './refine-sweep';
 import {
   type ProjectRow,
   type RequestAuditContext,
@@ -385,10 +384,6 @@ export function schedulerSweepIsStale(isLeaderNow: boolean, nowMs: number = Date
 export let connectorSweepRunning = false;
 
 export let lastConnectorSweepAt = 0;
-
-// Mid-session refinement sweep — last tick dispatch (the sweep itself keeps
-// its own completion timestamp in lib/refine-sweep.ts).
-let lastRefineSweepTickAt = 0;
 
 export function connectorSweepIntervalMs() {
   const raw = Number(process.env.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS);
@@ -1319,17 +1314,6 @@ export function startProjectTriggerScheduler(): void {
           lastConnectorSweepAt = 0;
           console.error('[project-connectors] sweep failed:', error);
         });
-    }
-
-    // Mid-session refinement backstop — the continual-harness cadence
-    // (lib/refine-sweep.ts). Slow cadence: every check is a live sandbox
-    // transcript read, and refinement is measured in tens of turns, not
-    // seconds. Internally re-entrancy-guarded and blast-radius-bounded.
-    if (refineSweepEnabled() && Date.now() - lastRefineSweepTickAt >= refineSweepIntervalMs()) {
-      lastRefineSweepTickAt = Date.now();
-      runProjectRefineSweep().catch((error) => {
-        console.error('[project-refine] sweep failed:', error);
-      });
     }
   };
   tick();

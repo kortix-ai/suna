@@ -25,13 +25,15 @@ reset-free and its value compounds over the life of the session.
 
 This protocol has two operating modes:
 
-1. **Mid-session refinement** — a refinement prompt arrives inside a
-   working session (delivered by the platform every N turns, or you invoke
-   the protocol yourself when you notice repeated failure). You refine
-   based on YOUR OWN recent turns.
+1. **In-session refinement (self-invoked)** — YOU run it, inside your own
+   working session, the moment a failure signature costs you twice. Also
+   run a checkpoint on long sessions: after every ~25 turns of work, pause
+   and scan your recent turns before continuing. You refine based on YOUR
+   OWN trajectory, then resume the task.
 2. **Project-level reflection** — the `harness-reflector` agent runs on a
-   cron, surveys ALL recent sessions (`kortix sessions digest`), and
-   refines the shared harness on `main` via a change request.
+   cron, fans out `session-reviewer` sub-agents to work through every
+   recent session's full history, aggregates their findings, and refines
+   the shared harness on `main` via a change request.
 </overview>
 
 <failure-signatures>
@@ -88,8 +90,34 @@ rewrite components with no observed failure. Most refinement runs should
 touch one or two components, not all four.
 </four-passes>
 
+<project-review-fanout>
+For project-level reflection (the `harness-reflector` run), do not skim a
+digest and call it a review. Work through every session:
+
+1. **Enumerate** every session in the window:
+   `kortix sessions digest --since 24h --json` (add `--all` for a first
+   ever run). Note per session: id, agent, status, title, whether a live
+   transcript is available.
+2. **Fan out one `session-reviewer` sub-agent per session** (batch a few
+   at a time in parallel; review every session, skip none silently). Each
+   reviewer gets the session id and returns a structured findings report.
+   Reviewers gather the FULL picture for their session:
+   - the transcript (available live for running sessions; for stopped
+     sessions reconstruct from what persists — see next line),
+   - the session's git branch: its commits, diffs, and files touched,
+   - change requests the session opened and their review outcomes.
+3. **Aggregate** all reviewer reports. Deduplicate findings that recur
+   across sessions — a failure signature seen in three sessions outranks
+   one seen once. Rank by cost (turns wasted × sessions affected).
+4. **Run the four passes** on the ranked findings, then land per the
+   rules below.
+
+Sub-agent review is read-only: reviewers never edit the harness or open
+CRs. Only the orchestrating reflector writes.
+</project-review-fanout>
+
 <landing-rules>
-**Mid-session refinement (session branch — immediate):**
+**In-session refinement (session branch — immediate):**
 
 1. Apply the edits directly in `/workspace`. They take effect on your
    next turn.
@@ -142,10 +170,12 @@ what future sessions inherit.
 </guardrails>
 
 <self-invocation>
-You do not need to wait for the platform's cadence. Invoke this protocol
-yourself the moment you notice a failure signature costing you twice.
-The best agents refine continuously; the platform cadence is a floor,
-not a ceiling.
+Nobody schedules in-session refinement for you — it is your discipline.
+Invoke this protocol the moment a failure signature costs you twice, and
+as a checkpoint on long sessions (roughly every 25 turns of work). The
+nightly `harness-reflector` run is the backstop, not the mechanism: it
+only sees what sessions left behind, while you can fix your harness live
+and benefit from the fix on your very next turn.
 </self-invocation>
 
 </skill>

@@ -291,16 +291,17 @@ sub-agents, skills/tools, memory — is the **harness**, and it lives in git
 under `.kortix/`. Kortix treats the harness as continuously improvable
 from trajectory evidence, on two loops:
 
-1. **Mid-session refinement** — when the manifest's `refine:` block is
-   enabled, the platform delivers a refinement prompt into a running
-   session every `every_turns` assistant turns (after `warmup_turns`,
-   hard-capped per day). The agent runs the four-pass protocol from the
-   `kortix-harness-refinement` skill over its own recent turns, applies
-   edits in place (they take effect next turn), commits `harness: …` to
-   the session branch, and keeps one CR updated toward `main`.
-2. **Cross-session reflection** — the `harness-reflector` agent (cron
-   trigger, disabled by default) surveys `kortix sessions digest`, refines
-   the shared harness, and opens a `harness: …` CR against `main`.
+1. **In-session refinement (self-invoked)** — every agent runs the
+   four-pass protocol from the `kortix-harness-refinement` skill over its
+   own recent turns the moment a failure signature costs it twice (and as
+   a checkpoint on long sessions). Edits apply in place — they take
+   effect next turn — committed `harness: …` to the session branch, with
+   one CR kept updated toward `main`.
+2. **Cross-session reflection** — the `harness-reflector` agent (daily
+   cron trigger, on by default) fans out read-only `session-reviewer`
+   sub-agents, one per recent session, to work through full session
+   histories; it aggregates their findings, refines the shared harness,
+   and opens a `harness: …` CR against `main`.
 
 Any agent may also invoke the protocol itself when a failure signature
 costs it twice — load `kortix-harness-refinement` for the failure

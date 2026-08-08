@@ -587,26 +587,6 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
   };
 }
 
-/** `refine:` (v2) — mid-session continual-harness refinement cadence. The
- *  platform delivers a refinement prompt into eligible RUNNING sessions every
- *  `every_turns` assistant turns (after `warmup_turns`), hard-capped per
- *  session per UTC day. Cross-field checks (agents naming declared agents)
- *  stay in the imperative reader (apps/api projects/refine.ts), which also
- *  owns the defaults. */
-function refineSchema(): JsonSchemaFragment {
-  return {
-    type: 'object',
-    properties: {
-      enabled: { type: 'boolean' },
-      every_turns: { type: 'integer', minimum: 1, maximum: 10_000 },
-      warmup_turns: { type: 'integer', minimum: 0, maximum: 10_000 },
-      max_per_session_per_day: { type: 'integer', minimum: 1, maximum: 96 },
-      agents: { type: 'array', items: NON_EMPTY_STRING, minItems: 1 },
-    },
-    additionalProperties: true,
-  };
-}
-
 /** `kortix_version: 2` body. */
 export function buildManifestV2Schema(): JsonSchemaFragment {
   return {
@@ -636,7 +616,6 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         additionalProperties: agentBlockV2Schema(),
       },
       ...sharedSectionProperties(2),
-      refine: refineSchema(),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
     },

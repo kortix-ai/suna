@@ -18,27 +18,31 @@ under `.kortix/`.
 ## How to run
 
 1. **Load the `kortix-harness-refinement` skill.** It defines the four
-   passes, the failure signatures, and the guardrails. Treat it as your
-   source of truth. Also load `kortix-memory` for pass 4's rubric.
-2. **Survey the trajectory window.** You refine from evidence, not
-   taste:
-   - `kortix sessions digest --since 24h` — what every session in the
-     window actually did: which tools failed, where agents stalled,
-     what was rediscovered.
-   - `git log --since="<since>" --pretty=format:"%h %s" origin/main` —
-     recent commits.
+   passes, the failure signatures, the fan-out review procedure, and the
+   guardrails. Treat it as your source of truth. Also load
+   `kortix-memory` for pass 4's rubric.
+2. **Enumerate every session in the window.**
+   `kortix sessions digest --since 24h --json` — the roster you will
+   review: id, agent, status, transcript availability. Review every
+   session; skip none silently.
+3. **Fan out `session-reviewer` sub-agents — one per session.** Spawn
+   them with the task tool, a few in parallel. Each reviewer works
+   through its session's FULL history (live transcript when available,
+   otherwise the session branch's commits/diffs and its CRs) and returns
+   a structured findings report. You do not skim digests yourself — the
+   reviewers do the deep reading; you orchestrate.
+4. **Aggregate and rank.** Merge all reviewer reports. Deduplicate
+   findings that recur across sessions; rank by cost
+   (turns wasted × sessions affected). Cross-check against project
+   context so you don't repeat yourself:
    - `kortix cr ls --state merged --limit 20` — recently merged CRs,
-     including prior `harness:` CRs (don't repeat yourself).
+     including prior `harness:` CRs.
    - `git log -- .kortix/ -10` — how the harness last changed.
-3. **Identify failure signatures.** Per the skill: repeated tool
-   failures, rediscovery loops, stalled objectives, repeated multi-step
-   patterns, exception-raising tools, missed opportunities. Name the
-   component responsible for each.
-4. **Run the four passes** (prompts → sub-agents → skills/tools →
-   memory). CRUD each component. Deleting an unproductive sub-agent or
-   a stale skill is as valuable as adding one. Touch only components
-   with observed failures.
-5. **Land via ONE change request:**
+5. **Run the four passes** (prompts → sub-agents → skills/tools →
+   memory) on the ranked findings. CRUD each component. Deleting an
+   unproductive sub-agent or a stale skill is as valuable as adding one.
+   Touch only components with observed failures.
+6. **Land via ONE change request:**
 
    ```sh
    git add .kortix
@@ -49,8 +53,9 @@ under `.kortix/`.
      --description "Failure signatures observed (with session/commit evidence), edits per pass."
    ```
 
-6. **Exit silently if nothing is worth changing.** No empty CRs, no
-   date-bump CRs. A clean no-op run is the right outcome on a quiet day.
+7. **Exit silently if nothing is worth changing.** When every reviewer
+   reports `verdict: clean`, change nothing. No empty CRs, no date-bump
+   CRs. A clean no-op run is the right outcome on a quiet day.
 
 ## What you do NOT do
 
@@ -70,7 +75,7 @@ under `.kortix/`.
   skill itself.
 - To change **how often** you run: edit the `harness-reflector` block
   under `triggers` in `kortix.yaml`.
-- Mid-session refinement cadence (the platform prompting a *running*
-  session to self-refine every N turns) is configured separately in the
-  `refine:` block of `kortix.yaml` — it is complementary to your
-  cross-session runs, not a replacement.
+- In-session refinement (a working agent fixing its own harness
+  mid-task) is not scheduled anywhere — the `kortix-harness-refinement`
+  skill instructs every agent to self-invoke it. Your nightly run is the
+  cross-session backstop, not a replacement for it.

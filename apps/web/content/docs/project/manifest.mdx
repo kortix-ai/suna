@@ -104,7 +104,6 @@ triggers:
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no | sandbox image(s) and hardware |
 | `opencode.config_dir` | no | default `.kortix/opencode` |
 | `triggers` | no | list of cron and webhook triggers |
-| `refine` | no | mid-session continual-harness refinement cadence |
 | `connectors` | no | list of connector definitions |
 | `policy.default_mode` | no | `allow_all` (default) or `risk`; project-wide connector approval mode |
 | `agents` | yes | name-to-block governance map; must not be empty |
@@ -231,29 +230,6 @@ triggers:
 | `session_id` | required for `pinned` | — | Exact session to re-prompt. |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret holding the HMAC signing key. Full field reference, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
-
-## `refine:`
-
-Opt-in mid-session refinement — the continual-harness loop. When enabled, the platform delivers a refinement prompt into each eligible running session every `every_turns` assistant turns. The agent then runs the four-pass protocol from the `kortix-harness-refinement` skill over its own recent turns: it scans for failure signatures, edits the harness components responsible (agent prompts, sub-agents, skills/tools, memory under `.kortix/`), commits `harness: …` to the session branch — edits take effect on the next turn, no restart — and keeps one change request updated toward `main`. Promotion to `main` always goes through CR review.
-
-```yaml
-refine:
-  enabled: true
-  every_turns: 25
-  warmup_turns: 10
-  max_per_session_per_day: 6
-  agents: [kortix]
-```
-
-| Field | Required | Default | Notes |
-|---|---|---|---|
-| `enabled` | yes | `false` | Must be literally `true` to activate. |
-| `every_turns` | no | `25` | Cadence in completed assistant turns, 1–10000. |
-| `warmup_turns` | no | `10` | The first refinement waits `warmup_turns + every_turns` turns. |
-| `max_per_session_per_day` | no | `6` | Hard cap per session per UTC day, 1–96. |
-| `agents` | no | `[default_agent]` | Only sessions running these agents are refined. Reflector agents (`harness-reflector`, `memory-reflector`) are rejected. |
-
-The sweep runs platform-side about every two minutes and only reaches sessions whose sandbox is live. Cross-session refinement — the `harness-reflector` cron trigger the starter ships disabled — is configured under `triggers:`, not here.
 
 ## `connectors:`
 
