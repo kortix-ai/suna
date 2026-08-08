@@ -91,3 +91,12 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
     }
   });
 });
+
+describe('buildSessionRuntimeEnv — Workspace identity', () => {
+  test('emits the canonical identifier and the Project compatibility alias', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
+
+    expect(env.KORTIX_WORKSPACE_ID).toBe(BASE_INPUT.projectId);
+    expect(env.KORTIX_PROJECT_ID).toBe(BASE_INPUT.projectId);
+  });
+});

@@ -19,7 +19,10 @@ export function toWorkspacePayload(value: unknown): unknown {
   for (const [key, child] of Object.entries(source)) {
     const workspaceKey = WORKSPACE_KEYS[key] ?? key;
     if (workspaceKey !== key && Object.hasOwn(source, workspaceKey)) continue;
-    target[workspaceKey] = toWorkspacePayload(child);
+    target[workspaceKey] =
+      workspaceKey === 'dashboard_url' && typeof child === 'string'
+        ? child.replace('/projects/', '/workspaces/')
+        : toWorkspacePayload(child);
   }
   return target;
 }

@@ -11,6 +11,7 @@ test('toWorkspacePayload maps Project wire keys recursively without changing val
       effective_project_role: 'manager',
       project: { project_id: 'workspace-1' },
       projects: [{ project_id: 'workspace-1' }],
+      dashboard_url: 'https://dev.kortix.com/projects/workspace-1',
       untouched: { account_id: 'account-1' },
     }),
   ).toEqual({
@@ -19,6 +20,7 @@ test('toWorkspacePayload maps Project wire keys recursively without changing val
     effective_workspace_role: 'manager',
     workspace: { workspace_id: 'workspace-1' },
     workspaces: [{ workspace_id: 'workspace-1' }],
+    dashboard_url: 'https://dev.kortix.com/workspaces/workspace-1',
     untouched: { account_id: 'account-1' },
   });
 });
