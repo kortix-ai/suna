@@ -5,7 +5,7 @@ description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable
 
 Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
 
-Apps is experimental and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. API and CLI execution return `404` until a project manager enables **Apps** for that project.
+Apps is an experimental feature flag and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. Until a project manager enables **Apps** under Customize → Feature flags, every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`, and `kortix apps <subcommand>` prints that message and exits `1`.
 
 All current source kinds run through the same Kortix sandbox hosting backend. Kortix selects Daytona, Platinum, or E2B. Static Apps, bundles, Dockerfiles, and OCI images therefore share one deployment and cold-wake contract. Cloudflare, Deno Deploy, Vercel, and other managed hosting backends are not part of the current API or SDK contract.
 

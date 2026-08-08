@@ -493,9 +493,12 @@ async function teamsConnect(
     const mode = await ctx.client.get<TeamsMode>(
       `/projects/${ctx.projectId}/channels/teams/mode`,
     );
+    // Client-side pre-check, worded exactly like the server's feature-flag gate
+    // (feature-flags/gate.ts). It is a failure, so it goes to stderr like every
+    // other CLI error — stdout stays reserved for the command's own output.
     if (!mode.enabled) {
-      process.stdout.write(
-        `${C.dim}Microsoft Teams is off for this project. Turn it on under Customize → Settings → Experimental, then retry.${C.reset}\n`,
+      process.stderr.write(
+        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
       );
       return 1;
     }

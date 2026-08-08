@@ -165,26 +165,37 @@ test.describe("18 — Kortix Apps UI", () => {
       await expect(
         page.getByRole("main").getByText("Experimental", { exact: true }),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Enable Apps" })).toBeVisible();
+      // The gate screen never self-enables: it points at Customize → Feature
+      // flags and there is no Enable button on the feature's own page.
+      await expect(page.getByText("is off for this project")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Enable Apps" }),
+      ).toHaveCount(0);
       expect(disabledAppRequests).toEqual([]);
       page.off("request", recordDisabledRequest);
 
+      // Enable through the Feature flags section — the only activation path.
+      await page.getByRole("button", { name: "Feature flags" }).click();
       const enabledRequest = page.waitForRequest(
         (request) =>
           request.method() === "PATCH" &&
-          request.url().endsWith(`/v1/projects/${project.id}/experimental`),
+          request.url().endsWith(`/v1/projects/${project.id}/features`),
       );
       const enabledResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "PATCH" &&
-          response.url().endsWith(`/v1/projects/${project.id}/experimental`),
+          response.url().endsWith(`/v1/projects/${project.id}/features`),
       );
-      await page.getByRole("button", { name: "Enable Apps" }).click();
+      await page.getByRole("switch", { name: "Apps" }).click();
       expect((await enabledRequest).postDataJSON()).toEqual({
         feature: "apps",
         enabled: true,
       });
       expect((await enabledResponse).status()).toBe(200);
+      await page.getByRole("button", { name: "Back to workspace" }).click();
+      await page.goto(`/projects/${project.id}/apps`, {
+        waitUntil: "domcontentloaded",
+      });
       await expect(page.getByText("No Apps deployed", { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(

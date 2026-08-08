@@ -21,8 +21,8 @@ export function ProjectAppsNavItem() {
   }, [isMobile, setOpenMobile]);
 
   if (!projectId) return null;
-  /* Fail-closed: the entry exists only after the project opts into the `apps`
-     experiment in Settings → Experimental. Loading counts as disabled. */
+  /* Fail-closed: the entry exists only after the project turns the `apps`
+     feature flag on in Customize → Feature flags. Loading counts as disabled. */
   if (!appsGate.enabled) return null;
   return (
     <SidebarMenuItem>
