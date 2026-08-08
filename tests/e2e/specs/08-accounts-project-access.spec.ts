@@ -298,7 +298,14 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
-    await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute('href', '/projects');
+    // Final-review FIX 4: the projects LIST is gone (Task 21) — the sidebar's
+    // brand mark is now labeled "Workspace home" (aria-label,
+    // `workspace-switcher.tsx:231`) and links to the CURRENT project, not a
+    // dead `/projects` list.
+    await expect(page.getByRole('link', { name: 'Workspace home' }).first()).toHaveAttribute(
+      'href',
+      `/projects/${project.project_id}`,
+    );
     await expect(page.getByRole('button', { name: 'New session' }).first()).toBeVisible();
     await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Set up project/i }).first()).toBeVisible();
@@ -317,8 +324,16 @@ test.describe('08 — Accounts, invites, and project access', () => {
 
     await selectAccountForUi(page, account.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
-    await expect(page.getByText(accountName).first()).toBeVisible();
+    // Final-review FIX 4: `/projects` is a pure redirect now (Task 21) — it
+    // resolves the SELECTED account's project via `ensureFirstProject` and
+    // lands on `/projects/<id>`, rather than painting a list with an
+    // account-name tab (`project-create-modal.tsx`'s deleted sibling list
+    // page). Landing on `project`'s own URL is a STRICTER proof of
+    // account-scoping than the old account-name tab label ever was — it can
+    // only match if resolution picked a project belonging to `account` — so
+    // the URL check replaces it rather than dropping coverage.
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
+    await expect(page.getByText(`${initialProjectName} Admin`).first()).toBeVisible();
 
     await installBrowserSession(page, ownerSession, `/accounts/${account.account_id}`, password);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
@@ -367,16 +382,31 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await installBrowserSession(page, memberSession, '/projects', password);
     await selectAccountForUi(page, account.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
+    // `/projects` redirects (Task 21) — for this member, `project` is the
+    // only project they can see in this account, so resolution lands there.
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
+    await expect(page.getByText(`${initialProjectName} Admin`).first()).toBeVisible();
 
     await api<{ ok: true }>(
       ownerSession.access_token,
       'DELETE',
       `/projects/${project.project_id}/access/${member.id}`,
     );
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    // Not a `page.reload()`: the current URL is `/projects/<id>` (the
+    // redirect target above), and reloading that would just re-request the
+    // ONE project whose access was just revoked, not re-run account-level
+    // resolution. Re-navigating to the `/projects` door re-triggers
+    // `ensureFirstProject`, which now finds nothing this member can see.
+    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+    // This member's account_role is 'member' (never promoted back after the
+    // earlier admin/member round-trip), so `canCreate` is false and
+    // `classifyLandingTerminal` resolves 'no-permission'
+    // (`app/(app)/projects/start/landing-terminal.tsx`) — the deleted list's
+    // own empty-state copy ("No projects yet") has no page left to render it
+    // on; this is its accurate successor on the surviving terminal surface.
+    await expect(page).toHaveURL(/\/projects\/start/);
+    await expect(page.getByText('No workspace yet')).toBeVisible();
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
-    await expect(page.getByText(/No projects yet/i)).toBeVisible();
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
     const invitedSession = await signIn(invitedEmail, authOptions);

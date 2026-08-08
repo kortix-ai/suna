@@ -312,15 +312,29 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     const bobAccounts = await api<AccountSummary[]>(bobSession.access_token, 'GET', '/accounts');
     expect(bobAccounts.map((item) => item.account_id)).toContain(account.account_id);
 
+    // Final-review FIX 4: `/projects` no longer paints a list of `h3` project
+    // cards — it's a redirect (Task 21) that resolves the SELECTED account's
+    // project via `ensureFirstProject` and lands on `/projects/<id>`. Landing
+    // on the EXPECTED project's own URL, with the OTHER account's project
+    // name nowhere on the page, is a stricter proof of per-account scoping
+    // than the deleted list ever gave: it can only match if resolution
+    // actually picked a project belonging to the selected account.
     await installBrowserSession(page, ownerSession, '/projects', password);
     await selectAccountForUi(page, personalAccount!.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('h3', { hasText: personalProjectName })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/projects/${personalProject.project_id}$`));
+    await expect(page.getByText(personalProjectName).first()).toBeVisible();
     await expect(page.getByText(accountProjectName)).toHaveCount(0);
 
     await selectAccountForUi(page, account.account_id);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.locator('h3', { hasText: accountProjectName })).toBeVisible();
+    // Not a `page.reload()`: the current URL is now `/projects/<personalProject.id>`,
+    // so a reload would just re-request that SAME project regardless of which
+    // account is selected. Re-navigating to the `/projects` door is what
+    // actually re-runs account-scoped resolution against the new selection.
+    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(new RegExp(`/projects/${accountProject.project_id}$`));
+    await expect(page.getByText(accountProjectName).first()).toBeVisible();
+    await expect(page.getByText(personalProjectName)).toHaveCount(0);
   });
 
   test('E2E-1 and E2E-4: GitHub repo project starts a session and reaches daemon health', async () => {
