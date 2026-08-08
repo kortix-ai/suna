@@ -61,6 +61,9 @@ export interface ExecutorAttachmentUploadResult extends ConnectorAttachmentUploa
 export interface ExecutorClientOptions {
   apiUrl: string;
   token: string;
+  /** Canonical Workspace identifier. */
+  workspaceId?: string;
+  /** @deprecated Use `workspaceId`. */
   projectId?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -85,12 +88,12 @@ type SDK = ReturnType<typeof createKortix>;
  * Final compatibility adapter for the retired Executor name.
  *
  * @deprecated Use `createKortix({ backendUrl, getToken })` and
- * `kortix.project(projectId).connectors` from `@kortix/sdk`.
+ * `kortix.workspace(workspaceId).connectors` from `@kortix/sdk`.
  */
 export class ExecutorClient {
   private readonly apiUrl: string;
   private readonly token: string;
-  private readonly projectId?: string;
+  private readonly workspaceId?: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly sdk: SDK;
@@ -102,7 +105,7 @@ export class ExecutorClient {
 
     this.apiUrl = normalizeApiUrl(opts.apiUrl);
     this.token = opts.token;
-    this.projectId = opts.projectId?.trim() || undefined;
+    this.workspaceId = opts.workspaceId?.trim() || opts.projectId?.trim() || undefined;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 60_000;
     this.sdkConfig = {
@@ -115,8 +118,8 @@ export class ExecutorClient {
   }
 
   private connectorsApi() {
-    return this.projectId
-      ? this.sdk.project(this.projectId).connectors
+    return this.workspaceId
+      ? this.sdk.workspace(this.workspaceId).connectors
       : this.sdk.connectors;
   }
 
@@ -174,8 +177,8 @@ export class ExecutorClient {
     opts: { approvalExecutionId?: string | null } = {},
   ): Promise<ExecutorCallResult<T>> {
     if (opts.approvalExecutionId) {
-      const path = this.projectId
-        ? `/connectors/projects/${encodeURIComponent(this.projectId)}/call`
+      const path = this.workspaceId
+        ? `/connectors/projects/${encodeURIComponent(this.workspaceId)}/call`
         : '/connectors/call';
       return this.request<ExecutorCallResult<T>>(path, {
         method: 'POST',
@@ -203,7 +206,7 @@ export class ExecutorClient {
    * Compatibility-only raw request escape hatch.
    *
    * @deprecated Replace raw Executor routes with the typed Connector methods on
-   * `kortix.project(projectId).connectors` from `@kortix/sdk`.
+   * `kortix.workspace(workspaceId).connectors` from `@kortix/sdk`.
    */
   async request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
     const normalized = normalizeLegacyPath(path);
