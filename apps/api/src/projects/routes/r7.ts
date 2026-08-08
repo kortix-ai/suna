@@ -1363,11 +1363,14 @@ projectsApp.openapi(
     const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
     const includeEvents = c.req.query('include_events') !== 'false';
 
-    const eventConditions = [
-      eq(auditEvents.accountId, loaded.row.accountId),
-      eq(auditEvents.projectId, projectId),
-      eq(auditEvents.sessionId, sessionId),
-    ];
+    // `session_id` is the integrity-chain scope and is globally unique. The
+    // visibility gate above already proves that the caller may read this
+    // project session. Some request-level events are written before account
+    // resolution (`auth.login.success`) or from a project-neutral endpoint
+    // (`GET /v1/skills`). Those rows still belong to this session's chain. An
+    // account/project predicate would remove the middle row while returning its
+    // successor, which makes a valid persisted chain impossible to verify.
+    const eventConditions = [eq(auditEvents.sessionId, sessionId)];
     if (cursor) {
       const cursorCondition = or(
         gt(auditEvents.sessionSequence, cursor.sequence),
