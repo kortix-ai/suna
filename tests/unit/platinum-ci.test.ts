@@ -57,7 +57,11 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain('nohup pnpm dev');
     expect(script).toContain('modprobe "$module"');
     expect(script).toContain('container_modules_ready=1');
+    expect(script).toContain('seq 1 180');
+    expect(script).toContain('docker_bridge_ready=1');
+    expect(script).toContain('supabase_bridge_ready=1');
     expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
+    expect(script).toContain('tests/test-results/platinum');
   });
 
   test('does not start the web stack for the default core run', () => {

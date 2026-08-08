@@ -259,9 +259,13 @@ rm -f "$STATUS" "$ARTIFACT"
 finish() {
   local code="$1"
   set +e
-  if [[ -d "$ROOT/tests/test-results" ]]; then
-    tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results
-  fi
+  mkdir -p "$ROOT/tests/test-results/platinum"
+  for source in "$LOG" "$DEV_LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log; do
+    if [[ -f "$source" ]]; then
+      cp "$source" "$ROOT/tests/test-results/platinum/$(basename "$source")"
+    fi
+  done
+  tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results
   printf '%s\n' "$code" > "$STATUS"
 }
 trap 'code=$?; finish "$code"' EXIT
@@ -294,13 +298,18 @@ echo "[platinum-ci] container_modules_ready=1"
 
 if ! docker info >/dev/null 2>&1; then
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 180); do
     docker info >/dev/null 2>&1 && break
     sleep 1
   done
 fi
-docker info >/dev/null
+if ! docker info >/dev/null 2>&1; then
+  tail -n 240 /workspace/dockerd.log >&2 || true
+  exit 3
+fi
 echo "[platinum-ci] docker_ready=1"
+docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
+echo "[platinum-ci] docker_bridge_ready=1"
 
 ${needsWeb ? `export KORTIX_SESSION_ID=platinum-ci
 export KORTIX_DEV_TUNNEL=0
@@ -314,6 +323,11 @@ for _ in $(seq 1 360); do
 done
 curl -fsS http://127.0.0.1:8008/v1/health >/dev/null
 curl -fsS http://localhost:3000 >/dev/null
+supabase_container="$(docker ps --filter 'name=supabase_db_' --format '{{.ID}}' | head -n 1)"
+test -n "$supabase_container"
+supabase_network="$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$supabase_container")"
+test "$(docker network inspect "$supabase_network" --format '{{.Driver}}')" = "bridge"
+echo "[platinum-ci] supabase_bridge_ready=1 container=$supabase_container network=$supabase_network"
 echo "[platinum-ci] local_web_ready=1"` : ''}
 
 ${testCommand}
