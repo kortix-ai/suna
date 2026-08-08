@@ -17,6 +17,80 @@ resource "aws_iam_policy" "bedrock_count_tokens" {
   tags   = local.tags
 }
 
+# Self-service MFA management — replaces the inline `EnforceMFA` policy that
+# used to hang directly off the `ino` user (Drata DCF-776 flags inline user
+# policies). This is the AWS-published self-service MFA + password pattern:
+# every action is scoped to the CALLING user via the ${aws:username} IAM policy
+# variable (escaped as $${aws:username} in Terraform so it is not treated as a
+# Terraform interpolation). The users are created out-of-band (per the file
+# convention above), so there is no aws_iam_user resource to reference; the
+# policy variable is what makes the same group policy safe for any member.
+resource "aws_iam_policy" "mfa_self_manage" {
+  name = "kortix-mfa-self-manage"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "ManageOwnMFADevices", Effect = "Allow",
+        Action = [
+          "iam:CreateVirtualMFADevice", "iam:DeleteVirtualMFADevice",
+          "iam:EnableMFADevice", "iam:DeactivateMFADevice",
+          "iam:ResyncMFADevice", "iam:ListMFADevices",
+          "iam:ListVirtualMFADevices"
+        ],
+        Resource = [
+          "arn:aws:iam::${local.account_id}:mfa/$${aws:username}",
+          "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+        ]
+      },
+      {
+        Sid      = "ManageOwnAccessKeys", Effect = "Allow",
+        Action   = ["iam:ListAccessKeys", "iam:GetAccessKeyLastUsed"],
+        Resource = "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+      },
+      {
+        Sid = "ManageOwnLoginProfile", Effect = "Allow",
+        Action = [
+          "iam:ChangePassword", "iam:GetLoginProfile",
+          "iam:UpdateLoginProfile", "iam:CreateLoginProfile", "iam:DeleteLoginProfile"
+        ],
+        Resource = "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+      },
+      {
+        Sid      = "ReadAccountSummary", Effect = "Allow",
+        Action   = ["iam:GetAccountSummary", "iam:GetAccountPasswordPolicy"],
+        Resource = "*"
+      }
+    ]
+  })
+  tags = local.tags
+}
+
+# SES send-only — replaces the inline `ses-send-only` policy that used to hang
+# directly off the `kortix-ses-sender` user (Drata DCF-776 flags inline user
+# policies). Grants send on every SES identity in this account (the Kortix
+# verified sending identity is managed out-of-band, so it is referenced by
+# account-scoped ARN rather than a hard-coded identity name).
+resource "aws_iam_policy" "ses_send_only" {
+  name = "kortix-ses-send-only"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid      = "SendEmail", Effect = "Allow",
+        Action   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail", "ses:SendBounce"],
+        Resource = ["arn:aws:ses:*:${local.account_id}:identity/*"]
+      },
+      {
+        Sid      = "ListConfig", Effect = "Allow",
+        Action   = ["ses:ListIdentities", "ses:DescribeConfigurationSet", "ses:GetIdentityVerificationAttributes"],
+        Resource = "*"
+      }
+    ]
+  })
+  tags = local.tags
+}
+
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
@@ -49,10 +123,24 @@ locals {
       policies = [aws_iam_policy.cloudwatch_logs.arn]
       members  = ["kortix-cloudwatch-logs"]
     }
+    # Self-service MFA for the `ino` user (was an inline `EnforceMFA` policy —
+    # DCF-776 requires group-based permissions only). See aws_iam_policy
+    # .mfa_self_manage above.
+    mfa-self-manage = {
+      policies = [aws_iam_policy.mfa_self_manage.arn]
+      members  = ["ino"]
+    }
+    # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
+    # policy — DCF-776 requires group-based permissions only). See aws_iam_policy
+    # .ses_send_only above.
+    ses-senders = {
+      policies = [aws_iam_policy.ses_send_only.arn]
+      members  = ["kortix-ses-sender"]
+    }
   }
-  # Use the policy index in the instance key. Two customer-managed policy ARNs
-  # are created in this stack, so deriving a key from the ARN makes the
-  # for_each collection unknown during planning and prevents imports/plans.
+  # Use the policy index in the instance key. Customer-managed policy ARNs are
+  # created in this stack, so deriving a key from the ARN makes the for_each
+  # collection unknown during planning and prevents imports/plans.
   group_attachments = merge([for g, cfg in local.groups : { for index, policy in cfg.policies : "${g}|${index}" => { group = g, policy = policy } }]...)
   user_groups = {
     for user in distinct(flatten([for cfg in values(local.groups) : cfg.members])) :
