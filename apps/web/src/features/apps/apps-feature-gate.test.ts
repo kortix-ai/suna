@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 
-test('Apps stays discoverable while execution remains behind the project experimental gate', () => {
+test('every Apps discovery surface hides until the project enables the apps experiment', () => {
   const nav = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
@@ -12,9 +12,10 @@ test('Apps stays discoverable while execution remains behind the project experim
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(nav).not.toContain('useAppsFeatureEnabled');
+  expect(nav).toContain('useAppsFeatureEnabled');
+  expect(nav).toContain('if (!appsGate.enabled) return null;');
   expect(nav).toContain('Experimental');
-  expect(menu).not.toContain("requiresExperimental: 'apps'");
+  expect(menu).toContain("requiresExperimental: 'apps'");
   expect(view).toContain('useAppsFeatureEnabled');
   expect(view).toContain("updateExperimentalFeature(projectId, 'apps', true)");
   expect(view).toContain('Enable Apps');

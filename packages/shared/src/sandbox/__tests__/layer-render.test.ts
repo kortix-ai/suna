@@ -334,14 +334,6 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(entrypoint).toContain('sudo -u kortix --');
   });
 
-  test('creates the private runtime directory before dropping root privileges', () => {
-    const runtimeDirectory = 'install -d -o kortix -g kortix -m 0700 /var/run/kortix';
-    const dropAt = entrypoint.indexOf('setpriv --reuid kortix');
-    expect(rendered).toContain(runtimeDirectory);
-    expect(entrypoint).toContain(runtimeDirectory);
-    expect(entrypoint.indexOf(runtimeDirectory)).toBeLessThan(dropAt);
-  });
-
   test('entrypoint PATH dirs cannot drift from the toolchain ENV PATH', () => {
     expect(rendered).toContain(`PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
   });

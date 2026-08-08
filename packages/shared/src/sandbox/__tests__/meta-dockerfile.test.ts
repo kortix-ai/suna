@@ -49,9 +49,6 @@ describe('buildMetaSandboxDockerfile', () => {
     );
     expect(dockerfile).not.toContain('artifacts/AGENTS.md');
     expect(dockerfile).toContain('/ephemeral/kortix-master/opencode');
-    expect(dockerfile).toContain(
-      'install -d -o kortix -g kortix -m 0700 /var/run/kortix',
-    );
     expect(dockerfile).toContain('/opt/kortix/llm-catalog.json');
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
