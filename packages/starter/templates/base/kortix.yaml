@@ -92,15 +92,12 @@ agents:
     skills: all
     # sandbox: python # Must name an available project template, or "default".
 
-  memory-reflector:
-    # Scoped specialist: only what its job needs (open — never merge — a
-    # memory CR). No connectors, no project secrets.
-    kortix_cli: [project.cr.open]
-
   harness-reflector:
     # Continual-harness reflector: refines the shared harness (prompts,
-    # sub-agents, skills/tools, memory) from session evidence. Same
-    # posture as memory-reflector: opens — never merges — a harness CR.
+    # sub-agents, skills/tools, memory — memory curation is its fourth
+    # pass) from session evidence. Scoped specialist: reads session
+    # digests, opens — never merges — a harness CR. No connectors, no
+    # project secrets.
     kortix_cli: [project.cr.open, project.session.read]
 
 # ─── Triggers ────────────────────────────────────────────────────────────
@@ -110,45 +107,21 @@ agents:
 # agent above (or be omitted to fall back to `default_agent`).
 
 triggers:
-  # Memory reflector — surveys recent project activity and curates
-  # `.kortix/memory/` (the project brain). Reads its rubric from the
-  # `kortix-memory` skill. Opens a `memory: …` change request at the end
-  # of each run; exits silently when nothing is worth changing.
-  #
-  # Disabled by default. Flip `enabled: true` once your project has
-  # enough activity for reflection to find signal — usually after the
-  # first week or two.
-  - slug: memory-reflector
-    name: Memory reflector
-    type: cron
-    agent: memory-reflector
-    enabled: false
-    cron: "0 0 3 * * *" # 03:00 daily
-    timezone: UTC
-    prompt: |
-      Load the `kortix-memory` skill, then reflect on the last 24h of
-      project activity: git log, merged CRs, and every session that ran
-      in the window (`kortix sessions digest --since 24h` — analyze what
-      each session actually did). Update `.kortix/memory/` per the rubric
-      and open a single CR titled `memory: …`. Exit silently if nothing is
-      worth changing.
-
   # Harness reflector — the continual-harness loop across sessions.
   # Surveys what every recent session actually did, finds failure
   # signatures (repeated tool failures, rediscovery loops, stalled
   # objectives), and refines the shared harness — agent prompts,
   # sub-agents, skills/tools, memory — via the four-pass protocol in
   # the `kortix-harness-refinement` skill. Opens a `harness: …` change
-  # request; exits silently when nothing is worth changing.
-  #
-  # Disabled by default. Flip `enabled: true` once sessions are running
-  # regularly — refinement needs trajectory evidence to work from.
+  # request; exits silently when nothing is worth changing — a quiet
+  # project costs one short no-op session per day. Flip `enabled: false`
+  # to opt out.
   - slug: harness-reflector
     name: Harness reflector
     type: cron
     agent: harness-reflector
-    enabled: false
-    cron: "0 30 3 * * *" # 03:30 daily, after the memory reflector
+    enabled: true
+    cron: "0 0 3 * * *" # 03:00 daily
     timezone: UTC
     prompt: |
       Load the `kortix-harness-refinement` skill, then run the four-pass

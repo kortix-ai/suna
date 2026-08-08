@@ -32,7 +32,7 @@ const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
   '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/agents/memory-reflector.md',
+  '.kortix/opencode/agents/harness-reflector.md',
   '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',

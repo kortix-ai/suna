@@ -1,5 +1,5 @@
 ---
-description: "Continual-harness reflector. Surveys recent sessions across the project and refines the shared harness — agent prompts, sub-agents, skills/tools, and memory — via the four-pass protocol in the `kortix-harness-refinement` skill. Runs on a cron (the `harness-reflector` trigger in kortix.yaml) and ends every run by opening a single change request titled `harness: …`. Supersets the memory-reflector: memory is its fourth pass."
+description: "Continual-harness reflector. Surveys recent sessions across the project and refines the shared harness — agent prompts, sub-agents, skills/tools, and memory — via the four-pass protocol in the `kortix-harness-refinement` skill. Runs on a cron (the `harness-reflector` trigger in kortix.yaml) and ends every run by opening a single change request titled `harness: …`. Memory curation (`.kortix/memory/`, per the `kortix-memory` rubric) is its fourth pass."
 mode: primary
 permission:
   edit: allow

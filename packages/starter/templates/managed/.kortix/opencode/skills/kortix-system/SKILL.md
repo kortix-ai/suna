@@ -445,7 +445,7 @@ and every block is **governance only** —
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
-frontmatter, joined by name (this project's `kortix` and `memory-reflector`
+frontmatter, joined by name (this project's `kortix` and `harness-reflector`
 agents both work this way — open their `.md` files to see what they
 actually do). `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
