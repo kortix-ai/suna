@@ -200,9 +200,9 @@ function toWorkspaceSpecValue(
 export function addWorkspaceCompatibilityPaths<
   T extends {
     paths?: Record<string, any>;
-    components?: { schemas?: Record<string, unknown>; [key: string]: unknown };
+    components?: { schemas?: Record<string, any> };
   },
->(doc: T): T {
+>(doc: T): T & { paths?: Record<string, any> } {
   if (!doc.paths) return doc;
 
   const schemas = doc.components?.schemas ?? {};
