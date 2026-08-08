@@ -29,6 +29,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -48,10 +49,12 @@ interface TemplateCreateResult {
 }
 
 async function openSandboxSection(page: Page, projectId: string) {
+  await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /^Settings$/i }).click();
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
   const sandboxHeading = page.getByRole('heading', { name: /Sandbox templates/i });
   if (!(await sandboxHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    await page.getByRole('button', { name: /^Sandbox$/i }).click();
+    await page.getByRole('button', { name: /^Sandbox templates$/i }).click();
   }
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), { timeout: 30_000 });
   await expect(sandboxHeading).toBeVisible({ timeout: 30_000 });
@@ -63,6 +66,7 @@ test.describe('12 — Sandbox templates UI', () => {
   let user: AuthUser;
   let session: AuthSession;
   let projectId: string;
+  let accountId: string;
 
   test.beforeAll(async () => {
     const email = `e2e-sbx-${Date.now()}@kortix.test`;
@@ -76,8 +80,9 @@ test.describe('12 — Sandbox templates UI', () => {
     );
     expect(personalAccount?.account_id).toBeTruthy();
     if (!personalAccount) throw new Error('test user has no personal account');
+    accountId = personalAccount.account_id;
     projectId = seedDatabaseProject({
-      accountId: personalAccount.account_id,
+      accountId,
       userId: user.id,
       name: projectName,
     });
@@ -111,9 +116,10 @@ test.describe('12 — Sandbox templates UI', () => {
     await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${projectId}/customize/sandbox`,
+      '/favicon.png',
       authOptions,
     );
+    await selectAccountForUi(page, accountId);
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
@@ -168,9 +174,10 @@ test.describe('12 — Sandbox templates UI', () => {
     await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${projectId}/customize/sandbox`,
+      '/favicon.png',
       authOptions,
     );
+    await selectAccountForUi(page, accountId);
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 

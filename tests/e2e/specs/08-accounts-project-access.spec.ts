@@ -18,7 +18,7 @@ const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
 type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'user';
+type ProjectRole = 'manager' | 'editor' | 'member';
 
 interface AccountSummary {
   account_id: string;
@@ -260,14 +260,14 @@ test.describe('08 — Accounts, invites, and project access', () => {
     expect(byEmail(accessBeforeGrant.members, memberEmail)?.project_role).toBeNull();
     expect(byEmail(accessBeforeGrant.members, memberEmail)?.effective_project_role).toBeNull();
 
-    const viewerGrant = await api<ProjectAccessMember>(
+    const memberGrant = await api<ProjectAccessMember>(
       ownerSession.access_token,
       'PUT',
       `/projects/${project.project_id}/access/${member.id}`,
-      { role: 'user' },
+      { role: 'member' },
     );
-    expect(viewerGrant.project_role).toBe('user');
-    expect(viewerGrant.effective_project_role).toBe('user');
+    expect(memberGrant.project_role).toBe('member');
+    expect(memberGrant.effective_project_role).toBe('member');
 
     const memberProjectsAfterGrant = await api<ProjectSummary[]>(
       memberSession.access_token,
@@ -280,8 +280,8 @@ test.describe('08 — Accounts, invites, and project access', () => {
       'GET',
       `/projects/${project.project_id}`,
     );
-    expect(readableProject.effective_project_role).toBe('user');
-    // A plain user is the floor *usable* role: it can start sessions and use the
+    expect(readableProject.effective_project_role).toBe('member');
+    // A plain member is the floor *usable* role: it can start sessions and use the
     // agent chat (this previously 403'd, which made the floor project role useless).
     // It reaches provider validation just like an owner — an invalid provider is a
     // 400, NOT the old role 403 (and avoids actually provisioning a sandbox here).
@@ -428,7 +428,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     );
     await membersDialog.getByLabel('Email').fill(memberEmail);
     await membersDialog.locator('#invite-role').click();
-    await page.getByRole('option', { name: /User/i }).click();
+    await page.getByRole('option', { name: /^Member$/i }).click();
     const accessInvite = page.waitForResponse(
       (response) =>
         response.url().includes(`/v1/projects/${project.project_id}/access/invite`) &&
@@ -438,7 +438,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     expect((await accessInvite).status()).toBe(200);
     const memberAccessRow = membersDialog.locator('li').filter({ hasText: memberEmail }).first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    await expect(memberAccessRow.getByRole('combobox')).toContainText('User');
+    await expect(memberAccessRow.getByRole('combobox')).toContainText('Member');
 
     await installBrowserSessionDirect(page, memberSession, '/projects', authOptions);
     await selectAccountForUi(page, account.account_id);

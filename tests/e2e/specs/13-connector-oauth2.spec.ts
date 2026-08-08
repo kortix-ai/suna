@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { authHeaders, createApiResultClient } from '../helpers/http';
+import { seedDatabaseProject } from '../helpers/database';
+import { createApiResultClient } from '../helpers/http';
 import {
   type AuthSession,
   type AuthUser,
@@ -8,6 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -15,31 +17,38 @@ const password = 'E2eConnectorOauth123!';
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
+interface AccountSummary {
+  account_id: string;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
+  account_role?: 'owner' | 'admin' | 'member';
+}
+
 test.describe('13 — Custom connector OAuth2', () => {
   test.setTimeout(180_000);
 
   let user: AuthUser;
   let session: AuthSession;
   let projectId: string;
+  let accountId: string;
 
   test.beforeAll(async () => {
     const email = `e2e-connector-oauth-${Date.now()}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
-
-    const response = await fetch(`${apiBase}/projects/provision`, {
-      method: 'POST',
-      headers: authHeaders(session.access_token),
-      body: JSON.stringify({
-        name: `e2e-connector-oauth-${Date.now()}`,
-      }),
+    const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+    const personalAccount = accounts.json?.find(
+      (account) =>
+        account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+    );
+    expect(personalAccount?.account_id).toBeTruthy();
+    if (!personalAccount) throw new Error('test user has no personal account');
+    accountId = personalAccount.account_id;
+    projectId = seedDatabaseProject({
+      accountId,
+      userId: user.id,
+      name: `e2e-connector-oauth-${Date.now()}`,
     });
-    const body = (await response.json()) as { project_id?: string; error?: string };
-    expect(response.status, JSON.stringify(body)).toBe(201);
-    expect(body.project_id).toBeTruthy();
-    if (!body.project_id)
-      throw new Error(`Project provision returned no project_id: ${JSON.stringify(body)}`);
-    projectId = body.project_id;
   });
 
   test.afterAll(async () => {
@@ -58,10 +67,13 @@ test.describe('13 — Custom connector OAuth2', () => {
     await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${projectId}/customize/connectors`,
+      '/favicon.png',
       authOptions,
     );
-    await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
+    await selectAccountForUi(page, accountId);
+    await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('link', { name: /^Customize$/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/connectors$`));
     await page.getByRole('tab', { name: /^Custom$/ }).click();
 
     const authSelect = page.getByRole('combobox', { name: /^Auth$/ });

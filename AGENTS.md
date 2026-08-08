@@ -213,7 +213,7 @@ these as standing rules whenever you touch the data/runtime layer:
 > **published npm package** with its own hard rules that have no analogue
 > elsewhere in this repo: **TDD is mandatory** (failing test first — invoke the
 > `tdd` skill — and every turn ends with the gates run, the real output pasted,
-> and an explicit shippable YES/NO/NOT YET); exported names (including _types_)
+> and an explicit shippable YES/NO/NOT YET); exported names (including *types*)
 > are a public API contract and renaming one is a breaking change; the `version`
 > field is inert and must never be bumped by hand; adding an export requires
 > three synchronized edits; and the framework-free core is enforced by a static
@@ -225,7 +225,7 @@ these as standing rules whenever you touch the data/runtime layer:
   through its public surface — not hand-rolled or duplicated in a host. If you
   need something the SDK doesn't expose, add it to the SDK.
 - **One client per host.** Create it once via `createKortix({ backendUrl,
-getToken })` and read everything through `@kortix/sdk` + `@kortix/sdk/react`.
+  getToken })` and read everything through `@kortix/sdk` + `@kortix/sdk/react`.
   Auth is just `getToken` — an API key / PAT for programmatic use, or a Supabase
   JWT for the logged-in web app. Hosts never instantiate a second client.
 - **A whole session is one hook.** `useSession(projectId, sessionId)` owns the
@@ -325,7 +325,7 @@ Mint a real JWT against local Supabase, then call the API with it:
    (`apikey` + `Authorization: Bearer <service_role>`, body
    `{email,password,email_confirm:true}`).
 3. Password-grant for the token: `POST
-127.0.0.1:54321/auth/v1/token?grant_type=password` (`apikey: <anon>`).
+   127.0.0.1:54321/auth/v1/token?grant_type=password` (`apikey: <anon>`).
 4. Call the API: `Authorization: Bearer <access_token>` against
    `localhost:8008/v1` (e.g. `/accounts`, `/projects/provision`,
    `/projects/:id/sessions`, `/p/<ext>/8000/...`).

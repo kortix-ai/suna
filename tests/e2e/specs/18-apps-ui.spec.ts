@@ -106,18 +106,13 @@ test.describe('18 — Kortix Apps UI', () => {
       projectId = project.id;
 
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-      await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);
+      await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, account.account_id);
-
-      await page.goto(`/projects/${project.id}`, {
-        waitUntil: 'domcontentloaded',
-      });
-      await expect(page.getByRole('link', { name: 'Apps' })).toBeVisible();
-      await dismissOnboarding(page);
 
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
+      await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
       await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
