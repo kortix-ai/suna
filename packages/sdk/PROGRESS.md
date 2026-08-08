@@ -26,7 +26,21 @@ Claimed SDK scope:
 The required `tdd` skill is unavailable in this session. This work uses the
 required RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+RED:
+
+- The slash-heavy URL regression took `492.09 ms` and failed its `< 200 ms` bound.
+
+GREEN:
+
+- Focused connector gateway suite: `12 pass`, `0 fail`; regression case `0.19 ms`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1807 pass`, `0 fail`, `7004 expect()` calls.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ### 2026-08-08 — session `sandbox-agent-lifecycle` claim
 
