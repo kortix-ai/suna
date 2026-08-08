@@ -1,7 +1,7 @@
 {
   "name": "@kortix/cli",
   "version": "0.1.0",
-  "description": "Kortix CLI \u2014 scaffold a Kortix project (.kortix/) inside any git repository.",
+  "description": "Kortix CLI \u2014 scaffold a Kortix workspace (.kortix/) inside any git repository.",
   "private": true,
   "type": "module",
   "bin": {

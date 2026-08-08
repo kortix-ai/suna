@@ -1,10 +1,10 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
-import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import type { Auth } from '../api/auth.ts';
+import { ensureDefaultProjectBinding } from '../project-bind.ts';
 
 const AUTH: Auth = {
   api_base: 'https://api.example.test/v1',
@@ -97,9 +97,9 @@ describe('ensureDefaultProjectBinding', () => {
     }) as typeof fetch;
   }
 
-  function storedDefaultProject(): { project_id: string; name: string } | undefined {
+  function storedDefaultWorkspace(): { workspace_id: string; name: string } | undefined {
     const cfg = JSON.parse(readFileSync(configFile, 'utf8'));
-    return cfg.hosts?.test?.default_project;
+    return cfg.hosts?.test?.default_workspace;
   }
 
   it('is a no-op when a default project is already bound', async () => {
@@ -127,7 +127,7 @@ describe('ensureDefaultProjectBinding', () => {
 
     expect(outcome.bound).toBe(true);
     expect(outcome.project?.project_id).toBe('proj_only');
-    expect(storedDefaultProject()?.project_id).toBe('proj_only');
+    expect(storedDefaultWorkspace()?.workspace_id).toBe('proj_only');
     expect(stderrChunks.join('')).toContain('Default project:');
   });
 
@@ -138,7 +138,7 @@ describe('ensureDefaultProjectBinding', () => {
 
     expect(outcome.bound).toBe(false);
     expect(outcome.project).toBeNull();
-    expect(storedDefaultProject()).toBeUndefined();
+    expect(storedDefaultWorkspace()).toBeUndefined();
     expect(stderrChunks.join('')).toContain('kortix init');
   });
 
@@ -205,7 +205,7 @@ describe('ensureDefaultProjectBinding', () => {
 
     expect(outcome.bound).toBe(false);
     expect(outcome.project).toBeNull();
-    expect(storedDefaultProject()).toBeUndefined();
+    expect(storedDefaultWorkspace()).toBeUndefined();
     expect(stderrChunks.join('')).toContain('kortix projects use');
   });
 

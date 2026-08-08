@@ -17,7 +17,7 @@ import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
-import { runProjects } from './commands/projects.ts';
+import { runProjects, runWorkspaces } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runAudit } from './commands/audit.ts';
@@ -70,10 +70,10 @@ interface CommandTier {
 }
 
 // The help layout leads with the navigable hierarchy — Host › Account ›
-// Project › Session, top-down, each with its `use` selection verb — then the
-// feature bands that operate ON the linked project, then the CLI tool itself.
-// You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
-// and open SESSIONS in the project. Order + membership here IS the layout.
+// Workspace › Session, top-down, each with its `use` selection verb — then the
+// feature bands that operate ON the linked workspace, then the CLI tool itself.
+// You sign into a HOST, pick an ACCOUNT within it, pick a WORKSPACE within that,
+// and open SESSIONS in the workspace. Order + membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
   // Deliberately the first band on the screen. An agent in any harness that
   // holds only this binary and a token has to be able to find, unprompted, the
@@ -96,7 +96,7 @@ const TIERS: readonly CommandTier[] = [
     ],
   },
   {
-    label: 'Where you are  (host › account › project › session)',
+    label: 'Where you are  (host › account › workspace › session)',
     sections: [
       {
         title: 'Sign in — per host',
@@ -109,7 +109,7 @@ const TIERS: readonly CommandTier[] = [
           { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
           { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
           { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
-          { name: 'token', blurb: 'Inspect the active token context (project/session/agent grants)' },
+          { name: 'token', blurb: 'Inspect the active token context (workspace/session/agent grants)' },
           {
             name: 'self-host',
             args: '<subcommand>',
@@ -128,27 +128,32 @@ const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Project — within the account',
+        title: 'Workspace — within the account',
         commands: [
           {
             name: 'init',
-            args: '[project-name]',
-            blurb: 'Start a new Kortix project (a fresh standalone directory)',
+            args: '[workspace-name]',
+            blurb: 'Start a new Kortix workspace (a fresh standalone directory)',
+          },
+          {
+            name: 'workspaces',
+            args: '<subcommand>',
+            blurb: 'List, link, set-default (use), open Kortix workspaces',
           },
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb: 'List, link, set-default (use), open Kortix cloud projects',
+            blurb: 'Deprecated compatibility alias for `workspaces`',
           },
         ],
       },
       {
-        title: 'Session — within the project',
+        title: 'Session — within the workspace',
         commands: [
           {
             name: 'sessions',
             args: '<subcommand>',
-            blurb: 'List, create, restart project sessions',
+            blurb: 'List, create, restart workspace sessions',
           },
           {
             name: 'chat',
@@ -160,17 +165,17 @@ const TIERS: readonly CommandTier[] = [
     ],
   },
   {
-    label: 'The linked project',
+    label: 'The linked workspace',
     sections: [
       {
         title: 'Author & ship',
         commands: [
-          { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
-          { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+          { name: 'ship', blurb: 'Create the cloud workspace (first run) + push your code' },
+          { name: 'validate', blurb: "Statically validate this workspace's kortix.yaml" },
           {
             name: 'doctor',
             args: '[--no-session]',
-            blurb: 'End-to-end health check: auth, project, session, agent reply',
+            blurb: 'End-to-end health check: auth, workspace, session, agent reply',
           },
           {
             name: 'schema',
@@ -196,22 +201,22 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'secrets',
             args: '<subcommand>',
-            blurb: 'Manage project secrets (project-scoped)',
+            blurb: 'Manage workspace secrets (workspace-scoped)',
           },
           {
             name: 'providers',
             args: '<subcommand>',
-            blurb: 'Connect LLM providers (API key or OAuth) for this project',
+            blurb: 'Connect LLM providers (API key or OAuth) for this workspace',
           },
           {
             name: 'env',
             args: '<subcommand>',
-            blurb: 'Pull/push project secrets as a dotenv file',
+            blurb: 'Pull/push workspace secrets as a dotenv file',
           },
           {
             name: 'channels',
             args: '<subcommand>',
-            blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
+            blurb: 'Connect Slack to this workspace — `connect` prints a one-click install link',
           },
           {
             name: 'sandboxes',
@@ -248,7 +253,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'access',
             args: '<subcommand>',
-            blurb: 'Manage who can use this project (invite/grant/revoke)',
+            blurb: 'Manage who can use this workspace (invite/grant/revoke)',
           },
           {
             name: 'roles',
@@ -468,6 +473,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'projects') {
     return runProjects(argv.slice(1));
   }
+  if (argv[0] === 'workspaces') {
+    return runWorkspaces(argv.slice(1));
+  }
   if (argv[0] === 'hosts') {
     return runHosts(argv.slice(1));
   }
@@ -554,14 +562,14 @@ async function main(argv: string[]): Promise<number> {
     return runUninstall(argv.slice(1));
   }
   // Anything else is an unknown command. This must NEVER fall through to a
-  // project scaffold — `kortix <new-project-name>` used to, which turned
+  // workspace scaffold — `kortix <new-workspace-name>` used to, which turned
   // every mistyped subcommand into a freshly scaffolded directory in cwd.
-  // Scaffolding is explicit-only: `kortix init [project-name]`.
+  // Scaffolding is explicit-only: `kortix init [workspace-name]`.
   const suggestion = closestCommand(argv[0]);
   const lines = [`${C.red}kortix:${C.reset} unknown command \`${argv[0]}\``];
   if (suggestion) lines.push(`       Did you mean ${C.cyan}kortix ${suggestion}${C.reset}?`);
   lines.push(
-    `       Run ${C.cyan}kortix --help${C.reset} for the full list, or ${C.cyan}kortix init <name>${C.reset} to start a new project.`,
+    `       Run ${C.cyan}kortix --help${C.reset} for the full list, or ${C.cyan}kortix init <name>${C.reset} to start a new workspace.`,
   );
   process.stderr.write(`${lines.join('\n')}\n`);
   return 2;
@@ -582,6 +590,7 @@ const KNOWN_COMMANDS = [
   'hosts',
   'accounts',
   'projects',
+  'workspaces',
   'sessions',
   'chat',
   'files',
