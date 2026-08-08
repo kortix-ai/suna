@@ -14,7 +14,7 @@ const lockHash = 'b'.repeat(64);
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v1-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v2-bbbbbbbbbbbbbbbb');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -30,6 +30,9 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install chromium');
+    for (const step of spec.steps) {
+      if (step.op === 'run') expect(step.cmd).not.toContain('\n');
+    }
   });
 
   test('checks out the requested ref and rejects any SHA mismatch', () => {

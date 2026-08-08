@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v1';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v2';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -123,7 +123,7 @@ export function buildPlatinumTemplateSpec(input: {
     'pnpm install --frozen-lockfile',
     'pnpm --dir tests exec playwright install chromium',
     'rm -rf /tmp/suna-cache',
-  ].join('\n');
+  ].join(' && ');
 
   return {
     name,
@@ -140,7 +140,7 @@ export function buildPlatinumTemplateSpec(input: {
           'rm -rf /var/lib/apt/lists/*',
           `npm install --global bun@${PLATINUM_CI_BUN_VERSION}`,
           `corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate`,
-        ].join('\n'),
+        ].join(' && '),
       },
       { op: 'run', cmd: cacheCommand },
       { op: 'env', key: 'KORTIX_PLATINUM_CI_TEMPLATE', value: name },
