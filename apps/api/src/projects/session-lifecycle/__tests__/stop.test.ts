@@ -133,6 +133,32 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual([]);
   });
 
+  test('cancels an in-progress stopped-row wake and guards against a late provider start', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'stopped',
+      metadata: {
+        runtimeWakeId: 'wake-1',
+        runtimeWakeStartedAt: new Date().toISOString(),
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    };
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(stopCalls).toEqual(['ext-1']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
+    const rendered = describeSql(metadata);
+    expect(rendered).toContain('runtimeWakeId');
+    expect(rendered).toContain('runtimeWakeLeaseExpiresAt');
+    expect(rendered).toContain('runtimeWakeCleanupUntilAt');
+    expect(rendered).toContain('manual');
+  });
+
   test('400s for an unsupported/unallowed provider', async () => {
     sandboxRow = {
       sandboxId: 'sess-1',

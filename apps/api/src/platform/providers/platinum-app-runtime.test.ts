@@ -18,6 +18,7 @@ let calls: Array<{
 }> = [];
 let startError: Error | null = null;
 let sandboxState = "running";
+let sandboxStateSequence: string[] = [];
 
 mock.module("../../shared/platinum", () => ({
   isPlatinumConfigured: () => true,
@@ -26,11 +27,15 @@ mock.module("../../shared/platinum", () => ({
       ? (JSON.parse(String(init.body)) as Record<string, unknown>)
       : undefined;
     calls.push({ path, method: String(init.method ?? "GET"), body });
-    if (path.endsWith("/start") && startError) throw startError;
+    if (path.endsWith("/start") && startError) {
+      const error = startError;
+      startError = null;
+      throw error;
+    }
     if (path.endsWith("/exec"))
       return { result: { stdout: "", stderr: "", exit_code: 0 } };
     if (path === "/v1/sandboxes/sbx_app")
-      return { id: "sbx_app", state: sandboxState };
+      return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
     return {};
   },
 }));
@@ -47,6 +52,7 @@ beforeEach(() => {
   calls = [];
   startError = null;
   sandboxState = "running";
+  sandboxStateSequence = [];
 });
 
 test("ensureAppRuntimeStarted launches appd daemon directly without user-image shell dependencies", async () => {
@@ -87,15 +93,32 @@ test("start treats a running conflict as an idempotent success", async () => {
   ]);
 });
 
-test("start preserves a conflict when the sandbox is not running", async () => {
+test("start waits for an accepted stop to settle before retrying the wake", async () => {
   startError = new Error(
     'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"stopping","code":"conflict"}',
   );
-  sandboxState = "stopping";
+  sandboxStateSequence = ["stopping", "stopped"];
+  const provider = new PlatinumProvider();
+
+  await expect(provider.start("sbx_app")).resolves.toBeUndefined();
+  expect(calls.map(({ path, method }) => ({ path, method }))).toEqual([
+    { path: "/v1/sandboxes/sbx_app/start", method: "POST" },
+    { path: "/v1/sandboxes/sbx_app", method: "GET" },
+    { path: "/v1/sandboxes/sbx_app", method: "GET" },
+    { path: "/v1/sandboxes/sbx_app/start", method: "POST" },
+  ]);
+});
+
+test("start preserves a conflict when the provider reports a terminal state", async () => {
+  startError = new Error(
+    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"failed","code":"conflict"}',
+  );
+  sandboxState = "failed";
   const provider = new PlatinumProvider();
 
   await expect(provider.start("sbx_app")).rejects.toThrow(/409/);
-  expect(calls.some((call) => call.path === "/v1/sandboxes/sbx_app")).toBe(
-    true,
-  );
+  expect(calls.map(({ path, method }) => ({ path, method }))).toEqual([
+    { path: "/v1/sandboxes/sbx_app/start", method: "POST" },
+    { path: "/v1/sandboxes/sbx_app", method: "GET" },
+  ]);
 });
