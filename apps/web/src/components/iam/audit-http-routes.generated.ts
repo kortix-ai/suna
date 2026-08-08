@@ -373,6 +373,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PUT|v1|projects|:projectId|default-agent",
   "GET|v1|projects|:projectId|detail",
   "PATCH|v1|projects|:projectId|experimental",
+  "PATCH|v1|projects|:projectId|features",
   "GET|v1|projects|:projectId|files",
   "GET|v1|projects|:projectId|files|archive",
   "GET|v1|projects|:projectId|files|content",

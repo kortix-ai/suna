@@ -125,7 +125,7 @@ test.describe("18 — Kortix Apps UI", () => {
         "POST",
         `/projects/${project.id}/apps`,
         { slug: `blocked-${runId}`, name: "Blocked App" },
-        404,
+        403,
       );
 
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);

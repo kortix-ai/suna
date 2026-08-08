@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 787,
+  "count": 790,
   "routes": [
     {
       "method": "GET",
@@ -1487,6 +1487,10 @@
       "path": "/v1/projects/:projectId/experimental"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/features"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/files"
     },
@@ -2655,6 +2659,10 @@
       "path": "/v1/workspaces/:projectId/experimental"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:projectId/features"
+    },
+    {
       "method": "GET",
       "path": "/v1/workspaces/:projectId/files"
     },
@@ -2977,6 +2985,10 @@
     {
       "method": "GET",
       "path": "/v1/workspaces/:projectId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:projectId/sessions/:sessionId/mcp/voice"
     },
     {
       "method": "PUT",
