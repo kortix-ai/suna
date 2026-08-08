@@ -98,7 +98,7 @@ export default function AccountSettingsScreen() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 21, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{account?.name ?? 'Account'}</Text>
             <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>
-              {account ? `${account.member_count} member${account.member_count === 1 ? '' : 's'} · ${account.project_count} project${account.project_count === 1 ? '' : 's'}` : 'Account settings'}
+              {account ? `${account.member_count} member${account.member_count === 1 ? '' : 's'} · ${account.project_count} workspace${account.project_count === 1 ? '' : 's'}` : 'Account settings'}
             </Text>
           </View>
         </View>

@@ -1240,7 +1240,7 @@ export default function ProjectSessionScreen() {
   const createProjectSession = useCreateProjectSession(projectId);
   const { data: project } = useProject(projectId);
   const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
-  const projectName = project?.name || 'Your project';
+  const projectName = project?.name || 'Your workspace';
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
     return `${(ps && PROJECT_SESSION_STATUS_LABELS[ps.status]) || 'Provisioning'}…`;
@@ -1521,7 +1521,7 @@ export default function ProjectSessionScreen() {
             if (health.bootError) {
               failConnect(sessionId, {
                 title: 'OpenCode runtime is not ready',
-                message: 'The sandbox booted, but the project runtime did not become usable.',
+                message: 'The sandbox booted, but the workspace runtime did not become usable.',
                 detail: health.bootError,
               });
               return;
@@ -1791,7 +1791,7 @@ export default function ProjectSessionScreen() {
   const goToProjects = useCallback(() => {
     haptics.tap();
     setDrawerOpen(false);
-    router.push('/projects');
+    router.push('/workspaces');
   }, [router]);
 
   const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
@@ -2056,7 +2056,7 @@ export default function ProjectSessionScreen() {
             className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}>
             <Ionicons name="albums-outline" size={18} color={iconColor} />
-            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">All projects</Text>
+            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">All workspaces</Text>
           </TouchableOpacity>
         </View>
 
@@ -2410,7 +2410,7 @@ export default function ProjectSessionScreen() {
                     className="mt-6 rounded-full bg-foreground px-5 py-3"
                     activeOpacity={0.8}>
                     <Text className="font-roobert-medium text-sm text-background">
-                      {sandboxUpgradeGate ? 'View plans' : 'Back to projects'}
+                      {sandboxUpgradeGate ? 'View plans' : 'Back to workspaces'}
                     </Text>
                   </TouchableOpacity>
                   {sandboxUpgradeGate ? (

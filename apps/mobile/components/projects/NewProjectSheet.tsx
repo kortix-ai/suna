@@ -1,5 +1,5 @@
 /**
- * NewProjectSheet — create a project, ported from web's ProjectCreateModal.
+ * NewProjectSheet — create a workspace through the compatible Project API.
  *
  * Two modes (same as web):
  *  - managed: provision a private Kortix-managed repo (name + optional skills toggle)
@@ -121,9 +121,9 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const handleCreateManaged = useCallback(async () => {
     if (!accountId) return toast.error('Select an account first');
     const cleaned = name.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
-    if (!cleaned) return toast.error('Project name is required');
+    if (!cleaned) return toast.error('Workspace name is required');
     if (cleaned.length > PROJECT_NAME_MAX_LENGTH) {
-      return toast.error(`Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`);
+      return toast.error(`Workspace name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`);
     }
     try {
       haptics.medium();
@@ -133,12 +133,12 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
         starter_template: starterTemplateForManagedProject(),
       });
       haptics.success();
-      toast.success('Project created');
+      toast.success('Workspace created');
       onCreated(project);
       sheetRef.current?.dismiss();
     } catch (err: any) {
       haptics.warning();
-      toast.error(err?.message || 'Failed to create project');
+      toast.error(err?.message || 'Failed to create workspace');
     }
   }, [accountId, name, provision, toast, onCreated]);
 
@@ -203,7 +203,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fg, marginBottom: 2 }}>New project</Text>
+        <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fg, marginBottom: 2 }}>New workspace</Text>
         <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginBottom: 20, lineHeight: 18 }}>
           A dedicated space for one company, product, or idea — set up for you.
         </Text>
@@ -216,12 +216,12 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Start fresh</Text>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18, marginTop: 2 }}>
-                  We set up your project with starter skills, ready to use. Nothing to configure.
+                  We set up your workspace with starter skills, ready to use. Nothing to configure.
                 </Text>
               </View>
             </View>
 
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Project name</Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Workspace name</Text>
             <SheetTextInput
               value={name}
               onChangeText={setName}
@@ -247,7 +247,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
             </Pressable>
 
             <PrimaryButton
-              label="Create project"
+              label="Create workspace"
               icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
               loading={provision.isPending}
               disabled={submitting || !accountId}
@@ -389,7 +389,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                   </View>
                 )}
 
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Project name (optional)</Text>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Workspace name (optional)</Text>
                 <SheetTextInput
                   value={name}
                   onChangeText={setName}

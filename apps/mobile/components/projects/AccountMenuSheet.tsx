@@ -153,8 +153,8 @@ export function AccountMenuSheet({
         {/* Actions — web's user-menu.tsx order, minus Download apps and Billing
             (not relevant in the app: you're already on mobile, and billing
             deliberately lives on the web). */}
-        {/* Web parity: Home is the projects dashboard, not the legacy sandbox home. */}
-        <ActionRow icon={Home} label="Home" onPress={() => go(() => router.replace('/projects'))} />
+        {/* Web parity: Home is the workspaces dashboard, not the legacy sandbox home. */}
+        <ActionRow icon={Home} label="Home" onPress={() => go(() => router.replace('/workspaces'))} />
         <ActionRow icon={BookOpen} label="Docs" onPress={() => go(() => Linking.openURL(`${frontend}/docs`).catch(() => {}))} />
         <ActionRow icon={LifeBuoy} label="Support" onPress={() => go(() => Linking.openURL(`${frontend}/support`).catch(() => {}))} />
         <ActionRow icon={Settings} label="User settings" onPress={() => go(() => router.push('/(settings)'))} />

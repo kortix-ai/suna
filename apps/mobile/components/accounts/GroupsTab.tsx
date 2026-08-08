@@ -71,7 +71,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
             </TouchableOpacity>
           )}
         </View>
-        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 14 }}>Bundle members together and attach the whole group to projects with a role.</Text>
+        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 14 }}>Bundle members together and attach the whole group to workspaces with a role.</Text>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
           <Search size={15} color={c.muted} />
@@ -89,7 +89,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         ) : filtered.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 36, gap: 10 }}>
             <Users size={26} color={c.muted} />
-            <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{search ? 'No groups match your search' : 'No groups yet. Create one to bulk-add members to projects.'}</Text>
+            <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{search ? 'No groups match your search' : 'No groups yet. Create one to bulk-add members to workspaces.'}</Text>
           </View>
         ) : (
           <View>
@@ -104,7 +104,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
                     <Pill label={g.source} isDark={isDark} />
                   </View>
                   <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }} numberOfLines={1}>
-                    {g.description ? `${g.description} · ` : ''}{g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'} · {g.project_count ?? 0} project{(g.project_count ?? 0) === 1 ? '' : 's'}
+                    {g.description ? `${g.description} · ` : ''}{g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'} · {g.project_count ?? 0} workspace{(g.project_count ?? 0) === 1 ? '' : 's'}
                   </Text>
                 </View>
                 {canCreate && (busyId === g.group_id ? <ActivityIndicator size="small" color={c.muted} /> : (
@@ -154,7 +154,7 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
         <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 16 }}>Groups bundle members together. Attach the group to projects with a role.</Text>
+        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 16 }}>Groups bundle members together. Attach the group to workspaces with a role.</Text>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Group name</Text>
         <SheetTextInput value={name} onChangeText={setName} placeholder="Engineering" />
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 6 }}>Description (optional)</Text>

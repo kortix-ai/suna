@@ -1,7 +1,7 @@
 /**
  * Member detail (web parity: accounts/[id]/members/[userId]). Super-admin grant/
  * revoke, an IAM-computed capabilities grid, the groups the member belongs to,
- * and the projects they can reach (with how).
+ * and the workspaces they can reach (with how).
  */
 
 import React, { useMemo, useState } from 'react';
@@ -33,11 +33,11 @@ const CAPABILITY_GROUPS: { heading: string; items: { label: string; action: stri
     { label: 'Create groups', action: 'group.create' },
     { label: 'Manage policies', action: 'policy.create' },
   ] },
-  { heading: 'Projects', items: [
-    { label: 'Create projects', action: 'project.create' },
-    { label: 'Read every project', action: 'project.read' },
-    { label: 'Write every project', action: 'project.write' },
-    { label: 'Delete every project', action: 'project.delete' },
+  { heading: 'Workspaces', items: [
+    { label: 'Create workspaces', action: 'project.create' },
+    { label: 'Read every workspace', action: 'project.read' },
+    { label: 'Write every workspace', action: 'project.write' },
+    { label: 'Delete every workspace', action: 'project.delete' },
   ] },
 ];
 const FLAT_CAPS = CAPABILITY_GROUPS.flatMap((g) => g.items);
@@ -176,15 +176,15 @@ export default function MemberDetailScreen() {
           </View>
         </Card>
 
-        {/* Project access */}
+        {/* Workspace access */}
         <Card isDark={isDark}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <FolderGit2 size={16} color={c.muted} />
-            <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Project access {access.length}</Text>
+            <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Workspace access {access.length}</Text>
           </View>
           <View style={{ marginTop: 12 }}>
             {accessQuery.isLoading ? <ActivityIndicator size="small" color={c.muted} /> : access.length === 0 ? (
-              <Text style={{ fontSize: 12.5, color: c.muted }}>No project access.</Text>
+              <Text style={{ fontSize: 12.5, color: c.muted }}>No workspace access.</Text>
             ) : access.map((p, i) => (
               <View key={p.project_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                 <View style={{ flex: 1, minWidth: 0 }}>

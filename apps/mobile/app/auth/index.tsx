@@ -98,7 +98,7 @@ export default function AuthScreen() {
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
-    if (isAuthenticated) router.replace('/projects');
+    if (isAuthenticated) router.replace('/workspaces');
   }, [isAuthenticated, router]);
 
   // A brand-new OAuth account was rejected (mobile is login-only) — surface it.
@@ -163,7 +163,7 @@ export default function AuthScreen() {
         setErrorMessage(friendlySignInError(res?.error?.message));
         return;
       }
-      router.replace('/projects');
+      router.replace('/workspaces');
     } catch (err: any) {
       log.error('Auth submit exception:', err);
       setErrorMessage(err?.message || 'An unexpected error occurred.');
@@ -195,7 +195,7 @@ export default function AuthScreen() {
         );
         return;
       }
-      if (data.session) router.replace('/projects');
+      if (data.session) router.replace('/workspaces');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Verification failed.');
     } finally {

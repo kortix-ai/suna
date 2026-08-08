@@ -68,9 +68,9 @@ const MONO = 'Menlo';
 const ROLES: ProjectRole[] = ['member', 'editor', 'manager'];
 
 const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
-  member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
-  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the project and run sessions.' },
-  manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
+  member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the workspace’s triggers.' },
+  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the workspace and run sessions.' },
+  manager: { label: 'Manager', blurb: 'Full control — edit the workspace, invite members, change settings.' },
 };
 
 interface PageTabLike { id: string; label: string; icon: string }
@@ -200,9 +200,9 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
         haptics.success();
         setEmail('');
         if (isInviteSent(result)) {
-          Alert.alert('Invitation sent', `Invitation sent to ${result.email}. They'll join this project as ${ROLE_DESC[result.project_role].label} when they sign up.`);
+          Alert.alert('Invitation sent', `Invitation sent to ${result.email}. They'll join this workspace as ${ROLE_DESC[result.project_role].label} when they sign up.`);
         } else {
-          Alert.alert('Member added', 'They now have access to this project.');
+          Alert.alert('Member added', 'They now have access to this workspace.');
         }
       },
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to invite member.'),
@@ -331,7 +331,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader title="Project access" description="Account owners and admins always have Manager access." count={accessMembers.length} isDark={isDark} />
+      <CardHeader title="Workspace access" description="Account owners and admins always have Manager access." count={accessMembers.length} isDark={isDark} />
       {accessQuery.isLoading ? (
         <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
       ) : accessQuery.isError ? (
@@ -354,7 +354,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
                 ? summary
                 : m.project_role
                   ? `Granted ${formatDate(m.granted_at)}`
-                  : 'No project access';
+                  : 'No workspace access';
             return (
               <TouchableOpacity
                 key={m.user_id}
@@ -501,7 +501,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     });
   };
   const doRevoke = () => {
-    Alert.alert('Revoke project access?', `${userLabel(member)} will lose direct access to this project.`, [
+    Alert.alert('Revoke workspace access?', `${userLabel(member)} will lose direct access to this workspace.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Revoke access', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -510,7 +510,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     ]);
   };
   const doDetach = (groupId: string, groupName: string) => {
-    Alert.alert('Detach group from project?', `"${groupName}" will be detached. Everyone whose access here comes from this group loses it.`, [
+    Alert.alert('Detach group from workspace?', `"${groupName}" will be detached. Everyone whose access here comes from this group loses it.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Detach group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -519,7 +519,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     ]);
   };
   const doRemoveFromGroup = (groupId: string, groupName: string) => {
-    Alert.alert('Remove from group?', `${userLabel(member)} will be removed from "${groupName}" across the whole account — this affects every project that group can access.`, [
+    Alert.alert('Remove from group?', `${userLabel(member)} will be removed from "${groupName}" across the whole account — this affects every workspace that group can access.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove from group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -546,13 +546,13 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
                   <RoleBadge role={g.role} isDark={isDark} />
                 </View>
                 <TouchableOpacity onPress={() => doDetach(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
-                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Detach from this project</Text>
+                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Detach from this workspace</Text>
                   <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Removes access for everyone in this group, here only</Text>
                 </TouchableOpacity>
                 {accountId && (
                   <TouchableOpacity onPress={() => doRemoveFromGroup(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
                     <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove from group</Text>
-                    <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Affects every project this group can access</Text>
+                    <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Affects every workspace this group can access</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -560,7 +560,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
           </>
         ) : (
           <>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Project role</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Workspace role</Text>
             <View>
               {ROLES.map((r, i) => (
                 <View key={r} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
@@ -657,7 +657,7 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
     });
   };
   const doDetach = () => {
-    Alert.alert('Detach group from project?', `"${grant.group_name}" will no longer be attached. Members lose their inherited ${ROLE_DESC[grant.role].label} access (unless granted another way).`, [
+    Alert.alert('Detach group from workspace?', `"${grant.group_name}" will no longer be attached. Members lose their inherited ${ROLE_DESC[grant.role].label} access (unless granted another way).`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Detach group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -736,9 +736,9 @@ export function MembersNavPage({
       <PageContent>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 48, gap: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View>
-            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: c.fg }}>Project members</Text>
+            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: c.fg }}>Workspace members</Text>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginTop: 4 }}>
-              Control who can access this project. Account owners and admins always have Manager access.
+              Control who can access this workspace. Account owners and admins always have Manager access.
             </Text>
           </View>
 

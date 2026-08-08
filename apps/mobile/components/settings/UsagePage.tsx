@@ -49,7 +49,7 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onClose();
       if (projectId) {
-        router.push(`/projects/${projectId}`);
+        router.push(`/workspaces/${projectId}`);
       }
     },
     [onClose, router]
