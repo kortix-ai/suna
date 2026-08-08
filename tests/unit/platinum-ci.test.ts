@@ -5,6 +5,7 @@ import {
   PLATINUM_CI_PNPM_VERSION,
   buildPlatinumTemplateSpec,
   buildWorkerScript,
+  platinumWorkerLaunchCommand,
   platinumTemplateName,
   validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
@@ -60,6 +61,14 @@ describe('Platinum CI worker plan', () => {
 
     expect(script).toContain("'pnpm' 'test'");
     expect(script).not.toContain('nohup pnpm dev');
+  });
+
+  test('detaches the worker with the Platinum-supported setsid contract', () => {
+    const command = platinumWorkerLaunchCommand();
+    expect(command).toContain('setsid -f /workspace/run-kortix-tests.sh');
+    expect(command).toContain('</dev/null');
+    expect(command).not.toContain('nohup');
+    expect(command).not.toMatch(/&\s*$/);
   });
 
   test('rejects values that could alter the Git fetch command', () => {

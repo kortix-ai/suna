@@ -236,6 +236,10 @@ ${testCommand}
 `;
 }
 
+export function platinumWorkerLaunchCommand(): string {
+  return 'setsid -f /workspace/run-kortix-tests.sh >/workspace/kortix-bootstrap.log 2>&1 </dev/null';
+}
+
 class PlatinumApi {
   readonly base: string;
   readonly headers: Record<string, string>;
@@ -462,7 +466,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     const launch = await exec(api, sandboxId, [
       'bash',
       '-lc',
-      'nohup /workspace/run-kortix-tests.sh >/workspace/kortix-bootstrap.log 2>&1 &',
+      platinumWorkerLaunchCommand(),
     ]);
     if ((launch?.exit_code ?? 0) !== 0) {
       throw new Error(`Platinum worker launch failed: ${launch?.stderr ?? ''}`);
