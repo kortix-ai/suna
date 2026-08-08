@@ -87,13 +87,17 @@ describe("database-only project fixture", () => {
     expect(db.query.mock.calls[0][0]).toContain(
       "INSERT INTO kortix.project_members",
     );
-    expect(db.query.mock.calls[0][0]).toContain("onboarding_completed_at");
     expect(db.query.mock.calls[0][1]).toEqual([
       project.id,
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
       "e2e-project",
       null,
+      JSON.stringify({
+        ke2e: { database_only: true },
+        experimental: { apps: true },
+        onboarding_completed_at: "2026-01-01T00:00:00.000Z",
+      }),
     ]);
     expect(db.end).toHaveBeenCalledOnce();
   });
@@ -118,7 +122,31 @@ describe("database-only project fixture", () => {
       "22222222-2222-4222-8222-222222222222",
       "local-project",
       "/tmp/ke2e-local.git",
+      JSON.stringify({
+        ke2e: { database_only: true },
+        experimental: { apps: true },
+        onboarding_completed_at: "2026-01-01T00:00:00.000Z",
+      }),
     ]);
+  });
+
+  it("can create a project with Apps disabled for the opt-in journey", async () => {
+    const db = database();
+
+    await createDatabaseProject(
+      env({ target: "local" }),
+      {
+        accountId: "11111111-1111-4111-8111-111111111111",
+        userId: "22222222-2222-4222-8222-222222222222",
+        name: "apps-opt-in",
+        appsEnabled: false,
+      },
+      db.open,
+    );
+
+    expect(JSON.parse(db.query.mock.calls[0][1][5])).toMatchObject({
+      experimental: { apps: false },
+    });
   });
 
   it("creates a seeded local bare repository without a network dependency", async () => {

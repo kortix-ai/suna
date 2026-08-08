@@ -13,9 +13,12 @@ export async function selectAccountForUi(
 }
 
 export async function dismissOnboarding(page: Page): Promise<void> {
-  const onboarding = page.locator(
-    '[role="dialog"][aria-labelledby^="onboarding-"]',
-  );
+  const onboarding = page
+    .getByRole("dialog")
+    .filter({
+      has: page.getByRole("progressbar", { name: "Setup progress" }),
+    })
+    .last();
   let absentSince = 0;
   for (let step = 0; step < 24; step += 1) {
     if (!(await onboarding.isVisible().catch(() => false))) {

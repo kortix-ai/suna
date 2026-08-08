@@ -94,6 +94,7 @@ test.describe("18 — Kortix Apps UI", () => {
         accountId: account.account_id,
         userId: user.id,
         name: `Apps UI ${runId}`,
+        appsEnabled: false,
       });
       projectId = project.id;
 

@@ -42,6 +42,7 @@ export async function createDatabaseProject(
     userId: string;
     name: string;
     repoUrl?: string | null;
+    appsEnabled?: boolean;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
@@ -69,7 +70,7 @@ export async function createDatabaseProject(
            'main',
            'kortix.yaml',
            'active'::kortix.project_status,
-           '{"ke2e":{"database_only":true},"experimental":{"apps":true},"onboarding_completed_at":"2026-01-01T00:00:00.000Z"}'::jsonb
+           $6::jsonb
          )
          RETURNING project_id
        )
@@ -93,6 +94,11 @@ export async function createDatabaseProject(
         input.userId,
         input.name,
         input.repoUrl ?? null,
+        JSON.stringify({
+          ke2e: { database_only: true },
+          experimental: { apps: input.appsEnabled ?? true },
+          onboarding_completed_at: "2026-01-01T00:00:00.000Z",
+        }),
       ],
     );
   } finally {
