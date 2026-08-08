@@ -327,11 +327,12 @@ describe('runCreateAttempt', () => {
 /**
  * `runCreate` is the full sequence `create()` actually runs: mint/reuse the
  * key -> provision -> on success, clear the key -> prime the cache ->
- * invalidate -> write the cookie -> navigate. `runCreateAttempt` above only
- * covers the provision sub-step; NONE of those tests would fail if a future
- * edit dropped `clearAttemptKey`, or moved it after `navigate` — a stale key
- * left behind is exactly what lets a later create with the same name
- * silently return the OLD project instead of making a new one.
+ * invalidate -> write the cookie -> enter onboarding. `runCreateAttempt`
+ * above only covers the provision sub-step; NONE of those tests would fail
+ * if a future edit dropped `clearAttemptKey`, or moved it after
+ * `enterOnboarding` — a stale key left behind is exactly what lets a later
+ * create with the same name silently return the OLD project instead of
+ * making a new one.
  *
  * Every seam is injected (`CreateOrchestrationClient`), never
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
@@ -364,15 +365,8 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      navigate: () => {},
+      enterOnboarding: () => {},
       now: () => 1_000,
-      // Default: the target account has no existing projects — this create
-      // is treated as the account's first, so `shouldRunOnboarding` stays
-      // `true` and the stamp never fires. Every test in THIS describe block
-      // that doesn't care about onboarding gets that "first project" shape
-      // for free; tests below that DO care override this explicitly.
-      getExistingProjectCount: async () => 0,
-      stampOnboardingComplete: async () => {},
       ...overrides,
     };
   }
@@ -397,7 +391,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(nextKey).not.toBe(sentKeys[0]);
   });
 
-  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, the onboarding stamp, or navigation', async () => {
+  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, or entering onboarding', async () => {
     const order: string[] = [];
     const state = { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' };
 
@@ -411,32 +405,18 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
-      navigate: () => order.push('navigate'),
+      enterOnboarding: () => order.push('enterOnboarding'),
       now: () => 1_000,
-      // Forces `shouldRunOnboarding` to `false` (this is the account's
-      // SECOND project) so the stamp step actually runs and takes its place
-      // in the sequence below — with the default `noopClient` shape (count
-      // 0) this step would be skipped entirely and could silently drift out
-      // of order without failing this test.
-      getExistingProjectCount: async () => 1,
-      stampOnboardingComplete: async () => {
-        order.push('stampOnboarding');
-      },
     });
 
-    // The exact sequence, not just "clearKey happened before navigate" —
-    // a reorder among the other steps must fail this too. `stampOnboarding`
-    // sits AFTER writeCookie and BEFORE navigate: see the placement comment
-    // on the `stampOnboardingComplete` call in `runCreate` for why (it is a
-    // fire-and-forget, non-blocking call, so its POSITION here reflects when
-    // it is *kicked off*, not when it completes).
+    // The exact sequence, not just "clearKey happened before enterOnboarding"
+    // — a reorder among the other steps must fail this too.
     expect(order).toEqual([
       'clearKey',
       'primeCache',
       'invalidate',
       'writeCookie',
-      'stampOnboarding',
-      'navigate',
+      'enterOnboarding',
     ]);
   });
 
@@ -507,10 +487,8 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      navigate: () => {},
+      enterOnboarding: () => {},
       now: () => 1_000,
-      getExistingProjectCount: async () => 0,
-      stampOnboardingComplete: async () => {},
     });
 
     expect(result.ok).toBe(true);
@@ -542,22 +520,42 @@ describe('runCreate: the full create() orchestration', () => {
     expect(cookieCalls).toEqual([['user-42', 'created-cookie']]);
   });
 
-  test('navigates to the created project on success', async () => {
-    const navigated: string[] = [];
-    await runCreate({ ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' }, [OWNER_ACCOUNT], 'user-1', {
+  test('enters onboarding on /new for the created project, and does not leave /new', async () => {
+    const entered: string[] = [];
+    const client = {
       ...noopClient(),
       runCreateAttempt: async () => fakeProject('created-nav'),
-      navigate: (path) => navigated.push(path),
-    });
-
-    expect(navigated).toEqual(['/projects/created-nav']);
+      enterOnboarding: (projectId: string) => entered.push(projectId),
+    };
+    await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      client,
+    );
+    expect(entered).toEqual(['created-nav']);
   });
 
-  test('a non-retryable failure never touches the cache, the cookie, or navigation', async () => {
+  // The whole point of the change: a create must NOT stamp the new project
+  // onboarded. Stamping is what made the wizard render `null` on arrival, so
+  // if this seam ever comes back the feature is silently dead again.
+  test('does not mark the new project onboarded', async () => {
+    const client = { ...noopClient(), runCreateAttempt: async () => fakeProject('created') };
+    expect(Object.keys(client)).not.toContain('stampOnboardingComplete');
+    expect(Object.keys(client)).not.toContain('getExistingProjectCount');
+    await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      client,
+    );
+  });
+
+  test('a non-retryable failure never touches the cache, the cookie, or onboarding', async () => {
     const err = new ApiError('Bad Gateway', { status: 502 });
     const primeCalls: unknown[] = [];
     const cookieCalls: unknown[] = [];
-    const navigated: string[] = [];
+    const entered: string[] = [];
 
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
@@ -570,14 +568,14 @@ describe('runCreate: the full create() orchestration', () => {
         },
         primeProjectCache: () => primeCalls.push('called'),
         writeLastProjectId: () => cookieCalls.push('called'),
-        navigate: (path) => navigated.push(path),
+        enterOnboarding: (projectId) => entered.push(projectId),
       },
     );
 
     expect(result.ok).toBe(false);
     expect(primeCalls).toEqual([]);
     expect(cookieCalls).toEqual([]);
-    expect(navigated).toEqual([]);
+    expect(entered).toEqual([]);
   });
 
   test('always resolves the account_id through buildCreatePayload — sends the fallback account even with no explicit pick', async () => {
@@ -598,189 +596,6 @@ describe('runCreate: the full create() orchestration', () => {
     expect(sentPayloads[0]?.account_id).toBe('acct-owner');
   });
 
-  /**
-   * The onboarding stamp (Task 20): after a successful create, if the target
-   * account already had at least one project BEFORE this one,
-   * `stampOnboardingComplete` marks the new project onboarded so
-   * `ProjectOnboardingWizard`'s own self-gate (`metadata.
-   * onboarding_completed_at`) skips it. First project in an account -> wizard
-   * runs. Every later one -> straight into the workspace.
-   *
-   * Nested inside the parent describe (not a sibling) so it shares the
-   * `beforeEach` that installs the fake `localStorage` — `noopClient()`'s
-   * `attemptKeyFor`/`clearAttemptKey` are the REAL functions from
-   * `create-workspace-key.ts` and need it, same as every other test above.
-   */
-  describe('onboarding stamp gate', () => {
-    test('MANDATORY: reads the existing-project count BEFORE creating — never derives it from the just-created project', async () => {
-      const order: string[] = [];
-
-      await runCreate(
-        { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-        {
-          attemptKeyFor,
-          clearAttemptKey,
-          primeProjectCache: () => {},
-          invalidateProjects: () => {},
-          writeLastProjectId: () => {},
-          navigate: () => {},
-          now: () => 1_000,
-          stampOnboardingComplete: async () => {},
-          getExistingProjectCount: async (accountId) => {
-            order.push(`count:${accountId}`);
-            return 1;
-          },
-          runCreateAttempt: async () => {
-            order.push('create');
-            return fakeProject('created-count-order');
-          },
-        },
-      );
-
-      // If this ever reads `2 | ['count:acct-owner', 'create']` reversed, the
-      // count was derived AFTER the create — exactly the bug the brief warns
-      // about: reading it post-create would always see at least the project
-      // that was just made, and `shouldRunOnboarding` would never see 0 again.
-      expect(order).toEqual(['count:acct-owner', 'create']);
-    });
-
-    test('stamps onboarding complete when the target account already has a project — NOT the first workspace', async () => {
-      const stamped: string[] = [];
-
-      const result = await runCreate(
-        { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-        {
-          ...noopClient(),
-          getExistingProjectCount: async () => 1,
-          runCreateAttempt: async () => fakeProject('created-second'),
-          stampOnboardingComplete: async (projectId) => {
-            stamped.push(projectId);
-          },
-        },
-      );
-
-      expect(result.ok).toBe(true);
-      expect(stamped).toEqual(['created-second']);
-    });
-
-    test("does NOT stamp onboarding complete for an account's first workspace — the wizard should still run", async () => {
-      const stamped: string[] = [];
-
-      await runCreate(
-        { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-        {
-          ...noopClient(),
-          getExistingProjectCount: async () => 0,
-          runCreateAttempt: async () => fakeProject('created-first'),
-          stampOnboardingComplete: async (projectId) => {
-            stamped.push(projectId);
-          },
-        },
-      );
-
-      expect(stamped).toEqual([]);
-    });
-
-    test('MANDATORY: a failed stamp does not fail the create or block navigation — the workspace already exists', async () => {
-      const navigated: string[] = [];
-      const stampError = new Error('PATCH /projects/:id/onboarding failed');
-
-      const result = await runCreate(
-        { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-        {
-          ...noopClient(),
-          getExistingProjectCount: async () => 1,
-          runCreateAttempt: async () => fakeProject('created-stamp-fail'),
-          stampOnboardingComplete: async () => {
-            throw stampError;
-          },
-          navigate: (path) => navigated.push(path),
-        },
-      );
-
-      expect(result.ok).toBe(true);
-      expect(navigated).toEqual(['/projects/created-stamp-fail']);
-    });
-
-    test('MANDATORY: a failed stamp is swallowed and logged, never left as an unhandled rejection', async () => {
-      const originalError = console.error;
-      const errorCalls: unknown[][] = [];
-      console.error = (...args: unknown[]) => {
-        errorCalls.push(args);
-      };
-      const stampError = new Error('PATCH /projects/:id/onboarding failed');
-
-      try {
-        const result = await runCreate(
-          { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-          [OWNER_ACCOUNT],
-          'user-1',
-          {
-            ...noopClient(),
-            getExistingProjectCount: async () => 1,
-            runCreateAttempt: async () => fakeProject('created-stamp-log'),
-            stampOnboardingComplete: async () => {
-              throw stampError;
-            },
-          },
-        );
-
-        // The stamp is fire-and-forget (not awaited by `runCreate`), so its
-        // rejection is handled on a later microtask than `runCreate`'s own
-        // return. A macrotask boundary guarantees every pending microtask —
-        // including the `.catch` this proves exists — has run.
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        expect(result.ok).toBe(true);
-        // This is the assertion that actually distinguishes "swallowed and
-        // logged" from "swallowed and silently dropped": if `runCreate` ever
-        // stops attaching a `.catch` (or stops logging), this goes to 0 while
-        // `result.ok` above would still (wrongly) look fine.
-        expect(errorCalls.length).toBeGreaterThan(0);
-      } finally {
-        console.error = originalError;
-      }
-    });
-
-    test('a failed existing-project-count read falls back to "first project" (0) rather than throwing out of runCreate', async () => {
-      const stamped: string[] = [];
-      const navigated: string[] = [];
-
-      const result = await runCreate(
-        { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-        {
-          ...noopClient(),
-          getExistingProjectCount: async () => {
-            throw new Error('count fetch failed');
-          },
-          runCreateAttempt: async () => fakeProject('created-count-fail'),
-          stampOnboardingComplete: async (projectId) => {
-            stamped.push(projectId);
-          },
-          navigate: (path) => navigated.push(path),
-        },
-      );
-
-      // Falls back to today's shipped default (wizard runs) — NOT to "skip
-      // the wizard", which would be the more surprising failure mode for a
-      // user who has never seen it before. The create itself must still
-      // succeed and still navigate: a count-read failure is no more allowed
-      // to break the create than a stamp failure is.
-      expect(stamped).toEqual([]);
-      expect(result.ok).toBe(true);
-      expect(navigated).toEqual(['/projects/created-count-fail']);
-    });
-  });
 });
 
 /**

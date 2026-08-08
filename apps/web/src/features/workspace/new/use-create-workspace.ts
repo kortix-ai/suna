@@ -10,7 +10,7 @@ import {
   filterCreatableAccounts,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
-import { shouldRunOnboarding } from '@/features/workspace/new/onboarding-gate';
+import { onboardingPath } from '@/features/workspace/new/onboarding-param';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   isManagedGitUnavailableError,
@@ -19,10 +19,8 @@ import {
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   listAccounts,
-  listProjectsForAccount,
   provisionProject,
   provisionProjectStream,
-  setProjectOnboardingComplete,
   PROVISION_IN_FLIGHT_CODE,
   type KortixAccount,
   type KortixProject,
@@ -30,7 +28,7 @@ import {
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk } from '@kortix/sdk/react';
 
 export type CreateStatus = 'idle' | 'creating' | 'error';
 
@@ -89,12 +87,8 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  * `creatableAccounts[0]?.account_id`, matched to the SAME filtered list the
  * picker itself renders from — never the raw, unfiltered account list.
  *
- * Extracted out of `buildCreatePayload` (below) so `runCreate`'s pre-create
- * existing-project-count read (`onboarding-gate.ts`) resolves the IDENTICAL
- * account the payload itself will use. Two independent resolutions here
- * could disagree — e.g. read account A's project count but actually create
- * in account B — silently mis-gating the onboarding wizard for a reason no
- * test on `buildCreatePayload` alone would ever catch.
+ * Extracted out of `buildCreatePayload` (below) as its own function so the
+ * account a create actually targets is resolved in exactly one place.
  */
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
@@ -404,7 +398,7 @@ export async function runProvisionAttempt(
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
  * React and could be given real module-level defaults (as
  * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
- * three (`primeProjectCache`, `invalidateProjects`, `navigate`) are
+ * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"
  * default here. `useCreateWorkspace` below always supplies the whole object
@@ -418,22 +412,22 @@ export type CreateOrchestrationClient = {
   primeProjectCache: (accountId: string, project: KortixProject) => void;
   invalidateProjects: () => void;
   writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
-  navigate: (path: string) => void;
+  /**
+   * Hand off to the guided onboarding, which runs on `/new` itself rather
+   * than on the new workspace's page.
+   *
+   * This replaced a `navigate('/projects/:id')`. Onboarding cannot run there:
+   * the wizard is mounted on the project shell but self-gates on
+   * `metadata.onboarding_completed_at`, and this function used to stamp that
+   * field before navigating — so the wizard rendered `null` every time. The
+   * stamp now comes from the wizard's own `complete()` instead, which means
+   * the project shell's copy correctly renders nothing once the user arrives.
+   *
+   * Implemented as `router.replace`, never `push`: the form state this
+   * replaces is not somewhere the user may navigate back into.
+   */
+  enterOnboarding: (projectId: string) => void;
   now: () => number;
-  /**
-   * The target account's project count, read BEFORE this create (Task 20).
-   * Feeds `shouldRunOnboarding` (`onboarding-gate.ts`) — see `runCreate`'s
-   * own doc comment for why the read must happen before, not after.
-   */
-  getExistingProjectCount: (accountId: string) => Promise<number>;
-  /**
-   * `PATCH /projects/:projectId/onboarding` (the same endpoint
-   * `useProjectOnboarding.complete()` already calls) with `completed: true`,
-   * so the new project's own onboarding self-gate skips the wizard. May
-   * reject — `runCreate` always swallows a rejection, never lets it fail the
-   * create.
-   */
-  stampOnboardingComplete: (projectId: string) => Promise<void>;
 };
 
 export type CreateResult = { ok: true; project: KortixProject } | { ok: false; error: unknown };
@@ -442,10 +436,19 @@ export type CreateResult = { ok: true; project: KortixProject } | { ok: false; e
  * The full sequence one submit runs:
  *
  * ```
- * mint/reuse key -> read existing project count -> provision (with retry) ->
+ * mint/reuse key -> provision (with retry) ->
  *   [on success only] clear key -> prime cache -> invalidate -> write cookie
- *   -> stamp onboarding (if not the account's first project) -> navigate
+ *   -> enter onboarding on /new
  * ```
+ *
+ * **No onboarding gate.** An earlier version read the account's project count
+ * here and pre-stamped the new project onboarded unless it was the account's
+ * first. That gate could never fire: the account's first project is
+ * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
+ * so the count was always >= 1 by the time anyone reached this code — and the
+ * pre-stamp made the wizard render `null` on arrival, every single time.
+ * Every `/new` create now runs onboarding, and the only thing that stamps the
+ * project is the wizard finishing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
  * other four. The API's own contract (`r1.ts`) is that the key identifies the
@@ -453,48 +456,13 @@ export type CreateResult = { ok: true; project: KortixProject } | { ok: false; e
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of
  * making a new one. Clearing it first, rather than last, also means that if
- * cache priming or navigation ever throws, the key is already gone and
- * cannot be resurrected by a subsequent retry.
+ * cache priming or entering onboarding ever throws, the key is already gone
+ * and cannot be resurrected by a subsequent retry.
  *
  * On any failure — including exhausting `runCreateAttempt`'s retry budget —
  * the key is deliberately left untouched, so a user-initiated retry (the
  * SAME `state`, submitted again) reuses it instead of minting a new one and
  * risking a second upstream repo.
- *
- * **Onboarding stamp (Task 20).** `client.getExistingProjectCount` is read
- * BEFORE `runCreateAttempt`, not after: `primeProjectCache` below prepends
- * the just-created project into the SAME `qk.projects.list(accountId)` cache
- * entry that read would otherwise come from, so a post-create read would
- * always see at least one project and `shouldRunOnboarding` would never see
- * 0 again — silently disabling the wizard for every account's genuine first
- * workspace. A failure reading the count is swallowed and falls back to `0`
- * (today's shipped default: the wizard runs) rather than throwing out of
- * `runCreate` — a count-read failure must not block the create any more than
- * a stamp failure may (see below).
- *
- * `shouldRunOnboarding` (`onboarding-gate.ts`) then decides, from that count,
- * whether this is the account's first project. If it is NOT, `runCreate`
- * fires `stampOnboardingComplete` — `PATCH /projects/:id/onboarding`, the
- * same endpoint `useProjectOnboarding.complete()` already calls — so the
- * new project's own self-gate (`metadata.onboarding_completed_at`) skips the
- * wizard on first paint instead of rendering it and having the user skip it
- * themselves.
- *
- * That call is fire-and-forget: NOT awaited, and placed before `navigate`
- * (same position as the already-fire-and-forget `invalidateProjects` above)
- * rather than after it. Awaiting it here would delay the user's arrival in a
- * workspace that already, successfully, exists — for a PATCH that has
- * nothing to do with whether the create succeeded. Firing it before
- * `navigate`, rather than after, only changes *when the request is kicked
- * off* relative to the SPA route change, not whether `runCreate` waits for
- * it; on this route change (`router.push`, no full page unload) an in-flight
- * `fetch` keeps running either way, so this ordering buys nothing in
- * reliability — it is chosen only to keep `navigate` as the visibly LAST
- * thing this function does, matching how every other success-path step reads
- * top-to-bottom. Its own rejection is caught and logged right here, never
- * left to reject unhandled and never rethrown: per the hard requirement, the
- * worst case of a failed stamp is one extra wizard render the user can skip,
- * and that must never be reported as a failed create.
  */
 export async function runCreate(
   state: NewWorkspaceFormState,
@@ -510,32 +478,13 @@ export async function runCreate(
     idempotencyKey,
   ) as unknown as ProvisionProjectInput;
 
-  const targetAccountId = resolveTargetAccountId(state, creatableAccounts);
-  const existingProjectCount = targetAccountId
-    ? await client.getExistingProjectCount(targetAccountId).catch((countError: unknown) => {
-        console.error('[useCreateWorkspace] Failed to read existing project count', {
-          accountId: targetAccountId,
-          error: countError,
-        });
-        return 0;
-      })
-    : 0;
-
   try {
     const project = await client.runCreateAttempt(payload);
     client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
     client.writeLastProjectId(userId, project.project_id);
-    if (!shouldRunOnboarding({ existingProjectCount })) {
-      void client.stampOnboardingComplete(project.project_id).catch((stampError: unknown) => {
-        console.error('[useCreateWorkspace] Failed to stamp onboarding complete', {
-          projectId: project.project_id,
-          error: stampError,
-        });
-      });
-    }
-    client.navigate(`/projects/${project.project_id}`);
+    client.enterOnboarding(project.project_id);
     return { ok: true, project };
   } catch (error) {
     return { ok: false, error };
@@ -545,18 +494,16 @@ export async function runCreate(
 /**
  * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
- * workspace caches, and navigates to the new project on success. All of that
- * sequencing lives in `runCreate`, above — this hook only wires it to the
- * live `queryClient`/`router`/`user` and to component state.
+ * workspace caches, and enters the guided onboarding for the new project on
+ * success. All of that sequencing lives in `runCreate`, above — this hook
+ * only wires it to the live `queryClient`/`router`/`user` and to component
+ * state.
  *
  * Fetches `['accounts']` itself — the same cache entry `new-workspace-page.tsx`,
  * `WorkspaceSwitcher` and `AccountSwitcher` already read — rather than taking
  * `creatableAccounts` as a parameter, so this hook can resolve the create's
  * target account (`resolveTargetAccountId`) without a second, page-specific
- * query. The onboarding-stamp gate (Task 20) reads a DIFFERENT cache entry —
- * `qk.projects.list(accountId)`, the exact key `WorkspaceSwitcher` and
- * `AccountSwitcher` already use — via `getExistingProjectCount` below; there
- * is no `accounts.setup_complete_at` involved anywhere in this gate.
+ * query.
  */
 export function useCreateWorkspace(): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
@@ -622,27 +569,8 @@ export function useCreateWorkspace(): {
         invalidateProjects: () =>
           void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
         writeLastProjectId,
-        navigate: (path) => router.push(path),
+        enterOnboarding: (projectId) => router.replace(onboardingPath(projectId)),
         now: Date.now,
-        // Same `qk.projects.list(accountId)` cache entry + `listProjectsForAccount`
-        // queryFn `WorkspaceSwitcher`/`AccountSwitcher` already fetch —
-        // `ensureQueryData` reuses a warm cache (the common case: reaching
-        // `/new` from either menu) and only fetches when it's actually cold,
-        // rather than inventing a second fetch shape for the same data. The
-        // freshness contract must be spread here too, not hand-authored:
-        // `staleTime` is per-OBSERVER, so a call site that declares its own
-        // value re-opens the disagreement `contract()` exists to close.
-        getExistingProjectCount: async (accountId) => {
-          const projects = await queryClient.ensureQueryData({
-            queryKey: qk.projects.list(accountId),
-            queryFn: () => listProjectsForAccount(accountId),
-            ...contract('inventory'),
-          });
-          return projects.length;
-        },
-        stampOnboardingComplete: async (projectId) => {
-          await setProjectOnboardingComplete(projectId, true);
-        },
       });
 
       if (!result.ok) {
