@@ -41,7 +41,7 @@ my-project/
     ├── memory/MEMORY.md               ← project-wide memory for agents
     └── opencode/                      ← OpenCode native config dir
         ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
-        ├── agents/{kortix,memory-reflector}.md
+        ├── agents/{kortix,harness-reflector}.md
         └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
 ```
 
