@@ -8,7 +8,8 @@ description: "Canonical reference for Kortix projects, the CLI, sessions, sandbo
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-connectors`, `kortix-memory`,
-`kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
+`kortix-harness-refinement`, `kortix-slack`, `kortix-computer`,
+`kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -281,6 +282,31 @@ watching — usually via `slack send`, silent otherwise), and it must be
 - `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable` command reference.
 </scheduling>
+
+<continual-harness>
+## Continual harness — the project refines its own scaffolding
+
+Everything that shapes agent behavior in this project — agent prompts,
+sub-agents, skills/tools, memory — is the **harness**, and it lives in git
+under `.kortix/`. Kortix treats the harness as continuously improvable
+from trajectory evidence, on two loops:
+
+1. **Mid-session refinement** — when the manifest's `refine:` block is
+   enabled, the platform delivers a refinement prompt into a running
+   session every `every_turns` assistant turns (after `warmup_turns`,
+   hard-capped per day). The agent runs the four-pass protocol from the
+   `kortix-harness-refinement` skill over its own recent turns, applies
+   edits in place (they take effect next turn), commits `harness: …` to
+   the session branch, and keeps one CR updated toward `main`.
+2. **Cross-session reflection** — the `harness-reflector` agent (cron
+   trigger, disabled by default) surveys `kortix sessions digest`, refines
+   the shared harness, and opens a `harness: …` CR against `main`.
+
+Any agent may also invoke the protocol itself when a failure signature
+costs it twice — load `kortix-harness-refinement` for the failure
+signatures, the four passes, and the guardrails (never edit managed
+`kortix-*` skills, never merge your own harness CR, no-op is valid).
+</continual-harness>
 
 <change-requests>
 **This is the single most important rule for any agent running in a
