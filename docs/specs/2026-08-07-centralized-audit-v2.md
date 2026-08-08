@@ -66,6 +66,13 @@ The sandbox agent already owns the authenticated OpenCode `/event` SSE loop.
 That loop captures every event, including sub-agent sessions. It batches the
 events to the API with stable event identifiers.
 
+The sandbox is an untrusted event producer. The API derives the canonical
+OpenCode session, agent, initiator, correlation, causation, and delegation
+fields from server-owned session and service-account rows. Sandbox-reported
+sub-agent lineage remains available only under `metadata.reported_provenance`.
+The metadata includes `provenance_trust: sandbox_reported`. Queries and UI
+attribution never treat those reported fields as canonical identity.
+
 The sanitizer records event type, identifiers, tool name, paths, sizes, status,
 and bounded redacted summaries. It replaces credential-shaped fields and values.
 It hashes canonical raw input and output before discarding the raw values.
@@ -98,6 +105,7 @@ timestamp comparison can repeat the boundary event and stall an export.
 - Authentication determines `authoritative_source`.
 - `X-Kortix-Client` populates only `client_reported_source`.
 - Agent and sandbox credentials bind project and session scope server-side.
+- Sandbox payloads cannot set canonical agent, initiator, or lineage fields.
 - Request bodies, prompt bodies, environment values, credentials, and raw tool
   outputs never enter canonical audit fields.
 - Redaction tests cover common tokens, authorization headers, URLs, and nested

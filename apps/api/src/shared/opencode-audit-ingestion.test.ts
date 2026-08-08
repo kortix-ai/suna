@@ -57,7 +57,7 @@ describe('parseOpenCodeAuditBatch', () => {
     });
   });
 
-  test('persists root correlation, immediate causation, and delegation depth', () => {
+  test('preserves relay lineage only as sandbox-reported metadata', () => {
     const parsed = parseOpenCodeAuditBatch(
       {
         events: [
@@ -73,11 +73,105 @@ describe('parseOpenCodeAuditBatch', () => {
       scope,
     );
     expect(parsed.values[0]).toMatchObject({
-      correlationId: 'ses_root',
-      causationId: 'ses_parent',
-      delegationDepth: 2,
-      agentId: 'analyst',
-      agentName: 'analyst',
+      correlationId: null,
+      causationId: null,
+      delegationDepth: 0,
+      agentId: null,
+      agentName: null,
+      metadata: {
+        provenance_trust: 'sandbox_reported',
+        reported_provenance: {
+          correlation_id: 'ses_root',
+          causation_id: 'ses_parent',
+          delegation_depth: 2,
+          agent_id: 'analyst',
+          agent_name: 'analyst',
+        },
+      },
+    });
+  });
+
+  test('uses only server-trusted provenance for canonical attribution', () => {
+    const parsed = parseOpenCodeAuditBatch(
+      {
+        events: [
+          event({
+            opencode_session_id: 'ses_forged',
+            agent_id: 'forged-agent',
+            initiator_actor_id: 'forged-user',
+            correlation_id: 'forged-correlation',
+            delegation_depth: 99,
+          }),
+        ],
+      },
+      {
+        ...scope,
+        trustedProvenance: {
+          opencodeSessionId: 'ses_trusted',
+          agentId: 'a7400000-0000-4000-a000-000000000001',
+          agentName: 'trusted-agent',
+          initiatorActorType: 'human',
+          initiatorActorId: 'a7500000-0000-4000-a000-000000000001',
+          correlationId: scope.sessionId,
+          causationId: null,
+          delegationDepth: 0,
+        },
+      },
+    );
+
+    expect(parsed.values[0]).toMatchObject({
+      opencodeSessionId: 'ses_trusted',
+      agentId: 'a7400000-0000-4000-a000-000000000001',
+      agentName: 'trusted-agent',
+      initiatorActorType: 'human',
+      initiatorActorId: 'a7500000-0000-4000-a000-000000000001',
+      correlationId: scope.sessionId,
+      causationId: null,
+      delegationDepth: 0,
+    });
+  });
+
+  test('does not promote sandbox-reported provenance into canonical attribution', () => {
+    const parsed = parseOpenCodeAuditBatch(
+      {
+        events: [
+          event({
+            opencode_session_id: 'ses_forged',
+            agent_id: 'ceo-agent',
+            agent_name: 'ceo-agent',
+            initiator_actor_type: 'human',
+            initiator_actor_id: 'victim-user',
+            correlation_id: 'ses_root_human',
+            causation_id: 'ses_manager',
+            delegation_depth: 7,
+          }),
+        ],
+      },
+      scope,
+    );
+
+    expect(parsed.values[0]).toMatchObject({
+      opencodeSessionId: null,
+      agentId: null,
+      agentName: null,
+      initiatorActorType: null,
+      initiatorActorId: null,
+      correlationId: null,
+      causationId: null,
+      delegationDepth: 0,
+      metadata: {
+        provenance_trust: 'sandbox_reported',
+        reported_provenance: {
+          opencode_session_id: 'ses_forged',
+          agent_id: 'ceo-agent',
+          agent_name: 'ceo-agent',
+          initiator_actor_type: 'human',
+          initiator_actor_id: 'victim-user',
+          correlation_id: 'ses_root_human',
+          causation_id: 'ses_manager',
+          delegation_depth: 7,
+        },
+      },
     });
   });
 

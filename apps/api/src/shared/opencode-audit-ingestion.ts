@@ -74,6 +74,17 @@ export interface OpenCodeAuditScope {
   accountId: string;
   projectId: string;
   sessionId: string;
+  /** Canonical attribution resolved from server-owned rows. Payload fields are untrusted. */
+  trustedProvenance?: {
+    opencodeSessionId: string | null;
+    agentId: string | null;
+    agentName: string | null;
+    initiatorActorType: 'human' | 'agent' | 'service_account' | 'system' | null;
+    initiatorActorId: string | null;
+    correlationId: string | null;
+    causationId: string | null;
+    delegationDepth: number;
+  };
 }
 
 export interface ParsedOpenCodeAuditBatch {
@@ -268,26 +279,37 @@ export function parseOpenCodeAuditBatch(
 
     const inputSummary = sanitizeSummary(event.input_summary, index, 'input_summary');
     const outputSummary = sanitizeSummary(event.output_summary, index, 'output_summary');
+    const reportedProvenance = {
+      opencode_session_id: optionalIdentifier(
+        event.opencode_session_id,
+        index,
+        'opencode_session_id',
+      ),
+      agent_id: optionalIdentifier(event.agent_id, index, 'agent_id'),
+      agent_name: optionalIdentifier(event.agent_name, index, 'agent_name'),
+      initiator_actor_type: initiatorActorType,
+      initiator_actor_id: optionalIdentifier(event.initiator_actor_id, index, 'initiator_actor_id'),
+      correlation_id: optionalIdentifier(event.correlation_id, index, 'correlation_id'),
+      causation_id: optionalIdentifier(event.causation_id, index, 'causation_id'),
+      delegation_depth: delegationDepth,
+    };
+    const trusted = scope.trustedProvenance;
 
     return {
       accountId: scope.accountId,
       projectId: scope.projectId,
       sessionId: scope.sessionId,
-      opencodeSessionId: optionalIdentifier(
-        event.opencode_session_id,
-        index,
-        'opencode_session_id',
-      ),
+      opencodeSessionId: trusted?.opencodeSessionId ?? null,
       turnId: optionalIdentifier(event.turn_id, index, 'turn_id'),
       messageId: optionalIdentifier(event.message_id, index, 'message_id'),
       toolCallId: optionalIdentifier(event.tool_call_id, index, 'tool_call_id'),
       executionId: optionalIdentifier(event.execution_id, index, 'execution_id'),
       actorType: 'agent',
-      agentId: optionalIdentifier(event.agent_id, index, 'agent_id'),
-      agentName: optionalIdentifier(event.agent_name, index, 'agent_name'),
-      initiatorActorType,
-      initiatorActorId: optionalIdentifier(event.initiator_actor_id, index, 'initiator_actor_id'),
-      delegationDepth,
+      agentId: trusted?.agentId ?? null,
+      agentName: trusted?.agentName ?? null,
+      initiatorActorType: trusted?.initiatorActorType ?? null,
+      initiatorActorId: trusted?.initiatorActorId ?? null,
+      delegationDepth: trusted?.delegationDepth ?? 0,
       source: 'opencode',
       authoritativeSource: 'opencode',
       outcome,
@@ -295,8 +317,8 @@ export function parseOpenCodeAuditBatch(
       phase,
       resourceType: 'opencode_event',
       resourceId: eventId,
-      correlationId: optionalIdentifier(event.correlation_id, index, 'correlation_id'),
-      causationId: optionalIdentifier(event.causation_id, index, 'causation_id'),
+      correlationId: trusted?.correlationId ?? null,
+      causationId: trusted?.causationId ?? null,
       sourceLedger: 'opencode_events',
       sourceRecordId: eventId,
       // One OpenCode emission can repeat the same phase with identical raw
@@ -311,7 +333,11 @@ export function parseOpenCodeAuditBatch(
       // OpenCode error strings can contain prompts or provider response bodies.
       // The canonical ledger stores only the bounded error code and digests.
       errorMessage: null,
-      metadata: sanitizeMetadata(event.metadata, index),
+      metadata: {
+        ...sanitizeMetadata(event.metadata, index),
+        provenance_trust: 'sandbox_reported',
+        reported_provenance: reportedProvenance,
+      },
       occurredAt,
     };
   });

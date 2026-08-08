@@ -1195,8 +1195,21 @@ projectsApp.openapi(
       return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
     const [scope] = await db
-      .select({ sessionId: sessionSandboxes.sessionId })
+      .select({
+        sessionId: sessionSandboxes.sessionId,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        agentName: projectSessions.agentName,
+        createdBy: projectSessions.createdBy,
+      })
       .from(sessionSandboxes)
+      .innerJoin(
+        projectSessions,
+        and(
+          eq(projectSessions.accountId, sessionSandboxes.accountId),
+          eq(projectSessions.projectId, sessionSandboxes.projectId),
+          eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+        ),
+      )
       .where(
         and(
           eq(sessionSandboxes.sandboxId, sandboxId),
@@ -1216,9 +1229,49 @@ projectsApp.openapi(
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
+
+    const identityConditions = [
+      and(
+        eq(serviceAccounts.projectId, projectId),
+        eq(serviceAccounts.agentName, scope.agentName),
+      ),
+    ];
+    if (scope.createdBy) {
+      identityConditions.push(eq(serviceAccounts.serviceAccountId, scope.createdBy));
+    }
+    const identities = await db
+      .select({
+        serviceAccountId: serviceAccounts.serviceAccountId,
+        agentName: serviceAccounts.agentName,
+      })
+      .from(serviceAccounts)
+      .where(and(eq(serviceAccounts.accountId, accountId), or(...identityConditions)));
+    const agentIdentity = identities.find((identity) => identity.agentName === scope.agentName);
+    const initiatorIdentity = scope.createdBy
+      ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
+      : null;
+
     let parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
     try {
-      parsed = parseOpenCodeAuditBatch(body, { accountId, projectId, sessionId });
+      parsed = parseOpenCodeAuditBatch(body, {
+        accountId,
+        projectId,
+        sessionId,
+        trustedProvenance: {
+          opencodeSessionId: scope.opencodeSessionId,
+          agentId: agentIdentity?.serviceAccountId ?? null,
+          agentName: scope.agentName,
+          initiatorActorType: initiatorIdentity
+            ? 'service_account'
+            : scope.createdBy
+              ? 'human'
+              : 'system',
+          initiatorActorId: scope.createdBy,
+          correlationId: sessionId,
+          causationId: null,
+          delegationDepth: 0,
+        },
+      });
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
