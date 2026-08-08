@@ -12,7 +12,6 @@
 import { daytonaProvider } from './daytona';
 import { e2bProvider } from './e2b';
 import { platinumProvider } from './platinum';
-import { localDockerSnapshotProvider } from './local-docker';
 import type { WarmRepoContext } from '../build-context';
 
 interface SandboxResourceSpec {
@@ -102,7 +101,7 @@ export interface BuildLogTap {
  * the id the build PROVED (Platinum's `requireExternalTemplateId` — the id
  * already in hand at registration) instead of re-deriving it via a fragile,
  * truncation-prone name-list lookup. `externalTemplateId` is absent on providers
- * with no external-id concept (Daytona / e2b / local-docker return void).
+ * with no external-id concept (Daytona and E2B return void).
  */
 export interface BuildSnapshotResult {
   externalTemplateId?: string;
@@ -135,7 +134,7 @@ export interface SandboxProviderAdapter {
    * the provider has no such reference to give, or on any lookup error — every
    * caller treats null as "fall back to the full rebuild path", never as a
    * hard failure. Absent on providers that don't expose an image reference at
-   * all (Platinum, E2B, local-docker); callers must null-check the method
+   * all (Platinum and E2B); callers must null-check the method
    * itself, not just its return value.
    */
   getSnapshotImageRef?(snapshotName: string): Promise<string | null>;
@@ -176,7 +175,6 @@ const ADAPTERS = new Map<string, SandboxProviderAdapter>();
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
 ADAPTERS.set(e2bProvider.id, e2bProvider);
-ADAPTERS.set(localDockerSnapshotProvider.id, localDockerSnapshotProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {
   const adapter = ADAPTERS.get(id);

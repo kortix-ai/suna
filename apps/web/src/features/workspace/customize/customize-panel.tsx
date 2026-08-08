@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -45,11 +46,10 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
 
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: open && !!projectId,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
+    ...contract('config'),
   });
   const projectName = detail.data?.project?.name ?? '';
 

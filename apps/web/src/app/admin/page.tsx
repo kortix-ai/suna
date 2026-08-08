@@ -1,12 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import {
   ActivityIcon as Activity,
   ArrowRightIcon as ArrowRight,
+  KanbanIcon as FolderKanban,
   SquaresFourIcon as LayoutDashboard,
+  UsersIcon as Users,
   WrenchIcon as Wrench,
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
@@ -19,12 +20,11 @@ import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from './_components/section-header';
 
 const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
-  instances: '/admin/ops',
+  instances: '/admin/sandboxes',
   accounts: '/admin/accounts',
 };
 
 export default function AdminOverviewPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const legacySection = searchParams.get('section');
@@ -41,10 +41,8 @@ export default function AdminOverviewPage() {
     <SectionContainer>
       <SectionHeader
         icon={LayoutDashboard}
-        title={tHardcodedUi.raw('appAdminPage.line40JsxAttrTitleAdminOverview')}
-        description={tHardcodedUi.raw(
-          'appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf',
-        )}
+        title={'Admin overview'}
+        description={'Production support entrypoint. Operations is the source of truth for live platform health.'}
       />
 
       <StatRow>
@@ -56,12 +54,12 @@ export default function AdminOverviewPage() {
         />
         <StatPill label="Accounts" value={(data?.totals.accounts ?? 0).toLocaleString()} />
         <StatPill
-          label={tHardcodedUi.raw('appAdminPage.line53JsxAttrLabelErroredSandboxes')}
+          label={'Errored sandboxes'}
           value={data?.sandboxes.errored ?? 0}
           tone={(data?.sandboxes.errored ?? 0) > 0 ? 'danger' : 'success'}
         />
         <StatPill
-          label={tHardcodedUi.raw('appAdminPage.line58JsxAttrLabelQueuedWork')}
+          label={'Queued work'}
           value={data?.queues.queued_total ?? 0}
           tone={(data?.queues.queued_total ?? 0) > 0 ? 'warning' : 'success'}
         />
@@ -69,20 +67,28 @@ export default function AdminOverviewPage() {
 
       <div className="grid gap-3 md:grid-cols-2">
         <QuickLink
-          href="/admin/ops"
+          href="/admin/accounts"
+          icon={Users}
+          title="Accounts"
+          description={'Tiers, credits, trials, entitlements, members, and billing state per account.'}
+        />
+        <QuickLink
+          href="/admin/projects"
+          icon={FolderKanban}
+          title="Projects"
+          description={'Every project across all accounts, most active first.'}
+        />
+        <QuickLink
+          href="/admin/sandboxes"
           icon={Activity}
-          title="Operations"
-          description={tHardcodedUi.raw(
-            'appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd',
-          )}
+          title="Sandboxes"
+          description={'Provider distribution, failover, sandbox fleet, and migrations.'}
         />
         <QuickLink
           href="/admin/utils"
           icon={Wrench}
           title="Maintenance"
-          description={tHardcodedUi.raw(
-            'appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd',
-          )}
+          description={'Support workflows for account access, technical issues, and operational recovery.'}
         />
       </div>
     </SectionContainer>

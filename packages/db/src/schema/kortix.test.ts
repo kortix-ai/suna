@@ -84,7 +84,7 @@ describe('kortix enums', () => {
 
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
-    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b', 'local-docker']);
+    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -247,7 +247,11 @@ describe('Kortix Apps schema', () => {
   test('stores immutable artifacts and deployment versions', () => {
     expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
     expect(getTableConfig(appDeployments).name).toBe('app_deployments');
-    expect(columnNames(appDeployments)).toContain('created_by');
+    expect(columnNames(appDeployments)).toEqual(expect.arrayContaining([
+      'created_by',
+      'source_session_id',
+      'actor_type',
+    ]));
     expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
   });
 

@@ -32,9 +32,6 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'platinum',
   'e2b',
-  // EXPERIMENTAL — same-machine Docker containers, see
-  // apps/api/src/platform/providers/local-docker.ts.
-  'local-docker',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -797,6 +794,11 @@ export const projectSessions = kortixSchema.table(
           and ${table.metadata}->'warm_session'->>'state' = 'available'
           and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
       ),
+    // NOTE: a plain btree `idx_project_sessions_created_at` (created_at) ALSO
+    // exists — created by migrations/20260807202731277_admin_analytics_time_indexes.concurrent.ts
+    // so the admin activity dashboard's global `created_at >= $1` window scan
+    // doesn't seq-scan the whole session history. Declared there, not here, for
+    // the same reason as the index below: it must be built CONCURRENTLY.
     // NOTE: a partial composite index `idx_project_sessions_account_active`
     // ((account_id) WHERE status IN active-set) ALSO exists — created by the
     // hand-written migration drizzle/20260617102106_account_active_session_index.sql
@@ -2777,6 +2779,28 @@ export const creditAccounts = kortixSchema.table(
     // abuse containment). Set out-of-band (data migration / operator SQL),
     // like tier='enterprise'.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
+    // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
+    // (webhooks.ts syncSubscriptionState) overwrites `tier` on every
+    // subscription event, so a trial encoded there would be clobbered. Instead
+    // the trial overlays at resolution time (billing/services/effective-tier):
+    // while `trial_status='active'` AND `trial_ends_at` is in the future, the
+    // account resolves entitlements/limits/models as `trial_tier`. Expiry is
+    // lazy (the resolver checks the timestamp) so correctness never depends on
+    // a cron; the billing cron only flips `trial_status` to 'expired' for
+    // hygiene. Reuses the vestigial baseline columns `trial_status`,
+    // `trial_started_at`, `trial_ends_at` (previously written by nothing).
+    trialTier: varchar('trial_tier', { length: 50 }),
+    // Seat allowance while the trial is active. Enforced on member add/invite
+    // for non-per_seat accounts (per-seat accounts meter seats via Stripe).
+    trialSeats: integer('trial_seats'),
+    trialNote: text('trial_note'),
+    trialGrantedBy: uuid('trial_granted_by'),
+    // Operator-set managed-models override. NULL (default) = the effective
+    // tier decides (TierConfig.models includes 'all'). true = account may use
+    // Kortix-managed model credentials regardless of tier. false = BYOK only,
+    // even on a tier that normally grants managed models. Resolved in
+    // billing/services/entitlements alongside the tier cache.
+    managedModelsOverride: boolean('managed_models_override'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
@@ -2910,6 +2934,9 @@ export const apps = kortixSchema.table(
     slug: varchar('slug', { length: 63 }).notNull(),
     name: text('name').notNull(),
     routeKey: varchar('route_key', { length: 20 }).notNull().unique(),
+    accessMode: varchar('access_mode', { length: 16 }).default('private').notNull(),
+    accessPasswordHash: text('access_password_hash'),
+    accessRevision: integer('access_revision').default(1).notNull(),
     desiredState: varchar('desired_state', { length: 16 }).default('running').notNull(),
     activeDeploymentId: uuid('active_deployment_id'),
     cpuCores: integer('cpu_cores').default(1).notNull(),
@@ -2927,6 +2954,11 @@ export const apps = kortixSchema.table(
   },
   (table) => [
     check('apps_desired_state_check', sql`${table.desiredState} IN ('running', 'stopped')`),
+    check(
+      'apps_access_mode_check',
+      sql`${table.accessMode} IN ('private', 'project', 'restricted', 'public', 'password')`,
+    ),
+    check('apps_access_revision_check', sql`${table.accessRevision} > 0`),
     check('apps_cpu_check', sql`${table.cpuCores} BETWEEN 1 AND 64`),
     check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
     check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
@@ -2937,6 +2969,28 @@ export const apps = kortixSchema.table(
       .where(sql`${table.deletedAt} IS NULL`),
     index('apps_account_idx').on(table.accountId),
     index('apps_route_key_idx').on(table.routeKey),
+  ],
+);
+
+/** Member and group allow-list for an App with restricted access. */
+export const appAccessGrants = kortixSchema.table(
+  'app_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    appId: uuid('app_id')
+      .notNull()
+      .references(() => apps.appId, { onDelete: 'cascade' }),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('app_access_grants_app_idx').on(table.appId),
+    uniqueIndex('app_access_grants_unique').on(
+      table.appId,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 
@@ -3004,6 +3058,13 @@ export const appDeployments = kortixSchema.table(
     readyAt: timestamp('ready_at', { withTimezone: true }),
     failedAt: timestamp('failed_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
+    sourceSessionId: text('source_session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    actorType: varchar('actor_type', { length: 24 })
+      .$type<'human' | 'agent' | 'service_account' | 'system'>()
+      .default('human')
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -3017,6 +3078,10 @@ export const appDeployments = kortixSchema.table(
       sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
     ),
     check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check(
+      'app_deployments_actor_type_check',
+      sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
+    ),
     check('app_deployments_version_check', sql`${table.version} > 0`),
     uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
     index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),
@@ -3152,6 +3217,12 @@ export const creditLedger = kortixSchema.table(
   },
   (table) => [
     unique('kortix_unique_stripe_event').on(table.stripeEventId),
+    // NOTE: several more indexes exist on this table than are declared here,
+    // all created by hand-written migrations. Relevant to the admin credit-burn
+    // dashboard: `idx_credit_ledger_created_at` (created_at), added by
+    // migrations/20260807202731278_admin_analytics_ledger_time_index.concurrent.ts.
+    // Every other time-ordered index leads with account_id and so cannot serve
+    // a platform-wide time-range scan.
     index('idx_kortix_credit_ledger_idempotency')
       .on(table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),

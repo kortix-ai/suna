@@ -17,6 +17,7 @@ import {
   type SlackInstallation,
   type SlackMode,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type { EmailInstallation, EmailMode, EmailSenderPolicy, SlackInstallation, SlackMode };
@@ -45,7 +46,7 @@ export function useConnectSlack() {
     mutationFn: ({ projectId, ...body }: ConnectInput) => connectSlack(projectId, body),
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: key(projectId) });
-      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }
@@ -85,7 +86,7 @@ export function useDisconnectSlack() {
     mutationFn: (projectId: string) => disconnectSlack(projectId),
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: key(projectId) });
-      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }
@@ -135,7 +136,7 @@ export function useConnectEmail() {
     onSuccess: (_data, { projectId, connector_slug }) => {
       qc.invalidateQueries({ queryKey: emailKey(projectId) });
       qc.invalidateQueries({ queryKey: emailKey(projectId, connector_slug) });
-      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }
@@ -151,7 +152,7 @@ export function useDisconnectEmail() {
     },
     onSuccess: ({ projectId, connectorSlug }) => {
       qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
-      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }
@@ -170,7 +171,7 @@ export function useUpdateEmailPolicy() {
     }) => updateEmailPolicy(projectId, connectorSlug, sender_policy),
     onSuccess: (_data, { projectId, connectorSlug }) => {
       qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
-      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
 }

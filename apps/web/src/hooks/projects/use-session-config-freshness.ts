@@ -27,7 +27,7 @@ import {
   type SessionReloadResult,
   sessionStartKey,
 } from '@kortix/sdk';
-import { clearRuntimeEnsureGuard } from '@kortix/sdk/react';
+import { clearRuntimeEnsureGuard, qk } from '@kortix/sdk/react';
 
 /**
  * How long a freshness answer is trusted before a window-focus refetch will
@@ -200,9 +200,9 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId, sessionId),
       });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     // Defining `onError` here REPLACES the provider's default mutation
     // `onError`, which is what keeps a 409 from also raising a generic toast.

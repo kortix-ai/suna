@@ -9,11 +9,15 @@ import {
   updateProjectTrigger,
   type ProjectTriggerListing,
 } from '../core/rest/projects-client';
+import { contract } from './query-contracts';
+import { qk } from './query-keys';
 
 /** Stable query-key factory — reuse to read/invalidate the same cache entry
- *  `useProjectTriggers` populates. */
+ *  `useProjectTriggers` populates. Delegates to `qk.project.triggers` — the
+ *  SAME entry the Customize settings pause switch and the schedule/triggers
+ *  view build directly via `qk.project.triggers(id)` too. */
 export const projectTriggersKey = (projectId: string | null | undefined) =>
-  ['project-triggers', projectId] as const;
+  qk.project.triggers(projectId ?? '');
 
 /**
  * Project triggers (cron/webhook, file-defined in the repo manifest) — list +
@@ -29,6 +33,7 @@ export function useProjectTriggers(projectId: string | null | undefined) {
     queryKey,
     queryFn: () => listProjectTriggers(projectId as string),
     enabled: !!projectId,
+    ...contract('config'),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });

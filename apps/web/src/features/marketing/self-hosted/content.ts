@@ -75,7 +75,7 @@ export const yours = {
       'Agent sandboxes, which run on the provider you configure',
       'The image registry the stack pulls from, which needs no credentials',
     ],
-    note: 'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. local-docker runs sandboxes on the same box through Docker and is experimental — not for production. Air-gapped and other fully isolated topologies are scoped with us rather than self-served.',
+    note: 'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. Air-gapped and other fully isolated topologies are scoped with us rather than self-served.',
   },
 } as const;
 
@@ -160,7 +160,7 @@ export const firstRun = {
       {
         n: '05',
         k: 'Your sandbox provider and its key',
-        v: 'Daytona, Platinum, E2B, or experimental local-docker. This is the one credential the stack genuinely cannot start without.',
+        v: 'Daytona, Platinum, or E2B. This is the one credential the stack genuinely cannot start without.',
       },
       {
         n: '06',

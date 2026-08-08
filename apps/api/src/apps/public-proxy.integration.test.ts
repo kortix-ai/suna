@@ -9,9 +9,10 @@ import {
   type Database,
   projects,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { AppHostingProvider, AppdStatus } from './hosting';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
+import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -61,7 +62,7 @@ async function cleanup(): Promise<void> {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
 }
 
-async function seedStoppedRuntime() {
+async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running') {
   const db = testDb();
   await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'App lifecycle race test' });
   await db.insert(projects).values({
@@ -69,6 +70,7 @@ async function seedStoppedRuntime() {
     accountId: ACCOUNT_ID,
     name: 'App lifecycle race test',
     repoUrl: 'https://example.test/app-lifecycle-race.git',
+    metadata: { experimental: { apps: true } },
   });
   await db.insert(apps).values({
     appId: APP_ID,
@@ -77,7 +79,7 @@ async function seedStoppedRuntime() {
     slug: 'app-lifecycle-race',
     name: 'App lifecycle race',
     routeKey: ROUTE_KEY,
-    desiredState: 'running',
+    desiredState,
     idleTimeoutSeconds: 300,
     monthlyBudgetUsd: '5.00',
   });
@@ -97,15 +99,25 @@ async function seedStoppedRuntime() {
     status: 'ready',
     sourceKind: 'oci_image',
     hostingType: 'sandbox',
-    hostingProvider: 'local-docker',
+    hostingProvider: 'platinum',
     runtimeVersion: 'test',
     createdBy: PROJECT_ID,
+    buildSpec: {
+      source: {
+        kind: 'oci_image',
+        image: 'docker.io/library/nginx:alpine',
+        command: ['nginx', '-g', 'daemon off;'],
+        port: 80,
+      },
+      environment: { NODE_ENV: 'production' },
+      secrets: { API_TOKEN: 'app-token' },
+    },
   });
   await db.insert(appRuntimes).values({
     runtimeId: RUNTIME_ID,
     deploymentId: DEPLOYMENT_ID,
     accountId: ACCOUNT_ID,
-    provider: 'local-docker',
+    provider: 'platinum',
     externalId: 'app-lifecycle-race-runtime',
     status: 'stopped',
     controlTokenHash: '0'.repeat(64),
@@ -161,6 +173,43 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(runtime?.wakeLeaseUntil).toBeNull();
   });
 
+  test('a public request reactivates an explicitly stopped App and wakes its runtime', async () => {
+    const loaded = await seedStoppedRuntime('stopped');
+    let ensureCalls = 0;
+    const hosting = {
+      ensureRunning: async () => {
+        ensureCalls += 1;
+      },
+      waitUntilReady: async () => readyStatus(),
+      stop: async () => {},
+    } as unknown as AppHostingProvider;
+
+    const runtime = await ensureAppRuntimeRunning(loaded, hosting);
+
+    expect(runtime.status).toBe('running');
+    expect(ensureCalls).toBe(1);
+    const [app] = await testDb().select().from(apps).where(eq(apps.appId, APP_ID));
+    expect(app?.desiredState).toBe('running');
+  });
+
+  test('a confirmed provider-stop signal forces provider start under the wake lease', async () => {
+    const loaded = await seedStoppedRuntime();
+    let startCalls = 0;
+    let ensureCalls = 0;
+    const hosting = {
+      start: async () => { startCalls += 1; },
+      ensureRunning: async () => { ensureCalls += 1; },
+      waitUntilReady: async () => readyStatus(),
+      stop: async () => {},
+    } as unknown as AppHostingProvider;
+
+    const runtime = await ensureAppRuntimeRunning(loaded, hosting, { forceProviderStart: true });
+
+    expect(runtime.status).toBe('running');
+    expect(startCalls).toBe(1);
+    expect(ensureCalls).toBe(0);
+  });
+
   test('a manual stop during provider readiness wins and cannot be overwritten by the wake owner', async () => {
     const loaded = await seedStoppedRuntime();
     const readinessStarted = deferred<void>();
@@ -198,8 +247,11 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
 
     const error = await wake;
     expect(error).toBeInstanceOf(Response);
-    expect((error as Response).status).toBe(503);
-    expect(await (error as Response).json()).toEqual({ error: 'App is stopped', code: 'app_stopped' });
+    expect((error as Response).status).toBe(409);
+    expect(await (error as Response).json()).toEqual({
+      error: 'App start was superseded by a newer lifecycle request',
+      code: 'app_start_superseded',
+    });
     expect(stopCalls).toBe(1);
 
     const [runtime] = await testDb().select().from(appRuntimes)
@@ -207,5 +259,49 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(runtime?.status).toBe('stopped');
     expect(runtime?.wakeLeaseOwner).toBeNull();
     expect(runtime?.wakeLeaseUntil).toBeNull();
+  });
+
+  test('concurrent cold starts queue one current-daemon deployment and preserve immutable provenance', async () => {
+    const loaded = await seedStoppedRuntime();
+    const previousWorkerEnabled = process.env.KORTIX_APPS_WORKER_ENABLED;
+    process.env.KORTIX_APPS_WORKER_ENABLED = 'false';
+    let queued: boolean[];
+    try {
+      queued = await Promise.all([
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+        enqueueCurrentAppRuntime(loaded.app, loaded.deployment),
+      ]);
+    } finally {
+      if (previousWorkerEnabled === undefined) delete process.env.KORTIX_APPS_WORKER_ENABLED;
+      else process.env.KORTIX_APPS_WORKER_ENABLED = previousWorkerEnabled;
+    }
+
+    expect(queued.filter(Boolean)).toHaveLength(1);
+    const replacements = await testDb().select().from(appDeployments).where(and(
+      eq(appDeployments.appId, APP_ID),
+      eq(appDeployments.runtimeVersion, APP_RUNTIME_VERSION),
+    ));
+    expect(replacements).toHaveLength(1);
+    expect(replacements[0]).toMatchObject({
+      version: 2,
+      status: 'queued',
+      sourceKind: 'oci_image',
+      hostingProvider: 'platinum',
+      actorType: 'system',
+      buildSpec: {
+        source: {
+          kind: 'oci_image',
+          image: 'docker.io/library/nginx:alpine',
+          command: ['nginx', '-g', 'daemon off;'],
+          port: 80,
+        },
+        environment: { NODE_ENV: 'production' },
+        secrets: { API_TOKEN: 'app-token' },
+      },
+      sourceSessionId: null,
+      artifactId: ARTIFACT_ID,
+    });
+    expect(replacements[0]!.buildSpec).toEqual(loaded.deployment.buildSpec);
   });
 });

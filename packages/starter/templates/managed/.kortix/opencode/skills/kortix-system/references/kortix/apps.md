@@ -6,8 +6,9 @@ changes only after the new runtime passes readiness.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
 project under Project Settings → Experimental. The API returns `404`, the
-public URL does not resolve, and the CLI and web surfaces stay hidden while the
-feature is disabled.
+public URL does not resolve, and App operations remain unavailable while the
+feature is disabled. The CLI and web inventory stay visible and label Apps as
+experimental.
 
 ## Select a workload
 
@@ -38,6 +39,8 @@ The command performs these operations:
 4. Queues an immutable deployment.
 5. Waits until the runtime passes readiness.
 6. Prints the stable App URL.
+
+The new App uses `private` access unless `--access` selects another mode.
 
 Use `--no-wait` only when another process will poll deployment state. The
 default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
@@ -122,6 +125,45 @@ The destination key cannot be a control key such as `PORT`, `PATH`,
 `invalid_environment`. Broker-only and connector-only secrets cannot be
 delivered as App environment values.
 
+## Access
+
+```sh
+kortix apps access storefront
+kortix apps access storefront --mode private
+kortix apps access storefront --mode project
+kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
+kortix apps access storefront --mode public
+kortix apps access storefront --mode password --password '<value>'
+```
+
+| Mode | Subjects |
+| --- | --- |
+| `private` | The App creator. This is the default. |
+| `project` | Every current project reader. |
+| `restricted` | The selected project members and groups. |
+| `public` | Anyone. |
+| `password` | Anyone who supplies the App password. |
+
+`kortix apps deploy` accepts the same `--access`, `--password`, `--members`,
+and `--groups` flags. Never store a password in `kortix.yaml` or a source file.
+Kortix stores only an Argon2id hash.
+
+Kortix-authenticated users open a five-minute exchange URL. It creates an
+eight-hour, secure, host-only cookie for that App hostname. A policy update
+revokes existing cookies.
+
+Create an authenticated browser link through the CLI:
+
+```sh
+kortix apps access-link storefront --json
+```
+
+The response contains `app.url`, `access_session.url`, and
+`access_session.expires_at`. The exchange URL is valid for five minutes. Treat
+it as a secret. Its first request sets the eight-hour App-host cookie and
+redirects to the same path without the token. Create a fresh link for each
+independent browser profile or cookie jar.
+
 ## Archive rules
 
 Directory deployments read these files, in order:
@@ -165,13 +207,29 @@ An idle stop preserves the runtime. The next request starts the sandbox, waits
 for readiness, and then proxies the request. Concurrent wake requests share one
 database lease.
 
-`kortix apps stop <app>` changes `desired_state` to `stopped`, stops compute,
-and makes public requests return `503 app_stopped`. `kortix apps start <app>`
-starts the active runtime immediately and permits future cold wake.
+`kortix apps stop <app>` suspends compute immediately. The next authorized request
+resumes the active runtime, waits for readiness, and then returns the App
+response for that same request. `kortix apps start <app>` warms the active
+runtime before an authorized request arrives.
 
 Every request extends the activity lease and idle deadline. Streaming responses
 renew the lease until the response ends. WebSocket connections renew it while
 the socket remains open.
+
+Browser navigation shows a Kortix lifecycle page during queued, validating,
+building, provisioning, checking, starting, failed, cancelled, and budget
+states. Machine clients receive `202 app_starting` with `Retry-After: 3` during
+a transient cold start. A healthy App never exposes `app_stopped` or an
+unavailable cold-start state.
+
+Browser navigations receive branded HTML with the same `202` status and a
+three-second refresh while starting. The Apps UI lives at
+`/projects/<project-id>/apps`. Its iframe uses an authenticated App access
+session and wakes a suspended private App.
+
+Each cold start checks the active `kortix-appd` version. If it is old, Kortix
+queues one immutable replacement asynchronously. The active deployment keeps
+serving until the replacement passes readiness.
 
 ## Versions and rollback
 
@@ -206,7 +264,7 @@ Common failures:
 | `provider_disabled` | Omit `--provider` or select an enabled provider. |
 | Readiness timeout | Make the process bind the declared port and return success at `readiness_path`. |
 | `402 app_budget_exceeded` | Increase the App budget or wait for the next monthly period. |
-| `503 app_stopped` | Run `kortix apps start <app>`. |
+| Repeated `202 app_starting` | Inspect deployment events and runtime logs. A healthy active deployment completes the same request after readiness. |
 
 ## Current boundaries
 

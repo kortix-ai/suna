@@ -10,7 +10,7 @@ import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { upsertProjectSecret } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CaretLeftIcon as ChevronLeft,
   ArrowSquareOutIcon as ExternalLink,
@@ -62,7 +62,7 @@ export function ApiKeyConnectForm({
     },
     onSuccess: () => {
       successToast(`${provider.label} connected`);
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
       onConnected(provider.id);
     },

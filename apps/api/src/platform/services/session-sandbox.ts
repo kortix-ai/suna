@@ -433,12 +433,7 @@ export async function provisionSessionSandbox(opts: {
   void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
-  // provider.sandboxFacingApiOrigin() (optional) lets a same-machine provider
-  // (local-docker) swap in its private Docker-network origin here — same
-  // reason KORTIX_API_URL is never just config.KORTIX_URL verbatim for that
-  // provider. Every other provider omits the method and falls back to the
-  // generic public origin, unchanged from before.
-  const kortixOrigin = (provider.sandboxFacingApiOrigin?.() ?? config.KORTIX_URL).replace(/\/+$/, '');
+  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
   const llmBaseUrl = resolveLlmGatewayBaseUrl(kortixOrigin);
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is

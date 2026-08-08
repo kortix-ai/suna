@@ -26,6 +26,7 @@ import {
   migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
+import { withMigrationDeadlockRetry } from './migration-retry';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -228,18 +229,27 @@ async function main() {
     }
   };
 
+  const applyPendingMigrations = () => withMigrationDeadlockRetry(
+    () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
+    {
+      onRetry: (attempt) => {
+        console.warn(`[migrate] PostgreSQL deadlock rolled back the transaction; retrying pending migrations (${attempt}/2).`);
+      },
+    },
+  );
+
   switch (cmd) {
     case 'up':
       await autoBaselineIfNeeded(base, databaseUrl);
       await repairAppliedMigrationRenames();
-      await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
+      await applyPendingMigrations();
       return;
     case 'bootstrap':
       // Fresh-DB convenience for self-host: prereqs → then `up`.
       await selfHostBootstrapIfFresh(databaseUrl);
       await autoBaselineIfNeeded(base, databaseUrl);
       await repairAppliedMigrationRenames();
-      await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
+      await applyPendingMigrations();
       return;
     case 'fake':
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY, fake: true });

@@ -3,8 +3,9 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
+export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
 export type AppDesiredState = 'running' | 'stopped';
+export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
 export type AppArtifactStatus = 'uploading' | 'uploaded' | 'ready' | 'rejected' | 'deleted';
 export type AppSourceKind = 'static' | 'bundle' | 'dockerfile' | 'oci_image';
@@ -31,6 +32,8 @@ export interface App {
   slug: string;
   name: string;
   url: string;
+  access_mode: AppAccessMode;
+  access_revision: number;
   desired_state: AppDesiredState;
   active_deployment_id: string | null;
   machine: AppMachineSpec;
@@ -58,6 +61,26 @@ export interface UpdateAppInput {
   disk_gb?: number;
   idle_timeout_seconds?: number;
   monthly_budget_usd?: number;
+}
+
+export interface AppAccessConfig {
+  mode: AppAccessMode;
+  revision: number;
+  member_ids: string[];
+  group_ids: string[];
+  password_configured: boolean;
+}
+
+export interface UpdateAppAccessInput {
+  mode: AppAccessMode;
+  member_ids?: string[];
+  group_ids?: string[];
+  password?: string;
+}
+
+export interface AppAccessSession {
+  url: string;
+  expires_at: string;
 }
 
 export interface AppArtifact {
@@ -157,6 +180,10 @@ export interface AppDeployment {
   failed_at: string | null;
   /** User whose deployment request resolved personal project-secret overrides. */
   created_by: string;
+  /** Originating Kortix project session when an agent created this deployment. */
+  source_session_id: string | null;
+  /** Immutable caller class recorded when the deployment was created. */
+  actor_type: 'human' | 'agent' | 'service_account' | 'system';
   created_at: string;
   updated_at: string;
 }
@@ -230,6 +257,31 @@ export async function deleteApp(projectId: string, appId: string): Promise<{ ok:
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/apps/${appId}`),
     'Failed to delete App',
+  );
+}
+
+export async function getAppAccess(projectId: string, appId: string): Promise<AppAccessConfig> {
+  return unwrap(
+    await backendApi.get<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`),
+    'Failed to load App access policy',
+  );
+}
+
+export async function updateAppAccess(
+  projectId: string,
+  appId: string,
+  input: UpdateAppAccessInput,
+): Promise<AppAccessConfig> {
+  return unwrap(
+    await backendApi.patch<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`, input),
+    'Failed to update App access policy',
+  );
+}
+
+export async function createAppAccessSession(projectId: string, appId: string): Promise<AppAccessSession> {
+  return unwrap(
+    await backendApi.post<AppAccessSession>(`/projects/${projectId}/apps/${appId}/access-session`, {}),
+    'Failed to create App access session',
   );
 }
 

@@ -5,6 +5,7 @@ import type {
   SandboxProviderTransitionState,
   UpdateProjectSandboxProviderResult,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   applySandboxProviderResult,
   isSandboxProviderTransitionTerminal,
@@ -73,8 +74,9 @@ describe('applySandboxProviderResult (FIX-L)', () => {
     const { client, setCalls, invalidateCalls } = fakeQueryClient();
     const kind = applySandboxProviderResult(client, 'p1', projectResult());
     expect(kind).toBe('project');
+    const summaryKey = qk.project.summary('p1');
     const projectWrite = setCalls.find(
-      (c) => Array.isArray(c.key) && c.key[0] === 'project' && c.key[1] === 'p1',
+      (c) => Array.isArray(c.key) && JSON.stringify(c.key) === JSON.stringify(summaryKey),
     );
     expect(projectWrite).toBeDefined();
     const cached = projectWrite!.value as KortixProject & { kind?: string };
@@ -90,8 +92,11 @@ describe('applySandboxProviderResult (FIX-L)', () => {
     expect(kind).toBe('preparation');
     // The core guarantee: a preparation result touches NO cache — it is not a project.
     expect(setCalls).toHaveLength(0);
+    const summaryKey = qk.project.summary('p1');
     expect(
-      setCalls.some((c) => Array.isArray(c.key) && c.key[0] === 'project'),
+      setCalls.some(
+        (c) => Array.isArray(c.key) && JSON.stringify(c.key) === JSON.stringify(summaryKey),
+      ),
     ).toBe(false);
   });
 });

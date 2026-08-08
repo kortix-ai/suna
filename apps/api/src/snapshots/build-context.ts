@@ -40,6 +40,7 @@ import {
   isKortixManagedSkillName,
 } from '@kortix/starter';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
+import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
@@ -73,10 +74,6 @@ const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
-const appdBinPath = () => process.env.KORTIX_APPD_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/kortix-app-runtime/dist/kortix-appd-linux-amd64');
-const appCaddyBinPath = () => process.env.KORTIX_APP_CADDY_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/kortix-app-runtime/dist/caddy-linux-amd64');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -111,8 +108,8 @@ export async function stageAppBuildContext(
   userDockerfile: string,
   appContext: { sourceDir?: string; runtimeSpec: Record<string, unknown> },
 ): Promise<StagedContext> {
-  const appdPath = appdBinPath();
-  const caddyPath = appCaddyBinPath();
+  const appdPath = appdBinaryPath();
+  const caddyPath = appCaddyBinaryPath();
   await assertExists(appdPath, 'KORTIX_APPD_BIN_PATH');
   await assertExists(caddyPath, 'KORTIX_APP_CADDY_BIN_PATH');
 
@@ -140,7 +137,7 @@ export async function stageAppBuildContext(
     await writeFileFs(
       join(runtimeDir, 'app.json'),
       `${JSON.stringify(appContext.runtimeSpec, null, 2)}\n`,
-      { mode: 0o600 },
+      { mode: 0o644 },
     );
 
     const dockerfileName = '.kortix-app.Dockerfile';

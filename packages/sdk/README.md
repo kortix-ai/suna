@@ -148,6 +148,28 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+### Apps
+
+`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+
+```ts
+const apps = kortix.project(projectId).apps;
+const app = await apps.create({ slug: 'docs', name: 'Docs' });
+const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
+await apps.deployments.create(app.app_id, {
+  artifact_id: artifact.artifact_id,
+  source: { kind: 'static', spa: true },
+});
+await apps.access.update(app.app_id, {
+  mode: 'restricted',
+  member_ids: [memberId],
+  group_ids: [groupId],
+});
+const browserSession = await apps.access.session(app.app_id);
+```
+
+Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
+
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults. A per-call choice
@@ -188,7 +210,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 

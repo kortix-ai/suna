@@ -166,7 +166,6 @@ export function daytonaLifecycle(autoStopOverride?: number): {
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
-  readonly requiresPublicCallback = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
@@ -301,16 +300,7 @@ export class DaytonaProvider implements SandboxProvider {
       PROVIDER_CALL_TIMEOUT_MS,
       `Daytona get(${externalId}) for App bootstrap`,
     );
-    const command = [
-      'pid_file=/tmp/kortix-appd.pid',
-      'if [ -r "$pid_file" ]; then',
-      '  IFS= read -r appd_pid < "$pid_file" || true',
-      '  if [ -n "${appd_pid:-}" ] && kill -0 "$appd_pid" 2>/dev/null; then exit 0; fi',
-      'fi',
-      "trap '' HUP",
-      '/kortix/bin/kortix-appd >>/tmp/kortix-appd-bootstrap.log 2>&1 </dev/null &',
-      'echo "$!" > "$pid_file"',
-    ].join('\n');
+    const command = '/kortix/bin/kortix-appd --daemon';
     const result = await withTimeout(
       sandbox.process.executeCommand(command, undefined, undefined, 15),
       PROVIDER_CALL_TIMEOUT_MS,

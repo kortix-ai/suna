@@ -105,6 +105,7 @@ export {
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
+  appAccessGrants,
   appArtifacts,
   appDeployments,
   appRuntimes,

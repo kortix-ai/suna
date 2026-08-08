@@ -92,7 +92,6 @@ function isMissingSandboxError(error: unknown): boolean {
 
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
-  readonly requiresPublicCallback = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,

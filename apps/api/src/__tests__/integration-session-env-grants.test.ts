@@ -67,8 +67,11 @@ beforeAll(async () => {
     accountId: ctx.accountId,
     name: `Secret delivery test ${SUFFIX}`,
     repoUrl: resolve(import.meta.dir, '../../../..'),
-    defaultBranch: 'HEAD',
-    manifestPath: 'packages/starter/templates/base/kortix.yaml',
+    // This suite tests session allowlist and secret-delivery composition. An
+    // ungoverned project resolves the same unrestricted agent grant without a
+    // Git checkout, which keeps the real-DB assertions deterministic.
+    defaultBranch: '',
+    manifestPath: '',
   });
 
   // Two identifiers, SAME key — the headline secrets-v2 scenario.
@@ -495,7 +498,9 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     );
     expect(snapshot.env[BROKER_KEY]).toBeUndefined();
     expect(snapshot.names).not.toContain(BROKER_KEY);
-    expect(snapshot.capabilities.capabilities).toEqual([]);
+    const capabilities = snapshot.capabilities.capabilities;
+    expect(capabilities.some((capability) => capability.identifier === UNSCOPED)).toBe(true);
+    expect(capabilities.some((capability) => capability.identifier === BROKER_IDENT)).toBe(false);
   });
 });
 

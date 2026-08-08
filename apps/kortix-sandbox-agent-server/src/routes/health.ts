@@ -120,6 +120,12 @@ export function createHealthRouter(
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
+      // The port opencode is listening on right now. It ALTERNATES: a verified
+      // reload boots the replacement on the idle half of the port pair and
+      // promotes it. The API's PTY proxy has to reach opencode directly (the
+      // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
+      // becomes the dead half after one reload.
+      opencode_port: opencode.getActivePort(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,

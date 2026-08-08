@@ -115,7 +115,6 @@ test('App workload bootstrap starts kortix-appd through the Daytona toolbox', as
   await new DaytonaProvider().ensureAppRuntimeStarted('sbx-eager-1');
 
   expect(processCommands).toHaveLength(1);
-  expect(processCommands[0]?.command).toContain('/kortix/bin/kortix-appd');
-  expect(processCommands[0]?.command).toContain('/tmp/kortix-appd.pid');
+  expect(processCommands[0]?.command).toBe('/kortix/bin/kortix-appd --daemon');
   expect(processCommands[0]?.timeout).toBe(15);
 });

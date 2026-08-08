@@ -1,5 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+import { qk } from './query-keys';
+
 type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
 
 interface SessionTitleRefreshOptions {
@@ -21,8 +23,13 @@ function cachedSessionHasTitle(
   projectId: string,
   sessionId: string,
 ): boolean {
-  const list = queryClient.getQueryData<unknown>(['project-sessions', projectId]);
-  const detail = queryClient.getQueryData<unknown>(['project-session', projectId, sessionId]);
+  // Exact-match reads (`getQueryData`), so these have to be the REAL cache
+  // entries the list/detail queries populate, not the broad `sessionsScope`
+  // invalidation prefix used below — `getQueryData` never does prefix
+  // matching. Default scope ('visible') matches `listProjectSessions`' own
+  // default and what the sidebar/list surfaces actually read.
+  const list = queryClient.getQueryData<unknown>(qk.project.sessions(projectId));
+  const detail = queryClient.getQueryData<unknown>(qk.project.session(projectId, sessionId));
   const candidates = [...(Array.isArray(list) ? list : []), detail];
   return candidates.some((candidate) => {
     if (!candidate || typeof candidate !== 'object') return false;
@@ -44,12 +51,16 @@ function refetchSessionTitleQueries(
   sessionId: string,
 ): Promise<unknown[]> {
   return Promise.all([
+    // The broad sessions-family prefix, not just the default-scope list: it
+    // reaches the list in EVERY scope plus every session/messages entry
+    // beneath it, so a manager-only 'project'-scope reader picks up the
+    // resolved title too, not only the default 'visible' one.
     queryClient.refetchQueries({
-      queryKey: ['project-sessions', projectId],
+      queryKey: qk.project.sessionsScope(projectId),
       type: 'active',
     }),
     queryClient.refetchQueries({
-      queryKey: ['project-session', projectId, sessionId],
+      queryKey: qk.project.session(projectId, sessionId),
       type: 'active',
     }),
   ]);

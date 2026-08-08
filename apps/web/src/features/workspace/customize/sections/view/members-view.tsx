@@ -107,6 +107,7 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
@@ -137,31 +138,31 @@ export function MembersView({ projectId }: { projectId: string }) {
   }, [requestedTab]);
 
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
 
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
 
   const pendingInvitesQuery = useQuery({
-    queryKey: ['project-pending-invites', projectId],
+    queryKey: qk.project.pendingInvites(projectId),
     queryFn: () => listPendingProjectInvites(projectId),
-    staleTime: 5_000,
+    ...contract('inventory'),
     enabled: !!canManage,
   });
 
   const accessRequestsQuery = useQuery({
-    queryKey: ['project-access-requests', projectId],
+    queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId),
-    staleTime: 10_000,
+    ...contract('inventory'),
     enabled: !!canManage,
   });
 
@@ -358,12 +359,16 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       }
 
       if (invited.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ['project-pending-invites', projectId] });
+        queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });
       }
       if (added.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
-        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+        // Only projectId is in scope here, not the owning account_id, so
+        // this can't target one qk.projects.list(accountId) entry —
+        // qk.projects.scope() is the shared prefix every list form lives
+        // under.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+        queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
       }
 
       setEmails(failed.map((f) => f.email));
@@ -629,9 +634,12 @@ function ProjectAccessCard({
   );
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['projects'] });
-    queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+    // qk.projects.scope(): restores the reach the old bare projects-literal
+    // prefix match had. An access change is rare — over-invalidating a few
+    // extra account lists costs nothing measurable.
+    queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+    queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
   };
 
   const updateMutation = useMutation({
@@ -1011,7 +1019,7 @@ function ProjectAccessCard({
 function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = ['project-access-requests', projectId];
+  const queryKey = qk.project.accessRequests(projectId);
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const markBusy = (id: string) => setBusyIds((prev) => new Set(prev).add(id));
   const clearBusy = (id: string) =>
@@ -1024,7 +1032,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   const requestsQuery = useQuery({
     queryKey,
     queryFn: () => listProjectAccessRequests(projectId),
-    staleTime: 10_000,
+    ...contract('inventory'),
   });
 
   const approveMutation = useMutation({
@@ -1034,7 +1042,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
     onSuccess: (result) => {
       successToast(`${result.member.email ?? 'Requester'} can now view this project`);
       queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to approve request'),
   });
@@ -1142,7 +1150,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
     errorMessage: 'Could not copy link',
   });
   const queryClient = useQueryClient();
-  const queryKey = ['project-pending-invites', projectId];
+  const queryKey = qk.project.pendingInvites(projectId);
   const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingInviteIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1158,7 +1166,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   const invitesQuery = useQuery({
     queryKey,
     queryFn: () => listPendingProjectInvites(projectId),
-    staleTime: 5_000,
+    ...contract('inventory'),
   });
 
   const revokeMutation = useMutation({
@@ -1358,12 +1366,12 @@ function ProjectGroupGrantsCard({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const grantsKey = ['project-group-grants', projectId];
+  const grantsKey = qk.project.groupGrants(projectId);
 
   const grantsQuery = useQuery({
     queryKey: grantsKey,
     queryFn: () => listProjectGroupGrants(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
@@ -1375,11 +1383,16 @@ function ProjectGroupGrantsCard({
   // a built-in grant (this list) AND a custom-role policy hits the union trap:
   // allow-only/highest-wins means the built-in role WINS and silently overrides
   // the custom role's restrictions. We flag those rows so it isn't a silent gotcha.
+  // qk.project.policies — the IAM role-policy family, NOT
+  // qk.project.executorPolicies (the unrelated sandbox tool-rule family
+  // PoliciesPanel reads). Both used to share the literal ['project-policies',
+  // id] pre-migration, which meant whichever fetch resolved last clobbered
+  // the other's cache entry with an incompatible shape.
   const policiesQuery = useQuery({
-    queryKey: ['project-policies', projectId],
+    queryKey: qk.project.policies(projectId),
     queryFn: () => listPolicies(accountId, { scopeId: projectId }),
     enabled: canManage,
-    staleTime: 20_000,
+    ...contract('config'),
   });
   const groupsWithCustomRole = useMemo(
     () =>
@@ -1424,8 +1437,8 @@ function ProjectGroupGrantsCard({
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
-    queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+    queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
   }
 
   const attachMutation = useMutation({
@@ -1817,14 +1830,14 @@ function ResourceAccessCard({
   members: ProjectAccessMember[];
 }) {
   const queryClient = useQueryClient();
-  const grantsKey = ['project-resource-grants', projectId];
+  const grantsKey = qk.project.resourceGrants(projectId);
 
   const grantsQuery = useQuery({
     queryKey: grantsKey,
     queryFn: () => listProjectResourceGrants(projectId),
     // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
     enabled: canManage,
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
@@ -1894,10 +1907,12 @@ function ResourceAccessCard({
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
-    // The agent/skill lists the rest of the UI renders are now filtered, so the
-    // project detail must refetch to reflect what this user can see.
-    queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    // The agent/skill lists the rest of the UI renders are now filtered, so
+    // the project detail must refetch to reflect what this user can see.
+    // invalidateProject() reaches qk.project.scope(projectId), which
+    // qk.project.summary(projectId) nests under — no separate summary
+    // invalidation needed alongside it.
+    void invalidateProject(queryClient, projectId);
   }
 
   function splitOnce(v: string): [string, string] {
@@ -2200,7 +2215,11 @@ function ProjectRoleAssignmentsCard({
   members: ProjectAccessMember[];
 }) {
   const queryClient = useQueryClient();
-  const policiesKey = ['project-policies', projectId];
+  // qk.project.policies — the IAM role-policy family. See
+  // ProjectGroupGrantsCard's policiesQuery above for why this is NOT
+  // qk.project.executorPolicies (a different endpoint/shape both used to
+  // share the literal ['project-policies', id] with, pre-migration).
+  const policiesKey = qk.project.policies(projectId);
 
   const policiesQuery = useQuery({
     queryKey: policiesKey,
@@ -2209,7 +2228,7 @@ function ProjectRoleAssignmentsCard({
     // 403s for data this card can never show them.
     enabled: canManage,
     queryFn: () => listPolicies(accountId, { scopeId: projectId }),
-    staleTime: 20_000,
+    ...contract('config'),
   });
   const rolesQuery = useQuery({
     queryKey: ['iam-roles', accountId],

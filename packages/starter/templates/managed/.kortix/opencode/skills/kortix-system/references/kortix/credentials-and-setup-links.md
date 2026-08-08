@@ -59,8 +59,17 @@ kortix secrets request APOLLO_API_KEY SMARTLEAD_API_KEY     # several keys, one 
 kortix secrets request APOLLO_API_KEY --scope connector     # server-side only
 ```
 
-Then **surface the `url`** to the human: *"Add your Apollo key here (expires in
-30 min): &lt;url&gt;"*.
+Then **surface the `url`** to the human: *"Add your Apollo key here (link valid
+7 days): &lt;url&gt;"*.
+
+**Reuse a live link — never re-mint per run.** Minting is not idempotent: every
+call creates a NEW link and does not invalidate the old one. If your task loops
+(cron, sweep, retry), record the link + its `expires_at` the first time you
+surface it, and on later runs check whether the secret is set before saying
+anything. Re-mint and re-post **only** when the recorded link is expired (or
+within ~1h of expiring) and the secret is still missing. Posting a fresh link
+every run floods the channel with duplicate "blocked" messages and points humans
+at dead links.
 
 - **`scope: runtime`** (default) — the value is injected into your sandbox env,
   so you can read it (`process.env.APOLLO_API_KEY`) or use it from a tool. Use
@@ -106,11 +115,14 @@ The webhook finalizes the connection automatically.
 
 ## After you surface the link
 
-You don't have a live callback. The smooth flow is:
+The smooth flow is:
 
 1. Mint the link and surface it, with a one-line "what this is for".
 2. **End your turn** — the human can't fill it in while you hold the turn.
-3. When they come back ("done"), **verify and continue**:
+3. When a **secret** is submitted while your session is running, the platform
+   sends you a follow-up message naming the saved keys — treat it as your cue to
+   verify and continue. If your session was asleep, or the human just says
+   "done", **verify and continue**:
    - **Secret:** check the name is now present — `kortix secrets ls` (or look for
      it in `KORTIX_PROJECT_SECRET_NAMES`). A fresh `runtime` value is live in the
      session env immediately (it's hot-synced; no restart needed).
@@ -124,11 +136,11 @@ If it isn't there yet, the human may not have finished — say so and wait.
 
 ## Why this is safe (and why it's the only good way)
 
-- The link is an **opaque, encrypted, single-project token** with a short TTL
-  (default 30 min, ask for more with `--expires` / `expires_in_minutes`).
+- The link is an **opaque, encrypted, single-project token** with a bounded TTL
+  (default 7 days, adjust with `--expires` / `expires_in_minutes`, max 30 days).
 - It is **value-only**: it can only *set* the exact key(s) you named, in *this*
   project. It can't read any existing secret and can't target another key — so a
-  leaked link is low-blast-radius and expires fast.
+  leaked link is low-blast-radius and expires on schedule.
 - **You never handle the raw value.** The human enters it directly into an
   encrypted store; for a connector, the key only ever lives at Pipedream.
 

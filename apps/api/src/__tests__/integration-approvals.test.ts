@@ -381,7 +381,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const ownerItem = ownerBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(ownerItem?.detail).toMatchObject({
       args_preview: { repo: 'kortix-ai/suna' },
@@ -395,7 +395,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const readOnlyItem = readOnlyBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(readOnlyItem?.detail).not.toHaveProperty('args_preview');
     expect(readOnlyItem?.detail).toMatchObject({
@@ -409,7 +409,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const automatedItem = automatedBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(automatedItem?.detail).not.toHaveProperty('args_preview');
     expect(automatedItem?.detail).toMatchObject({ args_preview_authorized: false });

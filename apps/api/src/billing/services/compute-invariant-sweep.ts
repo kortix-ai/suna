@@ -4,30 +4,31 @@
  * the pass that applies them plus the DB-only counters `/health` alerts on.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
 import { appRuntimes, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
-import { getProvider, type ProviderName, type SandboxStatus } from '../../platform/providers';
+import { type ProviderName, type SandboxStatus, getProvider } from '../../platform/providers';
 import {
   REAP_BATCH_SIZE,
   REAP_CONCURRENCY,
   computeMaxWindowMs,
   computeUnresolvedCeilingMs,
 } from '../../projects/reaper-constants';
-import { pauseComputeSession } from './compute-metering';
-import {
-  computeLivenessGraceMs,
-  isBeyondLivenessCeiling,
-  lastAliveAtOf,
-  parseTimestamp,
-} from './compute-liveness';
+import { runtimeWakeInProgress } from '../../projects/session-lifecycle/runtime-wake-fence';
+import { db } from '../../shared/db';
 import {
   type ComputeCloseReason,
   computeCloseWindowEnd,
   decideComputeClose,
   hasFailedRuntimeStart,
 } from './compute-close-policy';
+import {
+  computeLivenessGraceMs,
+  isBeyondLivenessCeiling,
+  lastAliveAtOf,
+  parseTimestamp,
+} from './compute-liveness';
+import { pauseComputeSession } from './compute-metering';
 
 export interface OrphanComputeResult {
   checked: number;
@@ -101,7 +102,9 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
  * `computeCloseWindowEnd`). Oldest-open first, so a saturated batch drains the
  * worst leaks first and can never starve them. Deterministic; idempotent.
  */
-export async function reconcileOrphanComputeSessions(now = new Date()): Promise<OrphanComputeResult> {
+export async function reconcileOrphanComputeSessions(
+  now = new Date(),
+): Promise<OrphanComputeResult> {
   const unresolvedCeilingMs = computeUnresolvedCeilingMs();
   const maxWindowMs = computeMaxWindowMs();
 
@@ -119,27 +122,34 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
       const row = rows[cursor++];
       try {
         const isApp = row.workloadType === 'app';
-        const runtimeStatus = isApp
-          ? appRuntimeBillingStatus(row.appStatus)
-          : row.sbStatus;
+        const runtimeStatus = isApp ? appRuntimeBillingStatus(row.appStatus) : row.sbStatus;
         const runtimeUpdatedAt = isApp ? row.appUpdatedAt : row.sbUpdatedAt;
-        const runtimeMetadata = (isApp ? row.appMetadata : row.sbMetadata) as
-          | Record<string, unknown>
-          | null;
+        const runtimeMetadata = (isApp ? row.appMetadata : row.sbMetadata) as Record<
+          string,
+          unknown
+        > | null;
         const provider = isApp ? row.appProvider : row.sessionProvider;
         const externalId = isApp ? row.appExternalId : row.sessionExternalId;
         const startedAt = parseTimestamp(row.startedAt) ?? now;
         const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
         const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
         const unresolvedSince = parseTimestamp(computeMetadata.unresolvedSince);
-        const lastAliveAt = lastAliveAtOf({ metadata: computeMetadata, startedAt: row.startedAt });
+        const lastAliveAt = lastAliveAtOf({
+          metadata: computeMetadata,
+          startedAt: row.startedAt,
+        });
         const livenessGraceMs = computeLivenessGraceMs();
 
         const base = {
           sandboxStatus: runtimeStatus ?? null,
           hasProviderTarget: !!externalId && !!provider,
           runtimeStartFailed: hasFailedRuntimeStart(runtimeMetadata),
-          beyondLivenessCeiling: isBeyondLivenessCeiling({ now, lastAliveAt, graceMs: livenessGraceMs }),
+          wakeInProgress: runtimeWakeInProgress(runtimeMetadata, now),
+          beyondLivenessCeiling: isBeyondLivenessCeiling({
+            now,
+            lastAliveAt,
+            graceMs: livenessGraceMs,
+          }),
           openForMs,
           unresolvedCeilingMs,
           maxWindowMs,
@@ -164,9 +174,16 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
           // been continuously unresolvable rather than treating it as transient.
           if (providerStatus === 'running') {
             if (unresolvedSince) {
-              await updateComputeSessionMetadata(row.computeId, { ...computeMetadata, unresolvedSince: null });
+              await updateComputeSessionMetadata(row.computeId, {
+                ...computeMetadata,
+                unresolvedSince: null,
+              });
             }
-          } else if (providerStatus !== 'stopped' && providerStatus !== 'removed' && !unresolvedSince) {
+          } else if (
+            providerStatus !== 'stopped' &&
+            providerStatus !== 'removed' &&
+            !unresolvedSince
+          ) {
             await updateComputeSessionMetadata(row.computeId, {
               ...computeMetadata,
               unresolvedSince: now.toISOString(),
@@ -206,7 +223,10 @@ export async function reconcileOrphanComputeSessions(now = new Date()): Promise<
         });
       } catch (err) {
         result.errors += 1;
-        console.warn(`[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err);
+        console.warn(
+          `[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
   };
@@ -223,7 +243,10 @@ async function updateComputeSessionMetadata(
     .set({ metadata })
     .where(eq(sandboxComputeSessions.id, computeId))
     .catch((err) =>
-      console.warn('[reaper] compute metadata update failed:', err instanceof Error ? err.message : err),
+      console.warn(
+        '[reaper] compute metadata update failed:',
+        err instanceof Error ? err.message : err,
+      ),
     );
 }
 
@@ -238,9 +261,10 @@ export async function countBillingInvariantViolations(): Promise<number> {
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
-    .where(and(
-      eq(sandboxComputeSessions.state, 'active'),
-      sql`(
+    .where(
+      and(
+        eq(sandboxComputeSessions.state, 'active'),
+        sql`(
         (${sandboxComputeSessions.workloadType} = 'app' AND (
           ${appRuntimes.runtimeId} IS NULL OR
           ${appRuntimes.status} NOT IN ('provisioning', 'starting', 'running')
@@ -249,7 +273,8 @@ export async function countBillingInvariantViolations(): Promise<number> {
           ${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active'
         ))
       )`,
-    ));
+      ),
+    );
   return Number(row?.n ?? 0);
 }
 
@@ -274,13 +299,15 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
-    .where(and(
-      eq(sandboxComputeSessions.state, 'active'),
-      sql`(
+    .where(
+      and(
+        eq(sandboxComputeSessions.state, 'active'),
+        sql`(
         (${sandboxComputeSessions.workloadType} = 'app' AND ${appRuntimes.status} = 'running') OR
         (${sandboxComputeSessions.workloadType} <> 'app' AND ${sessionSandboxes.status} = 'active')
       )`,
-      sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
-    ));
+        sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
+      ),
+    );
   return Number(row?.n ?? 0);
 }

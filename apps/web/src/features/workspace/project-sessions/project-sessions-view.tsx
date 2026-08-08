@@ -30,6 +30,7 @@ import {
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ChatIcon,
   MagnifyingGlassIcon,
@@ -58,8 +59,6 @@ import { SessionsToolbar } from './sessions-toolbar';
 /** Concurrent DELETEs during a bulk removal. There is no bulk endpoint, so a
  *  27-session batch would otherwise open 27 sockets at once. */
 const DELETE_CONCURRENCY = 4;
-
-const SESSIONS_QUERY_KEY = (projectId: string) => ['project-session-inventory', projectId];
 
 function formatTimestamp(value: string): { relative: string; exact: string } {
   try {
@@ -137,19 +136,27 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
-    queryKey: SESSIONS_QUERY_KEY(projectId),
+    // 'project' scope: the manager-only, unfiltered full inventory — a
+    // DIFFERENT server request than the default 'visible' scope every other
+    // reader uses, so it MUST carry its own scope segment in the key (see
+    // qk.project.sessions' doc comment). Sharing the default-scope key here
+    // is the exact bug this file existed to fix.
+    queryKey: qk.project.sessions(projectId, 'project'),
     queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
-    staleTime: 10_000,
     refetchInterval: (query) =>
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
     // The poll stops once every session settles, so without this a session
     // deleted from another surface would linger here indefinitely.
     refetchOnWindowFocus: true,
+    ...contract('inventory'),
   });
 
   const invalidateSessions = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY(projectId) });
-    queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    // The PREFIX, not the scoped read key: this view reads the 'project'
+    // scope, but every other surface (sidebar, header, palette, ...) reads
+    // the default 'visible' scope. A rename/share/delete here has to reach
+    // BOTH, or the other scope goes stale — see qk.project.sessionsScope.
+    queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   }, [projectId, queryClient]);
 
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
@@ -487,9 +494,10 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         sessionLabel={sessionToDelete?.label}
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
-        // Without this the modal invalidates only ['project-sessions'], and the
-        // deleted row survives here until the next poll — which never comes once
-        // every session has settled.
+        // The modal's own onSuccess already invalidates qk.project.sessionsScope
+        // — the prefix that reaches the 'project'-scoped key this view reads
+        // — so this is a harmless duplicate, kept so the two do not silently
+        // diverge again if either is edited independently.
         onDeleted={invalidateSessions}
       />
     </>

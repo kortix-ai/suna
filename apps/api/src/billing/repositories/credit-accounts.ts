@@ -71,6 +71,23 @@ export async function setEnterpriseEntitled(
     });
 }
 
+/**
+ * Set the operator managed-models override. null restores "the effective tier
+ * decides". Upserts so a brand-new account (no billing row yet) can be set.
+ */
+export async function setManagedModelsOverride(
+  accountId: string,
+  override: boolean | null,
+): Promise<void> {
+  await db
+    .insert(creditAccounts)
+    .values({ accountId, managedModelsOverride: override })
+    .onConflictDoUpdate({
+      target: creditAccounts.accountId,
+      set: { managedModelsOverride: override, updatedAt: new Date().toISOString() },
+    });
+}
+
 export async function getCreditBalance(accountId: string) {
   const [row] = await db
     .select({
@@ -97,6 +114,10 @@ export async function getSubscriptionInfo(accountId: string) {
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
       trialStatus: creditAccounts.trialStatus,
       trialEndsAt: creditAccounts.trialEndsAt,
+      trialStartedAt: creditAccounts.trialStartedAt,
+      trialTier: creditAccounts.trialTier,
+      trialSeats: creditAccounts.trialSeats,
+      managedModelsOverride: creditAccounts.managedModelsOverride,
       commitmentType: creditAccounts.commitmentType,
       commitmentEndDate: creditAccounts.commitmentEndDate,
       scheduledTierChange: creditAccounts.scheduledTierChange,

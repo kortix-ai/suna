@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -59,7 +58,6 @@ export function MaintenanceConfigDialog({
   onSave,
   isPending,
 }: MaintenanceConfigDialogProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const levelConfig = MAINTENANCE_LEVELS.find((l) => l.value === level);
   const Icon = levelConfig?.icon;
   const isNone = level === 'none';
@@ -95,9 +93,7 @@ export function MaintenanceConfigDialog({
               <Label htmlFor="m-message">Message</Label>
               <Textarea
                 id="m-message"
-                placeholder={tHardcodedUi.raw(
-                  'appAdminUtilsComponentsMaintenanceDialog.line95JsxAttrPlaceholderDescribeTheSituation',
-                )}
+                placeholder={'Describe the situation...'}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={3}
@@ -107,16 +103,12 @@ export function MaintenanceConfigDialog({
             {(level === 'warning' || level === 'blocking') && (
               <div className="grid grid-cols-2 gap-3">
                 <DateTimePicker
-                  label={tHardcodedUi.raw(
-                    'appAdminUtilsComponentsMaintenanceDialog.line105JsxAttrLabelStartTime',
-                  )}
+                  label={'Start Time'}
                   date={startDate}
                   setDate={setStartDate}
                 />
                 <DateTimePicker
-                  label={tHardcodedUi.raw(
-                    'appAdminUtilsComponentsMaintenanceDialog.line110JsxAttrLabelEndTime',
-                  )}
+                  label={'End Time'}
                   date={endDate}
                   setDate={setEndDate}
                 />
@@ -126,9 +118,7 @@ export function MaintenanceConfigDialog({
             {(level === 'critical' || level === 'blocking') && (
               <div className="space-y-2">
                 <Label>
-                  {tHardcodedUi.raw(
-                    'appAdminUtilsComponentsMaintenanceDialog.line119JsxTextAffectedServices',
-                  )}
+                  {'Affected Services'}
                 </Label>
                 <div className="grid grid-cols-2 gap-2">
                   {AVAILABLE_SERVICES.map((service) => {
@@ -162,9 +152,7 @@ export function MaintenanceConfigDialog({
 
             <div className="space-y-2">
               <Label htmlFor="m-status-url">
-                {tHardcodedUi.raw(
-                  'appAdminUtilsComponentsMaintenanceDialog.line151JsxTextStatusUrlOptional',
-                )}
+                {'Status URL (optional)'}
               </Label>
               <Input
                 id="m-status-url"
@@ -179,9 +167,7 @@ export function MaintenanceConfigDialog({
         {isNone && (
           <div className="px-6 py-5">
             <p className="text-muted-foreground text-sm">
-              {tHardcodedUi.raw(
-                'appAdminUtilsComponentsMaintenanceDialog.line165JsxTextClickingSaveWillClearAllMaintenanceNotificationsAnd',
-              )}
+              {'Clicking save will clear all maintenance notifications and restore normal access.'}
             </p>
           </div>
         )}

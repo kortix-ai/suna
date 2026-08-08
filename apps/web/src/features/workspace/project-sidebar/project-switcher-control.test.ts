@@ -76,3 +76,42 @@ describe('merged brand/switcher control', () => {
     expect(source).not.toContain('showIcon');
   });
 });
+
+/**
+ * `resolveSwitcherLabel` guarantees the detail name beats the list name — but
+ * only if this component hands the two values to the right parameters. Swap
+ * them and every assertion in `project-switcher-label.test.ts` still passes
+ * while the original two-titles bug is back, list-first, exactly as it was.
+ *
+ * Asserted against the source for the same reason as the tests above:
+ * observing it otherwise means mounting the sidebar with its auth, query,
+ * i18n and sidebar providers to read one label.
+ */
+describe('name wiring — detail is the source, the list is only a placeholder', () => {
+  test('the authoritative name comes from useProjectName, not the list', () => {
+    expect(source).toContain(
+      'const activeProjectName = useProjectName(activeProjectId ?? undefined)',
+    );
+  });
+
+  // `?? null` would collapse "no detail yet" into "detail says blank" and
+  // silently disable the placeholder — see resolveSwitcherLabel's doc comment.
+  test('the detail name is passed raw, so undefined survives', () => {
+    expect(source).not.toContain('useProjectName(activeProjectId ?? undefined) ?? null');
+  });
+
+  test('the list value is passed as the placeholder, never as the name', () => {
+    expect(source).toContain('placeholderProjectName: listProjectName');
+    expect(source).toContain('activeProjectName,');
+    expect(source).toContain(
+      'projectsQuery.data?.find((p) => p.project_id === activeProjectId)?.name',
+    );
+  });
+
+  // The pre-fix bug in one line. If this string ever reappears the list is a
+  // second source again, not a placeholder.
+  test('the list name is never merged into the name with ??', () => {
+    expect(source).not.toContain('listProjectName ??');
+    expect(source).not.toContain('?? listProjectName');
+  });
+});

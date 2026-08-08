@@ -53,6 +53,7 @@ import {
   type ProjectConfigSummary,
   type RuntimeAgentConfig,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
@@ -184,19 +185,19 @@ function AgentEditorForm({
   const update = useUpdateAgentConfig(projectId, agentName);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const sandboxesQuery = useQuery({
-    queryKey: ['project-sandbox-templates', projectId],
+    queryKey: qk.project.sandboxTemplates(projectId),
     queryFn: () => listProjectSandboxTemplates(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const secretOptions = useMemo(
     () =>

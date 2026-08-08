@@ -138,7 +138,13 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
                 reload: {
                   outcome: reload.outcome,
                   ...(reload.outcome === 'swapped'
-                    ? { port: reload.port, pid: reload.pid }
+                    ? {
+                        port: reload.port,
+                        pid: reload.pid,
+                        // Whether the swap interrupted work someone was waiting
+                        // on. null = could not tell; never report that as false.
+                        turn_ended: reload.turnEnded,
+                      }
                     : { reason: reload.reason }),
                 },
               }

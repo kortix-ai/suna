@@ -6,6 +6,7 @@ import {
   type SandboxProviderTransitionState,
   type UpdateProjectSandboxProviderResult,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 /**
  * A provider-migration transition never changes again once it reaches one of
@@ -34,10 +35,10 @@ type CacheClient = Pick<QueryClient, 'setQueryData' | 'invalidateQueries'>;
  *
  * Writes the project caches ONLY for the immediate `kind:'project'` result. A
  * `kind:'preparation'` result is a durable TRANSITION object, not a project —
- * writing it into `['project', id]` would corrupt the cached project shape (it
- * has no repo_url / metadata / experimental_features …). On preparation we leave
- * the project cache untouched and return `'preparation'` so the caller polls the
- * transition instead. Returns the result's kind.
+ * writing it into `qk.project.summary(id)` would corrupt the cached project
+ * shape (it has no repo_url / metadata / experimental_features …). On
+ * preparation we leave the project cache untouched and return `'preparation'`
+ * so the caller polls the transition instead. Returns the result's kind.
  */
 export function applySandboxProviderResult(
   queryClient: CacheClient,
@@ -48,12 +49,16 @@ export function applySandboxProviderResult(
   // Strip the discriminant so the cached value is a pure KortixProject.
   const { kind: _kind, ...project } = result;
   const cached = project as KortixProject;
-  queryClient.setQueryData(['project', projectId], cached);
-  queryClient.setQueryData<ProjectDetail | undefined>(['project-detail', projectId], (c) =>
+  queryClient.setQueryData(qk.project.summary(projectId), cached);
+  queryClient.setQueryData<ProjectDetail | undefined>(qk.project.detail(projectId), (c) =>
     c ? { ...c, project: cached } : c,
   );
-  queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
-  queryClient.invalidateQueries({ queryKey: ['projects'] });
+  queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+  // qk.projects.scope(), not the precise per-account form: restores the
+  // reach the old bare projects-literal prefix match had — every account's
+  // list, and the accountless slot the marketplace picker reads. A
+  // sandbox-provider switch is rare — over-invalidating costs nothing.
+  queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
   return 'project';
 }
 

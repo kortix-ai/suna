@@ -9,8 +9,31 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * the session is still healthy and the user needs to know their change did not
  * take effect and why.
  */
+/**
+ * How a config reload was applied, and what it cost.
+ *
+ * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
+ * config in place and interrupts nothing.
+ */
+export interface ReloadConfigResult {
+  how: 'disposed' | 'restarted' | 'kept-old'
+  turnEnded: boolean | null
+}
+
 export type VerifiedReloadResult =
-  | { outcome: 'swapped'; port: number; pid: number | null }
+  | {
+      outcome: 'swapped'
+      port: number
+      pid: number | null
+      /**
+       * Did the swap stop a turn someone was waiting on?
+       *
+       * `null` = could not tell (no finalize hook, or opencode never came back
+       * in time to ask). Never collapse null to false — "we don't know" and
+       * "nothing was interrupted" produce different things said to the user.
+       */
+      turnEnded: boolean | null
+    }
   | { outcome: 'kept-old'; reason: string }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -1021,7 +1044,7 @@ export type Opencode = {
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
-  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<'disposed' | 'restarted' | 'kept-old'>
+  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
   /**
    * Boot the new opencode, verify it serves, then swap and retire the old one.
    * Never leaves the session without an opencode.
@@ -1037,6 +1060,16 @@ export type Opencode = {
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
+  /**
+   * The port opencode is listening on RIGHT NOW.
+   *
+   * It moves: a verified reload boots the replacement on the idle half of the
+   * port pair and promotes it, so the live port alternates. Anything outside
+   * this process that needs to reach opencode directly — the API's PTY
+   * WebSocket proxy is the live case, since the daemon cannot carry a WS — has
+   * to ask rather than assume 4096.
+   */
+  getActivePort(): number
   getBinaryPath(): string | null
   getState(): OpencodeState
   markReady(): void
@@ -1059,7 +1092,16 @@ export interface OpencodeSupervisorOptions {
    * It reports the fact and main.ts finalizes the orphaned turn, the same way
    * boot already does when it adopts a root whose last turn never completed.
    */
-  onUnplannedRespawn?: () => void
+  /**
+   * Runs once opencode is serving again after it was replaced.
+   *
+   * Resolves TRUE when it actually aborted an incomplete turn — i.e. the
+   * replacement really did stop work someone was waiting on. That is the only
+   * honest basis for telling a user "your turn was stopped, continue": a
+   * pre-flight "is a turn running?" check races the turn finishing on its own,
+   * and would say it to people whose work completed normally.
+   */
+  onUnplannedRespawn?: () => void | Promise<boolean | void>
 }
 
 export function createOpencodeSupervisor(
@@ -1407,6 +1449,26 @@ export function createOpencodeSupervisor(
     return false
   }
 
+  /**
+   * Close the turn the retired opencode took with it, and report whether there
+   * was one. Returns null when it could not be determined.
+   */
+  async function finalizeAfterReplacement(): Promise<boolean | null> {
+    if (!options.onUnplannedRespawn) return null
+    const ready = await waitUntilReady(RESPAWN_FINALIZE_TIMEOUT_MS)
+    if (!ready) {
+      logger.warn('[opencode] replaced but never became ready; orphaned turn left as-is')
+      return null
+    }
+    try {
+      const ended = await options.onUnplannedRespawn()
+      return ended === true
+    } catch (err) {
+      logger.warn('[opencode] post-swap finalize hook threw', { err: (err as Error).message })
+      return null
+    }
+  }
+
   async function checkReady(port = activePort): Promise<boolean> {
     return probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)
   }
@@ -1640,39 +1702,29 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
-    async reloadConfig(
-      opts: { mustRespawn?: boolean } = {},
-    ): Promise<'disposed' | 'restarted' | 'kept-old'> {
+    async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
       // Some settings are not IN the config file — they shape the child's
       // PROCESS env at spawn, and a dispose cannot re-run that. The provider-key
       // deny-list is the live case: `withoutDeniedProviderEnv` strips native
       // keys when the child is spawned, so disposing after a gateway-mode
       // toggle would leave those keys exactly as they were — routing around the
       // gateway's budgets and logging, or failing to restore BYOK.
-      if (!opts.mustRespawn && (await tryDisposeReload())) return 'disposed'
+      // A dispose re-reads the config in place — same process, no turn lost.
+      if (!opts.mustRespawn && (await tryDisposeReload())) {
+        return { how: 'disposed', turnEnded: false }
+      }
       // Verified swap instead of the old kill-then-hope restart. A config that
       // cannot boot now leaves the running opencode in place and reports why,
       // rather than taking the session down with it.
       const result = await this.reloadVerified()
       if (result.outcome === 'kept-old') {
         logger.warn('[opencode] reload kept the previous instance', { reason: result.reason })
-        return 'kept-old'
+        // Nothing was replaced, so nothing was interrupted.
+        return { how: 'kept-old', turnEnded: false }
       }
-      // A swap strands the turn the retired process was running exactly as a
-      // restart did — same finalize, same reason (see restart()).
-      if (options.onUnplannedRespawn) {
-        const ready = await waitUntilReady(RESPAWN_FINALIZE_TIMEOUT_MS)
-        if (ready) {
-          try {
-            options.onUnplannedRespawn()
-          } catch (err) {
-            logger.warn('[opencode] post-swap finalize hook threw', {
-              err: (err as Error).message,
-            })
-          }
-        }
-      }
-      return 'restarted'
+      // No finalize here: reloadVerified() owns it now, so /kortix/refresh —
+      // which calls it directly — stops stranding the turn it interrupts.
+      return { how: 'restarted', turnEnded: result.turnEnded }
     },
 
     /** Promote the verified process before retiring the previous process. */
@@ -1701,10 +1753,22 @@ export function createOpencodeSupervisor(
         previousPort,
         previousPid: previous?.pid ?? null,
       })
+
+      // Finalize HERE, not in reloadConfig.
+      //
+      // A turn ends only when opencode emits session.idle/session.error over
+      // SSE. The process we just retired emits neither, so its last assistant
+      // message stays incomplete and every client streaming it spins forever.
+      // reloadConfig used to own this, which left `/kortix/refresh` — the one
+      // route that calls reloadVerified directly — stranding the turn it
+      // interrupted. Retiring the process and closing its turn belong together.
+      const turnEnded = await finalizeAfterReplacement()
+
       return {
         outcome: 'swapped',
         port: activePort,
         pid: this.getPid(),
+        turnEnded,
       }
     },
 
@@ -1727,6 +1791,10 @@ export function createOpencodeSupervisor(
 
     getPid() {
       return child?.pid ?? null
+    },
+
+    getActivePort() {
+      return activePort
     },
 
     getInternalUrl() {

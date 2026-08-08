@@ -4,6 +4,7 @@ import type {
   ConnectorDraftInput,
   ConnectorSyncResult,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 const MAX_CONNECTOR_SLUG_LENGTH = 128;
 
@@ -28,7 +29,7 @@ export type ConnectorSetupStatus =
 
 export function connectorConnectionQueryKeys(projectId: string) {
   return [
-    ['project-connectors', projectId],
+    qk.project.connectors(projectId),
     ['connections', projectId],
     ['connections-all', projectId],
     ['session-scope-catalog', projectId],

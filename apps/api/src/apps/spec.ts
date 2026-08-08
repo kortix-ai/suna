@@ -110,6 +110,34 @@ async function loadDockerfile(sourceDir: string, requested = 'Dockerfile'): Prom
   return { path, contents };
 }
 
+/**
+ * Provider exec APIs do not inherit the image config's WorkingDir. Preserve the
+ * final Dockerfile stage's literal WORKDIR in the immutable App runtime spec so
+ * relative commands keep normal Docker semantics when appd starts them.
+ */
+function finalDockerfileWorkdir(contents: string): string | undefined {
+  let workdir = '/';
+  const logicalLines = contents.replace(/\\\s*\r?\n/g, ' ').split(/\r?\n/);
+  for (const line of logicalLines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = /^([a-z]+)\s+(.+)$/i.exec(trimmed);
+    if (!match) continue;
+    const instruction = match[1]!.toUpperCase();
+    if (instruction === 'FROM') {
+      workdir = '/';
+      continue;
+    }
+    if (instruction !== 'WORKDIR') continue;
+    const value = match[2]!.trim().replace(/^(["'])(.*)\1$/, '$2');
+    // Docker expands ARG/ENV here during the image build. The API cannot do so
+    // without the build environment, so leave variable-based commands alone.
+    if (!value || value.includes('$')) return undefined;
+    workdir = value.startsWith('/') ? posix.normalize(value) : posix.resolve(workdir, value);
+  }
+  return workdir;
+}
+
 export async function normalizeAppBuild(
   source: AppSourceSpec,
   extractedSourceDir?: string,
@@ -176,6 +204,7 @@ export async function normalizeAppBuild(
         dockerfile: loaded.contents,
         runtimeSpec: {
           command: command(source.command),
+          workdir: finalDockerfileWorkdir(loaded.contents),
           target_port: targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),

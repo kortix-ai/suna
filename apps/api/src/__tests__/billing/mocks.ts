@@ -337,6 +337,12 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   return {
     id: 'cs_test_123',
     mode: 'subscription',
+    // Real Stripe always sets these two on a completed session. `payment_status`
+    // is the fraud gate in handleSubscriptionCheckout: only 'paid' activates.
+    // Defaulting it to 'paid' keeps this factory a HAPPY-PATH factory; tests for
+    // the unpaid path override it explicitly.
+    status: 'complete',
+    payment_status: 'paid',
     subscription: 'sub_test_123',
     customer: 'cus_test_123',
     customer_email: 'test@example.com',

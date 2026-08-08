@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
+  isLegacyMigratedSession,
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
@@ -56,7 +57,7 @@ describe('sessionDisplayStatus', () => {
 
   test('every display status has a label', () => {
     const all: SessionDisplayStatus[] = [
-      'needs-you', 'starting', 'running', 'done', 'stopped', 'failed',
+      'needs-you', 'starting', 'running', 'done', 'stopped', 'failed', 'legacy',
     ];
     for (const value of all) {
       expect(SESSION_DISPLAY_STATUS_LABELS[value]).toBeTruthy();
@@ -79,6 +80,49 @@ describe('sessionDisplayStatus', () => {
 
   test('labels never say "Active" — the data cannot support it', () => {
     expect(Object.values(SESSION_DISPLAY_STATUS_LABELS)).not.toContain('Active');
+  });
+});
+
+describe('legacy migrated sessions', () => {
+  const legacyMeta = {
+    legacy_migration: { run_id: 'suna-a1', source_sandbox_id: 'proj-1' },
+  };
+
+  test('detected by legacy_migration metadata', () => {
+    expect(isLegacyMigratedSession(makeSession({ metadata: legacyMeta }))).toBe(true);
+    expect(isLegacyMigratedSession(makeSession({ metadata: {} }))).toBe(false);
+    expect(isLegacyMigratedSession(makeSession())).toBe(false);
+  });
+
+  test("dormant migrated sessions display as 'legacy', never 'done' or 'stopped'", () => {
+    expect(sessionDisplayStatus(makeSession({ status: 'completed', metadata: legacyMeta }))).toBe(
+      'legacy',
+    );
+    expect(sessionDisplayStatus(makeSession({ status: 'stopped', metadata: legacyMeta }))).toBe(
+      'legacy',
+    );
+  });
+
+  test('a restored (live) migrated session keeps its live paint', () => {
+    expect(sessionDisplayStatus(makeSession({ status: 'running', metadata: legacyMeta }))).toBe(
+      'running',
+    );
+    expect(sessionDisplayStatus(makeSession({ status: 'provisioning', metadata: legacyMeta }))).toBe(
+      'starting',
+    );
+  });
+
+  test('a pending review still outranks the legacy state', () => {
+    expect(sessionDisplayStatus(makeSession({ status: 'completed', metadata: legacyMeta }), 1)).toBe(
+      'needs-you',
+    );
+  });
+
+  test("the 'legacy' filter matches migrated sessions; 'done' does not", () => {
+    const dormant = makeSession({ status: 'completed', metadata: legacyMeta });
+    expect(matchesStatusFilters(dormant, ['legacy'])).toBe(true);
+    expect(matchesStatusFilters(dormant, ['done'])).toBe(false);
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['legacy'])).toBe(false);
   });
 });
 

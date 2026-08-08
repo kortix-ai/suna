@@ -14,6 +14,9 @@ import {
 
 export const APP_CONTROL_PORT = 7331;
 export const APP_INGRESS_PORT = 8080;
+const APP_PROVIDER_WAKE_TIMEOUT_MS = 30_000;
+const APP_PROVIDER_WAKE_POLL_MS = 250;
+const APPD_RESTART_INTERVAL_MS = 5_000;
 
 export interface AppMachineSpec {
   cpuCores: number;
@@ -149,18 +152,54 @@ export class AppHostingProvider {
 
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {
     const runtimeProvider = this.dependencies.runtimeProvider(provider);
-    await runtimeProvider.start(externalId);
+    try {
+      await runtimeProvider.start(externalId);
+    } catch (error) {
+      // Concurrent cold requests can both observe the provider-stopped signal.
+      // Treat an already-running provider as a successful idempotent start.
+      const status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+      if (status !== 'running') throw error;
+    }
+    await this.waitForProviderRunning(runtimeProvider, externalId);
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }
 
   async ensureRunning(provider: SandboxProviderName, externalId: string): Promise<void> {
     const runtimeProvider = this.dependencies.runtimeProvider(provider);
     await runtimeProvider.ensureRunning(externalId);
+    await this.waitForProviderRunning(runtimeProvider, externalId);
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
   }
 
+  private async waitForProviderRunning(
+    runtimeProvider: SandboxProvider,
+    externalId: string,
+  ): Promise<void> {
+    const deadline = Date.now() + APP_PROVIDER_WAKE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const providerStatus = await runtimeProvider.getStatus(externalId);
+      if (providerStatus === 'running') return;
+      if (providerStatus === 'removed' || providerStatus === 'terminal') {
+        throw new Error(`App provider runtime ${externalId} entered ${providerStatus} while waking`);
+      }
+      await this.dependencies.sleep(APP_PROVIDER_WAKE_POLL_MS);
+    }
+    throw new Error(`App provider runtime ${externalId} did not become running within ${APP_PROVIDER_WAKE_TIMEOUT_MS}ms`);
+  }
+
   async stop(provider: SandboxProviderName, externalId: string): Promise<void> {
-    await this.dependencies.runtimeProvider(provider).stop(externalId);
+    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    try {
+      await runtimeProvider.stop(externalId);
+    } catch (error) {
+      // Provider stop endpoints are not consistently idempotent. Daytona, for
+      // example, rejects a second stop after it already archived the sandbox.
+      // Confirm provider truth before deciding whether the operation failed.
+      const status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
+      if (status === 'stopped' || status === 'removed') return;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message} (provider status: ${status})`, { cause: error });
+    }
   }
 
   async remove(provider: SandboxProviderName, externalId: string): Promise<void> {
@@ -221,6 +260,7 @@ export class AppHostingProvider {
   ): Promise<AppdStatus> {
     const deadline = Date.now() + timeoutMs;
     let lastError = 'runtime did not answer';
+    let nextRestartAt = 0;
     while (Date.now() < deadline) {
       try {
         const status = await this.status(provider, externalId, runtimeId);
@@ -232,6 +272,15 @@ export class AppHostingProvider {
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('kortix-appd failed')) throw error;
         lastError = error instanceof Error ? error.message : String(error);
+        const unauthorized = /kortix-appd status returned (?:401|403):/.test(lastError);
+        if (!unauthorized && Date.now() >= nextRestartAt) {
+          nextRestartAt = Date.now() + APPD_RESTART_INTERVAL_MS;
+          try {
+            await this.dependencies.runtimeProvider(provider).ensureAppRuntimeStarted(externalId);
+          } catch (restartError) {
+            lastError = `appd restart failed: ${restartError instanceof Error ? restartError.message : String(restartError)}`;
+          }
+        }
       }
       await this.dependencies.sleep(500);
     }

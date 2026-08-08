@@ -69,7 +69,9 @@ import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk';
 import {
   type Agent,
+  contract,
   modelKeyToWire,
+  qk,
   useRuntimeProviders,
   useVisibleAgents,
   wireToModelKey,
@@ -100,10 +102,10 @@ const SLACK_MANIFEST_STEPS = [
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId ?? ''),
     queryFn: () => getProject(projectId ?? ''),
     enabled: Boolean(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const teamsChannelEnabled = projectQuery.data?.experimental?.teams === true;
@@ -344,9 +346,9 @@ function ChannelBindingTableRow({
   canWrite: boolean;
 }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   // `can_manage` is the coarse project-manage flag; AND it with the real
   // connector write leaf so a READ-only connector role can't edit bindings

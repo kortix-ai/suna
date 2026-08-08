@@ -2,15 +2,19 @@ import { spawn } from 'bun';
 import { run, which } from './exec';
 
 export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
-  const builds: Array<[string, string]> = [
+  const packageBuilds: Array<[string, string]> = [
     ['sandbox agent', '@kortix/sandbox-agent-server'],
     ['CLI', '@kortix/cli'],
   ];
-  for (const [label, filter] of builds) {
+  for (const [label, filter] of packageBuilds) {
     console.log(`  building ${label} runtime artifact`);
     const code = await run(['pnpm', '--filter', filter, 'build'], { cwd: worktreePath });
     if (code !== 0) return code;
   }
+  const [label, script] = ['Apps runtime', 'apps/kortix-app-runtime/build.sh'];
+  console.log(`  building ${label} runtime artifact`);
+  const code = await run(['bash', script], { cwd: worktreePath });
+  if (code !== 0) return code;
   return 0;
 }
 

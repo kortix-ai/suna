@@ -423,7 +423,7 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix assigns a computer to a session. Daytona, Platinum, E2B, and the experimental local-Docker provider implement one provider interface. The session branch and sandbox share the session identity. The control plane extends a bounded sandbox deadline when it observes a turn start, gateway LLM activity, or authenticated preview traffic. A terminal turn shortens that deadline to the idle grace period. Passive traffic from an open conversation tab cannot keep the sandbox alive, and one continuous running stretch is capped at 24 hours. A stopped session can resume on the same provider identity or recover through the provider-specific path.',
+      text: 'Kortix assigns a computer to a session. Daytona, Platinum, and E2B implement one provider interface. The session branch and sandbox share the session identity. The control plane extends a bounded sandbox deadline when it observes a turn start, gateway LLM activity, or authenticated preview traffic. A terminal turn shortens that deadline to the idle grace period. Passive traffic from an open conversation tab cannot keep the sandbox alive, and one continuous running stretch is capped at 24 hours. A stopped session can resume on the same provider identity or recover through the provider-specific path.',
     },
     {
       type: 'p',

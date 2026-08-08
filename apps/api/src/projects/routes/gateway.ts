@@ -35,8 +35,7 @@ import {
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { config } from '../../config';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import {
   getProjectRoutingPolicy,
@@ -1295,9 +1294,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
     const principal: AuthedPrincipal = {
       userId: loaded.userId,
       accountId: loaded.row.accountId,

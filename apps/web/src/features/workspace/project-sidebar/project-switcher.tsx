@@ -45,12 +45,8 @@ import { resolveSwitcherLabel } from '@/features/workspace/project-sidebar/proje
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
-import {
-  getProjectDetail,
-  listAccounts,
-  listProjectsForAccount,
-  type KortixProject,
-} from '@kortix/sdk';
+import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { contract, qk, useProjectName } from '@kortix/sdk/react';
 import { formatRelative } from '@kortix/shared';
 import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
@@ -109,32 +105,34 @@ export function ProjectSwitcher({
     null;
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', activeAccount?.account_id],
+    queryKey: qk.projects.list(activeAccount?.account_id),
     queryFn: () => listProjectsForAccount(activeAccount?.account_id),
     enabled: !!activeAccount,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
-  const activeProject = useMemo(
-    () =>
-      activeProjectId && projectsQuery.data
-        ? (projectsQuery.data.find((p) => p.project_id === activeProjectId) ?? null)
-        : null,
+  // One SOURCE for the project name — `useProjectName`, i.e. the project
+  // detail entry. The two-source fallback that used to live here read the
+  // LIST first, so a rename that invalidated only the list made this label
+  // disagree with the project home title for a full gcTime. Do not
+  // reintroduce a fallback to another source — see `useProjectName`'s doc
+  // comment.
+  //
+  // The list still supplies a PLACEHOLDER, which is a different thing: coming
+  // from /projects the list is warm and the detail is cold, so a detail-only
+  // label showed a skeleton for a name that was on screen one route earlier.
+  // `resolveSwitcherLabel` consults it only while the detail has produced
+  // nothing — see its doc comment for the invariant. Passed raw, NOT `?? null`:
+  // `undefined` is what distinguishes "no detail yet" from "detail says blank".
+  const activeProjectName = useProjectName(activeProjectId ?? undefined);
+  const listProjectName = useMemo(
+    () => projectsQuery.data?.find((p) => p.project_id === activeProjectId)?.name,
     [projectsQuery.data, activeProjectId],
   );
-
-  // The project list is the slow way to learn the open project's name — it
-  // waits on `accounts` first. This is the SAME cache entry the project shell
-  // already fetches on mount, so subscribing costs no extra request and names
-  // the project as early as anything on the page can.
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', activeProjectId],
-    queryFn: () => getProjectDetail(activeProjectId as string),
-    enabled: !!activeProjectId,
-  });
   const { label: switcherLabel, pending: labelPending } = resolveSwitcherLabel({
     activeProjectId,
-    activeProjectName: activeProject?.name ?? projectDetailQuery.data?.project?.name ?? null,
+    activeProjectName,
+    placeholderProjectName: listProjectName,
   });
 
   useEffect(() => {

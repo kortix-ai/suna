@@ -18,6 +18,7 @@ mkdir -p "${runtime_dir}/dist"
 (
   cd "${runtime_dir}/caddy"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -buildvcs=false \
     -trimpath \
     -ldflags='-s -w' \
     -o "${runtime_dir}/dist/caddy-linux-amd64" \
