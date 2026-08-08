@@ -798,20 +798,22 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step(
-      "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
-      async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/sandbox-provider',
-            { provider: 'daytona' },
-            { params: { projectId: p.id } },
-          );
-        // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-        r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
-      },
-    );
+    if (ctx.env.target !== 'local') {
+      await ctx.step(
+        "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .patch(
+              '/v1/projects/:projectId/sandbox-provider',
+              { provider: 'daytona' },
+              { params: { projectId: p.id } },
+            );
+          // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
+          r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
+        },
+      );
+    }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

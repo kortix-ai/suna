@@ -413,6 +413,30 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
     }
   });
 
+  test.serial('external marketplace loading can be disabled for local runs', async () => {
+    let fetched = false;
+    const previous = process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED;
+    process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED = '0';
+    registerMarketplaceSourceProvider(async () => [
+      { id: 's1', address: 'github:mockorg/mockrepo', addedAt: '2026-06-16T00:00:00.000Z' },
+    ]);
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response('unexpected request', { status: 500 });
+    }) as unknown as typeof fetch;
+    _resetExternalCache();
+    try {
+      await listCatalogItems();
+      expect(fetched).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED;
+      else process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED = previous;
+      restoreFetch();
+      registerMarketplaceSourceProvider(async () => []);
+      _resetExternalCache();
+    }
+  });
+
   test.serial('bounds concurrent external registry loads', async () => {
     const sourceCount = 12;
     let active = 0;

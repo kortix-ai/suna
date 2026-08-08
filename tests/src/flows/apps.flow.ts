@@ -218,7 +218,7 @@ flow(
           "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
           { params: deploymentParams },
         );
-        logs.status(409);
+        logs.status(404);
       },
     );
 

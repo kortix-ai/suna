@@ -797,6 +797,7 @@ removes the App from subsequent reads. Invalid slugs → 400; `NONMEMBER` → 40
 or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
 awaiting archive. `POST …/:appId/deployments` requires a ready artifact and an
 exact source-kind match. Deployment list/detail/logs expose durable state.
+Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
 back an unknown deployment, or starting/stopping an undeployed App → 409/400 as

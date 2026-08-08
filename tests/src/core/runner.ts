@@ -19,6 +19,7 @@ import { log } from "./log";
 import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows } from "./lanes";
 import { mapWithConcurrency } from "./concurrency";
+import { planLocalFlows } from "./local-profile";
 import { ke2eRetryDelayMs } from "./client";
 import {
   summarize,
@@ -33,6 +34,7 @@ import type { FlowContext } from "./types";
 import { buildWorld, type World } from "../fixtures/world";
 
 export interface RunOptions {
+  profile?: "all" | "local";
   ids?: string[];
   domains?: string[];
   tags?: string[];
@@ -99,7 +101,13 @@ async function runOneFlow(
   const flowStart = performance.now();
   // Every flow gets one clean retry for errors explicitly marked as
   // infrastructure failures. Assertion failures never retry.
-  const maxAttempts = f.meta.retry?.attempts ?? DEFAULT_FLOW_ATTEMPTS;
+  const configuredAttempts = Number(
+    process.env.KE2E_DEFAULT_FLOW_ATTEMPTS ?? DEFAULT_FLOW_ATTEMPTS,
+  );
+  const defaultAttempts = Number.isFinite(configuredAttempts)
+    ? Math.max(1, Math.trunc(configuredAttempts))
+    : DEFAULT_FLOW_ATTEMPTS;
+  const maxAttempts = f.meta.retry?.attempts ?? defaultAttempts;
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
@@ -228,7 +236,25 @@ function positiveWorkerCount(value: number | undefined, fallback: number): numbe
 export async function runSuite(opts: RunOptions): Promise<RunResult> {
   const env = loadEnv();
   await discoverFlows();
-  const flows = allFlows().filter((f) => selected(f, opts));
+  const candidates = allFlows().filter((f) => selected(f, opts));
+  const localPlan = opts.profile === "local" ? planLocalFlows(candidates) : null;
+  const flows = localPlan?.runnable ?? candidates;
+  if (flows.length === 0) {
+    const excluded = localPlan?.excluded
+      .map((flow) => `${flow.id} (${flow.reason})`)
+      .join(", ");
+    throw new Error(
+      excluded
+        ? `no local flows selected; excluded: ${excluded}`
+        : "no flows matched the selected filters",
+    );
+  }
+  if (localPlan) {
+    log.info(
+      `local profile: ${flows.length}/${candidates.length} selected · ` +
+        `${localPlan.excluded.length} external/todo excluded`,
+    );
+  }
   const routesHit = new Set<string>();
   const startedAt = new Date().toISOString();
   const start = performance.now();
@@ -306,6 +332,8 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       target: env.target,
       gitSha: opts.gitSha ?? null,
       capabilities: env.capabilities as unknown as Record<string, boolean>,
+      profile: opts.profile ?? "all",
+      excludedFlows: localPlan?.excluded ?? [],
       routesHit: [...routesHit].sort(),
       flows: out,
       summary: summarize(out, durationMs),

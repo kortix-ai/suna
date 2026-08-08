@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/core/env';
@@ -7,6 +8,7 @@ import {
   deleteDatabaseProject,
   type OpenProjectDb,
 } from '../src/fixtures/database-project';
+import { createLocalGitRepository } from '../src/fixtures/local-git';
 
 function env(overrides: Partial<Env> = {}): Env {
   return {
@@ -72,8 +74,55 @@ describe('database-only project fixture', () => {
       '11111111-1111-4111-8111-111111111111',
       '22222222-2222-4222-8222-222222222222',
       'e2e-project',
+      null,
     ]);
     expect(db.end).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a local Git remote for black-box repository flows', async () => {
+    const db = database();
+
+    const project = await createDatabaseProject(
+      env({ target: 'local' }),
+      {
+        accountId: '11111111-1111-4111-8111-111111111111',
+        userId: '22222222-2222-4222-8222-222222222222',
+        name: 'local-project',
+        repoUrl: '/tmp/ke2e-local.git',
+      },
+      db.open,
+    );
+
+    expect(db.query.mock.calls[0][1]).toEqual([
+      project.id,
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      'local-project',
+      '/tmp/ke2e-local.git',
+    ]);
+  });
+
+  it('creates a seeded local bare repository without a network dependency', async () => {
+    const repository = await createLocalGitRepository('local-fixture');
+    try {
+      const head = spawnSync(
+        'git',
+        ['--git-dir', repository.repoUrl, 'rev-parse', 'refs/heads/main'],
+        { encoding: 'utf8' },
+      );
+      expect(head.status).toBe(0);
+      expect(head.stdout.trim()).toMatch(/^[0-9a-f]{40}$/);
+      const manifest = spawnSync(
+        'git',
+        ['--git-dir', repository.repoUrl, 'show', 'main:kortix.yaml'],
+        { encoding: 'utf8' },
+      );
+      expect(manifest.status).toBe(0);
+      expect(manifest.stdout).toContain('kortix_version: 2');
+      expect(manifest.stdout).toContain('default_agent: kortix');
+    } finally {
+      await repository.dispose();
+    }
   });
 
   it('deletes the project row directly and relies on database cascades', async () => {

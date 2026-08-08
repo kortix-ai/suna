@@ -74,6 +74,8 @@ export interface RunResult {
   target: string;
   gitSha: string | null;
   capabilities: Record<string, boolean>;
+  profile?: "all" | "local";
+  excludedFlows?: Array<{ id: string; reason: string }>;
   /** Every route template touched across the run (for coverage). */
   routesHit: string[];
   flows: FlowResult[];

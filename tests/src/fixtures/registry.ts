@@ -53,6 +53,22 @@ export class ResourceStack {
         }
         await this.deleteDatabaseProject(r.id);
         break;
+      case "local-git":
+        if (typeof r.meta?.dispose !== "function") {
+          throw new Error("local Git teardown is not configured");
+        }
+        await r.meta.dispose();
+        break;
+      case "tunnelPermission":
+        await this.admin.del("/v1/tunnel/permissions/:tunnelId/:permissionId", {
+          params: { tunnelId: r.meta?.tunnelId, permissionId: r.id },
+        });
+        break;
+      case "tunnelConnection":
+        await this.admin.del("/v1/tunnel/connections/:tunnelId", {
+          params: { tunnelId: r.id },
+        });
+        break;
       case "token":
         await this.admin.del("/v1/accounts/tokens/:id", { params: { id: r.id } });
         break;

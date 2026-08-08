@@ -25,6 +25,7 @@
     "test:shell:vps": "bash shell/vps/test-vps-e2e.sh",
     "playwright:install": "playwright install chromium",
     "ke2e": "bun bin/ke2e.ts",
+    "test:flows": "bun bin/ke2e.ts local",
     "coverage": "bun bin/ke2e.ts coverage",
     "gc": "bun bin/ke2e.ts gc",
     "report": "bun bin/ke2e.ts report",

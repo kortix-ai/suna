@@ -16,6 +16,7 @@ import { join } from 'node:path';
  *   bun scripts/migrate.ts down [--count=N]   roll back N (default 1)
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
  *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
+ *   bun scripts/migrate.ts local-up           loopback-only; tolerate cross-worktree ledger order
  *
  * DB URL: $DATABASE_URL, or --target=<env> (reads <ENV>_DB_URL / DATABASE_URL
  * from apps/api/.env so secrets never go through the shell).
@@ -28,6 +29,7 @@ import {
 } from './migration-ledger-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { migrationCheckOrder } from './migration-target';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -195,6 +197,7 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
+  const checkOrder = migrationCheckOrder(cmd, databaseUrl);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
   const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
 
@@ -204,7 +207,7 @@ async function main() {
     migrationsTable: 'pgmigrations',
     migrationsSchema: 'kortix_migrations',
     createMigrationsSchema: true,
-    checkOrder: true,
+    checkOrder,
     singleTransaction: true,
     verbose: false,
     logger: console,
@@ -246,6 +249,7 @@ async function main() {
   try {
     switch (cmd) {
       case 'up':
+      case 'local-up':
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
         await applyPendingMigrations();
@@ -283,7 +287,7 @@ async function main() {
         return;
       }
       default:
-        console.error(`Unknown command: ${cmd}. Use: up | status | down | fake | bootstrap`);
+        console.error(`Unknown command: ${cmd}. Use: up | local-up | status | down | fake | bootstrap`);
         process.exit(1);
     }
   } finally {

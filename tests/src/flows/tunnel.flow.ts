@@ -112,6 +112,7 @@ flow(
         .post("/v1/tunnel/connections", { name: ctx.fixtures.name("perm-tunnel"), capabilities: [] });
       r.status(201);
       tunnelId = r.json<any>().tunnelId;
+      ctx.track("tunnelConnection", tunnelId);
     });
 
     await ctx.step("list permissions (empty)", async () => {
