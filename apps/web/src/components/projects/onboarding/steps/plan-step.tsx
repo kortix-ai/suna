@@ -39,7 +39,18 @@ export function PlanStep({
   projectId,
   onContinue,
 }: {
-  projectId?: string;
+  /**
+   * REQUIRED, deliberately — this is the guard on the defect above.
+   *
+   * `useModelConnectionGate` falls back to `useParams().id` when given no
+   * explicit id, and `/new` has no `[id]` segment, so an omitted prop here
+   * silently reproduces the dead-click bug in full. Optional, it was
+   * unguardable: dropping `projectId={projectId}` at the single call site
+   * passed the entire test suite AND `tsc`, because a missing optional prop is
+   * legal and no test can see one that was never there. Required, the same
+   * edit is a compile error. Do not relax this to `?:`.
+   */
+  projectId: string;
   onContinue: () => void;
 }) {
   const { data: providers } = useRuntimeProviders();

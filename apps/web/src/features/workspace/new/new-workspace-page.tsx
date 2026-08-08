@@ -348,7 +348,11 @@ export function NewWorkspacePage() {
 
       {/* The way into the workspace, always. The gate above means the page has
           no other content while the param is set, and the wizard is `null`
-          until `getProjectDetail` settles — or forever, if that query errored.
+          until `getProjectDetail` settles — which, on an ERROR, it does: the
+          wizard then renders rather than staying null (see `onboarding-param.ts`
+          for why, and for why that is tolerable). So this link covers the
+          in-flight window and a query that never settles at all, not a
+          permanently-null wizard.
           The workspace has already been created and paid for, so a state with
           no route into it is not one this page is allowed to reach. This sits
           in normal flow rather than behind a readiness check because the wizard
@@ -393,10 +397,12 @@ export function NewWorkspacePage() {
       )}
 
       {/* The plan step's "See plans" option calls `openUpgrade()`, which needs a
-          mounted `GlobalUpgradeModal` to answer it. `AppProviders` — the only
-          other host — is mounted by `project-shell.tsx` and the share page,
-          never by `app/(app)/layout.tsx`, so on `/new` billing can be enabled
-          with no host at all and that option is a dead click. Same flag and
+          mounted `GlobalUpgradeModal` to answer it. The other hosts are
+          `AppProviders` (mounted by `project-shell.tsx` and the share page,
+          never by `app/(app)/layout.tsx`) and `accounts/[id]/page.tsx`, which
+          mounts one bare — the precedent that this mount follows. Neither
+          covers `/new`, so billing can be enabled here with no host at all and
+          that option is a dead click. Same flag and
           same line as `app-providers.tsx:139`. */}
       {isBillingEnabled() && <GlobalUpgradeModal />}
     </main>
