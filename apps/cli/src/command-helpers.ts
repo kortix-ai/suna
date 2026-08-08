@@ -1,3 +1,5 @@
+import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
+
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
@@ -428,8 +430,52 @@ async function probeConcurrently<Item, Result>(
   return found;
 }
 
+/**
+ * Pull the server's feature-flag gate message off an error, or null when the
+ * error is not that gate.
+ *
+ * The gate is one shape on the wire — 403 `{ error, code: 'feature_disabled',
+ * feature }` (apps/api/src/feature-flags/gate.ts) — but reaches the CLI as two
+ * error classes: the CLI's own `ApiError` keeps the parsed body in `.body`,
+ * while an SDK `ApiError` thrown by a `kortix.*` handle keeps it in
+ * `.details`/`.data` and lifts `code` onto the error. Both are read
+ * structurally here, and the status is deliberately NOT checked, so a future
+ * status carrying the same code still surfaces the same message.
+ */
+function featureDisabledMessage(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const carrier = err as {
+    code?: unknown;
+    message?: unknown;
+    body?: unknown;
+    details?: unknown;
+    data?: unknown;
+  };
+  const body = [carrier.body, carrier.details, carrier.data].find(
+    (candidate): candidate is Record<string, unknown> =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+  );
+  const code = typeof carrier.code === 'string' ? carrier.code : body?.code;
+  if (code !== FEATURE_DISABLED_CODE) return null;
+  // The server's prose already names the feature and points at
+  // Settings → Feature flags — print it verbatim rather than paraphrasing.
+  const fromBody = body?.error;
+  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
+  return typeof carrier.message === 'string' && carrier.message.length > 0
+    ? carrier.message
+    : null;
+}
+
 /** Print an HTTP error in a consistent style + return exit code 1. */
 export function surfaceApiError(err: unknown): number {
+  // The feature-flag gate is actionable on its own — never let it fall through
+  // to the generic 403 "you may not have permission" prose, which sends the
+  // user hunting for a role problem that does not exist.
+  const featureDisabled = featureDisabledMessage(err);
+  if (featureDisabled) {
+    process.stderr.write(`${status.err(featureDisabled)}\n`);
+    return 1;
+  }
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(

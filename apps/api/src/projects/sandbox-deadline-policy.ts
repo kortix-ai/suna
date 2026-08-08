@@ -64,6 +64,17 @@ export function turnGrantMs(): number {
 }
 
 /**
+ * Granted before a prompt reaches OpenCode. This covers env synchronization,
+ * token reminting, and one upstream delivery attempt. It does not assert that
+ * an agent is running. A successful OpenCode response upgrades the deadline to
+ * {@link turnGrantMs}; a failed delivery expires on this short grace instead of
+ * retaining a four-hour active-turn window.
+ */
+export function turnDeliveryGraceMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES', 15) * 60_000;
+}
+
+/**
  * Granted on a gateway LLM call — the MID-TURN extension.
  *
  * `usage_events` is written by the gateway (apps/api/src/llm-gateway/hooks.ts)
@@ -109,7 +120,7 @@ export function previewGrantMs(): number {
  *
  * A warm box is baked speculatively so that session start feels instant. Until
  * somebody claims it, it has no turns, no LLM calls and no human traffic — so it
- * can NEVER receive an extend, and under the plain 20-minute boot floor every
+ * can NEVER receive an extend, and under the plain 15-minute boot floor every
  * warm box was reaped before it could be handed out, which defeats the feature
  * outright. It therefore gets its lifetime up front instead of by observation.
  *
