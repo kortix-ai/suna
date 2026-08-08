@@ -139,6 +139,12 @@ describe('launch envs', () => {
     expect(env.STRIPE_WEBHOOK_SECRET).toBe('whsec_x');
   });
 
+  test('--billing exposes local billing routes without webhook forwarding', () => {
+    const env = apiLaunchEnv(ports, creds, { billing: true });
+    expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
+    expect(env.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+  });
+
   test('api and gateway share the SAME internal token (mutual auth invariant)', () => {
     const api = apiLaunchEnv(ports, creds);
     const gw = gatewayLaunchEnv(ports);

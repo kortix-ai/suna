@@ -12,6 +12,7 @@ interface SeedProjectOptions {
   userId: string;
   name: string;
   repoUrl?: string;
+  projectRole?: 'manager' | 'editor' | 'member';
 }
 
 export function runDatabaseSql(sql: string): void {
@@ -24,6 +25,7 @@ export function seedDatabaseProject({
   userId,
   name,
   repoUrl,
+  projectRole = 'editor',
 }: SeedProjectOptions): string {
   const projectId = randomUUID();
   const projectRepoUrl = repoUrl ?? `https://github.com/kortix-ai/browser-${projectId}.git`;
@@ -47,7 +49,7 @@ insert into kortix.project_members (
   '${escapeSql(accountId)}'::uuid,
   '${projectId}'::uuid,
   '${escapeSql(userId)}'::uuid,
-  'editor',
+  '${escapeSql(projectRole)}',
   '${escapeSql(userId)}'::uuid
 );
 `);

@@ -26,7 +26,7 @@ import {
   type AuthUser,
   createAuthUser,
   deleteAuthUser,
-  installBrowserSession,
+  installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
 
@@ -108,11 +108,11 @@ test.describe('12 — Sandbox templates UI', () => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    await installBrowserSession(
+    await installBrowserSessionDirect(
       page,
       session,
       `/projects/${projectId}/customize/sandbox`,
-      password,
+      authOptions,
     );
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
@@ -165,11 +165,11 @@ test.describe('12 — Sandbox templates UI', () => {
       }
     });
 
-    await installBrowserSession(
+    await installBrowserSessionDirect(
       page,
       session,
       `/projects/${projectId}/customize/sandbox`,
-      password,
+      authOptions,
     );
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;

@@ -342,6 +342,8 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   `pnpm dev` first.
 - `pnpm test -- --full` adds browser journeys and every app/package test. Start
   `pnpm dev` first.
+- In an isolated worktree, start the stack with
+  `pnpm worktree start <name> --billing` before browser or full tests.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 

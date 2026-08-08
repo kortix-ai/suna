@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test';
 import { json } from '../helpers/http';
-import { installBrowserSession, signIn } from '../helpers/session-auth';
+import { installBrowserSessionDirect, signIn } from '../helpers/session-auth';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -58,7 +58,7 @@ test.describe('09 - Admin operations console', () => {
     const session = await signIn(configuredAdminEmail, authOptions);
     // Let the assertions below own the admin navigations; otherwise the
     // immediate duplicate /admin load can abort Supabase's user fetch.
-    await installBrowserSession(page, session, '/favicon.png', password);
+    await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
 
     await assertAdminRouteClean(page, '/admin', ['Admin overview', 'Operations', 'Maintenance']);
 

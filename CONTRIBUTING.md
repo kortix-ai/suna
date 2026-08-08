@@ -62,6 +62,9 @@ pnpm test -- --browser-only    # Browser only; start pnpm dev first
 pnpm test -- --full            # Browser and all app/package tests; start pnpm dev first
 ```
 
+For an isolated worktree, start its stack with
+`pnpm worktree start <name> --billing` before browser or full tests.
+
 **Test-driven expectation:** when you add or change an HTTP route under `apps/api/src/**`,
 add or update the matching `ke2e` flow in `tests/src/flows/` and keep its `meta.routes` in
 sync. `bun tests/bin/ke2e.ts coverage` fails on any uncovered or unknown route.

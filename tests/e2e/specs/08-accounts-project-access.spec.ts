@@ -5,7 +5,7 @@ import { authHeaders, createApiJsonClient, createApiStatusClient } from '../help
 import {
   type AuthSession,
   createAuthUser,
-  installBrowserSession,
+  installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
 import { selectAccountForUi } from '../helpers/ui';
@@ -92,7 +92,13 @@ async function createProjectForAccessTest(
   const body = await response.text();
   if (response.status === 201) return JSON.parse(body) as ProjectSummary;
   if (response.status === 409 && body.includes('GitHub App installation required')) {
-    const projectId = seedDatabaseProject({ accountId, userId: ownerUserId, name, repoUrl });
+    const projectId = seedDatabaseProject({
+      accountId,
+      userId: ownerUserId,
+      name,
+      repoUrl,
+      projectRole: 'manager',
+    });
     return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
   }
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
@@ -330,7 +336,12 @@ test.describe('08 — Accounts, invites, and project access', () => {
       await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`),
     ).toBe(403);
 
-    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}`, password);
+    await installBrowserSessionDirect(
+      page,
+      ownerSession,
+      `/projects/${project.project_id}`,
+      authOptions,
+    );
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
@@ -364,7 +375,12 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     await expect(page.getByText(accountName).first()).toBeVisible();
 
-    await installBrowserSession(page, ownerSession, `/accounts/${account.account_id}`, password);
+    await installBrowserSessionDirect(
+      page,
+      ownerSession,
+      `/accounts/${account.account_id}`,
+      authOptions,
+    );
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
@@ -424,7 +440,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
     await expect(memberAccessRow.getByRole('combobox')).toContainText('User');
 
-    await installBrowserSession(page, memberSession, '/projects', password);
+    await installBrowserSessionDirect(page, memberSession, '/projects', authOptions);
     await selectAccountForUi(page, account.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
@@ -441,7 +457,12 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
     const invitedSession = await signIn(invitedEmail, authOptions);
     expect(invitedUser.id).toBeTruthy();
-    await installBrowserSession(page, invitedSession, `/invites/${accountInviteId}`, password);
+    await installBrowserSessionDirect(
+      page,
+      invitedSession,
+      `/invites/${accountInviteId}`,
+      authOptions,
+    );
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     if (page.url().includes(`/invites/${accountInviteId}`)) {
       await expect(page.getByText(/Team account/i)).toBeVisible();

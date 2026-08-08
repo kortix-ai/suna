@@ -1,4 +1,4 @@
-import { type Page, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { optionalEnvValue, requireEnvValue } from './env';
 import { json } from './http';
@@ -120,96 +120,6 @@ export async function signIn(email: string, options: AuthOptions): Promise<AuthS
     }),
     200,
   );
-}
-
-export async function installBrowserSession(
-  page: Page,
-  session: AuthSession,
-  returnUrl: string,
-  password: string,
-): Promise<void> {
-  await page.context().clearCookies();
-  const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-  if (vercelBypass) {
-    await page.context().setExtraHTTPHeaders({
-      'x-vercel-protection-bypass': vercelBypass,
-      'x-vercel-set-bypass-cookie': 'true',
-    });
-  }
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
-  if (vercelBypass) {
-    // The first request creates the web-origin _vercel_jwt cookie. Remove the
-    // Vercel-only headers before cross-origin requests reach the Kortix API.
-    await page.context().setExtraHTTPHeaders({});
-  }
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (
-      let attempt = 0;
-      attempt < 3 && !(await emailInput.isVisible().catch(() => false));
-      attempt++
-    ) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.waitForFunction(
-    () => {
-      const form = document.querySelector('form');
-      if (!form) return false;
-      const reactPropsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'));
-      if (!reactPropsKey) return false;
-      const reactProps = (form as unknown as Record<string, { onSubmit?: unknown }>)[reactPropsKey];
-      return typeof reactProps?.onSubmit === 'function';
-    },
-    null,
-    { timeout: 30_000 },
-  );
-  const signInTab = page.getByRole('tab', { name: /^Sign in$/i });
-  if (await signInTab.isVisible().catch(() => false)) {
-    await signInTab.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  const continueButton = page.getByRole('button', { name: /^Continue$/i });
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  const passwordInput = page.locator('input[name="password"]');
-  if (await continueButton.isVisible().catch(() => false)) {
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await expect(continueButton).toBeEnabled({ timeout: 60_000 });
-      await continueButton.click({ timeout: 60_000 });
-      if (
-        await usePassword
-          .or(passwordInput)
-          .isVisible({ timeout: 20_000 })
-          .catch(() => false)
-      ) {
-        break;
-      }
-    }
-  }
-  await expect(usePassword.or(passwordInput)).toBeVisible({ timeout: 45_000 });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await expect(passwordInput).toBeVisible({ timeout: 15_000 });
-  await passwordInput.fill(password);
-  await page
-    .locator('form')
-    .getByRole('button', { name: /^(Sign in|Continue)$/i })
-    .click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded', timeout: 180_000 });
 }
 
 /**

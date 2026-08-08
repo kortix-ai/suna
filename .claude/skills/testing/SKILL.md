@@ -45,6 +45,10 @@ pnpm test -- --browser-only    # Browser only; pnpm dev must be running
 pnpm test -- --full            # Browser plus all app/package tests; pnpm dev required
 ```
 
+For an isolated worktree, start its stack with
+`pnpm worktree start <name> --billing`. This exposes local billing routes
+without requiring Stripe webhook forwarding.
+
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release
 work.

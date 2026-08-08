@@ -5,7 +5,7 @@ import {
   type AuthUser,
   createAuthUser,
   deleteAuthUser,
-  installBrowserSession,
+  installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
 
@@ -55,11 +55,11 @@ test.describe('13 — Custom connector OAuth2', () => {
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
-    await installBrowserSession(
+    await installBrowserSessionDirect(
       page,
       session,
       `/projects/${projectId}/customize/connectors`,
-      password,
+      authOptions,
     );
     await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
     await page.getByRole('tab', { name: /^Custom$/ }).click();

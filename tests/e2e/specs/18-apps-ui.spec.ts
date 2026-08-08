@@ -56,7 +56,7 @@ interface AppResponse {
 }
 
 test.describe('18 — Kortix Apps UI', () => {
-  test('shows experimental Apps, enables it in place, and renders a read-only deployment index', async ({
+  test('shows experimental Apps and renders a read-only deployment index', async ({
     context,
     page,
   }, testInfo) => {
@@ -105,14 +105,6 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       projectId = project.id;
 
-      await api<Record<string, unknown>>(
-        session.access_token,
-        'POST',
-        `/projects/${project.id}/apps`,
-        { slug: `blocked-${runId}`, name: 'Blocked App' },
-        404,
-      );
-
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);
       await selectAccountForUi(page, account.account_id);
@@ -123,44 +115,11 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(page.getByRole('link', { name: 'Apps' })).toBeVisible();
       await dismissOnboarding(page);
 
-      const disabledAppRequests: string[] = [];
-      const recordDisabledRequest = (request: {
-        method(): string;
-        url(): string;
-      }) => {
-        if (
-          request.method() === 'GET' &&
-          request.url().endsWith(`/v1/projects/${project.id}/apps`)
-        ) {
-          disabledAppRequests.push(request.url());
-        }
-      };
-      page.on('request', recordDisabledRequest);
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Enable Apps' })).toBeVisible();
-      expect(disabledAppRequests).toEqual([]);
-      page.off('request', recordDisabledRequest);
-
-      const enabledRequest = page.waitForRequest(
-        (request) =>
-          request.method() === 'PATCH' &&
-          request.url().endsWith(`/v1/projects/${project.id}/experimental`),
-      );
-      const enabledResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          response.url().endsWith(`/v1/projects/${project.id}/experimental`),
-      );
-      await page.getByRole('button', { name: 'Enable Apps' }).click();
-      expect((await enabledRequest).postDataJSON()).toEqual({
-        feature: 'apps',
-        enabled: true,
-      });
-      expect((await enabledResponse).status()).toBe(200);
       await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(

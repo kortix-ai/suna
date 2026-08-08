@@ -24,9 +24,11 @@ pnpm test -- --browser-only    # Browser journeys; pnpm dev must be running
 pnpm test -- --full            # Core, browser, and every app/package test
 ```
 
-`--full` requires `pnpm dev` to be running. The runner reads the current
-worktree ports from `.kortix-worktree.json`. The primary checkout defaults to
-web `3000`, API `8008`, gateway `8090`, and Supabase `54321`.
+`--full` requires the local stack. Run `pnpm dev` in the primary checkout. In
+an isolated worktree, run `pnpm worktree start <name> --billing`; external
+Stripe webhook flows remain excluded. The runner reads the current worktree
+ports from `.kortix-worktree.json`. The primary checkout defaults to web
+`3000`, API `8008`, gateway `8090`, and Supabase `54321`.
 
 Every root run writes a machine-readable benchmark to:
 
