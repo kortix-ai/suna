@@ -9,28 +9,44 @@
  * the additive enum value idempotently (mirrors ensureSchema's push locally).
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { sql, eq, and } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
+  accounts,
+  tunnelAuditLogs,
   projects,
   tunnelConnections,
   tunnelPermissions,
-  executorConnectors,
-  executorConnectorActions,
+  connectors,
+  connectorActions,
 } from '@kortix/db';
-import { synthesizeComputerConnectors } from '../executor/computer-materialize';
-import { syncProjectConnectors } from '../executor/sync';
+import { synthesizeComputerConnectors } from '../connectors/computer-materialize';
+import { syncProjectConnectors } from '../connectors/sync';
 import { executeComputerCall, listAccountComputers } from '../tunnel/core/rpc-core';
-import { dbExecutorRouterDeps } from '../executor/db-deps';
+import { dbConnectorRouterDeps } from '../connectors/db-deps';
 
 let projectId = '';
 let accountId = '';
 let tunnelId = '';
-let originalMetadata: unknown = null;
 let seeded = false;
+let fixtureRoot = '';
+let previousGitCacheDir: string | undefined;
+
+function git(args: string[], cwd: string): void {
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
+}
 
 beforeAll(async () => {
-  await db.execute(sql`alter type kortix.executor_connector_provider add value if not exists 'computer'`);
+  await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
   await db.execute(sql`
     alter table kortix.tunnel_connections
       add column if not exists relay_owner_id varchar(255),
@@ -39,24 +55,34 @@ beforeAll(async () => {
       add column if not exists relay_owner_heartbeat_at timestamp with time zone
   `);
 
-  const rows = (await db.execute(
-    sql`select project_id, account_id, metadata from kortix.projects limit 1`,
-  )) as unknown as Array<{ project_id: string; account_id: string; metadata: unknown }>;
-  const proj = rows[0];
-  if (!proj) {
-    console.warn('[integration] no project in local DB — skipping computer connector e2e');
-    return;
-  }
-  projectId = proj.project_id;
-  accountId = proj.account_id;
-  originalMetadata = proj.metadata ?? {};
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'kortix-computer-connector-'));
+  previousGitCacheDir = process.env.KORTIX_GIT_CACHE_DIR;
+  process.env.KORTIX_GIT_CACHE_DIR = join(fixtureRoot, 'git-cache');
+  const repository = join(fixtureRoot, 'repository');
+  mkdirSync(repository, { recursive: true });
+  git(['init', '-b', 'main'], repository);
+  git(['config', 'user.email', 'computer-connector@kortix.test'], repository);
+  git(['config', 'user.name', 'Computer Connector Test'], repository);
+  writeFileSync(
+    join(repository, 'kortix.yaml'),
+    ['kortix_version: 2', 'project:', '  name: Computer Connector Test', ''].join('\n'),
+    'utf8',
+  );
+  git(['add', 'kortix.yaml'], repository);
+  git(['commit', '-m', 'initial'], repository);
 
-  // Opt the project into agent_tunnel (the synth gate).
-  const meta = { ...(proj.metadata as Record<string, unknown> | null ?? {}) };
-  const exp = { ...((meta.experimental as Record<string, unknown> | undefined) ?? {}) };
-  exp.agent_tunnel = true;
-  meta.experimental = exp;
-  await db.update(projects).set({ metadata: meta }).where(eq(projects.projectId, projectId));
+  projectId = crypto.randomUUID();
+  accountId = crypto.randomUUID();
+  await db.insert(accounts).values({ accountId, name: `computer-connector-${accountId}` });
+  await db.insert(projects).values({
+    projectId,
+    accountId,
+    name: `computer-connector-${projectId}`,
+    repoUrl: repository,
+    defaultBranch: 'main',
+    manifestPath: 'kortix.yaml',
+    metadata: { experimental: { agent_tunnel: true } },
+  });
 
   // Seed a machine that has connected before and is now offline (closed
   // laptop) — `lastHeartbeatAt` is set because device-auth approval is
@@ -80,10 +106,16 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!seeded) return;
   // Drop the materialized connector + the seeded tunnel (cascades permissions /
-  // requests), then restore the project's metadata.
-  await db.delete(executorConnectors).where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+  // requests), then remove the isolated project and account.
+  await db
+    .delete(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
   await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
-  await db.update(projects).set({ metadata: originalMetadata as any }).where(eq(projects.projectId, projectId));
+  await db.delete(projects).where(eq(projects.projectId, projectId));
+  await db.delete(accounts).where(eq(accounts.accountId, accountId));
+  if (previousGitCacheDir === undefined) delete process.env.KORTIX_GIT_CACHE_DIR;
+  else process.env.KORTIX_GIT_CACHE_DIR = previousGitCacheDir;
+  if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
 });
 
 describe('computer connector — real DB e2e', () => {
@@ -101,7 +133,10 @@ describe('computer connector — real DB e2e', () => {
     // Clear the experimental flag entirely: the connector no longer depends on
     // it (it's machine-driven like the Slack channel connector). Previously this
     // returned []; now the connected machine alone is enough.
-    await db.update(projects).set({ metadata: {} as any }).where(eq(projects.projectId, projectId));
+    await db
+      .update(projects)
+      .set({ metadata: {} as any })
+      .where(eq(projects.projectId, projectId));
     const specs = await synthesizeComputerConnectors(projectId, []);
     expect(specs).toHaveLength(1);
     expect(specs[0]!.slug).toBe('computer');
@@ -116,20 +151,23 @@ describe('computer connector — real DB e2e', () => {
       // isn't reachable from this test env, the install-driven computer synth
       // still runs — but if the whole sync throws, fall back to asserting synth
       // directly (covered above) and skip the row check.
-      console.warn('[integration] syncProjectConnectors threw (git backend?):', (e as Error).message);
+      console.warn(
+        '[integration] syncProjectConnectors threw (git backend?):',
+        (e as Error).message,
+      );
       return;
     }
     const [conn] = await db
       .select()
-      .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
     expect(conn).toBeTruthy();
     expect(conn!.providerType).toBe('computer');
 
     const actions = await db
       .select()
-      .from(executorConnectorActions)
-      .where(eq(executorConnectorActions.connectorId, conn!.connectorId));
+      .from(connectorActions)
+      .where(eq(connectorActions.connectorId, conn!.connectorId));
     expect(actions.length).toBeGreaterThan(5);
     expect(actions.some((a) => a.path === 'list_computers')).toBe(true);
     expect(actions.some((a) => a.path === 'fs.read')).toBe(true);
@@ -144,21 +182,24 @@ describe('computer connector — real DB e2e', () => {
     // The fix falls back to the materialized DB row.
     const [conn] = await db
       .select()
-      .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
     if (!conn) return; // sync skipped (git backend unreachable) — nothing materialized to read.
 
-    const policies = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'computer');
+    const policies = await dbConnectorRouterDeps.getConnectorPolicies!(projectId, 'computer');
     expect(policies).not.toBeNull(); // would have been null → 404 before the fix
     expect(Array.isArray(policies!.policies)).toBe(true);
 
-    const config = await dbExecutorRouterDeps.getConnectorConfig!(projectId, 'computer');
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(projectId, 'computer');
     expect(config).not.toBeNull();
     expect(config!.provider).toBe('computer');
     expect(config!.slug).toBe('computer');
 
     // A genuinely unknown slug must still be null → a true 404 (fallback doesn't mask it).
-    const missing = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'no-such-connector-xyz');
+    const missing = await dbConnectorRouterDeps.getConnectorPolicies!(
+      projectId,
+      'no-such-connector-xyz',
+    );
     expect(missing).toBeNull();
   });
 
@@ -177,10 +218,22 @@ describe('computer connector — real DB e2e', () => {
       .where(eq(tunnelConnections.tunnelId, tunnelId));
 
     try {
-      const out = await executeComputerCall({ accountId, selector: null, method: 'list_computers', args: {} });
+      const out = await executeComputerCall({
+        accountId,
+        selector: null,
+        method: 'list_computers',
+        args: {},
+      });
       expect(out.ok).toBe(true);
-      const machines = (out as { ok: true; data: { computers: Array<{ id: string; name: string; online: boolean }> } }).data.computers;
-      expect(machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine' && m.online)).toBe(true);
+      const machines = (
+        out as {
+          ok: true;
+          data: { computers: Array<{ id: string; name: string; online: boolean }> };
+        }
+      ).data.computers;
+      expect(
+        machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine' && m.online),
+      ).toBe(true);
 
       // direct helper sanity
       const direct = await listAccountComputers(accountId);
@@ -202,7 +255,12 @@ describe('computer connector — real DB e2e', () => {
 
   test('fs.read with no grant → permission_required (pending approval)', async () => {
     if (!seeded) return;
-    const out = await executeComputerCall({ accountId, selector: tunnelId, method: 'fs.read', args: { path: '/etc/hosts' } });
+    const out = await executeComputerCall({
+      accountId,
+      selector: tunnelId,
+      method: 'fs.read',
+      args: { path: '/etc/hosts' },
+    });
     expect(out.ok).toBe(false);
     if (!out.ok) {
       expect(out.kind).toBe('permission_required');
@@ -219,16 +277,38 @@ describe('computer connector — real DB e2e', () => {
       scope: {},
       status: 'active',
     });
-    const out = await executeComputerCall({ accountId, selector: tunnelId, method: 'fs.read', args: { path: '/etc/hosts' } });
+    const out = await executeComputerCall({
+      accountId,
+      selector: tunnelId,
+      method: 'fs.read',
+      args: { path: '/etc/hosts' },
+    });
     // Permission now passes; with no live WS agent the relay reports the machine
     // offline → a plain error (NOT permission_required anymore).
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.kind).toBe('error');
+
+    const [audit] = await db
+      .select({
+        phase: tunnelAuditLogs.phase,
+        success: tunnelAuditLogs.success,
+        errorMessage: tunnelAuditLogs.errorMessage,
+      })
+      .from(tunnelAuditLogs)
+      .where(and(eq(tunnelAuditLogs.tunnelId, tunnelId), eq(tunnelAuditLogs.operation, 'fs.read')));
+    expect(audit?.phase).toBe('failed');
+    expect(audit?.success).toBe(false);
+    expect(audit?.errorMessage).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
   test('an unknown machine selector → no_machine error', async () => {
     if (!seeded) return;
-    const out = await executeComputerCall({ accountId, selector: 'does-not-exist', method: 'fs.read', args: { path: '/x' } });
+    const out = await executeComputerCall({
+      accountId,
+      selector: 'does-not-exist',
+      method: 'fs.read',
+      args: { path: '/x' },
+    });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.kind).toBe('no_machine');
   });
@@ -271,7 +351,8 @@ describe('computer connector — real DB e2e', () => {
     });
 
     afterAll(async () => {
-      if (deadTunnelId) await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, deadTunnelId));
+      if (deadTunnelId)
+        await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, deadTunnelId));
       if (otherProjectId) await db.delete(projects).where(eq(projects.projectId, otherProjectId));
     });
 

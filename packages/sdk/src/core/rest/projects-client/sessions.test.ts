@@ -142,30 +142,16 @@ test('createProjectSession serializes non-secret runtime_context unchanged', asy
   });
 });
 
-test('createProjectSession serializes canonical connector authorization bindings', async () => {
+test('createProjectSession serializes canonical connection bindings', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-BINDING', name: null } };
   await createProjectSession('P1', {
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
   expect(last().body).toEqual({
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
-    },
-  });
-});
-
-test('createProjectSession retains deprecated profile_id input compatibility', async () => {
-  nextResponse = { status: 200, body: { session_id: 'NEW-LEGACY-BINDING', name: null } };
-  await createProjectSession('P1', {
-    connector_bindings: {
-      gmail: { profile_id: 'AUTH-1' },
-    },
-  });
-  expect(last().body).toEqual({
-    connector_bindings: {
-      gmail: { profile_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
 });
@@ -261,6 +247,18 @@ test('getSessionAudit appends ?limit= only when a limit is given', async () => {
 
   await getSessionAudit('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/audit');
+});
+
+test('getSessionAudit can poll approvals without refetching historical events', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', agent: null, count: 0, actions: [] } };
+  await getSessionAudit('P1', 'S1', 1000, {
+    cursor: '14|event-14',
+    includeEvents: false,
+    showErrors: false,
+  });
+  expect(last().url).toBe(
+    'http://test.local/projects/P1/sessions/S1/audit?limit=1000&cursor=14%7Cevent-14&include_events=false',
+  );
 });
 
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
@@ -465,7 +463,7 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
     required_connectors: null,
-    connector_bindings: { gmail: { authorization_id: 'AUTH-1' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-1' } },
     dropped_secrets: [],
     added_secrets: [],
     dropped_bindings: [],
@@ -476,15 +474,15 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   const result = await getProjectSessionScope('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
-  expect(result).toEqual(scope);
+  expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
 });
 
-test('setProjectSessionScope replaces connector authorizations with canonical input', async () => {
+test('setProjectSessionScope replaces connections with canonical input', async () => {
   nextResponse = {
     status: 200,
     body: {
       secrets_allowlist: [],
-      connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+      connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
       dropped_secrets: [],
       added_secrets: [],
       dropped_bindings: [],
@@ -494,16 +492,16 @@ test('setProjectSessionScope replaces connector authorizations with canonical in
   };
   const result = await setProjectSessionScope('P1', 'S1', {
     secrets: [],
-    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({
     secrets: [],
-    connector_bindings: { gmail: { authorization_id: 'AUTH-2' } },
+    connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
   expect(result.connector_bindings).toEqual({
-    gmail: { authorization_id: 'AUTH-2' },
+    gmail: { connection_id: 'AUTH-2' },
   });
 });
 

@@ -3,11 +3,12 @@
 import {
   type AdminConnector,
   type ConnectorAuthorizationStrategy,
-  listConnectionProfiles,
+  listConnections,
   listPipedreamApps,
   setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
+import { useProjectAccountId } from '@kortix/sdk/react';
 import { CheckIcon, KeyIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -28,7 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { connectorAuthorizationUpdateIsPending } from '@/features/workspace/customize/sections/connector-profile-form';
+import { connectorAuthorizationUpdateIsPending } from '@/features/workspace/customize/sections/connector-connection-form';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
 import { usePipedreamConnect } from '@/hooks/connectors/use-pipedream-connect-app';
 
@@ -36,7 +37,6 @@ import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
 } from '@/features/workspace/capabilities/connectors/connector-identity';
-import { useProjectAccountId } from '@/features/workspace/capabilities/shared/project-detail-query';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -186,16 +186,16 @@ function ConnectorModalBody({
 
   const [credOpen, setCredOpen] = useState(false);
 
-  const profilesQuery = useQuery({
-    queryKey: ['connector-profiles', projectId],
-    queryFn: () => listConnectionProfiles(projectId),
+  const connectionsQuery = useQuery({
+    queryKey: ['connections', projectId],
+    queryFn: () => listConnections(projectId),
     staleTime: 30_000,
     enabled: !isChannel && !isComputer,
   });
-  const connectionProfile = profilesQuery.data?.profiles.find(
+  const projectConnection = connectionsQuery.data?.connections.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
   );
-  const myPrivateProfile = profilesQuery.data?.profiles.find(
+  const myPrivateConnection = connectionsQuery.data?.connections.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
   );
 
@@ -220,12 +220,12 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
-  // `accountId` rides the ['project-detail'] cache the connectors page
-  // already filled, so the profiles probe resolves on the modal's first
+  // `accountId` rides the qk.project.detail(id) cache the connectors page
+  // already filled, so the connections probe resolves on the modal's first
   // render instead of after its own getProject round-trip.
   const accountId = useProjectAccountId(projectId);
-  const canManageProfiles =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE, { accountId })
+  const canManageConnections =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
       .allowed === true;
 
   const newSession = useNewProjectSession(projectId);
@@ -391,20 +391,20 @@ function ConnectorModalBody({
 
           <div className="bg-popover min-w-0 flex-1 overflow-hidden overflow-y-auto px-5 py-4 lg:px-6">
             <TabsContent value="accounts">
-              {profilesQuery.isError ? (
+              {connectionsQuery.isError ? (
                 <ErrorState
                   size="sm"
                   title="Couldn’t load connections"
                   description={
-                    profilesQuery.error instanceof Error
-                      ? profilesQuery.error.message
+                    connectionsQuery.error instanceof Error
+                      ? connectionsQuery.error.message
                       : 'The accounts stored for this connector could not be read.'
                   }
                   action={
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => void profilesQuery.refetch()}
+                      onClick={() => void connectionsQuery.refetch()}
                     >
                       Retry
                     </Button>
@@ -416,7 +416,7 @@ function ConnectorModalBody({
                   connector={connector}
                   displayName={displayName}
                   canWrite={canWrite}
-                  canManageProfiles={canManageProfiles}
+                  canManageConnections={canManageConnections}
                   strategyUpdating={strategyUpdating}
                   onChanged={onChanged}
                   onRemoved={onRemoved}
@@ -459,10 +459,10 @@ function ConnectorModalBody({
       <SetCredentialModal
         projectId={projectId}
         connector={credOpen ? connector : null}
-        profileId={
+        connectionId={
           usesProjectAuthorization
-            ? (connectionProfile?.profile_id ?? null)
-            : (myPrivateProfile?.profile_id ?? null)
+            ? (projectConnection?.connection_id ?? null)
+            : (myPrivateConnection?.connection_id ?? null)
         }
         authorizationStrategy={connector.authorizationStrategy}
         open={credOpen}

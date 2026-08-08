@@ -38,6 +38,7 @@ import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { REAP_CONCURRENCY } from '../reaper-constants';
 import { preserveEstablishedRuntime } from '../runtime-identity';
+import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import {
   countReapCandidates,
   markReaperVisited,
@@ -136,6 +137,10 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.skipped += 1;
             break;
           case 'reconcile-stopped':
+            if (providerStatus === 'stopped' && runtimeWakeInProgress(row.metadata, now)) {
+              result.skipped += 1;
+              break;
+            }
             await applyStoppedState({
               sandboxId: row.sandboxId,
               sessionId: row.sessionId,

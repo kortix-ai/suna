@@ -29,6 +29,7 @@ const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
+  macTrafficLightPosition,
 } = require('./window-chrome');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
@@ -332,14 +333,14 @@ function createMainWindow() {
     show: false, // revealed once the remote app finishes loading (splash covers the gap)
     backgroundColor: BG_COLOR,
     title: 'Kortix',
-    // macOS: hidden title bar with the traffic lights nudged down to sit
-    // vertically centered in the ~60px AppHeader bar (center ≈30px; the button
-    // center ≈ y + 6, so y=24). Kept in sync with the .kx-app-header min-height
-    // in globals.css and the collapsed-sidebar rail math.
+    // macOS: hidden title bar, traffic lights centered in the title-bar band
+    // the web app's first row shares with them. The band height and every
+    // offset derived from it live in ONE table (window-chrome.js →
+    // MAC_TITLEBAR); never re-hard-code a y here.
     ...(isMac
       ? {
           titleBarStyle: 'hidden',
-          trafficLightPosition: { x: 10, y: 24 },
+          trafficLightPosition: macTrafficLightPosition(),
         }
       : fs.existsSync(winIcon)
         ? { icon: winIcon }

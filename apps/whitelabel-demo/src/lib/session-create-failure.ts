@@ -55,8 +55,8 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
     // the platform, so this arm never once matched a real refusal. The wording
     // comes from the same classifier the connect card uses, so the toast and the
     // card cannot tell the user two different stories.
-    case 'CONNECTOR_AUTHORIZATION_REQUIRED':
-    case 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE': {
+    case 'CONNECTOR_CONNECTION_REQUIRED':
+    case 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE': {
       const requirement = connectorRequirement(err);
       const summary = requirement
         ? connectorRequirementSummary(requirement)
@@ -79,7 +79,7 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
         title: 'A selected secret is not available to sessions',
         detail:
           serverText ??
-          'One of the secrets you picked is owned by an integration rather than the project runtime. Deselect it and start again.',
+          'One of the secrets you picked is owned by a connector rather than the project runtime. Deselect it and start again.',
         retryable: false,
       };
     case 'SECRET_IDENTIFIER_KEY_COLLISION':
@@ -96,7 +96,7 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
         detail: serverText ?? 'Adjust the selected secrets and start again.',
         retryable: false,
       };
-    case 'CONNECTOR_PROFILE_NOT_FOUND':
+    case 'CONNECTOR_CONNECTION_NOT_FOUND':
       return {
         title: 'That connection no longer exists',
         detail:
@@ -104,7 +104,7 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
           'The connection you picked has been removed. Pick another, or ask a teammate to reconnect it.',
         retryable: false,
       };
-    case 'CONNECTOR_PROFILE_INACTIVE':
+    case 'CONNECTOR_CONNECTION_INACTIVE':
       return {
         title: 'That connection needs reconnecting',
         detail:

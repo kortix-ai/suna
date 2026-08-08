@@ -113,13 +113,11 @@ resource "aws_iam_role_policy_attachment" "execution" {
 
 # Let the execution role pull the values behind any injected secrets.
 #
-# Prefer secrets_blob_arn. ecs-deploy.sh builds every task-def revision by
-# reading EVERY key out of the kortix-<env>-env blob, so the blob — not this
-# module — is the source of truth for which secrets exist. Enumerating them in
-# var.secrets as well means keeping a second copy by hand, and that copy is
-# already wrong: prod's blob holds 132 keys against 100 in tfvars, and staging
-# has 106 with no tfvars at all. Granting on the blob ARN covers every key
-# forever and deletes the drift rather than tracking it.
+# Prefer secrets_blob_arn. ECS injects the complete secret JSON through one
+# stable task-definition selector. The application expands it into process.env
+# at startup. Adding or removing an optional JSON key does not invalidate an
+# existing task definition. Granting on the blob ARN covers every key without a
+# second hand-maintained selector list.
 #
 # var.secrets remains only as the fallback for callers that have not been
 # given a blob yet; it resolves to the same base ARNs.
@@ -426,7 +424,9 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [for k, v in local.environment : { name = k, value = v }]
-    secrets     = [for k, v in var.secrets : { name = k, valueFrom = v }]
+    secrets = var.secrets_blob_arn != "" ? [
+      { name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }
+    ] : [for k, v in var.secrets : { name = k, valueFrom = v }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {

@@ -2,10 +2,10 @@
 
 import {
   createConnector,
-  getDiscoverIntegration,
+  getDiscoverConnector,
   type ConnectorDraftInput,
+  type DiscoverConnector,
   type DiscoverConnectorTemplate,
-  type DiscoverIntegration,
 } from '@kortix/sdk';
 import { ArrowSquareOutIcon, CubeIcon, GlobeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -29,14 +29,14 @@ import {
   connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
-  proposeConnectorProfileSlug,
-  type EasyConnectProfileInput,
-} from '@/features/workspace/customize/sections/connector-profile-form';
-import { ConnectorProfileModal } from '@/features/workspace/customize/sections/connector-profile-modal';
+  proposeConnectorConnectionSlug,
+  type EasyConnectConnectionInput,
+} from '@/features/workspace/customize/sections/connector-connection-form';
+import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 /**
- * Add one catalog integration to the project: pick a published surface, name
- * the profile, create the connector.
+ * Add one catalog connector to the project: pick a published surface, name
+ * the connection, create the connector.
  *
  * ── Known duplication, read before changing either side ────────────────────
  * `features/workspace/customize/sections/discover-catalogue.tsx` implements
@@ -46,16 +46,16 @@ import { ConnectorProfileModal } from '@/features/workspace/customize/sections/c
  *
  * They were deliberately NOT unified. `connectors-view.discover.test.ts` pins
  * `discover-catalogue.tsx` at fourteen points of its *source text* — including
- * `'getDiscoverIntegration(projectId, selectedIntegration.id)'`,
- * `'createOnlyConnectorDraft(draft)'` and `'<ConnectorProfileModal'` — so
+ * `'getDiscoverConnector(projectId, selectedConnector.id)'`,
+ * `'createOnlyConnectorDraft(draft)'` and `'<ConnectorConnectionModal'` — so
  * extracting a shared module out of it would force a rewrite of a passing
  * contract test belonging to another surface. That was judged the worse trade.
  *
- * What is genuinely shared is already shared: `ConnectorProfileModal` and the
- * four helpers in `connector-profile-form.ts` are imported by both. The
+ * What is genuinely shared is already shared: `ConnectorConnectionModal` and the
+ * four helpers in `connector-connection-form.ts` are imported by both. The
  * duplication left here is the create mutation and the surface-picker markup.
  * This flow also carries no Pipedream branch — the browse grid is catalog
- * integrations only, so managed OAuth stays in the Add-connector modal.
+ * connectors only, so managed OAuth stays in the Add-connector modal.
  *
  * The one thing that HAS to match, and once did not, is `onAdded`: same
  * `(slug?: string)` signature, and the slug omitted on a sync failure. The two
@@ -70,7 +70,7 @@ interface VariantTarget {
 
 export function DiscoverAddFlow({
   projectId,
-  integration,
+  connector,
   existingSlugs,
   canWrite,
   onClose,
@@ -78,7 +78,7 @@ export function DiscoverAddFlow({
 }: {
   projectId: string;
   /** The card the user clicked, or `null` when nothing is open. */
-  integration: DiscoverIntegration | null;
+  connector: DiscoverConnector | null;
   existingSlugs: readonly string[];
   canWrite: boolean;
   onClose: () => void;
@@ -92,28 +92,28 @@ export function DiscoverAddFlow({
   onAdded: (slug?: string) => void;
 }) {
   // The variant the user picked, held separately so the surface list can close
-  // before the profile form opens (two stacked modals would trap focus twice).
+  // before the connection form opens (two stacked modals would trap focus twice).
   const [target, setTarget] = useState<VariantTarget | null>(null);
 
   // Same query key as `discover-catalogue.tsx` uses, so opening the same
-  // integration from either surface is one fetch, not two.
+  // connector from either surface is one fetch, not two.
   const detailQuery = useQuery({
-    queryKey: ['discover-integration-detail', projectId, integration?.id],
+    queryKey: ['discover-connector-detail', projectId, connector?.id],
     queryFn: () =>
-      integration
-        ? getDiscoverIntegration(projectId, integration.id)
-        : Promise.reject(new Error('No integration selected')),
-    enabled: Boolean(integration),
+      connector
+        ? getDiscoverConnector(projectId, connector.id)
+        : Promise.reject(new Error('No connector selected')),
+    enabled: Boolean(connector),
     staleTime: 15 * 60_000,
   });
 
-  const addProfile = useMutation({
+  const addConnection = useMutation({
     mutationFn: async ({
       variant,
-      profile,
+      connection,
     }: {
       variant: VariantTarget;
-      profile: EasyConnectProfileInput;
+      connection: EasyConnectConnectionInput;
     }) => {
       const template = variant.connector;
       const auth = template.auth
@@ -125,10 +125,10 @@ export function DiscoverAddFlow({
           }
         : undefined;
       const draft: ConnectorDraftInput = {
-        slug: profile.slug,
-        name: profile.name.trim(),
+        slug: connection.slug,
+        name: connection.name.trim(),
         provider: template.provider,
-        authorization_strategy: profile.authorizationStrategy,
+        authorization_strategy: connection.authorizationStrategy,
         ...(template.spec ? { spec: template.spec } : {}),
         ...(template.url ? { url: template.url } : {}),
         ...(template.transport ? { transport: template.transport } : {}),
@@ -160,17 +160,15 @@ export function DiscoverAddFlow({
     onError: (error: Error) => errorToast(error.message || 'Failed to add'),
   });
 
-  const profileName = target?.name ?? '';
+  const connectionName = target?.name ?? '';
 
   return (
     <>
-      <Modal open={integration !== null} onOpenChange={(open) => !open && onClose()}>
+      <Modal open={connector !== null} onOpenChange={(open) => !open && onClose()}>
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>{integration?.name ?? 'Integration'}</ModalTitle>
-            <ModalDescription>
-              Choose a surface published by {integration?.domain}.
-            </ModalDescription>
+            <ModalTitle>{connector?.name ?? 'Connector'}</ModalTitle>
+            <ModalDescription>Choose a surface published by {connector?.domain}.</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             {detailQuery.isLoading ? (
@@ -226,7 +224,7 @@ export function DiscoverAddFlow({
                         <Button
                           size="sm"
                           className="shrink-0"
-                          disabled={addProfile.isPending}
+                          disabled={addConnection.isPending}
                           onClick={() => {
                             const connector = variant.connector;
                             if (!connector) return;
@@ -264,22 +262,22 @@ export function DiscoverAddFlow({
         </ModalContent>
       </Modal>
 
-      <ConnectorProfileModal
+      <ConnectorConnectionModal
         open={target !== null}
-        idPrefix="browse-profile"
-        title={`Add ${profileName || 'integration'}`}
-        description="Create a connector profile. The display name and slug identify this specific connection in project configuration."
-        initialName={profileName}
-        initialSlug={target ? proposeConnectorProfileSlug(profileName, existingSlugs) : ''}
+        idPrefix="browse-connection"
+        title={`Add ${connectionName || 'connector'}`}
+        description="Create a connector connection. The display name and slug identify this connection in project configuration."
+        initialName={connectionName}
+        initialSlug={target ? proposeConnectorConnectionSlug(connectionName, existingSlugs) : ''}
         existingSlugs={existingSlugs}
-        pending={addProfile.isPending}
+        pending={addConnection.isPending}
         authorizationStrategyDisabled={
           target ? !connectorAuthorizationStrategyIsEditable(target.connector.provider) : false
         }
         onOpenChange={(open) => !open && setTarget(null)}
-        onSubmit={(profile) => {
+        onSubmit={(connection) => {
           if (!target) return;
-          addProfile.mutate({ variant: target, profile });
+          addConnection.mutate({ variant: target, connection });
         }}
       />
     </>

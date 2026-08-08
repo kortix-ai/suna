@@ -122,7 +122,7 @@ export interface AgentBlockV2 {
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   connectors?: GrantSetV2;
-  /** Connector profiles that must resolve before the session starts. Each
+  /** Connectors that must resolve before the session starts. Each
    *  entry must also exist in this agent's resolved `connectors` grant. */
   connectors_required?: string[];
   /** @deprecated Input alias for `connectors_required`. Serializers emit only
@@ -163,6 +163,34 @@ export interface ManifestV2 {
   sandbox?: Record<string, unknown>;
   triggers?: Array<Record<string, unknown>>;
   connectors?: Array<Record<string, unknown>>;
+  apps?: Record<string, AppBlockV2>;
+}
+
+export interface AppResourcesV2 {
+  cpu?: number;
+  memory_gb?: number;
+  disk_gb?: number;
+}
+
+/** Local deployment defaults. The server remains the App control plane. */
+export interface AppBlockV2 {
+  path?: string;
+  type?: 'static' | 'bundle' | 'dockerfile' | 'oci_image';
+  image?: string;
+  dockerfile?: string;
+  command?: string[];
+  port?: number;
+  root?: string;
+  output_dir?: string;
+  install_command?: string;
+  build_command?: string;
+  spa?: boolean;
+  readiness_path?: string;
+  idle_timeout_seconds?: number;
+  monthly_budget_usd?: number;
+  resources?: AppResourcesV2;
+  env?: Record<string, string>;
+  secrets?: Record<string, string>;
 }
 
 /**
@@ -198,7 +226,7 @@ function normalizeRequiredConnectorList(
   if (!Array.isArray(value)) {
     issues.push({
       path: where,
-      message: 'must be an array of connector profile slugs.',
+      message: 'must be an array of connector slugs.',
       severity: 'error',
     });
     return null;
@@ -210,7 +238,7 @@ function normalizeRequiredConnectorList(
     if (typeof item !== 'string' || item.trim() === '') {
       issues.push({
         path: `${where}[${index}]`,
-        message: 'entries must be non-empty connector profile slugs.',
+        message: 'entries must be non-empty connector slugs.',
         severity: 'error',
       });
       continue;
@@ -637,7 +665,7 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
   issues.push({
     path,
     message:
-      '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel integration itself is expressed as a connector (provider="channel").',
+      '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel connection is expressed as a connector (provider="channel").',
     severity: 'error',
   });
 }

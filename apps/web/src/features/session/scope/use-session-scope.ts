@@ -2,16 +2,16 @@
 
 import {
   getProjectSessionScope,
-  listConnectorAuthorizations,
+  listConnections,
   listConnectors,
   listProjectSecrets,
   setProjectSessionScope,
   type AdminConnector,
-  type ConnectorAuthorization,
+  type Connection,
   type ProjectSecret,
   type SessionScopeInput,
 } from '@kortix/sdk';
-import { useProjectConfig } from '@kortix/sdk/react';
+import { qk, useProjectConfig } from '@kortix/sdk/react';
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -25,13 +25,13 @@ import {
 interface SessionScopeCatalogSources {
   listSecrets(projectId: string): Promise<readonly ProjectSecret[]>;
   listConnectors(projectId: string): Promise<readonly AdminConnector[]>;
-  listAuthorizations(projectId: string): Promise<readonly ConnectorAuthorization[]>;
+  listConnections(projectId: string): Promise<readonly Connection[]>;
 }
 
 export interface SessionScopeCatalogErrors {
   secrets: Error | null;
   connectors: Error | null;
-  authorizations: Error | null;
+  connections: Error | null;
 }
 
 export interface LoadedSessionScopeCatalog {
@@ -48,7 +48,7 @@ export interface UseSessionScopeInput {
 const sdkCatalogSources: SessionScopeCatalogSources = {
   listSecrets: async (projectId) => (await listProjectSecrets(projectId)).items,
   listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
-  listAuthorizations: async (projectId) => (await listConnectorAuthorizations(projectId)).profiles,
+  listConnections: async (projectId) => (await listConnections(projectId)).connections,
 };
 
 function rejectedCatalogError(axis: string, reason: unknown): Error {
@@ -87,43 +87,46 @@ export async function loadSessionScopeCatalog(
   projectId: string,
   sources: SessionScopeCatalogSources = sdkCatalogSources,
 ): Promise<LoadedSessionScopeCatalog> {
-  const [secretsResult, connectorsResult, authorizationsResult] = await Promise.allSettled([
+  const [secretsResult, connectorsResult, connectionsResult] = await Promise.allSettled([
     sources.listSecrets(projectId),
     sources.listConnectors(projectId),
-    sources.listAuthorizations(projectId),
+    sources.listConnections(projectId),
   ]);
   const secrets = settledCatalogState('secret', secretsResult);
-  const connectors = settledCatalogState('connector profile', connectorsResult);
-  const authorizations = settledCatalogState('connector authorization', authorizationsResult);
+  const connectors = settledCatalogState('connector', connectorsResult);
+  const connections = settledCatalogState('connection', connectionsResult);
 
   return {
     raw: {
       secrets: secrets.state,
       connectors: connectors.state,
-      authorizations: authorizations.state,
+      connections: connections.state,
     },
     errors: {
       secrets: secrets.error,
       connectors: connectors.error,
-      authorizations: authorizations.error,
+      connections: connections.error,
     },
   };
 }
 
 function firstCatalogError(errors: SessionScopeCatalogErrors | undefined): Error | null {
   if (!errors) return null;
-  return errors.secrets ?? errors.connectors ?? errors.authorizations;
+  return errors.secrets ?? errors.connectors ?? errors.connections;
 }
 
 const unavailableCatalog = (): SessionScopeSelectionCatalog => ({
   secrets: { status: 'unavailable' },
-  connector_profiles: { status: 'unavailable' },
+  connector_connections: { status: 'unavailable' },
 });
 
 export function useSessionScope({ projectId, sessionId, agentName }: UseSessionScopeInput) {
   const queryClient = useQueryClient();
   const projectConfig = useProjectConfig(projectId);
-  const projectConfigKey = ['project-config', projectId] as const;
+  // useProjectConfig now rides the shared qk.project.detail(id) entry (a
+  // `select` projection, not its own key) — track fetch/error state on THAT
+  // key, not the retired standalone ['project-config', id] slot.
+  const projectConfigKey = qk.project.detail(projectId ?? '');
   const projectConfigFetches = useIsFetching({
     queryKey: projectConfigKey,
     exact: true,

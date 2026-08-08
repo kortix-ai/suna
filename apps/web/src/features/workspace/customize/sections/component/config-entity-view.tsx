@@ -27,6 +27,7 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon as ChevronRight,
   CopyIcon as Copy,
@@ -163,9 +164,9 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   } = props;
 
   const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const config = detailQuery.data?.config ?? null;
@@ -743,9 +744,9 @@ function EntityDetail<T extends ConfigEntity>({
   // project repo, so there is nothing to fetch.
   const platformSource = entity.path.startsWith('/');
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, entity.path],
+    queryKey: qk.project.fileSource(projectId, entity.path),
     queryFn: () => readProjectFile(projectId, configEntitySourcePath(entity.path)),
-    staleTime: 30_000,
+    ...contract('config'),
     enabled: !platformSource,
   });
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   gatewayBudgets,
@@ -35,8 +35,7 @@ import {
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { config } from '../../config';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import {
   getProjectRoutingPolicy,
@@ -47,6 +46,7 @@ import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/def
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
 import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import { classifyGatewayLogReference } from './gateway-log-reference';
 
 async function canDo(
   c: any,
@@ -194,8 +194,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const logId = c.req.param('logId');
-    if (!UUID_V4_REGEX.test(logId)) return c.json({ error: 'Invalid log id' }, 400);
+    const logReference = c.req.param('logId');
+    const referenceKind = classifyGatewayLogReference(logReference);
+    if (referenceKind === 'invalid') {
+      return c.json({ error: 'Invalid log id or request id' }, 400);
+    }
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -210,7 +213,17 @@ projectsApp.openapi(
     const [row] = await db
       .select()
       .from(gatewayRequestLogs)
-      .where(and(eq(gatewayRequestLogs.logId, logId), eq(gatewayRequestLogs.projectId, projectId)))
+      .where(
+        and(
+          referenceKind === 'both'
+            ? or(
+                eq(gatewayRequestLogs.logId, logReference),
+                eq(gatewayRequestLogs.requestId, logReference),
+              )
+            : eq(gatewayRequestLogs.requestId, logReference),
+          eq(gatewayRequestLogs.projectId, projectId),
+        ),
+      )
       .limit(1);
     if (!row) return c.json({ error: 'Not found' }, 404);
 
@@ -1281,9 +1294,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
     const principal: AuthedPrincipal = {
       userId: loaded.userId,
       accountId: loaded.row.accountId,

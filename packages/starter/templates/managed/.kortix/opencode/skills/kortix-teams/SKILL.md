@@ -1,6 +1,6 @@
 ---
 name: kortix-teams
-description: How to CONNECT Microsoft Teams (`kortix channels connect --platform teams`, prints a tenant-admin consent URL) and how to answer in Teams as a teammate. Covers the live Adaptive Card stream (`teams step` with --detail/--output/--source, `teams send` to finalize the answer), sending and downloading files (the consent-card upload flow + `teams download`), reading teams/channels/members via the Executor, asking the user, and the tone the bot should use. Load this when the turn is triggered from Teams (the prompt mentions a Teams tenant/conversation, or `$MS_TEAMS_CONVERSATION_ID` is set in the env), or when the user asks how to do anything in Teams.
+description: How to CONNECT Microsoft Teams (`kortix channels connect --platform teams`, prints a tenant-admin consent URL) and how to answer in Teams as a teammate. Covers the live Adaptive Card stream (`teams step` with --detail/--output/--source, `teams send` to finalize the answer), sending and downloading files (the consent-card upload flow + `teams download`), reading teams/channels/members through connector calls, asking the user, and the tone the bot should use. Load this when the turn is triggered from Teams (the prompt mentions a Teams tenant/conversation, or `$MS_TEAMS_CONVERSATION_ID` is set in the env), or when the user asks how to do anything in Teams.
 ---
 
 <skill name="teams">
@@ -33,7 +33,7 @@ Two things that differ from Slack, so don't assume symmetry:
 <overview>
 Once connected, your sandbox is wired into Microsoft Teams. When a teammate `@`-mentions the bot or replies in a conversation the bot owns, the platform spins up this session and hands you the message; your turn IS the Teams reply.
 
-The `teams` CLI is on `$PATH` and **just works** — there is no token in your sandbox and nothing to configure. Turn replies are owned and rendered by the Kortix server; vendor reads run through the Kortix Executor, which resolves the Microsoft Graph credential **server-side**. Don't look for an app password, don't reach for an MCP/HTTP workaround — just run the commands below. Two patterns matter most:
+The `teams` CLI is on `$PATH` and **just works** — there is no token in your sandbox and nothing to configure. Turn replies are owned and rendered by the Kortix server; vendor reads run through the Kortix connector gateway, which resolves the Microsoft Graph credential **server-side**. Don't look for an app password, don't reach for an MCP/HTTP workaround — just run the commands below. Two patterns matter most:
 
 - **`teams step "..."`** — narrate progress. Repaints the live Adaptive Card in the Teams conversation *as you go*.
 - **`teams send "..."`** — finalize the turn with your answer. This closes the live card and renders the reply.
@@ -180,7 +180,7 @@ The download runs through the Kortix server (the credential stays server-side); 
 </files-and-artifacts>
 
 <other-surfaces>
-Reach for these only when the task explicitly asks. They run through the Executor against Microsoft Graph (read-only).
+Reach for these only when the task explicitly asks. They run through the connector gateway against Microsoft Graph (read-only).
 
 ### Look up teams, channels, members, users
 

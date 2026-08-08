@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
+import { assertRpcDebitLedgerType } from '../billing/ledger-type-honesty';
 
 interface CreditBalance {
   balance: number;
@@ -122,6 +123,13 @@ export async function deductCredits(
   description: string,
   ledgerType: RouterLedgerDebitType = 'usage',
 ): Promise<CreditDeductResult> {
+  // The RPC hardcodes `type = 'usage'` on the ledger row, so a non-usage kind
+  // here manufactures a row that contradicts itself. Checked BEFORE the
+  // billing-disabled short circuit so a self-hosted run rejects the same
+  // programming error a managed run does (2026-07-30 mislabelled-clawback
+  // incident; see billing/ledger-type-honesty.ts).
+  assertRpcDebitLedgerType(ledgerType);
+
   // Billing disabled: no deduction
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
     return { success: true, amountDeducted: 0, newBalance: 0 };

@@ -8,7 +8,7 @@ import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
 import { linkSlackIdentity } from './slack/identity';
-import { reconcileChannelConnectors } from '../executor/sync';
+import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -181,7 +181,7 @@ slackOauthApp.openapi(
     }
   }
 
-  // Materialize the Slack channel connector so it appears in the Executor right
+  // Materialize the Slack channel connector so it appears in the Connector right
   // after connecting (best-effort; never blocks the redirect).
   void reconcileChannelConnectors(payload.projectId);
 

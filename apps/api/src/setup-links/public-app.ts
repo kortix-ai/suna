@@ -9,10 +9,10 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash } from 'node:crypto';
-import { executorConnectors, projects } from '@kortix/db';
+import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
-import { pipedreamConfigured, pipedreamConnectUrl } from '../executor/pipedream';
+import { pipedreamConfigured, pipedreamConnectUrl } from '../connectors/pipedream';
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
@@ -72,8 +72,8 @@ async function projectName(projectId: string): Promise<string> {
 }
 
 setupLinksPublicApp.use('/secret/:token', createSetupLinkRateLimitMiddleware());
-setupLinksPublicApp.use('/connector/:token', createSetupLinkRateLimitMiddleware());
-setupLinksPublicApp.use('/connector/:token/start', createSetupLinkRateLimitMiddleware());
+setupLinksPublicApp.use('/connectors/:token', createSetupLinkRateLimitMiddleware());
+setupLinksPublicApp.use('/connectors/:token/start', createSetupLinkRateLimitMiddleware());
 
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
 setupLinksPublicApp.get('/secret/:token', async (c) => {
@@ -135,36 +135,19 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   void propagateProjectSecretsToActiveSandboxes(resolved.projectId);
 
   // Notify the requesting session that the secret was submitted, so the agent
-  // can immediately retry whatever needed the credential. The session ID is
-  // sealed into the token at mint time (setup-links.ts passes c.get('sessionId')).
+  // can immediately retry whatever needed the credential instead of re-minting
+  // a link on its next loop run. The session ID is sealed into the token at
+  // mint time (setup-links.ts passes c.get('sessionId')).
   const sid = (resolved.payload as { sid?: string | null }).sid;
   if (sid) {
-    void (async () => {
-      try {
-        const { projectSessions } = await import('@kortix/db');
-        const { eq } = await import('drizzle-orm');
-        const [session] = await db
-          .select({ sessionId: projectSessions.sessionId, status: projectSessions.status })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sid))
-          .limit(1);
-        if (session?.status === 'running') {
-          // Best-effort: send a notification prompt to the session's agent.
-          // If this fails, the secret is still saved and propagated — the agent
-          // just won't get an immediate notification.
-          console.info('[setup-links] secret submitted, notifying session', { sid, saved });
-        }
-      } catch (err) {
-        console.warn('[setup-links] failed to notify session of secret submission:', err);
-      }
-    })();
+    void notifyRequestingSession(sid, resolved.projectId, resolved.payload.uid, saved);
   }
 
   return c.json({ ok: true, saved });
 });
 
-// GET /v1/setup-links/connector/:token — which app does this link connect?
-setupLinksPublicApp.get('/connector/:token', async (c) => {
+// GET /v1/setup-links/connectors/:token — which app does this link connect?
+setupLinksPublicApp.get('/connectors/:token', async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
@@ -178,11 +161,11 @@ setupLinksPublicApp.get('/connector/:token', async (c) => {
   });
 });
 
-// POST /v1/setup-links/connector/:token/start — mint a FRESH Pipedream Quick
+// POST /v1/setup-links/connectors/:token/start — mint a FRESH Pipedream Quick
 // Connect URL. Completing on Pipedream's hosted page fires the connect webhook,
-// which persists the credential (see executor/pipedream.ts createConnectToken
+// which persists the credential (see connector/pipedream.ts createConnectToken
 // webhook_uri + db-deps pipedreamWebhook), so no explicit finalize is needed.
-setupLinksPublicApp.post('/connector/:token/start', async (c) => {
+setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
@@ -190,14 +173,14 @@ setupLinksPublicApp.post('/connector/:token/start', async (c) => {
   if (!resolved.payload.app) return c.json({ error: 'This connector has no Pipedream app bound' }, 400);
   const [connector] = await db
     .select({
-      providerType: executorConnectors.providerType,
-      authorizationStrategy: executorConnectors.authorizationStrategy,
+      providerType: connectors.providerType,
+      authorizationStrategy: connectors.authorizationStrategy,
     })
-    .from(executorConnectors)
+    .from(connectors)
     .where(
       and(
-        eq(executorConnectors.projectId, resolved.projectId),
-        eq(executorConnectors.slug, resolved.payload.slug),
+        eq(connectors.projectId, resolved.projectId),
+        eq(connectors.slug, resolved.payload.slug),
       ),
     )
     .limit(1);
@@ -227,5 +210,64 @@ setupLinksPublicApp.post('/connector/:token/start', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to start connect' }, 502);
   }
 });
+
+/** Exported for tests. The text delivered to the requesting session's agent. */
+export function secretSubmittedPrompt(saved: string[]): string {
+  const plural = saved.length === 1 ? 'value' : 'values';
+  return (
+    `The secret ${plural} for ${saved.join(', ')} ${saved.length === 1 ? 'was' : 'were'} just ` +
+    'submitted through the intake link and saved to this project. Sync is in flight — run ' +
+    '`kortix secrets sync` if a variable is not visible in your environment yet, then continue ' +
+    'the task that was blocked on it. Do not mint a new intake link for these names.'
+  );
+}
+
+/**
+ * Best-effort resolve-on-set: hand the requesting agent a durable follow-up
+ * prompt via the session-lifecycle queue (same path as approval-resume), so
+ * the loop that minted the link learns the credential arrived instead of
+ * re-minting and re-posting a fresh link every run.
+ *
+ * Gated on `running`: a stopped/hibernated session reads the secret from the
+ * store on its next run anyway, and a public, unauthenticated submit must
+ * never boot a sandbox. Failures only warn — the secret is already saved and
+ * propagated regardless.
+ */
+async function notifyRequestingSession(
+  sessionId: string,
+  projectId: string,
+  actorUserId: string | null,
+  saved: string[],
+): Promise<void> {
+  try {
+    const [session] = await db
+      .select({
+        status: projectSessions.status,
+        accountId: projectSessions.accountId,
+        metadata: projectSessions.metadata,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (session?.status !== 'running') return;
+    const meta = (session.metadata ?? {}) as Record<string, unknown>;
+    if (typeof meta.deletedAt === 'string') return;
+    const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
+      '../projects/session-lifecycle'
+    );
+    await enqueueContinueSessionCommand({
+      source: 'system:secret-submitted',
+      projectId,
+      accountId: session.accountId,
+      sessionId,
+      actorUserId,
+      text: secretSubmittedPrompt(saved),
+    });
+    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+    console.info('[setup-links] secret submitted, session notified', { sessionId, saved });
+  } catch (err) {
+    console.warn('[setup-links] failed to notify session of secret submission:', err);
+  }
+}
 
 export { setupLinksPublicApp };

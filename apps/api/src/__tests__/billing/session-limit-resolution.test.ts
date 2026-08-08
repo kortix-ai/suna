@@ -31,6 +31,9 @@ mock.module('../../billing/repositories/credit-accounts', () => ({
     currentTier === null && currentOverride === null
       ? null
       : { tier: currentTier, maxConcurrentSessions: currentOverride },
+  // Imported (not called) by billing/services/entitlements via
+  // shared/account-limits — must exist on this wholesale mock.
+  getCreditAccount: async () => null,
 }));
 
 const { resolveAccountSessionLimit, maxConcurrentSessionsForTier, clearAccountLimitCache } =

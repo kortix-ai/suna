@@ -9,6 +9,8 @@ interface SessionCreatedAuditInput {
   inSession?: boolean | null;
   origin: string;
   invocationSource?: string | null;
+  clientReportedSource?: string | null;
+  callerSessionId?: string | null;
   agentName: string;
   visibility: string;
   sandboxProvider: string;
@@ -25,26 +27,65 @@ function actorType(input: SessionCreatedAuditInput): AuditActorType {
   return 'human';
 }
 
-function source(value?: string | null): string {
-  if (!value) return 'api';
-  if (value === 'ui') return 'web';
-  if (value.startsWith('trigger:')) return 'automation';
-  if (value.startsWith('system:')) return 'system';
-  return value;
+function authoritativeSource(input: SessionCreatedAuditInput, actor: AuditActorType): string {
+  if (actor === 'service_account') return 'automation';
+  if (actor === 'agent') return 'agent';
+  const invocation = input.invocationSource ?? '';
+  if (invocation.startsWith('trigger:')) return 'automation';
+  if (invocation.startsWith('system:')) return 'system';
+  if (['slack', 'email', 'telegram', 'teams', 'voice', 'admin'].includes(invocation)) {
+    return invocation;
+  }
+  if (input.origin === 'trigger' || input.origin === 'schedule') return 'automation';
+  if (input.origin === 'system') return 'system';
+  if (input.origin === 'backend') return 'api';
+  return 'human';
+}
+
+export interface SessionCreatedAuditAttribution {
+  actorType: AuditActorType;
+  authoritativeSource: string;
+  clientReportedSource: string | null;
+  initiatorActorType: 'agent' | null;
+  initiatorActorId: string | null;
+  delegationDepth: number;
+}
+
+export function sessionCreatedAuditAttribution(
+  input: SessionCreatedAuditInput,
+): SessionCreatedAuditAttribution {
+  const actor = actorType(input);
+  return {
+    actorType: actor,
+    authoritativeSource: authoritativeSource(input, actor),
+    clientReportedSource: input.clientReportedSource ?? null,
+    initiatorActorType: input.callerSessionId ? 'agent' : null,
+    initiatorActorId: input.callerSessionId ?? null,
+    delegationDepth: input.callerSessionId ? 1 : 0,
+  };
 }
 
 export function sessionCreatedAuditEvent(input: SessionCreatedAuditInput): AuditEventInput {
+  const attribution = sessionCreatedAuditAttribution(input);
   return {
     accountId: input.accountId,
     projectId: input.projectId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
-    actorType: actorType(input),
-    source: source(input.invocationSource),
+    actorType: attribution.actorType,
+    authoritativeSource: attribution.authoritativeSource,
+    clientReportedSource: attribution.clientReportedSource,
+    initiatorActorType: attribution.initiatorActorType,
+    initiatorActorId: attribution.initiatorActorId,
+    delegationDepth: attribution.delegationDepth,
     outcome: 'success',
     action: 'session.created',
+    phase: 'created',
     resourceType: 'project_session',
     resourceId: input.sessionId,
+    sourceLedger: 'project_sessions',
+    sourceRecordId: input.sessionId,
+    sourceRevision: 'created',
     metadata: {
       origin: input.origin,
       invocation_source: input.invocationSource ?? null,

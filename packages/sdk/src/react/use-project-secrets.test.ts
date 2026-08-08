@@ -22,16 +22,17 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 const { useProjectSecrets, projectSecretsKey } = await import('./use-project-secrets');
+const { qk } = await import('./query-keys');
 
 beforeEach(() => {
   invalidated = [];
 });
 
 describe('useProjectSecrets (query-key stability + invalidation wiring)', () => {
-  test('builds the query key from projectSecretsKey', () => {
+  test('builds the query key from projectSecretsKey, which now delegates to qk.project.secrets', () => {
     const result = useProjectSecrets('proj-1') as any;
     expect(result.queryKey).toEqual(projectSecretsKey('proj-1'));
-    expect(result.queryKey).toEqual(['project-secrets', 'proj-1']);
+    expect(result.queryKey).toEqual(qk.project.secrets('proj-1'));
   });
 
   test('is disabled without a projectId, enabled once one is supplied', () => {

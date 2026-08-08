@@ -21,13 +21,16 @@ describe('customize sections', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('dev');
   });
 
-  test('connectors, skills, and commands graduated out of the overlay', () => {
+  test('connectors and skills graduated out of the overlay', () => {
     expect(CUSTOMIZE_SECTIONS).not.toContain('connectors');
     expect(CUSTOMIZE_SECTIONS).not.toContain('skills');
-    expect(CUSTOMIZE_SECTIONS).not.toContain('commands');
     expect(parseCustomizeSection('connectors')).toBeNull();
     expect(parseCustomizeSection('skills')).toBeNull();
-    expect(parseCustomizeSection('commands')).toBeNull();
+  });
+
+  test('commands remains in the overlay because its standalone page was removed', () => {
+    expect(CUSTOMIZE_SECTIONS).toContain('commands');
+    expect(parseCustomizeSection('commands')).toBe('commands');
   });
 
   test('parses every canonical section and rejects unknowns', () => {
@@ -50,10 +53,25 @@ describe('legacyCustomizeRedirect', () => {
   test('routes the graduated sections to their own pages', () => {
     expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
     expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-    expect(legacyCustomizeRedirect('p1', 'commands')).toBe('/projects/p1/commands');
   });
+
+  test('commands stays in the overlay — its standalone page was removed', () => {
+    // Commands had a #6054 standalone page that #6169 deleted, so the deep
+    // link must never bounce to /projects/<id>/commands (a dead route). It
+    // resolves inside the overlay instead — see the resolve test below.
+    expect(legacyCustomizeRedirect('p1', 'commands')).toBeNull();
+  });
+
+  test('agents redirects to its standalone page, under either spelling', () => {
+    // Agents graduated to /projects/<id>/agent. The overlay section was named
+    // 'agents', so both spellings have to land — every bookmark in the wild
+    // points at the plural one.
+    expect(legacyCustomizeRedirect('p1', 'agents')).toBe('/projects/p1/agent');
+    expect(legacyCustomizeRedirect('p1', 'agent')).toBe('/projects/p1/agent');
+  });
+
   test('leaves overlay sections alone', () => {
-    expect(legacyCustomizeRedirect('p1', 'agents')).toBeNull();
+    expect(legacyCustomizeRedirect('p1', 'secrets')).toBeNull();
     expect(legacyCustomizeRedirect('p1', null)).toBeNull();
   });
 });
@@ -72,13 +90,19 @@ describe('resolveCustomizeOverlayHref', () => {
   });
 
   test('a named segment that resolves to a real section opens the overlay on it', () => {
-    expect(resolveCustomizeOverlayHref('/projects/p1/customize/agents')).toEqual({
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/members')).toEqual({
       opensOverlay: true,
-      section: 'agents',
+      section: 'members',
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/secrets?tab=x')).toEqual({
       opensOverlay: true,
       section: 'secrets',
+    });
+    // Commands came back INTO the overlay when #6169 deleted its standalone
+    // page, so unlike skills/connectors/agents its deep link resolves here.
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+      opensOverlay: true,
+      section: 'commands',
     });
   });
 
@@ -90,7 +114,10 @@ describe('resolveCustomizeOverlayHref', () => {
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/skills')).toEqual({
       opensOverlay: false,
     });
-    expect(resolveCustomizeOverlayHref('/projects/p1/customize/commands')).toEqual({
+    // Agents graduated too — `/customize/agents` must fall through to a
+    // navigation (legacyCustomizeRedirect sends it to /projects/<id>/agent),
+    // not reopen the overlay on the user's last section.
+    expect(resolveCustomizeOverlayHref('/projects/p1/customize/agents')).toEqual({
       opensOverlay: false,
     });
     expect(resolveCustomizeOverlayHref('/projects/p1/customize/connectors')).toEqual({

@@ -25,10 +25,56 @@
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
+import { resolveSandboxIngress } from './backend';
 
-// opencode's internal port — its PTY WebSocket endpoint lives here, reachable
-// via a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
-const OPENCODE_INTERNAL_PORT = 4096;
+// opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
+// a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
+//
+// That port MOVES. A verified config reload boots the replacement opencode on
+// the idle half of the port pair and promotes it, so after one reload the live
+// port is the other half and this constant points at a dead socket. It is now
+// only the fallback for a daemon too old to report where opencode actually is.
+const OPENCODE_FALLBACK_PORT = OPENCODE_PRIMARY_PORT;
+
+/** The daemon's own port — where its health endpoint answers. */
+const AGENT_PORT = 8000;
+
+/**
+ * Ask the box which port opencode is on right now.
+ *
+ * Deliberately NOT cached: the value changes on exactly the event we care about
+ * (a reload), so a cache would be stale precisely when it matters and would
+ * reintroduce the dead-socket bug it was meant to avoid. A PTY connect is a
+ * human opening a terminal — rare enough to afford one short round-trip.
+ *
+ * Falls back to 4096 on anything unexpected: an older daemon that does not
+ * report the field, an unreachable box, a slow one. That is the previous
+ * behaviour, so this can only improve on it.
+ */
+async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
+  try {
+    const { url, headers } = await resolveSandboxIngress(sandboxId, {
+      port: AGENT_PORT,
+      transport: 'http',
+    });
+    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!res.ok) return OPENCODE_FALLBACK_PORT;
+    const body = (await res.json().catch(() => null)) as { opencode_port?: unknown } | null;
+    const port = body?.opencode_port;
+    // Must be one of the pair. A daemon reporting anything else is either
+    // misconfigured or not the daemon, and following it blindly would let a
+    // response body redirect the PTY at an arbitrary port inside the sandbox.
+    return typeof port === 'number' && Number.isInteger(port) && isOpencodePort(port)
+      ? port
+      : OPENCODE_FALLBACK_PORT;
+  } catch {
+    return OPENCODE_FALLBACK_PORT;
+  }
+}
 
 /** Per-connection state stashed on the upgraded socket's `data`. */
 export interface PreviewWsData {
@@ -88,7 +134,8 @@ export async function preparePreviewWsUpgrade(
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
   // proxied against the port the client addressed.
   const ptyKind = classifyPtyWebSocketPath(remainingPath);
-  const upstreamPort = ptyKind === 'opencode' ? OPENCODE_INTERNAL_PORT : port;
+  const upstreamPort =
+    ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
 
   // Strip our own auth token before forwarding — opencode authenticates via the
   // Daytona preview token header, not our query param.

@@ -32,7 +32,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -51,6 +50,7 @@ let stdout = '';
 let stderr = '';
 /** What the mocked invite route answers. Each test sets this. */
 let inviteResponse: Record<string, unknown>;
+let pendingResponse: Record<string, unknown>;
 
 function writeConfig(): void {
   const file = join(tmp, 'config.json');
@@ -97,10 +97,14 @@ beforeEach(() => {
   (process.stdout as any).write = (chunk: unknown) => ((stdout += String(chunk)), true);
   (process.stderr as any).write = (chunk: unknown) => ((stderr += String(chunk)), true);
   inviteResponse = {};
+  pendingResponse = { pending: [] };
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/access/invite') && (init?.method ?? 'GET').toUpperCase() === 'POST') {
       return json(inviteResponse, 201);
+    }
+    if (url.includes('/access/pending-invites') && (init?.method ?? 'GET').toUpperCase() === 'GET') {
+      return json(pendingResponse);
     }
     return json({ error: `unexpected ${url}` }, 500);
   }) as typeof fetch;
@@ -185,5 +189,25 @@ describe('kortix access invite — email honesty', () => {
     expect(parsed.email_sent).toBe(false);
     expect(parsed.email_skip_reason).toBe('email_not_configured');
     expect(parsed.invite_url).toBe(INVITE_URL);
+  });
+
+  test('pending displays the invited member email from the API payload', async () => {
+    pendingResponse = {
+      pending: [
+        {
+          invite_id: 'inv_abc123',
+          email: 'pending@corp.com',
+          project_role: 'editor',
+          invited_by_email: 'owner@corp.com',
+          invite_expired: false,
+        },
+      ],
+    };
+
+    const code = await runAccess(['pending', '--project', PROJECT]);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('pending@corp.com');
+    expect(stripAnsi(stdout)).not.toContain('undefined');
   });
 });

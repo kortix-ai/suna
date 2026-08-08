@@ -9,8 +9,9 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
-import { type SecretGrant, visibilityToIntent } from '../../executor/share';
+import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -43,6 +44,7 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
+  clientReportedSource?: string | null;
 };
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -280,6 +282,7 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: clientIp(c),
     userAgent: c.req.header('user-agent') || null,
+    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
@@ -323,19 +326,20 @@ export function buildSecretView(input: {
           ? 'network'
           : backend === 'llm_gateway'
             ? 'llm_gateway'
-            : backend === 'executor'
-              ? 'executor'
+            : backend === 'connector'
+              ? 'connector'
               : backend === 'git_proxy'
                 ? 'git_proxy'
                 : backend === 'kortix_fetch'
                   ? 'http_broker'
                   : null;
-  const consumer =
+  const storedConsumer =
     strategy === 'denied'
       ? null
       : deliveryRow?.scope === 'connector'
         ? 'connector'
         : (deliveryRow?.consumer ?? legacyConsumer);
+  const consumer = storedConsumer;
   return {
     identifier,
     name,
@@ -364,7 +368,6 @@ export function buildSecretView(input: {
     delivery_status:
       (strategy === 'runtime' && consumer === 'sandbox') ||
       (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'executor') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
       consumer === 'connector'

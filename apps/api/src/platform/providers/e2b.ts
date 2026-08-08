@@ -17,6 +17,7 @@ import type {
   SandboxProvider,
   SandboxStatus,
 } from './index';
+import { assertWorkloadCredential, sandboxWorkloadType } from './index';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
@@ -29,6 +30,14 @@ const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
 const KORTIX_HEALTH_WAIT =
   'for attempt in $(seq 1 180); do ' +
   'if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/kortix/health >/dev/null; then exit 0; fi; ' +
+  'sleep 1; done; exit 1';
+const KORTIX_APPD = '/kortix/bin/kortix-appd';
+const KORTIX_APPD_COMMAND = `exec flock -n /run/kortix-appd.lock ${KORTIX_APPD}`;
+const KORTIX_APPD_HEALTH_WAIT =
+  'for attempt in $(seq 1 180); do ' +
+  'if curl --fail --silent --show-error --max-time 2 ' +
+  '-H "Authorization: Bearer $KORTIX_APPD_TOKEN" ' +
+  'http://127.0.0.1:7331/v1/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
@@ -70,8 +79,10 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
     }
     envs[key] = item;
   }
-  if (!envs.KORTIX_SANDBOX_TOKEN) {
-    throw new Error(`[e2b] sandbox ${externalId} persisted runtime environment has no KORTIX_SANDBOX_TOKEN`);
+  const workloadType = envs.KORTIX_WORKLOAD_TYPE === 'app' ? 'app' : 'session';
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  if (!envs[required]) {
+    throw new Error(`[e2b] sandbox ${externalId} persisted runtime environment has no ${required}`);
   }
   return envs;
 }
@@ -143,9 +154,31 @@ async function ensureKortixEntrypoint(
   });
 }
 
+async function ensureAppEntrypoint(
+  sandbox: E2BSandbox,
+  envs: Record<string, string>,
+): Promise<void> {
+  const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
+  const alreadyRunning = processes.some(
+    (process) => `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_APPD),
+  );
+  if (!alreadyRunning) {
+    await sandbox.commands.run(KORTIX_APPD_COMMAND, {
+      background: true,
+      user: 'root',
+      envs,
+      timeoutMs: 0,
+    });
+  }
+  await sandbox.commands.run(KORTIX_APPD_HEALTH_WAIT, {
+    user: 'root',
+    envs,
+    timeoutMs: 190_000,
+  });
+}
+
 export class E2BProvider implements SandboxProvider {
   readonly name: ProviderName = 'e2b';
-  readonly requiresPublicCallback = true;
 
   constructor(private readonly removeTimeoutMs = E2B_REMOVE_TIMEOUT_MS) {}
 
@@ -159,6 +192,7 @@ export class E2BProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    const workloadType = sandboxWorkloadType(opts);
     const template = opts.snapshot ?? config.E2B_TEMPLATE;
     if (!template) {
       throw new Error(
@@ -173,11 +207,10 @@ export class E2BProvider implements SandboxProvider {
     const envVars: Record<string, string> = {
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
+      ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_SANDBOX_TOKEN) {
-      throw new Error('[e2b] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to Kortix.');
-    }
+    assertWorkloadCredential(this.name, opts, envVars);
 
     const sandbox = await Sandbox.create(template, {
       ...apiOpts(),
@@ -187,6 +220,7 @@ export class E2BProvider implements SandboxProvider {
         [ENV_METADATA]: config.INTERNAL_KORTIX_ENV,
         kortix_account_id: opts.accountId,
         kortix_created_by: opts.userId,
+        ...(workloadType === 'app' ? { kortix_workload: workloadType } : {}),
       },
       timeoutMs: E2B_RUNTIME_BACKSTOP_MS,
       secure: true,
@@ -216,7 +250,8 @@ export class E2BProvider implements SandboxProvider {
       // can relaunch the authenticated daemon. Never put these secrets in E2B
       // metadata or Kortix DB metadata.
       await persistRuntimeEnv(sandbox, envVars);
-      await ensureKortixEntrypoint(sandbox, envVars);
+      if (workloadType === 'app') await ensureAppEntrypoint(sandbox, envVars);
+      else await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(sandbox.sandboxId);
       await sandbox.kill({ requestTimeoutMs: 20_000 }).catch(() => false);
@@ -224,15 +259,17 @@ export class E2BProvider implements SandboxProvider {
     }
 
     const externalId = sandbox.sandboxId;
+    const ingressPort = workloadType === 'app' ? 8080 : 8000;
     return {
       externalId,
-      baseUrl: `${sandboxApiBase}/v1/p/${externalId}/8000`,
+      baseUrl: `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`,
       metadata: {
         provisionedBy: opts.userId,
         e2bSandboxId: externalId,
         template,
         version: SANDBOX_VERSION,
         lifecycle: 'pause-filesystem-explicit-resume',
+        workloadType,
       },
     };
   }
@@ -248,11 +285,16 @@ export class E2BProvider implements SandboxProvider {
       // template start command during that boot; this explicit check makes the
       // Kortix runtime invariant independent of provider startup behavior.
       const envVars = await loadRuntimeEnv(sandbox);
-      await ensureKortixEntrypoint(sandbox, envVars);
+      if (envVars.KORTIX_WORKLOAD_TYPE === 'app') await ensureAppEntrypoint(sandbox, envVars);
+      else await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(externalId);
       throw error;
     }
+  }
+
+  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
+    // E2B honors the image ENTRYPOINT and resumes the existing process tree.
   }
 
   async start(externalId: string): Promise<void> {

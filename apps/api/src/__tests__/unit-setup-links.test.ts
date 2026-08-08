@@ -5,8 +5,8 @@
  * (the HKDF input) is present.
  */
 import { describe, expect, test } from 'bun:test';
-import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 import { encryptProjectSecret } from '../projects/secrets';
+import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 
 const PROJECT_A = '11111111-1111-4111-8111-111111111111';
 const PROJECT_B = '22222222-2222-4222-8222-222222222222';
@@ -76,7 +76,7 @@ describe('setup-link token codec', () => {
       pid: PROJECT_A,
     };
     const envelope = encryptProjectSecret(PROJECT_A, JSON.stringify(payload));
-    const token = 'ksl_' + Buffer.from(`${PROJECT_A}.${envelope}`, 'utf8').toString('base64url');
+    const token = `ksl_${Buffer.from(`${PROJECT_A}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(token);
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -98,7 +98,7 @@ describe('setup-link token codec', () => {
     const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const decoded = Buffer.from(token.slice('ksl_'.length), 'base64url').toString('utf8');
     const envelope = decoded.slice(decoded.indexOf('.') + 1);
-    const reWrapped = 'ksl_' + Buffer.from(`${PROJECT_B}.${envelope}`, 'utf8').toString('base64url');
+    const reWrapped = `ksl_${Buffer.from(`${PROJECT_B}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(reWrapped);
     expect(r.ok).toBe(false);
   });
@@ -137,14 +137,14 @@ describe('setup-link token codec', () => {
     expect(r.payload.sid).toBeNull();
   });
 
-  test('default TTL is 24 hours (1440 minutes)', () => {
+  test('default secret-link TTL is 7 days', () => {
     const before = Date.now();
     const { expiresAt } = mintSetupLink(PROJECT_A, {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
     });
     const ttlMs = expiresAt - before;
-    expect(ttlMs).toBeGreaterThan(24 * 60 * 60 * 1000 - 5000);
-    expect(ttlMs).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
+    expect(ttlMs).toBeGreaterThan(7 * 24 * 60 * 60 * 1000 - 5000);
+    expect(ttlMs).toBeLessThan(7 * 24 * 60 * 60 * 1000 + 5000);
   });
 });

@@ -38,7 +38,7 @@ const SELF_HOST_MARKETING_ONLY = [
   '/pricing',
   '/use-cases',
   '/solutions',
-  '/integrations',
+  '/connectors',
   '/security',
 ];
 
@@ -86,7 +86,7 @@ const PUBLIC_ROUTES = [
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
   '/solutions', // Solutions / persona landing pages should be public
-  '/integrations', // Integrations directory + per-tool pages should be public
+  '/connectors', // Connector directory + per-tool pages should be public
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked

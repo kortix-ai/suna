@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import {
-  migrationLedgerRepairExecutorName,
+  migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
 
@@ -43,10 +43,10 @@ suite('migration ledger rename repair', () => {
         .filter((filename) => filename.endsWith('.sql') || filename.endsWith('.concurrent.ts'))
         .sort()
         .map((filename) => filename.replace(/\.sql$/, '').replace(/\.ts$/, ''));
-      const executorIndex = migrationNames.indexOf(migrationLedgerRepairExecutorName);
-      expect(executorIndex).toBeGreaterThan(0);
+      const connectorIndex = migrationNames.indexOf(migrationLedgerRepairConnectorName);
+      expect(connectorIndex).toBeGreaterThan(0);
 
-      for (const [index, name] of migrationNames.slice(0, executorIndex).entries()) {
+      for (const [index, name] of migrationNames.slice(0, connectorIndex).entries()) {
         await client.query(
           `insert into kortix_migrations.pgmigrations (name, run_on)
            values ($1, $2::timestamptz)`,
@@ -83,13 +83,13 @@ suite('migration ledger rename repair', () => {
     const repaired = await repairMigrationLedger({
       databaseUrl: databaseUrl?.toString() ?? '',
       migrationsDir,
-      applyExecutorMigration: async () => {
+      applyConnectorMigration: async () => {
         await runner({
           ...runnerOptions,
           direction: 'up',
           count: 1,
           checkOrder: false,
-          file: migrationLedgerRepairExecutorName,
+          file: migrationLedgerRepairConnectorName,
         });
       },
     });
@@ -99,7 +99,7 @@ suite('migration ledger rename repair', () => {
       await repairMigrationLedger({
         databaseUrl: databaseUrl?.toString() ?? '',
         migrationsDir,
-        applyExecutorMigration: async () => {
+        applyConnectorMigration: async () => {
           throw new Error('already-repaired ledgers must not reapply migrations');
         },
       }),
@@ -113,7 +113,7 @@ suite('migration ledger rename repair', () => {
       dryRun: true,
     });
     const pendingNames = pending.map((migration) => migration.name);
-    expect(pendingNames).not.toContain(migrationLedgerRepairExecutorName);
+    expect(pendingNames).not.toContain(migrationLedgerRepairConnectorName);
     expect(pendingNames).not.toContain('20260730000452547_sandbox_deadline');
     expect(pendingNames).not.toContain('20260730000452600_sandbox_deadline_index.concurrent');
 
@@ -126,7 +126,7 @@ suite('migration ledger rename repair', () => {
           order by run_on, id`,
       );
       expect(ledger.rows.slice(-3).map((row) => row.name)).toEqual([
-        migrationLedgerRepairExecutorName,
+        migrationLedgerRepairConnectorName,
         '20260730000452547_sandbox_deadline',
         '20260730000452600_sandbox_deadline_index.concurrent',
       ]);

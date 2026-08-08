@@ -14,10 +14,19 @@ beforeEach(() => {
       method: opts.method ?? 'GET',
       body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
     });
-    return new Response(JSON.stringify({ ok: true, secrets: [], candidates: [], sessions: [] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        secrets: [],
+        candidates: [],
+        sessions: [],
+        connector_bindings: {},
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   }) as unknown as typeof fetch;
 });
 
@@ -40,6 +49,69 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   await kortix.project('PID123').secrets.list();
   expect(last().url).toContain('/projects/PID123/secrets');
   expect(last().method).toBe('GET');
+});
+
+test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  expect(typeof apps.list).toBe('function');
+  expect(typeof apps.create).toBe('function');
+  expect(typeof apps.get).toBe('function');
+  expect(typeof apps.update).toBe('function');
+  expect(typeof apps.remove).toBe('function');
+  expect(typeof apps.artifacts.register).toBe('function');
+  expect(typeof apps.artifacts.uploadArchive).toBe('function');
+  expect(typeof apps.artifacts.finalize).toBe('function');
+  expect(typeof apps.deployments.create).toBe('function');
+  expect(typeof apps.deployments.list).toBe('function');
+  expect(typeof apps.deployments.get).toBe('function');
+  expect(typeof apps.deployments.logs).toBe('function');
+  expect(typeof apps.start).toBe('function');
+  expect(typeof apps.stop).toBe('function');
+  expect(typeof apps.rollback).toBe('function');
+
+  await apps.deployments.create('APP1', {
+    artifact_id: 'ART1',
+    source: { kind: 'static' },
+  });
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments',
+    body: { artifact_id: 'ART1', source: { kind: 'static' } },
+  });
+});
+
+test('project(id).connectors exposes the complete connector data plane', async () => {
+  const connectors = kortix.project('PID123').connectors;
+
+  expect(typeof connectors.catalog).toBe('function');
+  expect(typeof connectors.tools).toBe('function');
+  expect(typeof connectors.search).toBe('function');
+  expect(typeof connectors.describe).toBe('function');
+  expect(typeof connectors.call).toBe('function');
+  expect(typeof connectors.uploadAttachment).toBe('function');
+
+  await connectors.call('slack.send_message', { channel: 'C1', text: 'hello' });
+  expect(last().url).toBe('http://test.local/connectors/projects/PID123/call');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    connector: 'slack',
+    action: 'send_message',
+    args: { channel: 'C1', text: 'hello' },
+  });
+});
+
+test('top-level connectors supports a project-scoped agent token without a project id', async () => {
+  expect(typeof kortix.connectors.catalog).toBe('function');
+  expect(typeof kortix.connectors.call).toBe('function');
+
+  await kortix.connectors.call('slack.send_message', { channel: 'C1' });
+  expect(last().url).toBe('http://test.local/connectors/call');
+  expect(last().body).toEqual({
+    connector: 'slack',
+    action: 'send_message',
+    args: { channel: 'C1' },
+  });
 });
 
 test('project(id).secrets.broker binds the project and encoded identifier', async () => {
@@ -80,17 +152,17 @@ test('session(...).scope reads the authoritative session scope', async () => {
   expect(last().method).toBe('GET');
 });
 
-test('session(...).rescope writes canonical connector authorization bindings', async () => {
+test('session(...).rescope writes canonical connection bindings', async () => {
   await kortix.session('PID123', 'SID456').rescope({
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
   expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({
     connector_bindings: {
-      gmail: { authorization_id: 'AUTH-1' },
+      gmail: { connection_id: 'AUTH-1' },
     },
   });
 });
@@ -257,8 +329,10 @@ test('project(id).channels covers slack, email and voice', async () => {
   expect(last().method).toBe('PUT');
 });
 
-test('project(id) omits the retired hosted-app surface', () => {
-  expect('apps' in (kortix.project('PID123') as object)).toBe(false);
+test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
+  const handle = kortix.project('PID123') as unknown as Record<string, unknown>;
+  expect('apps' in handle).toBe(true);
+  expect('deployments' in handle).toBe(false);
 });
 
 test('project(id).modelDefaults gets/sets/clears the default model', async () => {
@@ -398,74 +472,71 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
     provider: 'postman',
     spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
   });
-  expect(last().url).toContain('/executor/projects/PID123/connectors/auth-discovery');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/auth-discovery');
   expect(last().method).toBe('POST');
 
   await kortix.project('PID123').connectors.setName('slack-1', 'My Slack');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/name');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/name');
 
   await kortix.project('PID123').connectors.setCredential('slack-1', 'secret-value');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/credential');
 
   await kortix.project('PID123').connectors.setCredentialMode('slack-1', 'shared');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential-mode');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/credential-mode');
 
   await kortix.project('PID123').connectors.setAuthorizationStrategy('slack-1', 'user');
   expect(last().url).toContain(
-    '/executor/projects/PID123/connectors/slack-1/authorization-strategy',
+    '/connectors/projects/PID123/connectors/slack-1/authorization-strategy',
   );
 
   await kortix.project('PID123').connectors.setSensitive('slack-1', true);
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sensitive');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/sensitive');
 
   await kortix.project('PID123').connectors.policies.get('slack-1');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('GET');
 
   await kortix
     .project('PID123')
     .connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
-  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
   await kortix.project('PID123').connectors.pipedream.listApps('gmail');
-  expect(last().url).toContain('/executor/projects/PID123/pipedream/apps?q=gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/pipedream/apps?q=gmail');
 
   await kortix.project('PID123').connectors.discover.list('notion');
-  expect(last().url).toContain('/executor/projects/PID123/discover/integrations?q=notion');
+  expect(last().url).toContain('/connectors/projects/PID123/discover/connectors?q=notion');
 
   await kortix.project('PID123').connectors.discover.detail('mcp/notion');
   expect(last().url).toContain(
-    '/executor/projects/PID123/discover/integrations/detail?id=mcp%2Fnotion',
+    '/connectors/projects/PID123/discover/connectors/detail?id=mcp%2Fnotion',
   );
 
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect');
   expect(last().method).toBe('POST');
 
   await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
-  expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect/finalize');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect/finalize');
   expect(last().method).toBe('POST');
 });
 
-test('project(id).connectors exposes canonical authorizations with a profiles alias', async () => {
-  await kortix.project('PID123').connectors.authorizations.list();
-  expect(last().url).toContain('/projects/PID123/connector-profiles');
+test('project(id).connectors exposes the connection lifecycle', async () => {
+  await kortix.project('PID123').connectors.connections.list();
+  expect(last().url).toContain('/projects/PID123/connections');
 
-  await kortix.project('PID123').connectors.authorizations.reconcile({
+  await kortix.project('PID123').connectors.connections.reconcile({
     connector_alias: 'gmail',
     owner_type: 'project',
     label: 'Project Gmail',
   });
   expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').connectors.profiles.list();
-  expect(last().url).toContain('/projects/PID123/connector-profiles');
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
   await kortix.connectStatus();
-  expect(last().url).toContain('/executor/connect-status');
+  expect(last().url).toContain('/connectors/connect-status');
 });
 
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
@@ -592,6 +663,14 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   await kortix.accounts.audit.webhooks.remove('ACC1', 'WH1');
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).audit and session(id).audit expose canonical cursor pagination', async () => {
+  await kortix.project('PID123').audit({ phase: 'completed', cursor: 'CUR1' });
+  expect(last().url).toContain('/projects/PID123/audit?phase=completed&cursor=CUR1');
+
+  await kortix.session('PID123', 'SID456').audit(50, { cursor: '42|EVENT' });
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');
 });
 
 // ── setup links / manifest validate / git token / slack files / meet speak /

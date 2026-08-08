@@ -86,9 +86,9 @@ jobs:
         # in ~22s) and won't mask a real hang.
         run: bun test --timeout 30000 tests/self-host-e2e/fast/
 
-  # Tier 2 — unchanged heavyweight full-stack e2e. Nightly + manual only.
+  # Tier 2 — heavyweight self-host control-plane e2e. Nightly + manual only.
   full-e2e:
-    name: full self-host e2e (schema + session + update)
+    name: full self-host e2e (schema + auth + update)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -109,15 +109,10 @@ jobs:
           npm_config_engine_strict: "false"
       - name: Build all self-host images
         run: bash scripts/build-local-images.sh --tag selfhost-local
-      - name: Full self-host e2e (schema + session + update)
-        # Provider is EXPERIMENTAL local-docker (apps/api/src/platform/providers/
-        # local-docker.ts), hardcoded inside run.sh — no cloud sandbox creds
-        # needed, so this stays fully hermetic in CI. TAG selects the images
-        # built just above (kortix/kortix-{frontend,api,gateway}:selfhost-local);
-        # `kortix/kortix-sandbox` is NOT built/used here — local-docker's
-        # per-project snapshot builder produces its own image locally from
-        # `FROM ubuntu:24.04` + the Kortix runtime layer, identically to every
-        # other provider (see local-docker.ts's snapshot-adapter doc comment).
+      - name: Full self-host e2e (schema + auth + update)
+        # This lane is hermetic and verifies the self-host control plane.
+        # Agent sessions require external sandbox-provider credentials and run
+        # in separate provider-backed acceptance lanes.
         run: bash tests/e2e/self-hosted-e2e.sh
         env:
           TAG: selfhost-local

@@ -1,13 +1,13 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
 
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-executor`, `kortix-memory`,
+**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`, `kortix-memory`,
 `kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
@@ -21,11 +21,15 @@ re-install, no image re-bake):
 skills are marketplace items. Browse them with
 `kortix marketplace list --type skill`.
 
-Before answering anything about Kortix internals — the executor/connectors,
+Before answering anything about Kortix internals — Apps, connectors and connections,
 project memory, Slack/channels, reaching a connected computer, or sending a
 notetaker into a meeting — load the matching skill with
 `kortix system-skills get <name>` and follow it. Prefer this over any stale
 local copy. The CLI reflects the deployed platform.
+
+For App deployment or lifecycle work, load `kortix-apps`. It contains the
+source-type decision tree, fast paths, blocking behavior, and verification
+contract.
 </live-skills>
 
 <overview>
@@ -58,7 +62,7 @@ multi-source investigation), **browser automation** (logins, forms, JS
 sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 **documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
 transcription), **websites & apps** (build + deploy from the repo),
-**integrations** (3,000+ connectors + MCP/OpenAPI/GraphQL/HTTP, brokered
+**connectors** (3,000+ apps + MCP/OpenAPI/GraphQL/HTTP, brokered
 server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
 (a compounding file-based company brain), **scheduling** (cron/webhook
 triggers — see `<scheduling>` below), **channels** (Slack and chat
@@ -97,6 +101,7 @@ Load this skill when the user asks any of:
 - "How do I use or test OpenCode?"
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
+- "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
 - "How do I create an OpenCode agent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -159,12 +164,23 @@ project-scoped — it cannot enumerate other projects or hit account-level
 routes. Trying `kortix projects ls` from inside the sandbox returns 403;
 that's intentional. Use `kortix projects info` to inspect **this** project.
 
+**Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
+value-free JSON catalog for this session. Check it before asking for a
+credential. It lists only secrets allowed by both the agent grant and session
+scope. A `sandbox` entry names the environment variable that contains the
+value. An `https_broker` entry must use `kortix secrets call IDENTIFIER URL
+[options]`; Kortix adds the value server-side only after the request matches the
+stored host, method, and path policy. A `kortix_service` entry is available only
+through its named service, such as a connector or the LLM gateway. Never print
+or return a secret value or an opaque broker handle. Use `kortix secrets ls
+--json` when you need the complete delivery policy.
+
 **Getting a credential — never punt to the dashboard.** When you need an API key
 or an app connected, **mint a setup link and surface the URL in the same turn** —
 don't tell the human to "open Customize → Connectors", and don't ask them to
 paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-executor` MCP (or `kortix secrets request` / `kortix executor connect` /
-`kortix connectors link`). The human gets a fill-in
+`kortix-connectors` MCP (or `kortix secrets request` /
+`kortix connectors connect`). The human gets a fill-in
 modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
@@ -179,6 +195,54 @@ you're done. No manifest, no bot token, no secret-intake link. Details in the
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
 </cli>
+
+<apps>
+## Kortix Apps — deploy a website or container
+
+An **App** is a project-scoped, serverless deployment with one stable Kortix
+URL. A deployment is immutable. A failed deployment never replaces the active
+version. The control plane starts the App sandbox on the first public request,
+keeps it running while requests arrive, and stops it after the configured idle
+timeout. `stop` suspends compute immediately. The next public request resumes
+the App and returns the original request after readiness.
+
+Apps is experimental and off by default. Enable **Apps** for the selected
+project under Project Settings → Experimental before using the CLI or SDK. The
+CLI labels Apps as experimental. App operations remain gated by the selected
+project feature.
+
+New Apps are private. Use `kortix apps access <app>` to select creator-only,
+whole-project, restricted member/group, public, or password access. Never store
+an App password in `kortix.yaml`.
+
+Use the CLI from the source directory:
+
+```sh
+kortix apps deploy .                         # auto-detect static, bundle, or Dockerfile
+kortix apps deploy ./dist --type static
+kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
+kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
+kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
+kortix apps ls --json
+```
+
+For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`, then
+run `kortix apps deploy --manifest-app <name>`. A single declared App becomes
+the default for bare `kortix apps deploy`. The manifest stores non-secret
+environment values and maps runtime environment keys to **project secret
+identifiers**. It never stores secret values.
+
+The first release supports one public HTTP port, static sites, JavaScript
+bundles, Dockerfiles, and public OCI images. It supports HTTP streaming, SSE,
+and WebSockets. It does not support replicas, persistent volumes, UDP, private
+registries, or custom domains.
+
+**Full reference:**
+`.kortix/opencode/skills/kortix-system/references/kortix/apps.md` — workload
+selection, manifest fields, every lifecycle command, ignore rules, secrets,
+cold starts, rollback, limits, and failure handling. Load it before deploying
+or operating an App.
+</apps>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -440,7 +504,7 @@ manifest.
 agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     sandbox: ml                         # default environment for this agent
-    connectors: [github]                # which connector profiles it may call   (default: none)
+    connectors: [github]                # which connectors it may call   (default: none)
     kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
 ```
 
@@ -486,7 +550,7 @@ project.file.read  project.file.write
 project.customize.read  project.customize.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
-project.connector.read  project.connector.write  project.connector.profiles.manage   # channels (Slack/meet/email) send + connect are gated here
+project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -500,7 +564,7 @@ to see the full enum.
 <reference path=".kortix/opencode/skills/kortix-system/references/capabilities.md">
   The full capabilities reference behind the `<capabilities>` summary
   above: a worked-example paragraph per capability (research, browser,
-  code/data, documents, media, websites/apps, integrations, secrets,
+  code/data, documents, media, websites/apps, connectors, secrets,
   memory, scheduling, channels, subagents, models), "What Kortix is," and
   "What makes Kortix different" for comparison questions. Load whenever a
   capability question needs more than the one-liner in SKILL.md.
@@ -512,7 +576,7 @@ to see the full enum.
   punting the human to the dashboard or asking them to paste a raw key. Covers
   the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix executor connect` / `kortix connectors link` CLI), what the human sees
+  `kortix connectors connect` CLI), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.
@@ -527,6 +591,14 @@ to see the full enum.
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/apps.md">
+  Kortix Apps deployment and operations reference. Covers static, bundle,
+  Dockerfile, and OCI workloads; the v2 manifest `apps:` map; archive ignore
+  rules; environment and secret mappings; stable URLs; cold wake and idle
+  stop; lifecycle commands; rollback; resource and budget limits; and current
+  first-release boundaries. Load before deploying or operating an App.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">

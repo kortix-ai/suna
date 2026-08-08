@@ -8,7 +8,7 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
-  getConnectorAuthorizationRequiredProfiles,
+  getRequiredConnectorConnections,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
@@ -24,11 +24,11 @@ import {
   createProjectSession,
   getProjectSessionScope,
   type PendingSessionPrompt,
-  type SessionConnectorBindings,
+  type SessionConnectorBindingsInput,
   setProjectSessionScope,
 } from '@kortix/sdk';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { prefetchSessionStart } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -60,7 +60,7 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  * Options for a new-session start.
  * `agent_name` chooses the session's boot agent. Later prompts can name another
  * agent; the API re-scopes its grants before forwarding the prompt.
- * `connector_bindings` binds specific connection profiles; `inherit_unbound`
+ * `connector_bindings` binds specific connections; `inherit_unbound`
  * keeps the project-default fallback for every OTHER connector so binding one
  * doesn't null the rest. `require_connectors` names connectors that must resolve
  * to the acting user's OWN connection — a missing one opens the connect gate.
@@ -73,7 +73,7 @@ export type NewProjectSessionOpts = {
     sandbox_slug?: string;
     agent_name?: string;
     pending_prompt?: PendingSessionPrompt;
-    connector_bindings?: SessionConnectorBindings;
+    connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
     require_connectors?: string[];
   };
@@ -170,7 +170,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           useNewSessionGuardStore.getState().target(projectId, sessionId);
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },
@@ -181,11 +181,11 @@ export function useNewProjectSession(projectId: string | undefined) {
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
           } else if (action === 'connect') {
-            const connectorProfiles = getConnectorAuthorizationRequiredProfiles(err);
-            if (projectId && connectorProfiles) {
+            const connectorConnections = getRequiredConnectorConnections(err);
+            if (projectId && connectorConnections) {
               openConnectorGate({
                 projectId,
-                connectorProfiles,
+                connectorConnections,
                 retry: () => startRef.current(opts),
               });
             } else {

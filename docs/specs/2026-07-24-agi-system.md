@@ -76,7 +76,7 @@ document is normative and describes the target, not the current build.
 | C4 | Identity service | Mints, scopes, and introspects credentials for human, agent, machine, and service principals. |
 | C5 | Authorization engine | Resolves an action against a principal's scope and the agent's declared grant. |
 | C6 | Session orchestrator | Provisions, binds, monitors, resumes, and terminates sessions. |
-| C7 | Executor gateway | Brokers all external effects; resolves credentials server-side; enforces policy and approval; writes the effect ledger. |
+| C7 | Connector gateway | Brokers all external effects; resolves credentials server-side; enforces policy and approval; writes the effect ledger. |
 | C8 | Trigger service | Evaluates schedules and receives signed webhooks; starts sessions. |
 | C9 | Channel service | Bidirectional message transport between humans and sessions. |
 | C10 | Harness | Reasoning and tool-invocation loop. Replaceable. |
@@ -111,7 +111,7 @@ defect, not a degradation.
 - **INV-3 — Immutability of binding.** A session's identity, agent, and grant
   are fixed at provisioning and cannot change for the session's lifetime.
 - **INV-4 — Credential confinement.** Third-party credentials MUST NOT be
-  materialized inside a sandbox. They are resolved at the executor gateway.
+  materialized inside a sandbox. They are resolved at the connector gateway.
 - **INV-5 — Attributability.** Every state change, external effect, and control
   change resolves to a principal, a session, and a time.
 - **INV-6 — Declared authority.** Every capability an agent holds is declared in
@@ -274,7 +274,7 @@ be surfaced as orphaned rather than silently ignored or silently honored.
 
 R-5.1 — The manifest MUST be the single source of truth for: the agent roster,
 per-agent grants, connector declarations, required secrets, triggers, channels,
-executor policy, the sandbox image, and the default agent.
+connector policy, the sandbox image, and the default agent.
 
 R-5.2 — The manifest MUST reside in the repository and therefore MUST be
 versioned, diffable, and reviewable.
@@ -333,7 +333,7 @@ R-6.7 — The system MUST support thousands of concurrent sessions over one
 project configuration without cross-session interference.
 
 R-6.8 — The only surface legitimately shared between concurrent sessions is the
-external world, reached through the executor gateway, where contention is
+external world, reached through the connector gateway, where contention is
 therefore policy's problem and not the sandbox's.
 
 ### 6.4 Agent binding
@@ -452,9 +452,9 @@ R-8.4 — Alternative protocol faces (MCP or otherwise) MAY be offered. They MUS
 be implemented over the same core and MUST NOT constitute a separate
 authorization path.
 
-### 8.2 Executor gateway
+### 8.2 Connector gateway
 
-R-8.5 — Every external effect MUST route through the executor gateway.
+R-8.5 — Every external effect MUST route through the connector gateway.
 
 R-8.6 — The in-sandbox client MUST be a thin client. It MUST NOT hold, receive,
 or be able to derive a third-party credential.
@@ -471,7 +471,7 @@ results MUST be redacted summaries.
 
 ### 8.3 Policy and approval
 
-R-8.10 — The manifest MUST be able to declare an executor policy, materialized
+R-8.10 — The manifest MUST be able to declare a connector policy, materialized
 to per-project settings.
 
 R-8.11 — Actions MUST carry a risk classification.
@@ -649,7 +649,7 @@ Assessed against the current build, 2026-07-24.
 | Session strategy | R-7.9, R-7.10 | `fresh` and `reuse` implemented at the fire layer; `reuse` not exposed in the client contract, so unreachable in practice. `pinned` not built. |
 | Goal-based termination | R-7.11 – R-7.13 | **Not implemented.** Completion is turn-based. |
 | CLI parity | R-8.1 – R-8.4 | **Partial.** Parity is the stated direction; not audited or enforced. |
-| Executor gateway | R-8.5 – R-8.9 | Implemented. |
+| Connector gateway | R-8.5 – R-8.9 | Implemented. |
 | Policy and approval | R-8.10 – R-8.14 | Implemented; approval scoping (R-8.14) not verified. |
 | State representation | R-9.1, R-9.2 | Implemented. |
 | Skill loading | R-9.3, R-9.4 | Implemented. |

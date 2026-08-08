@@ -1,4 +1,4 @@
-import type { AdminConnector, ConnectorAuthorization, ProjectSecret } from '@kortix/sdk';
+import type { AdminConnector, Connection, ProjectSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -34,12 +34,12 @@ const connector = (slug: string): AdminConnector => ({
   secretSet: true,
 });
 
-const authorization = (profileId: string): ConnectorAuthorization => ({
-  profile_id: profileId,
+const connection = (connectionId: string): Connection => ({
+  connection_id: connectionId,
   connector_alias: 'mail',
   owner_type: 'project',
   owner_id: null,
-  label: profileId,
+  label: connectionId,
   status: 'active',
   is_default: true,
   metadata: {},
@@ -71,16 +71,16 @@ describe('loadSessionScopeCatalog', () => {
         calls.push(`connectors:${projectId}`);
         return [connector('mail')];
       },
-      listAuthorizations: async (projectId) => {
-        calls.push(`authorizations:${projectId}`);
-        return [authorization('authorization-mail')];
+      listConnections: async (projectId) => {
+        calls.push(`connections:${projectId}`);
+        return [connection('connection-mail')];
       },
     });
 
     expect(calls).toEqual([
       'secrets:project-1',
       'connectors:project-1',
-      'authorizations:project-1',
+      'connections:project-1',
     ]);
     expect(result.raw.secrets).toEqual({
       status: 'ready',
@@ -90,14 +90,14 @@ describe('loadSessionScopeCatalog', () => {
       status: 'ready',
       items: [connector('mail')],
     });
-    expect(result.raw.authorizations).toEqual({
+    expect(result.raw.connections).toEqual({
       status: 'ready',
-      items: [authorization('authorization-mail')],
+      items: [connection('connection-mail')],
     });
     expect(result.errors).toEqual({
       secrets: null,
       connectors: null,
-      authorizations: null,
+      connections: null,
     });
   });
 
@@ -107,16 +107,16 @@ describe('loadSessionScopeCatalog', () => {
         throw new Error('secret catalog denied');
       },
       listConnectors: async () => [],
-      listAuthorizations: async () => {
-        throw new Error('authorization catalog denied');
+      listConnections: async () => {
+        throw new Error('connection catalog denied');
       },
     });
 
     expect(result.raw.secrets).toEqual({ status: 'unavailable' });
     expect(result.raw.connectors).toEqual({ status: 'ready', items: [] });
-    expect(result.raw.authorizations).toEqual({ status: 'unavailable' });
+    expect(result.raw.connections).toEqual({ status: 'unavailable' });
     expect(result.errors.secrets?.message).toBe('secret catalog denied');
     expect(result.errors.connectors).toBeNull();
-    expect(result.errors.authorizations?.message).toBe('authorization catalog denied');
+    expect(result.errors.connections?.message).toBe('connection catalog denied');
   });
 });

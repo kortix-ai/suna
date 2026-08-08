@@ -47,7 +47,10 @@ describe('makeRequest admin-bypass header', () => {
   }
 
   test('attaches x-kortix-admin-bypass when enabled', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'test-token' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'test-token',
+    });
     const stub = stubFetch();
     try {
       setAdminBypass(true);
@@ -59,7 +62,10 @@ describe('makeRequest admin-bypass header', () => {
   });
 
   test('omits the header when disabled', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'test-token' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'test-token',
+    });
     const stub = stubFetch();
     try {
       setAdminBypass(false);
@@ -106,7 +112,10 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
   }
 
   test('a non-string top-level `message` (object) does not become ApiError.message', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const restore = stubErrorBody(403, { message: { code: 'FORBIDDEN' } });
     try {
       const res = await backendApi.get('/projects/abc/files');
@@ -121,7 +130,10 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
   });
 
   test('a non-string `detail.message` (number) does not become ApiError.message', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const restore = stubErrorBody(404, { detail: { message: 404 } });
     try {
       const res = await backendApi.get('/projects/abc/files');
@@ -134,8 +146,13 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
   });
 
   test('a real string `message` is still used verbatim', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
-    const restore = stubErrorBody(403, { message: 'Not allowed to read project files' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const restore = stubErrorBody(403, {
+      message: 'Not allowed to read project files',
+    });
     try {
       const res = await backendApi.get('/projects/abc/files');
       expect(res.success).toBe(false);
@@ -177,7 +194,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   }
 
   test('a single transient 502 on GET is retried and succeeds (no error surfaced)', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const stub = stubFetchSequence([
       { status: 502 }, // transient blip
       { status: 200, body: { ok: true } }, // retry succeeds
@@ -193,7 +213,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 
   test('503 and 504 are also retried on GET', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     for (const status of [503, 504]) {
       const stub = stubFetchSequence([{ status }, { status: 200, body: { ok: true } }]);
       try {
@@ -207,7 +230,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 
   test('a persistent 502 on GET exhausts retries and surfaces the error', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const stub = stubFetchSequence([{ status: 502 }]); // always 502
     try {
       const res = await backendApi.get('/projects/abc/sessions/s1/audit');
@@ -221,7 +247,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 
   test('a 502 on a POST is NOT retried (non-idempotent)', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const stub = stubFetchSequence([{ status: 502 }, { status: 200, body: { ok: true } }]);
     try {
       const res = await backendApi.post('/projects/abc/sessions', { foo: 1 });
@@ -234,7 +263,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 
   test('a 500 on GET is NOT retried (deterministic server error)', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const stub = stubFetchSequence([{ status: 500 }, { status: 200, body: { ok: true } }]);
     try {
       const res = await backendApi.get('/projects/abc/sessions/s1/audit');
@@ -247,7 +279,10 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
   });
 
   test('a 4xx on GET is NOT retried', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const stub = stubFetchSequence([{ status: 404 }, { status: 200, body: { ok: true } }]);
     try {
       const res = await backendApi.get('/projects/abc/sessions/s1/audit');
@@ -314,7 +349,10 @@ describe('makeRequest retries transient transport failures on idempotent reads',
   });
 
   test('a POST transport failure is not retried', async () => {
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
     const originalFetch = globalThis.fetch;
     let attempts = 0;
     globalThis.fetch = (async () => {
@@ -325,6 +363,131 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       const response = await backendApi.post('/projects/p1/sessions', {});
       expect(response.success).toBe(false);
       expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe('makeRequest keeps request deadlines silent to the global host error handler', () => {
+  test('a client request deadline returns TIMEOUT without invoking onError', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          'abort',
+          () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          },
+          { once: true },
+        );
+      })) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit', {
+        timeout: 5,
+      });
+      expect(response.success).toBe(false);
+      expect(response.error).toMatchObject({
+        code: 'TIMEOUT',
+        endpoint: '/projects/p1/sessions/s1/audit',
+        timeout: 5,
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a typed API request deadline returns its error without invoking onError', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json(
+        {
+          error: true,
+          code: 'request_deadline',
+          message: 'Request exceeded the 25s server processing deadline',
+          status: 503,
+        },
+        { status: 503 },
+      )) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      expect(response.success).toBe(false);
+      expect(response.error).toMatchObject({
+        status: 503,
+        code: 'request_deadline',
+        message: 'Request exceeded the 25s server processing deadline',
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a legacy API request deadline is normalized and stays silent during rollout', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json(
+        {
+          error: true,
+          message: 'Request exceeded the 25s server processing deadline',
+          status: 503,
+        },
+        { status: 503 },
+      )) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/secrets');
+      expect(response.success).toBe(false);
+      expect(response.error?.code).toBe('request_deadline');
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('an unrelated 503 still invokes onError after read retries are exhausted', async () => {
+    const errors: Error[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: (error) => {
+        errors.push(error as Error);
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({ message: 'sandbox waking up' }, { status: 503 })) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.get('/projects/p1/sessions/s1');
+      expect(response.success).toBe(false);
+      expect(response.error).toMatchObject({ status: 503, code: '503' });
+      expect(errors).toHaveLength(1);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -365,7 +528,10 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
 
   test('the coded MFA denial dispatches the step-up event', async () => {
     configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
-    const restoreFetch = stubFetch403({ error: 'mfa needed', code: 'account_mfa_required' });
+    const restoreFetch = stubFetch403({
+      error: 'mfa needed',
+      code: 'account_mfa_required',
+    });
     const win = stubWindow();
     try {
       const res = await backendApi.get('/accounts/abc/iam/groups');
@@ -379,7 +545,9 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
 
   test('an ordinary 403 dispatches nothing', async () => {
     configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
-    const restoreFetch = stubFetch403({ error: "You don't have permission to create projects." });
+    const restoreFetch = stubFetch403({
+      error: "You don't have permission to create projects.",
+    });
     const win = stubWindow();
     try {
       const res = await backendApi.get('/accounts/abc/iam/groups');
@@ -394,16 +562,16 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
 
 // Regression for Better Stack frontend pattern `1f3c4d96…`
 // (`ApiError: not supported`, HTTP 501) on the co-worker session "add
-// connector" path: `POST /v1/executor/projects/:id/connectors/auth-discovery`
-// returned a bare `{ error: 'not supported' }` 501 when an optional executor
+// connector" path: `POST /v1/connectors/projects/:id/connectors/auth-discovery`
+// returned a bare `{ error: 'not supported' }` 501 when an optional connector
 // capability wasn't wired on the deployment, and `makeRequest` forwarded it
 // to `onError` → Sentry as an opaque, unhandled-looking `ApiError`. The API
 // now returns a TYPED 501 envelope with `code: 'feature_not_supported'`
-// (executor router `featureNotSupportedResponse`); `makeRequest` classifies
+// (connector router `featureNotSupportedResponse`); `makeRequest` classifies
 // that as an EXPECTED "feature unavailable" state — silent to `onError`
 // (Sentry) but still returned as an `ApiError` so callers/UI can branch on
 // `.code`. Mirrors the billing-gate 402 / no-compaction-model classification.
-// See `apps/api/src/__tests__/unit-executor-feature-not-supported.test.ts`
+// See `apps/api/src/__tests__/unit-connector-feature-not-supported.test.ts`
 // for the API-side half of this contract.
 describe('makeRequest classifies a typed feature_not_supported 501 as silent to Sentry', () => {
   function stubFetchOnce(status: number, body: unknown) {
@@ -434,7 +602,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
       feature: 'connector_auth_discovery',
     });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {
         provider: 'openapi',
         spec: 'https://example.com/openapi.json',
       });
@@ -462,9 +630,12 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
         onErrorCalls++;
       },
     });
-    const restore = stubFetchOnce(501, { error: 'something broke', message: 'something broke' });
+    const restore = stubFetchOnce(501, {
+      error: 'something broke',
+      message: 'something broke',
+    });
     try {
-      const res = await backendApi.post('/executor/projects/p1/connectors/auth-discovery', {});
+      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {});
       expect(res.success).toBe(false);
       expect(res.error).toBeInstanceOf(ApiError);
       expect(res.error?.status).toBe(501);
@@ -550,7 +721,10 @@ describe('makeRequest classifies a typed model_not_servable 409 as silent to Sen
         onErrorCalls++;
       },
     });
-    const restore = stubFetchOnce(409, { error: 'Conflict', message: 'Conflict' });
+    const restore = stubFetchOnce(409, {
+      error: 'Conflict',
+      message: 'Conflict',
+    });
     try {
       const res = await backendApi.put('/projects/p1/model-defaults', {
         scope: 'project',
@@ -628,9 +802,14 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
         onErrorCalls++;
       },
     });
-    const restore = stubFetchOnce(409, { error: 'Conflict', message: 'Conflict' });
+    const restore = stubFetchOnce(409, {
+      error: 'Conflict',
+      message: 'Conflict',
+    });
     try {
-      const res = await backendApi.post('/projects/provision', { account_id: 'a1' });
+      const res = await backendApi.post('/projects/provision', {
+        account_id: 'a1',
+      });
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(409);
       expect(onErrorCalls).toBe(1);

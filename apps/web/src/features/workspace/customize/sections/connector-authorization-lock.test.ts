@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
  * The authorization owner is settled once a connector exists.
  *
  * Switching it afterwards silently changes WHOSE account every future session
- * runs as, and orphans the connection profiles and permission rules already
+ * runs as, and orphans the connections and permission rules already
  * stored under the old owner — a change shaped like a toggle that behaves like a
  * migration.
  *
@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
  */
 const SECTIONS = import.meta.dir;
 const VIEW = readFileSync(join(SECTIONS, 'connectors-view.tsx'), 'utf8');
-const MODAL = readFileSync(join(SECTIONS, 'connector-profile-modal.tsx'), 'utf8');
+const MODAL = readFileSync(join(SECTIONS, 'connector-connection-modal.tsx'), 'utf8');
 
 describe('connector authorization owner is locked after creation', () => {
   test('the detail page passes a lockedReason', () => {

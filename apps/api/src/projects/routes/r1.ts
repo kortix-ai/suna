@@ -84,7 +84,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
         projectId: project.projectId,
         accountId: project.accountId,
         name: spec.secretEnv,
-        consumer: 'executor',
+        consumer: 'connector',
       })
     : null;
   if (!secret) {

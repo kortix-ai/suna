@@ -217,7 +217,7 @@ services:
       KORTIX_MIN_FREE_DISK_MB: ${KORTIX_MIN_FREE_DISK_MB:-2048}
       # Optional push notification for every run's outcome (ok/degraded/
       # failed/skipped) — one generic env var, no vendor-specific
-      # integration. Unset by default (no-op). See notify_webhook() in
+      # connection. Unset by default (no-op). See notify_webhook() in
       # updater.sh.
       KORTIX_UPDATE_WEBHOOK_URL: ${KORTIX_UPDATE_WEBHOOK_URL:-}
     volumes:

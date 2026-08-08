@@ -1,3 +1,4 @@
+import './environment-secret';
 import { config } from './config';
 import { buildServer } from './server';
 

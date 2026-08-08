@@ -52,6 +52,8 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
+  /** Fatal local persistence failure in the OpenCode audit relay. */
+  auditRelayError?: string | null
 }
 
 /**
@@ -101,15 +103,17 @@ export function createHealthRouter(
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+    const auditRelayError = bootState.auditRelayError ?? null
     const runtimeReady =
       repoReady &&
       !bootState.repoMaterializationError &&
       !initialSessionError &&
+      !auditRelayError &&
       opencodeState === 'ok' &&
       initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError
+      : bootState.repoMaterializationError || initialSessionError || auditRelayError
         ? 'error'
         : opencodeState
 
@@ -120,6 +124,12 @@ export function createHealthRouter(
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
+      // The port opencode is listening on right now. It ALTERNATES: a verified
+      // reload boots the replacement on the idle half of the port pair and
+      // promotes it. The API's PTY proxy has to reach opencode directly (the
+      // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
+      // becomes the dead half after one reload.
+      opencode_port: opencode.getActivePort(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,
@@ -146,7 +156,7 @@ export function createHealthRouter(
             ),
           }
         : {}),
-      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

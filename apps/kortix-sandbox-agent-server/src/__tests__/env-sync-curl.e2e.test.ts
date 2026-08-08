@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
@@ -14,6 +17,7 @@ function baseConfig(): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -71,6 +75,7 @@ async function curlJson(url: string, body: string): Promise<{ status: number; bo
 describe('project env sync curl e2e', () => {
   it('updates running daemon env state through curl without restarting the sandbox', async () => {
     let restarts = 0
+    const temp = mkdtempSync(join(tmpdir(), 'kortix-env-curl-'))
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'old',
@@ -81,6 +86,9 @@ describe('project env sync curl e2e', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      join(temp, 'agent-env.sh'),
     )
     const server = Bun.serve({ port: 0, fetch: app.fetch })
 
@@ -95,6 +103,8 @@ describe('project env sync curl e2e', () => {
         ok: true,
         changed: true,
         revision: 'rev-curl-1',
+        exported: 2,
+        agent_env_written: true,
       })
       expect(store.snapshot()).toMatchObject({
         revision: 'rev-curl-1',
@@ -109,7 +119,12 @@ describe('project env sync curl e2e', () => {
         names: ['API_KEY', 'EXTRA_TOKEN'],
       }))
       expect(replay.status).toBe(200)
-      expect(JSON.parse(replay.body)).toMatchObject({ ok: true, changed: false })
+      expect(JSON.parse(replay.body)).toMatchObject({
+        ok: true,
+        changed: false,
+        exported: 2,
+        agent_env_written: true,
+      })
       expect(restarts).toBe(0)
 
       const modelRefresh = await curlJson(`http://127.0.0.1:${server.port}/kortix/env`, JSON.stringify({
@@ -123,6 +138,7 @@ describe('project env sync curl e2e', () => {
       expect(restarts).toBe(1)
     } finally {
       server.stop(true)
+      rmSync(temp, { recursive: true, force: true })
     }
   })
 })

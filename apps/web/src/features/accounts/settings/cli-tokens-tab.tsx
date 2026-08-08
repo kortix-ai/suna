@@ -34,6 +34,7 @@ import {
   type CreatedAccountToken,
   type KortixProject,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -260,9 +261,9 @@ export function CliTokensTab() {
   });
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', selectedAccountId],
+    queryKey: qk.projects.list(selectedAccountId ?? undefined),
     queryFn: () => listProjectsForAccount(selectedAccountId ?? undefined),
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const projects = projectsQuery.data ?? [];
 

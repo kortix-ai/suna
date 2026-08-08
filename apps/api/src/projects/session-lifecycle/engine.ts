@@ -1,4 +1,4 @@
-import { executorExecutions, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { connectorCalls, projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
@@ -573,9 +573,9 @@ async function executeQueuedContinue(
 
   if (payload.executionId) {
     const [exec] = await db
-      .select({ resultSummary: executorExecutions.resultSummary })
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, payload.executionId))
+      .select({ resultSummary: connectorCalls.resultSummary })
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, payload.executionId))
       .limit(1);
     const summary = (exec?.resultSummary ?? {}) as Record<string, unknown>;
     if (summary.consumed_at) {
@@ -686,7 +686,7 @@ async function executeQueuedCreate(
     metadata: payload.metadata,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
-    mayManageSystemConnectorProfiles: payload.mayManageSystemConnectorProfiles,
+    mayManageSystemConnections: payload.mayManageSystemConnections,
     enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
@@ -720,7 +720,7 @@ async function executeCreateSession(
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
-    mayManageSystemConnectorProfiles: command.mayManageSystemConnectorProfiles,
+    mayManageSystemConnections: command.mayManageSystemConnections,
   });
 
   if (result.error) {
@@ -793,8 +793,7 @@ function isProviderName(value: string | null): value is ProviderName {
   return (
     value === 'daytona' ||
     value === 'platinum' ||
-    value === 'e2b' ||
-    value === 'local-docker'
+    value === 'e2b'
   );
 }
 

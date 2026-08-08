@@ -120,6 +120,7 @@ function fetchWithAuth(
   headers: Headers,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const fetchImpl = platformConfig().fetch ?? fetch;
   if (input instanceof Request) {
     // Clone the Request with our auth headers baked in.
     // This guarantees Authorization is part of the Request itself,
@@ -128,9 +129,9 @@ function fetchWithAuth(
       headers,
       ...(signal ? { signal } : {}),
     });
-    return fetch(authedRequest);
+    return fetchImpl(authedRequest);
   }
-  return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
+  return fetchImpl(input, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
 // Timeout composition, streaming exemption, and header building live in

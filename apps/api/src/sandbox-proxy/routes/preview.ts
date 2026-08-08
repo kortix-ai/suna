@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
-import { getTraceHeaders } from '../../lib/request-context';
+import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
-  missingPromptConnectorAuthorizations,
+  missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import {
@@ -113,6 +113,22 @@ function errorMessage(error: unknown, fallback: string): string {
 // load is hundreds of requests and the extend is monotone, so collapsing them
 // loses nothing.
 const previewUseThrottle = createExtendThrottle(60_000);
+
+/**
+ * Bind the provider-facing sandbox identifier to its canonical Kortix scope.
+ * The request audit middleware runs after the proxy handler returns and reads
+ * this request-local context. Without this binding, `/v1/p/...` activity is
+ * present only in the account log and disappears from project/session history.
+ */
+export function bindSandboxRequestContext(
+  record: { accountId: string; projectId: string; sessionId: string },
+  sandboxId: string,
+): void {
+  setContextField('accountId', record.accountId);
+  setContextField('projectId', record.projectId);
+  setContextField('sessionId', record.sessionId);
+  setContextField('sandboxId', sandboxId);
+}
 
 const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
   /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
@@ -482,7 +498,7 @@ async function connectorGateRefusal(
 ): Promise<Response | null> {
   let verdict: PromptConnectorVerdict;
   try {
-    verdict = await missingPromptConnectorAuthorizations({
+    verdict = await missingPromptConnectorConnections({
       accountId: record.accountId,
       projectId: record.projectId,
       sessionId: record.sessionId,
@@ -512,9 +528,9 @@ async function connectorGateRefusal(
       {
         error:
           verdict.aliases.length === 1
-            ? `Required connector profile "${verdict.aliases[0]}" is unavailable`
-            : `Required connector profiles ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+            ? `Required connection "${verdict.aliases[0]}" is unavailable`
+            : `Required connections ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
+        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
         connectors: verdict.aliases,
       },
       409,
@@ -525,10 +541,10 @@ async function connectorGateRefusal(
     {
       // `message` as well as `error`: the SDK prefers `message` and otherwise
       // substitutes a generic "Failed to send message", which would bury this.
-      error: 'Connect the required connector profiles before continuing this session.',
-      message: 'Connect the required connector profiles before continuing this session.',
-      code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-      connector_profiles: verdict.profiles,
+      error: 'Create the required connections before continuing this session.',
+      message: 'Create the required connections before continuing this session.',
+      code: 'CONNECTOR_CONNECTION_REQUIRED',
+      connector_connections: verdict.connections,
     },
     409,
     origin,
@@ -597,13 +613,13 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
 // `project_sessions.agent_name` defaults to this, and no agent is literally named
 // "default" — the runtime resolves it to OpenCode's configured `default_agent`
 // (conventionally `kortix`). It is therefore non-binding: a "default" session's
-// executor token carries the least-privileged grant (null = full for ungoverned
+// connector token carries the least-privileged grant (null = full for ungoverned
 // projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
 // can never use it to escalate into another agent's connector / Kortix-CLI grant.
 const DEFAULT_AGENT_SENTINEL = 'default';
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
-// run a DIFFERENT *concrete* agent than the one this session's executor token was
+// run a DIFFERENT *concrete* agent than the one this session's connector token was
 // minted for. That — and only that — is the escalation the policy prevents (see
 // docs/specs/2026-06-28-token-session-agent-identity.md). The sentinel 'default'
 // is non-binding on EITHER side: a session stored as 'default' has no privileged
@@ -625,7 +641,7 @@ function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: st
 
 // Drop the prompt's `agent` field entirely so OpenCode resolves its own
 // `default_agent`. Used for non-concrete ('default') sessions: the box must
-// always run the agent it booted with — the one the executor token was minted
+// always run the agent it booted with — the one the connector token was minted
 // for — regardless of which concrete name the client speculatively echoed.
 function bodyWithoutPromptAgent(
   body: ArrayBuffer | undefined,
@@ -782,6 +798,7 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
+  bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
   if (

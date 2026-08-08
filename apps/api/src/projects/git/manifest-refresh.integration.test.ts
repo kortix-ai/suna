@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
-import { loadRequiredConnectorsForWarmSession } from '../lib/warm-session-authorizations';
+import { loadRequiredConnectorsForWarmSession } from '../lib/warm-session-connections';
 import { refreshMirror } from './mirror';
 import type { GitBackedProject } from './types';
 

@@ -73,6 +73,7 @@ import {
   listProjectsForAccount,
   type ProjectRole,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -778,8 +779,8 @@ function GroupProjectGrantsCard({
       // every group member's effective access — detaching this group
       // removes a path. Invalidate so a stale tab refetches on next
       // focus.
-      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to detach'),
   });
@@ -893,8 +894,8 @@ function GroupProjectGrantsCard({
           // The target project's Members card (in another tab) shows
           // group-derived access for every member — without these the
           // tab would be stale until the next focus + 20s staleTime.
-          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
-          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.access(attachedProjectId) });
+          queryClient.invalidateQueries({ queryKey: qk.project.summary(attachedProjectId) });
           setAttachOpen(false);
         }}
       />
@@ -965,10 +966,10 @@ function AttachToProjectDialog({
   // Only fetch the project list when the dialog is open. Includes
   // effective_project_role so we can filter to manageable projects.
   const projectsQuery = useQuery({
-    queryKey: ['projects-for-account', accountId],
+    queryKey: qk.projects.list(accountId),
     queryFn: () => listProjectsForAccount(accountId),
     enabled: open,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
   const candidates = useMemo(() => {

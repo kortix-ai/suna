@@ -78,7 +78,7 @@ export function evaluatePolicy(
   // see `packages/sdk/src/session/url.ts`), so this now requires the caller
   // to resolve sandboxId → projectId via `resolveProjectIdForSandbox` and
   // checks that resolved project against `isOwner`, mirroring the
-  // `projects/{id}/...` / `executor/projects/{id}/...` ownership checks
+  // `projects/{id}/...` / `connectors/projects/{id}/...` ownership checks
   // below. `resolveProjectIdForSandbox` is not wired up here (this module
   // has no upstream access) — until the caller supplies it, sandbox-proxy
   // traffic fails closed (denied) rather than staying open to every
@@ -119,7 +119,7 @@ export function evaluatePolicy(
   // Everything the app does once a project exists — detail, sessions,
   // gateway (cost/logs), secrets, sandbox, llm-catalog, settings — all live
   // under `projects/{id}/...`. Connector/policy management goes through
-  // `executor/projects/{id}/...` instead. Both require ownership of `{id}`.
+  // `connectors/projects/{id}/...` instead. Both require ownership of `{id}`.
   const sessionStartMatch = p.match(
     /^projects\/([^/]+)\/sessions\/[^/]+\/start$/,
   );
@@ -136,9 +136,9 @@ export function evaluatePolicy(
       ? allow()
       : deny(403, "You don't have access to this project.");
   }
-  const execMatch = p.match(/^executor\/projects\/([^/]+)(?:\/.*)?$/);
-  if (execMatch) {
-    return isOwner(execMatch[1])
+  const connectorMatch = p.match(/^connectors\/projects\/([^/]+)(?:\/.*)?$/);
+  if (connectorMatch) {
+    return isOwner(connectorMatch[1])
       ? allow()
       : deny(403, "You don't have access to this project.");
   }

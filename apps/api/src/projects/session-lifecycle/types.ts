@@ -16,6 +16,7 @@ export type SessionInvocationSource =
   | 'trigger:manual'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
+  | 'system:secret-submitted'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
@@ -51,7 +52,7 @@ export interface CreateSessionCommand {
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
+  mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -77,7 +78,7 @@ export interface QueuedCreateSessionPayload {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
-  mayManageSystemConnectorProfiles?: boolean;
+  mayManageSystemConnections?: boolean;
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued

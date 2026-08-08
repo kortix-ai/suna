@@ -22,14 +22,15 @@
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {
-    "@kortix/executor-sdk": "workspace:*",
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
+    "ignore": "7.0.5",
     "smol-toml": "^1.3.0",
+    "tar": "7.5.21",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

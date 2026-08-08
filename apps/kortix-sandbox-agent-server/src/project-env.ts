@@ -122,9 +122,11 @@ export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.en
   }
 }
 
-export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvStore): NodeJS.ProcessEnv {
+export function reconcileProjectEnv(
+  targetEnv: NodeJS.ProcessEnv,
+  store: ProjectEnvStore,
+): NodeJS.ProcessEnv {
   const snapshot = store.snapshot()
-  const merged: NodeJS.ProcessEnv = { ...baseEnv }
   // Clear every name this store has EVER managed, not just the ones still
   // granted. The server pushes only currently-granted names, so a revoked
   // secret never appears in `names` — deleting only those would leave its value
@@ -133,10 +135,14 @@ export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvSto
   // MCP servers and direct child spawns never pass through BASH_ENV, so the
   // `unset` written to agent-env.sh does not cover them.
   for (const name of snapshot.knownNames) {
-    delete merged[name]
+    delete targetEnv[name]
   }
   for (const [name, value] of Object.entries(snapshot.env)) {
-    merged[name] = value
+    targetEnv[name] = value
   }
-  return merged
+  return targetEnv
+}
+
+export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvStore): NodeJS.ProcessEnv {
+  return reconcileProjectEnv({ ...baseEnv }, store)
 }

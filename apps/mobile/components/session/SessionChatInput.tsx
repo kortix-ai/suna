@@ -103,7 +103,7 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
   {
     id: 'autowork',
     label: 'Kraemer',
-    role: 'Executor',
+    role: 'Connector',
     description: 'Fast TDD loop — reliable for clear specs',
     commandName: 'autowork',
     bestFor: 'Clear specs, coding tasks, "just build it" work',

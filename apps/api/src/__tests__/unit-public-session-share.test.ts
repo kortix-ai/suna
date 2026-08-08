@@ -9,7 +9,7 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const EXTERNAL_ID = 'sandbox-external-1';
 
 let shareRow: any;
-let personalBindingRow: { profileId: string } | null;
+let personalBindingRow: { connectionId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
 
@@ -112,13 +112,13 @@ describe('public session preview shares', () => {
   });
 
   test('rejects a legacy public link when the session now has a personal connector binding', async () => {
-    personalBindingRow = { profileId: '55555555-5555-4555-8555-555555555555' };
+    personalBindingRow = { connectionId: '55555555-5555-4555-8555-555555555555' };
 
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
 
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({
-      error: 'Sessions using a personal connector profile cannot be shared publicly',
+      error: 'Sessions using a personal connection cannot be shared publicly',
     });
   });
 

@@ -13,7 +13,7 @@ import type { BootMark } from './routes/health'
  * apps/api/src/platform/services/provider-events.ts's recordProviderEvent).
  * This module closes that gap by POSTing the same timeline server-side.
  *
- * INTEGRATION: the integrator should call `relayBootTimelineToApi(bootState.timeline)`
+ * INTEGRATION: the connector should call `relayBootTimelineToApi(bootState.timeline)`
  * from main.ts exactly once per boot, right after `runtimeReady` first becomes
  * true — i.e. from the same place that today computes readiness for
  * routes/health.ts (mirrors relayBootstrapPinToApi, which fires at the

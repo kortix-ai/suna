@@ -7,8 +7,8 @@ import type {
 } from '@kortix/llm-gateway';
 import { assertBillingActive, BillingGateError } from '../billing/services/billing-gate';
 import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
-import { getCachedAccountTier } from '../billing/services/entitlements';
-import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
+import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
+import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -60,7 +60,7 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
   const account = await validateAccountToken(token);
   if (account.isValid && account.userId && account.accountId) {
     // projectId/sessionId attribute usage to the calling session (the sandbox
-    // executor token is minted per-session with session_id = sandbox_id) — the
+    // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
     return {
       userId: account.userId,
@@ -82,8 +82,15 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
-        const tier = await getCachedAccountTier(principal.accountId);
-        return { ...principal, tier, freeModelsOnly: accountIsFreeTierForModels(tier) };
+        // Both reads share the entitlements tier-snapshot cache: one DB read,
+        // one wall-clock instant, no tier-vs-managed skew. `freeModelsOnly`
+        // is the managed-models entitlement (trial overlay + operator
+        // override included), not a literal tier=='free' check.
+        const [tier, managedModels] = await Promise.all([
+          getCachedAccountTier(principal.accountId),
+          accountMayUseManagedModels(principal.accountId),
+        ]);
+        return { ...principal, tier, freeModelsOnly: !managedModels };
       })()
     : { ...principal, freeModelsOnly: false };
   // Resolve the account/project/agent-configured concrete default once, here,
@@ -179,9 +186,11 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
 export async function assertLlmBillingActive(
   accountId: string,
 ): Promise<{ holdUsd?: number } | void> {
+  // Accounts without the managed-models entitlement (BYOK-only, whether by
+  // tier, trial, or operator override) never spend wallet credits on managed
+  // inference — their wallets fund sandbox compute only, so skip the LLM gate.
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    const tier = await getCachedAccountTier(accountId);
-    if (accountIsFreeTierForModels(tier)) return;
+    if (!(await accountMayUseManagedModels(accountId))) return;
   }
   return assertBillingActive(accountId);
 }
@@ -218,7 +227,7 @@ const llmActivityThrottle = createExtendThrottle(60_000);
  * money through our own control plane, and the row IS the billing record.
  *
  * `event.sessionId` is safe as the target for exactly the reason `originRef` is:
- * the gateway principal's session id comes from the executor token, minted
+ * the gateway principal's session id comes from the connector token, minted
  * server-side with sessionId = sandboxId = the project session id, so a caller
  * cannot name someone else's session. Fire-and-forget — a deadline write must
  * never fail a billing settlement.

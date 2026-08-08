@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
 
 let billingEnabled = true;
 let accountTier = 'free';
@@ -59,6 +60,12 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+  // The managed-models entitlement resolver (trial + operator override aware
+  // in production; tier-derived here). Deliberately does NOT bump
+  // accountTierCalls: in production it reads the same cached tier snapshot as
+  // getCachedAccountTier — it is not a second tier resolution.
+  accountMayUseManagedModels: async () =>
+    billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
 }));
 
 mock.module('../projects/secrets', () => ({
@@ -175,7 +182,10 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
-    expect(accountTierCalls).toBe(1);
+    // 0, not 1: the pass path answers via the managed-models entitlement
+    // resolver (shared tier snapshot) and never resolves the tier STRING —
+    // that fetch only happens on the refusal path to word the error.
+    expect(accountTierCalls).toBe(0);
   });
 
   test('rejects stale raw auto for paid accounts', async () => {

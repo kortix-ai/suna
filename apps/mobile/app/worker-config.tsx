@@ -5,7 +5,7 @@ import { WorkerConfigPage } from '@/components/pages/WorkerConfigPage';
 export default function WorkerConfigScreen() {
   const { workerId, view } = useLocalSearchParams<{
     workerId: string;
-    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+    view?: 'instructions' | 'tools' | 'connections' | 'triggers';
   }>();
   const router = useRouter();
 

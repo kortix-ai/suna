@@ -124,14 +124,20 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(matchesPaletteQuery(customizeItem!, 'Connectors')).toBe(false);
   });
 
-  test('Customize keeps "agents" — Agents genuinely stayed in the overlay', () => {
-    expect(customizeItem).toBeDefined();
-    expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(true);
+  test('typing "agents" surfaces the real Agents entry; Customize no longer matches', () => {
+    // Agents graduated to /projects/<id>/agent and carries its own palette
+    // entry, so Customize dropped the word — exactly like skills and
+    // connectors above. Leaving it would list Customize AHEAD of the page the
+    // user is typing the name of.
+    const agentsItem = paletteItems.find((item) => item.id === 'proj-agents');
+    expect(agentsItem).toBeDefined();
+    expect(matchesPaletteQuery(agentsItem!, 'agents')).toBe(true);
+    expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(false);
   });
 
-  test('the Connectors/Skills/Commands entries navigate to the standalone pages, not /customize/*', () => {
+  test('Connectors and Skills navigate to standalone pages; Commands opens Customize', () => {
     expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(commandsItem!.href).toBe('/projects/{projectId}/commands');
+    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
     expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
   });
 

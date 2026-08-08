@@ -23,7 +23,7 @@ const HELP = help`Usage: kortix secrets <subcommand> [options]
 Manage encrypted secrets on the linked Kortix project. A delivery policy
 controls whether each value reaches a sandbox or stays on Kortix services.
 
-A secret is profile-like: an IDENTIFIER (the unique handle an agent's
+A secret has an IDENTIFIER (the unique handle an agent's
 \`secrets\` grant references), a KEY (the env var injected into the sandbox),
 and a value. Runtime delivery uses KEY as an environment variable. Leave the
 identifier blank and it defaults to the key. Set it explicitly to keep a
@@ -41,10 +41,12 @@ Subcommands:
                                     Use \`KEY=-\` to read VALUE from stdin.
     --identifier <id>               Store under an explicit identifier (a second
     --id <id>                       value under the same KEY). One KEY=VALUE only.
-  request NAME [NAME …]             Mint a short-lived link for a human to
+  request NAME [NAME …]             Mint a link (valid 7 days) for a human to
                                     ENTER the value(s) — never pasted into
                                     chat. Surface the URL (web: fill-in
-                                    modal, Slack: tappable link).
+                                    modal, Slack: tappable link). Reuse a live
+                                    link across runs — do not re-mint/re-post
+                                    while one is unexpired.
                                     --scope runtime|connector  --expires <min>
   sync                              Force a re-push of all project secrets to
                                     this session's sandbox. Use after setting
@@ -407,13 +409,14 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
   if (!ctx) return 1;
   const strategy = strategyRaw as SecretStrategy;
   const normalizedConsumer = consumerFlag?.replace(/-/g, '_') ?? 'http_broker';
-  const consumer = normalizedConsumer === 'automation' ? 'executor' : normalizedConsumer;
+  // Preserve the old `automation` flag as an input alias. Send only the canonical value.
+  const consumer = normalizedConsumer === 'automation' ? 'connector' : normalizedConsumer;
   if (
     strategy === 'broker' &&
-    !['llm_gateway', 'connector', 'executor', 'http_broker'].includes(consumer)
+    !['llm_gateway', 'connector', 'http_broker'].includes(consumer)
   ) {
     process.stderr.write(
-      `${status.err('--consumer must be llm-gateway, connector, automation, or http-broker.')}\n`,
+      `${status.err('--consumer must be llm-gateway, connector, or http-broker.')}\n`,
     );
     return 2;
   }
@@ -494,7 +497,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     const result = await withKortixScope(ctx.auth, () =>
       setProjectSecretStrategy(ctx.projectId, identifier, strategy, {
         ...(strategy === 'broker'
-          ? { consumer: consumer as 'llm_gateway' | 'connector' | 'executor' | 'http_broker' }
+          ? { consumer: consumer as 'llm_gateway' | 'connector' | 'http_broker' }
           : {}),
         ...(policy ? { egress_policy: policy } : {}),
         ...(handlePrefix ? { handle_prefix: handlePrefix } : {}),
@@ -749,9 +752,19 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
       `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. The value is never pasted into chat.${C.reset}\n` +
-      `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
+      `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
+      `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
   );
   return 0;
+}
+
+export function describeLinkValidity(expiresAtIso: string, nowMs: number): string {
+  const expiresMs = Date.parse(expiresAtIso);
+  if (Number.isNaN(expiresMs) || expiresMs <= nowMs) return 'an unknown window';
+  const minutes = Math.round((expiresMs - nowMs) / 60_000);
+  if (minutes >= 2 * 24 * 60) return `${Math.round(minutes / (24 * 60))} days`;
+  if (minutes >= 2 * 60) return `${Math.round(minutes / 60)} hours`;
+  return `${Math.max(minutes, 1)} minute${minutes === 1 ? '' : 's'}`;
 }
 
 async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
@@ -791,19 +804,60 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
   if (!ctx) return 1;
 
   try {
-    const result = await ctx.client.post<{ ok: boolean; synced: number }>(
+    const result = await ctx.client.post<{
+      ok: boolean;
+      active_sandboxes: number;
+      targeted: number;
+      synced: number;
+      failed: number;
+      exported: number;
+      results: Array<{
+        session_id: string;
+        sandbox_id: string | null;
+        status: 'synced' | 'failed';
+        scope: 'inherit' | 'restricted' | 'none' | null;
+        revision: string | null;
+        exported: number;
+        managed: number | null;
+        withheld: number | null;
+        agent_env_written: boolean;
+        reason?: string;
+      }>;
+    }>(
       `/projects/${ctx.projectId}/secrets/sync`,
       {},
     );
     if (json) {
       emitJson(result);
+      return result.ok ? 0 : 1;
+    }
+    if (result.ok) {
+      if (result.active_sandboxes === 0) {
+        process.stdout.write(`\n${status.ok('No active sandboxes require secret synchronization.')}\n\n`);
+        return 0;
+      }
+      process.stdout.write(
+        `\n${status.ok(`Verified ${result.exported} secret export(s) across ${result.synced}/${result.active_sandboxes} active sandbox(es).`)}\n`,
+      );
+      for (const target of result.results) {
+        const scope = target.scope === 'none' ? ' · scope permits zero secrets' : '';
+        process.stdout.write(
+          `  ${C.dim}${target.session_id}: ${target.exported} exported · revision ${target.revision}${scope}${C.reset}\n`,
+        );
+      }
+      process.stdout.write('\n');
       return 0;
     }
-    process.stdout.write(
-      `\n${status.ok(`Synced ${result.synced ?? 'all'} secret(s) to active sandboxes.`)}\n` +
-        `  ${C.dim}If secrets are still missing, source /dev/shm/kortix/agent-env.sh or restart the session.${C.reset}\n\n`,
+
+    process.stderr.write(
+      `${status.err(`Secret sync incomplete: ${result.synced} synced, ${result.failed} failed.`)}\n`,
     );
-    return 0;
+    for (const target of result.results.filter((item) => item.status === 'failed')) {
+      process.stderr.write(
+        `  ${C.dim}${target.session_id || 'project'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
+      );
+    }
+    return 1;
   } catch (err) {
     return surfaceApiError(err);
   }

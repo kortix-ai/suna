@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ConnectorAuthorizationStrategySchema,
-  ConnectorAuthorizationMetadataSchema,
-  ConnectorAuthorizationSchema,
-  ReconcileConnectorAuthorizationInputSchema,
-  UpdateConnectorAuthorizationCredentialInputSchema,
-  ConnectionProfileMetadataSchema,
+  ConnectionSchema,
+  ConnectionMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
   ErrorEnvelopeSchema,
   OkResponseSchema,
@@ -15,14 +12,15 @@ import {
   ProjectSchema,
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
-  ReconcileConnectionProfileInputSchema,
   SecretBrokerRequestSchema,
   SecretBrokerResponseSchema,
+  ReconcileConnectionInputSchema,
   SecretSchema,
   SecretDeliveryStrategySchema,
+  SecretConsumerSchema,
   UpdateSecretStrategyInputSchema,
-  ConnectorAuthorizationRequiredErrorSchema,
-  ConnectorAuthorizationRequiredProfileSchema,
+  ConnectorConnectionRequiredErrorSchema,
+  RequiredConnectorConnectionSchema,
   SessionConnectorBindingInputSchema,
   SessionConnectorBindingSchema,
   SessionConnectorBindingsInputSchema,
@@ -36,7 +34,7 @@ import {
   SharingIntentSchema,
   TriggerListSchema,
   TriggerSchema,
-  UpdateConnectionProfileCredentialInputSchema,
+  UpdateConnectionCredentialInputSchema,
   WarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema,
 } from '../index';
@@ -53,12 +51,11 @@ describe('connector authorization strategy', () => {
   });
 });
 
-describe('connector authorization terminology', () => {
-  test('canonical authorization schemas preserve the compatibility wire shape', () => {
-    expect(ConnectorAuthorizationMetadataSchema).toBe(ConnectionProfileMetadataSchema);
+describe('connection terminology', () => {
+  test('canonical connection schemas expose the connection wire shape', () => {
     expect(
-      ConnectorAuthorizationSchema.parse({
-        profile_id: '11111111-2222-4333-8444-555555555555',
+      ConnectionSchema.parse({
+        connection_id: '11111111-2222-4333-8444-555555555555',
         connector_alias: 'gmail',
         owner_type: 'project',
         owner_id: null,
@@ -69,15 +66,20 @@ describe('connector authorization terminology', () => {
       }),
     ).toMatchObject({ connector_alias: 'gmail', status: 'active' });
     expect(
-      ReconcileConnectorAuthorizationInputSchema.parse({
+      ReconcileConnectionInputSchema.parse({
         connector_alias: 'gmail',
         owner_type: 'project',
         label: 'Project Gmail',
       }),
     ).toMatchObject({ connector_alias: 'gmail', owner_type: 'project' });
     expect(
-      UpdateConnectorAuthorizationCredentialInputSchema.parse({ value: 'secret-value' }),
+      UpdateConnectionCredentialInputSchema.parse({ value: 'secret-value' }),
     ).toEqual({ value: 'secret-value' });
+  });
+
+  test('secret consumers accept connector and reject removed product nouns', () => {
+    expect(SecretConsumerSchema.parse('connector')).toBe('connector');
+    expect(SecretConsumerSchema.safeParse('executor').success).toBe(false);
   });
 });
 
@@ -110,6 +112,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
       meta_agent: false,
+      apps: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -256,27 +259,20 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    // The RETIRED single-instance provider ('local_docker', underscore) stays
-    // rejected — a genuinely different identifier from the new EXPERIMENTAL
-    // 'local-docker' (hyphen) provider below.
-    expect(() =>
-      ProjectSchema.parse(
-        projectFixture({
-          available_sandbox_providers: ['daytona', 'local_docker'],
-        }),
-      ),
-    ).toThrow();
-  });
-
-  test('accepts the EXPERIMENTAL local-docker (hyphenated) sandbox provider', () => {
-    expect(() =>
-      ProjectSchema.parse(
-        projectFixture({
-          default_sandbox_provider: 'local-docker',
-          available_sandbox_providers: ['local-docker'],
-        }),
-      ),
-    ).not.toThrow();
+    const retiredProviders = [
+      ['local', 'docker'].join('_'),
+      ['local', 'docker'].join('-'),
+    ];
+    for (const retiredProvider of retiredProviders) {
+      expect(() =>
+        ProjectSchema.parse(
+          projectFixture({
+            default_sandbox_provider: retiredProvider,
+            available_sandbox_providers: [retiredProvider],
+          }),
+        ),
+      ).toThrow();
+    }
   });
 
   test('rejects an unknown status', () => {
@@ -471,7 +467,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b', 'local-docker']) {
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -639,6 +635,7 @@ describe('envelopes', () => {
       'llm_gateway',
       'review_center',
       'meta_agent',
+      'apps',
     ]);
   });
 
@@ -733,48 +730,38 @@ describe('SessionCreateInputSchema runtime_context', () => {
   });
 });
 
-describe('session connector profile contracts', () => {
-  const profileId = '11111111-1111-4111-a111-111111111111';
+describe('session connection contracts', () => {
+  const connectionId = '11111111-1111-4111-a111-111111111111';
 
-  test('normalizes canonical, deprecated, and equal dual binding input', () => {
-    expect(SessionConnectorBindingInputSchema.parse({ authorization_id: profileId })).toEqual({
-      authorization_id: profileId,
+  test('accepts only canonical connection binding input', () => {
+    expect(SessionConnectorBindingInputSchema.parse({ connection_id: connectionId })).toEqual({
+      connection_id: connectionId,
     });
-    expect(SessionConnectorBindingInputSchema.parse({ profile_id: profileId })).toEqual({
-      authorization_id: profileId,
-    });
-    expect(
-      SessionConnectorBindingInputSchema.parse({
-        authorization_id: profileId,
-        profile_id: profileId,
-      }),
-    ).toEqual({ authorization_id: profileId });
   });
 
   test('rejects missing, conflicting, and unknown binding input', () => {
     expect(SessionConnectorBindingInputSchema.safeParse({}).success).toBe(false);
     expect(
       SessionConnectorBindingInputSchema.safeParse({
-        authorization_id: profileId,
-        profile_id: '22222222-2222-4222-8222-222222222222',
+        authorization_id: connectionId,
       }).success,
     ).toBe(false);
     expect(
       SessionConnectorBindingInputSchema.safeParse({
-        authorization_id: profileId,
+        connection_id: connectionId,
         credential: 'secret',
       }).success,
     ).toBe(false);
   });
 
   test('emits only canonical connector binding output', () => {
-    expect(SessionConnectorBindingSchema.parse({ authorization_id: profileId })).toEqual({
-      authorization_id: profileId,
+    expect(SessionConnectorBindingSchema.parse({ connection_id: connectionId })).toEqual({
+      connection_id: connectionId,
     });
-    expect(SessionConnectorBindingSchema.safeParse({ profile_id: profileId }).success).toBe(false);
+    expect(SessionConnectorBindingSchema.safeParse({ authorization_id: connectionId }).success).toBe(false);
     expect(
       SessionConnectorBindingsSchema.safeParse({
-        veyris: { authorization_id: profileId, profile_id: profileId },
+        veyris: { authorization_id: connectionId, connection_id: connectionId },
       }).success,
     ).toBe(false);
   });
@@ -782,33 +769,33 @@ describe('session connector profile contracts', () => {
   test('normalizes connector binding maps before session creation', () => {
     expect(
       SessionCreateInputSchema.parse({
-        connector_bindings: { veyris: { profile_id: profileId } },
+        connector_bindings: { veyris: { connection_id: connectionId } },
       }).connector_bindings,
-    ).toEqual({ veyris: { authorization_id: profileId } });
+    ).toEqual({ veyris: { connection_id: connectionId } });
     expect(
       SessionConnectorBindingsInputSchema.safeParse({
-        veyris: { profile_id: profileId, credential: 'secret' },
+        veyris: { connection_id: connectionId, credential: 'secret' },
       }).success,
     ).toBe(false);
     expect(
       SessionConnectorBindingsInputSchema.safeParse({
-        VEYRIS: { profile_id: profileId },
+        VEYRIS: { connection_id: connectionId },
       }).success,
     ).toBe(false);
   });
 
-  test('bounds binding count and non-secret profile metadata', () => {
+  test('bounds binding count and non-secret connection metadata', () => {
     const tooMany = Object.fromEntries(
-      Array.from({ length: 65 }, (_, index) => [`connector_${index}`, { profile_id: profileId }]),
+      Array.from({ length: 65 }, (_, index) => [`connector_${index}`, { connection_id: connectionId }]),
     );
     expect(SessionConnectorBindingsInputSchema.safeParse(tooMany).success).toBe(false);
-    expect(ConnectionProfileMetadataSchema.safeParse({ access_token: 'nope' }).success).toBe(false);
-    expect(ConnectionProfileMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
+    expect(ConnectionMetadataSchema.safeParse({ access_token: 'nope' }).success).toBe(false);
+    expect(ConnectionMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
       false,
     );
   });
 
-  test('profile reconcile and credential mutation reject unknown or oversized input', () => {
+  test('connection reconcile and credential mutation reject unknown or oversized input', () => {
     const valid = {
       connector_alias: 'veyris',
       owner_type: 'external' as const,
@@ -816,15 +803,15 @@ describe('session connector profile contracts', () => {
       label: 'VEYRIS thread',
       metadata: { workspace_id: 'workspace-1' },
     };
-    expect(ReconcileConnectionProfileInputSchema.safeParse(valid).success).toBe(true);
+    expect(ReconcileConnectionInputSchema.safeParse(valid).success).toBe(true);
     expect(
-      ReconcileConnectionProfileInputSchema.safeParse({ ...valid, credential: 'secret' }).success,
+      ReconcileConnectionInputSchema.safeParse({ ...valid, credential: 'secret' }).success,
     ).toBe(false);
     expect(
-      UpdateConnectionProfileCredentialInputSchema.safeParse({ value: 'x'.repeat(65537) }).success,
+      UpdateConnectionCredentialInputSchema.safeParse({ value: 'x'.repeat(65537) }).success,
     ).toBe(false);
     expect(
-      UpdateConnectionProfileCredentialInputSchema.safeParse({
+      UpdateConnectionCredentialInputSchema.safeParse({
         oauth2: {
           type: 'oauth2_client_credentials',
           token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
@@ -836,7 +823,7 @@ describe('session connector profile contracts', () => {
       }).success,
     ).toBe(true);
     expect(
-      UpdateConnectionProfileCredentialInputSchema.safeParse({
+      UpdateConnectionCredentialInputSchema.safeParse({
         oauth2: {
           type: 'oauth2_client_credentials',
           token_url: 'http://localhost/token',
@@ -850,27 +837,27 @@ describe('session connector profile contracts', () => {
 });
 
 describe('session scope contracts', () => {
-  const authorizationId = '11111111-1111-4111-a111-111111111111';
+  const connectionId = '11111111-1111-4111-a111-111111111111';
 
-  test('normalizes deprecated binding input and rejects an empty replacement', () => {
+  test('accepts canonical binding input and rejects an empty replacement', () => {
     expect(
       SessionScopeInputSchema.parse({
-        connector_bindings: { gmail: { profile_id: authorizationId } },
+        connector_bindings: { gmail: { connection_id: connectionId } },
       }),
     ).toEqual({
-      connector_bindings: { gmail: { authorization_id: authorizationId } },
+      connector_bindings: { gmail: { connection_id: connectionId } },
     });
     expect(SessionScopeInputSchema.safeParse({}).success).toBe(false);
     expect(SessionScopeInputSchema.safeParse({ secret_values: [] }).success).toBe(false);
   });
 
-  test('emits only authorization_id in authoritative scope output', () => {
+  test('emits only connection_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
       // The alias a session REQUIRES, whether or not anything is connected —
       // the one axis a binding cannot express, since a binding carries an id.
       required_connectors: ['gmail'],
-      connector_bindings: { gmail: { authorization_id: authorizationId } },
+      connector_bindings: { gmail: { connection_id: connectionId } },
       dropped_secrets: [],
       added_secrets: ['GMAIL_TOKEN'],
       dropped_bindings: [],
@@ -881,7 +868,7 @@ describe('session scope contracts', () => {
     expect(
       SessionScopeSchema.safeParse({
         ...value,
-        connector_bindings: { gmail: { profile_id: authorizationId } },
+        connector_bindings: { gmail: { authorization_id: connectionId } },
       }).success,
     ).toBe(false);
   });
@@ -945,29 +932,29 @@ describe('session scope contracts', () => {
   });
 });
 
-describe('connector authorization required contracts', () => {
-  const profile = {
+describe('required connection contracts', () => {
+  const connection = {
     id: '11111111-1111-4111-a111-111111111111',
     slug: 'gmail-read',
     name: 'Gmail read only',
     authorization_strategy: 'user' as const,
   };
 
-  test('accepts the public missing-profile shape', () => {
-    expect(ConnectorAuthorizationRequiredProfileSchema.parse(profile)).toEqual(profile);
+  test('accepts the public missing-connection shape', () => {
+    expect(RequiredConnectorConnectionSchema.parse(connection)).toEqual(connection);
   });
 
   test('accepts the structured session-create conflict and rejects extra fields', () => {
     const value = {
-      code: 'CONNECTOR_AUTHORIZATION_REQUIRED' as const,
-      message: 'Connect the required connector profiles before starting this session.',
-      connector_profiles: [profile],
+      code: 'CONNECTOR_CONNECTION_REQUIRED' as const,
+      message: 'Create the required connections before starting this session.',
+      connector_connections: [connection],
     };
-    expect(ConnectorAuthorizationRequiredErrorSchema.parse(value)).toEqual(value);
+    expect(ConnectorConnectionRequiredErrorSchema.parse(value)).toEqual(value);
     expect(
-      ConnectorAuthorizationRequiredErrorSchema.safeParse({
+      ConnectorConnectionRequiredErrorSchema.safeParse({
         ...value,
-        connector_profiles: [{ ...profile, authorization_id: profile.id }],
+        connector_connections: [{ ...connection, authorization_id: connection.id }],
       }).success,
     ).toBe(false);
   });

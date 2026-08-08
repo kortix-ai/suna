@@ -30,8 +30,7 @@ The product term is **Secret**. An environment variable is one delivery form.
 | --- | --- | --- | --- |
 | `runtime` | `sandbox` | Plaintext value | Available for code that must read the value locally |
 | `broker` | `llm_gateway` | Nothing | Kortix authenticates provider requests server-side |
-| `broker` | `connector` | Nothing | Kortix resolves connector credentials server-side |
-| `broker` | `executor` | Nothing | Kortix resolves automation and channel credentials server-side |
+| `broker` | `connector` | Nothing | Kortix resolves automation and channel credentials server-side |
 | `broker` | `http_broker` | Opaque session handle | Kortix makes one policy-bound HTTPS request |
 | `broker` | `git_proxy` | Nothing | Git uses its separate encrypted credential path |
 | `egress` | `network` | Opaque placeholder | Unavailable and rejected with `409` |
@@ -209,7 +208,7 @@ The web editor provides these choices:
 - **Readable in sandbox** for `runtime` and `sandbox`;
 - **LLM gateway** for provider requests;
 - **Connector** for connector authorization;
-- **Automation** for Executor actions and channels;
+- **Automation** for Connector actions and channels;
 - **HTTPS broker** for a policy-bound request;
 - **Stored but disabled** for `denied`.
 

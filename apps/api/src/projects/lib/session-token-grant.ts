@@ -1,19 +1,15 @@
 /**
- * Re-mint a live session token's agent grant when a prompt switches agents.
+ * Reconcile a live session token's agent grant with the current manifest.
  *
- * `account_tokens.agent_grant` is written ONCE, at session mint, from the agent
- * the session was created with. Nothing ever rewrote it, and nothing updates
- * `project_sessions.agent_name` either — but in-session agent switching is
- * allowed and the proxy forwards a prompt's concrete `agent` field untouched.
- * So the connector and Kortix-CLI gates (`agentMayUseConnector`,
- * `agentMayPerform`) read the BOOT agent's grant no matter which agent is
- * actually running:
+ * `account_tokens.agent_grant` starts from the session's create-time agent.
+ * The connector and Kortix-CLI gates (`agentMayUseConnector`,
+ * `agentMayPerform`) read that row at call time. The row must therefore follow
+ * both in-session agent switches and same-agent manifest edits:
  *
- *     create session with agent A (connectors: all)
- *     prompt {"agent": "B"}  where B declares connectors: [calendar]
- *       -> opencode runs B
- *       -> the token still carries A's grant
- *       -> B calls A's connectors, including ones its own manifest denies it
+ *     create session with agent A (connectors: [slack])
+ *     update A to connectors: [slack, google_workspace]
+ *       -> the token still carries the old list unless it is reconciled
+ *       -> the existing session receives connector_not_assigned
  *
  * Secrets are replaced through the pre-prompt env sync (see `secret-grant.ts`).
  * An operator can enable the strict secret-grant lock to refuse a boundary
@@ -23,10 +19,10 @@
  * every subsequent call.
  */
 
+import { type AgentGrant, accountTokens, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountTokens, projects, type AgentGrant } from '@kortix/db';
-import { db } from '../../shared/db';
 import { config } from '../../config';
+import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import {
   AgentSecretGrantMismatchError,
@@ -119,12 +115,83 @@ export function remintDecisionFor(
   return { action: 'write', grant: running };
 }
 
+async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | null> {
+  try {
+    const [token] = await db
+      .select({ agentGrant: accountTokens.agentGrant })
+      .from(accountTokens)
+      .where(
+        and(
+          eq(accountTokens.sessionId, sessionId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      )
+      .limit(1);
+    return token?.agentGrant ?? null;
+  } catch (err) {
+    throw new SessionGrantRemintError(sessionId, err);
+  }
+}
+
+async function resolveCurrentGrant(input: {
+  projectId: string;
+  sessionId: string;
+  sessionAgent: string;
+  runningAgent: string;
+  enforceGrantLock: boolean;
+  forceRefresh: boolean;
+}): Promise<AgentGrant | null> {
+  try {
+    const [project] = await db
+      .select({
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
+      .from(projects)
+      .where(eq(projects.projectId, input.projectId))
+      .limit(1);
+
+    return await resolveSessionAgentGrant({
+      projectId: input.projectId,
+      repoUrl: project?.repoUrl ?? '',
+      defaultBranch: project?.defaultBranch,
+      manifestPath: project?.manifestPath,
+      sessionAgent: input.sessionAgent,
+      requestedAgent: input.runningAgent,
+      enforceGrantLock: input.enforceGrantLock,
+      forceRefresh: input.forceRefresh,
+    });
+  } catch (err) {
+    // A secret-boundary refusal is the env sync's error to report, not ours.
+    if (err instanceof AgentSecretGrantMismatchError) throw err;
+    throw new SessionGrantRemintError(input.sessionId, err);
+  }
+}
+
+async function applyResolvedGrant(
+  sessionId: string,
+  stored: AgentGrant | null,
+  running: AgentGrant | null,
+): Promise<RemintDecision> {
+  const decision = remintDecisionFor(stored, running);
+  if (decision.action === 'refuse') {
+    throw new SessionGrantRemintError(sessionId, new Error(decision.reason));
+  }
+  if (decision.action === 'write') {
+    await remintSessionAgentGrant(sessionId, decision.grant);
+  }
+  return decision;
+}
+
 /**
  * Re-point a session token's grant at the agent a prompt actually runs.
  *
- * A no-op — and, importantly, no manifest read — unless the prompt names a
- * concrete agent that differs from the session's. Ordinary turns are the
- * overwhelming majority and must not pay for this.
+ * Resolve on every prompt. The manifest can change while the session remains
+ * active, including through `kortix connectors add --apply`. Comparing only
+ * agent names leaves the token frozen at its create-time connector and CLI
+ * lists.
  *
  * Throws `SessionGrantRemintError` if the grant cannot be resolved or written;
  * the caller must fail the prompt rather than run the new agent under the old
@@ -153,72 +220,64 @@ export async function remintGrantForAgentSwitch(input: {
   const runningAgent =
     requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : input.sessionAgent;
 
-  let stored: AgentGrant | null;
-  try {
-    const [token] = await db
-      .select({ agentGrant: accountTokens.agentGrant })
-      .from(accountTokens)
-      .where(
-        and(
-          eq(accountTokens.sessionId, input.sessionId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-        ),
-      )
-      .limit(1);
-    stored = token?.agentGrant ?? null;
-  } catch (err) {
-    throw new SessionGrantRemintError(input.sessionId, err);
+  const stored = await loadStoredSessionGrant(input.sessionId);
+  const running = await resolveCurrentGrant({
+    ...input,
+    runningAgent,
+    enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
+    forceRefresh: true,
+  });
+  return applyResolvedGrant(input.sessionId, stored, running);
+}
+
+/**
+ * Resolve the grant represented by an existing session token from the current
+ * project manifest.
+ *
+ * Connector and Kortix CLI requests can occur after the session changes
+ * `kortix.yaml` in the same turn. The prompt hook cannot observe that later
+ * mutation. Gateway authorization therefore calls this function before it
+ * evaluates the stored grant.
+ *
+ * The stored grant identifies the agent that currently owns the token after an
+ * in-session agent switch. A null legacy or unrestricted grant falls back to
+ * `project_sessions.agent_name`.
+ */
+export async function reconcileStoredSessionAgentGrant(input: {
+  projectId: string;
+  sessionId: string;
+}): Promise<AgentGrant | null> {
+  const stored = await loadStoredSessionGrant(input.sessionId);
+
+  let runningAgent = stored?.agent?.trim() ?? '';
+  if (!runningAgent) {
+    try {
+      const [session] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, input.sessionId),
+            eq(projectSessions.projectId, input.projectId),
+          ),
+        )
+        .limit(1);
+      runningAgent = session?.agentName?.trim() || DEFAULT_AGENT_SENTINEL;
+    } catch (err) {
+      throw new SessionGrantRemintError(input.sessionId, err);
+    }
   }
 
-  // Skip — and pay NO manifest read — only when the token already represents the
-  // agent about to run.
-  //
-  // The earlier version skipped whenever `requested === sessionAgent`, which was
-  // wrong the moment a re-mint had happened: switch to a broader agent once, then
-  // switch back (or simply omit `agent`), and the token kept the BROADER grant
-  // while the narrower agent ran. `agent_name` never changes, so it could not
-  // detect that the token had moved. The grant's own `agent` field can.
-  if (stored?.agent === runningAgent) return { action: 'skip' };
-  // A null stored grant means the project declares no per-agent governance, so
-  // boot minted null too. Nothing to revert unless a concrete DIFFERENT agent is
-  // named — which is the only case worth a manifest read.
-  if (stored === null && runningAgent === input.sessionAgent) return { action: 'skip' };
-
-  let running: AgentGrant | null;
-  try {
-    const [project] = await db
-      .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
-      })
-      .from(projects)
-      .where(eq(projects.projectId, input.projectId))
-      .limit(1);
-
-    running = await resolveSessionAgentGrant({
-      projectId: input.projectId,
-      repoUrl: project?.repoUrl ?? '',
-      defaultBranch: project?.defaultBranch,
-      manifestPath: project?.manifestPath,
-      sessionAgent: input.sessionAgent,
-      requestedAgent: runningAgent,
-      enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
-    });
-  } catch (err) {
-    // A secret-boundary refusal is the env sync's error to report, not ours —
-    // rethrow it unchanged so the proxy still answers 409, not 503.
-    if (err instanceof AgentSecretGrantMismatchError) throw err;
-    throw new SessionGrantRemintError(input.sessionId, err);
-  }
-
-  const decision = remintDecisionFor(stored, running);
-  if (decision.action === 'refuse') {
-    throw new SessionGrantRemintError(input.sessionId, new Error(decision.reason));
-  }
-  if (decision.action === 'write') {
-    await remintSessionAgentGrant(input.sessionId, decision.grant);
-  }
-  return decision;
+  // This path refreshes connector and CLI authorization only. Secret delivery
+  // already ran at prompt time. Resolve this agent against itself so a connector
+  // call does not re-run the secret-boundary switch policy.
+  const running = await resolveCurrentGrant({
+    ...input,
+    sessionAgent: runningAgent,
+    runningAgent,
+    enforceGrantLock: false,
+    forceRefresh: true,
+  });
+  await applyResolvedGrant(input.sessionId, stored, running);
+  return running;
 }

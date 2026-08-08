@@ -16,12 +16,17 @@ process.env.KORTIX_URL = 'https://api.example.com';
 
 let compiled: string | null = '{"agent":{"support":{"prompt":"fresh"}}}';
 let compileThrows: Error | null = null;
-let compileCalls: Array<{ ref: string | null | undefined }> = [];
+let compileCalls: Array<{ ref: string | null | undefined; agent?: string }> = [];
 let posted: Array<{ opencodeEnv?: Record<string, string | null>; refreshModels?: boolean }> = [];
+let sessionMetadata: Record<string, unknown> | null = null;
 // One fake row that satisfies every select on this path — the sandbox lookup and
 // the session/project lookups `resolveSandboxEnvSnapshot` walks on its way to an
 // env snapshot. Cheaper than teaching the fake db which table it was asked for.
-const SANDBOX_ROW = { externalId: 'ext-1', config: { serviceKey: 'svc-key' } };
+const SANDBOX_ROW = {
+  sessionId: 'sess-1',
+  externalId: 'ext-1',
+  config: { serviceKey: 'svc-key' },
+};
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -32,6 +37,8 @@ const SESSION_ROW = {
   accountId: 'acct-1',
 };
 let activeSandbox: { externalId: string; config: Record<string, unknown> } | null = SANDBOX_ROW;
+let daemonProof = true;
+let daemonReload: string | null = 'restarted';
 
 // Spread: the module also exports `agentConfigEtag`, which sandbox-env-sync now
 // imports. A partial mock silently drops it and the module fails to load.
@@ -42,15 +49,31 @@ mock.module('./compile-agent-config', () => ({
     if (compileThrows) throw compileThrows;
     return compiled;
   },
+  resolveSelectedAgentConfigForSession: async (
+    _project: unknown,
+    agentName: string,
+    baseRef?: string | null,
+  ) => {
+    compileCalls.push({ ref: baseRef, agent: agentName });
+    if (compileThrows) throw compileThrows;
+    return compiled;
+  },
 }));
 
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: async () => (activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : []),
-        }),
+        where: () => {
+          const rows = activeSandbox
+            ? [{ ...SESSION_ROW, metadata: sessionMetadata, ...activeSandbox }]
+            : [];
+          return {
+            limit: async () => rows,
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
+          };
+        },
       }),
     }),
   },
@@ -86,10 +109,21 @@ const ORIGINAL_FETCH = globalThis.fetch;
     opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
     refreshModels: body.refreshModels as boolean | undefined,
   });
-  return Response.json({ ok: true });
+  return Response.json({
+    ok: true,
+    revision: body.revision,
+    exported: Object.keys((body.env as Record<string, unknown> | undefined) ?? {}).length,
+    managed: 1,
+    withheld: 0,
+    agent_env_written: daemonProof,
+    // How the daemon applied it. 'kept-old' is the verified swap declining a
+    // config that would not boot — the push landed, the config did not.
+    opencode_reload: daemonReload,
+  });
 };
 
-const { pushSessionAgentConfigToSandbox } = await import('./sandbox-env-sync');
+const { propagateProjectSecretsToActiveSandboxes, pushSessionAgentConfigToSandbox } =
+  await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -109,6 +143,53 @@ beforeEach(() => {
   compileCalls = [];
   posted = [];
   activeSandbox = SANDBOX_ROW;
+  daemonProof = true;
+  daemonReload = 'restarted';
+  sessionMetadata = null;
+});
+
+describe('propagateProjectSecretsToActiveSandboxes', () => {
+  test('reports a sandbox only after the daemon confirms revision, file write, and export count', async () => {
+    const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
+
+    expect(result).toMatchObject({
+      ok: true,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 1,
+      failed: 0,
+      exported: 1,
+      results: [{
+        session_id: 'sess-1',
+        sandbox_id: 'ext-1',
+        status: 'synced',
+        scope: 'inherit',
+        revision: expect.any(String),
+        exported: 1,
+        managed: 1,
+        withheld: 0,
+        agent_env_written: true,
+      }],
+    });
+  });
+
+  test('reports failure when the daemon does not confirm agent-env.sh write', async () => {
+    daemonProof = false;
+
+    const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
+
+    expect(result).toMatchObject({
+      ok: false,
+      synced: 0,
+      failed: 1,
+      exported: 0,
+      results: [{
+        session_id: 'sess-1',
+        status: 'failed',
+        reason: 'env sync did not confirm agent-env.sh write',
+      }],
+    });
+  });
 });
 
 describe('pushSessionAgentConfigToSandbox', () => {
@@ -117,15 +198,48 @@ describe('pushSessionAgentConfigToSandbox', () => {
     // nothing — `refreshModels` is what makes the daemon restart it and apply.
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
 
-    expect(result).toEqual({ applied: true });
+    expect(result).toMatchObject({ applied: true, opencodeReload: 'restarted' });
     expect(posted).toHaveLength(1);
     expect(posted[0].opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled as string);
     expect(posted[0].refreshModels).toBe(true);
   });
 
+  test('a declined swap is reported, not hidden behind applied:true', async () => {
+    // The verified reload booted the new opencode, it never served, so the box
+    // kept the one it had. We DID push — `applied` stays true — but the config
+    // did not take, and only `opencodeReload` can say so. Collapsing this to a
+    // bare success is exactly the silent no-op the swap exists to prevent.
+    daemonReload = 'kept-old';
+    const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
+    expect(result.applied).toBe(true);
+    expect(result.opencodeReload).toBe('kept-old');
+  });
+
+  test('an older daemon that says nothing reports null, never success', async () => {
+    daemonReload = null;
+    const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
+    expect(result.opencodeReload).toBeNull();
+  });
+
   test("recompiles from the SESSION's ref", async () => {
     await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'feature/x' });
     expect(compileCalls).toEqual([{ ref: 'feature/x' }]);
+  });
+
+  test('keeps runtime sessions on selected-agent compilation', async () => {
+    sessionMetadata = { workspace_mode: 'runtime' };
+
+    await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
+
+    expect(compileCalls).toEqual([{ ref: 'main', agent: 'support' }]);
+  });
+
+  test('keeps historical read sessions on selected-agent compilation', async () => {
+    sessionMetadata = { workspace_mode: 'read' };
+
+    await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
+
+    expect(compileCalls).toEqual([{ ref: 'main', agent: 'support' }]);
   });
 
   test('a project with no compiled config pushes NOTHING', async () => {
@@ -167,4 +281,3 @@ describe('pushSessionAgentConfigToSandbox', () => {
     expect(posted).toEqual([]);
   });
 });
-

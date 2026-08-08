@@ -33,6 +33,31 @@ const kortix = createKortix({
 await kortix.projects.list();
 ```
 
+### Call external systems through Connectors
+
+Use one six-method data plane for every Connector provider. A user token binds
+the project explicitly. An agent-minted session token already carries its
+project scope, so it can use the top-level fallback.
+
+```ts
+const connectors = projectId
+  ? kortix.project(projectId).connectors
+  : kortix.connectors;
+
+await connectors.catalog();
+await connectors.tools();
+await connectors.search('send email');
+await connectors.describe('gmail.send_email');
+await connectors.call('gmail.send_email', { to, subject, body });
+await connectors.uploadAttachment(bytes, {
+  filename: 'invoice.pdf',
+  contentType: 'application/pdf',
+});
+```
+
+A Connector defines callable tools. A Connection stores one authorization for
+that Connector. Credentials remain server-side and never enter the sandbox.
+
 ## No bundler, no framework
 
 The published package ships a browser IIFE bundle alongside its ESM `dist/` —
@@ -123,6 +148,28 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+### Apps
+
+`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+
+```ts
+const apps = kortix.project(projectId).apps;
+const app = await apps.create({ slug: 'docs', name: 'Docs' });
+const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
+await apps.deployments.create(app.app_id, {
+  artifact_id: artifact.artifact_id,
+  source: { kind: 'static', spa: true },
+});
+await apps.access.update(app.app_id, {
+  mode: 'restricted',
+  member_ids: [memberId],
+  group_ids: [groupId],
+});
+const browserSession = await apps.access.session(app.app_id);
+```
+
+Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
+
 For OpenCode REST sessions, `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults. A per-call choice
@@ -162,7 +209,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
@@ -184,12 +232,12 @@ await kortix.project(projectId).sessions.create({
 ```
 
 Do not put credentials in this map. For a white-label/backend wrapper, create an
-operator-managed connection profile, store its credential through the dedicated
-credential endpoint, and pass only the non-secret profile id at session create:
+operator-managed connection, store its credential through the dedicated
+credential endpoint, and pass only the non-secret connection id at session create:
 
 ```ts
 const project = kortix.project(projectId);
-const profile = await project.connectors.profiles.reconcile({
+const connection = await project.connectors.connections.reconcile({
   connector_alias: "customer-data",
   owner_type: "external",
   owner_id: wrapperUserId,
@@ -203,39 +251,39 @@ const auth = await project.connectors.auth.discover({
   provider: "postman",
   spec: "https://github.com/HubSpot/HubSpot-public-api-spec-collection",
 });
-await project.connectors.profiles.updateCredential(profile.profile_id, {
+await project.connectors.connections.updateCredential(connection.connection_id, {
   value: shortLivedCapability,
   kind: "secret",
 });
 await project.sessions.create({
   runtime_context: { locale: "de" },
   connector_bindings: {
-    "customer-data": { profile_id: profile.profile_id },
+    "customer-data": { connection_id: connection.connection_id },
   },
 });
 ```
 
 For bring-your-own authorization, each logged-in member creates their own
-profile without supplying an owner id; Kortix derives ownership from the bearer
+connection without supplying an owner id; Kortix derives ownership from the bearer
 token:
 
 ```ts
-const profile = await project.connectors.profiles.reconcileMember({
+const connection = await project.connectors.connections.reconcileMember({
   connector_alias: "gmail",
   label: "My Gmail",
 });
-await project.connectors.profiles.pipedreamConnect(profile.profile_id);
+await project.connectors.connections.pipedreamConnect(connection.connection_id);
 // Complete OAuth, then:
-await project.connectors.profiles.pipedreamFinalize(profile.profile_id);
+await project.connectors.connections.pipedreamFinalize(connection.connection_id);
 await project.sessions.create({
-  connector_bindings: { gmail: { profile_id: profile.profile_id } },
+  connector_bindings: { gmail: { connection_id: connection.connection_id } },
 });
 ```
 
-Member profiles are owner-only even for project managers, and sessions using
+Member connections are owner-only even for project managers, and sessions using
 one must remain private. Project defaults remain shared; external/agent/subject
-profiles remain operator-managed. Every profile is project/connector scoped
-and resolved on every Executor request, so revocation takes effect without a
+connections remain operator-managed. Every connection is project/connector scoped
+and resolved on every Connector request, so revocation takes effect without a
 restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.

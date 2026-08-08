@@ -18,7 +18,7 @@ import { withPipedreamOverlayEscape } from '@/hooks/connectors/use-pipedream-con
  * (a) React Fast Refresh could not hot-update it — every edit forced a full
  * page reload — and (b) any consumer importing just this hook pulled the whole
  * module and its 55 imports (`HighlightedCode`, `PoliciesPanel`,
- * `DiscoverCatalogue`, `ConnectorProfileModal`) into its route chunk.
+ * `DiscoverCatalogue`, `ConnectorConnectionModal`) into its route chunk.
  */
 export function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
   return useMutation({

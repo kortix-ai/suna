@@ -3,8 +3,8 @@ import {
   GatewayResolutionError,
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels, getCachedAccountTier } from '../../billing/services/entitlements';
+import { isPaidTier } from '../../billing/services/tiers';
 import { config } from '../../config';
 import {
   getProjectSecretValueForConsumer,
@@ -48,6 +48,12 @@ const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 // thin re-export, not a second implementation.
 export const resolveCachedAccountTier = getCachedAccountTier;
 
+// Managed-models entitlement, same shared snapshot cache. Trial overlay and
+// the operator `managed_models_override` are applied inside — never derive
+// this from a tier string here (that is exactly the conflation the comment
+// below warns about).
+export const resolveCachedManagedModels = accountMayUseManagedModels;
+
 // A managed model to fall over to when a BYOK key hits a limit (429/402/403).
 // Gated on the managed gateway being on + the managed provider being on (CLOUD-
 // ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
@@ -65,6 +71,32 @@ function byokFallbackCandidates(): UpstreamDescriptor[] {
 
 const PLAN_UPGRADE_SUGGESTION =
   'Upgrade your plan to use this model, or choose a model available on your current plan.';
+
+/**
+ * The same block, for a plan that is PAID but simply does not include managed
+ * inference — every v3 credit plan (Starter / Team / Scale).
+ *
+ * "requires a paid plan" is false and actively misleading there: the customer
+ * is paying. Managed models are not something their plan is too small for, they
+ * are deliberately not bundled, and the remedy is a key rather than an upgrade.
+ */
+const BRING_YOUR_OWN_KEY_SUGGESTION =
+  'This plan does not include managed models. Add your own provider key to use ' +
+  'this model, or pick a model your key covers.';
+
+export function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
+  return tierIsPaid
+    ? new GatewayResolutionError(
+        'plan_upgrade_required',
+        `"${model}" needs your own provider key on this plan.`,
+        BRING_YOUR_OWN_KEY_SUGGESTION,
+      )
+    : new GatewayResolutionError(
+        'plan_upgrade_required',
+        `"${model}" requires a paid plan.`,
+        PLAN_UPGRADE_SUGGESTION,
+      );
+}
 
 /**
  * `resolveCandidates` throws a `GatewayResolutionError` (never returns an
@@ -152,7 +184,18 @@ export async function resolveCandidates(
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
         : 'self-hosted';
+      // TWO DIFFERENT QUESTIONS. Conflating them is what let a credit plan reach
+      // managed inference through the back door.
+      //
+      // 1. Does this account pay the BYOK platform fee? Free accounts do not;
+      //    every paid account does, including the v3 credit plans.
       const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
+      // 2. May this account use MANAGED inference at all? `models: []` says no
+      //    for Starter/Team/Scale even though they are paid, so this cannot be a
+      //    `tier === 'free'` check — it has to be the same entitlement predicate
+      //    the direct managed path uses (trial + operator override included).
+      //    Billing disabled (self-hosted) keeps the fallback, as before.
+      const mayUseManagedModels = await resolveCachedManagedModels(principal.accountId);
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
       // Capability flags from the catalog (models.dev enrichment) so the
       // transport can decide which params a reasoning-restricted model
@@ -207,9 +250,15 @@ export async function resolveCandidates(
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it
       // (billed as Kortix credits) so the turn doesn't die.
-      return isFreeTier
-        ? byokDescriptors
-        : [...byokDescriptors, ...byokFallbackCandidates()];
+      //
+      // Only for accounts entitled to managed models. Otherwise a plan that
+      // includes no inference could reach it by having its own key rate-limit —
+      // serving managed tokens the plan forbids, and skipping the wallet
+      // admission gate on the way, since that gate is bypassed for exactly the
+      // tiers this fallback would be serving.
+      return mayUseManagedModels
+        ? [...byokDescriptors, ...byokFallbackCandidates()]
+        : byokDescriptors;
     }
     // No shared key configured for this project — provider keys are always
     // project-wide, so there's no other place to look.
@@ -239,13 +288,11 @@ export async function resolveCandidates(
       );
     }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-      const tier = await resolveCachedAccountTier(principal.accountId);
-      if (accountIsFreeTierForModels(tier)) {
-        throw new GatewayResolutionError(
-          'plan_upgrade_required',
-          `"${effectiveModel}" requires a paid plan.`,
-          PLAN_UPGRADE_SUGGESTION,
-        );
+      if (!(await resolveCachedManagedModels(principal.accountId))) {
+        // A v3 credit plan lands here too — it pays, it just doesn't bundle
+        // managed inference. Telling that customer to "upgrade" is wrong.
+        const tier = await resolveCachedAccountTier(principal.accountId);
+        throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
       }
     }
     const candidates = managedCandidates(managed);

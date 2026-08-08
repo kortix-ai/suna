@@ -152,7 +152,7 @@ jobs:
         if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 10
         run: make smoke
-      # The full ke2e API flow suite (~278 live flows) runs against staging-api
+      # The full ke2e API flow suite (~375 live flows) runs against staging-api
       # (QA_API_BASE_URL) as a BLOCKING pre-prod gate, enabled via repo var
       # QA_RUN_API_SUITE=true. It catches HTTP-contract regressions the browser
       # and unit gates miss — e.g. an unmounted route returning 404 (CHN-16, which
@@ -160,7 +160,7 @@ jobs:
       # repo var to false only to temporarily skip it.
       - name: API flow suite
         if: vars.QA_RUN_API_SUITE == 'true' && vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 45
+        timeout-minutes: 90
         run: make api
 
       - name: Browser regression
@@ -200,7 +200,7 @@ jobs:
           bash tests/scripts/collect-bun-junit.sh || true
           # vitest/pact/bun JUnit -> allure-results.
           npm --prefix tests run allure:junit
-          # ke2e API flows (283) -> allure-results (native exporter, same dir).
+          # ke2e API flows -> allure-results (native exporter, same dir).
           npm --prefix tests run allure || true
           cd tests
           rm -rf test-results/allure-report
@@ -209,11 +209,14 @@ jobs:
       - name: AWS auth for report publish
         id: aws-report-auth
         if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        timeout-minutes: 2
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}
+          action-timeout-s: 60
+          retry-max-attempts: 3
       - name: Publish release Allure report
         if: always() && steps.aws-report-auth.outcome == 'success'
         run: |

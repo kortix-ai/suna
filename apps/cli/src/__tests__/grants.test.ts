@@ -12,7 +12,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -116,7 +115,7 @@ function mockApi() {
     if (has('/access'))
       return json({ members: [{ user_id: 'user-9', email: 'alice@corp.com' }], can_manage: true });
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
-  }) as typeof fetch;
+    }) as unknown as typeof fetch;
 }
 
 function json(data: unknown): Response {
@@ -173,6 +172,17 @@ describe('kortix grants', () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.resources.agents[0].name).toBe('support-bot');
     expect(parsed.grants).toHaveLength(1);
+  });
+
+  test('ls handles an older skill resource payload with no secrets array', async () => {
+    globalThis.fetch = (async () =>
+      json({ resources: { agents: RESOURCES.agents, skills: RESOURCES.skills }, grants: GRANTS })) as unknown as typeof fetch;
+
+    const code = await runGrants(['ls', '--project', PROJECT]);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('support-bot');
+    expect(stderr).toBe('');
   });
 
   test('assign resolves a member email → user-id and POSTs an agent grant', async () => {

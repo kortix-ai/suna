@@ -21,6 +21,7 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
@@ -196,7 +197,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   onClick={handleNewSession}
                   disabled={creatingSession}
                   aria-busy={creatingSession}
-                  className="group/menu-button text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                  className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
                 >
                   <span className="shrink-0">
                     <NavigationArrowIcon className="rotate-90" />
@@ -245,6 +246,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   here — one Settings entry, on the Customize row's old line,
                   replaced all four. */}
               <ProjectFilesNavItem />
+              <ProjectAppsNavItem />
               <ProjectSettingsNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>

@@ -18,6 +18,10 @@ import {
 } from '@/components/ui/sheet';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 
 import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
 
@@ -32,15 +36,12 @@ import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capab
  */
 function CapabilitySidebarToggle() {
   const sidebar = useOptionalSidebar();
-  if (!sidebar) return null;
-  if (!sidebar.isMobile && sidebar.state === 'expanded') return null;
+  // Shared gate — see sidebar-opener.ts. Must be called before the early
+  // return, and it already covers the `!sidebar` case.
+  const show = useShowPageSidebarOpener();
+  if (!sidebar || !show) return null;
 
-  const label =
-    sidebar.state === 'expanded'
-      ? 'Collapse sidebar'
-      : sidebar.peek
-        ? 'Pin sidebar'
-        : 'Open sidebar';
+  const label = sidebarOpenerLabel(sidebar);
 
   return (
     <Hint label={label} side="bottom">
@@ -111,7 +112,7 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
 }
 
 /**
- * Shared tab bar for /projects/[id]/{connectors,skills,commands}. Lives in
+ * Shared tab bar for /projects/[id]/{agent,connectors,skills}. Lives in
  * the `(capabilities)` route group layout so it does not remount when
  * switching tabs. Each trigger wraps a real `next/link` via `asChild`.
  *
@@ -125,9 +126,17 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
+  // This bar is the first in-flow child of the capabilities layout, which the
+  // layout's own doc confirms adds no vertical offset — so on the desktop
+  // shell it starts at y=0 and shares the band with the OS window controls.
+  // Without the indent the first tab renders under the macOS traffic lights.
+  const sidebar = useOptionalSidebar();
 
   return (
-    <div className="relative flex shrink-0 items-center gap-1 border-b px-2">
+    <div
+      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
+      data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+    >
       <CapabilitySidebarToggle />
       <Tabs value={activeKey ?? ''} className="min-w-0 flex-1">
         <TabsList
@@ -143,7 +152,9 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
               asChild
               className="w-fit flex-none px-1 py-3"
             >
-              <Link href={capabilityTabHref(projectId, tab.key)}>{tab.label}</Link>
+              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                {tab.label}
+              </Link>
             </TabsTrigger>
           ))}
         </TabsList>

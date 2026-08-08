@@ -24,9 +24,14 @@ import { randomBytes } from 'node:crypto';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 
 const TOKEN_PREFIX = 'ksl_';
-const DEFAULT_TTL_MINUTES = 24 * 60; // 24 hours — async human-in-the-loop
+// Secret/connector links are relayed out-of-band (Slack, email) to a human who
+// may only act days later. A 24h default expired links before humans opened
+// them and forced agent loops to re-mint + re-post every run (the duplicate
+// "blocked" message stampede). 7 days matches the async human-in-the-loop
+// reality; safe because the token is value-only — it can never read a secret.
+const DEFAULT_TTL_MINUTES = 7 * 24 * 60;
 const MIN_TTL_MINUTES = 1;
-const MAX_TTL_MINUTES = 24 * 60;
+const MAX_TTL_MINUTES = 30 * 24 * 60;
 
 export interface SecretFieldSpec {
   name: string;
@@ -49,7 +54,7 @@ export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
   | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
   /**
-   * A human-in-the-loop APPROVAL for one gated executor call.
+   * A human-in-the-loop APPROVAL for one gated connector call.
    *
    * Unlike the other two kinds, this token is NOT a bearer capability: the
    * endpoints behind it require a signed-in Kortix account that is authorised to
@@ -82,18 +87,19 @@ type ConnectorSpec = {
 };
 type ApprovalSpec = {
   kind: 'approval';
-  /** The `executor_executions.execution_id` awaiting a decision. */
+  /** The `connector_calls.execution_id` awaiting a decision. */
   executionId: string;
   sessionId?: string | null;
   uid?: string | null;
 };
 
 /**
- * Approvals default to a LONGER window than a setup link: the link is often
- * relayed out-of-band (chat, email) and a human may only see it hours later.
- * Safe to be generous because the token is not a capability — the decision is
- * still gated on a signed-in, authorised account — and because the pending row
- * itself remains the authority: once resolved, a live link can do nothing.
+ * Approvals keep a 24h window: an approval is a time-sensitive decision about
+ * one gated call, not an async credential hand-off, so a week-old approval
+ * link answering a stale question helps nobody. The token is not a capability
+ * — the decision is still gated on a signed-in, authorised account — and the
+ * pending row itself remains the authority: once resolved, a live link can do
+ * nothing.
  */
 const APPROVAL_TTL_MINUTES = 24 * 60;
 

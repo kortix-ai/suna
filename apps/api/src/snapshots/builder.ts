@@ -405,7 +405,7 @@ type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
  *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
  *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so
  *     the ONLY thing that changed is the agent binary. A bumped opencode /
- *     entrypoint / CLI / slack-cli / executor-sdk / manifest-schema / browser /
+ *     entrypoint / CLI / slack-cli / SDK / manifest-schema / browser /
  *     layer version — or the user image or spec — moves swapKey → full rebuild.
  *     (No isShared shortcut: the shared default's runtime LAYER is not constant,
  *     so it must pass the same swapKey gate as everything else.)
@@ -1306,7 +1306,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
       { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
-      { label: 'executor-sdk', path: resolve(root, 'packages/executor-sdk/src') },
+      { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
       { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
       { label: 'registry', path: resolve(root, 'packages/registry/src') },
@@ -1364,6 +1364,9 @@ let startupPreBuildKicked = false;
  * session never pays a provider-specific lazy build.
  */
 export function kickStartupPreBuild(): void {
+  // Focused acceptance runs can skip the multi-gigabyte session and meta
+  // images. Production keeps the pre-build enabled by default.
+  if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
   for (const providerId of templateBuildProviders()) {

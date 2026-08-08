@@ -27,8 +27,12 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import {
+  sidebarOpenerLabel,
+  useDesktopShell,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
-import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import {
   type QuickView,
@@ -37,6 +41,7 @@ import {
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
 import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -92,9 +97,10 @@ export function SessionSiteHeader({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   // Desktop shell with the sidebar hidden (offcanvas): this header reaches the
-  // window's left edge, where the macOS traffic lights and the shell's
-  // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
-  // buttons past both and drop them onto the same center line (y≈26).
+  // window's top-left corner, which the OS owns — the macOS traffic lights and
+  // the shell's one "Open sidebar" toggle both live in that band. The row
+  // indents past them and drops onto their centre line; `.kx-titlebar-row`
+  // carries both offsets so no window px are hard-coded here.
   const {
     state: sidebarState,
     toggleSidebar,
@@ -103,19 +109,11 @@ export function SessionSiteHeader({
     peekLeave,
     isMobile: isMobileViewport,
   } = useSidebar();
-  const [desktopShell] = useState<'macos' | 'other' | null>(() =>
-    isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
-  );
+  const desktopShell = useDesktopShell();
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
-  const sidebarToggleLabel =
-    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
-  // Desktop: this toggle only exists to bring a hidden panel BACK — the
-  // collapse control now lives in the panel's own header (ProjectSidebar).
-  // Two toggles for one panel is one too many, so it self-hides while docked.
-  // Mobile is untouched: `sidebarState` there tracks the desktop cookie, not
-  // the Sheet, so gating on it would strand the only way to open the sheet.
-  const showSidebarToggle =
-    desktopShell === null && (isMobileViewport || sidebarState !== 'expanded');
+  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
+  // Shared gate — see sidebar-opener.ts.
+  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -131,10 +129,10 @@ export function SessionSiteHeader({
   const isProjectSession = !!projectId && !!projectSessionId;
 
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!),
     enabled: isProjectSession,
-    staleTime: 10_000,
+    ...contract('inventory'),
   });
   const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
@@ -143,7 +141,7 @@ export function SessionSiteHeader({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Restarting session…');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -154,7 +152,7 @@ export function SessionSiteHeader({
     mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
       successToast('Session stopped');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
@@ -255,25 +253,39 @@ export function SessionSiteHeader({
   return (
     <>
       <div className="relative z-50 w-full">
-        {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
-            line (children h-[28px] → center y≈26, matching the traffic lights
-            and the shell's Open-sidebar toggle), and indent the leading side
-            past the lights + toggle. px values on purpose — the lights are
-            OS-positioned; rem sizes drift with the root font. Both groups stay
-            in flow so justify-between keeps the trailing cluster on the right. */}
-        <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
+        {/* Desktop shell: this row IS the title-bar band, so it takes the
+            band's own offsets rather than picking its own. `.kx-titlebar-row`
+            indents the leading side past the OS controls plus the shell's
+            toggle (macOS: lights + toggle; Win/Linux: toggle) and reserves the
+            right edge for the Win/Linux min/max/close cluster — which this row
+            previously ran straight underneath. `--kx-titlebar-control-top`
+            plus the 28px children put the row on the controls' centre line;
+            the old literals (pt-12 / h-28 → y=26 against lights at y=30) were
+            copied by hand and had drifted 4px out.
+
+            Both groups stay in flow so justify-between keeps the trailing
+            cluster on the right. No margin transition: the indent only changes
+            when the sidebar docks/undocks, and gliding it made the row a
+            fourth competing timeline in that toggle — it snaps with the panel
+            instead. */}
+        <div
+          className={cn(
+            'flex items-center justify-between p-2',
+            // Unconditional on the shell. The LEFT indent depends on the
+            // sidebar (expanded, it covers the macOS lights itself) and is
+            // gated by the data attribute — but the RIGHT one does not: this
+            // column's right edge is the window's right edge whatever the
+            // sidebar does, so on Win/Linux the trailing dev-tools cluster
+            // sits under min/max/close either way.
+            desktopShell !== null && 'kx-titlebar-row',
+            sidebarHidden && 'pt-[var(--kx-titlebar-control-top)]',
+          )}
+          data-sidebar-collapsed={sidebarHidden || undefined}
+        >
           <div
             className={cn(
-              // No margin transition: this indent only changes when the
-              // sidebar docks/undocks, and gliding it made the row a fourth
-              // competing timeline in that toggle. Docking is one frame now,
-              // so the indent snaps with the panel and the gap.
               'pointer-events-auto flex min-w-0 items-center gap-0.5',
-              // Below md the shell floats an always-on sheet opener at this
-              // row's left end (see ProjectSheelLayout) — indent past it.
-              // 'max-md:ml-[34px]',
-              sidebarHidden && 'h-[28px]',
-              sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
+              sidebarHidden && 'h-[var(--kx-titlebar-control-size)]',
             )}
           >
             {showSidebarToggle && (
@@ -321,7 +333,7 @@ export function SessionSiteHeader({
           <div
             className={cn(
               'pointer-events-auto flex items-center gap-1.5',
-              sidebarHidden && 'h-[28px]',
+              sidebarHidden && 'h-[var(--kx-titlebar-control-size)]',
             )}
           >
             <SessionChangesIndicator sessionId={sessionId} />
@@ -447,7 +459,9 @@ export function SessionSiteHeader({
             open={shareOpen}
             onOpenChange={setShareOpen}
             onSaved={() =>
-              queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })
+              queryClient.invalidateQueries({
+                queryKey: qk.project.sessionsScope(projectId ?? ''),
+              })
             }
           />
           <RenameSessionModal

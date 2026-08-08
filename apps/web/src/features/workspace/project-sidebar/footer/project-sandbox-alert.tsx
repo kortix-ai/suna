@@ -32,6 +32,7 @@ import {
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   SparkleIcon as SparklesSolid,
@@ -117,7 +118,7 @@ export function useSandboxRecovery(projectId: string) {
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId) });
-    queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
   }, [queryClient, projectId]);
 
   const retry = useMutation({

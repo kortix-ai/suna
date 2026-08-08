@@ -38,7 +38,7 @@ describe('selectAllowlistableSecrets', () => {
     expect(rows.map((r) => r.identifier)).toEqual(['STRIPE']);
   });
 
-  test('an inbox-scoped channel key is recognised with its profile suffix', () => {
+  test('an inbox-scoped channel key is recognised with its connection suffix', () => {
     expect(secretScope(secret('a', 'AGENTMAIL_API_KEY'))).toBe('channel_install');
     expect(secretScope(secret('a', 'AGENTMAIL_API_KEY_SUPPORT'))).toBe('channel_install');
   });

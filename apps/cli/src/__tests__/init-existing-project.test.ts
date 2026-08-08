@@ -38,7 +38,7 @@ describe("init in an existing cloned project", () => {
       { cwd: repo },
     );
 
-    const result = spawnSync("bun", [cli, "init", "--force"], {
+    const result = spawnSync(process.execPath, [cli, "init", "--force"], {
       cwd: repo,
       encoding: "utf8",
     });

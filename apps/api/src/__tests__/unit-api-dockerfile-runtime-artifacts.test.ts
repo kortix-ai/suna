@@ -26,4 +26,12 @@ describe('API image sandbox runtime artifacts', () => {
     expect(sourceCopy).toBeGreaterThan(-1);
     expect(artifactRefresh).toBeGreaterThan(sourceCopy);
   });
+
+  test('copies every migration runner dependency into the self-host image', () => {
+    const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+
+    expect(dockerfile).toContain(
+      'COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts',
+    );
+  });
 });

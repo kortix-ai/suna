@@ -59,7 +59,7 @@ export interface ApiResponse<T = any> {
  * auth-discovery, Pipedream. `makeRequest` classifies a 501 carrying this code
  * as an EXPECTED "feature unavailable" state and drops it from Sentry; callers
  * branch on `err.code === FEATURE_NOT_SUPPORTED_CODE`. Must stay in sync with
- * `apps/api/src/executor/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
+ * `apps/api/src/connectors/router.ts`'s `FEATURE_NOT_SUPPORTED_CODE`.
  */
 export const FEATURE_NOT_SUPPORTED_CODE = 'feature_not_supported';
 
@@ -98,6 +98,22 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  * Mirrors `MODEL_NOT_SERVABLE_CODE`.
  */
 export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
+
+const REQUEST_DEADLINE_CODE = 'request_deadline';
+const LEGACY_REQUEST_DEADLINE_MESSAGE = /^Request exceeded the \d+s server processing deadline$/;
+
+const isRequestDeadlineResponse = (
+  status: number,
+  errorData: unknown,
+  message: string,
+): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === REQUEST_DEADLINE_CODE || LEGACY_REQUEST_DEADLINE_MESSAGE.test(message);
+};
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -146,14 +162,9 @@ export function isAdminBypassEnabled(): boolean {
 
 async function makeRequest<T = any>(
   url: string,
-  options: RequestInit & ApiClientOptions = {}
+  options: RequestInit & ApiClientOptions = {},
 ): Promise<ApiResponse<T>> {
-  const {
-    showErrors = true,
-    errorContext,
-    timeout = 30000,
-    ...fetchOptions
-  } = options;
+  const { showErrors = true, errorContext, timeout = 30000, ...fetchOptions } = options;
 
   const controller = new AbortController();
   let timeoutId: NodeJS.Timeout | null = null;
@@ -231,7 +242,8 @@ async function makeRequest<T = any>(
       }
 
       try {
-        response = await fetch(url, {
+        const fetchImpl = platformConfig().fetch ?? fetch;
+        response = await fetchImpl(url, {
           ...fetchOptions,
           headers,
           signal: attemptController.signal,
@@ -261,8 +273,7 @@ async function makeRequest<T = any>(
 
       try {
         await response.arrayBuffer();
-      } catch {
-      }
+      } catch {}
     }
 
     if (!response.ok) {
@@ -271,7 +282,9 @@ async function makeRequest<T = any>(
 
       try {
         errorData = await response.json();
-        if (typeof errorData.message === 'string') {
+        if (typeof errorData.reason === 'string') {
+          errorMessage = errorData.reason;
+        } else if (typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } else if (errorData.error && typeof errorData.error === 'string') {
           errorMessage = errorData.error;
@@ -281,16 +294,21 @@ async function makeRequest<T = any>(
         } else if (typeof errorData.detail?.message === 'string') {
           errorMessage = errorData.detail.message;
         }
-      } catch {
-      }
+      } catch {}
 
+      const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
         response: response,
         details: errorData || undefined,
         data: errorData,
         detail: errorData?.detail,
-        code: errorData?.code || errorData?.error_code || errorData?.detail?.error_code || response.status.toString()
+        code: isRequestDeadline
+          ? REQUEST_DEADLINE_CODE
+          : errorData?.code ||
+            errorData?.error_code ||
+            errorData?.detail?.error_code ||
+            response.status.toString(),
       });
 
       if (response.status === 402) {
@@ -319,13 +337,14 @@ async function makeRequest<T = any>(
       if (response.status === 431) {
         error = new RequestTooLargeError(431, {
           message: 'Request is too large to process',
-          suggestion: 'Try uploading files one at a time, or reduce the number of files attached to your message.',
+          suggestion:
+            'Try uploading files one at a time, or reduce the number of files attached to your message.',
         });
       }
 
       // Expected "feature not enabled on this deployment" state — the backend
       // returns a TYPED 501 with `code: 'feature_not_supported'` (see the
-      // executor router's `featureNotSupportedResponse`) when an OPTIONAL
+      // connector router's `featureNotSupportedResponse`) when an OPTIONAL
       // capability isn't wired on this deployment (e.g. connector
       // auth-discovery, Pipedream). The dashboard already surfaces these as a
       // graceful "unavailable" UI state (e.g. the connector-auth-discovery
@@ -366,7 +385,13 @@ async function makeRequest<T = any>(
       const isProvisionInFlight =
         response.status === 409 && errorData?.code === PROVISION_IN_FLIGHT_CODE;
 
-      if (showErrors && !isFeatureNotSupported && !isModelNotServable && !isProvisionInFlight) {
+      if (
+        showErrors &&
+        !isFeatureNotSupported &&
+        !isModelNotServable &&
+        !isProvisionInFlight &&
+        !isRequestDeadline
+      ) {
         platformConfig().onError?.(error, errorContext);
       }
 
@@ -382,16 +407,15 @@ async function makeRequest<T = any>(
     if (contentType?.includes('application/json')) {
       data = await response.json();
     } else if (contentType?.includes('text/')) {
-      data = await response.text() as T;
+      data = (await response.text()) as T;
     } else {
-      data = await response.blob() as T;
+      data = (await response.blob()) as T;
     }
 
     return {
       data,
       success: true,
     };
-
   } catch (error: any) {
     // Always clear timeout on error
     if (timeoutId) {
@@ -416,7 +440,10 @@ async function makeRequest<T = any>(
       // "Request timeout" toasts/Sentry events. Swallow it silently.
       if (!didTimeout) {
         return {
-          error: new ApiError('Request aborted', { name: 'AbortError', code: 'ABORTED' }),
+          error: new ApiError('Request aborted', {
+            name: 'AbortError',
+            code: 'ABORTED',
+          }),
           success: false,
         };
       }
@@ -424,18 +451,19 @@ async function makeRequest<T = any>(
       // Genuine timeout — our timer fired. Attach the endpoint so it's clear
       // *what* timed out (the previous error carried no URL).
       const endpoint = url.replace(getApiUrl(), '') || url;
-      apiError = new ApiError(`Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`, {
-        code: 'TIMEOUT',
-        url,
-        endpoint,
-        timeout,
-      });
+      apiError = new ApiError(
+        `Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`,
+        {
+          code: 'TIMEOUT',
+          url,
+          endpoint,
+          timeout,
+        },
+      );
 
-      // Only show timeout errors if showErrors is true
-      // This prevents spam from multiple concurrent timeouts or React Query cancellations
-      if (showErrors) {
-        platformConfig().onError?.(apiError, errorContext);
-      }
+      // A request deadline is transport state, not an actionable user error.
+      // Return the typed error to the caller, but never invoke the host's global
+      // error handler. Explicit callers can still render local recovery UI.
     } else if (error instanceof Error) {
       apiError = new ApiError(error.message, {
         name: error.name || 'ApiError',
@@ -463,7 +491,7 @@ async function makeRequest<T = any>(
 export const supabaseClient = {
   async execute<T = any>(
     queryFn: () => Promise<{ data: T | null; error: any }>,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<ApiResponse<T>> {
     try {
       const { data, error } = await queryFn();
@@ -487,9 +515,13 @@ export const supabaseClient = {
         success: true,
       };
     } catch (error: any) {
-      const apiError: ApiError = error instanceof Error
-        ? new ApiError(error.message, { name: error.name || 'ApiError', stack: error.stack })
-        : new ApiError(String(error));
+      const apiError: ApiError =
+        error instanceof Error
+          ? new ApiError(error.message, {
+              name: error.name || 'ApiError',
+              stack: error.stack,
+            })
+          : new ApiError(String(error));
 
       platformConfig().onError?.(apiError, errorContext);
 
@@ -551,36 +583,60 @@ async function postStream(
 }
 
 export const backendApi = {
-  get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
+  get: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
 
-  post: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  post: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  put: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  put: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  patch: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
+  patch: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, {
       ...options,
       method: 'PATCH',
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  delete: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'DELETE' }),
+  delete: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) =>
+    makeRequest<T>(`${getApiUrl()}${endpoint}`, {
+      ...options,
+      method: 'DELETE',
+    }),
 
-  upload: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) => {
+  upload: <T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => {
     const { headers, ...restOptions } = options || {};
-    const uploadHeaders = { ...headers as Record<string, string> };
+    const uploadHeaders = { ...(headers as Record<string, string>) };
     delete uploadHeaders['Content-Type'];
 
     return makeRequest<T>(`${getApiUrl()}${endpoint}`, {
@@ -591,9 +647,13 @@ export const backendApi = {
     });
   },
 
-  uploadPut: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) => {
+  uploadPut: <T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => {
     const { headers, ...restOptions } = options || {};
-    const uploadHeaders = { ...headers as Record<string, string> };
+    const uploadHeaders = { ...(headers as Record<string, string>) };
     delete uploadHeaders['Content-Type'];
 
     return makeRequest<T>(`${getApiUrl()}${endpoint}`, {

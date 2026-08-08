@@ -48,12 +48,12 @@ interface ExperimentalFeatureDef {
  * The registry. Order here is the order shown in Customize → Settings →
  * Experimental.
  *
- * agent_tunnel → connector: connected machines flow through the Executor as a
+ * agent_tunnel → connector: connected machines flow through the Connector as a
  * regular `computer` connector (one connector fronts all the account's machines;
  * `connectors`/`discover`/`describe`/`call`, one audit + policy path). That
  * connector is NO LONGER gated by this flag — it auto-materializes whenever the
  * account has a connected machine, exactly like the Slack channel connector
- * (see executor/computer-materialize.ts). This flag now only gates the dedicated
+ * (see connector/computer-materialize.ts). This flag now only gates the dedicated
  * tunnel surface (Customize → Computers, the device-auth / permissions UI).
  * See docs/specs/computer-connector.md.
  */
@@ -93,7 +93,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     key: 'agentmail_email',
     name: 'AgentMail Email',
     description:
-      'Assign AgentMail inbox profiles to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
+      'Assign AgentMail inbox connections to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
     stability: 'experimental',
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
@@ -161,6 +161,15 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     name: 'Meta Agent',
     description:
       'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+  },
+  {
+    key: 'apps',
+    name: 'Apps',
+    description:
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. The deployment contract is still experimental.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

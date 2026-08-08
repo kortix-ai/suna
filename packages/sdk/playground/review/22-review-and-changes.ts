@@ -1,6 +1,6 @@
 /**
  * 22 — human-in-the-loop surfaces: change requests, the Review Center inbox,
- * pending executor approvals, and sessions needing input. All reads.
+ * pending connector approvals, and sessions needing input. All reads.
  *
  * Run (from packages/sdk):  bun run playground/review/22-review-and-changes.ts [projectId]
  */

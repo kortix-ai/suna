@@ -38,6 +38,10 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
@@ -45,15 +49,12 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type SandboxTemplate,
-  getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
 } from '@kortix/sdk';
-import type { Command } from '@kortix/sdk/react';
+import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
-
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -73,32 +74,27 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const {
-    state: sidebarState,
-    toggleSidebar,
-    peek,
-    peekEnter,
-    peekLeave,
-    isMobile: isMobileViewport,
-  } = useSidebar();
-  const sidebarToggleLabel =
-    sidebarState === 'expanded' ? 'Collapse sidebar' : peek ? 'Pin sidebar' : 'Open sidebar';
-  // Same rule as the session header: on desktop this toggle only brings a
-  // hidden panel back, because the collapse control lives in the panel's own
-  // header (ProjectSidebar) — so it self-hides while the panel is docked.
-  // Mobile keeps it unconditionally: `sidebarState` there tracks the desktop
-  // cookie, not the Sheet, so gating on it would strand the only way to open
-  // the sheet on this page.
-  const showSidebarToggle = isMobileViewport || sidebarState !== 'expanded';
+  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
+  // Shared gate — see sidebar-opener.ts. This used to be a local
+  // `isMobileViewport || state !== 'expanded'`, which is true on the desktop
+  // shell too: the button below is `absolute top-2 left-2`, so on macOS it
+  // rendered directly on top of the traffic lights, alongside the shell's own
+  // opener at x=72. The shell owns that corner; this one stands down there.
+  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
+  // The sandbox TEMPLATE catalog, not live sandbox health (that is
+  // `useSandboxHealth`, its own key and its own polling). Changed only by this
+  // app's own mutations, which invalidate this key — see `FRESHNESS.sandboxes`.
   const sandboxesQuery = useQuery({
-    queryKey: ['project-sandboxes', projectId],
+    queryKey: qk.project.sandboxes(projectId),
     queryFn: () => listProjectSandboxes(projectId),
-    ...Q,
+    ...contract('config'),
+    refetchOnWindowFocus: false,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
@@ -112,10 +108,11 @@ export function ProjectHome({
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const accessRequests = useQuery({
-    queryKey: ['project-access-requests', projectId],
+    queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
     retry: false,
-    ...Q,
+    ...contract('inventory'),
+    refetchOnWindowFocus: false,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
@@ -275,12 +272,8 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion?: (text: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const name = detail.data?.project?.name ?? '';
+  // One source for the project name — see `useProjectName`'s doc comment.
+  const name = useProjectName(projectId) ?? '';
   const displayName = name.trim() || 'this project';
 
   return (
@@ -461,9 +454,10 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  // Connectors and Skills graduated out of Customize into their own routed
-  // pages (see capabilities/tabs.ts) — those tiles carry a capability tab key
-  // instead of a CustomizeSection and navigate there directly.
+  // Agents, Connectors and Skills graduated out of Customize into their own
+  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
+  // carry a capability tab key instead of a CustomizeSection and navigate
+  // there directly.
   section: CustomizeSection | CapabilityTab['key'];
 };
 
@@ -474,7 +468,7 @@ const isCapabilityTabKey = (section: SetupTile['section']): section is Capabilit
 const PROJECT_SETUP_TILES: SetupTile[] = [
   {
     icon: HiOutlineViewGrid,
-    title: 'Integrations',
+    title: 'Connectors',
     desc: 'Connect tools your agent can act in.',
     section: 'connectors',
   },
@@ -506,7 +500,10 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     icon: Kortix,
     title: 'Agent',
     desc: 'Shape how your agent thinks and acts.',
-    section: 'agents',
+    // 'agent' (the route segment), not the old 'agents' overlay section —
+    // `isCapabilityTabKey` matches on the key, so the wrong spelling would
+    // silently fall through to `openCustomize('agents')` and open nothing.
+    section: 'agent',
   },
 ];
 

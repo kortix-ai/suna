@@ -8,8 +8,8 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -45,11 +46,10 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
 
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: open && !!projectId,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
+    ...contract('config'),
   });
   const projectName = detail.data?.project?.name ?? '';
 
@@ -175,6 +175,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
         )}
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
+
+        {/* Desktop shell: this modal is `inset-0`, so its first row starts at
+            the window's top-left — under the macOS traffic lights, and under
+            the Win/Linux control cluster. The rail's "Back to workspace"
+            button landed straight on the lights.
+
+            A `.kx-titlebar-spacer` (display:none on the web, band-height and
+            draggable on desktop) drops the WHOLE modal below the band, which
+            covers the narrow-window variant too — the old guard was a
+            left-only `.kx-customize-header` indent that only ever fixed the
+            wide layout, and whose class stopped being rendered when this
+            became a two-column grid. */}
+        <div className="kx-titlebar-spacer shrink-0" />
 
         <div
           className={cn(
@@ -374,8 +387,11 @@ function SectionContent({
   }
 
   switch (section) {
-    case 'agents':
-      return <AgentsView projectId={projectId} />;
+    // No `agents` case: Agents graduated to /projects/<id>/agent. A stale
+    // `/customize/agents` deep link redirects there (see
+    // `legacyCustomizeRedirect`) rather than opening the overlay.
+    case 'commands':
+      return <CommandsView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'secrets':

@@ -81,7 +81,8 @@ jobs:
       - name: Build + dry-pack publishable npm packages (release gate)
         run: |
           set -euo pipefail
-          # @kortix/llm-catalog, @kortix/sdk and @kortix/executor-sdk publish to npm
+          # @kortix/llm-catalog, @kortix/sdk, and the final deprecated
+          # @kortix/executor-sdk adapter publish to npm
           # on release (deploy-prod.yml). Build + stage + dry-pack them on every PR
           # so a broken dist/ or published manifest fails here, not at release time.
           # The staging script asserts every publishConfig entrypoint exists in the

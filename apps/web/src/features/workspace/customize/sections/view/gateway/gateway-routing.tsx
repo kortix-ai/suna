@@ -36,7 +36,7 @@ import type {
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
-import { useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
+import { qk, useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { GenerationControlsPanel } from './generation-controls';
@@ -475,7 +475,7 @@ export function GatewayRouting({
         title="Routing"
         description="Configure what happens when the project default model fails."
       >
-        <div className="bg-popover rounded-md border px-4 py-5">
+        <div className="bg-popover rounded-md border px-4 py-3">
           <p className="text-destructive text-sm">Could not load the routing policy.</p>
           <Button className="mt-3" variant="outline" size="sm" onClick={() => routing.refetch()}>
             Retry
@@ -829,7 +829,7 @@ export function GatewayRouting({
                     await Promise.all([
                       queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
                       queryClient.invalidateQueries({
-                        queryKey: ['project-model-picker', projectId],
+                        queryKey: qk.project.modelPicker(projectId),
                       }),
                     ]);
                     successToast('Routing policy saved');

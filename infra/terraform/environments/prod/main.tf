@@ -1,12 +1,12 @@
 # ── prod environment — api.kortix.com on ECS Fargate (autoscaled, HA) ─────────
 #
 #   api.kortix.com → Cloudflare (proxied, Full strict) → ALB → ECS Fargate
-#   service (autoscaled on CPU/memory, min 2 tasks across 2 AZs) in private
+#   service (autoscaled on CPU/memory, min 3 tasks across 2 AZs) in private
 #   subnets, egress via per-AZ NAT.
 #
 # SAME modules as dev (../dev) — prod just runs bigger numbers, no Spot, a NAT
-# per AZ, and Container Insights on. min_capacity=2 across AZs gives the
-# availability + horizontal autoscaling expected for SOC 2. Not applied
+# per AZ, and Container Insights on. min_capacity=3 preserves one healthy
+# replica if two tasks fail together. Not applied
 # automatically. See README.md.
 
 terraform {
@@ -81,9 +81,10 @@ module "acm" {
   }
 }
 
-# The env secret blob is the source of truth for which secrets exist:
-# ecs-deploy.sh wires every key in it into each task-def revision. Looked up by
-# name so the random ARN suffix is never hard-coded.
+# The env secret blob is the source of truth for the container environment.
+# ECS injects the complete JSON document through one stable selector. The
+# application expands it before any configuration module reads process.env.
+# Looked up by name so the random ARN suffix is never hard-coded.
 data "aws_secretsmanager_secret" "env" {
   name = "kortix-prod-env"
 }
@@ -113,9 +114,9 @@ module "api" {
 
   # prod sizing: bigger tasks, HA floor of 2, no spot, insights on
   task_cpu           = 1024
-  task_memory        = 2048
-  desired_count      = 2
-  min_capacity       = 2
+  task_memory        = 4096
+  desired_count      = 3
+  min_capacity       = 3
   max_capacity       = 10
   use_fargate_spot   = false
   container_insights = true

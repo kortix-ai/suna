@@ -17,11 +17,25 @@ describe('CapabilityTabs sidebar toggle', () => {
     expect(source).toContain('peekLeave');
   });
 
-  // The panel's own header carries the collapse control (ProjectSidebar), so
-  // this page-level toggle exists only to bring a hidden panel back.
-  test('the toggle self-hides while the sidebar is docked open', () => {
-    expect(source).toContain("sidebar.state === 'expanded'");
-    expect(source).toContain('!sidebar.isMobile && sidebar.state ===');
+  // The panel's own header carries collapse (ProjectSidebar) and the desktop
+  // shell draws its own opener in the OS title-bar band, so this page-level
+  // toggle exists only to bring a hidden panel back on the web. The rule is
+  // pinned as a truth table in project-layout/sidebar-opener.test.ts — this
+  // bar defers to it. It previously inlined `!isMobile && state === 'expanded'`,
+  // which said nothing about the shell, so on macOS it drew a second opener
+  // under the traffic lights.
+  test('visibility comes from the shared gate, not a local rule', () => {
+    expect(source).toContain('useShowPageSidebarOpener()');
+    expect(code(source)).not.toContain('!sidebar.isMobile && sidebar.state ===');
+  });
+
+  // This bar is the first in-flow child of the capabilities layout, so on the
+  // desktop shell its first tab starts at window x=0 — under the macOS traffic
+  // lights. Hiding the toggle alone does not fix that; the row itself has to
+  // indent.
+  test('the row indents past the OS window controls on the desktop shell', () => {
+    expect(source).toContain('kx-titlebar-row');
+    expect(source).toContain("data-sidebar-collapsed={sidebar?.state === 'collapsed'");
   });
 
   // In-flow toggle: when it returns null the tabs just start earlier. Absolute
@@ -79,6 +93,18 @@ describe('CapabilityTabs Global rules control', () => {
     expect(bar).not.toContain('pr-12');
     expect(bar).not.toContain('pl-12');
     expect(bar).toContain('<GlobalRulesControl');
+  });
+});
+
+describe('CapabilityTabs route prefetch', () => {
+  test('fully prefetches every capability page behind the loading boundary', () => {
+    const body = code(source);
+    const tabsStart = body.indexOf('export function CapabilityTabs');
+    const tabs = body.slice(tabsStart);
+
+    expect(tabs).toMatch(
+      /<Link\s+href=\{capabilityTabHref\(projectId, tab\.key\)\}\s+prefetch=\{true\}>/,
+    );
   });
 });
 

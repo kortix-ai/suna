@@ -10,6 +10,8 @@ export interface RegisteredFlow {
   fn: FlowFn;
 }
 
+export const DEFAULT_FLOW_ATTEMPTS = 3;
+
 const registry = new Map<string, RegisteredFlow>();
 
 /**

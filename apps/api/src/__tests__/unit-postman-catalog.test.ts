@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizePostmanDocuments } from '../executor/sync';
+import { normalizePostmanDocuments } from '../connectors/sync';
 
 describe('Postman multi-document catalogs', () => {
   test('namespaces actions and deterministically suffixes collisions', () => {

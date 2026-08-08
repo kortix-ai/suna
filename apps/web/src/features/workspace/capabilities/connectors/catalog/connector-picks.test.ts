@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { catalogSections } from './catalog-entry';
-import { CATALOG_PREFETCH_PAGES, shouldPrefetchMorePages } from './catalog-prefetch';
 import {
   CATEGORY_PICKS,
   CURATED_SECTIONS,
@@ -118,37 +117,5 @@ describe('catalogSections applies picks', () => {
       { popularCap: 6 },
     );
     expect(sections[0]?.items.map((i) => i.slug)).toEqual(['notion', 'trello', 'zzz-unknown']);
-  });
-});
-
-describe('shouldPrefetchMorePages', () => {
-  const base = { loadedPages: 1, maxPages: 4, hasNextPage: true, isFetchingNextPage: false };
-
-  test('pulls the next page once the first has landed', () => {
-    expect(shouldPrefetchMorePages(base)).toBe(true);
-  });
-
-  // react-query reports hasNextPage false while a fresh infinite query is
-  // pending, which is indistinguishable from an exhausted one — firing here
-  // would race a second request against the same cursor.
-  test('never fires before the first page lands', () => {
-    expect(shouldPrefetchMorePages({ ...base, loadedPages: 0 })).toBe(false);
-  });
-
-  test('stops at the cap', () => {
-    expect(shouldPrefetchMorePages({ ...base, loadedPages: 4 })).toBe(false);
-    expect(shouldPrefetchMorePages({ ...base, loadedPages: 3 })).toBe(true);
-  });
-
-  test('stops at the end of the catalogue', () => {
-    expect(shouldPrefetchMorePages({ ...base, hasNextPage: false })).toBe(false);
-  });
-
-  test('never doubles up on a request already in flight', () => {
-    expect(shouldPrefetchMorePages({ ...base, isFetchingNextPage: true })).toBe(false);
-  });
-
-  test('the cap is more than one page, or this change does nothing', () => {
-    expect(CATALOG_PREFETCH_PAGES).toBeGreaterThan(1);
   });
 });

@@ -35,6 +35,8 @@ export interface OpencodeTurnError {
 }
 
 type OpencodeEventHandlers = {
+  /** Every parsed OpenCode event, before specialized dispatch. */
+  onEvent?: (event: { type?: string; properties?: unknown }) => void
   onQuestionAsked?: (req: QuestionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including
@@ -197,6 +199,7 @@ export function flattenOpencodeError(e: {
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
 export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
+  handlers.onEvent?.(event)
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {

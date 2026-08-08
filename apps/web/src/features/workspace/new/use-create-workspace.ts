@@ -30,6 +30,7 @@ import {
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 export type CreateStatus = 'idle' | 'creating' | 'error';
 
@@ -462,7 +463,7 @@ export type CreateResult = { ok: true; project: KortixProject } | { ok: false; e
  *
  * **Onboarding stamp (Task 20).** `client.getExistingProjectCount` is read
  * BEFORE `runCreateAttempt`, not after: `primeProjectCache` below prepends
- * the just-created project into the SAME `['projects', accountId]` cache
+ * the just-created project into the SAME `qk.projects.list(accountId)` cache
  * entry that read would otherwise come from, so a post-create read would
  * always see at least one project and `shouldRunOnboarding` would never see
  * 0 again — silently disabling the wizard for every account's genuine first
@@ -553,10 +554,9 @@ export async function runCreate(
  * `creatableAccounts` as a parameter, so this hook can resolve the create's
  * target account (`resolveTargetAccountId`) without a second, page-specific
  * query. The onboarding-stamp gate (Task 20) reads a DIFFERENT cache entry —
- * `['projects', accountId]`, the exact key `WorkspaceSwitcher`,
- * `AccountSwitcher` and `project-create-modal.tsx` already use — via
- * `getExistingProjectCount` below; there is no `accounts.setup_complete_at`
- * involved anywhere in this gate.
+ * `qk.projects.list(accountId)`, the exact key `WorkspaceSwitcher` and
+ * `AccountSwitcher` already use — via `getExistingProjectCount` below; there
+ * is no `accounts.setup_complete_at` involved anywhere in this gate.
  */
 export function useCreateWorkspace(): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
@@ -600,27 +600,43 @@ export function useCreateWorkspace(): {
         attemptKeyFor,
         clearAttemptKey,
         runCreateAttempt: (payload) => runProvisionAttempt(payload, setPhase),
+        // The optimistic write goes ONLY into the account this workspace
+        // actually belongs to — the one entry a merge here can never get
+        // wrong. `qk.projects.list()` (no account) is a DIFFERENT, sibling
+        // cache entry backing callers that let the API resolve the account,
+        // so hand-merging into it could inject this workspace into the wrong
+        // account's cached list. The invalidate below reaches that slot too,
+        // correctly, via a real fetch instead of a guess.
         primeProjectCache: (accountId, project) => {
-          queryClient.setQueryData<KortixProject[]>(['projects', accountId], (existing) => [
+          queryClient.setQueryData<KortixProject[]>(qk.projects.list(accountId), (existing) => [
             project,
             ...(existing ?? []),
           ]);
         },
-        invalidateProjects: () => void queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        // `qk.projects.scope()`, NOT `qk.projects.list()`. Under the old flat
+        // keys `['projects']` was a genuine PREFIX of `['projects', accountId]`,
+        // so invalidating it reached every account's list. Under `qk` those two
+        // are SIBLINGS (`'all'` vs `'<id>'`), so `list()` alone would match only
+        // the accountless slot and silently stop refreshing the list this
+        // create just added to. `scope()` is the shared prefix over every form.
+        invalidateProjects: () =>
+          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
         writeLastProjectId,
         navigate: (path) => router.push(path),
         now: Date.now,
-        // Same `['projects', accountId]` cache key + `listProjectsForAccount`
-        // queryFn `WorkspaceSwitcher`/`AccountSwitcher` already fetch
-        // (`workspace-switcher.tsx:127-129`) — `ensureQueryData` reuses a warm
-        // cache (the common case: reaching `/new` from either menu) and only
-        // fetches when it's actually cold, rather than inventing a second
-        // fetch shape for the same data.
+        // Same `qk.projects.list(accountId)` cache entry + `listProjectsForAccount`
+        // queryFn `WorkspaceSwitcher`/`AccountSwitcher` already fetch —
+        // `ensureQueryData` reuses a warm cache (the common case: reaching
+        // `/new` from either menu) and only fetches when it's actually cold,
+        // rather than inventing a second fetch shape for the same data. The
+        // freshness contract must be spread here too, not hand-authored:
+        // `staleTime` is per-OBSERVER, so a call site that declares its own
+        // value re-opens the disagreement `contract()` exists to close.
         getExistingProjectCount: async (accountId) => {
           const projects = await queryClient.ensureQueryData({
-            queryKey: ['projects', accountId],
+            queryKey: qk.projects.list(accountId),
             queryFn: () => listProjectsForAccount(accountId),
-            staleTime: 30_000,
+            ...contract('inventory'),
           });
           return projects.length;
         },

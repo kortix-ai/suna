@@ -1,10 +1,13 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
 } from './llm-gateway/routing/policy-config';
+
+hydrateEnvironmentSecret();
 
 /**
  * Running sandbox version.
@@ -17,12 +20,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// 'local-docker' is EXPERIMENTAL — see platform/providers/local-docker.ts.
-// It runs sandboxes as plain Docker containers on THIS machine (the one
-// running kortix-api) via the local Docker socket — no cloud provider
-// account, no multi-node scheduling. Same contract as every other provider;
-// no caller may special-case its name (see provider-boundary.test.ts).
-export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
+export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -249,11 +247,11 @@ const envSchema = z.object({
   // earlier 120m, so the pause/resume win is subsumed there.
   // Lock a session to the agent it booted with: the preview proxy 409s a prompt
   // that asks OpenCode to run a different agent. GATED OFF by default — it was
-  // added for a future per-agent executor-token auth model that isn't built yet,
+  // added for a future per-agent connector-token auth model that isn't built yet,
   // and meanwhile it blocks legitimate in-session agent switching and
   // false-positives on new sessions (the picker can send the first agent in the
   // list before the session's real default resolves). TODO(marko): re-enable once
-  // the executor token is re-minted per requested agent before tool execution.
+  // the connector token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
 
   // Optional strict lock for operators that require one immutable secret grant
@@ -486,24 +484,6 @@ const envSchema = z.object({
   E2B_DOMAIN: optStrDefault('e2b.dev'),
   E2B_TEMPLATE: optStr,
 
-  // ── Local Docker — EXPERIMENTAL sandbox provider (same-machine only) ────
-  // Runs sandboxes as Docker containers on the SAME host as kortix-api, via
-  // the local Docker socket. No API key required — "configured" means the
-  // Docker daemon is reachable, checked lazily at first provider use (create/
-  // start/stop/status), never at boot (self-host must still start with no
-  // Docker access so the operator can reach the dashboard).
-  //   LOCAL_DOCKER_NETWORK     — Docker network every kortix-sb-* container
-  //     joins, so kortix-api can reach it by container DNS name
-  //     (http://kortix-sb-<id>:<port>). The self-host CLI points this at the
-  //     Compose project's own default network when local-docker is selected
-  //     (see kortix-compose.yml). Auto-created (idempotent) if missing, so a
-  //     bare `pnpm dev` / standalone use still works.
-  //   LOCAL_DOCKER_SOCKET_PATH — override for the Docker Engine unix socket.
-  //     Empty = dockerode's own default (respects DOCKER_HOST, else
-  //     /var/run/docker.sock).
-  LOCAL_DOCKER_NETWORK: optStrDefault('kortix-local-docker'),
-  LOCAL_DOCKER_SOCKET_PATH: optStr,
-
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
@@ -557,7 +537,7 @@ const envSchema = z.object({
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL: optUrl('http://localhost:3000'),
 
-  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
+  // ── Pipedream Connect (optional — powers the Connector's 1-click connectors) ─
   PIPEDREAM_CLIENT_ID: optStr,
   PIPEDREAM_CLIENT_SECRET: optStr,
   PIPEDREAM_PROJECT_ID: optStr,
@@ -657,7 +637,6 @@ export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
   'daytona',
   'platinum',
   'e2b',
-  'local-docker',
 ] as const;
 
 /**
@@ -922,7 +901,7 @@ export const config = {
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
 
-  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  // ─── Pipedream Connect (Connector 1-click connectors) ──────────────────────
   PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
   PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
@@ -1051,9 +1030,6 @@ export const config = {
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
-  LOCAL_DOCKER_NETWORK: env.LOCAL_DOCKER_NETWORK,
-  LOCAL_DOCKER_SOCKET_PATH: env.LOCAL_DOCKER_SOCKET_PATH,
-
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
@@ -1182,12 +1158,6 @@ export const config = {
         return !!this.PLATINUM_API_KEY;
       case 'e2b':
         return !!this.E2B_API_KEY;
-      // No API key: "enabled" means selected. Docker socket reachability is
-      // checked lazily at first real use (create/start/stop/status) — see
-      // platform/providers/local-docker.ts — never here, so an operator can
-      // still start the API/dashboard before Docker is wired up.
-      case 'local-docker':
-        return true;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -1211,10 +1181,6 @@ export const config = {
 
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local-docker');
   },
 
   isE2BEnabled(): boolean {

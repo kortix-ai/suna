@@ -30,6 +30,7 @@ import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import {
@@ -37,10 +38,10 @@ import {
   setLlmProxyToken,
   llmProxyReady,
   llmProxyBaseUrl,
-  startExecutorProxy,
-  setExecutorProxyToken,
-  executorProxyReady,
-  executorProxyBaseUrl,
+  startConnectorProxy,
+  setConnectorProxyToken,
+  connectorProxyReady,
+  connectorProxyBaseUrl,
 } from './llm-proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
@@ -155,7 +156,10 @@ async function main() {
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -165,6 +169,7 @@ async function main() {
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })
@@ -383,8 +388,51 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const auditRelay = createAuditRelay(
+    async (events) => {
+      const ctx = sandboxRelayContext(auditRelayToken(process.env))
+      if (!ctx) throw new Error('audit relay context is unavailable')
+      const response = await fetch(
+        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+          body: JSON.stringify({ events }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      )
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+      }
+    },
+    {
+      spoolPath:
+        process.env.KORTIX_AUDIT_SPOOL_PATH || '/var/run/kortix/opencode-audit-spool.json',
+    },
+  )
+  const flushAuditRelay = () => {
+    void auditRelay.stop().catch((error) =>
+      logger.warn('[opencode-events] audit relay shutdown flush failed', {
+        err: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+  process.once('SIGTERM', flushAuditRelay)
+  process.once('SIGINT', flushAuditRelay)
+  const onEvent = (event: { type?: string; properties?: unknown }) => {
+    try {
+      auditRelay.enqueue(event)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      bootState.auditRelayError = message
+      logger.error('[opencode-events] audit relay persistence failed; runtime is unhealthy', {
+        err: message,
+      })
+    }
+  }
   const onQuestionAsked = (req: QuestionRequest) => {
-    void relayQuestionToApi(req, cfg).catch((err) =>
+    void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
@@ -410,7 +458,7 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -537,9 +585,9 @@ async function runWarmSeedMode(
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
   // snapshots only — cold + Daytona never run it).
-  // Start the localhost LLM credential proxy, and optionally the Executor proxy
-  // used by the compatibility MCP face. The agent-facing Executor path is the
-  // `kortix executor` CLI, which reads live env on each shell command and does
+  // Start the localhost LLM credential proxy, and optionally the Connector proxy
+  // used by the compatibility MCP face. The agent-facing Connector path is the
+  // `kortix connectors` CLI, which reads live env on each shell command and does
   // not need an OpenCode restart. Best-effort: a bind failure leaves the
   // *_PROXY_URL unset and adoption falls back to the restart path where needed.
   const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
@@ -553,14 +601,14 @@ async function runWarmSeedMode(
       bootMark('seed-llm-proxy-started')
       logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
     }
-    const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
-    const exUrl = startExecutorProxy(exPort)
+    const exPort = Number(process.env.KORTIX_CONNECTORS_PROXY_PORT) || 4320
+    const exUrl = startConnectorProxy(exPort)
     if (exUrl) {
-      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
+      // Seen by buildOpencodeConfigContent only when KORTIX_CONNECTORS_MCP_ENABLED=1.
       // The proxy is harmless when unused; the CLI remains the primary path.
-      process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
-      bootMark('seed-executor-proxy-started')
-      logger.info('[seed] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
+      process.env.KORTIX_CONNECTORS_PROXY_URL = exUrl
+      bootMark('seed-connector-proxy-started')
+      logger.info('[seed] connector hot-swap proxy up for optional connector MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -580,7 +628,10 @@ async function runWarmSeedMode(
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -590,6 +641,7 @@ async function runWarmSeedMode(
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })
@@ -670,9 +722,9 @@ async function runWarmSeedMode(
       }
 
       // The seed opencode process is started before adoption, when it has no
-      // session-scoped Executor/CLI/LLM env and may have started before the
+      // session-scoped Connector/CLI/LLM env and may have started before the
       // project config dir exists. Restart it after adopting the fork env + repo so
-      // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
+      // OPENCODE_CONFIG_CONTENT includes the Connector MCP and project config.
       const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
@@ -707,7 +759,7 @@ async function runWarmSeedMode(
       }
       // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
       // session-independent opencode config routed through the localhost LLM +
-      // executor proxies, so inject the per-session tokens LIVE and reuse the
+      // connector proxies, so inject the per-session tokens LIVE and reuse the
       // already-warm opencode — skipping the ~8s restart. Engages only when
       // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
       // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
@@ -723,20 +775,20 @@ async function runWarmSeedMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
-        // Optional Executor MCP compatibility: if the seed enabled that face,
+        // Optional Connector MCP compatibility: if the seed enabled that face,
         // the running MCP points at this proxy. The CLI path does not need this;
         // it reads the live session env through BASH_ENV on every command.
-        if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
-          setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
+        if (process.env.KORTIX_CONNECTORS_PROXY_URL && connectorProxyBaseUrl() != null) {
+          setConnectorProxyToken(process.env.KORTIX_CLI_TOKEN, process.env.KORTIX_API_URL)
         }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('adopt-opencode-hotswapped')
-          // Observability only: this confirms the optional executor proxy has a
+          // Observability only: this confirms the optional connector proxy has a
           // live token. It does not assert that OpenCode registered MCP tools.
-          if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
+          if (connectorProxyReady()) bootMark('adopt-connector-proxy-ready')
           logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
-            executorReady: executorProxyReady(),
+            connectorReady: connectorProxyReady(),
             gatewayCatalogChanged,
           })
         }
@@ -1228,18 +1280,21 @@ type SandboxRelayContext = {
 // The control-plane callback context for every project session. The sandbox
 // credential can call the sandbox-identity turn-stream route. This callback is
 // safe for web, CLI, Slack, Teams, and email sessions.
-function sandboxRelayContext(): SandboxRelayContext | null {
+function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
   // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (
-    process.env.KORTIX_CLI_TOKEN ||
-    process.env.KORTIX_SANDBOX_TOKEN ||
-    process.env.KORTIX_TOKEN ||
-    ''
-  ).trim()
+  const token =
+    tokenOverride !== undefined
+      ? (tokenOverride ?? '')
+      : (
+          process.env.KORTIX_CLI_TOKEN ||
+          process.env.KORTIX_SANDBOX_TOKEN ||
+          process.env.KORTIX_TOKEN ||
+          ''
+        ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {
@@ -1276,7 +1331,11 @@ function slackRelayContext(): SandboxRelayContext | null {
 // answers `question.asked` interactively over opencode's own SSE, and
 // auto-answering it here is the "every question is auto-answered even outside
 // Slack" bug. No round-trip, no status codes — the env is the source of truth.
-async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+async function relayQuestionToApi(
+  req: QuestionRequest,
+  cfg: Config,
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+): Promise<void> {
   // EVERY session, not just Slack ones.
   //
   // This used to take `slackRelayContext()`, which returns null without
@@ -1348,7 +1407,7 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     'wait for an answer here; finish this turn now. Next time, just ask with ' +
     '`slack send` rather than the question tool.)'
   const answers: string[][] = req.questions.map(() => [sentinel])
-  const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
+  const replyUrl = `${opencode.getInternalUrl()}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
       method: 'POST',

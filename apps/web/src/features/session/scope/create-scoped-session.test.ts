@@ -7,7 +7,7 @@ const scope: SessionScope = {
   secrets_allowlist: null,
   required_connectors: null,
   connector_bindings: {
-    mail: { authorization_id: 'authorization-mail-default' },
+    mail: { connection_id: 'connection-mail-default' },
   },
   dropped_secrets: [],
   added_secrets: [],
@@ -46,7 +46,7 @@ describe('createScopedSession', () => {
     expect(replacement).toEqual({
       secrets: ['MAIL_TOKEN'],
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail-default' },
+        mail: { connection_id: 'connection-mail-default' },
       },
       require_connectors: [],
     });

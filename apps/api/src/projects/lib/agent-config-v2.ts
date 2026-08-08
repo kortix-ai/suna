@@ -42,11 +42,11 @@ export type NormalizeRequiredConnectorsResult =
   | { ok: false; error: string };
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
-  if (!Array.isArray(value)) return `${field} must be a list of connector profile slugs`;
+  if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
   const normalized: string[] = [];
   for (const item of value) {
     if (typeof item !== 'string' || item.trim() === '') {
-      return `${field} must contain non-empty connector profile slugs`;
+      return `${field} must contain non-empty connector slugs`;
     }
     const slug = item.trim();
     if (!normalized.includes(slug)) normalized.push(slug);

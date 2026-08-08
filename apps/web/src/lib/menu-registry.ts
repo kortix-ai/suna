@@ -382,14 +382,13 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    // 'skills' and 'commands' were deliberately dropped: those two graduated
-    // out of the overlay into their own palette entries (proj-skills,
-    // proj-commands). Keeping the words here made this bare Customize entry
-    // match those queries too and — since filteredNavItems preserves registry
-    // declaration order rather than ranking by relevance — it listed ahead of
-    // the real Skills/Commands entries. 'agents' stays: Agents genuinely lives
-    // in Customize.
-    keywords: 'customize configure project agents',
+    // 'agents', 'skills' and 'commands' were deliberately dropped: those three
+    // graduated out of the overlay into their own palette entries (proj-agents,
+    // proj-skills, proj-commands). Keeping the words here made this bare
+    // Customize entry match those queries too and — since filteredNavItems
+    // preserves registry declaration order rather than ranking by relevance —
+    // it listed ahead of the real Agents/Skills/Commands entries.
+    keywords: 'customize configure project settings',
   },
   {
     id: 'proj-files',
@@ -403,13 +402,27 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository project drive browser explorer',
   },
   {
+    id: 'proj-apps',
+    label: 'Apps',
+    icon: Globe,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/apps',
+    requiresProject: true,
+    keywords: 'apps deploy deployments serverless docker static hosting urls',
+  },
+  {
     id: 'proj-agents',
-    label: 'Customize · Agents',
+    label: 'Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/agents',
+    // The standalone page, not `/customize/agents`. That href still works —
+    // `legacyCustomizeRedirect` bounces it here — but routing through the
+    // redirect costs a second navigation and paints the overlay route first.
+    href: '/projects/{projectId}/agent',
     requiresProject: true,
     keywords: 'agents subagents project customize ai',
   },
@@ -431,7 +444,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/commands',
+    href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
     keywords: 'commands slash project customize',
   },
@@ -456,7 +469,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/connectors',
     requiresProject: true,
     keywords:
-      'connectors integrations pipedream mcp openapi postman collections apps executor project customize',
+      'connectors connections pipedream mcp openapi postman collections apps connector project customize',
   },
   {
     id: 'proj-connectors-policies',
@@ -473,7 +486,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/connectors',
     requiresProject: true,
     keywords:
-      'policies approval block require_approval rules tools executor guardrails project customize',
+      'policies approval block require_approval rules tools connector guardrails project customize',
   },
   {
     id: 'proj-git',
@@ -590,7 +603,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/channels',
     requiresProject: true,
     keywords:
-      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
+      'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
   },
   {
     id: 'proj-settings',

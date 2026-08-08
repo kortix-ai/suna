@@ -32,7 +32,7 @@ const DEFAULT_STATIC_PORT = 3211
  *
  * `/home` and `/opt` used to be here, and `/home` is where the daemon writes
  * the session's credentials — `~/.config/kortix-opencode.json` holds the
- * session's LLM gateway key and executor PAT, `~/.local/share/opencode/auth.json`
+ * session's LLM gateway key and connector PAT, `~/.local/share/opencode/auth.json`
  * holds the account's Codex/OpenCode subscription credential. This listener has
  * no authentication of its own, so any caller who reached port 3211 could read
  * both. Mode 0600 was no defence: the reader IS the process that wrote them.

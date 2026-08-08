@@ -26,7 +26,7 @@ const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
-const SESSION_BOUND_PAT = 'kortix_pat_session_executor';
+const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -42,6 +42,7 @@ const { config } = await import('../config');
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
+let providerStopCalls = 0;
 let providerStatus = 'stopped';
 let providerStatusAfterStart: string | null = null;
 let providerStatusSessionMetadataUpdate: Record<string, unknown> | null = null;
@@ -110,6 +111,7 @@ function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
+  providerStopCalls = 0;
   providerStatus = 'stopped';
   providerStatusAfterStart = null;
   providerStatusSessionMetadataUpdate = null;
@@ -258,7 +260,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
-  // executor/sync.ts imports these from the same barrel; a wholesale module mock
+  // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
   // reads as "the suite is broken" rather than "the mock is short two names".
   RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
@@ -429,7 +431,9 @@ mock.module('../platform/providers', () => ({
       if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
       if (providerStartGate) await providerStartGate;
     },
-    stop: async () => undefined,
+    stop: async () => {
+      providerStopCalls += 1;
+    },
     remove: async () => undefined,
     ...(providerRecoveryEnabled
       ? {
@@ -596,6 +600,9 @@ mock.module('../shared/db', () => ({
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
+            if (table === projectSessions && fields?.sessionMetadata) {
+              return sessionRow ? [{ sessionMetadata: sessionRow.metadata }] : [];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
@@ -710,7 +717,11 @@ mock.module('../shared/db', () => ({
           return [sessionRow];
         },
         onConflictDoNothing: async () => [],
-        onConflictDoUpdate: ({ set }: { set: Partial<typeof projectSecrets.$inferInsert> }) => {
+        onConflictDoUpdate: ({
+          set,
+        }: {
+          set: Partial<typeof projectSecrets.$inferInsert>;
+        }) => {
           const conflictResult = {
             returning: async () => {
               if (table === projectGitConnections) {
@@ -834,7 +845,7 @@ mock.module('../shared/db', () => ({
         updates: Partial<typeof projectSessions.$inferSelect> &
           Partial<typeof sessionSandboxes.$inferSelect>,
       ) => ({
-        where: () => ({
+        where: (predicate?: unknown) => ({
           returning: async () => {
             if (table === projectSessions) {
               if (!sessionRow) return [];
@@ -854,6 +865,13 @@ mock.module('../shared/db', () => ({
             if (table === sessionSandboxes) {
               const row = sessionSandboxRows[0];
               if (!row) return [];
+              if (predicate) {
+                const query = new PgDialect().sqlToQuery(predicate as SQL);
+                if (query.sql.includes('runtimeWakeId')) {
+                  const wakeId = (row.metadata as Record<string, unknown> | null)?.runtimeWakeId;
+                  if (typeof wakeId !== 'string' || !query.params.includes(wakeId)) return [];
+                }
+              }
               sessionSandboxRows[0] = {
                 ...row,
                 ...updates,
@@ -930,6 +948,9 @@ mock.module('../shared/db', () => ({
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
+  '../projects/reaping/sandbox-state-sync'
+);
 
 function createApp() {
   const app = new Hono();
@@ -1052,7 +1073,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
     });
 
     expect(response.status).toBe(400);
@@ -1068,7 +1093,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
     });
 
     expect(response.status).toBe(201);
@@ -1151,6 +1180,106 @@ describe('project session API contract', () => {
     releaseProviderStart?.();
   });
 
+  test('provider reconciliation cannot close billing while an in-place resume is starting', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-resume-race',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    const won = await resumeStoppedSandbox({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-resume-race',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    });
+    const reconciled = await reconcileSandboxStoppedByExternalId(
+      'platinum-resume-race',
+      new Date(),
+    );
+    releaseProviderStart?.();
+    await flushUntil(() => providerStartCalls === 1);
+
+    expect(won).toBe(true);
+    expect(reconciled).toBe(false);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionRow?.status).toBe('running');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('a manual stop wins when provider start resolves after the stop', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await applyStoppedState({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      externalId: 'platinum-cancelled-wake',
+      metadata: { stopReason: 'manual', stoppedBy: USER_ID },
+    });
+    releaseProviderStart?.();
+    await flushUntil(() => providerStopCalls === 1);
+
+    expect(providerStopCalls).toBe(1);
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+  });
+
   test('upserts and lists project secrets without exposing secret values', async () => {
     const app = createApp();
 
@@ -1210,7 +1339,9 @@ describe('project session API contract', () => {
       configured: true,
     });
 
-    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, { headers });
+    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      headers,
+    });
     expect(listRes.status).toBe(200);
     expect(await listRes.json()).toMatchObject({
       items: [
@@ -1371,11 +1502,72 @@ describe('project session API contract', () => {
     expect(patBody).not.toHaveProperty('origin_ref');
   });
 
+  test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
+    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const projectRes = await app.request(`/v1/projects/${PROJECT_ID}`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(projectRes.status).toBe(403);
+    expect(await projectRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(patCloneRes.status).toBe(403);
+    expect(await patCloneRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    });
+    expect(sandboxCloneRes.status).toBe(403);
+    expect(await sandboxCloneRes.json()).toMatchObject({
+      error: 'sandbox workspace does not allow repository access',
+    });
+
+    for (const suffix of ['diff', 'merge-preview']) {
+      const crRes = await app.request(
+        `/v1/projects/${PROJECT_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+        { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+      );
+      expect(crRes.status).toBe(403);
+      expect(await crRes.json()).toMatchObject({
+        message: 'session workspace does not allow repository access',
+      });
+    }
+  });
+
   test('rejects removed session attribution fields', async () => {
     const app = createApp();
 
     for (const body of [
-      { provider: 'daytona', base_ref: 'main', end_user_ref: 'legacy-reference' },
+      {
+        provider: 'daytona',
+        base_ref: 'main',
+        end_user_ref: 'legacy-reference',
+      },
       { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
     ]) {
       const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1406,10 +1598,16 @@ describe('project session API contract', () => {
     const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    expect(await forbidden.json()).toMatchObject({
+      code: 'origin_override_forbidden',
+    });
 
     // A backend (PAT) caller naming an unknown identifier fails fast at create.
     const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1418,10 +1616,16 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['DOES_NOT_EXIST'],
+      }),
     });
     expect(unknown.status).toBe(404);
-    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+    expect(await unknown.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_NOT_FOUND',
+    });
 
     // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
     const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1430,7 +1634,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(ok.status).toBe(201);
     expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
@@ -1442,7 +1650,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: [],
+      }),
     });
     expect(zero.status).toBe(201);
     expect((await zero.json()).secrets_allowlist).toEqual([]);
@@ -1485,7 +1697,9 @@ describe('project session API contract', () => {
       }),
     });
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
+    expect(await res.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+    });
   });
 
   test('backend overrides for model, secrets, and agent apply at boot', async () => {
@@ -1498,7 +1712,12 @@ describe('project session API contract', () => {
       const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value, strategy: 'runtime', consumer: 'sandbox' }),
+        body: JSON.stringify({
+          name,
+          value,
+          strategy: 'runtime',
+          consumer: 'sandbox',
+        }),
       });
       expect(w.status).toBe(200);
     }
@@ -1539,7 +1758,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'reviewer' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'reviewer',
+      }),
     });
     expect(res2.status).toBe(201);
     expect((await res2.json()).agent_name).toBe('reviewer');
@@ -2666,7 +2889,10 @@ describe('project session API contract', () => {
       ...sessionRow!,
       status: 'stopped',
       agentName: 'meta',
-      metadata: { ...((sessionRow!.metadata as Record<string, unknown>) ?? {}), sandbox_slug: 'meta' },
+      metadata: {
+        ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
+        sandbox_slug: 'meta',
+      },
     };
     sessionSandboxRows = [];
 
@@ -2913,7 +3139,10 @@ describe('project session API contract', () => {
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', pending_prompt: pendingPrompt }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: pendingPrompt,
+      }),
     });
 
     expect(response.status).toBe(201);
@@ -2988,7 +3217,11 @@ describe('project session API contract', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'default' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+      }),
     });
     expect(createRes.status).toBe(201);
 

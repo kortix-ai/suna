@@ -141,12 +141,6 @@ async function main() {
   const htmlPath = resolve(outDir, "report.html");
   writeResults(result, jsonPath, htmlPath);
 
-  for (const f of result.flows) {
-    if (f.status === "pass") log.pass(`${f.id} ${log.dim((f.durationMs / 1000).toFixed(2) + "s")}`);
-    else if (f.status === "fail") log.fail(`${f.id} — ${f.reason}`);
-    else if (f.status === "skip") log.skip(`${f.id} — ${f.reason}`);
-    else log.skip(`${f.id} (todo) — ${f.reason}`);
-  }
   const s = result.summary;
   log.info("");
   log.info(`${log.bold("results")}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`);

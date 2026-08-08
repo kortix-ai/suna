@@ -85,7 +85,9 @@ export async function apiKeyAuth(c: Context, next: Next) {
   const result = await validateSecretKey(token);
 
   if (!result.isValid) {
-    console.warn(`[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`);
+    console.warn(
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+    );
     auditLoginFail({
       c,
       reason: result.error ?? 'invalid_api_key',
@@ -222,7 +224,10 @@ export async function supabaseAuth(c: Context, next: Next) {
     // marks in provider_events instead of dying with the sandbox. Write-only
     // telemetry about the caller's OWN boot, and the handler re-checks that the
     // token's sandboxId matches the session it claims to be reporting for.
-    path.endsWith('/boot-timeline');
+    path.endsWith('/boot-timeline') ||
+    // The runtime relay sends redacted OpenCode lifecycle events for its own
+    // session. The handler re-checks sandbox, account, project, and session.
+    path.endsWith('/audit/events');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -477,7 +482,7 @@ export async function combinedAuth(c: Context, next: Next) {
     // Set the acting token id so engine gates on combinedAuth-mounted routes can
     // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
     // this, a capability check on a combinedAuth route silently no-ops the fold —
-    // a scoped agent PAT would pass gates it shouldn't (e.g. executor connector-admin).
+    // a scoped agent PAT would pass gates it should not (e.g. connector-admin).
     c.set('iamTokenId', patResult.tokenId);
     if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
     c.set('agentGrant', patResult.agentGrant ?? null);
@@ -506,10 +511,13 @@ export async function combinedAuth(c: Context, next: Next) {
       });
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
     }
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      accountId: result.accountId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        accountId: result.accountId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -543,10 +551,13 @@ export async function combinedAuth(c: Context, next: Next) {
   // 3. Try Supabase JWT — fast path: local verification (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: local.userId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: local.userId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -588,7 +599,10 @@ export async function combinedAuth(c: Context, next: Next) {
   // JWKS not yet loaded — fall back to network getUser() call
   try {
     const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
     if (error || !user) {
       auditLoginFail({
@@ -599,10 +613,13 @@ export async function combinedAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: user.id,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: user.id,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -711,14 +728,14 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
     });
   }
 
-  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
+  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
   // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. The executor branch intentionally includes both gateway and
-  // connector-management routes: the unified Executor MCP exposes add/remove
+  // project. The connector branch intentionally includes both gateway and
+  // connector-management routes: the unified Connector MCP exposes add/remove
   // connector tools from inside the sandbox, while individual routes still gate
   // mutations via project.write in resolveAdmin.
   const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
+    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {

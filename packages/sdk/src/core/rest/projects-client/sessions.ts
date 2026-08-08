@@ -3,6 +3,7 @@
 import { backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
+import type { AuditEvent } from './audit';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -74,20 +75,10 @@ export interface ProjectSession {
 export type SessionRuntimeContextScalar = string | number | boolean | null;
 export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
 export interface SessionConnectorBinding {
-  authorization_id: string;
+  connection_id: string;
 }
 export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
-export type SessionConnectorBindingInput =
-  | {
-      authorization_id: string;
-      /** @deprecated Use `authorization_id`. Equal dual IDs remain accepted. */
-      profile_id?: string;
-    }
-  | {
-      authorization_id?: never;
-      /** @deprecated Use `authorization_id`. */
-      profile_id: string;
-    };
+export type SessionConnectorBindingInput = SessionConnectorBinding;
 export type SessionConnectorBindingsInput = Record<string, SessionConnectorBindingInput>;
 
 export interface PendingSessionPrompt {
@@ -131,9 +122,9 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
-   * Connector profiles that must resolve a strategy-compatible authorization
+   * Connectors that must resolve a strategy-compatible authorization
    * before provisioning. Missing authorizations return
-   * `CONNECTOR_AUTHORIZATION_REQUIRED`.
+   * `CONNECTOR_CONNECTION_REQUIRED`.
    */
   require_connectors?: string[];
   /**
@@ -317,10 +308,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
 
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(
-      `/projects/${projectId}/sessions/warm`,
-      {},
-    ),
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
   );
   markSessionFresh(result.session.session_id);
   return result;
@@ -331,11 +319,9 @@ export async function claimWarmProjectSession(
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(
-      `/projects/${projectId}/sessions/warm/claim`,
-      input,
-      { showErrors: false },
-    ),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
+      showErrors: false,
+    }),
   );
   markSessionFresh(session.session_id);
   return session;
@@ -353,7 +339,7 @@ export async function getProjectSession(
   );
 }
 
-/** One governed action an agent took in a session (from the executor audit). */
+/** One governed action an agent took in a session (from the connector audit). */
 export interface SessionAuditAction {
   execution_id: string;
   action: string;
@@ -395,23 +381,34 @@ export interface SessionAudit {
    *  historical trail. Absent on older backends (treat as true). */
   audit_access?: boolean;
   count: number;
+  /** Canonical ordered timeline. Empty for non-entitled accounts. */
+  events?: AuditEvent[];
+  /** Cursor for the next ordered session page. */
+  next_cursor?: string | null;
   actions: SessionAuditAction[];
 }
 
-/** Per-session audit trail: every executor-gated action the agent took, with its
- *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
- *  see the session (its launcher + project managers). */
+/** Canonical session timeline plus the governed connector approval projection.
+ * Visible to anyone who can see the session (its launcher + project managers). */
 export async function getSessionAudit(
   projectId: string,
   sessionId: string,
   limit?: number,
-  options?: { showErrors?: boolean },
+  options?: { showErrors?: boolean; cursor?: string; includeEvents?: boolean },
 ) {
-  const qs = limit ? `?limit=${limit}` : '';
+  const search = new URLSearchParams();
+  if (limit) search.set('limit', String(limit));
+  if (options?.cursor) search.set('cursor', options.cursor);
+  if (options?.includeEvents != null)
+    search.set('include_events', String(options.includeEvents));
+  const qs = search.toString();
   return unwrap(
-    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`, {
-      showErrors: options?.showErrors,
-    }),
+    await backendApi.get<SessionAudit>(
+      `/projects/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
+      {
+        showErrors: options?.showErrors,
+      },
+    ),
   );
 }
 
@@ -691,9 +688,9 @@ export interface SessionScopeInput {
    *
    * Unlike `connector_bindings`, an alias here needs nothing connected to it:
    * that is the point. A binding says "use THIS connection" and must carry an
-   * authorization id, so it cannot express "this session needs Gmail and has
+   * connection id, so it cannot express "this session needs Gmail and has
    * none". Naming an alias here makes the next turn stop with
-   * `CONNECTOR_AUTHORIZATION_REQUIRED` and a connect prompt instead of letting
+   * `CONNECTOR_CONNECTION_REQUIRED` and a connect prompt instead of letting
    * the agent discover the gap mid-answer.
    */
   require_connectors?: string[] | null;

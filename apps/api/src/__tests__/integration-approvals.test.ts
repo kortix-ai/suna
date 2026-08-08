@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
-  executorExecutions,
+  connectorCalls,
   projectMembers,
   projectSessions,
   sessionLifecycleCommands,
@@ -153,7 +153,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const id of execIds)
-    await db.delete(executorExecutions).where(eq(executorExecutions.executionId, id));
+    await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
   for (const id of minted)
@@ -197,7 +197,7 @@ afterAll(async () => {
 async function seedPending(argsPreviewComplete = true): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
   const [row] = await db
-    .insert(executorExecutions)
+    .insert(connectorCalls)
     .values({
       accountId: ctx.accountId,
       projectId: ctx.projectId,
@@ -212,7 +212,7 @@ async function seedPending(argsPreviewComplete = true): Promise<string> {
         args_preview_complete: argsPreviewComplete,
       },
     })
-    .returning({ id: executorExecutions.executionId });
+    .returning({ id: connectorCalls.executionId });
   execIds.push(row.id);
   return row.id;
 }
@@ -255,8 +255,8 @@ describe('approvals inbox + resolution', () => {
     expect(ap.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     // Approve clears the gate to the terminal `ok` + stamps the resolver.
     expect(after.status).toBe('ok');
     expect(after.approvedBy).toBe(humanUserId);
@@ -286,6 +286,19 @@ describe('approvals inbox + resolution', () => {
     expect(auditBody.audit_access).toBe(true);
     const entry = auditBody.actions.find((action) => action.execution_id === execId);
     expect(entry?.resolved_by).toBe(humanUserId);
+
+    const approvalsOnly = await authGet(
+      `/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit?include_events=false&limit=1`,
+    );
+    expect(approvalsOnly.status).toBe(200);
+    const approvalsOnlyBody = (await approvalsOnly.json()) as {
+      events: unknown[];
+      next_cursor: string | null;
+      actions: Array<{ execution_id: string }>;
+    };
+    expect(approvalsOnlyBody.events).toEqual([]);
+    expect(approvalsOnlyBody.next_cursor).toBeNull();
+    expect(approvalsOnlyBody.actions.some((action) => action.execution_id === execId)).toBe(true);
   });
 
   test('unentitled account: audit degrades to pending-only (never a 402 — the approval control plane)', async () => {
@@ -324,8 +337,8 @@ describe('approvals inbox + resolution', () => {
     expect(dn.status).toBe(200);
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, execId));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, execId));
     expect(after.status).toBe('denied');
     expect(after.resolvedAt).toBeTruthy();
     // The denier is recorded too, so the audit trail attributes the refusal.
@@ -381,7 +394,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const ownerItem = ownerBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(ownerItem?.detail).toMatchObject({
       args_preview: { repo: 'kortix-ai/suna' },
@@ -395,7 +408,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const readOnlyItem = readOnlyBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(readOnlyItem?.detail).not.toHaveProperty('args_preview');
     expect(readOnlyItem?.detail).toMatchObject({
@@ -409,7 +422,7 @@ describe('approvals inbox + resolution', () => {
       review_items: Array<{ review_item_id: string; detail: Record<string, unknown> }>;
     };
     const automatedItem = automatedBody.review_items.find(
-      (item) => item.review_item_id === `exec:${execId}`,
+      (item) => item.review_item_id === `call:${execId}`,
     );
     expect(automatedItem?.detail).not.toHaveProperty('args_preview');
     expect(automatedItem?.detail).toMatchObject({ args_preview_authorized: false });
@@ -445,7 +458,7 @@ describe('approvals inbox + resolution', () => {
     if (!ctx) return;
     const missingSessionId = crypto.randomUUID();
     const [row] = await db
-      .insert(executorExecutions)
+      .insert(connectorCalls)
       .values({
         accountId: ctx.accountId,
         projectId: ctx.projectId,
@@ -458,7 +471,7 @@ describe('approvals inbox + resolution', () => {
           args_preview_complete: true,
         },
       })
-      .returning({ id: executorExecutions.executionId });
+      .returning({ id: connectorCalls.executionId });
     execIds.push(row.id);
 
     const response = await authPost(`/v1/projects/${ctx.projectId}/approvals/${row.id}`, {
@@ -468,8 +481,8 @@ describe('approvals inbox + resolution', () => {
 
     const [after] = await db
       .select()
-      .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, row.id));
+      .from(connectorCalls)
+      .where(eq(connectorCalls.executionId, row.id));
     expect(after.status).toBe('pending_approval');
     expect(after.approvedBy).toBeNull();
     expect(after.resolvedAt).toBeNull();

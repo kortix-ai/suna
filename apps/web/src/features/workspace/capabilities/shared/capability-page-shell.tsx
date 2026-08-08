@@ -2,6 +2,11 @@
 
 import type { ReactNode } from 'react';
 
+import {
+  CapabilityScrollRootProvider,
+  useCapabilityScrollRootRef,
+} from './capability-scroll-root';
+
 interface CapabilityPageShellProps {
   title: string;
   description: string;
@@ -15,16 +20,20 @@ interface CapabilityPageShellProps {
 }
 
 /**
- * Shared page shell for the three capability routes (connectors, skills,
- * commands). `max-w-5xl` is a deliberate departure from
+ * Shared page shell for the three capability routes (agents, connectors,
+ * skills). `max-w-5xl` is a deliberate departure from
  * `CustomizeSectionWrapper`'s `max-w-2xl` — a 3-up card grid does not fit in
  * `max-w-2xl`. These are standalone routed pages, not Customize sections; do
  * not reuse or edit `section-wrapper.tsx` for them.
  *
- * This element — not the window — is the page's scroll container. Nothing
- * observes it today; if something ever needs to, it has to be handed this
- * element rather than the viewport, because the `(capabilities)` layout wraps
- * it in `overflow-hidden` and a clipped target intersects nothing.
+ * This element — not the window — is the page's scroll container, and it is
+ * published through `CapabilityScrollRootProvider` because the connectors
+ * catalogue observes it for infinite scroll. It has to be handed THIS element
+ * rather than the viewport: the `(capabilities)` layout wraps the shell in
+ * `overflow-hidden`, and a clipped target intersects the viewport never.
+ *
+ * The ref costs this shell nothing — no state, no re-render — so the two
+ * capability pages that do not page are unaffected by the one that does.
  */
 export function CapabilityPageShell({
   title,
@@ -34,8 +43,9 @@ export function CapabilityPageShell({
   filters,
   children,
 }: CapabilityPageShellProps) {
+  const scrollRef = useCapabilityScrollRootRef();
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-10 pb-20 lg:py-14">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
@@ -56,7 +66,7 @@ export function CapabilityPageShell({
         {filters ? (
           <div className="flex flex-wrap items-center justify-between gap-2">{filters}</div>
         ) : null}
-        {children}
+        <CapabilityScrollRootProvider scrollRef={scrollRef}>{children}</CapabilityScrollRootProvider>
       </div>
     </div>
   );

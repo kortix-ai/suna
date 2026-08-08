@@ -18,17 +18,17 @@ const sectionsOf = (f: RailFlags): string[] =>
 
 describe('isRailItemActive', () => {
   test('matches an item against its own section', () => {
-    expect(isRailItemActive(item('agents'), 'agents')).toBe(true);
+    expect(isRailItemActive(item('channels'), 'channels')).toBe(true);
     expect(isRailItemActive(item('secrets'), 'secrets')).toBe(true);
     expect(isRailItemActive(item('git'), 'git')).toBe(true);
   });
 
   test('plain items are independent rail items with no shared activation', () => {
-    expect(isRailItemActive(item('agents'), 'secrets')).toBe(false);
-    expect(isRailItemActive(item('agents'), 'git')).toBe(false);
-    expect(isRailItemActive(item('secrets'), 'agents')).toBe(false);
+    expect(isRailItemActive(item('channels'), 'secrets')).toBe(false);
+    expect(isRailItemActive(item('channels'), 'git')).toBe(false);
+    expect(isRailItemActive(item('secrets'), 'channels')).toBe(false);
     expect(isRailItemActive(item('secrets'), 'git')).toBe(false);
-    expect(isRailItemActive(item('git'), 'agents')).toBe(false);
+    expect(isRailItemActive(item('git'), 'channels')).toBe(false);
     expect(isRailItemActive(item('git'), 'secrets')).toBe(false);
   });
 
@@ -40,7 +40,7 @@ describe('isRailItemActive', () => {
   });
 
   test('the llm-management item is not active for a non-llm section', () => {
-    expect(isRailItemActive(item('llm-management'), 'agents')).toBe(false);
+    expect(isRailItemActive(item('llm-management'), 'channels')).toBe(false);
     expect(isRailItemActive(item('llm-management'), 'git')).toBe(false);
   });
 
@@ -119,8 +119,8 @@ describe('railGroups', () => {
   });
 });
 
-describe('graduated sections', () => {
-  test('the rail no longer offers connectors, skills, or commands', () => {
+describe('capability sections', () => {
+  test('the rail excludes standalone agents, connectors and skills pages', () => {
     const sections = sectionsOf(
       flags({
         tunnelEnabled: true,
@@ -130,14 +130,40 @@ describe('graduated sections', () => {
         reviewEnabled: true,
       }),
     );
+    // Agents moved to /projects/<id>/agent. A rail item here would open an
+    // overlay section customize-panel no longer has a case for — a blank pane.
+    expect(sections).not.toContain('agents');
+    expect(sections).not.toContain('agent');
     expect(sections).not.toContain('connectors');
     expect(sections).not.toContain('skills');
-    expect(sections).not.toContain('commands');
   });
+
+  test('the rail offers commands because its standalone page was removed', () => {
+    expect(sectionsOf(flags())).toContain('commands');
+  });
+
   test('the sections that stay are untouched', () => {
     const sections = sectionsOf(flags());
-    expect(sections).toContain('agents');
     expect(sections).toContain('secrets');
     expect(sections).toContain('channels');
+    expect(sections).toContain('members');
+  });
+
+  test('the Build group keeps Commands when every flagged item is off', () => {
+    // Agents was Build's only static item until it graduated; Commands took
+    // that slot when #6169 deleted its standalone page. So the group no longer
+    // empties out. customize-panel still filters empty groups — that guard
+    // simply has nothing to catch in Build today.
+    const groups = railGroups(flags({ marketplaceEnabled: false, reviewEnabled: false }));
+    expect(groups.find((g) => g.label === 'Build')?.items.map((i) => i.section)).toEqual([
+      'commands',
+    ]);
+  });
+
+  test('the Build group appends Marketplace and Review when enabled', () => {
+    const build = railGroups(flags({ marketplaceEnabled: true, reviewEnabled: true })).find(
+      (g) => g.label === 'Build',
+    );
+    expect(build?.items.map((i) => i.section)).toEqual(['commands', 'marketplace', 'review']);
   });
 });

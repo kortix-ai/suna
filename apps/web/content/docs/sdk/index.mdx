@@ -34,6 +34,23 @@ export const kortix = createKortix({
 
 Create an API key at **User settings → API keys**. The key starts with `kortix_pat_` and shows only once. Store it as a secret and return it from `getToken`. See [Auth](/docs/sdk/auth) for token types and scopes.
 
+## Call a Connector
+
+A Connector defines callable tools. A Connection stores one authorization for
+that Connector. Credentials stay server-side.
+
+```ts
+const connectors = kortix.project(projectId).connectors;
+
+await connectors.catalog();
+await connectors.search('send email');
+await connectors.describe('gmail.send_email');
+await connectors.call('gmail.send_email', { to, subject, body });
+```
+
+An agent-minted session token already carries its project scope. Use
+`kortix.connectors` when the agent does not have a separate `projectId` value.
+
 ## Start your first session
 
 1. Create a session in your project.

@@ -15,6 +15,7 @@ import {
   getAgentConfig,
   updateAgentConfig,
 } from '@kortix/sdk';
+import { invalidateProject } from '@kortix/sdk/react';
 
 export function agentConfigQueryKey(projectId: string, agentName: string) {
   return ['agent-config', projectId, agentName] as const;
@@ -36,7 +37,7 @@ export function useUpdateAgentConfig(projectId: string, agentName: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentConfigQueryKey(projectId, agentName) });
       // The agents list + its per-agent badges come from project-detail.
-      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      void invalidateProject(qc, projectId);
     },
   });
 }

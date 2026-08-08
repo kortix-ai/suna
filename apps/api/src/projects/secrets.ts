@@ -14,6 +14,11 @@ import {
   newLookupId,
   resolveSecretDelivery,
 } from '../secrets/strategy';
+import {
+  buildSecretCapabilities,
+  serializeSecretCapabilities,
+  type SecretCapabilityCatalog,
+} from './secret-capabilities';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -168,7 +173,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
   for (const row of rows) {
     if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
     // Connector credentials / Pipedream bindings are resolved server-side by the
-    // Executor gateway — never injected into the sandbox env.
+    // Connector gateway — never injected into the sandbox env.
     if (row.scope === 'connector') continue;
     const canonical = row.identifier === row.name;
     if (row.name in env && winnerIsCanonical.has(row.name) && !canonical) continue;
@@ -704,7 +709,13 @@ export async function listProjectSecretsSnapshotForUser(
   userId: string | null,
   grantEnv?: string[] | 'all',
   sessionId?: string | null,
-): Promise<{ env: Record<string, string>; names: string[]; revision: string }> {
+): Promise<{
+  env: Record<string, string>;
+  names: string[];
+  revision: string;
+  capabilities: SecretCapabilityCatalog;
+  capabilitiesJson: string;
+}> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
   const { env, selected } = resolveGrantedSecretSelection(rows, grantEnv);
   await materializeSecretDelivery(selected, env, {
@@ -717,7 +728,17 @@ export async function listProjectSecretsSnapshotForUser(
   });
 
   const names = Object.keys(env).sort();
-  return { env, names, revision: projectSecretsRevision(env) };
+  const capabilities = buildSecretCapabilities(selected, {
+    grantEnv,
+    sessionId: sessionId ?? null,
+  });
+  return {
+    env,
+    names,
+    revision: projectSecretsRevision(env),
+    capabilities,
+    capabilitiesJson: serializeSecretCapabilities(capabilities),
+  };
 }
 
 export async function getProjectSecretValue(

@@ -18,20 +18,21 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
+import {
+  CatalogEmptyNote,
+  CatalogNoMatch,
+} from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { CatalogEmptyNote, CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
@@ -44,7 +45,7 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
 
 /**
  * /projects/[id]/skills — the standalone Skills catalog. Reads
- * `config.skills` off the same `['project-detail', projectId]` query
+ * `config.skills` off the same `qk.project.detail(id)` query
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
  * about what a project's skills are.
  *
@@ -70,7 +71,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const detailQuery = useQuery(projectDetailQuery(projectId));
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
 
   const skills = useMemo(() => {
     const raw = detailQuery.data?.config.skills;
@@ -111,10 +116,14 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // One control, two labels. The header has a title beside it and can be terse;
   // the empty state is the whole screen and has to name what it creates. Both
   // start the same configure thread, so they cannot drift apart.
+  // `size="sm"` is `h-8` — the same height as the search input beside it in the
+  // header group. The Button default is `h-9`, which left the pair 4px
+  // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
       <Button
         variant="secondary"
+        size="sm"
         onClick={() => configure.start(newConfigPrompt('skill'))}
         disabled={configure.pending}
       >
@@ -142,6 +151,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
+            size="sm"
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
