@@ -97,6 +97,12 @@ agents:
     # memory CR). No connectors, no project secrets.
     kortix_cli: [project.cr.open]
 
+  harness-reflector:
+    # Continual-harness reflector: refines the shared harness (prompts,
+    # sub-agents, skills/tools, memory) from session evidence. Same
+    # posture as memory-reflector: opens — never merges — a harness CR.
+    kortix_cli: [project.cr.open, project.session.read]
+
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial
 # message. Add from the Kortix UI or uncomment one below. Slugs must be
@@ -127,6 +133,31 @@ triggers:
       and open a single CR titled `memory: …`. Exit silently if nothing is
       worth changing.
 
+  # Harness reflector — the continual-harness loop across sessions.
+  # Surveys what every recent session actually did, finds failure
+  # signatures (repeated tool failures, rediscovery loops, stalled
+  # objectives), and refines the shared harness — agent prompts,
+  # sub-agents, skills/tools, memory — via the four-pass protocol in
+  # the `kortix-harness-refinement` skill. Opens a `harness: …` change
+  # request; exits silently when nothing is worth changing.
+  #
+  # Disabled by default. Flip `enabled: true` once sessions are running
+  # regularly — refinement needs trajectory evidence to work from.
+  - slug: harness-reflector
+    name: Harness reflector
+    type: cron
+    agent: harness-reflector
+    enabled: false
+    cron: "0 30 3 * * *" # 03:30 daily, after the memory reflector
+    timezone: UTC
+    prompt: |
+      Load the `kortix-harness-refinement` skill, then run the four-pass
+      refinement protocol over the last 24h of project activity:
+      `kortix sessions digest --since 24h`, git log, and merged CRs.
+      Identify failure signatures, refine only the components with
+      observed failures, and open a single CR titled `harness: …`.
+      Exit silently if nothing is worth changing.
+
   # Cron trigger — fires on a 6-field croner expression
   # (second minute hour day month weekday).
   #
@@ -156,6 +187,26 @@ triggers:
   #   prompt: |
   #     Slack event from {{ headers.user_agent }}.
   #     User said: {{ body.text }}
+
+# ─── Mid-session refinement ──────────────────────────────────────────────
+# Continual-harness cadence for RUNNING sessions: every `every_turns`
+# assistant turns (after `warmup_turns`), the platform delivers a
+# refinement prompt into the session itself. The agent pauses its task,
+# runs the four-pass protocol from the `kortix-harness-refinement` skill
+# over its own recent turns, applies harness edits in place (they take
+# effect on its next turn — no restart), commits them to the session
+# branch, keeps ONE `harness: …` change request updated toward main, and
+# resumes its task. Complementary to the cross-session `harness-reflector`
+# trigger above.
+#
+# Disabled by default — flip `enabled: true` to opt the project in.
+#
+# refine:
+#   enabled: true
+#   every_turns: 25        # deliver a refinement prompt every N assistant turns
+#   warmup_turns: 10       # never before the session's first N turns
+#   max_per_session_per_day: 6   # hard cap per session per UTC day
+#   agents: [kortix]       # only sessions running these agents (default: [default_agent])
 
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack
