@@ -84,12 +84,15 @@ resource "aws_iam_policy" "ses_send_only" {
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
-    # Break-glass admins only (named individuals, MFA-enforced). kubet was scoped
-    # down to a live-managed `lightsail` group (lightsail:* — kept out of TF so the
-    # service wildcard isn't re-flagged by the IaC scanner).
+    # Break-glass admins only (named individuals, MFA-enforced). Person
+    # memberships are managed out-of-band (AWS console / aws iam
+    # add-user-to-group) — individual people must not live in version-controlled
+    # IaC (churn + audit noise on every join/leave). kubet was scoped down to a
+    # live-managed `lightsail` group (lightsail:* — kept out of TF so the service
+    # wildcard isn't re-flagged by the IaC scanner).
     administrators = {
       policies = ["arn:aws:iam::aws:policy/AdministratorAccess", "arn:aws:iam::aws:policy/IAMUserChangePassword"]
-      members  = ["markokraemer", "saumya@kortix.com"]
+      members  = []
     }
     bedrock-limited = {
       policies = ["arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"]
