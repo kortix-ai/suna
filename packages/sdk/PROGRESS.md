@@ -12,6 +12,42 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-08 — session `workspace-switcher-final-fix-wave` completion
+
+No **Now** task claimed. This is the SDK slice of the workspace-switcher
+branch's final whole-branch-review fix wave (`.superpowers/sdd/2026-08-06-
+workspace-switcher/final-fix-wave-report.md`) — one finding, additive only.
+
+Scope: `provisionProjectStream` (`core/rest/projects-client/projects.ts`)
+threw a bare `Error` for every failure — no `.status`, no `.code` — even
+though `ProvisionStreamEvent` already declared `code?: string` and the server
+sends it. `apps/web`'s `messageFor`/`isRetryableError` classify every create
+failure by reading exactly those two fields, so on the default streaming path
+they always saw `undefined` for both: a 400 offered an unwinnable retry, and a
+409 leaked the literal string `idempotency_key` to the user.
+
+RED: `projects.test.ts` — 3 new tests asserting the thrown error is
+`instanceof ApiError` with `.status`/`.code` set, for both the in-band `error`
+frame and the pre-stream denial. Failed for the right reason: the thrown
+value was a plain `Error`, not `ApiError`.
+
+GREEN: `provisionProjectStream` now throws `new ApiError(message, { status,
+code })` at both throw sites; `ProvisionStreamEvent`'s `error` variant gained
+an optional `status?: number` field to carry it. `1589 pass, 0 fail` (was
+1586 — the 3 new tests), `6408 expect()` calls across 122 files. `typecheck`
+clean. `smoke:install` green (pack → install → import).
+
+Public surface: **purely additive**. `ApiError` was already exported and
+already public; only an EXISTING type gained a new OPTIONAL field
+(`ProvisionStreamEvent['error'].status`), which the snapshot tests don't
+capture at the field level (verified: `public-surface.snapshot.json` and
+`public-type-surface.snapshot.json` show zero diff). No export added,
+renamed, or removed.
+
+**Status:** COMPLETE. **SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-06 — session `connector-secret-binding` completion
 
 No **Now** task claimed. This is an additive connector credential-source fix.

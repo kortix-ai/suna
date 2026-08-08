@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   buildCreatePayload,
   fingerprintOf,
+  isRetryableError,
   isTransportFailure,
   messageFor,
   RETRY_DELAY_MS,
@@ -163,6 +164,59 @@ describe('messageFor', () => {
 
   test('falls back to the generic message for a non-Error throw', () => {
     expect(messageFor('not even an Error')).toBe('Could not create the workspace. Try again.');
+  });
+
+  // ── Final-review FIX 1 ───────────────────────────────────────────────────
+  //
+  // Before FIX 1, `provisionProjectStream` threw a bare `Error` with no
+  // `.status`/`.code` — so on the default streaming path, `status` here was
+  // ALWAYS `undefined`, and a 409 fell through every named branch straight to
+  // `return message || '...'`, surfacing the server's raw text (which names
+  // `idempotency_key` verbatim — see `PROVISION_IN_FLIGHT_CODE`'s own doc
+  // comment, `packages/sdk/.../api-client.ts`) directly to the user.
+
+  test('FIX 1: maps a 409 provision_in_flight to a sanitized message — never the raw server text', () => {
+    const err = new ApiError('Another provision with this idempotency_key is in flight', {
+      status: 409,
+      code: PROVISION_IN_FLIGHT_CODE,
+    });
+    const msg = messageFor(err);
+    expect(msg).not.toContain('idempotency_key');
+    expect(msg).toBe(
+      'Another attempt to create this workspace is already in progress. Please wait a moment and try again.',
+    );
+  });
+
+  // ── Final-review FIX 2 ───────────────────────────────────────────────────
+  //
+  // `messageFor`'s 403 branch used to fire for ANY 403, including
+  // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
+  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1,
+  // `ensureFirstProject` auto-provisions everyone's first project) they lack
+  // permissions they actually have.
+
+  test('FIX 2: maps a 403 project_limit_reached to the server\'s own quota message, not the owner/admin explanation', () => {
+    const err = new ApiError(
+      'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+      { status: 403, code: 'project_limit_reached' },
+    );
+    const msg = messageFor(err);
+    expect(msg).not.toBe('You need owner or admin access in this account to create a workspace.');
+    expect(msg).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+  });
+
+  test('FIX 2: a plain 403 with no quota code still gets the owner/admin explanation', () => {
+    const err = new ApiError('Owner or admin role required', { status: 403 });
+    expect(messageFor(err)).toBe(
+      'You need owner or admin access in this account to create a workspace.',
+    );
+  });
+});
+
+describe('isRetryableError: 409 provision_in_flight', () => {
+  test('FIX 1: a 409 is retryable — the concurrent attempt is external state that can resolve before a later click', () => {
+    const err = new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
+    expect(isRetryableError(err)).toBe(true);
   });
 });
 
@@ -910,6 +964,81 @@ describe('runProvisionAttempt', () => {
     const err = new Error('Owner or admin role required');
     const client = streamClient({
       provisionProjectStream: async () => {
+        throw err;
+      },
+    });
+
+    await expect(
+      runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, () => {}, client),
+    ).rejects.toBe(err);
+    expect(client.plainCalls).toEqual([]);
+  });
+
+  // ── Final-review FIX 1, consequence 3 ────────────────────────────────────
+  //
+  // `emit('validating')` is the FIRST statement of `runProvision`
+  // (`apps/api/src/projects/provision-core.ts`), so by the time a 409
+  // `provision_in_flight` frame can possibly arrive, the stream has ALWAYS
+  // already delivered at least one phase event. Under the plain
+  // "any event blocks fallback" rule, that made the backoff retry
+  // unreachable on the primary streaming path — the exact "409 backoff is
+  // dead" finding from the final review.
+  //
+  // DECISION: a 409 provision_in_flight is not a genuine provisioning
+  // failure the way a 502/503 is — by construction it means another attempt
+  // carrying this SAME idempotency_key is already running. Replaying it
+  // through `runCreateAttempt` (identical key) is exactly what that
+  // function's own backoff loop is for, and it is safe regardless of
+  // `eventsReceived`: the server either hands back the SAME project once the
+  // in-flight attempt commits, or 409s again and the loop keeps waiting.
+  // Nothing about "the stream did real work" makes that unsafe — unlike a
+  // genuine 502/503/plain-error rethrow, this never risks a second upstream
+  // repo.
+  test('CONSEQUENCE 3: an in-band 409 provision_in_flight, even after a phase event fired, reaches the backoff retry via runCreateAttempt', async () => {
+    let plainAttempts = 0;
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        // The real-world shape: `validating` always fires before any error
+        // can possibly arrive, so `eventsReceived > 0` is always true here.
+        onEvent({ type: 'phase', phase: 'validating' });
+        onEvent({
+          type: 'error',
+          error: 'Another provision with this idempotency_key is in flight',
+          code: PROVISION_IN_FLIGHT_CODE,
+          status: 409,
+        });
+        throw new ApiError('Another provision with this idempotency_key is in flight', {
+          status: 409,
+          code: PROVISION_IN_FLIGHT_CODE,
+        });
+      },
+      provisionProject: async (input) => {
+        plainAttempts += 1;
+        if (plainAttempts === 1) {
+          throw new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
+        }
+        return fakeProject('created-after-inflight-retry');
+      },
+    });
+
+    const project = await runProvisionAttempt(
+      { name: 'x', idempotency_key: 'key-1' },
+      () => {},
+      client,
+    );
+
+    expect(project.project_id).toBe('created-after-inflight-retry');
+    expect(plainAttempts).toBe(2);
+    expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
+  });
+
+  test('CONSEQUENCE 3: a genuine post-event failure that is NOT provision_in_flight still never falls back', async () => {
+    // Adversarial pair to the test above: proves the new escape hatch is
+    // narrow — keyed on the code, not just "any error after events fired".
+    const err = new ApiError('Bad Gateway', { status: 502 });
+    const client = streamClient({
+      provisionProjectStream: async (_input, onEvent) => {
+        onEvent({ type: 'phase', phase: 'validating' });
         throw err;
       },
     });

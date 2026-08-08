@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { ApiError } from '../../http/api-client';
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
@@ -791,6 +792,75 @@ describe('provisionProjectStream', () => {
     await expect(
       provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
     ).rejects.toThrow('Owner or admin role required');
+  });
+
+  // ── Final-review FIX 1 ───────────────────────────────────────────────────
+  //
+  // Every failure `provisionProjectStream` threw used to be a bare `new
+  // Error(message)` — no `.status`, no `.code`, even though the server sends
+  // both (`apps/api/src/projects/routes/r1.ts`'s error frame, and the
+  // pre-stream denial body) and `apps/web`'s `messageFor`/`isRetryableError`
+  // (`use-create-workspace.ts`) classify EVERY create failure by reading
+  // exactly those two fields. On the streaming path — the one every user
+  // takes by default — those classifiers silently saw `undefined` for both,
+  // so a 400 got an unwinnable "Try again" and a 409 leaked the literal
+  // string "idempotency_key" to the user. These two tests prove the thrown
+  // error now carries `status`/`code` matching `ApiError`'s shape
+  // (`packages/sdk/src/core/http/api/errors.ts`), so the SAME host
+  // classifiers work identically whether the create went through the stream
+  // or the plain POST fallback.
+
+  test('FIX 1: an in-band error frame propagates status and code onto the thrown error', async () => {
+    const body =
+      'data: {"type":"error","error":"Another provision with this idempotency_key is in flight","code":"provision_in_flight","status":409}\n\n';
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([body]) });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).code).toBe('provision_in_flight');
+    expect((caught as ApiError).message).toBe(
+      'Another provision with this idempotency_key is in flight',
+    );
+  });
+
+  test('FIX 1: a pre-stream denial (non-2xx, no stream ever opened) propagates status and code the same way', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'name is required', code: 'invalid_name' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).code).toBe('invalid_name');
+    expect((caught as ApiError).message).toBe('name is required');
+  });
+
+  test('FIX 1: a pre-stream denial with no code still carries status, and the message stays exactly the server text', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'Owner or admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(403);
+    expect((caught as ApiError).code).toBeUndefined();
+    expect((caught as ApiError).message).toBe('Owner or admin role required');
   });
 
   test('the phase union matches the API contract exactly', () => {

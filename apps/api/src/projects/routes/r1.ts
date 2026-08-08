@@ -503,7 +503,13 @@ projectsApp.openapi(
           if (result.status === 201) {
             write({ type: 'done', project: result.body });
           } else {
-            write({ type: 'error', ...(result.body as object) });
+            // `status` alongside the body's `error`/`code` — see
+            // `ProvisionStreamEvent`'s doc comment in the SDK
+            // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
+            // Spread first, explicit field last: `result.body` never carries
+            // a `status` key today, but this ordering means it never could
+            // silently shadow the real one if that changed.
+            write({ type: 'error', ...(result.body as object), status: result.status });
           }
         } catch (error) {
           // The stream must never end in a bare close — that would hand the

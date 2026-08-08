@@ -122,4 +122,21 @@ describe('POST /provision-stream', () => {
     expect(doneIdx).toBeGreaterThan(-1);
     expect(streamRoute.slice(doneIdx, doneIdx + 60)).toContain('project: result.body');
   });
+
+  // Final-review FIX 1: the error frame used to spread ONLY `result.body`
+  // (`{ error, code? }`) — never `result.status`. `provisionProjectStream`
+  // (`packages/sdk/.../projects.ts`) throws whatever this frame carries, and
+  // `apps/web`'s `messageFor`/`isRetryableError` classify every create
+  // failure by reading `.status` — so a 400 and a 409 were indistinguishable
+  // on this transport even though `runProvision` returns a distinct
+  // `ProvisionResultStatus` for each. `errorIdx` finds the FIRST `type:
+  // 'error'` in the route's source, which is this expected-failure branch
+  // (the retry-loop's `catch` writes a SECOND, later `type: 'error'` frame
+  // for a thrown exception, with no `result` in scope to read a status from).
+  test('FIX 1: the error frame carries the result status, not just error/code', () => {
+    const streamRoute = codeOnly(streamRouteSource());
+    const errorIdx = streamRoute.indexOf("type: 'error'");
+    expect(errorIdx).toBeGreaterThan(-1);
+    expect(streamRoute.slice(errorIdx, errorIdx + 80)).toContain('status: result.status');
+  });
 });

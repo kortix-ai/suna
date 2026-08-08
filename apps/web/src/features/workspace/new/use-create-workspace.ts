@@ -12,7 +12,10 @@ import {
 } from '@/features/workspace/new/new-workspace-form';
 import { shouldRunOnboarding } from '@/features/workspace/new/onboarding-gate';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import {
+  isManagedGitUnavailableError,
+  isProjectLimitError,
+} from '@/lib/onboarding/ensure-first-project';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   listAccounts,
@@ -117,7 +120,10 @@ export function buildCreatePayload(
  *
  * `ApiError` field names verified at
  * `packages/sdk/src/core/http/api/errors.ts:46-55`: `status?: number`,
- * `code?: string` — branches below read those, not invented names.
+ * `code?: string` — branches below read those, not invented names. Both
+ * transports (`provisionProject` and, since final-review FIX 1,
+ * `provisionProjectStream`) throw an `ApiError` carrying the same fields, so
+ * every branch below reads identically regardless of which one ran.
  *
  * 502 and 503 are NOT the same failure and must not share a message. This
  * route's only 503 is `isManagedGitUnavailableError`
@@ -129,16 +135,44 @@ export function buildCreatePayload(
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
  * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
  * between the toast those use and the inline message here.
+ *
+ * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
+ * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
+ * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
+ * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
+ * plus `ensureFirstProject` auto-provisioning every account's first project
+ * means EVERY free-tier user who clicks "Create a workspace…" hits this —
+ * not an edge case. The generic 403 message ("You need owner or admin
+ * access…") is actively false for them: they have the role, they are simply
+ * out of quota. The server's own message is reused verbatim rather than
+ * inventing new copy — it already states the exact limit and the upgrade
+ * path, matching what the deleted create modal's `isProjectLimitError`
+ * handling reused for the same code (`ensure-first-project.ts`).
+ *
+ * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
+ * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
+ * (`packages/sdk/src/core/http/api-client.ts`) names the literal string
+ * "idempotency_key" as something that must never reach the user, and the
+ * server's message for this case names it verbatim. By the time this branch
+ * is reached, `runProvisionAttempt`'s own in-band retry (see its doc
+ * comment) has already exhausted its backoff — this is the terminal case,
+ * not the common one.
  */
 export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
+  if (isProjectLimitError(error)) {
+    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+  }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
   }
   if (status === 400) return message || 'Check the workspace name and try again.';
   if (isManagedGitUnavailableError(error)) {
     return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
+  }
+  if (status === 409) {
+    return 'Another attempt to create this workspace is already in progress. Please wait a moment and try again.';
   }
   if (status === 502) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
@@ -173,6 +207,13 @@ export function messageFor(error: unknown): string {
  *   state; see `messageFor` above. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
+ * - `409` (`provision_in_flight`, final-review FIX 1) — retryable. Named
+ *   explicitly rather than left to the default bucket: whether ANOTHER
+ *   attempt with this key is still running is external state by
+ *   definition, and it usually resolves within `runProvisionAttempt`'s own
+ *   in-band backoff before ever reaching here (see that function's doc
+ *   comment) — this branch only fires once that backoff is exhausted, and
+ *   the underlying condition can still clear before the user's next click.
  * - Anything else (a plain network `Error`, an unrecognized status) —
  *   retryable. There is no signal here that rules out transience, so the
  *   safer default is to offer the retry rather than silently block a case
@@ -188,6 +229,7 @@ export function isRetryableError(error: unknown): boolean {
 
   if (status === 400) return false;
   if (isManagedGitUnavailableError(error)) return false;
+  if (status === 409) return true;
 
   return true;
 }
@@ -311,6 +353,24 @@ export async function runCreateAttempt(
  * `onPhase(null)` fires once, right before the fallback runs — there is no
  * real phase information once the plain POST takes over, and freezing the UI
  * on the last streamed phase would show progress that stopped being true.
+ *
+ * **DECISION (final-review FIX 1, consequence 3): a 409 `provision_in_flight`
+ * error ALSO reaches the fallback, regardless of `eventsReceived`.**
+ * `emit('validating')` is the first statement of `runProvision`
+ * (`apps/api/src/projects/provision-core.ts`), so by the time this failure
+ * can arrive at all, `eventsReceived > 0` is already guaranteed — under the
+ * plain "any event blocks fallback" rule, that made `runCreateAttempt`'s own
+ * 409 backoff loop unreachable from the streaming path, the exact "409
+ * backoff is dead on the primary path" finding from the final review. This
+ * is deliberately narrower than the transport-failure gate above it, not a
+ * loosening of it: a `provision_in_flight` failure is not "a genuine
+ * provisioning failure that must never be retried as a second create" the
+ * way a 502/503/plain error is. By construction it means another call
+ * carrying this SAME `idempotency_key` is already mid-provision, so handing
+ * it to `runCreateAttempt` (identical key, unchanged payload) is exactly
+ * correct: either the server returns the SAME project once the in-flight
+ * attempt commits, or it 409s again and the loop keeps waiting — never a
+ * second upstream repo, and never a second create for this user intent.
  */
 export async function runProvisionAttempt(
   payload: ProvisionProjectInput,
@@ -324,7 +384,11 @@ export async function runProvisionAttempt(
       if (event.type === 'phase') onPhase(event.phase);
     });
   } catch (streamFailure) {
-    if (eventsReceived > 0 || !isTransportFailure(streamFailure)) throw streamFailure;
+    const code = (streamFailure as { code?: string } | null | undefined)?.code;
+    const isProvisionInFlight = code === PROVISION_IN_FLIGHT_CODE;
+    if (!isProvisionInFlight && (eventsReceived > 0 || !isTransportFailure(streamFailure))) {
+      throw streamFailure;
+    }
     onPhase(null);
     return runCreateAttempt(payload, client);
   }

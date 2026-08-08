@@ -1,6 +1,6 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
-import { type ApiClientOptions, backendApi } from '../../http/api-client';
+import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -500,11 +500,22 @@ export async function provisionProject(
  */
 export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
 
-/** One frame of `POST /projects/provision-stream`'s SSE body. */
+/**
+ * One frame of `POST /projects/provision-stream`'s SSE body.
+ *
+ * The `error` frame's `status` mirrors the HTTP status the equivalent
+ * `/provision` response would have carried for the same failure — the route
+ * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * shared `runProvision` core alongside `error`/`code`, exactly the fields
+ * `provisionProjectStream` (below) copies onto the error it throws. Without
+ * this, a host reading only `.status`/`.code` (as `apps/web`'s
+ * `messageFor`/`isRetryableError` do) cannot tell a 400 from a 409 on this
+ * transport, even though it can on the plain `provisionProject` path.
+ */
 export type ProvisionStreamEvent =
   | { type: 'phase'; phase: ProvisionPhase }
   | { type: 'done'; project: KortixProject }
-  | { type: 'error'; error: string; code?: string };
+  | { type: 'error'; error: string; code?: string; status?: number };
 
 /**
  * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
@@ -573,6 +584,9 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  * arrives as a plain non-2xx JSON response, never as a `200` that then opens
  * an SSE body containing an `error` frame — this function rejects with that
  * response's message the same way it rejects an in-stream `error` event.
+ * Both rejections are a real `ApiError` carrying `.status`/`.code`, not a
+ * bare `Error` — see the `ProvisionStreamEvent` doc comment above for why
+ * that match to `ApiError`'s shape matters.
  *
  * ## Streaming target matrix
  *
@@ -606,8 +620,15 @@ export async function provisionProjectStream(
   );
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error || `Provision failed: HTTP ${response.status}`);
+    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
+    // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
+    // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`
+    // throw; without this they saw `undefined` for both on this transport.
+    throw new ApiError(body?.error || `Provision failed: HTTP ${response.status}`, {
+      status: response.status,
+      code: body?.code,
+    });
   }
 
   const reader = response.body?.getReader();
@@ -634,7 +655,12 @@ export async function provisionProjectStream(
         const event = parseProvisionStreamFrame(frame);
         if (!event) continue;
         onEvent(event);
-        if (event.type === 'error') throw new Error(event.error);
+        // Same `ApiError` shape as the pre-stream-denial branch above, so a
+        // host classifying create failures gets identical `.status`/`.code`
+        // whichever branch fired.
+        if (event.type === 'error') {
+          throw new ApiError(event.error, { status: event.status, code: event.code });
+        }
         if (event.type === 'done') settled = event.project;
       }
     }
