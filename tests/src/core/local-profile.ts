@@ -36,6 +36,10 @@ export interface LocalFlowExclusion {
   reason: string;
 }
 
+export function localWebUrl(port: number): string {
+  return `http://localhost:${port}`;
+}
+
 export function localEnvironmentOverrides(input: LocalProfileInput): Record<string, string> {
   const { worktree, supabase } = input;
   const apiPort = worktree?.ports.api ?? 8008;
@@ -49,7 +53,7 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
   return {
     KE2E_TARGET: "local",
     KE2E_API_URL: `http://127.0.0.1:${apiPort}/v1`,
-    KE2E_BASE_URL: `http://127.0.0.1:${webPort}`,
+    KE2E_BASE_URL: localWebUrl(webPort),
     KE2E_GATEWAY_URL: `http://127.0.0.1:${gatewayPort}`,
     KE2E_SUPABASE_URL: supabase.API_URL,
     KE2E_DATABASE_URL: supabase.DB_URL,

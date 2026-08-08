@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readLocalSupabaseEnvironment, resolveLocalTopology } from './local-stack';
+import { localWebUrl } from './local-profile';
 
 export interface LocalTestLane {
   name: string;
@@ -144,7 +145,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
       const topology = resolveLocalTopology(root);
       const supabase = await readLocalSupabaseEnvironment(topology);
       const webPort = topology.marker?.ports.web ?? 3000;
-      const webUrl = `http://127.0.0.1:${webPort}`;
+      const webUrl = localWebUrl(webPort);
       await waitForLocalWeb(webUrl);
       if (
         !supabase.API_URL ||

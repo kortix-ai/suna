@@ -3,6 +3,7 @@ import type { RegisteredFlow } from "../src/core/flow";
 import {
   localEnvironmentOverrides,
   localRunExitCode,
+  localWebUrl,
   localWorkerCount,
   planLocalFlows,
 } from "../src/core/local-profile";
@@ -38,7 +39,7 @@ describe("ke2e local profile", () => {
     ).toMatchObject({
       KE2E_TARGET: "local",
       KE2E_API_URL: "http://127.0.0.1:23608/v1",
-      KE2E_BASE_URL: "http://127.0.0.1:23600",
+      KE2E_BASE_URL: "http://localhost:23600",
       KE2E_GATEWAY_URL: "http://127.0.0.1:23690",
       KE2E_SUPABASE_URL: "http://127.0.0.1:54321",
       KE2E_DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
@@ -51,6 +52,10 @@ describe("ke2e local profile", () => {
       KE2E_CAP_FUNDED: "0",
       KE2E_DEFAULT_FLOW_ATTEMPTS: "1",
     });
+  });
+
+  it("uses the Next development server's canonical localhost origin", () => {
+    expect(localWebUrl(24000)).toBe("http://localhost:24000");
   });
 
   it("selects every local REST flow and explains every exclusion", () => {
