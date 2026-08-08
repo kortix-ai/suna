@@ -11,6 +11,7 @@ flow(
   {
     domain: "apps",
     routes: [
+      "PATCH /v1/projects/:projectId/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -23,6 +24,15 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
+
+    await ctx.step("clear any apps flag override from a reused project", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: null },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
 
     await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
       const response = await owner.get("/v1/projects/:projectId/apps", {
@@ -140,6 +150,9 @@ flow(
   {
     domain: "apps",
     routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
       "POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
       "POST /v1/projects/:projectId/apps/:appId/deployments",
@@ -311,5 +324,12 @@ flow(
         stop.status(409);
       },
     );
+
+    await ctx.step("delete the test App after the boundary checks", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: appParams,
+      });
+      response.status(200).body().has("$.ok", true);
+    });
   },
 );

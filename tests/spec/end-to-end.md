@@ -790,7 +790,8 @@ deployment pointer. The provider remains an implementation detail.
 `GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
 feature flag, off by default: a member of a flag-off project gets
 `403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
-then enables the flag via `PATCH /projects/:projectId/features` and proceeds. A
+first clears any override left by a reused local fixture, then enables the flag
+via `PATCH /projects/:projectId/features` and proceeds. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; patch updates
 mutable policy; delete is soft and removes the App from subsequent reads.
@@ -810,4 +811,4 @@ Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
 back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
 specified by each route. `APP-2` exercises these boundaries through the real
-HTTP API.
+HTTP API, then deletes the test App.
