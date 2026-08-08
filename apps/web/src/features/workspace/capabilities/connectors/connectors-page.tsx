@@ -1,6 +1,7 @@
 'use client';
 
-import { listConnectors, type AdminConnector } from '@kortix/sdk';
+import { type AdminConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -57,10 +58,6 @@ import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catal
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 import {
   connectorDisplayName,
   connectorSummary,
@@ -140,7 +137,7 @@ type Panel = 'custom';
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
  *
- * Reads the project's own connectors off `['project-connectors', projectId]`,
+ * Reads the project's own connectors off `qk.project.connectors(projectId)`,
  * the same key `ConnectorsMasterDetail` uses, so the two surfaces cannot
  * disagree about what a project has.
  *
@@ -203,11 +200,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   );
 
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
-  const projectQuery = useQuery(projectDetailQuery(projectId));
+  const projectQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const existingSlugs = useMemo(() => connectors.map((c) => c.slug), [connectors]);

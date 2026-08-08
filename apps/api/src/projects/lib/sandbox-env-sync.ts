@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import { getProvider, type ProviderName } from '../../platform/providers';
+import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
@@ -27,20 +27,9 @@ import {
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
 
-/**
- * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
- * mirrors session-sandbox.ts's boot-time computation (see that file and
- * `local-docker.ts`'s `sandboxFacingApiOrigin()`). Every hot env-push call
- * site here recomputes the LLM-gateway base URL from scratch (a project's
- * gateway opt-in can toggle, or secrets can rotate, mid-session), so it must
- * ask the OWNING provider for its origin the same way the boot path does —
- * otherwise a same-machine provider's boot-time fix is silently undone by the
- * very next prompt or gateway-mode toggle, which re-pushes the generic public
- * origin over the daemon's `/kortix/env` and re-breaks connectivity.
- */
-export function llmGatewayBaseUrlForProvider(providerName: ProviderName): string {
-  const origin = getProvider(providerName).sandboxFacingApiOrigin?.() ?? config.KORTIX_URL;
-  return resolveLlmGatewayBaseUrl(origin);
+/** Resolve the LLM gateway URL used by every supported remote provider. */
+export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
+  return resolveLlmGatewayBaseUrl(config.KORTIX_URL);
 }
 
 const SANDBOX_SERVICE_PORT = 8000;
@@ -224,6 +213,11 @@ async function postEnvToDaemon(args: {
    * serves — the push landed, the config did not.
    */
   opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
+  /**
+   * Did applying the config interrupt a turn someone was waiting on?
+   * `null` = the box did not say (older daemon, or no reload happened).
+   */
+  opencodeTurnEnded: boolean | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -273,6 +267,7 @@ async function postEnvToDaemon(args: {
     agent_env_written?: unknown;
     opencode?: unknown;
     opencode_reload?: unknown;
+    opencode_turn_ended?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -297,6 +292,8 @@ async function postEnvToDaemon(args: {
       typeof body?.opencode_reload === 'string'
         ? (body.opencode_reload as 'disposed' | 'restarted' | 'kept-old')
         : null,
+    opencodeTurnEnded:
+      typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -658,7 +655,12 @@ export async function pushSessionAgentConfigToSandbox(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-}): Promise<{ applied: boolean; reason?: string; opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null }> {
+}): Promise<{
+  applied: boolean;
+  reason?: string;
+  opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  opencodeTurnEnded?: boolean | null;
+}> {
   try {
     const [session] = await db
       .select({
@@ -727,7 +729,11 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // `applied` means WE pushed it. Whether opencode actually took it is
     // `opencodeReload` — a declined swap leaves the old config running, and
     // reporting a bare `applied: true` for that is the lie this field prevents.
-    return { applied: true, opencodeReload: pushed.opencodeReload };
+    return {
+      applied: true,
+      opencodeReload: pushed.opencodeReload,
+      opencodeTurnEnded: pushed.opencodeTurnEnded,
+    };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);

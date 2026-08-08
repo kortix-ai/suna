@@ -7,6 +7,7 @@ import type {
   App,
   AppDeployment,
   AppHostingProvider,
+  AppAccessMode,
   AppSource,
   ProjectHandle,
 } from '@kortix/sdk';
@@ -14,8 +15,6 @@ import ignore from 'ignore';
 import * as tar from 'tar';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { hasEnvTokenHost } from '../api/config.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -25,7 +24,6 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadLocalManifest } from '../manifest.ts';
-import { loadLink, resolveProjectId } from '../project-link.ts';
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
@@ -56,14 +54,20 @@ Subcommands:
     --build-command <command>       Bundle build command.
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
-    --provider <name>               daytona, platinum, e2b, or local-docker.
+    --provider <name>               daytona, platinum, or e2b.
+    --access <mode>                 private (default), project, restricted, public, or password.
+    --password <value>              Required for new password-protected Apps.
+    --members <ids>                 Comma-separated member ids for restricted access.
+    --groups <ids>                  Comma-separated group ids for restricted access.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
-  stop <id|slug>                    Stop the App and block cold wake.
+  stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <deployment>   Move traffic to a ready deployment.
+  access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
+  access-link <id|slug>             Create a short-lived authenticated browser URL.
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
 Global options:
@@ -169,22 +173,6 @@ async function context(options: ContextOptions): Promise<{
   };
 }
 
-/** Read-only landing-page discovery. Missing auth, project, or flag stays dark. */
-export async function selectedProjectAppsEnabled(): Promise<boolean> {
-  const projectId = resolveProjectId();
-  if (!projectId) return false;
-  const linkedHost = hasEnvTokenHost() ? undefined : loadLink()?.host;
-  const auth = linkedHost ? loadAuthForHost(linkedHost) : loadAuth();
-  if (!auth?.token) return false;
-  try {
-    const kortix = kortixFromAuth(auth);
-    const project = await withKortixScope(auth, () => kortix.project(projectId).get());
-    return project.experimental?.apps === true;
-  } catch {
-    return false;
-  }
-}
-
 async function scoped<T>(ctx: NonNullable<Awaited<ReturnType<typeof context>>>, fn: () => Promise<T>) {
   return withKortixScope(ctx.auth, fn);
 }
@@ -223,12 +211,6 @@ function takeCommon(rest: string[]) {
 
 export async function runApps(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    const helpArgs = argv.slice(1);
-    const helpContext = await context({
-      projectArg: takeFlagValue(helpArgs, ['--project']),
-      hostArg: takeFlagValue(helpArgs, ['--host']),
-    });
-    if (!helpContext) return 2;
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
   }
@@ -255,6 +237,10 @@ export async function runApps(argv: string[]): Promise<number> {
         return await stateCommand(subcommand, rest, common.options, common.json);
       case 'rollback':
         return await rollbackCommand(rest, common.options, common.json);
+      case 'access':
+        return await accessCommand(rest, common.options, common.json);
+      case 'access-link':
+        return await accessLinkCommand(rest, common.options, common.json);
       case 'delete':
       case 'rm':
       case 'remove':
@@ -323,12 +309,25 @@ interface DeployFlags {
   waitSeconds: number;
   includeNodeModules: boolean;
   manifestApp?: string;
+  accessMode?: AppAccessMode;
+  password?: string;
+  memberIds?: string[];
+  groupIds?: string[];
+}
+
+function csv(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
 }
 
 function deployFlags(rest: string[]): DeployFlags {
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
-  if (provider && !['daytona', 'platinum', 'e2b', 'local-docker'].includes(provider)) {
-    throw new Error('--provider must be daytona, platinum, e2b, or local-docker');
+  if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
+    throw new Error('--provider must be daytona, platinum, or e2b');
+  }
+  const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
+  if (accessMode && !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)) {
+    throw new Error('--access must be private, project, restricted, public, or password');
   }
   const spa = takeFlagBool(rest, ['--spa']);
   const noSpa = takeFlagBool(rest, ['--no-spa']);
@@ -357,6 +356,10 @@ function deployFlags(rest: string[]): DeployFlags {
     waitSeconds,
     includeNodeModules: takeFlagBool(rest, ['--include-node-modules']),
     manifestApp: takeFlagValue(rest, ['--manifest-app']),
+    accessMode,
+    password: takeFlagValue(rest, ['--password']),
+    memberIds: csv(takeFlagValue(rest, ['--members'])),
+    groupIds: csv(takeFlagValue(rest, ['--groups'])),
   };
 }
 
@@ -494,9 +497,11 @@ async function waitForDeployment(
 ): Promise<AppDeployment> {
   const deadline = Date.now() + waitSeconds * 1000;
   let current = deployment;
+  let polls = 0;
   while (!['ready', 'failed', 'cancelled'].includes(current.status)) {
     if (Date.now() >= deadline) throw new Error(`Deployment did not finish within ${waitSeconds} seconds`);
-    await Bun.sleep(2000);
+    await Bun.sleep(polls < 40 ? 500 : polls < 100 ? 1_000 : 2_000);
+    polls += 1;
     current = (await apps.deployments.get(appId, deployment.deployment_id)).deployment;
   }
   if (current.status !== 'ready') {
@@ -566,6 +571,16 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       const inferred = flags.image ? flags.image.split('/').pop()!.split(':')[0]! : basename(sourcePath!);
       const slug = slugFrom(flags.slug ?? inferred);
       app = await ctx.apps.create({ slug, name: flags.name ?? slug });
+    }
+
+    if (flags.accessMode) {
+      await ctx.apps.access.update(app.app_id, {
+        mode: flags.accessMode,
+        ...(flags.password ? { password: flags.password } : {}),
+        ...(flags.memberIds ? { member_ids: flags.memberIds } : {}),
+        ...(flags.groupIds ? { group_ids: flags.groupIds } : {}),
+      });
+      app = await ctx.apps.get(app.app_id);
     }
 
     let artifactId: string;
@@ -696,6 +711,65 @@ async function rollbackCommand(rest: string[], options: ContextOptions, json: bo
   });
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
+  return 0;
+}
+
+async function accessCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('access needs an App id or slug');
+  rest.splice(rest.indexOf(target), 1);
+  const mode = takeFlagValue(rest, ['--mode']) as AppAccessMode | undefined;
+  if (mode && !['private', 'project', 'restricted', 'public', 'password'].includes(mode)) {
+    throw new Error('--mode must be private, project, restricted, public, or password');
+  }
+  const password = takeFlagValue(rest, ['--password']);
+  const memberIds = csv(takeFlagValue(rest, ['--members']));
+  const groupIds = csv(takeFlagValue(rest, ['--groups']));
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const result = await scoped(ctx, async () => {
+    let app = await resolveApp(ctx.apps, target);
+    const access = mode
+      ? await ctx.apps.access.update(app.app_id, {
+          mode,
+          ...(password ? { password } : {}),
+          ...(memberIds ? { member_ids: memberIds } : {}),
+          ...(groupIds ? { group_ids: groupIds } : {}),
+        })
+      : await ctx.apps.access.get(app.app_id);
+    if (mode) app = await ctx.apps.get(app.app_id);
+    return { app, access };
+  });
+  if (json) emitJson(result);
+  else {
+    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n`);
+    if (result.access.member_ids.length) process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
+    if (result.access.group_ids.length) process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
+    process.stdout.write('\n');
+  }
+  return 0;
+}
+
+async function accessLinkCommand(
+  rest: string[],
+  options: ContextOptions,
+  json: boolean,
+): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('access-link needs an App id or slug');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const result = await scoped(ctx, async () => {
+    const app = await resolveApp(ctx.apps, target);
+    const accessSession = await ctx.apps.access.session(app.app_id);
+    return { app, access_session: accessSession };
+  });
+  if (json) emitJson(result);
+  else {
+    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n`);
+    process.stdout.write(`  ${result.access_session.url}\n`);
+    process.stdout.write(`  ${C.dim}expires ${result.access_session.expires_at}${C.reset}\n\n`);
+  }
   return 0;
 }
 

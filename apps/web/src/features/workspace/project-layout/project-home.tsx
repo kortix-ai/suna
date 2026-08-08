@@ -49,15 +49,12 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type SandboxTemplate,
-  getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
 } from '@kortix/sdk';
-import type { Command } from '@kortix/sdk/react';
+import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
-
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -90,10 +87,14 @@ export function ProjectHome({
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
+  // The sandbox TEMPLATE catalog, not live sandbox health (that is
+  // `useSandboxHealth`, its own key and its own polling). Changed only by this
+  // app's own mutations, which invalidate this key — see `FRESHNESS.sandboxes`.
   const sandboxesQuery = useQuery({
-    queryKey: ['project-sandboxes', projectId],
+    queryKey: qk.project.sandboxes(projectId),
     queryFn: () => listProjectSandboxes(projectId),
-    ...Q,
+    ...contract('config'),
+    refetchOnWindowFocus: false,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
@@ -107,10 +108,11 @@ export function ProjectHome({
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const accessRequests = useQuery({
-    queryKey: ['project-access-requests', projectId],
+    queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
     retry: false,
-    ...Q,
+    ...contract('inventory'),
+    refetchOnWindowFocus: false,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
@@ -270,12 +272,8 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion?: (text: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const name = detail.data?.project?.name ?? '';
+  // One source for the project name — see `useProjectName`'s doc comment.
+  const name = useProjectName(projectId) ?? '';
   const displayName = name.trim() || 'this project';
 
   return (

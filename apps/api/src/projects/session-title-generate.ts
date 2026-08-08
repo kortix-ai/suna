@@ -298,18 +298,15 @@ async function resolveFallbackModel(
   input: GenerateSessionTitleInput,
   excludedModel?: string,
 ): Promise<string | null> {
-  const [{ getCachedAccountTier }, { tierGrantsAllModels }, resolution] = await Promise.all([
+  const [{ accountMayUseManagedModels }, resolution] = await Promise.all([
     import('../billing/services/entitlements'),
-    import('../billing/services/tiers'),
     import('../llm-gateway/resolution/default-model'),
   ]);
   const scope = {
     userId: input.userId,
     accountId: input.accountId,
     projectId: input.projectId,
-    freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(input.accountId))
-      : false,
+    freeModelsOnly: !(await accountMayUseManagedModels(input.accountId)),
   };
   const resolved = await resolution.resolveEffectiveModel({ ...scope, explicit: null });
   const candidates = [resolved.model, platformDefaultModel()];

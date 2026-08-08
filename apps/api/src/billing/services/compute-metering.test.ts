@@ -98,6 +98,7 @@ mock.module('../repositories/compute-sessions', () => ({
     expectedLastBilledAt: string;
     nextLastBilledAt: string;
     addCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
   }) => {
     const row = computeRows.find((r: any) => r.id === input.id);
     if (!row) return false;
@@ -105,6 +106,10 @@ mock.module('../repositories/compute-sessions', () => ({
     if (row.lastBilledAt !== input.expectedLastBilledAt) return false;
     row.lastBilledAt = input.nextLastBilledAt;
     row.costUsd = String(Number(row.costUsd ?? 0) + input.addCostUsd);
+    if (input.terminalState) {
+      row.state = input.terminalState;
+      row.endedAt = input.nextLastBilledAt;
+    }
     return true;
   },
   releaseComputeWindow: async (input: {
@@ -112,15 +117,19 @@ mock.module('../repositories/compute-sessions', () => ({
     claimedLastBilledAt: string;
     revertToLastBilledAt: string;
     subCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
   }) => {
     const row = computeRows.find((r: any) => r.id === input.id);
     if (!row) return false;
     if (row.lastBilledAt !== input.claimedLastBilledAt) return false;
     row.lastBilledAt = input.revertToLastBilledAt;
     row.costUsd = String(Number(row.costUsd ?? 0) - input.subCostUsd);
+    if (input.terminalState) {
+      row.state = 'active';
+      row.endedAt = null;
+    }
     return true;
   },
-  updateComputeSession: async () => {},
   findStaleActiveSessions: async () => [],
 }));
 

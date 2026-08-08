@@ -13,7 +13,7 @@
 export interface ResolveFilesRefInput {
   /** Persisted per-project Version selection, from `useSelectedVersion`. */
   selectedVersion: string | undefined;
-  /** Canonical project meta, once the `['project', id]` cache slot has it. */
+  /** Canonical project meta, once the `qk.project.summary(id)` cache slot has it. */
   project: { default_branch: string } | undefined;
 }
 

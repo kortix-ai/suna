@@ -39,6 +39,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
 
+### Removed
+
+- The retired local sandbox value was removed from `AppHostingProvider`. This
+  is an intentional breaking type-contract change and requires a breaking SDK
+  release. The API no longer accepts or emits that value.
+
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.

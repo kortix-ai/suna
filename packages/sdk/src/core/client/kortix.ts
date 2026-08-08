@@ -357,6 +357,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         create: (input: Parameters<typeof P.createApp>[1]) => P.createApp(projectId, input),
         get: (appId: string) => P.getApp(projectId, appId),
         update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
+        access: {
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
+            P.createAppAccessSession(projectId, ...a),
+        },
         remove: (appId: string) => P.deleteApp(projectId, appId),
         artifacts: {
           register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>

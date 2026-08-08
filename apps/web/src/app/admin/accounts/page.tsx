@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import {
   ArrowDownIcon as ArrowDown,
@@ -16,6 +15,7 @@ import {
   FunnelIcon as Filter,
   KanbanIcon as FolderKanban,
   ClockCounterClockwiseIcon as History,
+  KeyIcon as Key,
   EnvelopeIcon as Mail,
   ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
@@ -23,6 +23,7 @@ import {
   UsersIcon as Users,
   XIcon as X,
 } from '@phosphor-icons/react';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +60,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
@@ -67,6 +69,11 @@ import {
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
+  useAdminGrantTrial,
+  useAdminRevokeTrial,
+  useAdminSetEnterpriseDemo,
+  useAdminSetEnterpriseEntitled,
+  useAdminSetManagedModels,
   useAdminSetTier,
   type AdminAccount,
   type AdminAccountsFilters,
@@ -82,25 +89,40 @@ import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_componen
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 
-// Tiers & payment statuses surfaced in the filter UI. Current tiers first, then
-// the hidden legacy tier_* plans. Keep these `value`s in sync with the canonical
-// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` also renders
+// The canonical tier catalog, admin-labelled. Mirror the `value`s against the
+// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` renders
 // account rows off this list, so a missing entry shows the raw tier key.
-const TIER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'free', label: 'Free' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'per_seat', label: 'Team' },
+//
+// Only FOUR plans are current (sellable today): the billing-v3 credit plans
+// Starter/Team/Scale (paid, BYOK — no bundled managed inference) and
+// Enterprise (sales-assigned; SSO/SCIM/RBAC/audit). Everything marked legacy
+// is grandfathered compatibility — old plans existing customers keep, never
+// offered to new ones. `free`/`none` are non-plans.
+type TierOption = { value: string; label: string; legacy?: boolean };
+const TIER_CATALOG: TierOption[] = [
+  { value: 'starter', label: 'Starter' },
+  { value: 'team', label: 'Team' },
+  { value: 'scale', label: 'Scale' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'tier_2_20', label: 'Plus (legacy)' },
-  { value: 'tier_6_50', label: 'Pro (legacy)' },
-  { value: 'tier_12_100', label: 'Business (legacy)' },
-  { value: 'tier_25_200', label: 'Ultra (legacy)' },
-  { value: 'tier_50_400', label: 'Enterprise (legacy)' },
-  { value: 'tier_125_800', label: 'Scale (legacy)' },
-  { value: 'tier_200_1000', label: 'Max (legacy)' },
-  { value: 'tier_150_1200', label: 'Enterprise Max (legacy)' },
+  { value: 'free', label: 'Free' },
   { value: 'none', label: 'No plan' },
+  { value: 'pro', label: 'Pro', legacy: true },
+  { value: 'per_seat', label: 'Team per-seat', legacy: true },
+  { value: 'tier_2_20', label: 'Plus', legacy: true },
+  { value: 'tier_6_50', label: 'Pro', legacy: true },
+  { value: 'tier_12_100', label: 'Business', legacy: true },
+  { value: 'tier_25_200', label: 'Ultra', legacy: true },
+  { value: 'tier_50_400', label: 'Enterprise', legacy: true },
+  { value: 'tier_125_800', label: 'Scale', legacy: true },
+  { value: 'tier_200_1000', label: 'Max', legacy: true },
+  { value: 'tier_150_1200', label: 'Enterprise Max', legacy: true },
 ];
+
+// Filter list: every key an account row can carry, legacy ones labelled so.
+const TIER_OPTIONS: { value: string; label: string }[] = TIER_CATALOG.map((t) => ({
+  value: t.value,
+  label: t.legacy ? `${t.label} · legacy` : t.label,
+}));
 
 const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'active', label: 'Active' },
@@ -197,12 +219,75 @@ function formatDateTime(value: string | null | undefined) {
 
 function tierLabel(tier: string | null) {
   if (!tier) return 'No plan';
-  return TIER_OPTIONS.find((t) => t.value === tier)?.label ?? tier;
+  const entry = TIER_CATALOG.find((t) => t.value === tier);
+  if (!entry) return tier;
+  return entry.legacy ? `${entry.label} · legacy` : entry.label;
 }
 
 function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badge>['variant'] {
   if (!tier || tier === 'free' || tier === 'none') return 'muted';
   return 'info';
+}
+
+// ── Trial helpers ────────────────────────────────────────────────────────────
+// `active` is the only status that grants the trial tier. The other four are
+// history the row keeps for audit, so they render greyed rather than hidden.
+
+/**
+ * Trial tiers offered in the grant form. Deliberately TWO, not the whole
+ * catalog: model access is the independent "Managed models" switch below (not
+ * a tier property), so the only real choice is whether the trial carries the
+ * enterprise identity surface. The API accepts any paid tier for edge cases;
+ * `free`/`none` are rejected server-side.
+ */
+const TRIAL_TIER_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'team', label: 'Team', hint: 'Standard paid plan — recommended' },
+  { value: 'enterprise', label: 'Enterprise', hint: 'Adds SSO, SCIM, RBAC, audit log' },
+];
+
+const TRIAL_DURATION_PRESETS = [14, 30, 60, 90];
+const MAX_TRIAL_SEATS = 100; // MAX_SEATS_PER_ACCOUNT in billing/services/tiers.ts
+const MAX_TRIAL_DURATION_DAYS = 365; // MAX_TRIAL_DURATION_DAYS in billing/services/trial-admin.ts
+const MAX_TRIAL_CREDIT_GRANT = 10_000;
+
+function trialIsActive(trial: AdminAccount['trial'] | undefined): boolean {
+  return trial?.status === 'active';
+}
+
+function trialBadgeVariant(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
+  switch (status) {
+    case 'active':
+      return 'success';
+    case 'converted':
+      return 'info';
+    case 'revoked':
+      return 'destructive';
+    case 'expired':
+      return 'warning';
+    default:
+      return 'muted';
+  }
+}
+
+/**
+ * Signed relative distance. `formatRelative` collapses any negative diff to
+ * "just now", which would print an active trial's future end date as "just now".
+ */
+function formatCountdown(value: string | null): string {
+  if (!value) return '—';
+  const ms = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return '—';
+  const abs = Math.abs(ms);
+  // Round, don't floor: a 90-day window read a millisecond after it is issued
+  // is 89.999 days, and "in 89d" for a trial the operator just set to 90 reads
+  // as an off-by-one bug.
+  const unit =
+    abs < 3_600_000
+      ? `${Math.max(1, Math.round(abs / 60_000))}m`
+      : abs < 86_400_000
+        ? `${Math.round(abs / 3_600_000)}h`
+        : `${Math.round(abs / 86_400_000)}d`;
+  return ms < 0 ? `${unit} ago` : `in ${unit}`;
 }
 
 function paymentStatusBadge(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
@@ -257,8 +342,10 @@ function activeFilterCount(f: AccountFilters): number {
 }
 
 export default function AdminAccountsPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [searchInput, setSearchInput] = useState('');
+  // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
+  // land on a filtered list instead of the whole fleet.
+  const urlSearchParams = useSearchParams();
+  const [searchInput, setSearchInput] = useState(urlSearchParams.get('search') ?? '');
   const search = useDebounce(searchInput);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<AccountFilters>(EMPTY_FILTERS);
@@ -292,6 +379,14 @@ export default function AdminAccountsPage() {
 
   const filtersCount = activeFilterCount(filters);
 
+  // `selected` is the row object captured at click time. Re-resolve it against
+  // the latest page so an in-sheet mutation (credits, trial, entitlement flags)
+  // shows its own result once the invalidated list query refetches, instead of
+  // rendering the pre-mutation snapshot until the sheet is reopened.
+  const selectedAccount = selected
+    ? (accounts.find((a) => a.accountId === selected.accountId) ?? selected)
+    : null;
+
   const setSort = useCallback((sortBy: AdminAccountsSortBy) => {
     setFilters((f) => {
       if (f.sortBy === sortBy) {
@@ -311,9 +406,7 @@ export default function AdminAccountsPage() {
       <SectionHeader
         icon={Users}
         title="Accounts"
-        description={tHardcodedUi.raw(
-          'appAdminAccountsPage.line337JsxAttrDescriptionFilterSortAndInspectEveryAccountGrantOr',
-        )}
+        description={'Filter, sort, and inspect every account. Grant or debit credits, review ledger, and see billing state.'}
         actions={
           <Button
             variant="outline"
@@ -330,7 +423,7 @@ export default function AdminAccountsPage() {
 
       <StatRow>
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line354JsxAttrLabelTotalFiltered')}
+          label={'Total (filtered)'}
           value={total.toLocaleString()}
           hint={filtersCount > 0 ? 'Matches current filters' : 'All accounts'}
         />
@@ -338,15 +431,15 @@ export default function AdminAccountsPage() {
           label="Paid"
           value={(summary?.paidCount ?? 0).toLocaleString()}
           tone="success"
-          hint={tHardcodedUi.raw('appAdminAccountsPage.line362JsxAttrHintNonFreeTiers')}
+          hint={'Non-free tiers'}
         />
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line365JsxAttrLabelCreditsInSet')}
+          label={'Credits in set'}
           value={formatCredits(summary?.totalCredits ?? 0)}
-          hint={tHardcodedUi.raw('appAdminAccountsPage.line367JsxAttrHintSumOfBalances')}
+          hint={'Sum of balances'}
         />
         <StatPill
-          label={tHardcodedUi.raw('appAdminAccountsPage.line370JsxAttrLabelPastDue')}
+          label={'Past due'}
           value={summary?.pastDueCount ?? 0}
           tone={(summary?.pastDueCount ?? 0) > 0 ? 'warning' : 'default'}
           hint={(summary?.pastDueCount ?? 0) > 0 ? 'Needs review' : 'All clear'}
@@ -390,7 +483,7 @@ export default function AdminAccountsPage() {
             action={
               search || filtersCount > 0 ? (
                 <Button variant="outline" size="sm" onClick={resetFilters}>
-                  {tHardcodedUi.raw('appAdminAccountsPage.line409JsxTextClearFilters')}
+                  {'Clear filters'}
                 </Button>
               ) : undefined
             }
@@ -536,7 +629,7 @@ export default function AdminAccountsPage() {
         </div>
       )}
 
-      <AccountDetailSheet account={selected} onClose={() => setSelected(null)} />
+      <AccountDetailSheet account={selectedAccount} onClose={() => setSelected(null)} />
     </SectionContainer>
   );
 }
@@ -560,15 +653,12 @@ function FilterBar({
   onReset: () => void;
   filtersCount: number;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <PageSearchBar
         value={searchInput}
         onChange={onSearchChange}
-        placeholder={tHardcodedUi.raw(
-          'appAdminAccountsPage.line580JsxAttrPlaceholderSearchByAccountOwnerEmailOrAccountId',
-        )}
+        placeholder={'Search by account, owner email, or account ID…'}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -576,12 +666,10 @@ function FilterBar({
           <Switch
             checked={filters.paidOnly}
             onCheckedChange={(v) => onFiltersChange({ ...filters, paidOnly: v })}
-            aria-label={tHardcodedUi.raw(
-              'appAdminAccountsPage.line588JsxAttrAriaLabelPaidAccountsOnly',
-            )}
+            aria-label={'Paid accounts only'}
           />
           <span className="text-sm">
-            {tHardcodedUi.raw('appAdminAccountsPage.line590JsxTextPaidOnly')}
+            {'Paid only'}
           </span>
         </label>
 
@@ -615,28 +703,28 @@ function FilterBar({
           </SelectTrigger>
           <SelectContent align="end">
             <SelectItem value="created:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line622JsxTextNewestFirst')}
+              {'Newest first'}
             </SelectItem>
             <SelectItem value="created:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line623JsxTextOldestFirst')}
+              {'Oldest first'}
             </SelectItem>
             <SelectItem value="balance:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line624JsxTextBalanceHigh')}
+              {'Balance — high'}
             </SelectItem>
             <SelectItem value="balance:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line625JsxTextBalanceLow')}
+              {'Balance — low'}
             </SelectItem>
             <SelectItem value="members:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line626JsxTextMostMembers')}
+              {'Most members'}
             </SelectItem>
             <SelectItem value="members:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line627JsxTextFewestMembers')}
+              {'Fewest members'}
             </SelectItem>
             <SelectItem value="name:asc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line628JsxTextNameAZ')}
+              {'Name A–Z'}
             </SelectItem>
             <SelectItem value="name:desc">
-              {tHardcodedUi.raw('appAdminAccountsPage.line629JsxTextNameZA')}
+              {'Name Z–A'}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -654,7 +742,6 @@ function FiltersPanel({
   onChange: (f: AccountFilters) => void;
   onReset: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [minBalance, setMinBalance] = useState(
     filters.minBalance !== null ? String(filters.minBalance) : '',
   );
@@ -698,7 +785,7 @@ function FiltersPanel({
       <div className="border-border/60 flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">Filters</span>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>
-          {tHardcodedUi.raw('appAdminAccountsPage.line689JsxTextResetAll')}
+          {'Reset all'}
         </Button>
       </div>
 
@@ -708,7 +795,7 @@ function FiltersPanel({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span>
-            {tHardcodedUi.raw('appAdminAccountsPage.line698JsxTextHasActiveSubscription')}
+            {'Has active subscription'}
           </span>
           <Select
             value={
@@ -772,7 +859,7 @@ function FiltersPanel({
       <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            {tHardcodedUi.raw('appAdminAccountsPage.line761JsxTextPaymentStatus')}
+            {'Payment status'}
           </div>
           {filters.paymentStatus.length > 0 && (
             <Button
@@ -840,7 +927,6 @@ function ActiveChips({
   searchInput: string;
   onSearchChange: (v: string) => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
   if (searchInput) {
@@ -925,7 +1011,7 @@ function ActiveChips({
             onChange({ ...EMPTY_FILTERS, sortBy: filters.sortBy, sortDir: filters.sortDir });
           }}
         >
-          {tHardcodedUi.raw('appAdminAccountsPage.line913JsxTextClearAll')}
+          {'Clear all'}
         </Button>
       )}
     </div>
@@ -1064,6 +1150,15 @@ function AccountDetail({ account }: { account: AdminAccount }) {
               <CreditCard className="h-3.5 w-3.5" />
               Credits
             </TabsTrigger>
+            <TabsTrigger value="entitlements" className="gap-1.5">
+              <Key className="h-3.5 w-3.5" />
+              Entitlements
+              {trialIsActive(account.trial) && (
+                <Badge variant="success" size="sm">
+                  trial
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="users" className="gap-1.5">
               <Users className="h-3.5 w-3.5" />
               Users
@@ -1095,6 +1190,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           <TabsContent value="credits" className="mt-4">
             <CreditsTab account={account} />
           </TabsContent>
+          <TabsContent value="entitlements" className="mt-4">
+            <EntitlementsTab account={account} />
+          </TabsContent>
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
           </TabsContent>
@@ -1114,8 +1212,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 }
 
 function CreditsTab({ account }: { account: AdminAccount }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
   const setTier = useAdminSetTier();
@@ -1219,12 +1315,12 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onClick={() => handleSetTier('per_seat', 'Team')}
               disabled={setTier.isPending}
             >
-              {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextRevertToTeam5247682b')}
+              {'Revert to Team'}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0')}
+          {'Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is unchanged.'}
         </p>
       </div>
 
@@ -1248,17 +1344,13 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'appAdminAccountsPage.line1161JsxAttrPlaceholderAmountEG25',
-            )}
+            placeholder={'Amount (e.g. 25)'}
             step="0.01"
           />
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'appAdminAccountsPage.line1167JsxAttrPlaceholderReasonNote',
-            )}
+            placeholder={'Reason / note'}
           />
           <label className="text-muted-foreground flex items-center gap-2 text-sm">
             <input
@@ -1267,7 +1359,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onChange={(e) => setIsExpiring(e.target.checked)}
               className="size-4"
             />
-            {tHardcodedUi.raw('appAdminAccountsPage.line1176JsxTextGrantAsExpiringCredits')}
+            {'Grant as expiring credits'}
           </label>
         </div>
         <div className="flex gap-2">
@@ -1281,7 +1373,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             ) : (
               <ArrowUpRight className="h-3.5 w-3.5" />
             )}
-            {tHardcodedUi.raw('appAdminAccountsPage.line1190JsxTextGrantCredits')}
+            {'Grant credits'}
           </Button>
           <Button
             variant="outline"
@@ -1298,7 +1390,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
       <ConfirmDialog
         open={confirmDebit}
         onOpenChange={setConfirmDebit}
-        title={tHardcodedUi.raw('appAdminAccountsPage.line1207JsxAttrTitleDebitCredits')}
+        title={'Debit credits?'}
         description={
           <div className="space-y-2 text-sm">
             <p>
@@ -1307,9 +1399,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               from <span className="font-medium">{account.name || account.accountId}</span>.
             </p>
             <p className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw(
-                'appAdminAccountsPage.line1215JsxTextWillFailIfTheAccountHasInsufficientCredits',
-              )}
+              {'Will fail if the account has insufficient credits. Action is recorded in the ledger.'}
             </p>
           </div>
         }
@@ -1321,13 +1411,430 @@ function CreditsTab({ account }: { account: AdminAccount }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Entitlements — trial + per-account overrides
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One labelled row inside an entitlement panel: text left, control right. */
+function EntitlementRow({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground text-sm font-medium">{title}</div>
+        <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">{description}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function EntitlementsTab({ account }: { account: AdminAccount }) {
+  const grantTrial = useAdminGrantTrial();
+  const revokeTrial = useAdminRevokeTrial();
+  const setManagedModels = useAdminSetManagedModels();
+  const setEnterpriseDemo = useAdminSetEnterpriseDemo();
+  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
+
+  const trial = account.trial;
+  const isActive = trialIsActive(trial);
+
+  const [tierKey, setTierKey] = useState('team');
+  const [seats, setSeats] = useState('5');
+  const [durationDays, setDurationDays] = useState('30');
+  const [creditGrant, setCreditGrant] = useState('25');
+  const [note, setNote] = useState('');
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+
+  const parsedSeats = Number(seats);
+  const parsedDuration = Number(durationDays);
+  const parsedCredit = Number(creditGrant);
+  const seatsValid = Number.isInteger(parsedSeats) && parsedSeats >= 1 && parsedSeats <= MAX_TRIAL_SEATS;
+  const durationValid =
+    Number.isInteger(parsedDuration) &&
+    parsedDuration >= 1 &&
+    parsedDuration <= MAX_TRIAL_DURATION_DAYS;
+  const creditValid =
+    creditGrant.trim() === '' ||
+    (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
+  const formValid = seatsValid && durationValid && creditValid;
+
+  const accountLabel = account.name || account.accountId;
+
+  async function handleGrantTrial() {
+    if (!formValid) return;
+    try {
+      await grantTrial.mutateAsync({
+        accountId: account.accountId,
+        tierKey,
+        seats: parsedSeats,
+        durationDays: parsedDuration,
+        creditGrant: creditGrant.trim() === '' ? undefined : parsedCredit,
+        note: note.trim() === '' ? undefined : note.trim(),
+      });
+      successToast(isActive ? 'Trial replaced' : 'Trial granted', {
+        description: `${accountLabel} behaves as ${tierLabel(tierKey)} for ${parsedDuration} days.`,
+      });
+      setNote('');
+    } catch (error) {
+      errorToast('Failed to grant trial', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleRevokeTrial() {
+    try {
+      await revokeTrial.mutateAsync({ accountId: account.accountId });
+      successToast('Trial revoked', { description: `${accountLabel} is back on its billed tier.` });
+    } catch (error) {
+      errorToast('Failed to revoke trial', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setConfirmRevoke(false);
+    }
+  }
+
+  async function handleManagedModels(override: boolean | null) {
+    try {
+      await setManagedModels.mutateAsync({ accountId: account.accountId, override });
+      successToast('Managed models updated', {
+        description:
+          override === null
+            ? 'The effective tier decides again.'
+            : override
+              ? 'Managed models forced on.'
+              : 'Restricted to BYOK keys.',
+      });
+    } catch (error) {
+      errorToast('Failed to set managed models', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleEnterpriseDemo(enabled: boolean) {
+    try {
+      await setEnterpriseDemo.mutateAsync({ accountId: account.accountId, enabled });
+      successToast(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
+    } catch (error) {
+      errorToast('Failed to set enterprise demo', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async function handleEnterpriseEntitled(enabled: boolean) {
+    try {
+      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
+      successToast(
+        enabled ? 'Enterprise contract entitlements on' : 'Enterprise contract entitlements off',
+      );
+    } catch (error) {
+      errorToast('Failed to set enterprise entitlements', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const managedModelsChoices: { value: boolean | null; label: string }[] = [
+    { value: null, label: 'Default (tier)' },
+    { value: true, label: 'Force on' },
+    { value: false, label: 'BYOK only' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Trial — an admin-issued overlay: the account BEHAVES as the trial tier
+          until it ends, without touching credit_accounts.tier (Stripe owns
+          that). Re-granting overwrites the window: extend = re-grant. */}
+      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-foreground text-sm font-medium">Trial</div>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Emulates a paid tier for a fixed window. Billed tier stays{' '}
+              <span className="text-foreground/80">{tierLabel(account.tier)}</span>.
+            </p>
+          </div>
+          <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
+            {trial?.status ?? 'none'}
+          </Badge>
+        </div>
+
+        {trial && trial.status !== 'none' ? (
+          <div className="border-border/60 divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">Tier</div>
+              <div className="mt-0.5 text-sm font-medium">
+                {trial.tier ? tierLabel(trial.tier) : '—'}
+                {trial.seats != null && (
+                  <span className="text-muted-foreground font-normal">
+                    {' '}
+                    · {trial.seats} seat{trial.seats === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* A revoked or converted trial keeps its original window for audit,
+                and that window can still be in the future — so the countdown is
+                only meaningful while the trial is active. */}
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                {isActive ? 'Ends' : 'Window ended'}
+              </div>
+              <div className="mt-0.5 text-sm font-medium">
+                {isActive ? formatCountdown(trial.endsAt) : formatDateTime(trial.endsAt)}
+              </div>
+              {isActive && (
+                <div className="text-muted-foreground text-xs">{formatDateTime(trial.endsAt)}</div>
+              )}
+            </div>
+            <div className="px-3 py-2.5">
+              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Started
+              </div>
+              <div className="mt-0.5 text-sm font-medium">{formatRelative(trial.startedAt)}</div>
+              <div className="text-muted-foreground text-xs">{formatDateTime(trial.startedAt)}</div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">No trial has ever been issued.</p>
+        )}
+
+        {trial?.note && (
+          <p className="text-muted-foreground border-border/60 border-l-2 pl-3 text-xs">
+            {trial.note}
+          </p>
+        )}
+
+        {/* Grant / replace form */}
+        <div className="border-border/60 space-y-3 border-t pt-4">
+          <div className="text-foreground text-sm font-medium">
+            {isActive ? 'Replace trial' : 'Grant trial'}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Tier
+              </label>
+              <Select value={tierKey} onValueChange={setTierKey}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRIAL_TIER_OPTIONS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      <span>{t.label}</span>
+                      <span className="text-muted-foreground ml-1.5 text-xs">{t.hint}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                Model access is the Managed models switch below, not the tier.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Seats
+              </label>
+              <Input
+                type="number"
+                min={1}
+                max={MAX_TRIAL_SEATS}
+                step={1}
+                value={seats}
+                onChange={(e) => setSeats(e.target.value)}
+                aria-invalid={!seatsValid}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+                Credit grant ($)
+              </label>
+              <Input
+                type="number"
+                min={0}
+                max={MAX_TRIAL_CREDIT_GRANT}
+                step="0.01"
+                value={creditGrant}
+                onChange={(e) => setCreditGrant(e.target.value)}
+                aria-invalid={!creditValid}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+              Duration
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {TRIAL_DURATION_PRESETS.map((d) => (
+                <Button
+                  key={d}
+                  type="button"
+                  size="sm"
+                  variant={durationDays === String(d) ? 'default' : 'outline'}
+                  className="h-7"
+                  onClick={() => setDurationDays(String(d))}
+                >
+                  {d}d
+                </Button>
+              ))}
+              <Input
+                type="number"
+                min={1}
+                max={MAX_TRIAL_DURATION_DAYS}
+                step={1}
+                value={durationDays}
+                onChange={(e) => setDurationDays(e.target.value)}
+                aria-label="Custom trial duration in days"
+                aria-invalid={!durationValid}
+                className="h-7 w-24"
+              />
+            </div>
+          </div>
+
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note (why, who asked, deal context)"
+            maxLength={2000}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleGrantTrial}
+              disabled={!formValid || grantTrial.isPending || revokeTrial.isPending}
+              className="gap-1.5"
+            >
+              {grantTrial.isPending && <Loading className="h-3.5 w-3.5" />}
+              {isActive ? 'Replace trial' : 'Grant trial'}
+            </Button>
+            {isActive && (
+              <Button
+                variant="outline"
+                onClick={() => setConfirmRevoke(true)}
+                disabled={grantTrial.isPending || revokeTrial.isPending}
+              >
+                Revoke trial
+              </Button>
+            )}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions.
+            The free welcome grant is $2; one per-seat month is $25.
+          </p>
+        </div>
+      </div>
+
+      {/* Managed models override — tri-state, null restores tier control. */}
+      <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
+        <EntitlementRow
+          title="Managed models"
+          description="Force Kortix-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {managedModelsChoices.map((choice) => (
+              <Button
+                key={String(choice.value)}
+                type="button"
+                size="sm"
+                variant={account.managedModelsOverride === choice.value ? 'default' : 'outline'}
+                className="h-7"
+                disabled={setManagedModels.isPending}
+                onClick={() => handleManagedModels(choice.value)}
+              >
+                {choice.label}
+              </Button>
+            ))}
+          </div>
+        </EntitlementRow>
+      </div>
+
+      {/* Enterprise flags. Demo = evaluation preview; entitled = signed contract. */}
+      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+        <EntitlementRow
+          title="Enterprise demo"
+          description="Interactive preview of SSO, SCIM, advanced RBAC, and audit logs. Evaluation only — no billing change."
+        >
+          <Switch
+            checked={account.demoEnterprise}
+            disabled={setEnterpriseDemo.isPending}
+            onCheckedChange={handleEnterpriseDemo}
+            aria-label="Toggle enterprise demo"
+          />
+        </EntitlementRow>
+
+        <div className="border-border/60 border-t pt-4">
+          <EntitlementRow
+            title="Enterprise contract entitlements"
+            description="Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also per-seat billed, so the Stripe reconciliation cannot strip them."
+          >
+            <Switch
+              checked={account.enterpriseEntitled}
+              disabled={setEnterpriseEntitled.isPending}
+              onCheckedChange={handleEnterpriseEntitled}
+              aria-label="Toggle enterprise contract entitlements"
+            />
+          </EntitlementRow>
+        </div>
+      </div>
+
+      {/* Read-only context the operator needs before issuing a trial. */}
+      <div className="border-border/60 bg-card divide-border grid grid-cols-2 divide-x rounded-2xl border text-sm">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+            Billing model
+          </span>
+          <span className="text-right font-medium">{account.billingModel || '—'}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">Seats</span>
+          <span className="text-right font-medium">{account.seatCount ?? '—'}</span>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmRevoke}
+        onOpenChange={setConfirmRevoke}
+        title="Revoke trial"
+        description={
+          <div className="space-y-2 text-sm">
+            <p>
+              <span className="font-medium">{accountLabel}</span> drops back to{' '}
+              <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>{' '}
+              immediately.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Entitlements, project and session limits, and the managed-models gate all revert on
+              the next request. Credits already granted are not clawed back.
+            </p>
+          </div>
+        }
+        confirmLabel="Revoke trial"
+        onConfirm={handleRevokeTrial}
+        isPending={revokeTrial.isPending}
+      />
+    </div>
+  );
+}
+
 function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccountUsers> }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (usersQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
         <Loading className="h-4 w-4" />
-        {tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}
+        {'Loading users…'}
       </div>
     );
   }
@@ -1338,10 +1845,8 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
       <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
-          title={tHardcodedUi.raw('appAdminAccountsPage.line1247JsxAttrTitleNoUsersOnThisAccount')}
-          description={tHardcodedUi.raw(
-            'appAdminAccountsPage.line1248JsxAttrDescriptionMembersWillAppearHereOnceUsersAreAdded',
-          )}
+          title={'No users on this account'}
+          description={'Members will appear here once users are added.'}
           size="sm"
         />
       </div>
@@ -1379,7 +1884,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
             <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">
                 <span className="text-muted-foreground/70">
-                  {tHardcodedUi.raw('appAdminAccountsPage.line1285JsxTextLastSignIn')}
+                  {'Last sign-in:'}
                 </span>
                 <span className="text-foreground/80">
                   {user.last_sign_in_at ? formatRelative(user.last_sign_in_at) : 'Never'}
@@ -1387,7 +1892,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
               </div>
               <div className="truncate">
                 <span className="text-muted-foreground/70">
-                  {tHardcodedUi.raw('appAdminAccountsPage.line1291JsxTextSignedUp')}
+                  {'Signed up:'}
                 </span>
                 <span className="text-foreground/80">
                   {user.signed_up_at ? formatRelative(user.signed_up_at) : '—'}
@@ -1497,12 +2002,11 @@ function formatRelative(value: string | null) {
 }
 
 function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAccountLedger> }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (ledgerQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
         <Loading className="h-4 w-4" />
-        {tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}
+        {'Loading ledger…'}
       </div>
     );
   }
@@ -1513,10 +2017,8 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
       <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
-          title={tHardcodedUi.raw('appAdminAccountsPage.line1342JsxAttrTitleNoLedgerEntries')}
-          description={tHardcodedUi.raw(
-            'appAdminAccountsPage.line1343JsxAttrDescriptionCreditActivityWillShowUpHere',
-          )}
+          title={'No ledger entries'}
+          description={'Credit activity will show up here.'}
           size="sm"
         />
       </div>
@@ -1574,7 +2076,6 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
 }
 
 function BillingTab({ account }: { account: AdminAccount }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const actions = billingActionsFor(account);
 
   const summary: Array<[string, React.ReactNode]> = [
@@ -1676,9 +2177,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="border-border/60 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
-                    title={tHardcodedUi.raw(
-                      'appAdminAccountsPage.line1495JsxAttrTitleOpenInStripe',
-                    )}
+                    title={'Open in Stripe'}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
                     Open

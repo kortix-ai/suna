@@ -1,6 +1,7 @@
 'use client';
 
 import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 /** Fail-closed project gate for every Apps discovery and page surface. */
@@ -9,10 +10,10 @@ export function useAppsFeatureEnabled(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const query = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId!),
     enabled: !!projectId,
-    staleTime: 60_000,
+    ...contract('config'),
     refetchOnWindowFocus: false,
   });
   return {

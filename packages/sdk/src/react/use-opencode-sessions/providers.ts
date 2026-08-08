@@ -3,6 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
+import { contract } from '../query-contracts';
+import { qk } from '../query-keys';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
@@ -33,10 +35,15 @@ export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    // Same fetcher and same response shape every other `getProjectDetail`
+    // reader caches under `qk.project.detail(id)` — sharing the key (instead
+    // of the old standalone flat `project-detail` array literal) is what stops
+    // this hook from firing a second `GET /projects/:id/detail` on every
+    // session page purely to duplicate data the project shell already has.
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId!),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const projectGatewayEnabled =
     projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;

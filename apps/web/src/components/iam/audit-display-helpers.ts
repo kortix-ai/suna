@@ -148,7 +148,15 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/account-invites/:inviteId/decline': 'Declined account invitation',
   'DELETE /v1/account/delete-immediately': 'Deleted account immediately',
   'DELETE /v1/billing/account/delete-immediately': 'Deleted billing account immediately',
+  // Admin entitlement overrides. The auto-labeller reads these as nouns
+  // ("Ran trial", "Created managed model"); they are operator decisions.
+  'POST /v1/admin/api/accounts/:id/trial': 'Granted account trial',
+  'DELETE /v1/admin/api/accounts/:id/trial': 'Revoked account trial',
+  'POST /v1/admin/api/accounts/:id/managed-models': 'Set managed-models override',
+  'POST /v1/admin/api/accounts/:id/enterprise-demo': 'Set enterprise demo flag',
+  'POST /v1/admin/api/accounts/:id/enterprise-entitlement': 'Set enterprise entitlement flag',
   'POST /v1/billing/cron/free-tier-rotation': 'Ran free-tier billing rotation',
+  'POST /v1/billing/cron/trial-expiry': 'Ran trial expiry sweep',
   'POST /v1/billing/cron/yearly-rotation': 'Ran yearly billing rotation',
   'POST /v1/billing/webhook/revenuecat': 'Received RevenueCat billing webhook',
   'POST /v1/billing/webhook/stripe': 'Received Stripe billing webhook',
@@ -368,8 +376,7 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
 // match wins. `segments` is the path after /v1/ with UUIDs replaced by
 // the literal token `:id`, so e.g.
 //   POST /v1/projects/abc-…/group-grants
-// becomes
-//   ['projects', ':id', 'group-grants']
+// becomes segments ["projects", ":id", "group-grants"]
 
 type PathSegments = string[];
 type HttpPatternHandler = (

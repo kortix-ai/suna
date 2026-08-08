@@ -321,7 +321,8 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching covers all four JS engine wordings for the same null-context bug:
+// matching covers all five JS-engine / DOM-binding wordings for the same
+// null-context bug:
 //   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
 //   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
 //   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
@@ -340,6 +341,14 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 //                                method so a generic JSC `null is not an object
 //                                (evaluating '<other expr>')` throw does NOT
 //                                match (pattern `a8754de5…`).
+//   - Gecko (Firefox) DOM-binding: `WebGL2RenderingContext.<m>: Argument 1 is
+//                                not an object.` — Firefox's DOM bindings throw
+//                                on the method call itself (a DIFFERENT code
+//                                path from SpiderMonkey's engine TypeError
+//                                above) when the `this` binding is not a valid
+//                                object (here the null WebGL2 context). Pattern
+//                                `fd773de2…` (Firefox 152 on Android 17,
+//                                `getAttribLocation`, marketing homepage).
 // `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
 // stripped before matching so all capture paths (window.onerror,
 // onunhandledrejection, Sentry exception) classify consistently.
@@ -377,6 +386,38 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // class after V8 (#4544), old JSC, and SpiderMonkey (#5172).
   "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
+  // Gecko / Firefox DOM-binding wording. When the WebGL2 context is `null` /
+  // invalid (context loss, blacklisted GPU, stripped WebView), Firefox's DOM
+  // bindings throw on the method call itself with the canonical Gecko DOM-API
+  // shape `<Interface>.<method>: Argument 1 is not an object.` — the
+  // `Argument 1 is not an object.` is Gecko's standard message for a `this`
+  // binding that is not a valid object (here the null WebGL2 context). This is
+  // the SAME null-WebGL-context crash class as the V8/JSC/SpiderMonkey entries
+  // above, just with Firefox's DOM-API error wording instead of an engine
+  // TypeError. Better Stack pattern
+  // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
+  // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
+  // (post-v0.12.5, release `e2540c341c6f43536a7cf0e0b51599e9928f055c`),
+  // call site `setupPositionAttribute` in chunk
+  // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
+  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // Android 17 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The `getSupportedExtensions` sibling is added
+  // preemptively — same class, Firefox may emit it too. The
+  // `WebGL2RenderingContext.<method>:` prefix is the Gecko DOM-binding's own
+  // canonical marker (the interface + method name), never emitted by
+  // first-party app code, so the message wording alone is specific enough —
+  // same message-only contract as the other engine variants (no chunk-frame
+  // anchor, no first-party negative guard). Note: `stripErrorWrappers`'s
+  // `[A-Za-z]+Error:` regex does NOT strip the
+  // `WebGL2RenderingContext.<method>:` prefix (it contains a `.`), so the
+  // pattern is matched verbatim by `.includes()` after the `TypeError: ` /
+  // `Unhandled promise rejection: ` wrappers are stripped.
+  'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
 ] as const;
 
 // Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
@@ -1770,12 +1811,15 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Matches all four JS engine wordings: V8
+ * Matches all five JS-engine / DOM-binding wordings: V8
  * (`Cannot read properties of null (reading '<m>')`), old JSC
  * (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
- * (`can't access property "<m>"<…>`), and modern JSC (Safari / Chrome-on-iOS
+ * (`can't access property "<m>"<…>`), modern JSC (Safari / Chrome-on-iOS
  * CriOS, which uses WebKit/JSC rather than V8:
- * `null is not an object (evaluating 'this.gl.<m>')`). Never page Better Stack
+ * `null is not an object (evaluating 'this.gl.<m>')`), and Gecko/Firefox
+ * DOM-binding (`WebGL2RenderingContext.<m>: Argument 1 is not an object.` —
+ * Firefox's DOM bindings throw on the method call itself when the `this`
+ * binding is the null WebGL2 context). Never page Better Stack
  * for this class. See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full
  * rationale and the `supportsWebGL2()` probe in `shader-safe.tsx` for the
  * primary guard.

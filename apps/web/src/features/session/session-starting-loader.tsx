@@ -14,6 +14,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -552,7 +553,7 @@ export function SessionStartingLoader({
       clockStart.current = Date.now();
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
       });
     },
     onError: (err) => {

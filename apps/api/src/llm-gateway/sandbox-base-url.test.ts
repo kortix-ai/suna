@@ -1,10 +1,5 @@
-// resolveLlmGatewayBaseUrl is the ONE formula both session-sandbox.ts (boot)
-// and projects/lib/sandbox-env-sync.ts (hot env-push) must share — a second,
-// hand-rolled copy at either call site is exactly how local-docker's
-// KORTIX_LLM_BASE_URL fix got silently undone by the very next prompt (the
-// hot-push path kept computing the generic public origin). These tests pin
-// down the formula in isolation so a future edit can't drift the two call
-// sites apart again.
+// resolveLlmGatewayBaseUrl is the formula shared by sandbox boot and hot
+// environment pushes. These tests prevent the two call sites from drifting.
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 process.env.KORTIX_URL = 'https://api.example.com';
@@ -35,7 +30,7 @@ describe('resolveLlmGatewayBaseUrl', () => {
     );
   });
 
-  test('local-docker-style origin (Docker network DNS) round-trips the same way', () => {
+  test('an internal container DNS origin round-trips the same way', () => {
     expect(resolveLlmGatewayBaseUrl('http://kortix-api:8008')).toBe(
       'http://kortix-api:8008/v1/llm',
     );

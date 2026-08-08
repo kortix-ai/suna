@@ -1,8 +1,19 @@
 import { eq, desc, sql, and, gte, inArray } from 'drizzle-orm';
 import { creditLedger, creditUsage, creditPurchases } from '@kortix/db';
 import { db } from '../../shared/db';
+import { assertLedgerTypeHonesty } from '../ledger-type-honesty';
 
+/**
+ * The ONLY Drizzle write path into kortix.credit_ledger (the other writer is the
+ * atomic_use_credits / atomic_add_credits RPC pair, in SQL).
+ *
+ * Every row passes assertLedgerTypeHonesty first: a row may not claim one kind
+ * in `type` and a contradicting kind in `metadata.ledger_type` or its
+ * description. See billing/ledger-type-honesty.ts for the 2026-07-30
+ * mislabelled-clawback incident this closes.
+ */
 export async function insertLedgerEntry(data: typeof creditLedger.$inferInsert) {
+  assertLedgerTypeHonesty(data);
   const [row] = await db.insert(creditLedger).values(data).returning();
   return row;
 }

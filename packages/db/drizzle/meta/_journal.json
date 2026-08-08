@@ -281,6 +281,34 @@
       "when": 1786067397287,
       "tag": "20260807014957_add_kortix_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786114559482,
+      "tag": "20260807145559_app_deployment_provenance_schema_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786121841282,
+      "tag": "20260807165721_remove_local_docker_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786129586815,
+      "tag": "20260807190626_trial_and_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786137170442,
+      "tag": "20260807211250_add_app_access_control_rebase",
+      "breakpoints": true
     }
   ]
 }

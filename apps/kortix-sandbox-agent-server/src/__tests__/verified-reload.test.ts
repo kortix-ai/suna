@@ -192,7 +192,7 @@ describe('callers get the outcome', () => {
 
   test('reloadConfig reports kept-old rather than claiming success', () => {
     const reload = SRC.split('async reloadConfig(')[1]?.split('\n    },')[0] ?? '';
-    expect(reload).toContain("return 'kept-old'");
+    expect(reload).toContain("how: 'kept-old'");
   });
 
   test('the refresh route returns the outcome so CLI and web can show it', () => {

@@ -658,9 +658,11 @@ export default function AccountSettingsPage() {
                   </Disclosure>
                 </SettingsGroup>
 
-                {/* Tucked away, not headline: this is a self-serve unlock for
-                    evaluating the Enterprise surface (SSO/SCIM/RBAC/audit),
-                    not a feature admins configure day-to-day. Hidden entirely
+                {/* Tucked away, not headline: this reports whether the
+                    Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
+                    evaluation, not a feature admins configure day-to-day. The
+                    toggle is platform-admin-only now; account admins see the
+                    state read-only (see EnterpriseDemoCard). Hidden entirely
                     when a self-host operator's Enterprise license already
                     forces every entitlement on — there's nothing left to
                     demo-toggle or upsell in that case. */}

@@ -1,8 +1,8 @@
 'use client';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/utils';
-import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { GlobeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -12,14 +12,13 @@ export function ProjectAppsNavItem() {
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
-  const appsGate = useAppsFeatureEnabled(projectId);
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
-  if (!projectId || !appsGate.enabled) return null;
+  if (!projectId) return null;
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -31,6 +30,9 @@ export function ProjectAppsNavItem() {
         <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
           <GlobeIcon />
           Apps
+          <Badge aria-hidden size="xs" variant="beta" className="ml-auto">
+            Experimental
+          </Badge>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

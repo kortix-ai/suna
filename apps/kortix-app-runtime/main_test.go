@@ -19,6 +19,7 @@ import (
 func TestDaemonizeStartsOnceAndWritesPid(t *testing.T) {
 	originalCommand := daemonCommand
 	originalAlive := daemonProcessAlive
+	originalMatches := daemonProcessMatchesExecutable
 	starts := 0
 	daemonCommand = func() (*exec.Cmd, error) {
 		starts++
@@ -27,9 +28,11 @@ func TestDaemonizeStartsOnceAndWritesPid(t *testing.T) {
 	daemonProcessAlive = func(pid int) bool {
 		return syscall.Kill(pid, 0) == nil
 	}
+	daemonProcessMatchesExecutable = func(int) bool { return true }
 	t.Cleanup(func() {
 		daemonCommand = originalCommand
 		daemonProcessAlive = originalAlive
+		daemonProcessMatchesExecutable = originalMatches
 	})
 
 	dir := t.TempDir()
@@ -53,6 +56,48 @@ func TestDaemonizeStartsOnceAndWritesPid(t *testing.T) {
 	if starts != 1 {
 		t.Fatalf("daemon starts = %d, want 1", starts)
 	}
+}
+
+func TestDaemonizeReplacesAStalePidOwnedByAnotherProcess(t *testing.T) {
+	originalCommand := daemonCommand
+	originalAlive := daemonProcessAlive
+	originalMatches := daemonProcessMatchesExecutable
+	starts := 0
+	daemonCommand = func() (*exec.Cmd, error) {
+		starts++
+		return exec.Command("sh", "-c", "sleep 30"), nil
+	}
+	// The stale PID was reused by another live process. kill(0) alone cannot
+	// prove that the process is kortix-appd.
+	daemonProcessAlive = func(int) bool { return true }
+	daemonProcessMatchesExecutable = func(int) bool { return false }
+	t.Cleanup(func() {
+		daemonCommand = originalCommand
+		daemonProcessAlive = originalAlive
+		daemonProcessMatchesExecutable = originalMatches
+	})
+
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "appd.pid")
+	logPath := filepath.Join(dir, "appd.log")
+	if err := os.WriteFile(pidPath, []byte("4242\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := daemonize(pidPath, logPath); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 {
+		t.Fatalf("daemon starts = %d, want 1 after stale PID reuse", starts)
+	}
+	raw, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 }
 
 func TestValidateSpecRejectsReservedPorts(t *testing.T) {
@@ -115,6 +160,18 @@ func TestStaticCaddyConfigSupportsSPAWithoutProxy(t *testing.T) {
 	}
 }
 
+func TestReadinessChecksPublicIngressForStaticAndDynamicApps(t *testing.T) {
+	for _, spec := range []appSpec{
+		{StaticRoot: "/srv", ReadinessPath: "/health"},
+		{Command: []string{"server"}, TargetPort: 3000, ReadinessPath: "/health"},
+	} {
+		want := "http://127.0.0.1:8080/health"
+		if got := spec.readinessURL(); got != want {
+			t.Fatalf("readiness URL = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestLogRingIsBoundedAndCursorBased(t *testing.T) {
 	ring := newLogRing(3)
 	for _, line := range []string{"one", "two", "three", "four"} {
@@ -151,6 +208,18 @@ func TestChildEnvironmentRemovesControlSecrets(t *testing.T) {
 	}
 	if !strings.Contains(joined, "PUBLIC_VALUE=yes") {
 		t.Fatalf("public environment missing: %s", joined)
+	}
+}
+
+func TestCaddyEnvironmentUsesWritableTemporaryState(t *testing.T) {
+	env := strings.Join(caddyEnvironment([]string{"HOME=/root", "PATH=/bin"}), "\n")
+	for _, required := range []string{
+		"XDG_CONFIG_HOME=/tmp/kortix-caddy-config",
+		"XDG_DATA_HOME=/tmp/kortix-caddy-data",
+	} {
+		if !strings.Contains(env, required) {
+			t.Fatalf("Caddy environment missing %q: %s", required, env)
+		}
 	}
 }
 

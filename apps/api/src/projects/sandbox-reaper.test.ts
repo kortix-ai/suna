@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
-import * as realProviders from '../platform/providers';
 import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realProviders from '../platform/providers';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -18,7 +18,10 @@ let endedCompute: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let stuckSessions: Array<{ sessionId: string }> = [];
 let computeRows: any[] = [];
-let pausedComputeWindows: Array<{ sandboxId: string; windowEnd: Date | undefined }> = [];
+let pausedComputeWindows: Array<{
+  sandboxId: string;
+  windowEnd: Date | undefined;
+}> = [];
 
 let orderByExpressions: string[] = [];
 let statusCalls: string[] = [];
@@ -43,9 +46,7 @@ function applyOrder(rows: any[], now: Date = NOW): any[] {
     'startedAt' in r ? String(r.startedAt ?? '') : String(r.metadata?.reaperVisitedAt ?? '');
   const expired = (r: any) =>
     r?.deadlineAt instanceof Date && r.deadlineAt.getTime() <= now.getTime() ? 0 : 1;
-  return [...rows].sort(
-    (a, b) => expired(a) - expired(b) || visited(a).localeCompare(visited(b)),
-  );
+  return [...rows].sort((a, b) => expired(a) - expired(b) || visited(a).localeCompare(visited(b)));
 }
 
 /** Flatten a drizzle SQL expression to its literal text so a test can assert
@@ -93,8 +94,7 @@ function sqlValues(expression: unknown): string[] {
  *  and `where().orderBy().limit()` resolve to the same rows. */
 function hybrid(rows: any[], throwOnGroupBy = false): any {
   const p: any = Promise.resolve(rows);
-  p.limit = (n?: number) =>
-    hybrid(typeof n === 'number' ? rows.slice(0, n) : rows, throwOnGroupBy);
+  p.limit = (n?: number) => hybrid(typeof n === 'number' ? rows.slice(0, n) : rows, throwOnGroupBy);
   p.orderBy = (...expressions: unknown[]) => {
     for (const expression of expressions) orderByExpressions.push(describeSql(expression));
     return hybrid(applyOrder(rows), throwOnGroupBy);
@@ -120,11 +120,13 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 // test doesn't import the real config, which calls process.exit on incomplete
 // local env. Run this file in its own `bun test <file>` invocation (as CI does)
 // so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({ config: {
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
-} }));
+mock.module('../config', () => ({
+  config: {
+    KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+    KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  },
+}));
 
 mock.module('../shared/db', () => ({
   db: {
@@ -160,11 +162,11 @@ mock.module('../shared/db', () => ({
                 ? candidates
                 : table === appRuntimes
                   ? appRuntimeKeepRows
-                : table === sandboxComputeSessions
-                  ? computeRows
-                  : table === projectSessions
-                    ? stuckSessions
-                    : [],
+                  : table === sandboxComputeSessions
+                    ? computeRows
+                    : table === projectSessions
+                      ? stuckSessions
+                      : [],
             );
           },
         };
@@ -212,7 +214,7 @@ mock.module('../platform/providers', () => ({
       const err = stopErrorByExternal[externalId];
       if (err) throw err;
     },
-    listManagedRunningSandboxes: async () => name === 'e2b' ? e2bManagedBoxes : managedBoxes,
+    listManagedRunningSandboxes: async () => (name === 'e2b' ? e2bManagedBoxes : managedBoxes),
   }),
 }));
 
@@ -346,8 +348,12 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // Billing is settled against the still-active row before the flip.
     expect(pausedCompute).toEqual(['sb-1']);
     expect(cacheInvalidations).toEqual(['ext-1']);
-    expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(true);
-    expect(updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped')).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped'),
+    ).toBe(true);
   });
 
   test('a box with an observed turn SURVIVES — its deadline is still ahead', async () => {
@@ -482,6 +488,26 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.billingClosed).toBe(1);
     expect(stops).toEqual([]);
     expect(pausedCompute).toEqual(['sb-1']);
+  });
+
+  test('a transient stopped observation cannot defeat an in-flight provider wake', async () => {
+    candidates = [
+      candidate({
+        provider: 'platinum',
+        metadata: {
+          runtimeWakeId: 'wake-1',
+          runtimeWakeStartedAt: new Date(NOW.getTime() - 5_000).toISOString(),
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'stopped';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.skipped).toBe(1);
+    expect(r.reconciled).toBe(0);
+    expect(r.billingClosed).toBe(0);
+    expect(pausedCompute).toEqual([]);
   });
 
   test('never acts on transient unknown provider state, expired or not', async () => {
@@ -684,13 +710,23 @@ describe('the batch cap rotates and cannot starve a row', () => {
     expect(orderByExpressions.some((e) => e.includes('nulls first'))).toBe(true);
     // Expired rows must win the batch, or a backlog of healthy rows could defer
     // the one row that is actually over its deadline, forever.
-    expect(orderByExpressions.some((e) => e.includes('deadline_at') && e.includes('desc'))).toBe(true);
+    expect(orderByExpressions.some((e) => e.includes('deadline_at') && e.includes('desc'))).toBe(
+      true,
+    );
   });
 
   test('every examined row is stamped, including ones the pass deliberately left alone', async () => {
     candidates = [
-      candidate({ sandboxId: 'sb-a', sessionId: 'sess-a', externalId: 'ext-a' }),
-      candidate({ sandboxId: 'sb-b', sessionId: 'sess-b', externalId: 'ext-b' }),
+      candidate({
+        sandboxId: 'sb-a',
+        sessionId: 'sess-a',
+        externalId: 'ext-a',
+      }),
+      candidate({
+        sandboxId: 'sb-b',
+        sessionId: 'sess-b',
+        externalId: 'ext-b',
+      }),
     ];
     statusByExternal['ext-a'] = 'running';
     statusByExternal['ext-b'] = 'running';
@@ -709,9 +745,21 @@ describe('the batch cap rotates and cannot starve a row', () => {
     process.env.KORTIX_REAP_BATCH_SIZE = '2';
     try {
       candidates = [
-        candidate({ sandboxId: 'sb-a', sessionId: 'sess-a', externalId: 'ext-a' }),
-        candidate({ sandboxId: 'sb-b', sessionId: 'sess-b', externalId: 'ext-b' }),
-        candidate({ sandboxId: 'sb-c', sessionId: 'sess-c', externalId: 'ext-c' }),
+        candidate({
+          sandboxId: 'sb-a',
+          sessionId: 'sess-a',
+          externalId: 'ext-a',
+        }),
+        candidate({
+          sandboxId: 'sb-b',
+          sessionId: 'sess-b',
+          externalId: 'ext-b',
+        }),
+        candidate({
+          sandboxId: 'sb-c',
+          sessionId: 'sess-c',
+          externalId: 'ext-c',
+        }),
       ];
 
       const r = await reapAndReconcileSandboxes(NOW);
@@ -801,6 +849,7 @@ describe('decideComputeClose', () => {
     sandboxStatus: 'active' as string | null,
     hasProviderTarget: true,
     runtimeStartFailed: false,
+    wakeInProgress: false,
     beyondLivenessCeiling: false,
     providerStatus: 'running' as any,
     unresolvedForMs: null as number | null,
@@ -820,10 +869,14 @@ describe('decideComputeClose', () => {
     expect(d.needsProviderStatus).toBe(false);
   });
   test('sandbox row in error → close', () => {
-    expect(decideComputeClose({ ...base, sandboxStatus: 'error' }).reason).toBe('sandbox-not-active');
+    expect(decideComputeClose({ ...base, sandboxStatus: 'error' }).reason).toBe(
+      'sandbox-not-active',
+    );
   });
   test('sandbox row archived → close', () => {
-    expect(decideComputeClose({ ...base, sandboxStatus: 'archived' }).reason).toBe('sandbox-not-active');
+    expect(decideComputeClose({ ...base, sandboxStatus: 'archived' }).reason).toBe(
+      'sandbox-not-active',
+    );
   });
   test('a provisioning box is NOT closed — the meter legitimately opens first', () => {
     expect(decideComputeClose({ ...base, sandboxStatus: 'provisioning' }).reason).toBeNull();
@@ -832,7 +885,9 @@ describe('decideComputeClose', () => {
     expect(decideComputeClose({ ...base, sandboxStatus: null }).reason).toBe('sandbox-row-missing');
   });
   test('no provider target → close', () => {
-    expect(decideComputeClose({ ...base, hasProviderTarget: false }).reason).toBe('sandbox-row-missing');
+    expect(decideComputeClose({ ...base, hasProviderTarget: false }).reason).toBe(
+      'sandbox-row-missing',
+    );
   });
   test('a wake that failed → close, without a provider call', () => {
     const d = decideComputeClose({ ...base, runtimeStartFailed: true });
@@ -847,37 +902,72 @@ describe('decideComputeClose', () => {
   });
 
   test('provider says stopped / removed / terminal → close', () => {
-    expect(decideComputeClose({ ...base, providerStatus: 'stopped' }).reason).toBe('provider-not-running');
-    expect(decideComputeClose({ ...base, providerStatus: 'removed' }).reason).toBe('provider-not-running');
-    expect(decideComputeClose({ ...base, providerStatus: 'terminal' }).reason).toBe('provider-not-running');
+    expect(decideComputeClose({ ...base, providerStatus: 'stopped' }).reason).toBe(
+      'provider-not-running',
+    );
+    expect(decideComputeClose({ ...base, providerStatus: 'removed' }).reason).toBe(
+      'provider-not-running',
+    );
+    expect(decideComputeClose({ ...base, providerStatus: 'terminal' }).reason).toBe(
+      'provider-not-running',
+    );
+  });
+
+  test('a fresh wake fence makes provider-stopped transitional, not billable-stop proof', () => {
+    const decision = decideComputeClose({
+      ...base,
+      providerStatus: 'stopped',
+      wakeInProgress: true,
+    });
+    expect(decision.reason).toBeNull();
   });
 
   // 44 of 66 open prod rows answered `unknown`: it is the steady state for a
   // box deleted out from under us, not a transient.
   test('REGRESSION: unknown is transient on first sight — do not close yet', () => {
     expect(
-      decideComputeClose({ ...base, providerStatus: 'unknown', unresolvedForMs: null }).reason,
+      decideComputeClose({
+        ...base,
+        providerStatus: 'unknown',
+        unresolvedForMs: null,
+      }).reason,
     ).toBeNull();
   });
   test('REGRESSION: unknown past the ceiling stops billing — uncertainty never justifies charging', () => {
     expect(
-      decideComputeClose({ ...base, providerStatus: 'unknown', unresolvedForMs: HOUR }).reason,
+      decideComputeClose({
+        ...base,
+        providerStatus: 'unknown',
+        unresolvedForMs: HOUR,
+      }).reason,
     ).toBe('unresolvable-past-ceiling');
   });
   test('unknown but only briefly → keep billing', () => {
     expect(
-      decideComputeClose({ ...base, providerStatus: 'unknown', unresolvedForMs: HOUR - 1 }).reason,
+      decideComputeClose({
+        ...base,
+        providerStatus: 'unknown',
+        unresolvedForMs: HOUR - 1,
+      }).reason,
     ).toBeNull();
   });
   test('an unresolvable lookup (provider threw, status null) is treated like unknown', () => {
     expect(
-      decideComputeClose({ ...base, providerStatus: null, unresolvedForMs: HOUR }).reason,
+      decideComputeClose({
+        ...base,
+        providerStatus: null,
+        unresolvedForMs: HOUR,
+      }).reason,
     ).toBe('unresolvable-past-ceiling');
   });
 
   // The rule that makes an 829-hour row impossible.
   test('REGRESSION: no window may exceed the max, even while the provider says running', () => {
-    const d = decideComputeClose({ ...base, openForMs: 24 * HOUR, providerStatus: 'running' });
+    const d = decideComputeClose({
+      ...base,
+      openForMs: 24 * HOUR,
+      providerStatus: 'running',
+    });
     expect(d.reason).toBe('window-past-max');
     expect(d.needsProviderStatus).toBe(false);
   });
@@ -905,19 +995,31 @@ describe('computeCloseWindowEnd', () => {
   test('a stopped sandbox bills through the moment we recorded the stop', () => {
     const stoppedAt = new Date(now.getTime() - 90 * HOUR);
     expect(
-      computeCloseWindowEnd({ ...base, reason: 'sandbox-not-active', sandboxUpdatedAt: stoppedAt }).getTime(),
+      computeCloseWindowEnd({
+        ...base,
+        reason: 'sandbox-not-active',
+        sandboxUpdatedAt: stoppedAt,
+      }).getTime(),
     ).toBe(stoppedAt.getTime());
   });
   test('a failed wake bills through the failure, not through today', () => {
     const failedAt = new Date(now.getTime() - 95 * HOUR);
     expect(
-      computeCloseWindowEnd({ ...base, reason: 'runtime-start-failed', runtimeWakeFailedAt: failedAt }).getTime(),
+      computeCloseWindowEnd({
+        ...base,
+        reason: 'runtime-start-failed',
+        runtimeWakeFailedAt: failedAt,
+      }).getTime(),
     ).toBe(failedAt.getTime());
   });
   test('an unresolvable box bills through the last moment it was resolvable', () => {
     const lastSeen = new Date(now.getTime() - 50 * HOUR);
     expect(
-      computeCloseWindowEnd({ ...base, reason: 'unresolvable-past-ceiling', unresolvedSince: lastSeen }).getTime(),
+      computeCloseWindowEnd({
+        ...base,
+        reason: 'unresolvable-past-ceiling',
+        unresolvedSince: lastSeen,
+      }).getTime(),
     ).toBe(lastSeen.getTime());
   });
   test('a max-length window bills exactly the max, never the 100h it actually ran', () => {
@@ -944,7 +1046,12 @@ describe('computeCloseWindowEnd', () => {
     ).toBe(now.getTime());
   });
   test('a missing evidence timestamp degrades to now rather than throwing', () => {
-    expect(computeCloseWindowEnd({ ...base, reason: 'sandbox-not-active' }).getTime()).toBe(now.getTime());
+    expect(
+      computeCloseWindowEnd({
+        ...base,
+        reason: 'sandbox-not-active',
+      }).getTime(),
+    ).toBe(now.getTime());
   });
 
   // Get the reason wrong and the bill is still capped — that is what makes the
@@ -995,18 +1102,38 @@ describe('reconcileOrphanComputeSessions', () => {
     expect(pausedCompute).toEqual([]);
   });
 
+  test('the compute invariant keeps the meter open during a fresh provider wake', async () => {
+    computeRows = [
+      openRow({
+        sessionProvider: 'platinum',
+        sbMetadata: {
+          runtimeWakeId: 'wake-1',
+          runtimeWakeStartedAt: new Date(NOW3.getTime() - 5_000).toISOString(),
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'stopped';
+
+    const r = await reconcileOrphanComputeSessions(NOW3);
+
+    expect(r.closed).toBe(0);
+    expect(pausedCompute).toEqual([]);
+  });
+
   test('a healthy running App runtime keeps billing through its App join', async () => {
-    computeRows = [openRow({
-      workloadType: 'app',
-      sbStatus: null,
-      sessionProvider: null,
-      sessionExternalId: null,
-      appStatus: 'running',
-      appUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
-      appMetadata: {},
-      appProvider: 'daytona',
-      appExternalId: 'app-ext-1',
-    })];
+    computeRows = [
+      openRow({
+        workloadType: 'app',
+        sbStatus: null,
+        sessionProvider: null,
+        sessionExternalId: null,
+        appStatus: 'running',
+        appUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
+        appMetadata: {},
+        appProvider: 'daytona',
+        appExternalId: 'app-ext-1',
+      }),
+    ];
     statusByExternal['app-ext-1'] = 'running';
 
     const r = await reconcileOrphanComputeSessions(NOW3);
@@ -1018,17 +1145,19 @@ describe('reconcileOrphanComputeSessions', () => {
 
   test('a stopped App runtime closes its compute window without a provider call', async () => {
     const stoppedAt = new Date(NOW3.getTime() - HOUR);
-    computeRows = [openRow({
-      workloadType: 'app',
-      sbStatus: null,
-      sessionProvider: null,
-      sessionExternalId: null,
-      appStatus: 'stopped',
-      appUpdatedAt: stoppedAt.toISOString(),
-      appMetadata: {},
-      appProvider: 'daytona',
-      appExternalId: 'app-ext-1',
-    })];
+    computeRows = [
+      openRow({
+        workloadType: 'app',
+        sbStatus: null,
+        sessionProvider: null,
+        sessionExternalId: null,
+        appStatus: 'stopped',
+        appUpdatedAt: stoppedAt.toISOString(),
+        appMetadata: {},
+        appProvider: 'daytona',
+        appExternalId: 'app-ext-1',
+      }),
+    ];
 
     const r = await reconcileOrphanComputeSessions(NOW3);
 
@@ -1097,7 +1226,13 @@ describe('reconcileOrphanComputeSessions', () => {
   });
 
   test('an open row with no sandbox row behind it is closed', async () => {
-    computeRows = [openRow({ sbStatus: null, sessionProvider: null, sessionExternalId: null })];
+    computeRows = [
+      openRow({
+        sbStatus: null,
+        sessionProvider: null,
+        sessionExternalId: null,
+      }),
+    ];
 
     const r = await reconcileOrphanComputeSessions(NOW3);
 
@@ -1143,7 +1278,10 @@ describe('reconcileOrphanComputeSessions', () => {
     computeRows = [
       openRow({
         startedAt: new Date(NOW3.getTime() - 20 * HOUR).toISOString(),
-        computeMetadata: { lastAliveAt: NOW3.toISOString(), unresolvedSince: lastSeen.toISOString() },
+        computeMetadata: {
+          lastAliveAt: NOW3.toISOString(),
+          unresolvedSince: lastSeen.toISOString(),
+        },
       }),
     ];
     statusByExternal['ext-1'] = 'unknown';
@@ -1157,7 +1295,12 @@ describe('reconcileOrphanComputeSessions', () => {
 
   test('a box that becomes resolvable again clears the unresolved clock', async () => {
     computeRows = [
-      openRow({ computeMetadata: { lastAliveAt: NOW3.toISOString(), unresolvedSince: new Date(NOW3.getTime() - 3 * HOUR).toISOString() } }),
+      openRow({
+        computeMetadata: {
+          lastAliveAt: NOW3.toISOString(),
+          unresolvedSince: new Date(NOW3.getTime() - 3 * HOUR).toISOString(),
+        },
+      }),
     ];
     statusByExternal['ext-1'] = 'running';
 
@@ -1183,19 +1326,36 @@ describe('reconcileOrphanComputeSessions', () => {
 
   test('oldest-open rows are drained first so a saturated batch cannot starve them', async () => {
     computeRows = [
-      openRow({ computeId: 'cs-new', sandboxId: 'sb-new', startedAt: new Date(NOW3.getTime() - HOUR).toISOString(), sbStatus: 'stopped' }),
-      openRow({ computeId: 'cs-old', sandboxId: 'sb-old', startedAt: new Date(NOW3.getTime() - 800 * HOUR).toISOString(), sbStatus: 'stopped' }),
+      openRow({
+        computeId: 'cs-new',
+        sandboxId: 'sb-new',
+        startedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
+        sbStatus: 'stopped',
+      }),
+      openRow({
+        computeId: 'cs-old',
+        sandboxId: 'sb-old',
+        startedAt: new Date(NOW3.getTime() - 800 * HOUR).toISOString(),
+        sbStatus: 'stopped',
+      }),
     ];
 
     await reconcileOrphanComputeSessions(NOW3);
 
     expect(pausedCompute[0]).toBe('sb-old');
-    expect(orderByExpressions.some((e) => e.includes('started_at') || e.includes('startedAt'))).toBe(true);
+    expect(
+      orderByExpressions.some((e) => e.includes('started_at') || e.includes('startedAt')),
+    ).toBe(true);
   });
 
   test('one bad row never sinks the sweep', async () => {
     computeRows = [
-      openRow({ computeId: 'cs-a', sandboxId: 'sb-a', startedAt: 'not-a-date', sbStatus: 'stopped' }),
+      openRow({
+        computeId: 'cs-a',
+        sandboxId: 'sb-a',
+        startedAt: 'not-a-date',
+        sbStatus: 'stopped',
+      }),
       openRow({ computeId: 'cs-b', sandboxId: 'sb-b', sbStatus: 'stopped' }),
     ];
 

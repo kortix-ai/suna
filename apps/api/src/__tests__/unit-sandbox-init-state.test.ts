@@ -46,7 +46,6 @@ describe('sandbox init state helpers', () => {
     const provider = {
       name: 'daytona' as const,
       provisioning: { async: true, stages: [] },
-      requiresPublicCallback: true,
       async create() {
         attempts += 1;
         if (attempts < 3) throw new Error(`attempt-${attempts}`);
@@ -80,7 +79,6 @@ describe('sandbox init state helpers', () => {
     const provider = {
       name: 'e2b' as const,
       provisioning: { async: true, stages: [] },
-      requiresPublicCallback: true,
       async create() {
         attempts += 1;
         throw new Error('Maximum number of concurrent E2B sandboxes reached');

@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  getRequiredConnectorConnections,
-  resolveCreateFailure,
-} from './new-session-failure';
+import { getRequiredConnectorConnections, resolveCreateFailure } from './new-session-failure';
 
 const connectorConnections = [
   {
@@ -30,6 +27,11 @@ describe('resolveCreateFailure', () => {
     expect(resolveCreateFailure('concurrent_session_limit')).toBe('silent');
   });
 
+  test('request deadlines stay silent because the server can complete after the client stops waiting', () => {
+    expect(resolveCreateFailure('TIMEOUT')).toBe('silent');
+    expect(resolveCreateFailure('request_deadline')).toBe('silent');
+  });
+
   test('a missing connection opens the connect-to-start gate', () => {
     expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('connect');
   });
@@ -41,9 +43,8 @@ describe('resolveCreateFailure', () => {
     expect(resolveCreateFailure('REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE')).toBe('toast');
   });
 
-  test('everything else — including codeless network failures — surfaces a toast, never a redirect', () => {
+  test('other failures surface a toast, never a redirect', () => {
     expect(resolveCreateFailure(undefined)).toBe('toast');
-    expect(resolveCreateFailure('TIMEOUT')).toBe('toast');
     expect(resolveCreateFailure('internal_error')).toBe('toast');
   });
 });
@@ -86,7 +87,9 @@ describe('getRequiredConnectorConnections', () => {
       getRequiredConnectorConnections({
         code: 'CONNECTOR_CONNECTION_REQUIRED',
         data: {
-          connector_connections: [{ ...connectorConnections[0], authorization_strategy: 'workspace' }],
+          connector_connections: [
+            { ...connectorConnections[0], authorization_strategy: 'workspace' },
+          ],
         },
       }),
     ).toBeNull();

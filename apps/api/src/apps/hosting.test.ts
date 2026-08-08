@@ -35,6 +35,7 @@ function dependencies() {
     },
     start: async () => {},
     ensureRunning: async () => {},
+    getStatus: async () => 'running',
     ensureAppRuntimeStarted: async (externalId: string) => { appRuntimeStarts.push(externalId); },
     stop: async () => {},
     remove: async () => {},
@@ -69,7 +70,7 @@ describe('AppHostingProvider', () => {
   test('builds the provider snapshot with the App runtime profile', async () => {
     const { hosting, builds } = dependencies();
     await hosting.buildImage({
-      provider: 'local-docker',
+      provider: 'daytona',
       snapshotName: 'kortix-app-deployment-1',
       slug: 'hello',
       sourceDir: '/tmp/source',
@@ -128,6 +129,81 @@ describe('AppHostingProvider', () => {
     expect(appRuntimeStarts).toEqual(['box-1', 'box-1']);
   });
 
+  test('treats a provider start conflict as success when the runtime is already running', async () => {
+    const events: string[] = [];
+    const runtime = {
+      start: async () => {
+        events.push('start');
+        throw new Error('Sandbox is already started');
+      },
+      getStatus: async () => {
+        events.push('status');
+        return 'running' as const;
+      },
+      ensureAppRuntimeStarted: async () => { events.push('appd'); },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+
+    await hosting.start('daytona', 'box-1');
+
+    expect(events).toEqual(['start', 'status', 'status', 'appd']);
+  });
+
+  test('waits for provider running state before starting appd after a cold wake', async () => {
+    const events: string[] = [];
+    const statuses = ['stopped', 'unknown', 'running'] as const;
+    let statusIndex = 0;
+    const runtime = {
+      ensureRunning: async () => { events.push('wake'); },
+      getStatus: async () => {
+        const providerStatus = statuses[Math.min(statusIndex, statuses.length - 1)]!;
+        statusIndex += 1;
+        events.push(`status:${providerStatus}`);
+        return providerStatus;
+      },
+      ensureAppRuntimeStarted: async () => { events.push('appd'); },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => runtime,
+      sleep: async () => {},
+    });
+
+    await hosting.ensureRunning('platinum', 'box-1');
+
+    expect(events).toEqual(['wake', 'status:stopped', 'status:unknown', 'status:running', 'appd']);
+  });
+
+  test('treats an already stopped provider runtime as an idempotent stop', async () => {
+    const events: string[] = [];
+    const runtime = {
+      stop: async () => {
+        events.push('stop');
+        throw new Error('Sandbox is not in a stoppable state');
+      },
+      getStatus: async () => {
+        events.push('status');
+        return 'stopped' as const;
+      },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+
+    await hosting.stop('daytona', 'box-1');
+
+    expect(events).toEqual(['stop', 'status']);
+  });
+
+  test('preserves a stop error while the provider still reports running', async () => {
+    const runtime = {
+      stop: async () => {
+        throw new Error('provider stop failed');
+      },
+      getStatus: async () => 'running' as const,
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+
+    expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed');
+  });
+
   test('polls authenticated appd status until the runtime is ready', async () => {
     const { hosting, ingressCalls, fetchCalls } = dependencies();
     const status = await hosting.waitUntilReady('e2b', 'box-1', 'runtime-1', 1_000);
@@ -140,5 +216,27 @@ describe('AppHostingProvider', () => {
       'x-provider-auth': 'provider-token',
       Authorization: `Bearer ${appControlToken('runtime-1', secret)}`,
     });
+  });
+
+  test('restarts appd when the provider is running but the control endpoint is unavailable', async () => {
+    const events: string[] = [];
+    const runtime = {
+      resolveIngress: async () => ({ url: 'https://control.test', headers: {}, effectivePort: 7331 }),
+      ensureAppRuntimeStarted: async () => { events.push('bootstrap'); },
+    } as unknown as SandboxProvider;
+    const responses = [
+      new Response('upstream unreachable', { status: 502 }),
+      Response.json({ status: 'running', ready: true }),
+    ];
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => runtime,
+      controlSecret: secret,
+      fetch: (async () => responses.shift()!) as unknown as typeof globalThis.fetch,
+      sleep: async () => {},
+    });
+
+    await hosting.waitUntilReady('daytona', 'box-1', 'runtime-1', 1_000);
+
+    expect(events).toEqual(['bootstrap']);
   });
 });

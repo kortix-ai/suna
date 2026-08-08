@@ -132,6 +132,18 @@ export interface SessionReloadResult {
    * no reload was needed) — never "it worked".
    */
   opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null;
+  /**
+   * Did the reload stop a turn the user was waiting on?
+   *
+   * Reported by the box AFTER the fact — it is true only when the finalize
+   * actually aborted an incomplete turn. A pre-flight "is a turn running?"
+   * check would race the turn finishing and tell people their work was
+   * interrupted when it completed normally.
+   *
+   * `null` = the box did not say. Never render that as "nothing was
+   * interrupted"; say nothing instead.
+   */
+  turn_ended: boolean | null;
   /** Present when nothing was applied. */
   reason?: string;
 }
@@ -145,8 +157,31 @@ export interface SessionReloadResult {
  * brought forward: the etag moved, opencode kept reading the working tree, and
  * the user was told the opposite.
  */
+/**
+ * The sentence appended when the reload STOPPED work someone was waiting on.
+ *
+ * Marko asked for this on the call: the reload restarts the runtime and "the
+ * whole opencode session is going to stop", so the command has to say so and
+ * the user has to know they must continue. Until now the turn simply ended —
+ * cleanly, so nothing spun, but silently, so it looked like the agent gave up.
+ *
+ * Only appended on a definite `true`. `null` means the box could not tell, and
+ * inventing "your turn was stopped" for a turn that finished normally is worse
+ * than saying nothing.
+ */
+const TURN_ENDED_SENTENCE =
+  'The turn that was running was stopped — send a message to continue.';
+
+function withTurnNotice(sentence: string, result: SessionReloadResult): string {
+  return result.turn_ended === true ? `${sentence} ${TURN_ENDED_SENTENCE}` : sentence;
+}
+
 export function reloadDetail(result: SessionReloadResult): string {
   if (!result.applied) return `Nothing to apply: ${result.reason ?? 'unchanged'}.`;
+  return withTurnNotice(reloadOutcomeSentence(result), result);
+}
+
+function reloadOutcomeSentence(result: SessionReloadResult): string {
   switch (result.agent_files) {
     case 'updated':
       return 'Reloaded. The next prompt runs the new config.';
@@ -342,6 +377,7 @@ export async function reloadSessionConfig(input: {
       commit_sha: null,
       agent_files: 'unknown',
       opencode_reload: null,
+      turn_ended: null,
       reason: 'no reachable sandbox',
     };
   }
@@ -360,6 +396,7 @@ export async function reloadSessionConfig(input: {
       commit_sha: before.commitSha,
       agent_files: 'unknown',
       opencode_reload: null,
+      turn_ended: null,
       reason:
         before.turnInFlight === true
           ? 'session is mid-turn'
@@ -412,6 +449,7 @@ export async function reloadSessionConfig(input: {
       reason: configDirReason,
     }),
     opencode_reload: push.opencodeReload ?? null,
+    turn_ended: push.opencodeTurnEnded ?? null,
     ...(push.applied
       ? push.opencodeReload === 'kept-old'
         ? {

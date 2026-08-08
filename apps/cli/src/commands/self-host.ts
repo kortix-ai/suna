@@ -1716,12 +1716,7 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-// 'local-docker' is EXPERIMENTAL: runs sandboxes as containers on THIS same
-// machine via the local Docker socket — no cloud account, not horizontally
-// scalable, and noticeably slower (it builds sandbox images locally on this
-// machine). Not recommended for production — listed last and non-default in
-// the wizard below. See apps/api/src/platform/providers/local-docker.ts.
-const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
+const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b'] as const;
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
@@ -1753,8 +1748,7 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     process.stdout.write(
       `  ${C.cyan}daytona${C.reset}      ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
         `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (recommended) — Kortix's own microVM sandbox provider${C.reset}\n` +
-        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n` +
-        `  ${C.cyan}local-docker${C.reset} ${C.dim}[experimental] runs sandboxes as containers on this same machine — slower (builds sandbox images locally on this machine), not recommended for production${C.reset}\n`,
+        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n`,
     );
     provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
   }
@@ -1771,10 +1765,6 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
-  // local-docker: no credentials to collect — the local Docker socket IS the
-  // "account". writeCompose()/renderFullDockerCompose() wires the socket
-  // mount + LOCAL_DOCKER_NETWORK in automatically for this provider.
-
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
   // operator, not a per-user connection (those live in the DB and are
@@ -1836,23 +1826,16 @@ export function sandboxProviders(env: Record<string, string>): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** The key each sandbox provider needs to be considered "ready" — mirrors
- *  isProviderEnabled() in apps/api/src/config.ts. 'local-docker' has none: its
- *  "account" is the local Docker socket, checked lazily by the API itself. */
+/** The key each sandbox provider needs to be considered ready. */
 const SANDBOX_PROVIDER_KEY: Record<string, string> = {
   daytona: 'DAYTONA_API_KEY',
   e2b: 'E2B_API_KEY',
   platinum: 'PLATINUM_API_KEY',
 };
 
-/** A configured sandbox provider is one named in ALLOWED_SANDBOX_PROVIDERS
- *  whose required key is actually set — whichever of daytona/e2b/platinum was
- *  chosen at `init`/`configure` (see configureConnections()) — or
- *  'local-docker', which needs no key at all. */
+/** A configured sandbox provider is selected and has its required key. */
 export function sandboxProviderConfigured(env: Record<string, string>): boolean {
-  return sandboxProviders(env).some(
-    (provider) => provider === 'local-docker' || !!env[SANDBOX_PROVIDER_KEY[provider] ?? ''],
-  );
+  return sandboxProviders(env).some((provider) => !!env[SANDBOX_PROVIDER_KEY[provider] ?? '']);
 }
 
 /** Managed git provider configured? Required to create/CRUD projects. */
@@ -2315,7 +2298,6 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
-      localDockerConfigured: sandboxProviders(env).includes('local-docker'),
     }),
     { encoding: 'utf8', mode: 0o600 },
   );

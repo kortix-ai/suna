@@ -1,8 +1,39 @@
 import { getEnv } from '@/lib/env-config';
+import { HostBoundaryError } from '@kortix/sdk';
 
 /** API base (already includes the /v1 suffix), e.g. https://api.kortix.com/v1. */
 export function setupLinkApiBase(): string {
   return (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
+}
+
+/**
+ * Maps a failed setup-link request to the state the human should see. The API
+ * distinguishes an expired link (410 — expected, recoverable by re-minting)
+ * from an unknown/mangled one (404 — usually a truncated copy); collapsing
+ * both into one generic "invalid" message left humans stuck with no way
+ * forward.
+ */
+export function classifySetupLinkError(cause: unknown): 'expired' | 'invalid' | 'network' {
+  const status =
+    cause instanceof HostBoundaryError
+      ? cause.status
+      : typeof (cause as { status?: unknown } | null | undefined)?.status === 'number'
+        ? (cause as { status: number }).status
+        : null;
+  if (status === 410) return 'expired';
+  if (status === 404 || status === 400) return 'invalid';
+  return 'network';
+}
+
+/** "6 days" / "3 hours" / "25 minutes" until the link dies; null once past. */
+export function describeLinkExpiry(expiresAtIso: string, nowMs: number): string | null {
+  const expiresMs = Date.parse(expiresAtIso);
+  if (Number.isNaN(expiresMs) || expiresMs <= nowMs) return null;
+  const minutes = Math.round((expiresMs - nowMs) / 60_000);
+  if (minutes >= 2 * 24 * 60) return `${Math.round(minutes / (24 * 60))} days`;
+  if (minutes >= 2 * 60) return `${Math.round(minutes / 60)} hours`;
+  if (minutes >= 2) return `${minutes} minutes`;
+  return 'less than 2 minutes';
 }
 
 export type SetupLinkKind = 'secret' | 'connector';

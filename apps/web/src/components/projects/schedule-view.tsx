@@ -81,8 +81,10 @@ import {
   upsertProjectSecret,
 } from '@kortix/sdk';
 import {
+  contract,
   type ModelKey,
   modelKeyToWire,
+  qk,
   useRuntimeProviders,
   useVisibleAgents,
   wireToModelKey,
@@ -543,13 +545,17 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
   const queryClient = useQueryClient();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
-  const queryKey = useMemo(() => ['project-triggers', projectId], [projectId]);
+  // Same entity/fetcher the Customize settings pause switch
+  // (settings-view.tsx's `TriggersActivationCard`) reads — both must share
+  // this key, via `qk.project.triggers`, or a pause/resume in one goes
+  // unseen in the other.
+  const queryKey = useMemo(() => qk.project.triggers(projectId), [projectId]);
 
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
     refetchInterval: 10_000,
-    staleTime: 5_000,
+    ...contract('config'),
   });
 
   const [query, setQuery] = useState('');
@@ -1032,10 +1038,10 @@ function AgentModelSection({
   }, [trigger.session_mode, trigger.session_id, trigger.session_key]);
 
   const pinnableSessions = useQuery({
-    queryKey: ['project-sessions', projectId, 'trigger-pin'],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: canWrite && modeDraft === 'pinned',
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const saveSession = useMutation({
     mutationFn: (input: UpdateProjectTriggerInput) =>
@@ -1784,10 +1790,10 @@ function CreateTriggerModal({
   const [filterRows, setFilterRows] = useState<FilterRow[]>([]);
   // Sessions to choose from when pinning (only fetched once the user picks 'pinned').
   const pinnableSessions = useQuery({
-    queryKey: ['project-sessions', projectId, 'trigger-pin'],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: open && sessionMode === 'pinned',
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
   const [error, setError] = useState<string | null>(null);

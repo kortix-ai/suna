@@ -3,8 +3,8 @@ import { and, eq, isNull, lt, lte, or } from 'drizzle-orm';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
-import { getProvider } from '../platform/providers';
 import { db } from '../shared/db';
+import { AppHostingProvider } from './hosting';
 
 let running = false;
 const state = globalThis as unknown as {
@@ -30,6 +30,7 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
       .limit(50);
     let stopped = 0;
     let errors = 0;
+    const hosting = new AppHostingProvider();
     for (const { runtime } of rows) {
       try {
         const [claimed] = await db
@@ -43,7 +44,7 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
           ))
           .returning();
         if (!claimed) continue;
-        await getProvider(claimed.provider as SandboxProviderName).stop(claimed.externalId);
+        await hosting.stop(claimed.provider as SandboxProviderName, claimed.externalId);
         const stoppedAt = new Date();
         await db.update(appRuntimes).set({
           status: 'stopped',

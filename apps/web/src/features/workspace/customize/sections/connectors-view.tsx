@@ -144,6 +144,7 @@ import {
   syncConnectors,
   updateConnectionCredential,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
@@ -284,9 +285,9 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
   const projectQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 60_000,
+    ...contract('config'),
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.project?.experimental?.agentmail_email === true;
@@ -1079,9 +1080,9 @@ export function ConnectionRoster({
     staleTime: 30_000,
   });
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 60_000,
+    ...contract('inventory'),
   });
   const emailByUser = useMemo(() => {
     const map = new Map<string, string>();
@@ -2692,9 +2693,9 @@ export function ConnectionSection({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const configQuery = useQuery({
-    queryKey: ['connector-config', projectId, connector.slug],
+    queryKey: qk.project.connectorConfig(projectId, connector.slug),
     queryFn: () => getConnectorConfig(projectId, connector.slug),
-    staleTime: 5_000,
+    ...contract('config'),
     enabled: canWrite,
   });
 
@@ -2721,7 +2722,9 @@ export function ConnectionSection({
       }),
     onSuccess: () => {
       successToast('Connection saved');
-      queryClient.invalidateQueries({ queryKey: ['connector-config', projectId, connector.slug] });
+      queryClient.invalidateQueries({
+        queryKey: qk.project.connectorConfig(projectId, connector.slug),
+      });
       onChanged();
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to save connection'),
@@ -4748,10 +4751,10 @@ export function SetCredentialModal({
     EMPTY_OAUTH2_APPLICATION_FORM,
   );
   const configQuery = useQuery({
-    queryKey: ['connector-config', projectId, connector?.slug],
+    queryKey: qk.project.connectorConfig(projectId, connector?.slug ?? ''),
     queryFn: () => getConnectorConfig(projectId, connector!.slug),
     enabled: open && Boolean(connector) && authorizationStrategy === 'project',
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const requestAuth =
     authorizationStrategy === 'user' ? connector?.requestAuthType : configQuery.data?.auth.type;

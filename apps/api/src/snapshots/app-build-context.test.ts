@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stageAppBuildContext } from './build-context';
@@ -39,8 +39,10 @@ describe('stageAppBuildContext', () => {
     expect(await readFile(join(staged.contextDir, 'public', 'index.html'), 'utf8')).toBe(
       '<h1>hello</h1>',
     );
-    expect(JSON.parse(await readFile(join(staged.contextDir, '.kortix-app-runtime', 'app.json'), 'utf8')))
+    const runtimeSpecPath = join(staged.contextDir, '.kortix-app-runtime', 'app.json');
+    expect(JSON.parse(await readFile(runtimeSpecPath, 'utf8')))
       .toEqual({ static_root: '/srv', spa: true });
+    expect((await stat(runtimeSpecPath)).mode & 0o777).toBe(0o644);
     const dockerfile = await readFile(staged.composedPath, 'utf8');
     expect(dockerfile).toContain('FROM scratch');
     expect(dockerfile).toContain('ENTRYPOINT ["/kortix/bin/kortix-appd"]');

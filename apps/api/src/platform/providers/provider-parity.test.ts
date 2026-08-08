@@ -1,14 +1,14 @@
 /**
  * Cross-cutting parity guard: every ProviderName must be wired into every
  * shared subsystem — the runtime registry, its compute rate card, and the
- * snapshot-build adapter registry. Written so that adding a 5th provider
+ * snapshot-build adapter registry. Written so that adding another provider
  * without wiring it into one of these three places fails a test here instead
  * of silently under-covering it in production (the exact gap this suite
- * closes for local-docker per the reinforcement in the task brief).
+ * closes for every provider in the canonical registry).
  */
 import { describe, expect, test } from 'bun:test';
 
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b,local-docker';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 process.env.DAYTONA_API_KEY = 'daytona_test_key';
 process.env.DAYTONA_SERVER_URL = 'https://app.daytona.io/api';
 process.env.DAYTONA_TARGET = 'us';
@@ -27,11 +27,11 @@ const { SANDBOX_TEMPLATE_PROVIDERS } = await import('../../snapshots/provider-co
 
 describe('sandbox provider parity across shared subsystems', () => {
   test('config.KNOWN_PROVIDERS is the single canonical provider list every other list must match', () => {
-    expect(KNOWN_PROVIDERS).toContain('local-docker');
+    expect(KNOWN_PROVIDERS).toEqual(['daytona', 'platinum', 'e2b']);
     expect(new Set(SANDBOX_TEMPLATE_PROVIDERS)).toEqual(new Set(KNOWN_PROVIDERS));
   });
 
-  for (const name of ['daytona', 'platinum', 'e2b', 'local-docker'] as const) {
+  for (const name of ['daytona', 'platinum', 'e2b'] as const) {
     test(`${name}: runtime registry constructs a provider implementing the full contract`, () => {
       const provider = getProvider(name);
       expect(provider.name).toBe(name);
@@ -66,11 +66,4 @@ describe('sandbox provider parity across shared subsystems', () => {
     });
   }
 
-  test('local-docker requires no provider API key to be admitted (unlike daytona/platinum/e2b)', () => {
-    // config was loaded once above with ALLOWED_SANDBOX_PROVIDERS covering all
-    // four names and every OTHER provider's key set — isProviderEnabled must
-    // still resolve local-docker as enabled with nothing beyond selection.
-    expect(config.isProviderEnabled('local-docker')).toBe(true);
-    expect(config.isLocalDockerEnabled()).toBe(true);
-  });
 });

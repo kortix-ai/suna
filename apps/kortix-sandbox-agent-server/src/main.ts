@@ -155,7 +155,10 @@ async function main() {
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -165,6 +168,7 @@ async function main() {
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })
@@ -580,7 +584,10 @@ async function runWarmSeedMode(
       // writing, or the client streams a part that will never complete.
       const pinned = readPinnedOpencodeSessionId()
       if (!pinned) return
-      void finalizeOrphanedTurn(
+      // RETURNED, not fire-and-forget. The boolean is whether a turn was really
+      // interrupted, and the reload surfaces it so the user can be told to
+      // continue instead of watching a turn stop for no stated reason.
+      return finalizeOrphanedTurn(
         opencode.getInternalUrl(),
         process.env.KORTIX_WORKSPACE || '/workspace',
         pinned,
@@ -590,6 +597,7 @@ async function runWarmSeedMode(
             sessionId: pinned,
           })
         }
+        return finalized
       })
     },
   })

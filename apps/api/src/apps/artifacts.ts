@@ -41,6 +41,29 @@ export interface ArchiveInspection {
   extractedBytes: number;
 }
 
+const APP_ARTIFACT_STORAGE_RETRY_DELAYS_MS = [100, 250] as const;
+
+export class AppArtifactStorageUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('App artifact storage is temporarily unavailable', { cause });
+    this.name = 'AppArtifactStorageUnavailableError';
+  }
+}
+
+export async function retryAppArtifactStorage<T>(
+  operation: () => Promise<T>,
+  sleep: (delayMs: number) => Promise<void> = Bun.sleep,
+): Promise<T> {
+  for (const delayMs of APP_ARTIFACT_STORAGE_RETRY_DELAYS_MS) {
+    try {
+      return await operation();
+    } catch {
+      await sleep(delayMs);
+    }
+  }
+  return operation();
+}
+
 function safeObjectSegment(value: string, name: string): string {
   if (!SAFE_OBJECT_SEGMENT.test(value)) throw new Error(`${name} contains invalid characters`);
   return value;
@@ -86,13 +109,21 @@ export async function createAppArtifactUploadUrl(
   projectId: string,
   artifactId: string,
 ): Promise<{ uploadUrl: string; objectPath: string; maxBytes: number }> {
-  await ensureAppArtifactBucket();
-  const objectPath = appArtifactObjectPath(accountId, projectId, artifactId);
-  const { data, error } = await getSupabase().storage
-    .from(APP_ARTIFACT_BUCKET)
-    .createSignedUploadUrl(objectPath, { upsert: false });
-  if (error || !data?.signedUrl) throw error ?? new Error('failed to create App artifact upload URL');
-  return { uploadUrl: data.signedUrl, objectPath, maxBytes: MAX_ARCHIVE_BYTES };
+  try {
+    return await retryAppArtifactStorage(async () => {
+      await ensureAppArtifactBucket();
+      const objectPath = appArtifactObjectPath(accountId, projectId, artifactId);
+      const { data, error } = await getSupabase().storage
+        .from(APP_ARTIFACT_BUCKET)
+        .createSignedUploadUrl(objectPath, { upsert: false });
+      if (error || !data?.signedUrl) {
+        throw error ?? new Error('failed to create App artifact upload URL');
+      }
+      return { uploadUrl: data.signedUrl, objectPath, maxBytes: MAX_ARCHIVE_BYTES };
+    });
+  } catch (error) {
+    throw new AppArtifactStorageUnavailableError(error);
+  }
 }
 
 export async function downloadAppArtifact(

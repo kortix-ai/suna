@@ -28,7 +28,7 @@ import {
   setProjectSessionScope,
 } from '@kortix/sdk';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { prefetchSessionStart } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -170,7 +170,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           useNewSessionGuardStore.getState().target(projectId, sessionId);
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },

@@ -10,6 +10,7 @@ import { Close } from '@/features/icon/icons/close';
 import { listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
 import { listProjectAccess } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   MagnifyingGlassIcon as Search,
@@ -137,7 +138,7 @@ export function SharingPicker({
  * listGroups, keyed off the account the project belongs to (derived from the
  * access response, so no extra prop plumbing).
  */
-function SubjectPicker({
+export function SubjectPicker({
   projectId,
   memberIds,
   groupIds,
@@ -151,9 +152,9 @@ function SubjectPicker({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const { data, isLoading } = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
 
   const accountId = data?.account_id;

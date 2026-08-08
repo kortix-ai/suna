@@ -152,7 +152,9 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
               asChild
               className="w-fit flex-none px-1 py-3"
             >
-              <Link href={capabilityTabHref(projectId, tab.key)}>{tab.label}</Link>
+              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                {tab.label}
+              </Link>
             </TabsTrigger>
           ))}
         </TabsList>

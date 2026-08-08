@@ -8,7 +8,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deleteProjectProviderOAuth, deleteProjectSecret } from '@kortix/sdk';
 import {
@@ -52,7 +52,7 @@ export function ConnectedTab({
     onSuccess: (provider) => {
       successToast(`${provider.label} disconnected`);
       setConfirmId(null);
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to disconnect'),

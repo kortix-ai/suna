@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 
-test('Apps discovery and direct access use the project experimental gate', () => {
+test('Apps stays discoverable while execution remains behind the project experimental gate', () => {
   const nav = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
@@ -12,9 +12,13 @@ test('Apps discovery and direct access use the project experimental gate', () =>
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(nav).toContain('useAppsFeatureEnabled');
-  expect(menu).toContain("requiresExperimental: 'apps'");
+  expect(nav).not.toContain('useAppsFeatureEnabled');
+  expect(nav).toContain('Experimental');
+  expect(menu).not.toContain("requiresExperimental: 'apps'");
   expect(view).toContain('useAppsFeatureEnabled');
+  expect(view).toContain("updateExperimentalFeature(projectId, 'apps', true)");
+  expect(view).toContain('Enable Apps');
+  expect(view).toContain('Experimental');
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {
@@ -24,4 +28,26 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('New App');
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
+  expect(view).toContain('<iframe');
+  expect(view).toContain('className="max-w-5xl"');
+});
+
+test('a suspended App preview issues the request that wakes its active deployment', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(view).toContain('if (!app.active_deployment_id)');
+  expect(view).toContain('if (!url)');
+  expect(view).toContain('src={url}');
+  expect(view).toContain('data-testid="app-live-preview"');
+  expect(view).not.toContain("app.desired_state === 'stopped'");
+  expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
+});
+
+test('an active App never looks undeployed while its signed preview URL loads', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(view).toContain('if (!app.active_deployment_id)');
+  expect(view).toContain("data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}");
+  expect(view).toContain('Preparing preview');
+  expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });

@@ -793,8 +793,7 @@ function isProviderName(value: string | null): value is ProviderName {
   return (
     value === 'daytona' ||
     value === 'platinum' ||
-    value === 'e2b' ||
-    value === 'local-docker'
+    value === 'e2b'
   );
 }
 

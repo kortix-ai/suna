@@ -39,6 +39,7 @@ mock.module('../../config', () => ({
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier: async () => 'pro',
   getCachedAccountTier: async () => 'pro',
+  accountMayUseManagedModels: async () => true,
 }));
 
 mock.module('../../projects/secrets', () => ({

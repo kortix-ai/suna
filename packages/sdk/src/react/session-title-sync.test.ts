@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { qk } from './query-keys';
+
+const SESSIONS_LIST_KEY = qk.project.sessions('project-1');
 
 function titleQueryClient(initialName: string | null) {
   let name = initialName;
@@ -16,8 +19,8 @@ function titleQueryClient(initialName: string | null) {
 
   return {
     client: {
-      getQueryData: (key: unknown[]) =>
-        key[0] === 'project-sessions'
+      getQueryData: (key: readonly unknown[]) =>
+        JSON.stringify(key) === JSON.stringify(SESSIONS_LIST_KEY)
           ? list()
           : {
               session_id: 'session-1',
@@ -44,11 +47,14 @@ describe('reconcileHydratedSessionTitle', () => {
     expect(resolved).toBe(true);
     expect(refetched).toEqual([
       {
-        queryKey: ['project-sessions', 'project-1'],
+        // The broad sessions-family prefix (list, every scope, every
+        // session/messages entry) — NOT the exact list key `getQueryData`
+        // reads above. See `qk.project.sessionsScope`'s doc comment.
+        queryKey: qk.project.sessionsScope('project-1'),
         type: 'active',
       },
       {
-        queryKey: ['project-session', 'project-1', 'session-1'],
+        queryKey: qk.project.session('project-1', 'session-1'),
         type: 'active',
       },
     ]);

@@ -62,6 +62,9 @@ function fakeOpencode(
     getState: () => state,
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
+    // Health reports this so the API's PTY proxy can follow opencode across a
+    // reload swap. Omitting it made every /kortix/health assertion 500.
+    getActivePort: () => 4096,
     restart: async () => hooks.restart?.(),
     // The env route calls reloadConfig now, which applies config in place via
     // dispose and falls back to restart. Both land here so a test counting

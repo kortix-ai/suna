@@ -38,6 +38,30 @@ describe('Kortix Apps Cloudflare router', () => {
       await signAppRequest(request, timestamp, env.DEV_EDGE_SECRET),
     );
     expect(response.headers.get('x-kortix-app-environment')).toBe('dev');
+    expect(response.headers.get('content-security-policy')).toBe(
+      "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+    );
+    expect(response.headers.get('x-frame-options')).toBeNull();
+  });
+
+  test('replaces upstream framing restrictions and preserves other CSP directives', async () => {
+    globalThis.fetch = async () => new Response('hello', {
+      status: 200,
+      headers: {
+        'x-frame-options': 'DENY',
+        'content-security-policy': "default-src 'self'; frame-ancestors https://example.com",
+      },
+    });
+
+    const response = await worker.fetch(
+      new Request('https://dev-hello-0123456789abcdef.apps.kortix.com/'),
+      env,
+    );
+
+    expect(response.headers.get('x-frame-options')).toBeNull();
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'self'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+    );
   });
 
   test('signs method, host, path, and query deterministically', async () => {
