@@ -27,6 +27,7 @@ import {
   repairMigrationLedger,
 } from './migration-ledger-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
+import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -195,10 +196,11 @@ async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
+  const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
 
   const base = {
     databaseUrl,
-    dir: MIGRATIONS_DIR,
+    dir: runtimeMigrations.path,
     migrationsTable: 'pgmigrations',
     migrationsSchema: 'kortix_migrations',
     createMigrationsSchema: true,
@@ -209,11 +211,14 @@ async function main() {
   } as const;
 
   console.log(`node-pg-migrate ${cmd}  DB: ${fmtUrl(databaseUrl)}`);
+  for (const override of runtimeMigrations.appliedOverrides) {
+    console.warn(`[migrate] checksum-guarded runtime override: ${override}`);
+  }
 
   const repairAppliedMigrationRenames = async () => {
     const repaired = await repairMigrationLedger({
       databaseUrl,
-      migrationsDir: MIGRATIONS_DIR,
+      migrationsDir: runtimeMigrations.path,
       applyConnectorMigration: async () => {
         await runner({
           ...base,
@@ -238,47 +243,51 @@ async function main() {
     },
   );
 
-  switch (cmd) {
-    case 'up':
-      await autoBaselineIfNeeded(base, databaseUrl);
-      await repairAppliedMigrationRenames();
-      await applyPendingMigrations();
-      return;
-    case 'bootstrap':
-      // Fresh-DB convenience for self-host: prereqs → then `up`.
-      await selfHostBootstrapIfFresh(databaseUrl);
-      await autoBaselineIfNeeded(base, databaseUrl);
-      await repairAppliedMigrationRenames();
-      await applyPendingMigrations();
-      return;
-    case 'fake':
-      await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY, fake: true });
-      return;
-    case 'down':
-      await runner({
-        ...base,
-        direction: 'down',
-        count: countArg ? Number.parseInt(countArg, 10) : 1,
-      });
-      return;
-    case 'status': {
-      const pending = await runner({
-        ...base,
-        direction: 'up',
-        count: Number.POSITIVE_INFINITY,
-        dryRun: true,
-      });
-      if (pending.length === 0) console.log('Up to date — no pending migrations.');
-      else {
-        console.log(`${pending.length} pending migration(s):`);
-        for (const m of pending) console.log(`  pending  ${m.name}`);
+  try {
+    switch (cmd) {
+      case 'up':
+        await autoBaselineIfNeeded(base, databaseUrl);
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      case 'bootstrap':
+        // Fresh-DB convenience for self-host: prereqs → then `up`.
+        await selfHostBootstrapIfFresh(databaseUrl);
+        await autoBaselineIfNeeded(base, databaseUrl);
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      case 'fake':
+        await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY, fake: true });
+        return;
+      case 'down':
+        await runner({
+          ...base,
+          direction: 'down',
+          count: countArg ? Number.parseInt(countArg, 10) : 1,
+        });
+        return;
+      case 'status': {
+        const pending = await runner({
+          ...base,
+          direction: 'up',
+          count: Number.POSITIVE_INFINITY,
+          dryRun: true,
+        });
+        if (pending.length === 0) console.log('Up to date — no pending migrations.');
+        else {
+          console.log(`${pending.length} pending migration(s):`);
+          for (const m of pending) console.log(`  pending  ${m.name}`);
+        }
+        if (pending.length > 0) process.exitCode = 1;
+        return;
       }
-      if (pending.length > 0) process.exitCode = 1;
-      return;
+      default:
+        console.error(`Unknown command: ${cmd}. Use: up | status | down | fake | bootstrap`);
+        process.exit(1);
     }
-    default:
-      console.error(`Unknown command: ${cmd}. Use: up | status | down | fake | bootstrap`);
-      process.exit(1);
+  } finally {
+    runtimeMigrations.cleanup();
   }
 }
 

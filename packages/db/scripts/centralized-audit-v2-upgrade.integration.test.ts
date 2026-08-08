@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 
 const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
 const migrationsDir = join(import.meta.dir, '..', 'migrations');
@@ -63,10 +64,10 @@ async function applyBootstrap(client: pg.Client): Promise<void> {
   }
 }
 
-function migrationOptions(url: string) {
+function migrationOptions(url: string, directory: string) {
   return {
     databaseUrl: url,
-    dir: migrationsDir,
+    dir: directory,
     migrationsTable: 'pgmigrations',
     migrationsSchema: 'kortix_migrations',
     createMigrationsSchema: true,
@@ -87,6 +88,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
     'backfills legacy session cursors and begins the integrity chain after legacy history',
     async () => {
       const databaseName = `audit_v2_upgrade_${randomUUID().replaceAll('-', '')}`;
+      const runtimeMigrations = materializeMigrationRuntimeDirectory(migrationsDir);
       const admin = new pg.Client({ connectionString: databaseUrl });
       await admin.connect();
       try {
@@ -105,7 +107,13 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
           await client.end();
         }
 
-        const migrationFiles = readdirSync(migrationsDir)
+        expect(
+          readFileSync(
+            join(runtimeMigrations.path, '20260807221200000_centralized_audit_v2.sql'),
+            'utf8',
+          ),
+        ).toContain("SET statement_timeout = '30min';");
+        const migrationFiles = readdirSync(runtimeMigrations.path)
           .filter((name) => name.endsWith('.sql') || name.endsWith('.ts'))
           .sort();
         const auditV2Index = migrationFiles.findIndex((name) =>
@@ -113,7 +121,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
         );
         expect(auditV2Index).toBeGreaterThan(0);
         await runner({
-          ...migrationOptions(upgradeUrl),
+          ...migrationOptions(upgradeUrl, runtimeMigrations.path),
           direction: 'up',
           count: auditV2Index,
         });
@@ -144,7 +152,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
         }
 
         await runner({
-          ...migrationOptions(upgradeUrl),
+          ...migrationOptions(upgradeUrl, runtimeMigrations.path),
           direction: 'up',
           count: Number.POSITIVE_INFINITY,
         });
@@ -208,6 +216,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
           await verified.end();
         }
       } finally {
+        runtimeMigrations.cleanup();
         const cleanup = new pg.Client({ connectionString: databaseUrl });
         await cleanup.connect();
         try {
