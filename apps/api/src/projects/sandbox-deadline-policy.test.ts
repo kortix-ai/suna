@@ -4,12 +4,11 @@
 // Every case below is a bug that shipped in the first cut of this design and was
 // caught by review, so each one names the failure it prevents rather than the
 // branch it covers.
-//
-// `mock.module` is process-global in bun — run this file on its own.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../config', () => mockConfigModule());
 
 const {
   ABSOLUTE_RUN_CAP_MS,
@@ -22,6 +21,7 @@ const {
   isWarmPoolBox,
   llmActivityGrantMs,
   previewGrantMs,
+  turnDeliveryGraceMs,
   turnGrantMs,
   warmPoolGrantMs,
 } = await import('./sandbox-deadline-policy');
@@ -30,6 +30,7 @@ const KNOBS = [
   'KORTIX_SANDBOX_TURN_GRANT_MINUTES',
   'KORTIX_SANDBOX_LLM_ACTIVITY_GRANT_MINUTES',
   'KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES',
+  'KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES',
   'KORTIX_SANDBOX_WARM_GRANT_MINUTES',
 ];
 afterEach(() => {
@@ -39,6 +40,11 @@ afterEach(() => {
 describe('the grants', () => {
   test('a turn start is worth 4h — above the p99 turn, 66x below the 264h worst case', () => {
     expect(turnGrantMs()).toBe(4 * 3_600_000);
+  });
+
+  test('an unaccepted prompt receives only the 15-minute delivery grace', () => {
+    expect(turnDeliveryGraceMs()).toBe(15 * 60_000);
+    expect(turnDeliveryGraceMs()).toBeLessThan(turnGrantMs());
   });
 
   // The measured p99.9 gap between consecutive usage_events inside one session is
@@ -60,10 +66,10 @@ describe('the grants', () => {
 
   // An unclaimed warm box can NEVER be observed again — no turns, no LLM calls,
   // no human traffic — so a floor is its whole lifetime. It must outlive the
-  // 20-minute boot floor or the warm pool is reaped before it can be handed out.
-  test('an unclaimed warm box gets a bounded hour, well past the 20-minute boot floor', () => {
+  // 15-minute boot floor or the warm pool is reaped before it can be handed out.
+  test('an unclaimed warm box gets a bounded hour, well past the 15-minute boot floor', () => {
     expect(warmPoolGrantMs()).toBe(60 * 60_000);
-    expect(warmPoolGrantMs()).toBeGreaterThan(20 * 60_000);
+    expect(warmPoolGrantMs()).toBeGreaterThan(15 * 60_000);
     // Bounded, not exempt: the unbounded exemption it replaces let warm boxes
     // hold for hours as pure billed dead time.
     expect(warmPoolGrantMs()).toBeLessThan(ABSOLUTE_RUN_CAP_MS);
@@ -77,11 +83,13 @@ describe('the grants', () => {
     process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES = '60';
     process.env.KORTIX_SANDBOX_LLM_ACTIVITY_GRANT_MINUTES = '90';
     process.env.KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES = '10';
+    process.env.KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES = '8';
     process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '5';
 
     expect(turnGrantMs()).toBe(60 * 60_000);
     expect(llmActivityGrantMs()).toBe(90 * 60_000);
     expect(previewGrantMs()).toBe(10 * 60_000);
+    expect(turnDeliveryGraceMs()).toBe(8 * 60_000);
     expect(warmPoolGrantMs()).toBe(5 * 60_000);
   });
 
@@ -90,6 +98,7 @@ describe('the grants', () => {
       turnGrantMs(),
       llmActivityGrantMs(),
       previewGrantMs(),
+      turnDeliveryGraceMs(),
       warmPoolGrantMs(),
     ]) {
       expect(grant).toBeLessThanOrEqual(ABSOLUTE_RUN_CAP_MS);
@@ -121,7 +130,11 @@ describe('isPreviewUseObservation — a human using the preview keeps the box', 
   test('every app port counts, not a hard-coded list of them', () => {
     for (const port of [3000, 5173, 8080, 1, 65535]) {
       expect(
-        isPreviewUseObservation({ isPrincipal: true, sandboxAuthored: false, upstreamPort: port }),
+        isPreviewUseObservation({
+          isPrincipal: true,
+          sandboxAuthored: false,
+          upstreamPort: port,
+        }),
       ).toBe(true);
     }
   });
@@ -147,7 +160,11 @@ describe('isPreviewUseObservation — a human using the preview keeps the box', 
   test('REGRESSION: passive traffic on the session-data ports does NOT extend', () => {
     for (const port of [AGENT, OPENCODE]) {
       expect(
-        isPreviewUseObservation({ isPrincipal: true, sandboxAuthored: false, upstreamPort: port }),
+        isPreviewUseObservation({
+          isPrincipal: true,
+          sandboxAuthored: false,
+          upstreamPort: port,
+        }),
       ).toBe(false);
     }
   });
@@ -199,9 +216,11 @@ describe('isTerminalTurnEnd — a retry is not a turn end', () => {
 
 describe('isWarmPoolBox — the marker the warm coordinator leaves on the row', () => {
   test('an available warm box is recognised from the sandbox row itself, with no join', () => {
-    expect(isWarmPoolBox({ warm_session: { state: 'available', sandbox_slug: 'default' } })).toBe(
-      true,
-    );
+    expect(
+      isWarmPoolBox({
+        warm_session: { state: 'available', sandbox_slug: 'default' },
+      }),
+    ).toBe(true);
   });
 
   test('a claimed or discarded marker is not a warm-pool box', () => {
