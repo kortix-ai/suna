@@ -7,6 +7,8 @@ Kortix Apps are provider-neutral serverless deployments. An App owns one stable 
 
 Apps is experimental and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. API and CLI execution return `404` until a project manager enables **Apps** for that project.
 
+All current source kinds run through the same Kortix sandbox hosting backend. Kortix selects Daytona, Platinum, or E2B. Static Apps, bundles, Dockerfiles, and OCI images therefore share one deployment and cold-wake contract. Cloudflare, Deno Deploy, Vercel, and other managed hosting backends are not part of the current API or SDK contract.
+
 ## Choose the fastest source path
 
 - Deploy plain HTML, CSS, JavaScript, or a prebuilt SPA as `static`.
