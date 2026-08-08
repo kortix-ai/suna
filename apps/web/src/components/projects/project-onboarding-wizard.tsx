@@ -17,6 +17,7 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { listConnectors } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
+import { completeThenNotify } from './onboarding/complete-then';
 import { slideVariants } from './onboarding/motion';
 import {
   buildSteps,
@@ -76,7 +77,28 @@ function AnimatedStep({
   );
 }
 
-export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
+export function ProjectOnboardingWizard({
+  projectId,
+  onCompleted,
+  onSkip,
+}: {
+  projectId: string;
+  /**
+   * Called once onboarding has finished — after the completion stamp has been
+   * attempted, whether or not it succeeded (see `completeThenNotify`).
+   * `project-shell.tsx` passes nothing: there the wizard simply disappears in
+   * place, which is the behaviour that shipped.
+   */
+  onCompleted?: () => void;
+  /**
+   * When supplied, renders a "Skip for now" control. Skipping does NOT stamp
+   * the project onboarded, so the project shell's own copy of this wizard
+   * still catches the user on a later visit. Absent on the project shell,
+   * where there is nowhere to skip TO — the wizard is already the thing
+   * standing between the user and their workspace.
+   */
+  onSkip?: () => void;
+}) {
   const contactTier = usePersonalContactTier();
   const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
@@ -157,7 +179,13 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     [goTo, steps.length],
   );
   const back = useCallback(() => goTo((i) => Math.max(i - 1, 0)), [goTo]);
-  const complete = useCallback(() => onboarding.complete(), [onboarding]);
+  // ONE exit for the whole wizard: `startWithPrompt` and `DoneStep`'s `onStart`
+  // both come through here, so `onCompleted` needs exactly one wrapping site.
+  // `skipSurvey` below is NOT an exit — it moves between steps.
+  const complete = useCallback(
+    () => completeThenNotify(() => onboarding.complete(), onCompleted),
+    [onboarding, onCompleted],
+  );
 
   // Picking a starting point on the finish step seeds the project-home composer
   // and closes the wizard in one action. `composer-prefill-store` is the
@@ -207,6 +235,22 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                   onClick={back}
                 >
                   <ArrowLeft className="size-4" />
+                </Button>
+              )}
+              {/* `ml-auto` rather than a spacer: the back control is conditional and the
+                  progress indicator is absolutely positioned (out of flow), so auto-margin
+                  is the only thing that pins this right in BOTH chrome states. Muted at
+                  rest — it is an escape hatch, never a call to action competing with the
+                  step's own primary button. */}
+              {onSkip && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground ml-auto"
+                  onClick={onSkip}
+                >
+                  Skip for now
                 </Button>
               )}
               <div className="pointer-events-none absolute inset-x-0 flex justify-center">
