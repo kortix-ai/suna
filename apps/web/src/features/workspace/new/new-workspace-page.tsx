@@ -1,15 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 
 import { readCloneParam } from '@/features/workspace/new/clone-param';
+import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
@@ -86,6 +88,13 @@ export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
+  const router = useRouter();
+  // Same `useSearchParams()` result the clone param reads — one subscription,
+  // two params. Non-null only between "the workspace was created" and "the
+  // user finished or skipped onboarding for it".
+  const onboardingProjectId = readOnboardingParam(
+    new URLSearchParams(searchParams?.toString() ?? ''),
+  );
 
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
@@ -321,6 +330,24 @@ export function NewWorkspacePage() {
           </m.div>
         )}
       </AnimatePresence>
+
+      {/* Onboarding runs HERE, not on the workspace page. The wizard is a
+          fullscreen portal, so it covers the completed ProvisionProgress panel
+          that stays mounted behind it (a successful create never clears
+          `status`, by design).
+
+          Completing stamps `metadata.onboarding_completed_at`, so the copy of
+          this wizard mounted on the project shell self-gates to `completed`
+          and renders nothing when we arrive. Skipping deliberately does NOT
+          stamp — that shell copy then catches the user on a later visit, which
+          is the whole safety net behind letting them skip at all. */}
+      {onboardingProjectId && (
+        <ProjectOnboardingWizard
+          projectId={onboardingProjectId}
+          onCompleted={() => router.replace(`/projects/${onboardingProjectId}`)}
+          onSkip={() => router.replace(`/projects/${onboardingProjectId}`)}
+        />
+      )}
     </main>
   );
 }
