@@ -161,6 +161,7 @@ flow(
   "SBX-4",
   {
     domain: "sandboxes",
+    requires: ["daytona"],
     routes: [
       "POST /v1/projects/:projectId/sandbox-templates",
       "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
@@ -245,10 +246,9 @@ flow(
       r.status(404);
     });
 
-    // PATCH starts provider builds. Keep that provider-backed action in the
-    // deployed-target profile. The local profile still proves the route with
-    // the unknown-template 404 above and keeps its run network-independent.
-    if (ctx.env.target !== "local" && templateId) {
+    // Template creation and PATCH both start provider builds. The flow carries
+    // the `daytona` capability so the local profile excludes the whole action.
+    if (templateId) {
       const createdTemplateId = templateId;
       await ctx.step("PATCH and build the created template on a provider-backed target", async () => {
         const patched = await ctx.client
