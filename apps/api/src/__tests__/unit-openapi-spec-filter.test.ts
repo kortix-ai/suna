@@ -8,6 +8,7 @@
 import { createRoute } from '@hono/zod-openapi';
 import { describe, expect, test } from 'bun:test';
 import {
+  addWorkspaceCompatibilityPaths,
   INTERNAL_SPEC_PREFIXES,
   filterSpecPaths,
   makeOpenApiApp,
@@ -53,8 +54,84 @@ describe('filterSpecPaths', () => {
   });
 });
 
+describe('addWorkspaceCompatibilityPaths', () => {
+  test('keeps Project paths and adds canonical Workspace paths with Workspace parameters and fields', () => {
+    const projectPath = '/v1/projects/{projectId}/channels/teams/manifest';
+    const workspacePath = '/v1/workspaces/{workspaceId}/channels/teams/manifest';
+    const input = {
+      openapi: '3.1.0',
+      info: { title: 'Kortix API', version: 'test' },
+      paths: {
+        [projectPath]: {
+          get: {
+            tags: ['projects'],
+            summary: 'Read project manifest',
+            parameters: [
+              {
+                in: 'path',
+                name: 'projectId',
+                required: true,
+                schema: { type: 'string' },
+              },
+            ],
+            responses: {
+              200: {
+                description: 'Project manifest',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['project_id', 'project_role'],
+                      properties: {
+                        project_id: { type: 'string' },
+                        project_role: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const output = addWorkspaceCompatibilityPaths(input);
+
+    expect(output).not.toBe(input);
+    expect(Object.keys(output.paths)[0]).toBe(workspacePath);
+    expect(output.paths[projectPath]).toEqual(input.paths[projectPath]);
+    expect(output.paths[workspacePath]).toBeDefined();
+    expect(output.paths[workspacePath].get.tags).toEqual(['workspaces']);
+    expect(output.paths[workspacePath].get.summary).toBe('Read workspace manifest');
+    expect(output.paths[workspacePath].get.parameters[0].name).toBe('workspaceId');
+    expect(
+      output.paths[workspacePath].get.responses[200].content['application/json'].schema,
+    ).toMatchObject({
+      required: ['workspace_id', 'workspace_role'],
+      properties: {
+        workspace_id: { type: 'string' },
+        workspace_role: { type: 'string' },
+      },
+    });
+    expect(input.paths[projectPath].get.parameters[0].name).toBe('projectId');
+  });
+
+  test('does not overwrite an explicitly registered Workspace route', () => {
+    const explicit = { get: { summary: 'Explicit Workspace route' } };
+    const output = addWorkspaceCompatibilityPaths({
+      paths: {
+        '/v1/projects/{projectId}': { get: { summary: 'Project route' } },
+        '/v1/workspaces/{workspaceId}': explicit,
+      },
+    });
+
+    expect(output.paths['/v1/workspaces/{workspaceId}']).toBe(explicit);
+  });
+});
+
 describe('mountOpenApiDocs — served spec excludes internal routers', () => {
-  test('/v1/openapi.json omits an /v1/admin route but keeps a public route', async () => {
+  test('/v1/openapi.json omits internal routes and publishes both Workspace and Project contracts', async () => {
     const app = makeOpenApiApp();
 
     const publicRoute = createRoute({
@@ -80,6 +157,7 @@ describe('mountOpenApiDocs — served spec excludes internal routers', () => {
     const spec = (await res.json()) as { paths: Record<string, unknown> };
     const paths = Object.keys(spec.paths);
     expect(paths).toContain('/v1/projects/{id}');
+    expect(paths).toContain('/v1/workspaces/{id}');
     expect(paths.some((p) => p.startsWith('/v1/admin'))).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ mock.module('@kortix/sdk', () => ({
     const created = {
       project_id: '99999999-9999-4999-8999-999999999999',
       account_id: 'acct_1',
-      name: 'My First Project',
+      name: 'My First Workspace',
     };
     projects = [created];
     return created;
@@ -216,7 +216,7 @@ describe('ensureFirstProject retry safety with an injected client (Task 6)', () 
     return {
       project_id: id,
       account_id: ACCOUNT,
-      name: 'My First Project',
+      name: 'My First Workspace',
     } as unknown as KortixProject;
   }
 

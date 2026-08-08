@@ -164,7 +164,7 @@ export function ChatGptSubscriptionConnect({
         if (cancelledRef.current) return;
         if (res.status === 'success') {
           setPhase('done');
-          successToast('ChatGPT subscription connected to this project');
+          successToast('ChatGPT subscription connected to this workspace');
           queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
@@ -293,7 +293,7 @@ export function ChatGptSubscriptionConnect({
 
       {showSharingPicker ? null : (
         <p className="text-muted-foreground mt-3 text-xs">
-          Saved for everyone on this project. Restart a running session sandbox to pick it up.
+          Saved for everyone in this workspace. Restart a running session sandbox to pick it up.
         </p>
       )}
     </div>

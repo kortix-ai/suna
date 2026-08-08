@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { skipToken, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { sessionTabTitleFromSession } from './session-tab-title';
@@ -30,15 +30,15 @@ export function SessionTabTitleSync({
   projectId: string;
   sessionId: string;
 }) {
-  // A pure READER of the session list the page already loads. `enabled: false`
+  // A pure READER of the session list the page already loads. `skipToken`
   // stops this component from ever issuing a request of its own, while still
   // subscribing to the cache entry — so the optimistic write in the rename
   // mutation (`applySessionRename`) reaches the tab immediately. `select`
   // narrows 64 sessions down to one string, so structural sharing re-renders
   // this component only when the title actually changes.
-  const { data: title } = useQuery({
+  const { data: title } = useQuery<ProjectSession[], Error, string | null>({
     queryKey: qk.project.sessions(projectId),
-    enabled: false,
+    queryFn: skipToken,
     notifyOnChangeProps: ['data'],
     select: (sessions: ProjectSession[]) => {
       const session = sessions.find((item) => item.session_id === sessionId);

@@ -424,15 +424,10 @@ export default function ProjectsPage() {
       <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0 space-y-1">
+            <div className="min-w-0">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
                 Workspaces
               </h1>
-              <p className="text-muted-foreground text-base">
-                {tHardcodedUi.raw(
-                  'appProjectsPage.line216JsxTextYourWorkspacesOnePlacePickUpWhereYou',
-                )}
-              </p>
             </div>
             <div className="flex w-full min-w-0 flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:gap-2">
               {isMultiAccount && (
@@ -568,7 +563,7 @@ export default function ProjectsPage() {
               {showAllError && (
                 <InfoBanner
                   tone="destructive"
-                  title={`Failed to load projects for ${failedAllAccountQueries.length} account${failedAllAccountQueries.length === 1 ? '' : 's'}`}
+                  title={`Failed to load workspaces for ${failedAllAccountQueries.length} account${failedAllAccountQueries.length === 1 ? '' : 's'}`}
                   action={
                     <Button
                       variant="outline"

@@ -186,7 +186,7 @@ export function SessionSharesModal({
               <ErrorState
                 size="sm"
                 title="Can't show these links"
-                description="Only the session's creator or a project manager can view and revoke its public links."
+                description="Only the session's creator or a workspace manager can view and revoke its public links."
               />
             ) : listState === 'empty' ? (
               <EmptyState

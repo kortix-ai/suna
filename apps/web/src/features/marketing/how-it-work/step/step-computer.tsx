@@ -65,7 +65,7 @@ const FACTS = [
   {
     icon: CpuIcon,
     title: 'Its own isolated machine',
-    sub: 'booted from your project image, with your tools already on it',
+    sub: 'booted from your workspace image, with your tools already on it',
   },
   {
     icon: GitBranchIcon,

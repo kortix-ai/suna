@@ -118,7 +118,7 @@ type BootStepVariant = 'stepper' | 'compact';
  */
 export const STEPS: Step[] = [
   { label: 'Reserving your computer', description: 'Finding you a secure, isolated machine.' },
-  { label: 'Loading your workspace', description: 'Copying your project files into place.' },
+  { label: 'Loading your workspace', description: 'Copying your workspace files into place.' },
   { label: 'Waking the agent', description: 'Starting the runtime and loading your tools.' },
   { label: 'Connecting', description: 'Linking you to your session. Almost there.' },
 ];

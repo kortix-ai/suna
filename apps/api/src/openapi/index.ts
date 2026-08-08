@@ -99,6 +99,165 @@ export function filterSpecPaths<T extends { paths?: Record<string, unknown> }>(
   return { ...doc, paths: kept };
 }
 
+const PROJECT_SPEC_PREFIX = '/v1/projects';
+const WORKSPACE_SPEC_PREFIX = '/v1/workspaces';
+const WORKSPACE_FIELD_NAMES: Readonly<Record<string, string>> = {
+  project_id: 'workspace_id',
+  project_role: 'workspace_role',
+  effective_project_role: 'effective_workspace_role',
+  project: 'workspace',
+  projects: 'workspaces',
+};
+
+function workspaceSchemaName(name: string): string {
+  const replaced = name.replaceAll('Projects', 'Workspaces').replaceAll('Project', 'Workspace');
+  return replaced === name ? `Workspace${name}` : replaced;
+}
+
+function workspaceHumanText(value: string): string {
+  return value
+    .replaceAll('Projects', 'Workspaces')
+    .replaceAll('projects', 'workspaces')
+    .replaceAll('Project', 'Workspace')
+    .replaceAll('project', 'workspace');
+}
+
+function collectSchemaReferences(
+  value: unknown,
+  schemas: Record<string, unknown>,
+  names: Set<string>,
+): void {
+  if (Array.isArray(value)) {
+    for (const child of value) collectSchemaReferences(child, schemas, names);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+
+  const record = value as Record<string, unknown>;
+  const ref = record.$ref;
+  const prefix = '#/components/schemas/';
+  if (typeof ref === 'string' && ref.startsWith(prefix)) {
+    const name = ref.slice(prefix.length);
+    if (!names.has(name)) {
+      names.add(name);
+      collectSchemaReferences(schemas[name], schemas, names);
+    }
+  }
+  for (const child of Object.values(record)) collectSchemaReferences(child, schemas, names);
+}
+
+function toWorkspaceSpecValue(
+  value: unknown,
+  schemaNames: ReadonlyMap<string, string>,
+  parentKey?: string,
+  parent?: Record<string, unknown>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child) => toWorkspaceSpecValue(child, schemaNames, parentKey, parent));
+  }
+  if (typeof value === 'string') {
+    if (parentKey === '$ref') {
+      const prefix = '#/components/schemas/';
+      if (value.startsWith(prefix)) {
+        const name = value.slice(prefix.length);
+        return `${prefix}${schemaNames.get(name) ?? name}`;
+      }
+      return value;
+    }
+    if (parentKey === 'required') return WORKSPACE_FIELD_NAMES[value] ?? value;
+    if (parentKey === 'tags' && value === 'projects') return 'workspaces';
+    if (parentKey === 'name' && parent?.in === 'path' && value === 'projectId') {
+      return 'workspaceId';
+    }
+    if (parentKey === 'summary' || parentKey === 'description' || parentKey === 'title') {
+      return workspaceHumanText(value);
+    }
+    if (parentKey === 'dashboard_url') return value.replace('/projects/', '/workspaces/');
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const target: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    const workspaceKey = WORKSPACE_FIELD_NAMES[key] ?? key;
+    if (workspaceKey !== key && Object.hasOwn(source, workspaceKey)) continue;
+    target[workspaceKey] = toWorkspaceSpecValue(child, schemaNames, workspaceKey, source);
+  }
+  return target;
+}
+
+/**
+ * Publish the canonical Workspace namespace without removing the Project API.
+ *
+ * Runtime mounts the same handlers at both prefixes. The OpenAPI registry does
+ * not duplicate a sub-router's definitions when that sub-router is mounted a
+ * second time, so the served document needs the same compatibility projection
+ * as the runtime response middleware. Project paths and schemas remain intact
+ * for existing integrations; Workspace paths use canonical parameter and JSON
+ * field names.
+ */
+export function addWorkspaceCompatibilityPaths<
+  T extends {
+    paths?: Record<string, any>;
+    components?: { schemas?: Record<string, unknown>; [key: string]: unknown };
+  },
+>(doc: T): T {
+  if (!doc.paths) return doc;
+
+  const schemas = doc.components?.schemas ?? {};
+  const referencedSchemas = new Set<string>();
+  for (const [path, item] of Object.entries(doc.paths)) {
+    if (path === PROJECT_SPEC_PREFIX || path.startsWith(`${PROJECT_SPEC_PREFIX}/`)) {
+      collectSchemaReferences(item, schemas, referencedSchemas);
+    }
+  }
+
+  const schemaNames = new Map<string, string>();
+  const reservedNames = new Set(Object.keys(schemas));
+  for (const name of referencedSchemas) {
+    let candidate = workspaceSchemaName(name);
+    if (reservedNames.has(candidate) || [...schemaNames.values()].includes(candidate)) {
+      candidate = `WorkspaceCompatibility${name}`;
+    }
+    schemaNames.set(name, candidate);
+    reservedNames.add(candidate);
+  }
+
+  const workspacePaths: Record<string, any> = {};
+  for (const [path, item] of Object.entries(doc.paths)) {
+    if (path !== PROJECT_SPEC_PREFIX && !path.startsWith(`${PROJECT_SPEC_PREFIX}/`)) continue;
+    const workspacePath = path
+      .replace(PROJECT_SPEC_PREFIX, WORKSPACE_SPEC_PREFIX)
+      .replaceAll('{projectId}', '{workspaceId}');
+    if (Object.hasOwn(doc.paths, workspacePath)) continue;
+    workspacePaths[workspacePath] = toWorkspaceSpecValue(item, schemaNames) as any;
+  }
+  // JSON object order is presentation order in Scalar. Put the canonical
+  // namespace first, while retaining every legacy Project path unchanged.
+  const paths = { ...workspacePaths, ...doc.paths };
+
+  if (!doc.components?.schemas || referencedSchemas.size === 0) {
+    return { ...doc, paths };
+  }
+
+  const workspaceSchemas: Record<string, unknown> = {};
+  for (const name of referencedSchemas) {
+    const workspaceName = schemaNames.get(name);
+    if (!workspaceName || schemas[name] === undefined) continue;
+    workspaceSchemas[workspaceName] = toWorkspaceSpecValue(schemas[name], schemaNames);
+  }
+
+  return {
+    ...doc,
+    paths,
+    components: {
+      ...doc.components,
+      schemas: { ...schemas, ...workspaceSchemas },
+    },
+  };
+}
+
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
 export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: string): void {
   app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
@@ -126,7 +285,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
       },
       servers: [{ url: new URL(c.req.url).origin }],
     });
-    return c.json(filterSpecPaths(document));
+    return c.json(addWorkspaceCompatibilityPaths(filterSpecPaths(document)));
   });
 
   app.get('/v1/docs', Scalar({ url: '/v1/openapi.json', pageTitle: 'Kortix API' }));

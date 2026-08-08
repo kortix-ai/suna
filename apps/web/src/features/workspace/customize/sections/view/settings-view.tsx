@@ -89,7 +89,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const archiveMutation = useMutation({
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
-      successToast('Project archived');
+      successToast('Workspace archived');
       // qk.projects.scope(): for a single-account user the archived
       // project's account IS the primary account qk.projects.list() (no
       // args) resolves to, so a precise invalidation would leave the
@@ -98,11 +98,11 @@ export function SettingsView({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to archive workspace'),
   });
 
   return (
-    <CustomizeSectionWrapper title="Settings" description="Manage your project settings">
+    <CustomizeSectionWrapper title="Settings" description="Manage your workspace settings">
       {projectQuery.isLoading && (
         <div className="space-y-5">
           <Skeleton className="h-56 rounded-md" />
@@ -747,7 +747,7 @@ function GeneralProjectCard({
     },
     onError: (error: Error, _nextName, context) => {
       renameOnError(queryClient, project.project_id, context);
-      errorToast(error.message || 'Failed to update project');
+      errorToast(error.message || 'Failed to update workspace');
     },
     onSettled: () => renameOnSettled(queryClient, project.project_id),
   });

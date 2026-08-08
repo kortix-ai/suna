@@ -813,7 +813,7 @@ function GroupProjectGrantsCard({
       ) : grantsQuery.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load projects"
+          title="Failed to load workspaces"
           description={(grantsQuery.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>

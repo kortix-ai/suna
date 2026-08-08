@@ -732,14 +732,14 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
             return `Created ${n} projects`;
           case 'update':
             // A real mutation (rename / default_branch / manifest_path) — never "opened".
-            if (n === 1) return arg ? `Updated ${arg}` : 'Updated your project';
+            if (n === 1) return arg ? `Updated ${arg}` : 'Updated your workspace';
             return `Updated ${n} projects`;
           case 'open':
-            if (n === 1) return arg ? `Opened ${arg}` : 'Opened your project';
+            if (n === 1) return arg ? `Opened ${arg}` : 'Opened your workspace';
             return `Opened ${n} projects`;
         }
       }
-      return arg ? `Worked in ${arg}` : 'Worked in your project';
+      return arg ? `Worked in ${arg}` : 'Worked in your workspace';
     }
     case 'skills': {
       if (n === 1) return arg ? `Used the ${arg} skill` : 'Used a skill';
@@ -798,7 +798,7 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
     case 'automations':
       return 'Hit a problem with your automations';
     case 'projects':
-      return 'Hit a problem with your project';
+      return 'Hit a problem with your workspace';
     case 'skills':
       return "Couldn't use a skill";
     case 'ask':

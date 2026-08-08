@@ -819,6 +819,7 @@ registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG S
 // session and cannot present session auth.
 app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/workspaces', voiceMcpRoutes); // Canonical Workspace twin for the voice-worker MCP.
 app.route('/v1/workspaces', workspacesApp); // Canonical Workspace namespace.
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 

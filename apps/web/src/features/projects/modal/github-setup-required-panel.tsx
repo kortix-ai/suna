@@ -58,8 +58,8 @@ export function GitHubSetupRequiredPanel({
       title="GitHub isn't connected on this server yet"
       description={
         isAdmin
-          ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
-          : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
+          ? "Every Kortix workspace is a git repository. Connect GitHub once in this account's Git settings."
+          : "Every Kortix workspace is a git repository. Ask your admin to connect GitHub in this account's Git settings."
       }
       action={
         <Button

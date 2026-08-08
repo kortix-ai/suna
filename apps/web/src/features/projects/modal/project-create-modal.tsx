@@ -106,10 +106,10 @@ const managedProjectSchema = z.object({
     .pipe(
       z
         .string()
-        .min(1, 'Project name is required')
+        .min(1, 'Workspace name is required')
         .max(
           PROJECT_NAME_MAX_LENGTH,
-          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+          `Workspace name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
         ),
     ),
 });

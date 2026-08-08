@@ -604,14 +604,14 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-settings',
-    label: 'Project settings',
+    label: 'Workspace settings',
     icon: CogOneSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/workspaces/{projectId}/customize/settings',
     requiresProject: true,
-    keywords: 'project settings repository general danger zone',
+    keywords: 'workspace settings repository general danger zone project',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

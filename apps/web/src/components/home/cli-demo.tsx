@@ -164,7 +164,7 @@ const AGENT_PICK_INTRO: Line[] = [
 ];
 
 const AGENTS = ['opencode', 'claude', 'codex', 'cursor'];
-const PROJECT_NAME_LABEL: Line = [t('Project name '), t('(my-app)', 'dim'), t(': ')];
+const PROJECT_NAME_LABEL: Line = [t('Workspace name '), t('(my-app)', 'dim'), t(': ')];
 
 const initTail = (name: string): Line[] => [
   [],

@@ -176,10 +176,10 @@ export function ProjectIconField({
           disabled={disabled}
           aria-label={
             emoji
-              ? `Project icon: ${emoji}. Change it`
+              ? `Workspace icon: ${emoji}. Change it`
               : glyphFace
-                ? `Project icon: ${glyphFace.name}. Change it`
-                : 'Choose project icon'
+                ? `Workspace icon: ${glyphFace.name}. Change it`
+                : 'Choose workspace icon'
           }
           // size-9 matches the sibling name Input (`size="sm"` => h-9), which is
           // what the field has to line up with. That is 33.11px, under the 40px
@@ -311,7 +311,7 @@ export function ProjectIconField({
       */}
       <PopoverContent
         align="start"
-        aria-label="Choose project icon"
+        aria-label="Choose workspace icon"
         className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
       >
         <ProjectIconPicker

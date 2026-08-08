@@ -21,7 +21,7 @@ export type FirstProjectAutoCreateState = {
 };
 
 /** Name + template for every auto-provisioned first project. */
-export const FIRST_PROJECT_NAME = 'My First Project';
+export const FIRST_PROJECT_NAME = 'My First Workspace';
 export const FIRST_PROJECT_TEMPLATE = 'general-knowledge-worker';
 
 /**

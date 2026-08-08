@@ -130,12 +130,12 @@ export function TemplateSessionInstallDialog({
             </span>
             <div>
               <h3 className="text-foreground text-sm font-medium">Set it up with the agent</h3>
-              <p className="text-muted-foreground text-xs">Guided install, right in your project</p>
+              <p className="text-muted-foreground text-xs">Guided install, inside your workspace</p>
             </div>
           </div>
 
           <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-            We&apos;ll open a chat in your project and an agent will walk you through it — ask for
+            We&apos;ll open a chat in your workspace and an agent will walk you through it — ask for
             the details it needs, connect your accounts, and turn it on when you&apos;re ready.
             Nothing runs until you say go.
           </p>
@@ -164,12 +164,12 @@ export function TemplateSessionInstallDialog({
               </div>
             ) : projectsQuery.isPending ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loading className="size-4" /> Loading your projects…
+                <Loading className="size-4" /> Loading your workspaces…
               </div>
             ) : projectsQuery.isError ? (
               <div className="border-border/60 bg-muted/30 rounded-xl border px-4 py-4">
                 <p className="text-foreground text-sm font-medium">
-                  Couldn&apos;t load your projects
+                  Couldn&apos;t load your workspaces
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
                   {(projectsQuery.error as Error)?.message || 'The request failed.'}
@@ -204,7 +204,7 @@ export function TemplateSessionInstallDialog({
                 {target === NEW_PROJECT && (
                   <div className="space-y-1.5">
                     <Label className="text-sm" htmlFor="use-case-new-project-name">
-                      Project name
+                      Workspace name
                     </Label>
                     <Input
                       id="use-case-new-project-name"

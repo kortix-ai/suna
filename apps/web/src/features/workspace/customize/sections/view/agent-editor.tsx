@@ -270,7 +270,7 @@ function AgentEditorForm({
         <div className="min-w-0 space-y-0.5">
           <p className="text-foreground text-sm font-medium">Configuration</p>
           <p className="text-muted-foreground text-xs text-pretty">
-            Saving commits the change to your project repo.
+            Saving commits the change to your workspace repo.
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Close editor" onClick={requestClose}>

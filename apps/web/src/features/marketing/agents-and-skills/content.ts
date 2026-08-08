@@ -294,7 +294,7 @@ export const repo = {
 export const marketplace = {
   eyebrow: 'Marketplace',
   title: 'Start from someone else’s work. Own it immediately.',
-  sub: 'Browse agents, skills and whole projects, add one to your project in a click, and what arrives is files in your repo — not a dependency you rent. It is labelled beta because sources and updates are still moving, and it is on for every project.',
+  sub: 'Browse agents, skills and whole workspaces, add one to your workspace in a click, and what arrives is files in your repo — not a dependency you rent. It is labelled beta because sources and updates are still moving, and it is on for every workspace.',
   steps: [
     {
       n: '00',
@@ -304,7 +304,7 @@ export const marketplace = {
     {
       n: '01',
       title: 'Add it',
-      body: 'One button. It starts an agent session that reads the item’s source and merges what fits into your project’s own files, rather than dropping a package in and hoping.',
+      body: 'One button. It starts an agent session that reads the item’s source and merges what fits into your workspace’s own files, rather than dropping a package in and hoping.',
     },
     {
       n: '02',

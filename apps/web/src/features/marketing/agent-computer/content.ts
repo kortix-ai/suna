@@ -26,7 +26,7 @@
 export const hero = {
   eyebrow: 'Agent computer',
   title: 'Every session gets its own computer.',
-  sub: 'Start a session and its own isolated Linux machine boots, clones your project repo, and cuts a fresh branch named after that session. The agent gets the whole machine. Only what it commits survives.',
+  sub: 'Start a session and its own isolated Linux machine boots, clones your workspace repo, and cuts a fresh branch named after that session. The agent gets the whole machine. Only what it commits survives.',
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
@@ -49,7 +49,7 @@ export const boot = {
     {
       n: '00',
       title: 'The machine comes up',
-      body: 'A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.',
+      body: 'A Linux machine boots from the sandbox image your workspace declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.',
     },
     {
       n: '01',
@@ -117,7 +117,7 @@ export const parallel = {
 
 export const declared = {
   eyebrow: 'Declared in the repo',
-  title: 'The machine is a file in your project.',
+  title: 'The machine is a file in your workspace.',
   sub: 'The sandbox image, its CPU and memory, and which agent gets which machine are declared in kortix.yaml. Change the file, open a change request, and every session started after it boots the new machine.',
   yaml: {
     title: 'kortix.yaml',

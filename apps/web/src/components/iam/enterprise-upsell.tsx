@@ -65,7 +65,7 @@ const FEATURE_COPY: Record<
       'Bring your identity provider — Okta, Microsoft Entra ID, or any SAML IdP — and let it drive who gets in and what they can touch.',
     points: [
       'Single sign-on with just-in-time member provisioning',
-      'IdP groups map to roles on your projects',
+      'IdP groups map to roles in your workspaces',
       'SCIM keeps users and groups in sync, including offboarding',
     ],
   },
