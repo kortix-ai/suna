@@ -315,7 +315,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // under its coordinator: the indent already carries the spawn link, so the
     // row drops its own spawned-by icon.
     const renderSessionNode = (session: ProjectSession, nested: boolean) => {
-      const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+      const href = `/workspaces/${session.project_id}/sessions/${session.session_id}`;
       const isActive = pathname?.includes(`/sessions/${session.session_id}`);
       const isSwitchTarget = switchingToSessionId === session.session_id;
       const children = directSubsessions(session);
@@ -474,7 +474,7 @@ function SessionListHeader({
       )}
     >
       <Link
-        href={`/projects/${projectId}/sessions`}
+        href={`/workspaces/${projectId}/sessions`}
         className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
       >
         <span className="truncate">Sessions</span>

@@ -1,5 +1,5 @@
 /**
- * Projects screen — post-login landing, ported from web's /projects page.
+ * Workspaces screen — post-login landing, served canonically at /workspaces.
  *
  * Repo-first model: lists projects for the current account (GET /accounts +
  * GET /projects?account_id=). A compact header (account switcher + New + the
@@ -102,7 +102,7 @@ export default function ProjectsScreen() {
   const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.055)';
 
   const openProject = React.useCallback(
-    (p: KortixProject) => router.push(`/projects/${p.project_id}`),
+    (p: KortixProject) => router.push(`/workspaces/${p.project_id}`),
     [router],
   );
 
@@ -115,7 +115,7 @@ export default function ProjectsScreen() {
 
   const confirmArchive = React.useCallback(
     (p: KortixProject) => {
-      Alert.alert('Archive project', `Archive "${p.name}"?`, [
+      Alert.alert('Archive workspace', `Archive "${p.name}"?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Archive',
@@ -125,10 +125,10 @@ export default function ProjectsScreen() {
               haptics.medium();
               await archive.mutateAsync(p.project_id);
               haptics.success();
-              toast.success('Project archived');
+              toast.success('Workspace archived');
             } catch (e: any) {
               haptics.warning();
-              toast.error(e?.message || 'Failed to archive project');
+              toast.error(e?.message || 'Failed to archive workspace');
             }
           },
         },
@@ -152,7 +152,7 @@ export default function ProjectsScreen() {
   const handleCreated = React.useCallback(
     (project: KortixProject) => {
       setNewProjectOpen(false);
-      router.push(`/projects/${project.project_id}`);
+      router.push(`/workspaces/${project.project_id}`);
     },
     [router],
   );
@@ -196,7 +196,7 @@ export default function ProjectsScreen() {
       >
         {/* Title */}
         <Text className="font-roobert-semibold text-foreground" style={{ fontSize: 28, lineHeight: 36 }}>
-          Projects
+          Workspaces
         </Text>
         <Text className="mt-1 font-roobert text-[14px] text-muted-foreground">
           Your workspaces in one place. Pick up where you left off.
@@ -212,7 +212,7 @@ export default function ProjectsScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search projects"
+              placeholder="Search workspaces"
               placeholderTextColor={faint}
               className="ml-2 flex-1"
               style={{ fontSize: 15, fontFamily: 'Roobert', color: fg }}
@@ -255,7 +255,7 @@ export default function ProjectsScreen() {
               style={{ padding: 20, borderColor: isDark ? 'rgba(248,113,113,0.25)' : 'rgba(220,38,38,0.25)' }}
             >
               <Icon as={AlertCircle} size={22} color={isDark ? '#f87171' : '#dc2626'} />
-              <Text className="mt-2 font-roobert-medium text-[15px] text-foreground">Couldn't load projects</Text>
+              <Text className="mt-2 font-roobert-medium text-[15px] text-foreground">Couldn't load workspaces</Text>
               <Text className="mt-1 text-center font-roobert text-[13px] text-muted-foreground">
                 {(projectsQuery.error as Error)?.message ?? 'Check your connection and try again.'}
               </Text>
@@ -278,9 +278,9 @@ export default function ProjectsScreen() {
               >
                 <Icon as={FolderPlus} size={26} className="text-muted-foreground" strokeWidth={1.8} />
               </View>
-              <Text className="font-roobert-semibold text-[17px] text-foreground">No projects yet</Text>
+              <Text className="font-roobert-semibold text-[17px] text-foreground">No workspaces yet</Text>
               <Text className="mt-1.5 text-center font-roobert text-[13px] text-muted-foreground" style={{ maxWidth: 260 }}>
-                A project is a dedicated space for one company, product, or idea.
+                A workspace is a dedicated space for one company, product, or idea.
               </Text>
               {canCreate && (
                 <Pressable
@@ -293,7 +293,7 @@ export default function ProjectsScreen() {
                 >
                   <Icon as={Plus} size={16} color={theme.primaryForeground} strokeWidth={2.4} />
                   <Text className="font-roobert-medium text-[14px]" style={{ color: theme.primaryForeground }}>
-                    Create your first project
+                    Create your first workspace
                   </Text>
                 </Pressable>
               )}

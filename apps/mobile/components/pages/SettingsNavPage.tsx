@@ -129,14 +129,14 @@ function GeneralCard({ project, canManage, isDark }: { project: KortixProject; c
     haptics.tap();
     update.mutate({ name: name.trim() }, {
       onSuccess: () => haptics.success(),
-      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to update project.'),
+      onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to update workspace.'),
     });
   };
 
   return (
     <Card title="General" isDark={isDark}>
       <View style={{ marginTop: 14 }}>
-        <FieldLabel color={c.muted}>Project name</FieldLabel>
+        <FieldLabel color={c.muted}>Workspace name</FieldLabel>
         <TextInput
           value={name}
           onChangeText={setName}
@@ -179,7 +179,7 @@ function RepositoryCard({ project, canManage, isDark }: { project: KortixProject
   const inputStyle = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 13, color: c.fg, fontFamily: MONO } as const;
 
   return (
-    <Card title="Repository" description="The git repo backing this project. Every session branches from it." isDark={isDark}>
+    <Card title="Repository" description="The git repo backing this workspace. Every session branches from it." isDark={isDark}>
       {/* Repo row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 }}>
         {githubUrl ? <Github size={15} color={c.muted} /> : <GitBranch size={15} color={c.muted} />}
@@ -288,7 +288,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
           </Text>
           {!expanded && (
             <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 3 }}>
-              Soft-released, still-moving features. Expand to opt this project in — they may change or break.
+              Soft-released, still-moving features. Expand to opt this workspace in — they may change or break.
             </Text>
           )}
         </View>
@@ -298,7 +298,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
       {expanded && (
         <View style={{ marginTop: 12 }}>
           <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted }}>
-            These are real but unfinished. Turning one on enables it for this project only — it may change shape or break between versions, and stays off until you turn it on.
+            These are real but unfinished. Turning one on enables it for this workspace only — it may change shape or break between versions, and stays off until you turn it on.
           </Text>
           <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: c.border }}>
             {features.map((f) => (
@@ -352,13 +352,13 @@ function DangerCard({ project, isDark }: { project: KortixProject; isDark: boole
   const archive = useArchiveProject();
 
   const confirm = () => {
-    Alert.alert('Archive project', `Archive ${project.name}? Current sessions remain recoverable.`, [
+    Alert.alert('Archive workspace', `Archive ${project.name}? Current sessions remain recoverable.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Archive', style: 'destructive', onPress: () => {
         haptics.medium();
         archive.mutate(project.project_id, {
-          onSuccess: () => { haptics.success(); Alert.alert('Archived', 'Project archived.'); },
-          onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to archive project.'),
+          onSuccess: () => { haptics.success(); Alert.alert('Archived', 'Workspace archived.'); },
+          onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to archive workspace.'),
         });
       } },
     ]);
@@ -368,8 +368,8 @@ function DangerCard({ project, isDark }: { project: KortixProject; isDark: boole
     <Card title="Danger zone" description="Irreversible and destructive actions." tone="destructive" isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Archive project</Text>
-          <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Hide this project from the active project list.</Text>
+          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Archive workspace</Text>
+          <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Hide this workspace from the active workspace list.</Text>
         </View>
         <TouchableOpacity onPress={confirm} disabled={archive.isPending} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
           {archive.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
@@ -414,7 +414,7 @@ export function SettingsNavPage({
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
           ) : isError ? (
-            <Card title="Failed to load project" description={(error as Error)?.message} tone="destructive" isDark={isDark}>
+            <Card title="Failed to load workspace" description={(error as Error)?.message} tone="destructive" isDark={isDark}>
               <TouchableOpacity onPress={() => refetch()} style={{ alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
               </TouchableOpacity>

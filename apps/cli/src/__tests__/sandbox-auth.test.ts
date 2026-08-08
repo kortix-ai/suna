@@ -19,6 +19,7 @@ const ENV_KEYS = [
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_WORKSPACE_ID',
   'BASH_ENV',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
@@ -99,6 +100,12 @@ describe('in-sandbox auth resolution', () => {
   it('reads the project id from KORTIX_PROJECT_ID', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-xyz';
     expect(resolveProjectId()).toBe('proj-xyz');
+  });
+
+  it('prefers the canonical KORTIX_WORKSPACE_ID', () => {
+    process.env.KORTIX_PROJECT_ID = 'legacy-project';
+    process.env.KORTIX_WORKSPACE_ID = 'canonical-workspace';
+    expect(resolveProjectId()).toBe('canonical-workspace');
   });
 
   it('lets connector management commands override KORTIX_PROJECT_ID with --project', () => {

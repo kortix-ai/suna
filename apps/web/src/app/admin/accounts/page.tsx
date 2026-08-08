@@ -1944,7 +1944,7 @@ function ProjectsTab({
       {projects.map((project) => (
         <a
           key={project.projectId}
-          href={`/projects/${project.projectId}`}
+          href={`/workspaces/${project.projectId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="hover:bg-muted/40 flex flex-col gap-2 px-4 py-3 text-sm transition-colors"

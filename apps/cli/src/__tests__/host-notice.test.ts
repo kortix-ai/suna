@@ -63,7 +63,7 @@ describe('host notice', () => {
       const notice = renderHostNotice(['whoami']);
       expect(notice).toContain('host sandbox');
       expect(notice).toContain('https://dev-api.kortix.com/v1');
-      expect(notice).toContain('authenticated (project token)');
+      expect(notice).toContain('authenticated (workspace token)');
       expect(notice).not.toContain('https://api.kortix.com');
       expect(notice).not.toContain('not logged in');
     } finally {
@@ -115,7 +115,7 @@ describe('host notice', () => {
       const notice = renderHostNotice(['whoami']);
       expect(notice).toContain('host sandbox');
       expect(notice).toContain('authenticated (session token)');
-      expect(notice).not.toContain('authenticated (project token)');
+      expect(notice).not.toContain('authenticated (workspace token)');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -31,13 +31,15 @@ describe('buildInstallSuccessSummary', () => {
 });
 
 describe('projectMarketplaceHref', () => {
-  test('builds the customize marketplace deep link for a project', () => {
-    expect(projectMarketplaceHref('proj_123')).toBe('/projects/proj_123/customize/marketplace');
+  test('builds the canonical Workspace marketplace deep link', () => {
+    expect(projectMarketplaceHref('proj_123')).toBe(
+      '/workspaces/proj_123/customize/marketplace',
+    );
   });
 
   test('URL-encodes project ids with special characters', () => {
     expect(projectMarketplaceHref('proj/weird id')).toBe(
-      '/projects/proj%2Fweird%20id/customize/marketplace',
+      '/workspaces/proj%2Fweird%20id/customize/marketplace',
     );
   });
 });

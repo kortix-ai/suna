@@ -55,8 +55,8 @@ export function useProjectShellShortcuts({
 
       // Resolve the active tab from the URL (cheaper than threading params).
       // The active tab is either a session id, the Customize sentinel, or none.
-      const sessMatch = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-      const custMatch = pathname?.match(/^\/projects\/([^/]+)\/customize/);
+      const sessMatch = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
+      const custMatch = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/customize/);
       const urlProject = sessMatch?.[1] ?? custMatch?.[1] ?? null;
       const activeTabId = sessMatch?.[2] ?? (custMatch ? CUSTOMIZE_TAB_ID : null);
       const tabs =
@@ -64,8 +64,8 @@ export function useProjectShellShortcuts({
 
       const hrefForTab = (id: string) =>
         id === CUSTOMIZE_TAB_ID
-          ? `/projects/${projectId}/customize`
-          : `/projects/${projectId}/sessions/${id}`;
+          ? `/workspaces/${projectId}/customize`
+          : `/workspaces/${projectId}/sessions/${id}`;
       const goToTab = (id: string) => router.push(hrefForTab(id));
 
       // New tab — Mod+T

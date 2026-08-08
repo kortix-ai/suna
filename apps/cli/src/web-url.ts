@@ -96,6 +96,18 @@ export function projectWebUrl(
   return `${webDashboardUrl(apiBase)}/projects/${projectId}`;
 }
 
+/** Canonical Web dashboard URL for a Workspace. */
+export function workspaceWebUrl(
+  apiBase: string,
+  workspaceId: string,
+  dashboardUrl?: string | null,
+): string {
+  if (dashboardUrl && dashboardUrl.trim()) {
+    return stripTrailingSlash(dashboardUrl.trim()).replace('/projects/', '/workspaces/');
+  }
+  return `${webDashboardUrl(apiBase)}/workspaces/${workspaceId}`;
+}
+
 /** Web (dashboard) URL for a session within a project. */
 export function sessionWebUrl(
   apiBase: string,

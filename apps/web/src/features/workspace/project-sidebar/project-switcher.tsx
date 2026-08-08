@@ -1,7 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 /**
  * ProjectSwitcher — the standalone "which project" switcher.
  *
@@ -52,6 +50,10 @@ import { CaretUpDownIcon, CheckCircleIcon as CheckCircleSolid } from '@phosphor-
 
 export type ProjectSwitcherVariant = 'header' | 'sidebar';
 
+export function shouldShowWorkspaceSwitcher(workspaceCount: number): boolean {
+  return workspaceCount >= 2;
+}
+
 export function ProjectSwitcher({
   variant = 'header',
   className,
@@ -59,7 +61,6 @@ export function ProjectSwitcher({
   variant?: ProjectSwitcherVariant;
   className?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
@@ -90,7 +91,10 @@ export function ProjectSwitcher({
     [sidebar],
   );
 
-  const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
+  const activeProjectId =
+    pathname?.startsWith('/workspaces/') || pathname?.startsWith('/projects/')
+      ? params?.id
+      : undefined;
 
   // Account switching lives in the Account·You menu; here we just read the
   // selected account to scope the project list.
@@ -163,7 +167,7 @@ export function ProjectSwitcher({
     if (project.project_id === activeProjectId) return close();
     beginSwitch(project.project_id);
     close();
-    router.push(`/projects/${project.project_id}`);
+    router.push(`/workspaces/${project.project_id}`);
   };
 
   // Header variant only. The sidebar variant leads with the Kortix mark
@@ -180,8 +184,28 @@ export function ProjectSwitcher({
 
   // Where the mark goes. Off a project route the switcher is genuinely the
   // "all projects" entry, and so is its mark.
-  const homeHref = activeProjectId ? `/projects/${activeProjectId}` : '/projects';
-  const homeLabel = activeProjectId ? 'Project home' : 'All projects';
+  const homeHref = activeProjectId ? `/workspaces/${activeProjectId}` : '/workspaces';
+  const homeLabel = activeProjectId ? 'Workspace home' : 'All workspaces';
+  const showWorkspaceSwitcher = shouldShowWorkspaceSwitcher(allProjectsSorted.length);
+
+  // One workspace is the normal case. Keep the Kortix home mark and remove
+  // the selector until there is a real choice to make.
+  if (variant === 'sidebar' && !showWorkspaceSwitcher) {
+    return (
+      <Link
+        href={homeHref}
+        aria-label={homeLabel}
+        data-slot="workspace-home"
+        className={cn(
+          'text-foreground hover:bg-sidebar-accent focus-visible:ring-primary/30 flex size-8 shrink-0 items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out outline-none focus-visible:ring-[0.6px] active:scale-[0.96]',
+          className,
+          'max-w-8 flex-none',
+        )}
+      >
+        <Kortix className="size-4" />
+      </Link>
+    );
+  }
 
   const trigger =
     variant === 'header' ? (
@@ -225,7 +249,7 @@ export function ProjectSwitcher({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Switch project"
+                aria-label="Switch workspace"
                 className="hover:bg-sidebar-accent focus-visible:ring-primary/30 flex h-full max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-e-sm pr-1.5 pl-2 text-left transition-colors duration-150 ease-out outline-none focus-visible:rounded-sm focus-visible:ring-[0.6px]"
               >
                 <span className="text-foreground min-w-0 truncate text-sm font-medium tracking-tight whitespace-nowrap">
@@ -267,9 +291,7 @@ export function ProjectSwitcher({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject',
-                )}
+                placeholder="Find workspace"
                 className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-8 text-sm"
               />
             </div>
@@ -277,7 +299,7 @@ export function ProjectSwitcher({
         )}
 
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Projects</DropdownMenuLabel>
+          <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
           <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {projectsQuery.isLoading ? (
               <div className="space-y-1 py-1">
@@ -287,7 +309,7 @@ export function ProjectSwitcher({
               </div>
             ) : filteredProjects.length === 0 ? (
               <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-                {query.trim() ? 'No projects match' : 'No projects yet'}
+                {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
               </div>
             ) : (
               filteredProjects.map((project) => {
@@ -327,19 +349,19 @@ export function ProjectSwitcher({
             className="cursor-pointer font-medium"
             onSelect={() => {
               close();
-              router.push('/projects');
+              router.push('/workspaces');
             }}
           >
-            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}
+            All workspaces
           </DropdownMenuItem>
           <DropdownMenuItem
             className="cursor-pointer font-medium"
             onSelect={() => {
               close();
-              router.push('/projects?new=1');
+              router.push('/workspaces?new=1');
             }}
           >
-            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}
+            New workspace
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

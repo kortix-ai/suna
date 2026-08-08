@@ -45,9 +45,19 @@ describe('the click guard', () => {
 
     const midFlight = useNewSessionGuardStore.getState().pending;
     expect(canBeginNewSession(midFlight, P)).toBe(false);
-    expect(pendingNewSessionPath(midFlight, P)).toBe('/projects/proj-1/sessions/sess-1');
-    expect(hasLandedOnNewSession(midFlight, P, '/projects/proj-1')).toBe(false);
-    expect(hasLandedOnNewSession(midFlight, P, '/projects/proj-1/sessions/sess-1')).toBe(true);
+    expect(pendingNewSessionPath(midFlight, P)).toBe(
+      '/workspaces/proj-1/sessions/sess-1',
+    );
+    expect(hasLandedOnNewSession(midFlight, P, '/workspaces/proj-1')).toBe(
+      false,
+    );
+    expect(
+      hasLandedOnNewSession(
+        midFlight,
+        P,
+        '/workspaces/proj-1/sessions/sess-1',
+      ),
+    ).toBe(true);
 
     useNewSessionGuardStore.getState().settle(P);
     expect(canBeginNewSession(useNewSessionGuardStore.getState().pending, P)).toBe(true);
@@ -84,7 +94,13 @@ describe('the click guard', () => {
 
 describe('hasLandedOnNewSession', () => {
   test('is false before the create resolves a session id', () => {
-    expect(hasLandedOnNewSession({ [P]: { sessionId: null } }, P, '/projects/proj-1')).toBe(false);
+    expect(
+      hasLandedOnNewSession(
+        { [P]: { sessionId: null } },
+        P,
+        '/workspaces/proj-1',
+      ),
+    ).toBe(false);
   });
 
   test('is false without a pathname', () => {
@@ -96,7 +112,7 @@ describe('hasLandedOnNewSession', () => {
       hasLandedOnNewSession(
         { [P]: { sessionId: 'sess-1' } },
         P,
-        '/projects/proj-1/sessions/sess-2',
+        '/workspaces/proj-1/sessions/sess-2',
       ),
     ).toBe(false);
   });

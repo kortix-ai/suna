@@ -12,6 +12,36 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-08 — session `workspace-refactor-revival` claim
+
+No **Now** task claimed. This is the user-directed reconciliation of the
+Projects-to-Workspaces compatibility refactor with current `origin/main`.
+
+SDK scope:
+
+- Preserve every published Project export and add Workspace names only through
+  compatible aliases and additive APIs.
+- Reconcile the branch with the current framework-free core and thin-host rules.
+- Do not edit the SDK package version.
+- Run RED, GREEN, full SDK gates, and real API, CLI, and web verification.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+Verification after merging current `origin/main`:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`, including examples.
+- `pnpm --filter @kortix/sdk test`: `1769 pass`, `0 fail`, and `7522 expect()`
+  calls across `141` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed
+  `@kortix/sdk` and `@kortix/executor-sdk` imported and constructed in Node ESM.
+- Public Workspace names are additive. No Project export was removed or renamed.
+- The SDK package version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-08 — session `apps-retired-provider-scanner`
 
 The final PR cadence found the retired-provider id as a literal in one SDK

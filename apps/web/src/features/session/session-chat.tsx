@@ -3348,15 +3348,15 @@ export function SessionChat({
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+    const projectRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
     return {
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
         if (projectRoute) {
           const [, projectId, projectSessionId] = projectRoute;
           const href = parentSessionData.parentID
-            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
-            : `/projects/${projectId}/sessions/${projectSessionId}`;
+            ? `/workspaces/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+            : `/workspaces/${projectId}/sessions/${projectSessionId}`;
           router.push(href);
           return;
         }

@@ -103,7 +103,7 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
               {preview || 'Your account name'}
             </Text>
             <Text style={{ fontSize: 12.5, lineHeight: 17, color: c.muted, marginTop: 2 }}>
-              A shared workspace for your team and projects.
+              A shared account for your team and workspaces.
             </Text>
           </View>
         </View>

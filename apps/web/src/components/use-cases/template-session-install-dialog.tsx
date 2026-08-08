@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -23,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Loading from '@/components/ui/loading';
 import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
@@ -60,10 +60,7 @@ export function TemplateSessionInstallDialog({
   const [opening, setOpening] = useState(false);
 
   const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
-  const activeProjects = useMemo(
-    () => projects.filter((p) => p.status === 'active'),
-    [projects],
-  );
+  const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,7 +102,7 @@ export function TemplateSessionInstallDialog({
         projectId,
         `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
       );
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      router.push(`/workspaces/${projectId}/sessions/${session_id}`);
     } catch (e) {
       setError(
         isManagedGitUnavailableError(e)
@@ -117,9 +114,7 @@ export function TemplateSessionInstallDialog({
   }
 
   const confirmDisabled =
-    opening ||
-    !target ||
-    (target === NEW_PROJECT && newProjectName.trim().length === 0);
+    opening || !target || (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -25,7 +25,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
 ];
 
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {
-  return `/projects/${projectId}/${key}`;
+  return `/workspaces/${projectId}/${key}`;
 }
 
 export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | null {

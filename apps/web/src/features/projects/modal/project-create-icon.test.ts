@@ -131,7 +131,7 @@ describe('create modal: the project icon', () => {
 
 describe('create modal: footer actions', () => {
   test('gates the managed submit on a non-empty name', () => {
-    const footer = footers.find((chunk) => chunk.includes("'Create project'"));
+    const footer = footers.find((chunk) => chunk.includes("'Create workspace'"));
     expect(footer).toBeDefined();
     // `watch`, not `getValues`: it subscribes the render to the field, so the
     // button enables on the keystroke rather than on the next repaint.

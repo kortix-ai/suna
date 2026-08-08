@@ -12,8 +12,8 @@ import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
-import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
+import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
@@ -119,7 +119,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     const next = new URLSearchParams(searchParams.toString());
     next.delete('customize');
     const query = next.toString();
-    router.replace(`/projects/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
+    router.replace(`/workspaces/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
   }, [projectId, router, searchParams]);
 
   useEffect(() => {

@@ -16,6 +16,9 @@ flow(
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "DELETE /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId/access",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
     ],
   },
   async (ctx) => {

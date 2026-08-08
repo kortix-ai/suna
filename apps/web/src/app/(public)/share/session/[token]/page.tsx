@@ -18,9 +18,9 @@ import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
+import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
-import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 
 interface PublicShareMeta {
   share: {
@@ -161,7 +161,7 @@ export default function PublicSessionSharePage() {
   const sharePermission = isFileShare
     ? 'View only · no workspace browsing'
     : 'No terminal, files, or session controls';
-  const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
+  const sessionHref = `/workspaces/${meta.share.project_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
     ? 'This shared file is offline'
     : 'This shared preview is offline';
@@ -201,11 +201,7 @@ export default function PublicSessionSharePage() {
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {offline && hasAuth && (
             <Button size="sm" className="h-8 gap-1.5" onClick={startSession} disabled={starting}>
-              {starting ? (
-                <Loading className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
+              {starting ? <Loading className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               Start
             </Button>
           )}
@@ -247,11 +243,7 @@ export default function PublicSessionSharePage() {
               <p className="text-muted-foreground mt-2 text-sm">{offlineDescription}</p>
               {hasAuth ? (
                 <Button className="mt-5 gap-1.5" onClick={startSession} disabled={starting}>
-                  {starting ? (
-                    <Loading className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                  {starting ? <Loading className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   {tI18nHardcoded.raw(
                     'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
                   )}

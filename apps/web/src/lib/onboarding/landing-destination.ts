@@ -10,7 +10,9 @@
  * UI, so no caller ever has to block on a backend round-trip to build a
  * redirect. See `app/(app)/projects/start/page.tsx`.
  */
-export const PROJECT_LANDING_PATH = '/projects/start';
+export const WORKSPACE_LANDING_PATH = '/workspaces/start';
+/** @deprecated Use `WORKSPACE_LANDING_PATH`. */
+export const PROJECT_LANDING_PATH = WORKSPACE_LANDING_PATH;
 
 /** Non-httpOnly so middleware can read it and the project page can set it. */
 export const LAST_PROJECT_COOKIE = 'kortix_last_project';
@@ -87,10 +89,13 @@ export function parseLastProjectForUser(
   return isValidProjectId(projectId) ? projectId : null;
 }
 
-/** `/projects/<id>` for a trusted-shaped id, else null. */
-export function projectPathFromId(projectId: string | null | undefined): string | null {
-  return isValidProjectId(projectId) ? `/projects/${projectId}` : null;
+/** `/workspaces/<id>` for a trusted-shaped id, else null. */
+export function workspacePathFromId(workspaceId: string | null | undefined): string | null {
+  return isValidProjectId(workspaceId) ? `/workspaces/${workspaceId}` : null;
 }
+
+/** @deprecated Use `workspacePathFromId`. */
+export const projectPathFromId = workspacePathFromId;
 
 /**
  * The default destination for an authenticated user, given whatever the browser
@@ -104,6 +109,7 @@ export function resolveDefaultLandingPath(
   currentUserId: string | null | undefined,
 ): string {
   return (
-    projectPathFromId(parseLastProjectForUser(cookieValue, currentUserId)) ?? PROJECT_LANDING_PATH
+    workspacePathFromId(parseLastProjectForUser(cookieValue, currentUserId)) ??
+    WORKSPACE_LANDING_PATH
   );
 }

@@ -640,7 +640,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         }
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onDeleted={() => router.push(`/projects/${projectId}`)}
+        onDeleted={() => router.push(`/workspaces/${projectId}`)}
       />
     </>
   );
@@ -822,8 +822,8 @@ function ActiveSessionChat({
     const query = params.toString();
     router.replace(
       query
-        ? `/projects/${projectId}/sessions/${sessionId}?${query}`
-        : `/projects/${projectId}/sessions/${sessionId}`,
+        ? `/workspaces/${projectId}/sessions/${sessionId}?${query}`
+        : `/workspaces/${projectId}/sessions/${sessionId}`,
       { scroll: false },
     );
   }, [

@@ -136,6 +136,23 @@ describe('final Executor compatibility adapter', () => {
     );
   });
 
+  test('accepts canonical workspaceId and prefers it over deprecated projectId', async () => {
+    const { calls, fetchImpl } = harness(() => ({ body: catalog }));
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'user-token',
+      workspaceId: 'workspace/1',
+      projectId: 'stale-project',
+      fetchImpl,
+    });
+
+    await client.connectors();
+
+    expect(calls[0]?.url).toBe(
+      'https://api.test/v1/connectors/projects/workspace%2F1/catalog',
+    );
+  });
+
   test('preserves ExecutorError for failed SDK calls', async () => {
     const { fetchImpl } = harness(() => ({
       status: 404,

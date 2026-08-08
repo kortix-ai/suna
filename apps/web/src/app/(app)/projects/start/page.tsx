@@ -92,7 +92,7 @@ export default function ProjectStartPage() {
 
       if (project) {
         writeLastProjectId(user?.id, project.project_id);
-        router.replace(withCurrentQuery(`/projects/${project.project_id}`));
+        router.replace(withCurrentQuery(`/workspaces/${project.project_id}`));
         return;
       }
 
@@ -101,7 +101,7 @@ export default function ProjectStartPage() {
       // last project. There is no project to open, so the list is the only
       // surface that can explain the state — this is a terminal case, not a
       // default landing.
-      router.replace(withCurrentQuery('/projects'));
+      router.replace(withCurrentQuery('/workspaces'));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
@@ -164,7 +164,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
       <div className="space-y-1">
-        <p className="text-base font-medium">We could not open your project</p>
+        <p className="text-base font-medium">We could not open your workspace</p>
         <p className="text-muted-foreground text-sm">
           Something went wrong on our side. Your work is safe.
         </p>
@@ -172,7 +172,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
       <div className="flex items-center gap-2">
         <Button onClick={onRetry}>Try again</Button>
         <Button variant="ghost" asChild>
-          <Link href="/projects">View all projects</Link>
+          <Link href="/workspaces">View all workspaces</Link>
         </Button>
       </div>
     </div>
@@ -187,7 +187,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
 function ProjectStartSkeleton() {
   return (
     <div className="flex min-h-screen flex-col" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Opening your project</span>
+      <span className="sr-only">Opening your workspace</span>
       <div className="w-full border-b">
         <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
           <Skeleton className="h-5 w-32 rounded-md" />

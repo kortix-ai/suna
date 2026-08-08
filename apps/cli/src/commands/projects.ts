@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import type { Auth } from '../api/auth.ts';
 import { loadAuth } from '../api/auth.ts';
+import { ApiError, clientFromAuth } from '../api/client.ts';
 import {
   activeAccount,
   activeHostName,
@@ -9,8 +11,16 @@ import {
   setActiveAccount,
   setDefaultProject,
 } from '../api/config.ts';
-import { ApiError, clientFromAuth } from '../api/client.ts';
-import { confirm } from '../prompts.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import {
+  emitJson,
+  locateProjectAnywhere,
+  takeFlagBool,
+  takeFlagValue,
+  type ProjectNamespace,
+} from '../command-helpers.ts';
+import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
   isKortixProject,
@@ -18,14 +28,10 @@ import {
   resolveProjectId,
   saveLink,
 } from '../project-link.ts';
-import { selectFromList } from '../tui-select.ts';
-import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
-import { projectWebUrl } from '../web-url.ts';
-import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
-import type { Auth } from '../api/auth.ts';
-import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import { selectFromList } from '../tui-select.ts';
+import { projectWebUrl, workspaceWebUrl } from '../web-url.ts';
 import { authHeaderArgs } from './ship.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
@@ -35,21 +41,69 @@ export {
   currentGitCredentialHelperCommand,
 } from '../project-git.ts';
 
-const HELP = help`Usage: kortix projects <subcommand>
+interface ProjectDomain extends ProjectNamespace {
+  command: 'projects' | 'workspaces';
+  plural: 'projects' | 'workspaces';
+  title: 'Project' | 'Workspace';
+  toWire: (project: ProjectSummary) => unknown;
+  webUrl: typeof projectWebUrl;
+}
+
+interface WorkspaceSummary extends Omit<ProjectSummary, 'project_id'> {
+  workspace_id: string;
+}
+
+function normalizeWorkspace(value: unknown): ProjectSummary {
+  const workspace = value as WorkspaceSummary;
+  return {
+    ...workspace,
+    project_id: workspace.workspace_id,
+  };
+}
+
+function toWorkspaceWire(project: ProjectSummary): WorkspaceSummary {
+  const { project_id, ...rest } = project;
+  return { ...rest, workspace_id: project_id };
+}
+
+const PROJECT_DOMAIN: ProjectDomain = {
+  command: 'projects',
+  route: '/projects',
+  singular: 'project',
+  plural: 'projects',
+  title: 'Project',
+  normalize: (value) => value as ProjectSummary,
+  toWire: (project) => project,
+  webUrl: projectWebUrl,
+};
+
+const WORKSPACE_DOMAIN: ProjectDomain = {
+  command: 'workspaces',
+  route: '/workspaces',
+  singular: 'workspace',
+  plural: 'workspaces',
+  title: 'Workspace',
+  normalize: normalizeWorkspace,
+  toWire: toWorkspaceWire,
+  webUrl: workspaceWebUrl,
+};
+
+function commandHelp(domain: ProjectDomain): string {
+  return help`Usage: kortix ${domain.command} <subcommand>
 
 Subcommands:
-  ls [--all]           List projects in the active account (--all spans every
+  ls [--all]           List ${domain.plural} in the active account (--all spans every
                        account, grouped). (--json)
-  info [<id>]          Show one project (defaults to the linked/default) (--json)
-  use [<id>]           Set the global DEFAULT project (interactive if omitted).
-                       Switches the active account to the project's account.
-  unset                Clear the global default project.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
+  info [<id>]          Show one ${domain.singular} (defaults to the linked/default) (--json)
+  use [<id>]           Set the global DEFAULT ${domain.singular} (interactive if omitted).
+                       Switches the active account to the ${domain.singular}'s account.
+  unset                Clear the global default ${domain.singular}.
+  link [<id>]          Bind cwd to a remote ${domain.singular} (writes .kortix/link.json)
   unlink               Remove .kortix/link.json from cwd
-  open [<id>]          Open the dashboard URL for one project
+  open [<id>]          Open the dashboard URL for one ${domain.singular}
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
                        back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Archive a project (defaults to the linked one).
+  rm [<id>]            Archive a ${domain.singular} (defaults to the linked one).
                        --purge also deletes its managed git repo (irreversible).
                        -y / --yes skips the confirmation.
 
@@ -58,12 +112,22 @@ first, then — unless you pass --host — scans every other logged-in host for
 it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
 
-Run \`kortix projects <subcommand> --help\` for options.
+Run \`kortix ${domain.command} <subcommand> --help\` for options.
 `;
+}
 
 export async function runProjects(argv: string[]): Promise<number> {
+  return runProjectDomain(argv, PROJECT_DOMAIN);
+}
+
+export async function runWorkspaces(argv: string[]): Promise<number> {
+  return runProjectDomain(argv, WORKSPACE_DOMAIN);
+}
+
+async function runProjectDomain(argv: string[], domain: ProjectDomain): Promise<number> {
+  const commandHelpText = commandHelp(domain);
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
+    process.stdout.write(commandHelpText);
     return argv.length === 0 ? 2 : 0;
   }
 
@@ -76,7 +140,7 @@ export async function runProjects(argv: string[]): Promise<number> {
   // would silently fall back to archiving the DEFAULT project instead of
   // showing usage.
   if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
+    process.stdout.write(commandHelpText);
     return 0;
   }
   switch (sub) {
@@ -85,7 +149,7 @@ export async function runProjects(argv: string[]): Promise<number> {
       const restCopy = [...rest];
       const all = takeFlagBool(restCopy, ['--all', '-a']);
       const json = takeFlagBool(restCopy, ['--json']);
-      return projectsLs(json, all);
+      return projectsLs(domain, json, all);
     }
     case 'info': {
       const restCopy = [...rest];
@@ -97,16 +161,16 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsInfo(restCopy[0], json, hostArg);
+      return projectsInfo(domain, restCopy[0], json, hostArg);
     }
     case 'use':
     case 'default':
-      return projectsUse(rest.find((a) => !a.startsWith('-')));
+      return projectsUse(domain, rest.find((a) => !a.startsWith('-')));
     case 'unset':
     case 'clear':
-      return projectsUnset();
+      return projectsUnset(domain);
     case 'link':
-      return projectsLink(rest[0]);
+      return projectsLink(domain, rest[0]);
     case 'unlink':
       return projectsUnlink();
     case 'open': {
@@ -118,7 +182,7 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsOpen(restCopy[0], hostArg);
+      return projectsOpen(domain, restCopy[0], hostArg);
     }
     case 'clone': {
       const restCopy = [...rest];
@@ -129,13 +193,13 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsClone(restCopy[0], restCopy[1], hostArg);
+      return projectsClone(domain, restCopy[0], restCopy[1], hostArg);
     }
     case 'rm':
     case 'remove':
-      return projectsRm(rest);
+      return projectsRm(domain, rest);
     default:
-      process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
+      process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${commandHelpText}`);
       return 2;
   }
 }
@@ -188,6 +252,7 @@ export function resolveProjectCloneTarget(
 }
 
 async function projectsClone(
+  domain: ProjectDomain,
   arg?: string,
   destination?: string,
   hostArg?: string,
@@ -195,7 +260,7 @@ async function projectsClone(
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
-      `${status.err("No project selected. Run `kortix projects use`, link a directory, or pass an id.")}\n`,
+      `${status.err(`No ${domain.singular} selected. Run \`kortix ${domain.command} use\`, link a directory, or pass an id.`)}\n`,
     );
     return 1;
   }
@@ -203,7 +268,8 @@ async function projectsClone(
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects clone ${id} --host ${host}`,
+    (host) => `kortix ${domain.command} clone ${id} --host ${host}`,
+    domain,
   );
   if (!located) return 1;
 
@@ -214,7 +280,7 @@ async function projectsClone(
       const credential = await client.post<{
         push_token: string;
         git_username?: string;
-      }>(`/projects/${project.project_id}/git-token`);
+      }>(`${domain.route}/${project.project_id}/git-token`);
       target.token = credential.push_token;
       target.username = credential.git_username || target.username;
     } catch (err) {
@@ -281,23 +347,24 @@ function scopeAccountId(auth: Auth): string | undefined {
   return activeAccount()?.id ?? auth.account_id ?? undefined;
 }
 
-async function projectsLs(json = false, all = false): Promise<number> {
+async function projectsLs(domain: ProjectDomain, json = false, all = false): Promise<number> {
   const auth = requireAuth();
   if (!auth) return 1;
-  if (all) return projectsLsAll(auth, json);
+  if (all) return projectsLsAll(domain, auth, json);
 
   // Scope to the active account so this lists exactly that account's projects
   // (not the server's earliest-joined-account default).
   const client = clientFromAuth(auth, { accountId: scopeAccountId(auth) });
   let projects: ProjectSummary[];
   try {
-    projects = await client.get<ProjectSummary[]>('/projects');
+    const response = await client.get<unknown[]>(domain.route);
+    projects = response.map(domain.normalize);
   } catch (err) {
     return surface(err);
   }
 
   if (json) {
-    emitJson(projects);
+    emitJson(projects.map(domain.toWire));
     return 0;
   }
 
@@ -314,20 +381,20 @@ async function projectsLs(json = false, all = false): Promise<number> {
   }
 
   if (projects.length === 0) {
-    process.stdout.write(`  ${C.dim}No projects in this account.${C.reset}\n\n`);
+    process.stdout.write(`  ${C.dim}No ${domain.plural} in this account.${C.reset}\n\n`);
     return 0;
   }
 
   renderProjectTable(projects, { linked, def });
   process.stdout.write(
-    `\n  ${C.dim}${projects.length} project${projects.length === 1 ? '' : 's'}` +
+    `\n  ${C.dim}${projects.length} ${domain.singular}${projects.length === 1 ? '' : 's'}` +
       `${acct ? ` in ${acct.name || acct.slug}` : ''} · spans all accounts: ${C.reset}` +
-      `${C.cyan}kortix projects ls --all${C.reset}\n\n`,
+      `${C.cyan}kortix ${domain.command} ls --all${C.reset}\n\n`,
   );
   return 0;
 }
 
-async function projectsLsAll(auth: Auth, json = false): Promise<number> {
+async function projectsLsAll(domain: ProjectDomain, auth: Auth, json = false): Promise<number> {
   let me: MeResponse;
   try {
     me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
@@ -343,9 +410,10 @@ async function projectsLsAll(auth: Auth, json = false): Promise<number> {
   for (const a of me.accounts) {
     let projects: ProjectSummary[] = [];
     try {
-      projects = await clientFromAuth(auth, { accountId: a.account_id }).get<ProjectSummary[]>(
-        '/projects',
-      );
+      const response = await clientFromAuth(auth, {
+        accountId: a.account_id,
+      }).get<unknown[]>(domain.route);
+      projects = response.map(domain.normalize);
     } catch {
       /* skip accounts we can't read; leave the section empty */
     }
@@ -362,7 +430,7 @@ async function projectsLsAll(auth: Auth, json = false): Promise<number> {
           role: s.account.role,
           active: s.account.account_id === activeId,
         },
-        projects: s.projects,
+        [domain.plural]: s.projects.map(domain.toWire),
       })),
     );
     return 0;
@@ -377,14 +445,14 @@ async function projectsLsAll(auth: Auth, json = false): Promise<number> {
       `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
     );
     if (s.projects.length === 0) {
-      process.stdout.write(`  ${C.dim}— no projects${C.reset}\n`);
+      process.stdout.write(`  ${C.dim}— no ${domain.plural}${C.reset}\n`);
       continue;
     }
     renderProjectTable(s.projects, { linked, def });
     total += s.projects.length;
   }
   process.stdout.write(
-    `\n  ${C.dim}${total} project${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
+    `\n  ${C.dim}${total} ${domain.singular}${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
       `account${me.accounts.length === 1 ? '' : 's'}${C.reset}\n\n`,
   );
   return 0;
@@ -421,28 +489,34 @@ function renderProjectTable(
   }
 }
 
-async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
+async function projectsInfo(
+  domain: ProjectDomain,
+  arg?: string,
+  json = false,
+  hostArg?: string,
+): Promise<number> {
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
-      `${status.err('No project linked. Run `kortix projects link` or pass an id.')}\n`,
+      `${status.err(`No ${domain.singular} linked. Run \`kortix ${domain.command} link\` or pass an id.`)}\n`,
     );
     return 1;
   }
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects info ${id} --host ${host}`,
+    (host) => `kortix ${domain.command} info ${id} --host ${host}`,
+    domain,
   );
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    emitJson(domain.toWire(p));
     return 0;
   }
   process.stdout.write('\n');
   process.stdout.write(`  ${C.bold}${p.name}${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}project_id ${C.reset}${p.project_id}\n`);
+  process.stdout.write(`  ${C.dim}${domain.singular}_id ${C.reset}${p.project_id}\n`);
   process.stdout.write(`  ${C.dim}account_id ${C.reset}${p.account_id}\n`);
   process.stdout.write(`  ${C.dim}repo       ${C.reset}${p.repo_url}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${p.default_branch}\n`);
@@ -452,7 +526,7 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   return 0;
 }
 
-async function projectsUse(arg?: string): Promise<number> {
+async function projectsUse(domain: ProjectDomain, arg?: string): Promise<number> {
   const auth = requireAuth();
   if (!auth) return 1;
 
@@ -460,7 +534,7 @@ async function projectsUse(arg?: string): Promise<number> {
   if (arg) {
     // An explicit id may live in any account — resolve it unscoped.
     try {
-      target = await clientFromAuth(auth).get<ProjectSummary>(`/projects/${arg}`);
+      target = domain.normalize(await clientFromAuth(auth).get<unknown>(`${domain.route}/${arg}`));
     } catch (err) {
       return surface(err);
     }
@@ -468,21 +542,26 @@ async function projectsUse(arg?: string): Promise<number> {
     // Pick from the active account's projects.
     let list: ProjectSummary[];
     try {
-      list = await clientFromAuth(auth, { accountId: scopeAccountId(auth) }).get<ProjectSummary[]>(
-        '/projects',
-      );
+      const response = await clientFromAuth(auth, {
+        accountId: scopeAccountId(auth),
+      }).get<unknown[]>(domain.route);
+      list = response.map(domain.normalize);
     } catch (err) {
       return surface(err);
     }
     if (list.length === 0) {
       process.stderr.write(
-        `${status.err('No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
+        `${status.err(`No ${domain.plural} in the active account.`)} Switch with \`kortix accounts use\`.\n`,
       );
       return 1;
     }
     const picked = await selectFromList<ProjectSummary>({
-      title: 'Set the global default project',
-      items: list.map((p) => ({ value: p, label: p.name, sublabel: p.project_id })),
+      title: `Set the global default ${domain.singular}`,
+      items: list.map((p) => ({
+        value: p,
+        label: p.name,
+        sublabel: p.project_id,
+      })),
     });
     if (!picked) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -492,7 +571,7 @@ async function projectsUse(arg?: string): Promise<number> {
   }
 
   if (!target) {
-    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
+    process.stderr.write(`${status.err(`Could not resolve a ${domain.singular}.`)}\n`);
     return 1;
   }
 
@@ -523,7 +602,7 @@ async function projectsUse(arg?: string): Promise<number> {
     name: target.name,
   });
 
-  process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
+  process.stdout.write(`${status.ok(`Default ${domain.singular}: ${C.bold}${target.name}${C.reset}`)}\n`);
   if (switched) {
     process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
   }
@@ -533,19 +612,19 @@ async function projectsUse(arg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsUnset(): Promise<number> {
+async function projectsUnset(domain: ProjectDomain): Promise<number> {
   const existing = defaultProject();
   if (clearDefaultProject()) {
     process.stdout.write(
-      `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
+      `${status.ok(`Cleared the default ${domain.singular}${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
     );
   } else {
-    process.stdout.write(`${C.dim}No default project set. Nothing to do.${C.reset}\n`);
+    process.stdout.write(`${C.dim}No default ${domain.singular} set. Nothing to do.${C.reset}\n`);
   }
   return 0;
 }
 
-async function projectsLink(arg?: string): Promise<number> {
+async function projectsLink(domain: ProjectDomain, arg?: string): Promise<number> {
   const auth = requireAuth();
   if (!auth) return 1;
 
@@ -554,7 +633,7 @@ async function projectsLink(arg?: string): Promise<number> {
   // dir (from `kortix init`) or a `kortix.yaml` at the root.
   if (!isKortixProject()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
+      `${status.err(`Not a Kortix ${domain.singular} — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
     );
     process.stderr.write(
       `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first to scaffold one.${C.reset}\n`,
@@ -567,23 +646,24 @@ async function projectsLink(arg?: string): Promise<number> {
   let target: ProjectSummary | null = null;
   if (arg) {
     try {
-      target = await client.get<ProjectSummary>(`/projects/${arg}`);
+      target = domain.normalize(await client.get<unknown>(`${domain.route}/${arg}`));
     } catch (err) {
       return surface(err);
     }
   } else {
     let list: ProjectSummary[];
     try {
-      list = await client.get<ProjectSummary[]>('/projects');
+      const response = await client.get<unknown[]>(domain.route);
+      list = response.map(domain.normalize);
     } catch (err) {
       return surface(err);
     }
     if (list.length === 0) {
-      process.stderr.write(`${status.err('No projects in this account to link to.')}\n`);
+      process.stderr.write(`${status.err(`No ${domain.plural} in this account to link to.`)}\n`);
       return 1;
     }
     const picked = await selectFromList<ProjectSummary>({
-      title: `Pick a project to link to ${process.cwd()}`,
+      title: `Pick a ${domain.singular} to link to ${process.cwd()}`,
       items: list.map((p) => ({
         value: p,
         label: p.name,
@@ -598,7 +678,7 @@ async function projectsLink(arg?: string): Promise<number> {
   }
 
   if (!target) {
-    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
+    process.stderr.write(`${status.err(`Could not resolve a ${domain.singular}.`)}\n`);
     return 1;
   }
 
@@ -616,7 +696,7 @@ async function projectsLink(arg?: string): Promise<number> {
   process.stdout.write(
     `  ${C.dim}host:       ${C.reset}${hostName} ${C.faded}(${auth.api_base})${C.reset}\n`,
   );
-  process.stdout.write(`  ${C.dim}project_id: ${C.reset}${target.project_id}\n`);
+  process.stdout.write(`  ${C.dim}${domain.singular}_id: ${C.reset}${target.project_id}\n`);
   return 0;
 }
 
@@ -631,19 +711,20 @@ async function projectsUnlink(): Promise<number> {
   return 0;
 }
 
-async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
+async function projectsOpen(domain: ProjectDomain, arg?: string, hostArg?: string): Promise<number> {
   const id = arg ?? resolveProjectId();
   if (!id) {
-    process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
+    process.stderr.write(`${status.err(`No ${domain.singular} linked. Pass an id or link first.`)}\n`);
     return 1;
   }
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects open ${id} --host ${host}`,
+    (host) => `kortix ${domain.command} open ${id} --host ${host}`,
+    domain,
   );
   if (!located) return 1;
-  const url = projectWebUrl(located.located.auth.api_base, id);
+  const url = domain.webUrl(located.located.auth.api_base, id);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -655,7 +736,7 @@ interface RmResult {
   repo_deleted: boolean;
 }
 
-async function projectsRm(args: string[]): Promise<number> {
+async function projectsRm(domain: ProjectDomain, args: string[]): Promise<number> {
   const rest = [...args];
   const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
@@ -669,7 +750,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
-      `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,
+      `${status.err(`No ${domain.singular} to remove.`)} Pass an id or run inside a linked ${domain.singular}.\n`,
     );
     return 1;
   }
@@ -677,7 +758,8 @@ async function projectsRm(args: string[]): Promise<number> {
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects rm ${id} --host ${host}`,
+    (host) => `kortix ${domain.command} rm ${id} --host ${host}`,
+    domain,
   );
   if (!located) return 1;
   const { client, project } = located.located;
@@ -695,7 +777,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+    result = await client.delete<RmResult>(`${domain.route}/${id}${purge ? '?purge=true' : ''}`);
   } catch (err) {
     return surface(err);
   }
@@ -748,7 +830,6 @@ function formatRelative(iso: string): string {
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
 }
-
 
 function openInBrowser(url: string): void {
   // Only hand a real web URL to the OS opener — a value starting with '-' would

@@ -662,8 +662,17 @@ function routeArea(path: string): string {
   if (path === '/health' || path === '/health/live' || path === '/metrics') return 'System';
   if (path.includes('/accounts/:accountId/audit')) return 'Account audit';
   if (path.includes('/accounts/:accountId/iam')) return 'Identity and access';
-  if (path.includes('/projects/:projectId/sessions') || path.includes('/turn-')) return 'Sessions';
-  if (path.includes('/projects/:projectId/gateway')) return 'AI gateway';
+  if (
+    path.includes('/projects/:projectId/sessions') ||
+    path.includes('/workspaces/:projectId/sessions') ||
+    path.includes('/turn-')
+  )
+    return 'Sessions';
+  if (
+    path.includes('/projects/:projectId/gateway') ||
+    path.includes('/workspaces/:projectId/gateway')
+  )
+    return 'AI gateway';
   if (path.includes('/connector') || path.startsWith('/v1/connectors/')) return 'Connectors';
   if (path.startsWith('/v1/billing/')) return 'Billing';
   if (path.startsWith('/v1/tunnel/')) return 'Computer';
@@ -672,6 +681,7 @@ function routeArea(path: string): string {
   if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
   if (path.includes('/channels/')) return 'Channels';
   if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';
+  if (path.startsWith('/v1/workspaces')) return 'Workspaces';
   if (path.startsWith('/v1/projects')) return 'Projects';
   if (path.startsWith('/v1/accounts') || path.startsWith('/v1/account')) return 'Accounts';
   return 'API';

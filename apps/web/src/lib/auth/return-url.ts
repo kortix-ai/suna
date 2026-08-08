@@ -89,9 +89,11 @@ export function sanitizeAuthReturnUrl(
 
   // Middleware preserves an unauthenticated request as the post-auth return
   // path. A request for the bare list must still enter through the landing
-  // door. Otherwise a new account renders /projects while its first project is
-  // being provisioned.
-  if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
+  // door. Otherwise a new account renders the collection while its first
+  // workspace is being provisioned.
+  if (normalizedValue === '/workspaces' || normalizedValue === '/projects') {
+    return PROJECT_LANDING_PATH;
+  }
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
     return fallback;

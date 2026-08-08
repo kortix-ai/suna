@@ -28,7 +28,7 @@ const QUICK_FILTERS: QuickFilter[] = [
   { label: 'All events', action: null, daysBack: null },
   { label: 'IAM only', action: 'iam.', daysBack: null },
   { label: 'Group changes', action: 'iam.group', daysBack: null },
-  { label: 'Project access', action: 'iam.project.group', daysBack: null },
+  { label: 'Workspace access', action: 'iam.project.group', daysBack: null },
   { label: 'Super-admin', action: 'iam.member.super_admin', daysBack: null },
   { label: 'Last 24h', action: null, daysBack: 1 },
   { label: 'Last 7d', action: null, daysBack: 7 },

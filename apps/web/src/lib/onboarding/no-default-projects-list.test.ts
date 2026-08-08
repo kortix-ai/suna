@@ -3,15 +3,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The projects LIST must never be a default destination.
+ * The workspaces LIST must never be a default destination.
  *
- * `/projects` is a place the user chooses to visit. It is not where the app
+ * `/workspaces` is a place the user chooses to visit. It is not where the app
  * drops them after signing in, after a flow completes, or when it does not know
  * where else to go — those all resolve to the latest project. This test is the
  * enforcement: it scans for programmatic navigation to the bare `/projects`
  * path and fails on anything not explicitly justified below.
  *
- * If you are adding a genuine user-chosen "show me all my projects" control,
+ * If you are adding a genuine user-chosen "show me all my workspaces" control,
  * add it to ALLOWED with the reason. If you are adding a default landing, use
  * `latestProjectPath()` (or `PROJECT_LANDING_PATH` when the account context just
  * changed and the remembered project would be stale) instead.
@@ -21,13 +21,13 @@ const SRC = join(import.meta.dir, '..', '..');
 
 /** Programmatic navigation to the bare list. */
 // `(?:\w+\()?` also catches a single wrapping call — e.g.
-// `router.replace(withCurrentQuery('/projects'))`. Without it, wrapping the
+// `router.replace(withCurrentQuery('/workspaces'))`. Without it, wrapping the
 // literal is a silent escape hatch from this entire guard.
 const NAV_PATTERNS = [
-  /router\.(?:push|replace)\(\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
-  /window\.location\.href\s*=\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
-  /redirect\(\s*(?:\w+\(\s*)?['"`]\/projects['"`]/,
-  /NextResponse\.redirect\(\s*new URL\(\s*['"`]\/projects['"`]/,
+  /router\.(?:push|replace)\(\s*(?:\w+\(\s*)?['"`]\/(?:workspaces|projects)['"`]/,
+  /window\.location\.href\s*=\s*(?:\w+\(\s*)?['"`]\/(?:workspaces|projects)['"`]/,
+  /redirect\(\s*(?:\w+\(\s*)?['"`]\/(?:workspaces|projects)['"`]/,
+  /NextResponse\.redirect\(\s*new URL\(\s*['"`]\/(?:workspaces|projects)['"`]/,
 ];
 
 const ALLOWED = new Map<string, string>([
@@ -43,10 +43,7 @@ const ALLOWED = new Map<string, string>([
     'features/workspace/project-sidebar/project-switcher.tsx',
     'Explicit "All projects" control inside the switcher.',
   ],
-  [
-    'features/workspace/command-palette.tsx',
-    'Explicit "Go to projects" command the user types.',
-  ],
+  ['features/workspace/command-palette.tsx', 'Explicit "Go to projects" command the user types.'],
   [
     'components/projects/project-access-boundary.tsx',
     'Explicit escape button shown when the user cannot read THIS project; the list is the honest destination.',
@@ -63,8 +60,8 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe('the projects list is never a default destination', () => {
-  test('no unjustified programmatic navigation to /projects', () => {
+describe('the workspaces list is never a default destination', () => {
+  test('no unjustified programmatic navigation to a workspace collection', () => {
     const offenders: string[] = [];
 
     for (const file of walk(SRC)) {

@@ -34,6 +34,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
       : {};
   return {
     ...projectGitEnv,
+    KORTIX_WORKSPACE_ID: input.projectId,
+    // Deprecated compatibility alias. Remove only after installed CLIs and
+    // third-party sandbox tooling consume KORTIX_WORKSPACE_ID.
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',

@@ -53,7 +53,7 @@ const MODE_OPTIONS: Array<{
     mode: 'project',
     icon: 'globe-outline',
     label: 'Whole team',
-    description: 'Everyone in this project',
+    description: 'Everyone in this workspace',
   },
   {
     mode: 'members',
@@ -302,7 +302,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                 <Text
                   className="text-center font-roobert text-sm"
                   style={{ color: mutedColor, paddingVertical: 24 }}>
-                  No other members in this project yet.
+                  No other members in this workspace yet.
                 </Text>
               ) : (
                 sortedMembers.map((m) => {

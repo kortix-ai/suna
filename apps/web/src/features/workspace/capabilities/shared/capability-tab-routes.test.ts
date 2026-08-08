@@ -15,9 +15,9 @@ describe('CAPABILITY_TABS', () => {
 });
 
 describe('capabilityTabHref', () => {
-  test('builds a project-scoped path', () => {
-    expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/skills');
-    expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/agent');
+  test('builds a workspace-scoped path', () => {
+    expect(capabilityTabHref('p1', 'skills')).toBe('/workspaces/p1/skills');
+    expect(capabilityTabHref('p1', 'agent')).toBe('/workspaces/p1/agent');
   });
 });
 

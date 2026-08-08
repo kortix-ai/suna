@@ -26,7 +26,7 @@ export function buildInstallSuccessSummary(
  *  so it's testable and reusable from both in-app navigation and a toast
  *  action that has to work from any page, including the public marketplace. */
 export function projectMarketplaceHref(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}/customize/marketplace`;
+  return `/workspaces/${encodeURIComponent(projectId)}/customize/marketplace`;
 }
 
 /** True when an item exposes any secrets/connectors/tools it needs — used to

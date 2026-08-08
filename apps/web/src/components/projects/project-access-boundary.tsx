@@ -321,7 +321,7 @@ function AccessGateScreen({
   const copy = gateCopyKeys(state);
   const forbidden = isForbiddenState(state);
   const action = gateAction(state);
-  const goToProjects = () => router.push('/projects');
+  const goToProjects = () => router.push('/workspaces');
   const showAdminBypass = forbidden && !!adminRole?.isAdmin;
 
   return (

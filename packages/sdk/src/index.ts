@@ -382,6 +382,7 @@ export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/rest/workspaces-client';
 export * from './core/runtime/client';
 export * from './core/session';
 export {

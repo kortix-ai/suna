@@ -85,11 +85,11 @@ describe('toggle-panel-mode command palette item', () => {
 });
 
 describe('project sessions command palette item', () => {
-  test('falls back to the canonical project sessions page', () => {
+  test('falls back to the canonical Workspace sessions page', () => {
     const sessionsItem = paletteItems.find((item) => item.id === 'proj-sessions');
 
     expect(sessionsItem).toBeDefined();
-    expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
+    expect(sessionsItem!.href).toBe('/workspaces/{projectId}/sessions');
   });
 });
 
@@ -136,14 +136,16 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('Connectors and Skills navigate to standalone pages; Commands opens Customize', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
+    expect(skillsItem!.href).toBe('/workspaces/{projectId}/skills');
+    expect(commandsItem!.href).toBe(
+      '/workspaces/{projectId}/customize/commands',
+    );
+    expect(connectorsItem!.href).toBe('/workspaces/{projectId}/connectors');
   });
 
   test('proj-connectors-policies no longer advertises a Customize destination it cannot reach', () => {
     expect(policiesItem).toBeDefined();
-    expect(policiesItem!.href).toBe('/projects/{projectId}/connectors');
+    expect(policiesItem!.href).toBe('/workspaces/{projectId}/connectors');
     expect(policiesItem!.label).not.toContain('Customize');
   });
 });

@@ -27,7 +27,7 @@ describe('project Files sidebar entry', () => {
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
     // href was previously unasserted, so `<Link href="#">` would have passed.
-    expect(navItem).toMatch(/href=\{`\/projects\/\$\{projectId\}\/files`\}/);
+    expect(navItem).toMatch(/href=\{`\/workspaces\/\$\{projectId\}\/files`\}/);
     expect(navItem).toContain('asChild');
     expect(navItem).not.toContain('router.push');
   });

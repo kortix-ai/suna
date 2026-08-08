@@ -1,7 +1,7 @@
 import {
   activeAccount,
   activeHostEntry,
-  defaultProject,
+  defaultWorkspace,
   getHost,
   hasEnvTokenHost,
   type Host,
@@ -20,7 +20,7 @@ function hostAuthState(host: Host, mode: 'env' | 'stored'): string {
   if (mode === 'env') {
     return process.env.KORTIX_SESSION_ID
       ? 'authenticated (session token)'
-      : 'authenticated (project token)';
+      : 'authenticated (workspace token)';
   }
   if (host.user_email || host.user_id) return `${host.user_email || host.user_id} (user)`;
   return 'authenticated';
@@ -61,8 +61,8 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const linkedHost = !hostArg ? directoryLink?.host : undefined;
   const notice = resolveHostNotice(hostArg ?? linkedHost);
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
-  // Append account + project for the active host only. With an explicit
-  // `--host`, the active-config account/project may belong to a different
+  // Append account + workspace for the active host only. With an explicit
+  // `--host`, the active-config account/workspace may belong to a different
   // host, so we don't claim them.
   if (!hostArg) {
     const acct = linkedHost
@@ -71,8 +71,10 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
         : null
       : activeAccountLabel();
     if (acct) line += `${C.dim} · account ${C.reset}${acct}`;
-    const proj = activeProjectLabel();
-    if (proj) line += `${C.dim} · project ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
+    const workspace = activeWorkspaceLabel();
+    if (workspace) {
+      line += `${C.dim} · workspace ${C.reset}${workspace.label}${C.dim} (${workspace.source})${C.reset}`;
+    }
     // Session is the leaf: shown only when we're actually inside one (a
     // sandbox run injects KORTIX_SESSION_ID), never as a persisted pointer.
     const session = activeSessionLabel();
@@ -96,14 +98,14 @@ function activeAccountLabel(): string | null {
   return acct.name || acct.slug;
 }
 
-/** Active project: the cwd's directory link wins over the global default. */
-function activeProjectLabel(): { label: string; source: 'linked' | 'default' } | null {
+/** Active workspace: the cwd's directory link wins over the global default. */
+function activeWorkspaceLabel(): { label: string; source: 'linked' | 'default' } | null {
   const link = loadLink();
-  if (link?.project_id) {
-    return { label: shortId(link.project_id), source: 'linked' };
+  if (link?.workspace_id) {
+    return { label: shortId(link.workspace_id), source: 'linked' };
   }
-  const def = defaultProject();
-  if (def) return { label: def.name || shortId(def.project_id), source: 'default' };
+  const def = defaultWorkspace();
+  if (def) return { label: def.name || shortId(def.workspace_id), source: 'default' };
   return null;
 }
 
@@ -113,7 +115,7 @@ function shortId(id: string): string {
 
 /**
  * The bare-`kortix` landing breadcrumb: a top-down render of WHERE YOU ARE
- * in the Host → Account → Project → Session hierarchy, marking auth state
+ * in the Host → Account → Workspace → Session hierarchy, marking auth state
  * and making each gap actionable (a "→ kortix … " next step). All local
  * reads (config + cwd link + env) — no network, no latency.
  *
@@ -123,7 +125,7 @@ function shortId(id: string): string {
  *
  *   ● host      cloud  (https://api.kortix.com, signed in as …)   ▸ kortix hosts use
  *     account   Acme Capital  (acme)                              ▸ kortix accounts use
- *     project   veyris  (linked)
+ *     workspace veyris  (linked)
  *     session   —                              open one: kortix chat · kortix sessions new
  *
  * Signed OUT of the active host, the lower levels are hidden (you can't
@@ -139,7 +141,7 @@ export function renderContext(): string {
   const host = linkedHost ?? active.host;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored');
-  const labelW = 7; // "account".length / "project".length / "session".length
+  const labelW = 9; // "workspace".length
 
   const rows: ContextRow[] = [];
 
@@ -151,7 +153,7 @@ export function renderContext(): string {
     hint: signedIn ? navHint('kortix hosts use') : gapHint('kortix hosts login'),
   });
 
-  // You can't have an account/project/session without a signed-in host.
+  // You can't have an account/workspace/session without a signed-in host.
   if (!signedIn) return renderRows(rows, labelW);
 
   // 2. Account — a workspace within the active host. A linked directory pins
@@ -183,26 +185,26 @@ export function renderContext(): string {
           },
   );
 
-  // 3. Project — a project within the active account.
-  const proj = activeProjectLabel();
+  // 3. Workspace — a workspace within the active account.
+  const workspace = activeWorkspaceLabel();
   rows.push(
-    proj
+    workspace
       ? {
           glyph: ' ',
-          label: 'project',
-          value: `${C.bold}${proj.label}${C.reset}  ${C.faded}(${proj.source})${C.reset}`,
-          // A linked cwd wins and can't be swapped with `projects use`, so
+          label: 'workspace',
+          value: `${C.bold}${workspace.label}${C.reset}  ${C.faded}(${workspace.source})${C.reset}`,
+          // A linked cwd wins and can't be swapped with `workspaces use`, so
           // only point at the switch verb for a global default.
           hint:
-            proj.source === 'default'
-              ? `${C.faded}switch with \`kortix projects use\`${C.reset}`
+            workspace.source === 'default'
+              ? `${C.faded}switch with \`kortix workspaces use\`${C.reset}`
               : undefined,
         }
       : {
           glyph: `${C.yellow}⚠${C.reset}`,
-          label: 'project',
+          label: 'workspace',
           value: `${C.faded}— none${C.reset}`,
-          hint: gapHint('kortix projects use'),
+          hint: gapHint('kortix workspaces use'),
         },
   );
 

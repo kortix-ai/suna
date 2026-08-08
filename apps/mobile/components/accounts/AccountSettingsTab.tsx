@@ -75,7 +75,7 @@ function DangerSection({ isDark }: { isDark: boolean }) {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Delete account</Text>
-        <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Permanently delete this account and all associated projects.</Text>
+        <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Permanently delete this account and all associated workspaces.</Text>
       </View>
       <View style={{ paddingHorizontal: 14, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
         <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.muted }}>Coming soon</Text>

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { defaultProject } from './api/config.ts';
+import { defaultWorkspace } from './api/config.ts';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
@@ -14,6 +14,9 @@ import { sandboxEnvValue } from './api/sandbox-env.ts';
  * the user's globally-active host is a different one.
  */
 export interface ProjectLink {
+  /** Canonical Workspace identifier. */
+  workspace_id: string;
+  /** @deprecated Compatibility alias for `workspace_id`. */
   project_id: string;
   account_id: string;
   /** Named host (from ~/.config/kortix/config.json) this project lives on. */
@@ -22,6 +25,11 @@ export interface ProjectLink {
   host_url?: string;
   linked_at: string;
 }
+
+export type ProjectLinkInput = Omit<ProjectLink, 'workspace_id' | 'project_id'> & {
+  workspace_id?: string;
+  project_id?: string;
+};
 
 export function linkFilePath(cwd = process.cwd()): string {
   return resolve(cwd, '.kortix', 'link.json');
@@ -45,9 +53,16 @@ export function loadLink(cwd = process.cwd()): ProjectLink | null {
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ProjectLink>;
-    if (typeof parsed.project_id !== 'string' || !parsed.project_id) return null;
+    const workspaceId =
+      typeof parsed.workspace_id === 'string' && parsed.workspace_id
+        ? parsed.workspace_id
+        : typeof parsed.project_id === 'string' && parsed.project_id
+          ? parsed.project_id
+          : null;
+    if (!workspaceId) return null;
     return {
-      project_id: parsed.project_id,
+      workspace_id: workspaceId,
+      project_id: workspaceId,
       account_id: parsed.account_id ?? '',
       host: typeof parsed.host === 'string' && parsed.host ? parsed.host : undefined,
       host_url:
@@ -59,12 +74,16 @@ export function loadLink(cwd = process.cwd()): ProjectLink | null {
   }
 }
 
-export function saveLink(link: ProjectLink, cwd = process.cwd()): void {
+export function saveLink(link: ProjectLinkInput, cwd = process.cwd()): void {
+  const workspaceId = link.workspace_id ?? link.project_id;
+  if (!workspaceId) throw new Error('workspace_id is required');
   const path = linkFilePath(cwd);
   mkdirSync(dirname(path), { recursive: true });
   // Order keys so the file is human-friendly + diffs predictable.
   const ordered = {
-    project_id: link.project_id,
+    workspace_id: workspaceId,
+    // Deprecated compatibility alias for installed CLIs and external tooling.
+    project_id: workspaceId,
     account_id: link.account_id,
     host: link.host,
     host_url: link.host_url,
@@ -81,16 +100,21 @@ export function clearLink(cwd = process.cwd()): void {
 /**
  * Resolve which project a CLI command should operate on, in order:
  *   1. --project / projectArg
- *   2. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
- *   3. .kortix/link.json in cwd (per-repo binding)
- *   4. the active host's global default project (`kortix projects use`)
+ *   2. KORTIX_WORKSPACE_ID env (canonical platform-injected value)
+ *   3. KORTIX_PROJECT_ID env (deprecated compatibility value)
+ *   4. .kortix/link.json in cwd (per-repo binding)
+ *   5. the active host's global default workspace (`kortix workspaces use`)
  * Returns null if none of those are set.
  */
 export function resolveProjectId(projectArg?: string): string | null {
   if (projectArg) return projectArg;
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  const envProjectId =
+    sandboxEnvValue('KORTIX_WORKSPACE_ID') ?? sandboxEnvValue('KORTIX_PROJECT_ID');
   if (envProjectId) return envProjectId;
   const link = loadLink();
-  if (link?.project_id) return link.project_id;
-  return defaultProject()?.project_id ?? null;
+  if (link?.workspace_id) return link.workspace_id;
+  return defaultWorkspace()?.workspace_id ?? null;
 }
+
+export const resolveWorkspaceId = resolveProjectId;
+export const isKortixWorkspace = isKortixProject;

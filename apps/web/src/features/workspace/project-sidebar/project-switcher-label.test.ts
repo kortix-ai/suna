@@ -9,15 +9,15 @@ describe('resolveSwitcherLabel', () => {
     ).toEqual({ label: 'My First Project', pending: false });
   });
 
-  test('never says "Projects" while a project route is still resolving', () => {
+  test('never says "Workspaces" while a workspace route is still resolving', () => {
     const state = resolveSwitcherLabel({ activeProjectId: 'p1', activeProjectName: null });
     expect(state.pending).toBe(true);
     expect(state.label).toBeNull();
   });
 
-  test('off a project route it is genuinely the projects entry', () => {
+  test('off a workspace route it is genuinely the workspaces entry', () => {
     expect(resolveSwitcherLabel({ activeProjectId: undefined })).toEqual({
-      label: 'Projects',
+      label: 'Workspaces',
       pending: false,
     });
   });
@@ -92,7 +92,7 @@ describe('resolveSwitcherLabel — list as placeholder, never as a second source
     ).toEqual({ label: null, pending: true });
   });
 
-  test('a cold list falls back to the placeholder skeleton, not to "Projects"', () => {
+  test('a cold list falls back to the placeholder skeleton, not to "Workspaces"', () => {
     expect(
       resolveSwitcherLabel({
         activeProjectId: 'p1',
@@ -109,7 +109,7 @@ describe('resolveSwitcherLabel — list as placeholder, never as a second source
         activeProjectName: undefined,
         placeholderProjectName: 'Some Project',
       }),
-    ).toEqual({ label: 'Projects', pending: false });
+    ).toEqual({ label: 'Workspaces', pending: false });
   });
 
   // The whole sequence, in order, for one navigation from /projects.

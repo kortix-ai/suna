@@ -72,7 +72,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
   };
 
   const confirmDisconnect = (installationId: string, owner: string | null) => {
-    Alert.alert('Disconnect GitHub', `New imports from ${owner ?? 'this GitHub account'} will stop working until it's connected again. Existing projects keep their repository link.`, [
+    Alert.alert('Disconnect GitHub', `New imports from ${owner ?? 'this GitHub account'} will stop working until it's connected again. Existing workspaces keep their repository link.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Disconnect', style: 'destructive', onPress: () => { haptics.medium(); disconnect.mutate(installationId); } },
     ]);
@@ -162,7 +162,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
         <Shield size={15} color={c.muted} style={{ marginTop: 1 }} />
         <Text style={{ flex: 1, fontSize: 12, lineHeight: 17, color: c.muted }}>
-          Kortix stores the GitHub App installation on the account. It's a platform credential — individual projects link to repos through it.
+          Kortix stores the GitHub App installation on the account. It's a platform credential — individual workspaces link to repos through it.
         </Text>
       </View>
     </ScrollView>

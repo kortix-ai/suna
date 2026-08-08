@@ -134,7 +134,7 @@ export function useSandboxRecovery(projectId: string) {
     mutationFn: () => fixSandboxWithAgent(projectId),
     onSuccess: ({ session_id }) => {
       successToast('Started a session to fix the sandbox build');
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      router.push(`/workspaces/${projectId}/sessions/${session_id}`);
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Could not start the fix session'),

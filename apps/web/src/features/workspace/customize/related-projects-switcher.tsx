@@ -29,7 +29,7 @@ export function RelatedProjectsSwitcher({ project }: { project: KortixProject })
       <Label className="text-muted-foreground px-2">Related projects</Label>
       <Select
         value={project.project_id}
-        onValueChange={(nextProjectId) => router.push(`/projects/${nextProjectId}`)}
+        onValueChange={(nextProjectId) => router.push(`/workspaces/${nextProjectId}`)}
       >
         <SelectTrigger className="h-auto min-h-10 w-full px-3 py-2">
           <span className="min-w-0 text-left">

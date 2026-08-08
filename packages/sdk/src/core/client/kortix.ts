@@ -21,6 +21,7 @@ import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
+import * as W from '../rest/workspaces-client';
 import { getSessionHealth } from '../session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { setCurrentRuntime } from '../session/current-runtime';
@@ -245,6 +246,26 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     provision: P.provisionProject,
     update: P.updateProject,
     archive: P.archiveProject,
+    llmCatalog: P.getProjectLlmCatalog,
+    modelPicker: P.getProjectModelPicker,
+    sandboxHealth: P.getProjectSandboxHealth,
+    sandboxTemplates: P.listProjectSandboxTemplates,
+    sessions: P.listProjectSessions,
+    createSession: P.createProjectSession,
+  };
+
+  /** Canonical top-level Workspace operations. */
+  const workspaces = {
+    list: W.listWorkspaces,
+    listForAccount: W.listWorkspacesForAccount,
+    get: W.getWorkspace,
+    detail: W.getWorkspaceDetail,
+    create: W.createWorkspace,
+    /** Create a workspace backed by a brand-new Kortix-managed Git repository. */
+    createRepo: W.createWorkspaceRepo,
+    provision: W.provisionWorkspace,
+    update: W.updateWorkspace,
+    archive: W.archiveWorkspace,
     llmCatalog: P.getProjectLlmCatalog,
     modelPicker: P.getProjectModelPicker,
     sandboxHealth: P.getProjectSandboxHealth,
@@ -714,6 +735,19 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     };
   }
 
+  /** Canonical Workspace handle. Project remains as a compatibility alias. */
+  function workspace(workspaceId: string) {
+    const handle = project(workspaceId);
+    return {
+      ...handle,
+      get: (opts?: Parameters<typeof W.getWorkspace>[1]) => W.getWorkspace(workspaceId, opts),
+      detail: () => W.getWorkspaceDetail(workspaceId),
+      update: (input: Parameters<typeof W.updateWorkspace>[1]) =>
+        W.updateWorkspace(workspaceId, input),
+      archive: () => W.archiveWorkspace(workspaceId),
+    };
+  }
+
   /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
   function session(projectId: string, sessionId: string) {
     // Opinionated-action state, scoped to THIS handle. The opencode runtime is
@@ -1164,9 +1198,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
     accountInvites,
     projects,
+    workspaces,
     /** Connector calls scoped by an agent/session token when no project id is available. */
     connectors: connectorDataPlane(),
     project,
+    workspace,
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
@@ -1190,6 +1226,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 export type Kortix = ReturnType<typeof createKortix>;
 /** The id-bound project handle returned by `kortix.project(id)`. */
 export type ProjectHandle = ReturnType<Kortix['project']>;
+/** The canonical id-bound Workspace handle returned by `kortix.workspace(id)`. */
+export type WorkspaceHandle = ReturnType<Kortix['workspace']>;
 /** The id-bound session handle returned by `kortix.session(pid, sid)`. */
 export type SessionHandle = ReturnType<Kortix['session']>;
 

@@ -49,7 +49,7 @@ export function itemDeepLink(
   sessionId: string | undefined | null,
 ): string | null {
   if (!projectId || !sessionId) return null;
-  return `/projects/${projectId}/sessions/${sessionId}`;
+  return `/workspaces/${projectId}/sessions/${sessionId}`;
 }
 
 /**

@@ -35,7 +35,7 @@ export default function ProjectNotFound() {
       <NotFoundCard
         actions={[
           {
-            href: projectId ? `/projects/${projectId}` : PROJECT_LANDING_PATH,
+            href: projectId ? `/workspaces/${projectId}` : PROJECT_LANDING_PATH,
             label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
             icon: <ArrowLeft className="h-4 w-4" />,
           },

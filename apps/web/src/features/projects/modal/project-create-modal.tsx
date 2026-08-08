@@ -296,7 +296,7 @@ export const ProjectCreateModal = ({
   }
 
   async function finishCreatedProject(project: KortixProject) {
-    successToast('Project created');
+    successToast('Workspace created');
     // Optimistic write goes ONLY into the account this project actually
     // belongs to — the one entry a merge here can never get wrong.
     // qk.projects.list() (no account) is a DIFFERENT, sibling cache entry —
@@ -323,7 +323,7 @@ export const ProjectCreateModal = ({
       });
       if (sessionId) {
         resetAndClose();
-        router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
+        router.replace(`/workspaces/${project.project_id}/sessions/${sessionId}`);
         return;
       }
     }
@@ -331,12 +331,12 @@ export const ProjectCreateModal = ({
     const onboardingSessionId = await startProjectOnboardingSession(project);
     if (onboardingSessionId) {
       resetAndClose();
-      router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+      router.replace(`/workspaces/${project.project_id}/sessions/${onboardingSessionId}`);
       return;
     }
 
     resetAndClose();
-    router.replace(`/projects/${project.project_id}`);
+    router.replace(`/workspaces/${project.project_id}`);
   }
 
   const createMutation = useMutation({
@@ -353,7 +353,7 @@ export const ProjectCreateModal = ({
           const project = existing[0];
           if (project) {
             resetAndClose();
-            router.replace(`/projects/${project.project_id}`);
+            router.replace(`/workspaces/${project.project_id}`);
             return;
           }
         } catch {
@@ -384,7 +384,7 @@ export const ProjectCreateModal = ({
         });
         return;
       }
-      errorToast(error.message || 'Failed to create project');
+      errorToast(error.message || 'Failed to create workspace');
     },
   });
 
@@ -500,7 +500,7 @@ export const ProjectCreateModal = ({
         type: 'active',
       });
       resetAndClose();
-      router.replace(`/projects/${result.project.project_id}`);
+      router.replace(`/workspaces/${result.project.project_id}`);
     },
     onError: (error: Error) => {
       errorToast(error.message || 'Failed to link repository');
@@ -570,7 +570,7 @@ export const ProjectCreateModal = ({
     }
 
     setIsConnectingGitHub(true);
-    rememberGitHubSetupReturn('/projects?new=1');
+    rememberGitHubSetupReturn('/workspaces?new=1');
     router.push(`/github/setup?account_id=${encodeURIComponent(effectiveAccountId)}`);
   }
 
@@ -736,7 +736,7 @@ export const ProjectCreateModal = ({
                             <GithubIcon />
                           </ItemMedia>
                           <ItemContent>
-                            <ItemTitle>Connect GitHub to create projects</ItemTitle>
+                            <ItemTitle>Connect GitHub to create workspaces</ItemTitle>
                             <ItemDescription>
                               Install the Kortix GitHub App in your user account or organization.
                               Kortix creates a private repository there.
@@ -800,11 +800,12 @@ export const ProjectCreateModal = ({
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="text-foreground text-sm font-medium">
-                            Cloning {sourceItemQuery.data?.title.replaceAll('-', ' ') ?? 'project'}
+                            Cloning{' '}
+                            {sourceItemQuery.data?.title.replaceAll('-', ' ') ?? 'workspace'}
                           </div>
                           <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
                             {sourceItemQuery.data?.description ??
-                              'Your new project starts with everything this project ships.'}
+                              'Your new workspace starts with everything this template ships.'}
                           </p>
                         </div>
                         {pickedTemplateId && !sourceItemId ? (
@@ -861,7 +862,7 @@ export const ProjectCreateModal = ({
                   }
                 >
                   {submitting ? <Loading /> : <Plus />}
-                  {mode === 'github-create' ? 'Create in your GitHub' : 'Create project'}
+                  {mode === 'github-create' ? 'Create in your GitHub' : 'Create workspace'}
                 </Button>
               </ModalFooter>
             </form>

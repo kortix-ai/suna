@@ -1,8 +1,8 @@
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
+import { loadLink, resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
 
@@ -174,7 +174,7 @@ export async function locateSessionAnywhere(
     const probed = await probeSession(ctx.client, ctx.projectId, sessionId);
     if (probed !== false && !(probed instanceof ApiError)) {
       return {
-        located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: probed },
+          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: probed },
         switched: false,
       };
     }
@@ -216,6 +216,18 @@ export interface LocatedProject {
   hostName?: string;
 }
 
+export interface ProjectNamespace {
+  route: '/projects' | '/workspaces';
+  singular: 'project' | 'workspace';
+  normalize: (value: unknown) => ProjectSummary;
+}
+
+const PROJECT_NAMESPACE: ProjectNamespace = {
+  route: '/projects',
+  singular: 'project',
+  normalize: (value) => value as ProjectSummary,
+};
+
 /**
  * Resolve which host a project id lives on, and return the already-fetched
  * project row. Project-id routes resolve their account from the id itself
@@ -226,6 +238,7 @@ export async function locateProjectAnywhere(
   projectId: string,
   opts: { hostArg?: string },
   retryCommand: (hostName: string) => string,
+  namespace: ProjectNamespace = PROJECT_NAMESPACE,
 ): Promise<{ located: LocatedProject; switched: boolean } | null> {
   const pinned = Boolean(opts.hostArg);
   const primaryHostName = opts.hostArg ?? activeHostName() ?? undefined;
@@ -238,7 +251,7 @@ export async function locateProjectAnywhere(
     return null;
   }
   if (primaryAuth?.token) {
-    const probed = await probeProject(clientFromAuth(primaryAuth), projectId);
+    const probed = await probeProject(clientFromAuth(primaryAuth), projectId, namespace);
     if (probed !== false && !(probed instanceof ApiError)) {
       return { located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed }, switched: false };
     }
@@ -247,7 +260,7 @@ export async function locateProjectAnywhere(
       return null;
     }
     if (pinned) {
-      process.stderr.write(`${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`);
+      process.stderr.write(`${status.err(`${capitalize(namespace.singular)} ${projectId} not found on host "${opts.hostArg}".`)}\n`);
       return null;
     }
   }
@@ -259,7 +272,7 @@ export async function locateProjectAnywhere(
   const hit = await probeConcurrently(others, async (h) => {
     const auth = loadAuthForHost(h.name);
     if (!auth) return false as const;
-    return probeProject(clientFromAuth(auth), projectId);
+    return probeProject(clientFromAuth(auth), projectId, namespace);
   });
   if (hit) {
     const auth = loadAuthForHost(hit.item.name)!;
@@ -269,7 +282,7 @@ export async function locateProjectAnywhere(
     };
   }
 
-  process.stderr.write(`${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`);
+  process.stderr.write(`${status.err(`${capitalize(namespace.singular)} ${projectId} not found on any host you're logged into.`)}\n`);
   printHostRetryHints(retryCommand);
   return null;
 }
@@ -330,13 +343,19 @@ async function probeSession(
 async function probeProject(
   client: ApiClient,
   projectId: string,
+  namespace: ProjectNamespace = PROJECT_NAMESPACE,
 ): Promise<ProjectSummary | false | ApiError> {
   try {
-    return await client.get<ProjectSummary>(`/projects/${projectId}`);
+    const value = await client.get<unknown>(`${namespace.route}/${projectId}`);
+    return namespace.normalize(value);
   } catch (err) {
     if (err instanceof ApiError) return err.status === 404 ? false : err;
     return false;
   }
+}
+
+function capitalize(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
 /** Scan every logged-in host's accounts and projects for a session id,

@@ -42,7 +42,7 @@ export function pendingNewSessionPath(
   projectId: string,
 ): string | null {
   const sessionId = pending[projectId]?.sessionId;
-  return sessionId ? `/projects/${projectId}/sessions/${sessionId}` : null;
+  return sessionId ? `/workspaces/${projectId}/sessions/${sessionId}` : null;
 }
 
 /** True once the browser is showing the session the pending create minted. */
@@ -74,7 +74,9 @@ export const useNewSessionGuardStore = create<NewSessionGuardState>((set, get) =
   },
   target: (projectId, sessionId) =>
     set((state) =>
-      state.pending[projectId] ? { pending: { ...state.pending, [projectId]: { sessionId } } } : state,
+      state.pending[projectId]
+        ? { pending: { ...state.pending, [projectId]: { sessionId } } }
+        : state,
     ),
   settle: (projectId) =>
     set((state) => {
