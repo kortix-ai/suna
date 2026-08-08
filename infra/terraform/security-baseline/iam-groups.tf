@@ -113,12 +113,18 @@ locals {
       policies = [aws_iam_policy.cloudwatch_logs.arn]
       members  = ["kortix-cloudwatch-logs"]
     }
-    # Self-service MFA for the `ino` user (was an inline `EnforceMFA` policy —
-    # DCF-776 requires group-based permissions only). See aws_iam_policy
-    # .mfa_self_manage above.
+    # Self-service MFA group (replaces the inline `EnforceMFA` policy that used
+    # to hang directly off one user — DCF-776 requires group-based permissions
+    # only). The policy is self-scoped via the ${aws:username} IAM variable, so
+    # it is safe for any member. Person memberships are managed OUT-OF-BAND
+    # (AWS console / `aws iam add-user-to-group --group-name mfa-self-manage`),
+    # NOT committed to this repo: individual people must not live in
+    # version-controlled IaC (churn + audit noise on every join/leave), and the
+    # self-scoped policy keeps DCF-776 satisfied with no member named in TF.
+    # See aws_iam_policy.mfa_self_manage above.
     mfa-self-manage = {
       policies = [aws_iam_policy.mfa_self_manage.arn]
-      members  = ["ino"]
+      members  = []
     }
     # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
     # policy — DCF-776 requires group-based permissions only). See aws_iam_policy
