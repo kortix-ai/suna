@@ -28,7 +28,19 @@ SDK scope:
 The required `tdd` skill is unavailable in this session. This work uses the
 required RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+Verification after merging current `origin/main`:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`, including examples.
+- `pnpm --filter @kortix/sdk test`: `1769 pass`, `0 fail`, and `7522 expect()`
+  calls across `141` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0`; packed
+  `@kortix/sdk` and `@kortix/executor-sdk` imported and constructed in Node ESM.
+- Public Workspace names are additive. No Project export was removed or renamed.
+- The SDK package version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ### 2026-08-08 — session `apps-retired-provider-scanner`
 
