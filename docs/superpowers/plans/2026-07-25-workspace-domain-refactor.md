@@ -8,16 +8,15 @@
 - Add failing tests for canonical workspace routes and exports.
 - Add compatibility tests for deprecated project boundaries.
 
-## Task 2: Database domain
+## Task 2: Storage compatibility
 
-- Add one forward migration for workspace tables, columns, and database objects.
-- Rename Drizzle schema exports and relations.
-- Preserve existing identifiers and relationships.
-- Run migrations and database tests against the isolated database.
+- Keep existing `projects`, `project_*`, and `project_id` storage identifiers.
+- Add no database migration for the terminology cutover.
+- Map physical Project storage to canonical Workspace contracts at API and SDK boundaries.
+- Test the mapping recursively and preserve existing identifiers and relationships.
 
 ## Task 3: API domain
 
-- Rename the internal domain to `workspaces`.
 - Mount canonical `/workspaces` handlers.
 - Mount deprecated `/projects` aliases over the same handlers.
 - Use canonical workspace request and response fields.
@@ -38,9 +37,9 @@
 
 ## Task 6: Web domain and default routing
 
-- Move canonical routes to `/workspaces`.
+- Expose canonical routes at `/workspaces` through authenticated compatibility rewrites.
 - Add `/projects` compatibility redirects.
-- Rename symbols, copy, analytics, and visible labels.
+- Rename public copy, analytics, and visible labels.
 - Route login and organization switching to the default workspace.
 - Hide the switcher for one workspace.
 - Keep explicit workspace management under organization settings.
@@ -48,14 +47,14 @@
 
 ## Task 7: Mobile, tests, and documentation
 
-- Move mobile routes and symbols to workspaces.
+- Add canonical mobile Workspace routes and retain Project route compatibility.
 - Rename test fixtures and documentation.
 - Preserve compatibility examples where required.
 - Run mobile and documentation checks.
 
 ## Task 8: Full local verification
 
-- Run focused and full database, API, SDK, CLI, web, mobile, and `ke2e` gates.
+- Run focused and full API, SDK, CLI, web, mobile, and `ke2e` gates.
 - Exercise canonical and compatibility behavior with real inputs.
 - Fix all regressions.
 

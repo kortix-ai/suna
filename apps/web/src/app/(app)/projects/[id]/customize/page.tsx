@@ -9,8 +9,8 @@
  * you on the project home behind it.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -32,7 +32,7 @@ export default function ProjectCustomizeRedirect() {
     }
     const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;
     useCustomizeStore.getState().openCustomize(section);
-    router.replace(`/projects/${projectId}`);
+    router.replace(`/workspaces/${projectId}`);
   }, [projectId, searchParams, router]);
 
   return null;

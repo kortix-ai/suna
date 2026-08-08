@@ -88,7 +88,7 @@ describe('SessionCostDetailContent', () => {
     expect(html).toContain('request-1');
     expect(html).toContain('2m');
     expect(html).toContain('2 vCPU');
-    expect(html).toContain('href="/projects/project-detail/sessions/session-detail"');
+    expect(html).toContain('href="/workspaces/project-detail/sessions/session-detail"');
   });
 
   test('renders loading and error states without stale detail', () => {

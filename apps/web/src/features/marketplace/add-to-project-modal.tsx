@@ -41,8 +41,8 @@ import { startTemplateSetupSession } from '@/features/projects/modal/template-se
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
@@ -173,7 +173,7 @@ export function AddToProjectModal({
         );
         onOpenChange(false);
         closeCustomize();
-        router.replace(sessionHref ?? `/projects/${project.project_id}`);
+        router.replace(sessionHref ?? `/workspaces/${project.project_id}`);
         return;
       }
 
@@ -187,7 +187,7 @@ export function AddToProjectModal({
       );
       onOpenChange(false);
       closeCustomize();
-      router.push(sessionHref ?? `/projects/${projectId}`);
+      router.push(sessionHref ?? `/workspaces/${projectId}`);
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =

@@ -28,18 +28,18 @@ describe('merged brand/switcher control', () => {
   test('the mark keeps its link to the project home', () => {
     expect(control).toContain('<Kortix');
     expect(control).toContain('href={homeHref}');
-    expect(source).toContain("activeProjectId ? `/projects/${activeProjectId}` : '/projects'");
+    expect(source).toContain("activeProjectId ? `/workspaces/${activeProjectId}` : '/workspaces'");
   });
 
   test('the name opens the switcher menu', () => {
     expect(control).toContain('<DropdownMenuTrigger asChild>');
-    expect(control).toContain('aria-label="Switch project"');
+    expect(control).toContain('aria-label="Switch workspace"');
   });
 
   // Two hit areas, never overlapping, each nameable by a screen reader.
   test('the two segments are separately labelled', () => {
     expect(control).toContain('aria-label={homeLabel}');
-    expect(control).toContain('aria-label="Switch project"');
+    expect(control).toContain('aria-label="Switch workspace"');
   });
 
   // This is what makes it one control instead of two: hover, press and open
@@ -74,6 +74,12 @@ describe('merged brand/switcher control', () => {
   // Dead prop after the merge: the sidebar variant always leads with the mark.
   test('the showIcon escape hatch is gone', () => {
     expect(source).not.toContain('showIcon');
+  });
+
+  test('one workspace renders only the home mark and two workspaces expose the selector', () => {
+    expect(source).toContain('workspaceCount >= 2');
+    expect(source).toContain("variant === 'sidebar' && !showWorkspaceSwitcher");
+    expect(source).toContain('data-slot="workspace-home"');
   });
 });
 

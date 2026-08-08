@@ -119,7 +119,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       }
 
       if (!opts) {
-        router.push(`/projects/${projectId}`);
+        router.push(`/workspaces/${projectId}`);
         return;
       }
 
@@ -145,7 +145,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       const createSession = async () => {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
-        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        router.prefetch(`/workspaces/${projectId}/sessions/${sessionId}`);
         await loadingToast(
           'Starting session…',
           createProjectSession(projectId, {
@@ -172,7 +172,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           prefetchSessionStart(queryClient, projectId, sessionId);
           queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);
-          router.push(`/projects/${projectId}/sessions/${sessionId}`);
+          router.push(`/workspaces/${projectId}/sessions/${sessionId}`);
         },
       })
         .catch((err) => {

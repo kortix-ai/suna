@@ -377,7 +377,10 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
-  const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
+  const projectId =
+    rawPathname?.startsWith('/workspaces/') || rawPathname?.startsWith('/projects/')
+      ? (params?.id ?? null)
+      : null;
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
     const match = pathname?.match(/^\/sessions\/([^/]+)/);
@@ -746,7 +749,7 @@ export function CommandPalette() {
 
   const handleSelectProject = useCallback(
     (p: KortixProject) => {
-      router.push(`/projects/${p.project_id}`);
+      router.push(`/workspaces/${p.project_id}`);
       close();
     },
     [router, close],
@@ -755,7 +758,7 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      router.push('/projects');
+      router.push('/workspaces');
       close();
     },
     [setSelectedAccountId, router, close],
@@ -765,7 +768,7 @@ export function CommandPalette() {
     (s: ProjectSession) => {
       if (!projectId) return close();
       openProjectTab(projectId, s.session_id);
-      router.push(`/projects/${projectId}/sessions/${s.session_id}`);
+      router.push(`/workspaces/${projectId}/sessions/${s.session_id}`);
       close();
     },
     [projectId, openProjectTab, router, close],
@@ -852,7 +855,7 @@ export function CommandPalette() {
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
-      router.push(`/projects/${projectId}/files`);
+      router.push(`/workspaces/${projectId}/files`);
       close();
     },
     [projectId, router, close],
@@ -1228,7 +1231,11 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+          if (
+            href.startsWith('/workspaces') ||
+            href.startsWith('/projects') ||
+            href.startsWith('/accounts')
+          ) {
             router.push(href);
             close();
             break;

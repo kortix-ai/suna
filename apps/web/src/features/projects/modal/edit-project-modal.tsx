@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
@@ -17,7 +18,6 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { updateProject, type ProjectInput } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
@@ -97,7 +97,7 @@ export const EditProjectModal = ({
 
   const saveMutation = useMutation({
     mutationFn: (patch: Partial<ProjectInput>) => {
-      if (!projectId) throw new Error('No project selected');
+      if (!projectId) throw new Error('No workspace selected');
       return updateProject(projectId, patch);
     },
     // Paint the new name in the same frame the modal closes, snapshotting
@@ -121,7 +121,7 @@ export const EditProjectModal = ({
     },
     onError: (err, _patch, context) => {
       renameOnError(queryClient, projectId, context);
-      errorToast(err instanceof Error ? err.message : 'Failed to update project');
+      errorToast(err instanceof Error ? err.message : 'Failed to update workspace');
     },
     onSettled: () => renameOnSettled(queryClient, projectId),
   });

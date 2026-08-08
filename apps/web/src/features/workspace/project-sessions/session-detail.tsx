@@ -40,7 +40,7 @@ export function SessionDetail({
 }) {
   const access = sessionAccessMeta(session);
   const fields = sessionDetailFields(session, formatted);
-  const href = `/projects/${projectId}/sessions/${session.session_id}`;
+  const href = `/workspaces/${projectId}/sessions/${session.session_id}`;
 
   return (
     <div className="space-y-5 px-4 py-5">

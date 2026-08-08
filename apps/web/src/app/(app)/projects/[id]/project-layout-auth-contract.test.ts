@@ -11,14 +11,14 @@ const MIDDLEWARE = resolve(WEB_ROOT, 'src/middleware.ts');
  * already did, and doing it again cost a second GoTrue round-trip on every
  * project switch and hard load.
  *
- * That is only safe while middleware default-denies `/projects`. Middleware has
+ * That is only safe while middleware default-denies both workspace route families. Middleware has
  * TWO route lists that skip its auth gate — `PUBLIC_ROUTES` and the adjacent
  * `STATIC_PUBLIC_ROUTES` — so both are pinned here. Adding `/projects` to
  * either fails this suite loudly instead of silently rendering the project
  * shell to a signed-out visitor.
  */
 describe('project layout auth contract', () => {
-  test('middleware does not treat /projects as a public route', () => {
+  test('middleware does not treat workspace routes as public routes', () => {
     const source = readFileSync(MIDDLEWARE, 'utf8');
     const publicRoutesStart = source.indexOf('const PUBLIC_ROUTES');
     const staticPublicRoutesStart = source.indexOf('const STATIC_PUBLIC_ROUTES');
@@ -33,10 +33,11 @@ describe('project layout auth contract', () => {
     const publicRoutes = source.slice(publicRoutesStart, staticPublicRoutesStart);
 
     expect(publicRoutes.length).toBeGreaterThan(0);
+    expect(publicRoutes).not.toMatch(/'\/workspaces'/);
     expect(publicRoutes).not.toMatch(/'\/projects'/);
   });
 
-  test('middleware does not treat /projects as a static public route', () => {
+  test('middleware does not treat workspace routes as static public routes', () => {
     const source = readFileSync(MIDDLEWARE, 'utf8');
     const staticPublicRoutesStart = source.indexOf('const STATIC_PUBLIC_ROUTES');
     const markdownNegotiationRoutesStart = source.indexOf('const MARKDOWN_NEGOTIATION_ROUTES');
@@ -50,9 +51,13 @@ describe('project layout auth contract', () => {
     expect(staticPublicRoutesStart).toBeGreaterThan(-1);
     expect(markdownNegotiationRoutesStart).toBeGreaterThan(-1);
 
-    const staticPublicRoutes = source.slice(staticPublicRoutesStart, markdownNegotiationRoutesStart);
+    const staticPublicRoutes = source.slice(
+      staticPublicRoutesStart,
+      markdownNegotiationRoutesStart,
+    );
 
     expect(staticPublicRoutes.length).toBeGreaterThan(0);
+    expect(staticPublicRoutes).not.toMatch(/'\/workspaces'/);
     expect(staticPublicRoutes).not.toMatch(/'\/projects'/);
   });
 

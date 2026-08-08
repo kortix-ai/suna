@@ -36,7 +36,7 @@ export function ProjectFilesNavItem() {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const canReadFiles = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
-  const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
+  const isActive = !!pathname && /^\/(?:workspaces|projects)\/[^/]+\/files(\/|$)/.test(pathname);
 
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
@@ -55,7 +55,7 @@ export function ProjectFilesNavItem() {
         tooltip="Files"
         className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
+        <Link href={`/workspaces/${projectId}/files`} prefetch onClick={handleClick}>
           <FolderOpen />
           Files
         </Link>

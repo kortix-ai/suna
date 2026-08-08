@@ -31,7 +31,7 @@ export function useChangeRequestRecovery() {
 
       setStartingCrId(target.crId);
       const sessionId = crypto.randomUUID();
-      const href = `/projects/${projectId}/sessions/${sessionId}`;
+      const href = `/workspaces/${projectId}/sessions/${sessionId}`;
       markSessionFresh(sessionId);
       router.prefetch(href);
 

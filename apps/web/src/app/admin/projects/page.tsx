@@ -105,7 +105,9 @@ export default function AdminProjectsPage() {
   // (newest / most sessions first, which is what an operator wants to see).
   const setSort = useCallback((column: AdminProjectsSortBy) => {
     setSortState((s) =>
-      s.by === column ? { by: column, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by: column, dir: 'desc' },
+      s.by === column
+        ? { by: column, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+        : { by: column, dir: 'desc' },
     );
     setPage(1);
   }, []);
@@ -242,7 +244,7 @@ export default function AdminProjectsPage() {
                   <TableCell>
                     <div className="max-w-[320px] min-w-0">
                       <Link
-                        href={`/projects/${project.projectId}`}
+                        href={`/workspaces/${project.projectId}`}
                         className="group inline-flex max-w-full items-center gap-1.5 text-sm font-medium"
                       >
                         <span className="truncate group-hover:underline">

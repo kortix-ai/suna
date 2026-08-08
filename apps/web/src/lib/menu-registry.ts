@@ -331,19 +331,19 @@ export const menuRegistry: MenuItemDef[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // PROJECT & APP NAVIGATION (command palette — new project shell)
-  // App-level items always show; project-level items use the {projectId} token
-  // and only show when a project is active (requiresProject).
+  // WORKSPACE & APP NAVIGATION (command palette — current workspace shell)
+  // App-level items always show; workspace-level items use the compatibility
+  // {projectId} token and only show when a workspace is active.
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'nav-projects',
-    label: 'Projects',
+    label: 'Workspaces',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects',
-    keywords: 'projects list all workspaces switch',
+    href: '/workspaces',
+    keywords: 'workspaces list all projects switch',
   },
   {
     id: 'nav-accounts',
@@ -365,7 +365,7 @@ export const menuRegistry: MenuItemDef[] = [
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
     // the href is the routed fallback for surfaces that consume this registry
     // without the palette's nested picker.
-    href: '/projects/{projectId}/sessions',
+    href: '/workspaces/{projectId}/sessions',
     requiresProject: true,
     keywords: 'sessions runs threads project conversations open',
   },
@@ -376,7 +376,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize',
+    href: '/workspaces/{projectId}/customize',
     requiresProject: true,
     // 'agents', 'skills' and 'commands' were deliberately dropped: those three
     // graduated out of the overlay into their own palette entries (proj-agents,
@@ -393,7 +393,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/files',
+    href: '/workspaces/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository project drive browser explorer',
   },
@@ -404,7 +404,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/apps',
+    href: '/workspaces/{projectId}/apps',
     requiresProject: true,
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
@@ -418,7 +418,7 @@ export const menuRegistry: MenuItemDef[] = [
     // The standalone page, not `/customize/agents`. That href still works —
     // `legacyCustomizeRedirect` bounces it here — but routing through the
     // redirect costs a second navigation and paints the overlay route first.
-    href: '/projects/{projectId}/agent',
+    href: '/workspaces/{projectId}/agent',
     requiresProject: true,
     keywords: 'agents subagents project customize ai',
   },
@@ -429,7 +429,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/skills',
+    href: '/workspaces/{projectId}/skills',
     requiresProject: true,
     keywords: 'skills project customize abilities',
   },
@@ -440,7 +440,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/commands',
+    href: '/workspaces/{projectId}/customize/commands',
     requiresProject: true,
     keywords: 'commands slash project customize',
   },
@@ -451,7 +451,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/secrets',
+    href: '/workspaces/{projectId}/customize/secrets',
     requiresProject: true,
     keywords: 'secrets env environment variables project customize',
   },
@@ -462,7 +462,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/connectors',
+    href: '/workspaces/{projectId}/connectors',
     requiresProject: true,
     keywords:
       'connectors connections pipedream mcp openapi postman collections apps connector project customize',
@@ -479,7 +479,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
-    href: '/projects/{projectId}/connectors',
+    href: '/workspaces/{projectId}/connectors',
     requiresProject: true,
     keywords:
       'policies approval block require_approval rules tools connector guardrails project customize',
@@ -491,7 +491,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/git',
+    href: '/workspaces/{projectId}/customize/git',
     requiresProject: true,
     keywords:
       'git repository provider github code storage clone proxy branch sync project customize',
@@ -503,7 +503,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/sandbox',
+    href: '/workspaces/{projectId}/customize/sandbox',
     requiresProject: true,
     keywords: 'sandbox templates image snapshot runtime environment project customize',
   },
@@ -514,7 +514,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/marketplace',
+    href: '/workspaces/{projectId}/customize/marketplace',
     requiresProject: true,
     requiresExperimental: 'marketplace',
     keywords: 'marketplace store install templates agents skills browse project customize',
@@ -526,7 +526,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/llm-management',
+    href: '/workspaces/{projectId}/customize/llm-management',
     requiresProject: true,
     requiresExperimental: 'llm_gateway',
     keywords:
@@ -539,7 +539,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/computers',
+    href: '/workspaces/{projectId}/customize/computers',
     requiresProject: true,
     requiresExperimental: 'agent_tunnel',
     keywords:
@@ -552,7 +552,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/members',
+    href: '/workspaces/{projectId}/customize/members',
     requiresProject: true,
     keywords: 'members team access collaborators project customize',
   },
@@ -574,7 +574,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/schedules',
+    href: '/workspaces/{projectId}/customize/schedules',
     requiresProject: true,
     keywords: 'schedules cron triggers timed project customize',
   },
@@ -585,7 +585,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/webhooks',
+    href: '/workspaces/{projectId}/customize/webhooks',
     requiresProject: true,
     keywords: 'webhooks triggers http project customize',
   },
@@ -596,7 +596,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/channels',
+    href: '/workspaces/{projectId}/customize/channels',
     requiresProject: true,
     keywords:
       'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
@@ -608,7 +608,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings',
+    href: '/workspaces/{projectId}/customize/settings',
     requiresProject: true,
     keywords: 'project settings repository general danger zone',
   },

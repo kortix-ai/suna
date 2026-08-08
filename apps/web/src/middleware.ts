@@ -9,6 +9,7 @@ import {
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
+import { canonicalWorkspacePath, workspaceCompatibilityPath } from '@/lib/workspace-routing';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -138,6 +139,7 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 // in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
 // stay blocked by default.
 const DESKTOP_ALLOWED_ROUTES = [
+  '/workspaces',
   '/projects',
   '/accounts',
   '/invites',
@@ -191,6 +193,15 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
   ) {
     return NextResponse.next();
+  }
+
+  // Project URLs are compatibility inputs. Keep the complete suffix and query
+  // while moving the visible URL onto the canonical Workspace namespace.
+  const canonicalPath = canonicalWorkspacePath(pathname);
+  if (canonicalPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = canonicalPath;
+    return NextResponse.redirect(url, 308);
   }
 
   // ── Terms of Service → public Drive file (permanent 308) ────────────────
@@ -340,6 +351,12 @@ export async function middleware(request: NextRequest) {
   // on the client, so the next request just repeats the same failure.
   const redirectPreservingSession = (url: URL) =>
     redirectPreservingCookies(url, supabaseResponse.cookies);
+
+  const rewritePreservingSession = (url: URL) => {
+    const response = NextResponse.rewrite(url);
+    for (const cookie of supabaseResponse.cookies.getAll()) response.cookies.set(cookie as never);
+    return response;
+  };
 
   // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
   // Docker containers they contain placeholder values. We MUST use runtime
@@ -497,6 +514,13 @@ export async function middleware(request: NextRequest) {
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
       return redirectPreservingSession(url);
+    }
+
+    const compatibilityPath = workspaceCompatibilityPath(pathname);
+    if (compatibilityPath) {
+      const url = request.nextUrl.clone();
+      url.pathname = compatibilityPath;
+      return rewritePreservingSession(url);
     }
 
     return supabaseResponse;

@@ -5,6 +5,7 @@ import {
   isValidProjectId,
   projectPathFromId,
   resolveDefaultLandingPath,
+  workspacePathFromId,
 } from './landing-destination';
 
 const VALID = '11111111-1111-4111-8111-111111111111';
@@ -35,8 +36,9 @@ describe('isValidProjectId', () => {
 });
 
 describe('projectPathFromId', () => {
-  test('builds the project path for a valid id', () => {
-    expect(projectPathFromId(VALID)).toBe(`/projects/${VALID}`);
+  test('builds the canonical Workspace path for a valid id', () => {
+    expect(workspacePathFromId(VALID)).toBe(`/workspaces/${VALID}`);
+    expect(projectPathFromId(VALID)).toBe(`/workspaces/${VALID}`);
   });
 
   test('returns null rather than a path for untrusted input', () => {
@@ -51,10 +53,10 @@ describe('resolveDefaultLandingPath', () => {
   const cookie = (userId: string, projectId: string) => `${userId}:${projectId}`;
 
   test('sends a remembered project straight to its page for its OWNER', () => {
-    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/projects/${VALID}`);
+    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/workspaces/${VALID}`);
   });
 
-  test('REGRESSION: a different user never inherits the previous account\'s project', () => {
+  test("REGRESSION: a different user never inherits the previous account's project", () => {
     // The shipped bug: sign out of A, sign in as B in the same browser, and the
     // post-auth redirect followed A's cookie straight into A's project — so B
     // landed on "Request access to this project" on every single login.

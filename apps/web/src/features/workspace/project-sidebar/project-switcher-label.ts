@@ -63,8 +63,8 @@ export function resolveSwitcherLabel(input: {
 }): SwitcherLabel {
   const name = input.activeProjectName?.trim() || null;
   if (name) return { label: name, pending: false };
-  // No project in the route — the switcher really is the "all projects" entry.
-  if (!input.activeProjectId) return { label: 'Projects', pending: false };
+  // No workspace in the route — the switcher is the "all workspaces" entry.
+  if (!input.activeProjectId) return { label: 'Workspaces', pending: false };
   // The detail entry exists and its name is blank. It still governs.
   if (input.activeProjectName !== undefined) return { label: null, pending: true };
 

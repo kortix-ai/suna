@@ -11,7 +11,7 @@ Replace the Kortix `Project` domain with the canonical `Workspace` domain.
 Use this hierarchy:
 
 ```text
-Organization
+Account
 └── Workspace
     ├── Agents
     ├── Sessions
@@ -26,22 +26,21 @@ Keep deprecated compatibility boundaries for existing consumers.
 
 ## Product contract
 
-- Each organization owns one or more workspaces.
-- A new organization receives one default workspace.
-- The default workspace name matches the organization name.
-- Login opens the current organization's default workspace.
-- Organization switching opens that organization's default workspace.
+- Each account owns one or more workspaces.
+- A new account receives one default workspace.
+- The default workspace name matches the account name.
+- Login opens the current account's default workspace.
+- Account switching opens that account's default workspace.
 - The interface hides the workspace switcher for one accessible workspace.
 - The interface shows the switcher for two or more accessible workspaces.
-- Workspace creation remains an explicit organization-management action.
+- Workspace creation remains an explicit account-management action.
 - The zero-workspace state appears only when automatic creation fails.
 
 ## Canonical names
 
 The canonical domain uses these names:
 
-- Database table: `workspaces`.
-- Database foreign key: `workspace_id`.
+- Public storage term: `Workspace`.
 - API collection: `/v1/workspaces`.
 - SDK facade: `kortix.workspace(workspaceId)`.
 - SDK collection: `kortix.workspaces`.
@@ -50,7 +49,8 @@ The canonical domain uses these names:
 - Mobile route: `/workspaces/:workspaceId`.
 - Public types and functions use `Workspace`.
 
-Project-scoped child records use `workspace_` names.
+Physical database identifiers remain `projects`, `project_*`, and `project_id`
+in this change. They are compatibility storage details, not public product names.
 
 ## Compatibility
 
@@ -66,18 +66,17 @@ The following deprecated boundaries remain:
 
 Compatibility aliases must not create a second implementation.
 
-## Database migration
+## Storage compatibility
 
-One forward migration renames:
+This change does not rename physical database objects.
 
-- `kortix.projects` to `kortix.workspaces`.
-- Every `kortix.project_*` table to its `kortix.workspace_*` equivalent.
-- Every domain foreign-key column from `project_id` to `workspace_id`.
-- Project-named indexes, constraints, policies, functions, and triggers.
+- `kortix.projects` remains the storage table.
+- `project_*` tables remain unchanged.
+- `project_id` columns remain unchanged.
+- Existing indexes, constraints, policies, functions, and triggers remain unchanged.
 
-The migration preserves row identifiers and relationships.
-
-Application code uses only canonical workspace database names after migration.
+The API and SDK map this storage model onto the canonical Workspace contract.
+This boundary avoids a high-risk database migration during the terminology cutover.
 
 ## API
 
@@ -107,7 +106,10 @@ The package version remains unchanged.
 
 ## Applications
 
-Web and mobile code use workspace route segments, symbols, copy, and analytics.
+Web and mobile use Workspace copy, analytics, and canonical route segments.
+
+Internal compatibility modules can retain Project symbols while they delegate to
+the canonical Workspace surface.
 
 Compatibility route files only redirect.
 
@@ -117,7 +119,7 @@ Workspace management remains available under organization settings.
 
 ## Non-goals
 
-- Rename `Account` to `Organization` in this change.
+- Rename `Account` to another domain in this change.
 - Change existing UUID values.
 - Remove deprecated project compatibility.
 - Merge the pull request without user approval.
@@ -127,7 +129,7 @@ Workspace management remains available under organization settings.
 
 The change requires:
 
-- Database migration and schema tests on the isolated database.
+- Storage compatibility tests with no schema migration.
 - Canonical and deprecated API black-box requests.
 - SDK RED tests and all SDK release gates.
 - Real CLI process tests for both nouns.

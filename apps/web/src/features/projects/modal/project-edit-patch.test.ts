@@ -131,7 +131,9 @@ describe('changing the icon only', () => {
   test('a different emoji is savable on its own, with no name key', () => {
     // The bug this feature exists to fix: the old modal compared only the name,
     // so an icon-only edit left Save disabled.
-    const patch = readyPatch(buildProjectEditPatch(ICONED, { name: 'Atlas', icon: { emoji: '🎯' } }));
+    const patch = readyPatch(
+      buildProjectEditPatch(ICONED, { name: 'Atlas', icon: { emoji: '🎯' } }),
+    );
 
     expect(patch).toEqual({ icon: '🎯' });
     expect('name' in patch).toBe(false);
@@ -202,7 +204,9 @@ describe('switching between an emoji and a glyph', () => {
   test('switching a glyph project to an emoji sends icon, and NEVER icon_glyph: null', () => {
     // The symmetric direction — same server behaviour, same reasoning,
     // covered independently because the two branches are separate code paths.
-    const patch = readyPatch(buildProjectEditPatch(GLYPHED, { name: 'Atlas', icon: { emoji: '🚀' } }));
+    const patch = readyPatch(
+      buildProjectEditPatch(GLYPHED, { name: 'Atlas', icon: { emoji: '🚀' } }),
+    );
 
     expect(patch).toEqual({ icon: '🚀' });
     expect('icon_glyph' in patch).toBe(false);
@@ -296,24 +300,27 @@ describe('summarizeProjectEdit', () => {
   test('an icon-only change says so, and does not claim a rename', () => {
     const message = summarizeProjectEdit({ icon: '🎯' }, 'Atlas');
 
-    expect(message).toBe('Project icon updated');
+    expect(message).toBe('Workspace icon updated');
     expect(message).not.toContain('Renamed');
   });
 
   test('a glyph-only change says so too', () => {
-    const message = summarizeProjectEdit({ icon_glyph: { name: 'Rocket', color: 'blue' } }, 'Atlas');
+    const message = summarizeProjectEdit(
+      { icon_glyph: { name: 'Rocket', color: 'blue' } },
+      'Atlas',
+    );
 
-    expect(message).toBe('Project icon updated');
+    expect(message).toBe('Workspace icon updated');
   });
 
   test('a removal is reported as a removal, not as an update', () => {
     // The distinction the whole tri-state exists for. `!patch.icon` would
     // collapse these two branches and report a removal as an update.
-    expect(summarizeProjectEdit({ icon: null }, 'Atlas')).toBe('Project icon removed');
+    expect(summarizeProjectEdit({ icon: null }, 'Atlas')).toBe('Workspace icon removed');
   });
 
   test('a glyph removal is reported as a removal too', () => {
-    expect(summarizeProjectEdit({ icon_glyph: null }, 'Atlas')).toBe('Project icon removed');
+    expect(summarizeProjectEdit({ icon_glyph: null }, 'Atlas')).toBe('Workspace icon removed');
   });
 
   test('an absent icon key is not treated as a removal', () => {
@@ -323,6 +330,6 @@ describe('summarizeProjectEdit', () => {
   });
 
   test('an empty patch still says something', () => {
-    expect(summarizeProjectEdit({}, 'Atlas')).toBe('Project updated');
+    expect(summarizeProjectEdit({}, 'Atlas')).toBe('Workspace updated');
   });
 });

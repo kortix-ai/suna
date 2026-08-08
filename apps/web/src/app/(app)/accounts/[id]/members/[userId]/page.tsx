@@ -553,7 +553,7 @@ function MemberProjectAccessCard({
               <button
                 key={p.project_id}
                 type="button"
-                onClick={() => router.push(`/projects/${p.project_id}`)}
+                onClick={() => router.push(`/workspaces/${p.project_id}`)}
                 className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors"
               >
                 <FolderOpen className="text-muted-foreground size-4 shrink-0" />

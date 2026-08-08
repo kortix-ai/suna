@@ -77,15 +77,15 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
  * instead of opening the overlay.
  */
 const GRADUATED: Record<string, (projectId: string) => string> = {
-  files: (p) => `/projects/${p}/files`,
-  changes: (p) => `/projects/${p}/files?panel=proposed-changes`,
+  files: (p) => `/workspaces/${p}/files`,
+  changes: (p) => `/workspaces/${p}/files?panel=proposed-changes`,
   // The overlay section was `agents`; the route segment is `agent`. Both
   // spellings redirect, because every bookmark and stale href in the wild
   // points at the plural one.
-  agent: (p) => `/projects/${p}/agent`,
-  agents: (p) => `/projects/${p}/agent`,
-  connectors: (p) => `/projects/${p}/connectors`,
-  skills: (p) => `/projects/${p}/skills`,
+  agent: (p) => `/workspaces/${p}/agent`,
+  agents: (p) => `/workspaces/${p}/agent`,
+  connectors: (p) => `/workspaces/${p}/connectors`,
+  skills: (p) => `/workspaces/${p}/skills`,
 };
 
 export function legacyCustomizeRedirect(

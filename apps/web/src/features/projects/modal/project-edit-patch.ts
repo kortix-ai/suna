@@ -133,9 +133,9 @@ export function summarizeProjectEdit(patch: Partial<ProjectInput>, savedName: st
   // `=== null` and not `!patch.icon`: an absent key is not a removal, and this
   // function is reached with both icon keys absent whenever only the name
   // moved.
-  if (patch.icon === null || patch.icon_glyph === null) return 'Project icon removed';
-  if (patch.icon || patch.icon_glyph) return 'Project icon updated';
+  if (patch.icon === null || patch.icon_glyph === null) return 'Workspace icon removed';
+  if (patch.icon || patch.icon_glyph) return 'Workspace icon updated';
   // Unreachable from `status: 'ready'`, which never returns an empty patch —
   // but a toast that says nothing is worse than one that says something dull.
-  return 'Project updated';
+  return 'Workspace updated';
 }

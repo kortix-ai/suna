@@ -292,7 +292,7 @@ export default function ProjectsPage() {
           // reads), the same reach the old bare projects-literal prefix
           // match had.
           queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-          router.replace(`/projects/${project.project_id}`);
+          router.replace(`/workspaces/${project.project_id}`);
         })
         .catch((err) => {
           const delay = AUTO_CREATE_RETRY_DELAY_MS[n - 1];
@@ -356,11 +356,11 @@ export default function ProjectsPage() {
       // costs nothing measurable.
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
-      successToast(name ? `"${name}" archived` : 'Project archived');
+      successToast(name ? `"${name}" archived` : 'Workspace archived');
       setArchiveTarget(null);
     },
     onError: (error: Error) => {
-      errorToast(error.message || 'Failed to archive project');
+      errorToast(error.message || 'Failed to archive workspace');
     },
   });
 
@@ -417,7 +417,7 @@ export default function ProjectsPage() {
       <div className="w-full border-b">
         <AppHeader
           user={user}
-          breadcrumb="Projects"
+          breadcrumb="Workspaces"
           actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
         />
       </div>
@@ -426,7 +426,7 @@ export default function ProjectsPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
-                Projects
+                Workspaces
               </h1>
               <p className="text-muted-foreground text-base">
                 {tHardcodedUi.raw(
@@ -544,7 +544,7 @@ export default function ProjectsPage() {
                     <ProjectCard
                       key={project.project_id}
                       project={project}
-                      onOpen={() => router.push(`/projects/${project.project_id}`)}
+                      onOpen={() => router.push(`/workspaces/${project.project_id}`)}
                       onEdit={() => setEditTarget(project)}
                       onArchive={() => setArchiveTarget(project)}
                       archiving={archivingId === project.project_id}
@@ -637,7 +637,7 @@ export default function ProjectsPage() {
                           project={project}
                           onOpen={() => {
                             setSelectedAccountId(group.account.account_id);
-                            router.push(`/projects/${project.project_id}`);
+                            router.push(`/workspaces/${project.project_id}`);
                           }}
                           onEdit={() => setEditTarget(project)}
                           onArchive={() => setArchiveTarget(project)}
@@ -681,11 +681,11 @@ export default function ProjectsPage() {
         onOpenChange={(o) => {
           if (!o && !archiveMutation.isPending) setArchiveTarget(null);
         }}
-        title="Archive project"
+        title="Archive workspace"
         description={
           <>
             <span className="text-foreground font-medium">{archiveTarget?.name}</span> will be
-            archived and removed from your projects list.
+            archived and removed from your workspaces list.
           </>
         }
         confirmLabel="Archive"

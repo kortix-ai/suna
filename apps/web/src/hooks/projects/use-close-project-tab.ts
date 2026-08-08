@@ -1,7 +1,7 @@
 'use client';
 
-import { startTransition, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { startTransition, useCallback } from 'react';
 
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
@@ -35,21 +35,19 @@ export function useCloseProjectTab(projectId: string) {
   const router = useRouter();
   const pathname = usePathname();
   const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
-  const setOptimisticActive = useProjectSessionTabsStore(
-    (s) => s.setOptimisticActive,
-  );
+  const setOptimisticActive = useProjectSessionTabsStore((s) => s.setOptimisticActive);
 
   return useCallback(
     (sessionId: string) => {
-      const tabs =
-        useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
+      const tabs = useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
       const idx = tabs.indexOf(sessionId);
       // Already gone (duplicate event, stale snapshot from a previous close
       // whose `router.push` hasn't flushed yet). Bail before idx underflow.
       if (idx === -1) return;
 
       const isActive =
-        pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ??
+        (pathname?.startsWith(`/workspaces/${projectId}/sessions/${sessionId}`) ||
+          pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`)) ??
         false;
 
       if (!isActive) {
@@ -60,14 +58,14 @@ export function useCloseProjectTab(projectId: string) {
 
       const remaining = tabs.filter((id) => id !== sessionId);
       if (remaining.length === 0) {
-        router.push(`/projects/${projectId}`);
+        router.push(`/workspaces/${projectId}`);
         startTransition(() => closeTab(projectId, sessionId));
         return;
       }
 
       const nextId = remaining[Math.min(idx, remaining.length - 1)];
       setOptimisticActive(projectId, nextId);
-      router.push(`/projects/${projectId}/sessions/${nextId}`);
+      router.push(`/workspaces/${projectId}/sessions/${nextId}`);
       startTransition(() => closeTab(projectId, sessionId));
     },
     [projectId, pathname, router, closeTab, setOptimisticActive],

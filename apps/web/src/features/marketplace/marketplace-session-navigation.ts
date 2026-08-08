@@ -9,7 +9,7 @@ export interface SessionRouter {
 }
 
 export function marketplaceInstallSessionHref(projectId: string, sessionId: string): string {
-  return `/projects/${projectId}/sessions/${sessionId}`;
+  return `/workspaces/${projectId}/sessions/${sessionId}`;
 }
 
 export function prepareMarketplaceInstallSessionNavigation(

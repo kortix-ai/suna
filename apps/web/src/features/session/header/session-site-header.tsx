@@ -24,14 +24,14 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
-import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   sidebarOpenerLabel,
   useDesktopShell,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
+import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
@@ -123,7 +123,7 @@ export function SessionSiteHeader({
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
   // session, which is only addressable on the `/projects/:id/sessions/:id` route.
-  const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+  const projectRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
   const projectId = projectRoute?.[1];
   const projectSessionId = projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
@@ -305,7 +305,7 @@ export function SessionSiteHeader({
 
             {isProjectSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
-                <Link href={`/projects/${projectId}`}>
+                <Link href={`/workspaces/${projectId}`}>
                   <HouseIcon className="size-4.5" />
                 </Link>
               </Button>
@@ -477,7 +477,7 @@ export function SessionSiteHeader({
             sessionLabel={sessionTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            onDeleted={() => router.push(`/projects/${projectId}`)}
+            onDeleted={() => router.push(`/workspaces/${projectId}`)}
           />
         </>
       )}

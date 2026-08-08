@@ -45,14 +45,14 @@ describe('customize sections', () => {
 
 describe('legacyCustomizeRedirect', () => {
   test('keeps the existing files and changes redirects', () => {
-    expect(legacyCustomizeRedirect('p1', 'files')).toBe('/projects/p1/files');
+    expect(legacyCustomizeRedirect('p1', 'files')).toBe('/workspaces/p1/files');
     expect(legacyCustomizeRedirect('p1', 'changes')).toBe(
-      '/projects/p1/files?panel=proposed-changes',
+      '/workspaces/p1/files?panel=proposed-changes',
     );
   });
   test('routes the graduated sections to their own pages', () => {
-    expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
-    expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/projects/p1/skills');
+    expect(legacyCustomizeRedirect('p1', 'connectors')).toBe('/workspaces/p1/connectors');
+    expect(legacyCustomizeRedirect('p1', 'skills')).toBe('/workspaces/p1/skills');
   });
 
   test('commands stays in the overlay — its standalone page was removed', () => {
@@ -63,11 +63,11 @@ describe('legacyCustomizeRedirect', () => {
   });
 
   test('agents redirects to its standalone page, under either spelling', () => {
-    // Agents graduated to /projects/<id>/agent. The overlay section was named
+    // Agents graduated to /workspaces/<id>/agent. The overlay section was named
     // 'agents', so both spellings have to land — every bookmark in the wild
     // points at the plural one.
-    expect(legacyCustomizeRedirect('p1', 'agents')).toBe('/projects/p1/agent');
-    expect(legacyCustomizeRedirect('p1', 'agent')).toBe('/projects/p1/agent');
+    expect(legacyCustomizeRedirect('p1', 'agents')).toBe('/workspaces/p1/agent');
+    expect(legacyCustomizeRedirect('p1', 'agent')).toBe('/workspaces/p1/agent');
   });
 
   test('leaves overlay sections alone', () => {

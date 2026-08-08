@@ -1,7 +1,7 @@
+import { menuRegistry } from '@/lib/menu-registry';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { menuRegistry } from '@/lib/menu-registry';
 import { railGroups } from './rail';
 
 // The rail lives in rail.ts and the panel that renders it in customize-panel.tsx;
@@ -30,7 +30,7 @@ describe('Customize information architecture', () => {
     expect(customizeSource).not.toContain("section: 'files'");
     const entry = menuRegistry.find((item) => item.id === 'proj-files');
     expect(entry?.label).toBe('Files');
-    expect(entry?.href).toBe('/projects/{projectId}/files');
+    expect(entry?.href).toBe('/workspaces/{projectId}/files');
   });
 
   test('LLM management remains reachable from the Connect rail group', () => {

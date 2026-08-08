@@ -1,7 +1,7 @@
 'use client';
 
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { GlobeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -23,11 +23,14 @@ export function ProjectAppsNavItem() {
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
-        isActive={pathname?.startsWith(`/projects/${projectId}/apps`) === true}
+        isActive={
+          pathname?.startsWith(`/workspaces/${projectId}/apps`) === true ||
+          pathname?.startsWith(`/projects/${projectId}/apps`) === true
+        }
         tooltip="Apps"
         className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
+        <Link href={`/workspaces/${projectId}/apps`} prefetch onClick={handleClick}>
           <GlobeIcon />
           Apps
           <Badge aria-hidden size="xs" variant="beta" className="ml-auto">
