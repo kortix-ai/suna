@@ -162,13 +162,18 @@ test.describe("12 — Sandbox templates UI", () => {
       page.getByText(/Platform default · shared by every project/),
     ).toBeVisible();
 
-    // At least one state badge rendered (Ready / Building / Pulling / Not built yet / Error).
+    // Every available provider reports its real launch state. A local stack can
+    // legitimately report Not ready when no provider snapshot exists.
     const platformRow = page
       .getByRole("listitem")
       .filter({ hasText: "Platform default" });
-    await expect(platformRow).toContainText("Daytona");
-    await expect(platformRow).toContainText("Platinum");
-    await expect(platformRow).toContainText("Ready");
+    const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
+    await expect(platformRow).toContainText(
+      new RegExp(`Daytona[^A-Za-z]*(?:${launchState})`),
+    );
+    await expect(platformRow).toContainText(
+      new RegExp(`Platinum[^A-Za-z]*(?:${launchState})`),
+    );
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });

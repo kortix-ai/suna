@@ -83,7 +83,10 @@ test.describe("13 — Custom connector OAuth2", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissOnboarding(page);
-    await page.getByRole("link", { name: /^Customize$/i }).click();
+
+    // A user opens the standalone Connectors surface from the project home.
+    // Connectors no longer lives inside the Customize overlay.
+    await page.getByRole("button", { name: /^Connectors$/i }).click();
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/connectors$`),
     );
