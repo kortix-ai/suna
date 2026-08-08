@@ -49,7 +49,6 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
-import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
 import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
@@ -59,7 +58,7 @@ import {
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
   CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
@@ -172,7 +171,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // footer "Review" pill, and the Customize rail all read the SAME inbox summary
   // and gate on the SAME flag. When the flag is off the summary query never runs,
   // so no indicators render and nothing polls.
-  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   // Grouping, ordering, and the two multi-select facets all live in the

@@ -1,7 +1,7 @@
 'use client';
 
 import { type AdminConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -221,9 +221,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [],
   );
 
-  const experimental = projectQuery.data?.project?.experimental;
-  const discoverEnabled = experimental?.connectors_api_discover === true;
-  const emailChannelEnabled = experimental?.agentmail_email === true;
+  // The one gating primitive. `useFeatureFlag` reads the SAME
+  // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
+  // the same fetch and the same fail-closed semantics — `projectQuery` stays
+  // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
+  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
+  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
@@ -256,8 +259,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
   //
-  // `projectQuery` supplies `experimental`, and every flag read off it FAILS
-  // CLOSED: a 500 leaves `discoverEnabled` and `emailChannelEnabled` false.
+  // `projectQuery` is the SAME cache entry `useFeatureFlag` reads, and every
+  // flag read off it FAILS CLOSED: a 500 leaves `discoverEnabled` and
+  // `emailChannelEnabled` false.
   // `settled` does not save us — react-query drops `isLoading` once a query
   // has exhausted its retries, so on failure the page rendered as fully loaded
   // with capabilities silently gone. Naming only `connectorsQuery` here also

@@ -672,7 +672,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      /** Toggle a feature flag (Customize → Feature flags). Pass `enabled: null` to clear the override. */
+      updateFeatureFlag: (...a: DropFirst<Parameters<typeof P.updateFeatureFlag>>) =>
+        P.updateFeatureFlag(projectId, ...a),
+
+      /** @deprecated Renamed to `updateFeatureFlag`. Keeps the legacy `/experimental` wire path for older deployed APIs. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
       ) => P.updateExperimentalFeature(projectId, ...a),
