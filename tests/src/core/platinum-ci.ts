@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v2';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v3';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -32,7 +32,11 @@ export interface PlatinumTemplateSpec {
   name: string;
   version: string;
   base_image: string;
-  steps: Array<{ op: 'run'; cmd: string } | { op: 'env'; key: string; value: string }>;
+  steps: Array<
+    | { op: 'run'; cmd: string }
+    | { op: 'env'; key: string; value: string }
+    | { op: 'kernel_modules'; profile: 'container' }
+  >;
   default_cpu: number;
   default_ram_mb: number;
   default_disk_gb: number;
@@ -58,7 +62,10 @@ export class PlatinumHttpError extends Error {
 }
 
 export function isRetryablePlatinumError(error: unknown): boolean {
-  if (error instanceof PlatinumHttpError) return TRANSIENT_STATUS_CODES.has(error.status);
+  if (error instanceof PlatinumHttpError) {
+    return TRANSIENT_STATUS_CODES.has(error.status)
+      || (error.status === 500 && /operation was aborted/i.test(error.message));
+  }
   if (error instanceof SyntaxError) return false;
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(message);
@@ -188,6 +195,7 @@ export function buildPlatinumTemplateSpec(input: {
     version: '1.0.0',
     base_image: PLATINUM_CI_NODE_IMAGE,
     steps: [
+      { op: 'kernel_modules', profile: 'container' },
       {
         op: 'run',
         cmd: [
@@ -265,6 +273,11 @@ echo "[platinum-ci] exact_sha=$actual_sha"
 cd "$ROOT"
 corepack enable
 pnpm install --frozen-lockfile
+
+for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
+  modprobe "$module"
+done
+echo "[platinum-ci] container_modules_ready=1"
 
 if ! docker info >/dev/null 2>&1; then
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &

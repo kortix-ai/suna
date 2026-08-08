@@ -32,6 +32,10 @@ const excludedFiles = new Set([
   // Migration acceptance coverage must construct the retired value to prove
   // that an upgrade fails closed instead of relabelling historical rows.
   'packages/db/scripts/local-docker-provider-removal.integration.test.ts',
+  // The checksum-guarded runtime override removes historical retired-provider
+  // rows without modifying the immutable migration file.
+  'packages/db/scripts/migration-runtime-overrides.ts',
+  'packages/db/scripts/migration-runtime-overrides.test.ts',
   'packages/sdk/PROGRESS.md',
   'tests/unit/retired-local-provider.test.ts',
 ]);

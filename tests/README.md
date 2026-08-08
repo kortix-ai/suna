@@ -50,14 +50,19 @@ The template name includes the `pnpm-lock.yaml` hash. The template contains the
 pinned Node, Bun, pnpm, Docker, Chromium, and pnpm-store state. A lockfile change
 creates one new template. Other commits reuse it.
 
+The template requests Platinum's `kernel_modules/container` profile. The worker
+loads the container module set before it starts dockerd. This profile is
+infrastructure for the same local test command. It does not change test logic.
+
 The worker fetches the requested public Git ref and verifies its full SHA. It
 streams `kortix-test.log`, downloads `tests/test-results`, and deletes the
 sandbox. The worker auto-stops after 15 idle minutes if workflow cancellation
 prevents immediate deletion.
 
-The control client retries `502`, `503`, `504`, `524`, timeouts, and connection
-resets with bounded exponential backoff. Sandbox deletion uses eight attempts.
-A failed deletion fails the workflow and keeps the exact sandbox ID in the log.
+The control client retries `502`, `503`, `504`, `524`, the provider's transient
+`500 operation was aborted` response, timeouts, and connection resets. It uses
+bounded exponential backoff. Sandbox deletion uses eight attempts. A failed
+deletion fails the workflow and keeps the exact sandbox ID in the log.
 
 ## Product flows
 

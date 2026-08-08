@@ -19,7 +19,7 @@ const lockHash = 'b'.repeat(64);
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v2-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v3-bbbbbbbbbbbbbbbb');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -35,6 +35,7 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install chromium');
+    expect(spec.steps).toContainEqual({ op: 'kernel_modules', profile: 'container' });
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
     }
@@ -52,6 +53,8 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain("fetch --depth=1 origin 'refs/pull/6260/head'");
     expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
     expect(script).toContain('nohup pnpm dev');
+    expect(script).toContain('modprobe "$module"');
+    expect(script).toContain('container_modules_ready=1');
     expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
   });
 
@@ -102,6 +105,10 @@ describe('Platinum CI worker plan', () => {
     expect(calls).toBe(3);
     expect(delays).toEqual([1_000, 2_000]);
     expect(isRetryablePlatinumError(new PlatinumHttpError('bad request', 400))).toBe(false);
+    expect(isRetryablePlatinumError(
+      new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500),
+    )).toBe(true);
+    expect(isRetryablePlatinumError(new PlatinumHttpError('internal bug', 500))).toBe(false);
   });
 
   test('rejects values that could alter the Git fetch command', () => {

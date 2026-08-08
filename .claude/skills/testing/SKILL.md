@@ -77,6 +77,8 @@ Keep the test command unchanged. GitHub Actions invokes
 
 - Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
 - Bake Node, Bun, pnpm, Docker, Chromium, and the pnpm store into the template.
+- Request Platinum's `kernel_modules/container` profile and load the required
+  modules before starting dockerd.
 - Fetch the public pull-request or branch ref inside the sandbox.
 - Verify the full 40-character SHA before installing or testing.
 - Use an ephemeral 8 vCPU, 16 GiB RAM, 50 GiB disk worker.
