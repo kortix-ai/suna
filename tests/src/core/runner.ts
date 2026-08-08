@@ -334,6 +334,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       capabilities: env.capabilities as unknown as Record<string, boolean>,
       profile: opts.profile ?? "all",
       excludedFlows: localPlan?.excluded ?? [],
+      fixtureStats: world.fixtureStats(),
       routesHit: [...routesHit].sort(),
       flows: out,
       summary: summarize(out, durationMs),

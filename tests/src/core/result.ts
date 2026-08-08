@@ -66,6 +66,11 @@ export interface RunSummary {
   durationMs: number;
 }
 
+export interface FixtureStats {
+  databaseProjectCount: number;
+  managedProjectCount: number;
+}
+
 export interface RunResult {
   runId: string;
   startedAt: string;
@@ -76,6 +81,8 @@ export interface RunResult {
   capabilities: Record<string, boolean>;
   profile?: "all" | "local";
   excludedFlows?: Array<{ id: string; reason: string }>;
+  /** Run-scoped project fixtures created before teardown starts. */
+  fixtureStats: FixtureStats;
   /** Every route template touched across the run (for coverage). */
   routesHit: string[];
   flows: FlowResult[];

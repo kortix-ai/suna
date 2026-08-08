@@ -29,6 +29,7 @@ import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
 import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
 import { createLocalGitRepository } from './local-git';
+import type { FixtureStats } from '../core/result';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -36,6 +37,7 @@ export interface World {
   principals: Principals;
   newStack(): ResourceStack;
   makeFixtures(stack: ResourceStack): Fixtures;
+  fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
 }
 
@@ -65,6 +67,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       principals,
       newStack: () => new ResourceStack(new Client(env.apiUrl)),
       makeFixtures: () => noFixtures,
+      fixtureStats: () => ({ databaseProjectCount: 0, managedProjectCount: 0 }),
       teardownAll: async () => {},
     };
   }
@@ -304,6 +307,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     principals: principalsProxy(provisioned.principals),
     newStack: () => new ResourceStack(adminClient, deleteDatabaseProjectFixture),
     makeFixtures: fixturesFor,
+    fixtureStats: () => ({ databaseProjectCount, managedProjectCount }),
     async teardownAll() {
       log.info(
         `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,

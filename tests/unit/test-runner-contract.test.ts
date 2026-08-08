@@ -19,4 +19,13 @@ describe('local test runner contract', () => {
     expect(rootPackage.scripts['test:browser']).toBeUndefined();
     expect(testsPackage.scripts.test).toContain('vitest run');
   });
+
+  it('snapshots fixture counts into results before teardown starts', () => {
+    const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
+    const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');
+    const teardown = runner.indexOf('await world.teardownAll()');
+
+    expect(fixtureSnapshot).toBeGreaterThan(-1);
+    expect(teardown).toBeGreaterThan(fixtureSnapshot);
+  });
 });

@@ -1,14 +1,15 @@
-import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/core/env';
 import {
+  type OpenProjectDb,
   createDatabaseProject,
   deleteDatabaseProject,
-  type OpenProjectDb,
 } from '../src/fixtures/database-project';
 import { createLocalGitRepository } from '../src/fixtures/local-git';
+import { buildWorld } from '../src/fixtures/world';
 
 function env(overrides: Partial<Env> = {}): Env {
   return {
@@ -51,6 +52,21 @@ function database() {
 }
 
 describe('database-only project fixture', () => {
+  it('reports zero structured fixture counts for a public-only run', async () => {
+    const world = await buildWorld(env(), [
+      {
+        id: 'SYS-TEST',
+        meta: { domain: 'system', routes: [] },
+        fn: async () => {},
+      },
+    ]);
+
+    expect(world.fixtureStats()).toEqual({
+      databaseProjectCount: 0,
+      managedProjectCount: 0,
+    });
+  });
+
   it('creates an isolated project row and manager grant without a Git provider call', async () => {
     const db = database();
 
