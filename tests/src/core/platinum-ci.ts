@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v5';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v6';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -197,8 +197,7 @@ function platinumWarmEntrypoint(): string {
     'cd /workspace/suna',
     'rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock',
     'for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done',
-    'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
-    'dockerd_pid=$!',
+    'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 & dockerd_pid=$!',
     'for _ in $(seq 1 180); do docker info >/dev/null 2>&1 && break; sleep 1; done',
     'docker info >/dev/null',
     'pnpm exec supabase start',
