@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalTestPlan } from '../src/core/local-runner';
+import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('runs the REST flows, SDK, runner unit tests, and route coverage concurrently by default', () => {
@@ -50,5 +50,25 @@ describe('local test runner', () => {
 
   it('rejects conflicting modes', () => {
     expect(() => buildLocalTestPlan(['--full', '--sdk-only'])).toThrow('choose only one');
+  });
+
+  it('retries a cold local web route until it is ready', async () => {
+    let attempts = 0;
+    const sleeps: number[] = [];
+
+    await waitForLocalWeb('http://127.0.0.1:24000', {
+      timeoutMs: 1_000,
+      probe: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error('compiling');
+        return new Response(null, { status: 200 });
+      },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(attempts).toBe(3);
+    expect(sleeps).toEqual([250, 250]);
   });
 });

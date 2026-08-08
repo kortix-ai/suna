@@ -109,6 +109,32 @@ interface LaneResult {
   durationMs: number;
 }
 
+export async function waitForLocalWeb(
+  webUrl: string,
+  options: {
+    timeoutMs?: number;
+    probe?: (url: string) => Promise<Response>;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  const deadline = performance.now() + timeoutMs;
+  const probe =
+    options.probe ??
+    ((url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }));
+  const sleep = options.sleep ?? Bun.sleep;
+  do {
+    try {
+      const response = await probe(webUrl);
+      if (response.ok) return;
+    } catch {
+      // The dev server can accept connections before its first route compiles.
+    }
+    await sleep(250);
+  } while (performance.now() < deadline);
+  throw new Error(`local web is not ready at ${webUrl} after ${timeoutMs}ms`);
+}
+
 async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
   console.log(`\n[test] START ${lane.name}: ${lane.command.join(' ')}`);
@@ -119,12 +145,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
       const supabase = await readLocalSupabaseEnvironment(topology);
       const webPort = topology.marker?.ports.web ?? 3000;
       const webUrl = `http://127.0.0.1:${webPort}`;
-      try {
-        const response = await fetch(webUrl, { signal: AbortSignal.timeout(2_000) });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      } catch {
-        throw new Error(`local web is not running at ${webUrl}; start it with pnpm dev`);
-      }
+      await waitForLocalWeb(webUrl);
       if (
         !supabase.API_URL ||
         !supabase.DB_URL ||
