@@ -515,6 +515,7 @@ async function ensureTemplate(
   console.log(`[platinum-ci] template=${spec.name} cache=miss`);
   const queued = await api.json<PlatinumTemplate>('/v1/templates/from-spec', {
     method: 'POST',
+    headers: { 'idempotency-key': `kortix-ci-template-${spec.name}` },
     body: JSON.stringify(spec),
   });
   return waitForTemplate(api, queued);
@@ -537,6 +538,7 @@ async function ensureWarmTemplate(
   console.log(`[platinum-ci] template=${name} cache=miss parent=${base.id}`);
   const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
     method: 'POST',
+    headers: { 'idempotency-key': `kortix-ci-template-${name}` },
     body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
   });
   return waitForTemplate(api, derived);
