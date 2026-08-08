@@ -3455,12 +3455,12 @@
       "line850JsxAttrDescAChosenListOfMembers": "指定成员列表"
     },
     "appProjectsIdCustomizeMembersPage": {
-      "line92JsxTextProjectMembers": "项目成员",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "管理谁可以访问此项目及其角色。",
+      "line92JsxTextProjectMembers": "工作区成员",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "管理谁可以访问此工作区及其角色。",
       "line140JsxAttrTitleInviteByEmail": "通过电子邮件邀请",
-      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "将现有 Kortix 用户添加到此项目。",
+      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "将现有 Kortix 用户添加到此工作区。",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line260JsxAttrTitleProjectAccess": "项目访问权限",
+      "line260JsxAttrTitleProjectAccess": "工作区访问权限",
       "line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess": "账户所有者和管理员始终拥有经理访问权限。",
       "line328JsxTextNoAccess": "无访问权限"
     },

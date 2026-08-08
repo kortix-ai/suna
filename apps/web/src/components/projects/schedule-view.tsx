@@ -422,7 +422,7 @@ function SessionStrategyFields({
             ))}
             {!sessionsLoading && sessions.length === 0 && (
               <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                No sessions in this project yet.
+                No sessions in this workspace yet.
               </div>
             )}
           </SelectContent>

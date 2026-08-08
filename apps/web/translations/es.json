@@ -3459,12 +3459,12 @@
       "line850JsxAttrDescAChosenListOfMembers": "Una lista elegida de miembros"
     },
     "appProjectsIdCustomizeMembersPage": {
-      "line92JsxTextProjectMembers": "Miembros del proyecto",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Gestiona quién puede acceder a este proyecto y sus roles.",
+      "line92JsxTextProjectMembers": "Miembros del espacio de trabajo",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Gestiona quién puede acceder a este espacio de trabajo y sus roles.",
       "line140JsxAttrTitleInviteByEmail": "Invitar por correo electrónico",
-      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "Agrega un usuario existente de Kortix a este proyecto.",
+      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "Agrega un usuario existente de Kortix a este espacio de trabajo.",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line260JsxAttrTitleProjectAccess": "Acceso al proyecto",
+      "line260JsxAttrTitleProjectAccess": "Acceso al espacio de trabajo",
       "line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess": "Los propietarios de la cuenta y los administradores siempre tienen acceso de gestor.",
       "line328JsxTextNoAccess": "Sin acceso"
     },

@@ -310,7 +310,7 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
 
 const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
   [
-    { value: 'project_open', label: 'Project members can join' },
+    { value: 'project_open', label: 'Workspace members can join' },
     { value: 'owner_only', label: 'Owner only' },
     { value: 'owner_approval', label: 'Owner approval' },
   ];

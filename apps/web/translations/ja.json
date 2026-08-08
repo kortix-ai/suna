@@ -3459,12 +3459,12 @@
       "line850JsxAttrDescAChosenListOfMembers": "選択したメンバー"
     },
     "appProjectsIdCustomizeMembersPage": {
-      "line92JsxTextProjectMembers": "プロジェクトメンバー",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "このプロジェクトへのアクセス権と役割を管理します。",
+      "line92JsxTextProjectMembers": "ワークスペースメンバー",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "このワークスペースへのアクセス権と役割を管理します。",
       "line140JsxAttrTitleInviteByEmail": "メールで招待",
-      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "既存の Kortix ユーザーをこのプロジェクトに追加します。",
+      "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "既存の Kortix ユーザーをこのワークスペースに追加します。",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line260JsxAttrTitleProjectAccess": "プロジェクトアクセス",
+      "line260JsxAttrTitleProjectAccess": "ワークスペースアクセス",
       "line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess": "アカウント所有者と管理者は常にマネージャー権限を持ちます。",
       "line328JsxTextNoAccess": "アクセスなし"
     },
