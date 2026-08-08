@@ -406,6 +406,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
+    requiresExperimental: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   {
