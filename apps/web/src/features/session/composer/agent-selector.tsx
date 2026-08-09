@@ -27,11 +27,21 @@ export function AgentSelector({
   selectedAgent,
   onSelect,
   disabled = false,
+  triggerLabelClassName,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
+  /**
+   * Overrides the trigger label's `max-w-[100px]` (twMerge picks the last
+   * conflicting utility, so this cleanly replaces rather than stacks).
+   * `AgentSelector` is re-exported from `session-chat-input.tsx` and
+   * imported through that barrel by `schedule-view.tsx` (x2) and
+   * `channels-view.tsx` — none of them pass this, so they keep the 100px
+   * default byte-identical. Only the composer passes `max-w-[7rem]`.
+   */
+  triggerLabelClassName?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -168,7 +178,9 @@ export function AgentSelector({
             )}
           >
             {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
-            <span className="max-w-[7rem] truncate">{displayName}</span>
+            <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>
+              {displayName}
+            </span>
             <CaretDownIcon
               className={cn(
                 'size-3 opacity-50 transition-transform duration-200',

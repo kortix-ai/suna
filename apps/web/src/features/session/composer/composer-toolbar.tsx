@@ -165,6 +165,7 @@ export function ComposerToolbar({
             selectedAgent={selectedAgent}
             onSelect={onAgentChange ?? (() => {})}
             disabled={agentSelectorLocked}
+            triggerLabelClassName="max-w-[7rem]"
           />
         )}
         {showModel && (
