@@ -43,9 +43,8 @@ import { listAccounts } from '@kortix/sdk';
  * vertical rhythms.
  *
  * Kept short because this is the response to pressing Create — 300ms total,
- * exit at ~66% of enter — and because the handoff has an entrance of its own:
- * `KortixHyperLogo` dissolves itself in over 800ms the moment it mounts. A
- * slow fade here would run under that reveal and mute it.
+ * exit at ~66% of enter. The handoff's own caption stagger runs inside this
+ * fade, so a slower swap would swallow it.
  */
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
 const SWAP_IN = { duration: 0.18, ease: EASE_OUT };
@@ -337,7 +336,7 @@ export function NewWorkspacePage() {
                       as an animated `paddingRight`. Once an icon is PICKED the
                       column is open for good and the tile is tinted, so the
                       extra `gap-1.5` is safe and keeps the fill off the input. */}
-                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-1.5')}>
+                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-2')}>
                   <m.div
                     // ONE element, always mounted, retargeting its width —
                     // NOT an AnimatePresence enter/exit. Mount/unmount

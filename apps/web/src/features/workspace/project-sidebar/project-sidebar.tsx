@@ -14,12 +14,11 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
@@ -28,7 +27,6 @@ import {
   ProjectSettingsNavItem,
   useSettingsKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/project-settings-nav';
-import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
@@ -39,7 +37,7 @@ import {
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { WorkspaceSwitcher } from './workspace-switcher';
@@ -213,7 +211,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSessionList projectId={projectId} />
           </SidebarGroup>
 
-          <SidebarGroup className="mt-auto py-0.5">
+          <SidebarGroup className="mt-auto">
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />

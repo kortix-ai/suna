@@ -117,7 +117,7 @@ export function ThemeSubmenu() {
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
         {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
-        Theme
+        Appearance
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>

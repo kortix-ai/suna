@@ -45,7 +45,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { cn } from '@/lib/utils';
@@ -110,17 +109,17 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
-                {/* Placeholder, not a guess: the initial is derived from the
-                    name, so painting a tile before the name arrives would swap
-                    letters mid-load. */}
+                {/* Nothing, not a skeleton. The tile's initial and the label
+                    both come from the name, so a placeholder would paint a
+                    shape that swaps content the moment the query lands. The
+                    control keeps its size either way — the row is a fixed
+                    `h-8` — so the empty state is a quiet gap, not a jump. */}
                 {project ? (
                   <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
-                ) : (
-                  <Skeleton className="size-6 shrink-0 rounded-sm" />
-                )}
+                ) : null}
 
                 <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
-                  {project?.name ?? <Skeleton className="h-3.5 w-24 rounded-sm" />}
+                  {project?.name ?? null}
                 </span>
 
                 <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 group-data-[collapsible=icon]:hidden" />
@@ -131,11 +130,11 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               align="start"
               side="bottom"
               sideOffset={6}
-              className="w-[256px] space-y-0.5 overflow-hidden shadow-lg border-foreground/10"
+              className="border-foreground/10 w-[256px] space-y-0.5 overflow-hidden shadow-lg"
             >
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <ArrowsLeftRightIcon weight='fill' />
+                  <ArrowsLeftRightIcon weight="fill" />
                   Switch Workspace
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>

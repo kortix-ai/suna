@@ -159,8 +159,10 @@ export function WorkspaceMenuSection() {
         ) : (
           <>
             {visibleGroups.map((group) => (
-              <DropdownMenuGroup key={group.accountId}>
-                <DropdownMenuLabel>{group.accountName}</DropdownMenuLabel>
+              <DropdownMenuGroup key={group.accountId} className="p-0.5">
+                <DropdownMenuLabel className="px-1.5 text-sm">
+                  {group.accountName.replaceAll("'s Account", '')}
+                </DropdownMenuLabel>
                 {group.workspaces.map((workspace) => {
                   const active = workspace.project_id === activeProjectId;
                   const loading = switching && workspace.project_id !== activeProjectId;
@@ -169,7 +171,7 @@ export function WorkspaceMenuSection() {
                       key={workspace.project_id}
                       disabled={loading}
                       onSelect={() => switchProject(workspace)}
-                      className={cn('cursor-pointer', active && 'bg-muted/80')}
+                      className={cn('cursor-pointer px-1.5', active && 'bg-muted/80')}
                     >
                       <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">

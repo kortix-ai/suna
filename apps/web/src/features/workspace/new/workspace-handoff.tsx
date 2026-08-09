@@ -1,32 +1,21 @@
 'use client';
 
 import { m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
+import { KortixLogo } from '@/components/ui/kortix-logo';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
 
 /**
- * The caption lands just after the mark rather than with it. The logo builds
- * ITSELF out of its ASCII grid over 800ms — that dissolve is the entrance, and
- * a label arriving in the same frame competes with it for the first look. One
- * beat behind (the doctrine's 30–80ms stagger, rounded up because the logo's
- * reveal is long) makes the mark the subject and the name its label.
+ * The caption lands a beat after the mark rather than with it. Both arrive
+ * inside the page's own 180ms fade, so with no offset they read as one block
+ * appearing; with it, the mark is the subject and the name is its label.
+ * Stretched past the doctrine's 30–80ms stagger because there are only two
+ * elements here — too short a gap between exactly two things reads as a
+ * stutter rather than a sequence.
  */
 const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
-
-/**
- * The escape hatch waits, because in the normal path it is never seen: the
- * wizard is a fullscreen portal and covers this screen as soon as
- * `getProjectDetail` settles, usually well inside 1.6s. Showing the link
- * immediately would put "Go to workspace" on screen for a moment in every
- * single successful create, which reads as an offer to leave at exactly the
- * point the user is being taken somewhere. Delaying it means it only ever
- * appears when it is actually needed — a detail query that is slow, or one
- * that never settles at all.
- */
-const ESCAPE_IN = { duration: 0.24, delay: 1.6, ease: EASE_OUT };
 
 /**
  * The bridge between `/new`'s create form and the onboarding wizard.
@@ -40,16 +29,21 @@ const ESCAPE_IN = { duration: 0.24, delay: 1.6, ease: EASE_OUT };
  * `size-4` spinner with a link — so the moment the create SUCCEEDED was
  * rendered as the UI being torn down and replaced. Nothing about that read as
  * progress. Holding one mark across both means the successful create has no
- * visual event at all: the logo keeps turning over and the wizard arrives on
- * top of it.
+ * visual event at all: the mark keeps breathing and the wizard arrives on top
+ * of it.
  *
- * The logo is doing two jobs and both are honest. Its dissolve-in is the
- * entrance; `loop` then replays it as the "still working" signal, which is
- * what this screen actually knows — the create is a single opaque call, so
- * there is no real progress to report and a determinate bar would be a lie.
- * Same component and same `loop` as `RouteLoadingFallback`
- * (`components/common/route-loading.tsx`), so waiting looks the same here as
- * it does on every route transition in the app.
+ * Two ambient loops, and neither claims to know more than it does. The mark
+ * pulses; the caption shimmers. That is the whole signal, because it is all
+ * this screen actually knows — the create is one opaque call with no phase
+ * reporting left, so a determinate bar or a step list would be inventing
+ * progress. `TextShimmer` is the same treatment the session transcript's busy
+ * line uses (`session-starting-loader.tsx`), so "working on it" reads the same
+ * here as it does mid-session.
+ *
+ * `motion-reduce:animate-none` gates the pulse: Tailwind's `animate-pulse` is
+ * an infinite loop, and `globals.css` has no blanket `prefers-reduced-motion`
+ * rule that would stop it. (`TextShimmer` has the same gap internally — it is
+ * shared with two other surfaces, so it is not fixed from here.)
  *
  * `role="status"` (+ the explicit `aria-live`, for ATs that do not map the
  * role) makes the caption the announced content; the mark is decoration and is
@@ -73,52 +67,22 @@ export function WorkspaceHandoff({
       aria-busy="true"
       className="flex flex-col items-center gap-6 text-center"
     >
-      <KortixHyperLogo
+      <KortixLogo
         aria-hidden
         size={44}
-        // `startOnView={false}` — this never scrolls into view, it swaps in
-        // where the form was, so an IntersectionObserver would only delay it.
-        startOnView={false}
-        loop
-        className="text-foreground"
+        variant="icon"
+        className="text-foreground animate-pulse motion-reduce:animate-none"
       />
 
-      <m.p
-        className="text-muted-foreground w-full truncate text-sm"
+      <m.div
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={CAPTION_IN}
       >
-        {/* The name comes from the form's own `useState`, so a RELOAD of
-            `/new?onboarding=<id>` arrives with it EMPTY — the workspace exists,
-            but this page no longer knows what it is called. That is the only
-            route to a nameless handoff (the submit gate requires a valid name),
-            and it is always window 2, so the fallback says what is true there
-            rather than rendering "Creating " with a hole in it. Refetching the
-            name would put a query on the page purely to fill a caption the
-            wizard is about to cover. */}
-        {workspaceName ? (
-          <>
-            Creating <span className="text-foreground font-medium">{workspaceName}</span>
-          </>
-        ) : (
-          'Opening your workspace'
-        )}
-      </m.p>
-
-      {projectId ? (
-        // Never conditioned on how long the wizard has taken — a timer would
-        // make the page hold state about a component it does not own. The
-        // delay lives in the transition, so this is simply "there, later".
-        <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={ESCAPE_IN}>
-          <Link
-            href={`/projects/${encodeURIComponent(projectId)}`}
-            className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4"
-          >
-            Go to workspace
-          </Link>
-        </m.div>
-      ) : null}
+        <TextShimmer>
+          {workspaceName ? `Creating ${workspaceName}` : 'Opening your workspace'}
+        </TextShimmer>
+      </m.div>
     </div>
   );
 }

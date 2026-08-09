@@ -56,39 +56,21 @@ describe('WorkspaceHandoff', () => {
     expect(text).not.toContain('Creating ');
   });
 
-  test('no escape hatch while the create is still in flight — there is nowhere to go yet', () => {
-    const html = render({ workspaceName: 'x', projectId: null });
-    expect(html).not.toContain('Go to workspace');
-    expect(html).not.toContain('<a ');
-  });
-
-  test('once the project exists, the escape hatch links to it, percent-encoded', () => {
-    // Mirrors `onboardingPath` on the way in — asymmetric encoding builds a
-    // broken URL for any id carrying a character that is not URL-safe.
-    const html = render({ workspaceName: 'x', projectId: 'proj/1 2' });
-    expect(html).toContain('Go to workspace');
-    expect(html).toContain('href="/projects/proj%2F1%202"');
-    expect(html).not.toContain('href="/projects/proj/1 2"');
-  });
-
-  test('the escape hatch reuses the page-wide quiet-control treatment', () => {
-    // Same as `Log out` and `Try again` on `/new` — no third button weight.
-    const html = render({ workspaceName: 'x', projectId: 'proj-1' });
-    expect(html).toContain('text-muted-foreground hover:text-foreground');
-  });
-
-  test('the escape hatch waits, so it is never seen on the normal path', () => {
-    // The wizard is a fullscreen portal and covers this screen as soon as
-    // `getProjectDetail` settles. An immediate link would put "Go to
-    // workspace" on screen during every successful create — an offer to leave
-    // at the exact point the user is being taken somewhere.
-    const escapeIn = source.match(/const ESCAPE_IN = \{([^}]*)\}/)?.[1] ?? '';
-    expect(escapeIn).toContain('delay:');
-    const delay = Number(escapeIn.match(/delay:\s*([\d.]+)/)?.[1]);
-    expect(delay).toBeGreaterThan(1);
-    // ...and it renders at opacity 0, so the delay is a real wait rather than
-    // a late mount that would pop into layout.
-    expect(render({ workspaceName: 'x', projectId: 'proj-1' })).toContain('style="opacity:0"');
+  test('NO escape hatch, in either state — this screen offers the mark and the caption, nothing else', () => {
+    // There used to be a delayed "Go to workspace" link once `projectId`
+    // existed. It is gone on purpose: the wizard is a fullscreen portal and
+    // covers this screen as soon as `getProjectDetail` settles, so the link
+    // was an offer to leave at the exact moment the user is being taken
+    // somewhere. Both states are asserted because the link was conditioned on
+    // `projectId` — checking only the null case would not notice it coming
+    // back.
+    for (const html of [
+      render({ workspaceName: 'x', projectId: null }),
+      render({ workspaceName: 'x', projectId: 'proj-1' }),
+    ]) {
+      expect(html).not.toContain('Go to workspace');
+      expect(html).not.toContain('<a ');
+    }
   });
 
   test('the caption lands one beat behind the mark, not with it', () => {
@@ -100,14 +82,40 @@ describe('WorkspaceHandoff', () => {
     expect(delay).toBeLessThan(0.3);
   });
 
-  test('the mark is the app-wide loader, driven as a loop rather than a one-shot', () => {
-    // Same component and same `loop` as `RouteLoadingFallback`, so waiting
-    // looks the same here as on every route transition.
-    expect(source).toContain("from '@/components/ui/marketing/kortix-hyper-logo'");
-    expect(source).toContain('loop');
-    // Nothing scrolls this into view — it swaps in where the form was, so an
-    // IntersectionObserver would only delay it.
-    expect(source).toContain('startOnView={false}');
+  test('the mark is the canonical Kortix logo, breathing rather than spinning', () => {
+    expect(source).toContain("from '@/components/ui/kortix-logo'");
+    expect(source).toContain('variant="icon"');
+    expect(source).toContain('animate-pulse');
+  });
+
+  test('the pulse is gated on reduced motion, since Tailwind loops it forever', () => {
+    // `globals.css` has no blanket prefers-reduced-motion rule, so an
+    // ungated `animate-pulse` runs regardless of the preference.
+    expect(source).toContain('animate-pulse motion-reduce:animate-none');
+  });
+
+  test('the caption carries the shimmer, the same busy treatment as a live session', () => {
+    // `session-starting-loader.tsx` uses TextShimmer for the same job, so
+    // "working on it" reads the same here as it does mid-session.
+    expect(source).toContain("from '@/components/ui/text-shimmer'");
+    const html = render({ workspaceName: 'suna-web', projectId: null });
+    // TextShimmer paints the text with a moving gradient, so the glyphs
+    // themselves are transparent — if this class is gone, the caption is
+    // invisible, not merely unanimated.
+    expect(html).toContain('bg-clip-text');
+    expect(html).toContain('text-transparent');
+  });
+
+  test('BOTH captions get the shimmer — the fallback is not a plain-text special case', () => {
+    // The empty-name branch only renders on a hard reload of
+    // `/new?onboarding=<id>`, which is exactly why it is easy to leave
+    // untreated: it never appears in the normal create flow.
+    const named = render({ workspaceName: 'suna-web', projectId: null });
+    const nameless = render({ workspaceName: '', projectId: 'proj-1' });
+    for (const html of [named, nameless]) {
+      expect(html).toContain('bg-clip-text');
+      expect(html).toContain('--spread:');
+    }
   });
 
   test('reduced motion drops the caption travel but keeps the fade', () => {
