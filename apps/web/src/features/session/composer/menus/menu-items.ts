@@ -70,8 +70,16 @@ export function buildMentionSections({
   let index = 0;
   const sections: MentionSection[] = [];
 
+  // Deliberately no `hidden` / `mode` filter here — this mirrors
+  // session-chat-input.tsx:665 (`agents.filter((a) => (a.name || '')
+  // .toLowerCase().includes(q))`, nothing else). `primaryAgents`
+  // (session-chat-input.tsx:312-314, `!a.hidden && a.mode !== 'subagent'`)
+  // exists in the same component but feeds Tab-cycling and the toolbar's
+  // `AgentSelector` only — never the `@` menu. So hidden agents and
+  // subagents ARE listed here today, which is plausibly how you delegate to
+  // a subagent by name. Changing that is a product decision for Jay, not
+  // something to fold into this refactor — see the pinning test below.
   const agentRows: MenuRow[] = agents
-    .filter((a) => !a.hidden && a.mode !== 'subagent')
     .filter((a) => (a.name || '').toLowerCase().includes(q))
     .map((a) => ({ index: index++, kind: 'agent' as const, label: a.name || '', value: a.name || '' }));
   if (agentRows.length) sections.push({ kind: 'agent', heading: 'Agents', items: agentRows });
