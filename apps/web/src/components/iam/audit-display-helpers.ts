@@ -161,6 +161,21 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /internal/gateway/models': 'Resolved gateway models',
   'POST /internal/gateway/trace': 'Recorded gateway trace',
   'POST /internal/gateway/usage': 'Recorded gateway usage',
+  // The in-process LLM gateway ingress (`llm-gateway/wire.ts`). Each action is
+  // mounted twice — bare and `/v1`-prefixed — because OpenAI-shaped clients
+  // treat the base URL as an origin and append `/v1/...` themselves. Both
+  // mounts are the SAME handler, so both carry the SAME text: one action, one
+  // label, however the caller spelled the path. `/messages` is the Anthropic
+  // wire shape over that same completion pipeline, not a separate action.
+  // Without these the auto-labeller reads them as bare nouns ("Created
+  // completion", "Viewed health") with no hint that the gateway served them.
+  'POST /v1/llm/chat/completions': 'Ran gateway completion',
+  'POST /v1/llm/v1/chat/completions': 'Ran gateway completion',
+  'POST /v1/llm/messages': 'Ran gateway completion',
+  'POST /v1/llm/v1/messages': 'Ran gateway completion',
+  'GET /v1/llm/models': 'Listed gateway models',
+  'GET /v1/llm/v1/models': 'Listed gateway models',
+  'GET /v1/llm/health': 'Checked gateway health',
   'GET /scim/v2/accounts/:accountId/ResourceTypes': 'Listed SCIM resource types',
   'GET /scim/v2/accounts/:accountId/ResourceTypes/:id': 'Viewed SCIM resource type',
   'POST /v1/account-invites/:inviteId/accept': 'Accepted account invitation',
