@@ -20,6 +20,18 @@ describe('local test runner contract', () => {
     expect(testsPackage.scripts.test).toContain('vitest run');
   });
 
+  it('removes superseded cross-cutting workflows and runners', () => {
+    for (const path of [
+      '.github/workflows/package-tests.yml',
+      '.github/workflows/e2e.yml',
+      '.github/workflows/qa-nightly.yml',
+      'Makefile',
+      'tests/bin/kortix.ts',
+    ]) {
+      expect(existsSync(resolve(root, path)), path).toBe(false);
+    }
+  });
+
   it('starts a fresh Supabase stack before migrations without waiting on schema health', () => {
     const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
 
@@ -37,17 +49,21 @@ describe('local test runner contract', () => {
 
   it('builds publishable artifacts once and schedules package tests by load class', () => {
     const source = readFileSync(resolve(root, 'tests/bin/package-quality.ts'), 'utf8');
-    const smoke = source.indexOf('"smoke:install"');
+    const smoke = source.indexOf("'smoke:install'");
     const dryPack = source.indexOf('verifyPublishablePackage(directory, false)');
 
     expect(smoke).toBeGreaterThan(-1);
     expect(dryPack).toBeGreaterThan(smoke);
-    expect(source).toContain('"--no-sort"');
-    expect(source).toContain('KORTIX_API_TEST_WORKERS: "3"');
-    expect(source).toContain('["@kortix/cli", "@kortix/sandbox-agent-server"]');
-    expect(source).toContain('await runWorkspaceTests(["@kortix/db"], 1)');
-    expect(source).toContain('"!kortix-api"');
-    expect(source).toContain('"!@kortix/db"');
+    expect(source).toContain('scripts/publish-npm-package.test.mjs');
+    expect(source).toContain("'@kortix/sdk', 'typecheck'");
+    expect(source).toContain("verifyPublishablePackage('agent-tunnel')");
+    expect(source).toContain('packed agent-tunnel CLI cannot load its WebSocket fallback');
+    expect(source).toContain("'--no-sort'");
+    expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
+    expect(source).toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
+    expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
+    expect(source).toContain("'!kortix-api'");
+    expect(source).toContain("'!@kortix/db'");
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {
@@ -58,15 +74,11 @@ describe('local test runner contract', () => {
   });
 
   it('runs process-heavy CLI and sandbox-agent test files in parallel', () => {
-    const cliPackage = JSON.parse(
-      readFileSync(resolve(root, 'apps/cli/package.json'), 'utf8'),
-    );
+    const cliPackage = JSON.parse(readFileSync(resolve(root, 'apps/cli/package.json'), 'utf8'));
     const agentPackage = JSON.parse(
       readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/package.json'), 'utf8'),
     );
-    const dbPackage = JSON.parse(
-      readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'),
-    );
+    const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
     expect(cliPackage.scripts.test).toContain('bun test --isolate --parallel=4');
     expect(agentPackage.scripts.test).toBe('bun test --parallel=4');

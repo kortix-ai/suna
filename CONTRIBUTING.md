@@ -57,7 +57,9 @@ pnpm test -- --id ACC-4        # One product flow
 pnpm test -- --domain access   # One product domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
+pnpm test -- --packages-only   # All app/package tests and publish contracts
 pnpm test -- --full            # Browser and all app/package tests
+pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
 ```
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
@@ -89,5 +91,6 @@ pnpm test -- --full
 - [ ] No `.only(` / focused tests committed (the gate rejects them).
 - [ ] Mocks are at the boundary and reset per test; no real production data or credentials.
 
-CI runs `pnpm test -- --full` inside an ephemeral Platinum sandbox. A red
-required check blocks the merge.
+CI runs core, browser, and package modes in parallel warm Platinum or Daytona
+sandboxes. Release QA also proves deployed staging with the target-smoke mode.
+A red required check blocks the merge.

@@ -2,7 +2,7 @@
 import { cleanupDaytonaCiSandbox } from '../src/core/daytona-ci';
 import { cleanupPlatinumCiSandboxes } from '../src/core/platinum-ci';
 
-const runId = process.env.GITHUB_RUN_ID || '';
+const runId = process.env.SANDBOX_TEST_RUN_ID || process.env.GITHUB_RUN_ID || '';
 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
 
 const cleanups: Array<Promise<number>> = [];

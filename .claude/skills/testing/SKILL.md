@@ -42,7 +42,9 @@ pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
+pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Browser plus all app/package tests
+pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 ```
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
@@ -70,10 +72,10 @@ Each root run writes a benchmark to
 
 ## Run CI in a warm sandbox
 
-Keep the test command unchanged. GitHub Actions invokes
-`bun tests/bin/sandbox-ci.ts`, and the selected worker runs `pnpm test` or
-`pnpm test -- --full` at the exact requested SHA. Select `auto`, `platinum`, or
-`daytona` with `TEST_SANDBOX_PROVIDER`.
+Keep the test commands unchanged. GitHub Actions starts three warm workers in
+parallel. They run `pnpm test`, `pnpm test -- --browser-only`, and
+`pnpm test -- --packages-only` at the exact requested SHA. Select `auto`,
+`platinum`, or `daytona` with `TEST_SANDBOX_PROVIDER`.
 
 - Use `auto` by default. Try Platinum first when its key exists.
 - Fall back to Daytona only when the Platinum runner throws an infrastructure
@@ -95,6 +97,12 @@ Keep the test command unchanged. GitHub Actions invokes
 - Retry transient provider failures with bounded backoff.
 - Fail the workflow when sandbox deletion exhausts its retry budget.
 - Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
+- Give each parallel lane a unique sandbox run ID.
+
+Before a production merge, run `pnpm test -- --target-smoke` against the exact
+staging hosts. Require `RELEASE_SOURCE_SHA` to match both the API and gateway
+health commits. Keep the Vercel bypass header for the Playwright request. Reject
+development and production targets.
 
 For Platinum:
 

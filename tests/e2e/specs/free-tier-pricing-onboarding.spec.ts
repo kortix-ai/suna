@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('free-tier pricing and onboarding surface', () => {
-  test('pricing page presents the free tier, model options, and sandbox compute terms', async ({
+  test('@target-smoke pricing page presents the free tier, model options, and sandbox compute terms', async ({
     page,
   }) => {
     await page.goto('/pricing', { waitUntil: 'domcontentloaded' });

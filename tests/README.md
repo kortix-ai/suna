@@ -22,7 +22,9 @@ pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
+pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
+pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
 ```
 
 Browser and full modes start local Supabase, apply migrations, and start the
@@ -44,10 +46,12 @@ code.
 ## Sandbox CI workers
 
 GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
-tests. The workflow runs the same `pnpm test -- --full` command in Platinum or
-Daytona. Set `provider` to `auto`, `platinum`, or `daytona`. Auto tries Platinum
-first. It falls back to Daytona only when Platinum infrastructure throws. A
-non-zero test exit returns directly and does not trigger fallback.
+tests. Full mode starts three warm workers in parallel. The workers run
+`pnpm test`, `pnpm test -- --browser-only`, and
+`pnpm test -- --packages-only`. Set `provider` to `auto`, `platinum`, or
+`daytona`. Auto tries Platinum first. It falls back to Daytona only when
+Platinum infrastructure throws. A non-zero test exit returns directly and does
+not trigger fallback. Each lane has a unique sandbox run ID and artifact.
 Platinum warm restore readiness is capped at 2 minutes. A missing marker or
 unreachable guest after that cap is an infrastructure error and triggers auto
 fallback. Cold template builds keep their separate 45-minute creation budget.
@@ -58,6 +62,11 @@ Chromium, linked `node_modules`, a warm checkout, and pre-pulled Supabase images
 Each worker fetches the requested ref, verifies the exact SHA, runs an offline
 lockfile install, starts nested Docker, and invokes the unchanged root command.
 Both runners stream logs, download `tests/test-results`, and delete the worker.
+
+Release QA also runs `pnpm test -- --target-smoke` against deployed staging.
+This mode rejects development and production hosts. It requires the API and
+gateway health commits to equal `RELEASE_SOURCE_SHA`. It then runs the tagged
+Playwright smoke against `staging.kortix.com` with the Vercel bypass header.
 
 ### Platinum
 
@@ -158,6 +167,11 @@ counts. Do not infer those counts from source files.
 
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
+
+The browser suite does not repeat every REST contract. It covers one journey
+for each user-visible behavior. REST flows remain authoritative for complete API
+and CLI contracts. A browser journey is incomplete when it skips for a missing
+provider, OAuth, or mutation capability; report that skip explicitly.
 
 The browser lane uses the current worktree web, API, and Supabase ports. It
 starts and owns the deterministic local stack. Run it directly:

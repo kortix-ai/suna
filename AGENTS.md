@@ -341,22 +341,30 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
+- `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.
+- `pnpm test -- --target-smoke` verifies the deployed staging API and gateway
+  SHA, then runs the tagged Playwright staging smoke. Release CI supplies the
+  staging credentials and `RELEASE_SOURCE_SHA`.
 - Browser and full modes reuse only a running API that proves the deterministic
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- GitHub Actions runs `pnpm test -- --full` inside a disposable warm sandbox
-  through `.github/workflows/test.yml`. Set `provider` to `platinum`, `daytona`,
-  or `auto`. Auto tries Platinum first. It uses Daytona only when Platinum
-  infrastructure throws. A non-zero test exit does not trigger fallback.
+- GitHub Actions runs core, browser, and package modes in three disposable warm
+  sandboxes through `.github/workflows/test.yml`. The slowest lane defines the
+  gate duration. Set `provider` to `platinum`, `daytona`, or `auto`. Auto tries
+  Platinum first. It uses Daytona only when Platinum infrastructure throws. A
+  non-zero test exit does not trigger fallback.
 - Platinum warm restore readiness is capped at 2 minutes. A missing marker or
   unreachable guest after that cap triggers Daytona in `auto` mode. Cold
   template creation retains its separate 45-minute budget.
 - Both providers fetch and verify the exact SHA, upload `tests/test-results`,
   and delete the sandbox. The sandbox worker is infrastructure only. Do not add
   CI-only test logic.
+- Release QA also runs the same root runner against deployed staging. It blocks
+  production when API or gateway health reports a SHA other than
+  `RELEASE_SOURCE_SHA`, or when the tagged Playwright staging smoke fails.
 
 ### Product flow source of truth
 

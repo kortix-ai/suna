@@ -6,7 +6,7 @@ const root = resolve(import.meta.dir, '../..');
 const sha = process.env.SANDBOX_TEST_SHA ?? '';
 const ref = process.env.SANDBOX_TEST_REF ?? sha;
 const repository = process.env.GITHUB_REPOSITORY || 'kortix-ai/suna';
-const runId = process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
+const runId = process.env.SANDBOX_TEST_RUN_ID || process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
 const testArgs = process.argv.slice(2);
 
