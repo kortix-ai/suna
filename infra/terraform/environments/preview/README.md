@@ -1,26 +1,26 @@
 # ECS PR preview runtime
 
 This root provisions the persistent, non-production control plane for ephemeral
-PR API previews. It reuses the dev VPC and NAT gateway. It does not change the
+PR API and frontend previews. It reuses the dev VPC and NAT gateway. It does not change the
 dev ECS services or any production resource.
 
 The shared resources are:
 
 - one ECS cluster (`kortix-preview`);
-- one HTTPS ALB with the existing `*.preview-api.kortix.com` ACM certificate;
-- one DNS-only wildcard CNAME (`*.preview-api.kortix.com`) to the ALB;
+- one HTTPS ALB with certificates for `*.preview-api.kortix.com` and `*.preview.kortix.com`;
+- DNS-only wildcard CNAMEs for both preview host families;
 - one dedicated WAF, encrypted ALB access logs, and encrypted task logs;
-- one task execution role that can read only `kortix-preview-env`;
+- one task execution role that can read only `kortix-preview-env` and `kortix-dev-web-env`;
 - one GitHub OIDC role scoped to per-PR resources in the preview cluster.
 
-`deploy-preview.yml` creates one Fargate Spot service, task definition, target
-group, and host listener rule per labeled PR. The API and gateway run as two
-containers in the same task. The gateway has no public listener. The API reaches
-it on `127.0.0.1:8090`.
+`deploy-preview.yml` creates one Fargate Spot service and task definition per
+labeled PR. The API, gateway, and frontend run as three containers in one task.
+The workflow creates separate API and frontend target groups and listener rules.
+The gateway has no public listener. The API reaches it on `127.0.0.1:8090`.
 
 The wildcard record is DNS-only. Cloudflare Universal SSL does not cover the
-multi-level `pr-N.preview-api.kortix.com` hostname. TLS terminates at the ALB
-with the existing ACM wildcard certificate. The WAF protects the direct edge.
+multi-level preview hostnames. TLS terminates at the ALB with ACM wildcard
+certificates. The WAF protects the direct edge.
 
 ## Bootstrap
 
@@ -51,10 +51,12 @@ following evidence:
 
 1. `https://pr-<PR>.preview-api.kortix.com/v1/health` reports
    `environment=preview` and this PR's full commit SHA.
-2. The sticky PR comment contains the Vercel deployment URL.
-3. The Vercel deployment calls the per-PR backend successfully.
-4. Closing or removing the label deletes the ECS service, listener rule, target
-   group, active task definitions, and both branch-scoped Vercel variables.
+2. `https://pr-<PR>.preview.kortix.com/api/health` reports the same SHA.
+3. The ECS frontend uses Basic auth and targets only its per-PR API.
+4. The sticky PR comment contains both ECS and Vercel frontend URLs.
+5. The Vercel deployment calls the per-PR backend successfully.
+6. Closing or removing the label deletes the ECS service, two listener rules,
+   two target groups, active task definitions, and owned Vercel variables.
 
 The shared Terraform root remains after per-PR teardown.
 

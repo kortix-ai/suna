@@ -6,7 +6,10 @@ export function GET() {
     {
       status: 'ok',
       service: 'web',
-      version: process.env.NEXT_PUBLIC_KORTIX_VERSION || 'unknown',
+      version:
+        process.env.KORTIX_PUBLIC_VERSION ||
+        Reflect.get(process.env, 'NEXT_PUBLIC_KORTIX_VERSION') ||
+        'unknown',
       commit: process.env.NEXT_PUBLIC_KORTIX_COMMIT || 'unknown',
     },
     {

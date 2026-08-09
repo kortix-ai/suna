@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  authorizeEnvironment,
+  ENVIRONMENT_ACCESS_COOKIE,
   ENVIRONMENT_HEALTH_PATH,
   ENVIRONMENT_PROTECTION_USERNAME,
+  authorizeEnvironment,
+  deriveEnvironmentAccessCookie,
 } from './environment-protection';
 
 function basic(username: string, password: string): string {
@@ -19,7 +21,7 @@ describe('authorizeEnvironment', () => {
         authorization: null,
         pathname: '/',
       }),
-    ).toEqual({ allowed: true });
+    ).toEqual({ allowed: true, source: 'disabled' });
   });
 
   test('always allows the ECS health path', () => {
@@ -30,7 +32,7 @@ describe('authorizeEnvironment', () => {
         authorization: null,
         pathname: ENVIRONMENT_HEALTH_PATH,
       }),
-    ).toEqual({ allowed: true });
+    ).toEqual({ allowed: true, source: 'health' });
   });
 
   test('fails closed when protection is enabled without a password', () => {
@@ -81,6 +83,35 @@ describe('authorizeEnvironment', () => {
         authorization: basic(ENVIRONMENT_PROTECTION_USERNAME, 'test-password'),
         pathname: '/projects',
       }),
-    ).toEqual({ allowed: true });
+    ).toEqual({ allowed: true, source: 'basic' });
+  });
+
+  test('accepts one signed parent-domain cookie across protected subdomains', async () => {
+    const expectedAccessCookie = await deriveEnvironmentAccessCookie('test-password');
+    expect(expectedAccessCookie).not.toContain('test-password');
+    expect(ENVIRONMENT_ACCESS_COOKIE).toBe('__Secure-kortix_test_access');
+    expect(
+      authorizeEnvironment({
+        enabled: 'true',
+        password: 'test-password',
+        authorization: null,
+        accessCookie: expectedAccessCookie,
+        expectedAccessCookie,
+        pathname: '/projects',
+      }),
+    ).toEqual({ allowed: true, source: 'cookie' });
+  });
+
+  test('rejects a cookie derived from another password', async () => {
+    expect(
+      authorizeEnvironment({
+        enabled: 'true',
+        password: 'test-password',
+        authorization: null,
+        accessCookie: await deriveEnvironmentAccessCookie('wrong-password'),
+        expectedAccessCookie: await deriveEnvironmentAccessCookie('test-password'),
+        pathname: '/projects',
+      }),
+    ).toEqual({ allowed: false, reason: 'credentials_required' });
   });
 });

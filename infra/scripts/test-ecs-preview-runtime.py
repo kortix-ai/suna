@@ -14,16 +14,20 @@ README = (ROOT / "infra/terraform/environments/preview/README.md").read_text()
 
 class PreviewRuntimeContract(unittest.TestCase):
     def test_deploy_precedes_vercel_wiring_and_requires_exact_health(self):
-        self.assertIn("needs: [build-api, build-gateway]", WORKFLOW)
+        self.assertIn("needs: [build-api, build-gateway, build-web]", WORKFLOW)
         self.assertIn("needs: deploy", WORKFLOW)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", WORKFLOW)
         self.assertIn("pull_request_target:", WORKFLOW)
         self.assertIn("branches: [main]", WORKFLOW)
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", WORKFLOW)
-        self.assertIn('[ "$environment" = "preview" ]', WORKFLOW)
-        self.assertIn('[ "$commit" = "$COMMIT" ]', WORKFLOW)
+        self.assertIn('[ "$api_environment" = "preview" ]', WORKFLOW)
+        self.assertIn('[ "$api_commit" = "$COMMIT" ]', WORKFLOW)
+        self.assertIn('[ "$web_commit" = "$COMMIT" ]', WORKFLOW)
         self.assertIn("KORTIX_PUBLIC_BACKEND_URL", WORKFLOW)
         self.assertIn("NEXT_PUBLIC_BACKEND_URL", WORKFLOW)
+        self.assertIn("kortix/kortix-frontend:pr-${{ github.event.pull_request.head.sha }}", WORKFLOW)
+        self.assertIn("https://pr-${NUM}.preview.kortix.com", WORKFLOW)
+        self.assertIn("WEB_PROTECTION_PASSWORD", WORKFLOW)
         self.assertIn('deployed_sha="$(printf', WORKFLOW)
         self.assertIn('[ "$state" = "READY" ]', WORKFLOW)
         self.assertIn('[ "$deployed_sha" = "$COMMIT" ]', WORKFLOW)
@@ -51,11 +55,17 @@ class PreviewRuntimeContract(unittest.TestCase):
     def test_each_pr_has_isolated_routing_and_preview_secret_delivery(self):
         self.assertIn('SERVICE="kortix-pr-${PR}"', SCRIPT)
         self.assertIn('HOST="pr-${PR}.preview-api.kortix.com"', SCRIPT)
+        self.assertIn('WEB_HOST="pr-${PR}.preview.kortix.com"', SCRIPT)
         self.assertIn('SECRET_NAME="kortix-preview-env"', SCRIPT)
+        self.assertIn('WEB_SECRET_NAME="kortix-dev-web-env"', SCRIPT)
         self.assertIn('{"name": "INTERNAL_KORTIX_ENV", "value": "preview"}', SCRIPT)
         self.assertIn('{"name": "KORTIX_WORKERS_ENABLED", "value": "false"}', SCRIPT)
         self.assertIn('{"name": "KORTIX_SKIP_ENSURE_SCHEMA", "value": "1"}', SCRIPT)
         self.assertIn('"LLM_GATEWAY_PROXY_TARGET", "value": "http://127.0.0.1:8090"', SCRIPT)
+        self.assertIn('"name": "web"', SCRIPT)
+        self.assertIn('"containerPort": 3000', SCRIPT)
+        self.assertIn('"name": "NEXT_PUBLIC_APP_URL", "value": web_url', SCRIPT)
+        self.assertIn('"name": "NEXT_PUBLIC_BACKEND_URL", "value": backend_url', SCRIPT)
         self.assertNotIn("kortix-prod-env", SCRIPT)
         self.assertIn("rollback_deploy", SCRIPT)
         self.assertIn("PREVIOUS_TASK_DEFINITION", SCRIPT)
@@ -73,6 +83,10 @@ class PreviewRuntimeContract(unittest.TestCase):
             "drop_invalid_header_fields = true",
             "enable_deletion_protection = true",
             'name    = "*.preview-api"',
+            'name    = "*.preview"',
+            'domain_name = "*.preview.kortix.com"',
+            'resource "aws_lb_listener_certificate" "frontend"',
+            'data "aws_secretsmanager_secret" "web"',
             "proxied = false",
             'name = "kortix-gha-preview-deploy"',
             '"repo:kortix-ai/suna:pull_request"',

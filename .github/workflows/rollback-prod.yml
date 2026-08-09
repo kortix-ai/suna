@@ -16,8 +16,10 @@ name: Rollback Production
 #     :X.Y.Z gateway image exists (the gateway entered prod at v0.9.72, so older
 #     targets have no gateway image; it's left untouched rather than pointed at a
 #     missing tag, which would wedge Argo on ImagePullBackOff).
-#   * FRONTEND (Vercel): finds the production deployment built for vX.Y.Z and
-#     PROMOTES it back to production via the Vercel API — instant, no rebuild.
+#   * FRONTEND (ECS): rolls `kortix-prod-web` to the immutable
+#     `kortix/kortix-frontend:X.Y.Z` image and verifies the isolated ECS host.
+#   * FRONTEND (Vercel): also promotes the matching Vercel deployment while the
+#     parallel validation path remains active.
 #
 # SAFETY
 #   * Image existence is checked per surface (Docker Hub tags API). Missing → skip.
@@ -63,6 +65,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   rollback:
@@ -98,7 +101,7 @@ jobs:
           want() { case "$SURF" in *",$1,"*) return 0;; *) return 1;; esac; }
           img_exists() { [ "$(curl -s -o /dev/null -w '%{http_code}' "https://hub.docker.com/v2/repositories/kortix/$1/tags/$TARGET/")" = "200" ]; }
 
-          ROLL_API=no; ROLL_GW=no; ROLL_FE=no
+          ROLL_API=no; ROLL_GW=no; ROLL_FE=no; ROLL_FE_VERCEL=no
           if want api; then
             if img_exists kortix-api; then ROLL_API=yes; else echo "::warning::kortix-api:$TARGET missing — skipping api."; fi
           fi
@@ -106,12 +109,22 @@ jobs:
             if img_exists kortix-gateway; then ROLL_GW=yes; else echo "::warning::kortix-gateway:$TARGET missing (gateway likely didn't exist at $TARGET) — leaving gateway untouched."; fi
           fi
           if want frontend; then
-            if [ -n "${VERCEL_TOKEN:-}" ]; then ROLL_FE=yes; else echo "::warning::No VERCEL_TOKEN — skipping frontend (do it via Vercel Instant Rollback)."; fi
+            if img_exists kortix-frontend; then
+              ROLL_FE=yes
+              if [ -n "${VERCEL_TOKEN:-}" ]; then
+                ROLL_FE_VERCEL=yes
+              else
+                echo "::warning::No VERCEL_TOKEN — rolling ECS frontend only."
+              fi
+            else
+              echo "::warning::kortix-frontend:$TARGET missing — skipping frontend."
+            fi
           fi
 
           {
             echo "target=$TARGET"; echo "current=$CUR"
             echo "roll_api=$ROLL_API"; echo "roll_gw=$ROLL_GW"; echo "roll_fe=$ROLL_FE"
+            echo "roll_fe_vercel=$ROLL_FE_VERCEL"
           } >> "$GITHUB_OUTPUT"
           echo "Plan → target=$TARGET current=$CUR | api=$ROLL_API gateway=$ROLL_GW frontend=$ROLL_FE"
 
@@ -127,6 +140,7 @@ jobs:
           IN_REASON: ${{ inputs.reason }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016
           BR="rollback/prod-to-v$TARGET"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -134,10 +148,12 @@ jobs:
 
           ROLLED=""
           if [ "$ROLL_API" = yes ]; then
+            # shellcheck disable=SC2016
             yq -i '.image.tag = strenv(TARGET) | .kortixVersion = strenv(TARGET)' infra/k8s/envs/prod/values.yaml
             git add infra/k8s/envs/prod/values.yaml; ROLLED="api"
           fi
           if [ "$ROLL_GW" = yes ]; then
+            # shellcheck disable=SC2016
             yq -i '.image.tag = strenv(TARGET)' infra/k8s/envs/prod/gateway-values.yaml
             git add infra/k8s/envs/prod/gateway-values.yaml; ROLLED="${ROLLED:+$ROLLED+}gateway"
           fi
@@ -149,13 +165,19 @@ jobs:
           {
             printf '## 🔴 Production rollback → v%s (backend: %s)\n\n' "$TARGET" "$ROLLED"
             printf '**Reason:** %s\n\n' "$IN_REASON"
+            # shellcheck disable=SC2016
             printf -- '- Pins `image.tag` (+`kortixVersion`) to the existing **`:%s`** image(s) → Argo CD reconciles on merge, **zero rebuild**.\n' "$TARGET"
+            # shellcheck disable=SC2016
             printf -- '- `VERSION` left at `%s` so deploy-prod cannot overwrite the `:%s` image.\n' "$CURRENT" "$TARGET"
+            # shellcheck disable=SC2016
             printf -- '- **DB untouched** (forward-only migrations are additive).\n\n'
+            # shellcheck disable=SC2016
             printf '⚠️ **Merge this, then re-run `rollback-prod` with `surfaces=frontend`** — merging pushes `prod`, which makes Vercel rebuild the current frontend and override the FE rollback.\n\n'
+            # shellcheck disable=SC2016
             printf '`deploy-prod` will go partly red on merge (version-watch / release-create) — cosmetic; Argo does the real roll.\n'
           } > "$BODY_FILE"
 
+          # shellcheck disable=SC2016
           existing="$(gh pr list --base prod --head "$BR" --state open --json number --jq '.[0].number' || true)"
           if [ -n "$existing" ]; then
             echo "PR #$existing already open."; echo "pr=$existing" >> "$GITHUB_OUTPUT"
@@ -164,9 +186,55 @@ jobs:
             echo "Opened $url"; echo "pr=$url" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Configure AWS credentials for ECS frontend rollback
+        if: steps.plan.outputs.roll_fe == 'yes'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: eu-west-2
+
+      - name: Frontend — roll ECS to the vTARGET image
+        if: steps.plan.outputs.roll_fe == 'yes'
+        env:
+          TARGET: ${{ steps.plan.outputs.target }}
+        run: |
+          set -euo pipefail
+          bash infra/scripts/ecs-deploy.sh \
+            prod \
+            "kortix/kortix-frontend:${TARGET}" \
+            --service web \
+            --version "${TARGET}" \
+            --database-migrated
+          task_definition="$(aws ecs describe-services \
+            --region eu-west-2 \
+            --cluster kortix-prod-web \
+            --services kortix-prod-web \
+            --query 'services[0].taskDefinition' \
+            --output text)"
+          # shellcheck disable=SC2016
+          image="$(aws ecs describe-task-definition \
+            --region eu-west-2 \
+            --task-definition "$task_definition" \
+            --query 'taskDefinition.containerDefinitions[?name==`web`].image | [0]' \
+            --output text)"
+          [ "$image" = "kortix/kortix-frontend:${TARGET}" ] || {
+            echo "::error::ECS task definition uses $image"; exit 1;
+          }
+          for attempt in $(seq 1 20); do
+            live="$(curl -fsS --max-time 15 https://prod-fe-ecs.kortix.com/api/health 2>/dev/null || true)"
+            if [ "$(jq -r '.version // empty' <<<"$live" 2>/dev/null || true)" = "$TARGET" ]; then
+              echo "Prod FE-ECS rolled back to v$TARGET."
+              exit 0
+            fi
+            echo "(${attempt}/20) waiting for prod FE-ECS v$TARGET"
+            sleep 10
+          done
+          echo "::error::Prod FE-ECS did not report v$TARGET after rollback."
+          exit 1
+
       - name: Frontend — promote the vTARGET deployment (Vercel)
         id: frontend
-        if: steps.plan.outputs.roll_fe == 'yes'
+        if: steps.plan.outputs.roll_fe_vercel == 'yes'
         env:
           TARGET: ${{ steps.plan.outputs.target }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -201,6 +269,7 @@ jobs:
           ROLL_API: ${{ steps.plan.outputs.roll_api }}
           ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
           ROLL_FE: ${{ steps.plan.outputs.roll_fe }}
+          ROLL_FE_VERCEL: ${{ steps.plan.outputs.roll_fe_vercel }}
           PR: ${{ steps.backend.outputs.pr }}
         run: |
           {
@@ -210,7 +279,8 @@ jobs:
             echo "|---|---|---|"
             echo "| api | ${ROLL_API:-no} | merge the backend PR → Argo |"
             echo "| gateway | ${ROLL_GW:-no} | merge the backend PR → Argo (skipped if no :$TARGET image) |"
-            echo "| frontend | ${ROLL_FE:-no} | promoted now via Vercel API |"
+            echo "| frontend ECS | ${ROLL_FE:-no} | immutable release image |"
+            echo "| frontend Vercel | ${ROLL_FE_VERCEL:-no} | promoted via Vercel API |"
             echo ""
             [ -n "${PR:-}" ] && echo "- Backend PR: $PR"
             echo "- ⚠️ Merge the backend PR, then re-run with \`surfaces=frontend\` to re-pin the FE (the merge rebuilds prod FE)."
