@@ -1,16 +1,15 @@
 'use client';
 
 /**
- * The workspace-picker VIEW of the sidebar's account menu: search, every
+ * The workspace-picker SUBMENU of the sidebar's account menu: search, every
  * workspace in every account, and the create row.
  *
- * Reached from "Switch Workspace" in that menu's main view, which swaps its
- * content for this rather than flying a submenu out to the side — a search box
- * and a grouped list need the full menu width, and side-flyouts are miserable on
- * touch. The back control lives with the parent, which owns the view state.
+ * Reached from "Switch Workspace" in that menu — a `DropdownMenuSub`, the same
+ * shape as Theme and Help, so all three read as one family. Radix owns opening,
+ * closing and the return path; this file is only what goes inside.
  *
- * Rendered INSIDE an open `DropdownMenuContent`, so it emits menu children only:
- * no `DropdownMenu`, no trigger, no portal of its own.
+ * Rendered INSIDE an open `DropdownMenuSubContent`, so it emits menu children
+ * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
@@ -124,7 +123,7 @@ export function WorkspaceMenuSection() {
       {/* Always mounted. The /projects index is gone, so this view is the whole
           directory — a conditional search box would make workspace N+7
           unreachable for anyone with more than a handful. */}
-      <div className="px-1 pb-1">
+      <div className="p-0.5">
         <div className="relative">
           <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
           <Input
@@ -142,10 +141,10 @@ export function WorkspaceMenuSection() {
         </div>
       </div>
 
-      {/* Bounded so a long list scrolls inside the menu rather than growing it
-          past the viewport. `min-h` keeps the menu from collapsing to a sliver
-          on an empty or one-workspace account, which is what stops the swap
-          between views from jolting — a layout answer, not an animated one. */}
+      {/* Bounded so a long list scrolls inside the submenu rather than growing
+          it past the viewport. `min-h` stops the panel collapsing to a sliver on
+          an empty or one-workspace account, where a search box above a single
+          row would otherwise read as a rendering glitch. */}
       <div className="max-h-[240px] min-h-[120px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {workspacesLoading ? (
           <div className="space-y-1 p-1">

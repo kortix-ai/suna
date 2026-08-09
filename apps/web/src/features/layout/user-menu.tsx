@@ -52,7 +52,6 @@ import {
   ArrowsLeftRightIcon,
   ArticleIcon,
   BookOpenIcon,
-  CaretLeftIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
@@ -141,8 +140,8 @@ export function UserMenu({
   user: UserMenuUser;
   variant?: UserMenuVariant;
   /**
-   * Add "Switch Workspace", which swaps this menu's content for the workspace
-   * directory. On for the project sidebar, off in the header.
+   * Add "Switch Workspace" — a submenu holding the workspace directory, the
+   * same shape as Theme and Help. On for the project sidebar, off in the header.
    *
    * The directory used to be its own control at the top of the sidebar — a
    * `<Link>` carrying the Kortix mark fused to a separate dropdown trigger
@@ -162,14 +161,6 @@ export function UserMenu({
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  /**
-   * Which face of the menu is showing. Deliberately NOT animated: this is a
-   * menu people live in, and the motion rule for that frequency is remove or
-   * drastically reduce. The height jump the swap could cause is handled in
-   * layout instead — the workspace view carries its own `min-h` — because
-   * height is not a property worth animating even when a swap is worth marking.
-   */
-  const [view, setView] = useState<'main' | 'workspaces'>('main');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
@@ -278,7 +269,7 @@ export function UserMenu({
       </Button>
     ) : (
       <SidebarMenuButton
-        size="lg"
+        size="sm"
         className={cn(
           'group/user relative gap-2 px-2.5 py-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
@@ -290,30 +281,19 @@ export function UserMenu({
           email={user.email}
           name={user.name}
           avatarUrl={user.avatar}
-          size="md"
+          size="sm"
           className="border-border border"
         />
         <div className="flex min-w-0 flex-1 flex-col items-start justify-start space-y-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="text-foreground truncate text-sm font-medium tracking-tight">
             {user.name}
           </span>
-          <span className="text-muted-foreground/80 truncate text-xs">{user.email}</span>
         </div>
       </SidebarMenuButton>
     );
 
   const dropdown = (
-    <DropdownMenu
-      open={menuOpen}
-      onOpenChange={(open) => {
-        setMenuOpen(open);
-        // Reset here rather than in an effect keyed on `menuOpen`: this is the
-        // event that closes the menu, so the reset belongs in it. An effect
-        // would set state during render-commit to fix up state the same commit
-        // already knew about — a second pass for something with no second cause.
-        if (!open) setView('main');
-      }}
-    >
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align={variant === 'sidebar' ? 'start' : 'end'}
@@ -324,39 +304,6 @@ export function UserMenu({
         sideOffset={variant === 'sidebar' ? 6 : 8}
         className="w-[256px] space-y-0.5 overflow-hidden"
       >
-        {view === 'workspaces' ? (
-          <>
-            {/* `preventDefault` — every other row here closes the menu on
-                select, which is what Radix does by default and what you want
-                everywhere except the one row whose entire job is to stay and
-                show you something else. */}
-            <DropdownMenuItem
-              onSelect={(event) => {
-                event.preventDefault();
-                setView('main');
-              }}
-              size="sm"
-            >
-              <CaretLeftIcon />
-              Switch Workspace
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-
-            <WorkspaceMenuSection />
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              onSelect={() => deferAfterClose(() => router.push('/new'))}
-              size="sm"
-            >
-              <PlusIcon />
-              Create a workspace…
-            </DropdownMenuItem>
-          </>
-        ) : (
-          <>
         {currentAccount && (
           <>
             <DropdownMenuItem
@@ -459,20 +406,35 @@ export function UserMenu({
           </DropdownMenuPortal>
         </DropdownMenuSub>
 
-        {/* Sits with Theme and Help — all three are things you open from here
-            rather than places this menu sends you — and above the separator, so
-            it stays clear of the row that ends your session. */}
+        {/* A submenu, the same shape as Theme and Help above — all three are
+            things you open from here rather than places this menu sends you, so
+            they read as one family. Above the separator, clear of the row that
+            ends your session.
+
+            Wider than the default sub content: this one holds a search field and
+            grouped rows with avatars, not three radio items. */}
         {showWorkspaces && (
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault();
-              setView('workspaces');
-            }}
-            size="sm"
-          >
-            <ArrowsLeftRightIcon />
-            Switch Workspace
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ArrowsLeftRightIcon />
+              Switch Workspace
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
+                <WorkspaceMenuSection />
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onSelect={() => deferAfterClose(() => router.push('/new'))}
+                  size="sm"
+                >
+                  <PlusIcon />
+                  Create a workspace…
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
         )}
 
         {/* Log out is the only row that ends something, so it gets its own
@@ -484,8 +446,6 @@ export function UserMenu({
           <LogOut />
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
         </DropdownMenuItem>
-          </>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
