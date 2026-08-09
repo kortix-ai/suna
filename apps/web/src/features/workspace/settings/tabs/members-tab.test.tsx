@@ -148,6 +148,34 @@ describe('MembersTabView', () => {
     expect(out).toContain('invite-dialog-marker');
   });
 
+  test('renders groupGrantsSlot, resourceAccessSlot, and roleAssignmentsSlot, in that order, below the table', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        groupGrantsSlot={<div>group-grants-marker</div>}
+        resourceAccessSlot={<div>resource-access-marker</div>}
+        roleAssignmentsSlot={<div>role-assignments-marker</div>}
+      />,
+    );
+    expect(out).toContain('group-grants-marker');
+    expect(out).toContain('resource-access-marker');
+    expect(out).toContain('role-assignments-marker');
+    // Rehomed in their existing order (members-view.tsx's own composition
+    // order: ProjectGroupGrantsCard, ResourceAccessCard,
+    // ProjectRoleAssignmentsCard) — see members-tab.tsx's header comment.
+    expect(out.indexOf('group-grants-marker')).toBeLessThan(out.indexOf('resource-access-marker'));
+    expect(out.indexOf('resource-access-marker')).toBeLessThan(out.indexOf('role-assignments-marker'));
+    // Below the table, not inside it.
+    expect(out.indexOf('</table>')).toBeLessThan(out.indexOf('group-grants-marker'));
+  });
+
+  test('the three rehomed slots are absent by default (undefined), same as inviteDialogSlot', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(out).not.toContain('group-grants-marker');
+    expect(out).not.toContain('resource-access-marker');
+    expect(out).not.toContain('role-assignments-marker');
+  });
+
   test('renders a loading skeleton for the table while isLoading', () => {
     const out = renderToStaticMarkup(<MembersTabView isLoading members={[member({})]} />);
     expect(out).not.toContain('<table');

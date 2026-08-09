@@ -10,29 +10,31 @@ import { toArray } from '@/features/workspace/customize/shared/utils';
 // thrown from the project layout chunk
 // (`app/(app)/projects/[id]/layout-b5947ecaa233b0d6.js`) at `Object.useMemo`.
 //
-// Root cause: the `ProjectGroupGrantsCard` component in members-view.tsx
-// derived `groupsWithCustomRole` inside a `useMemo` as
+// Root cause: the `ProjectGroupGrantsCard` component derived
+// `groupsWithCustomRole` inside a `useMemo` as
 //   `(policiesQuery.data ?? []).filter(...).map(...)`.
 // The IAM `listPolicies(accountId, { scopeId: projectId })` SDK call is typed
 // to return `IamPolicy[]`, but a 200 whose body yields a non-array `policies`
 // value (a backend shape gap, a partial response, an empty object) is a valid
 // HTTP outcome. `?? []` only absorbs `null`/`undefined`; a defined non-array
-// (e.g. `{}`) passes straight through, so `.filter` throws. The prod build
-// downlevels `??` to a ternary, which is what produces the
-// `(intermediate value)(intermediate value)(intermediate value).filter`
-// wording (three intermediate values = the inlined `(a ?? b).filter` ternary).
+// (e.g. `{}`) passes straight through, so `.filter` throws.
 //
-// The fix routes every `query.data ?? []` consumer in members-view.tsx through
-// `toArray(...)` (Array.isArray guard — absorbs undefined, null, AND non-array).
+// **Moved from `customize/sections/view/members-view-nonarray-guard.test.ts`
+// (Task 19, coordinator fix round 1).** `ProjectGroupGrantsCard` — along with
+// `ResourceAccessCard` and `ProjectRoleAssignmentsCard`, which share the same
+// `toArray(policiesQuery.data)` / `toArray(groupsQuery.data)` derivation
+// shape — was rehomed (cut, not copied) from `members-view.tsx` into
+// `members-tab.tsx`; see that file's header comment. This guard follows the
+// code it protects: the invariant is about the derivation, not about which
+// file happens to hold it, so it now reads `members-tab.tsx`'s source
+// instead. `members-view.tsx` no longer contains this card at all.
+//
 // These tests (a) reproduce the exact prod throw on the unguarded path and
 // (b) keep a future refactor from silently restoring the `(x ?? []).filter`
 // shape via source-level assertions (same convention as chunk22256-guard.test.ts
 // and policies-panel.test.ts).
 
-const membersViewSource = readFileSync(
-  join(import.meta.dir, 'members-view.tsx'),
-  'utf8',
-);
+const membersTabSource = readFileSync(join(import.meta.dir, 'members-tab.tsx'), 'utf8');
 
 /**
  * The exact derivation that threw in prod, lifted out of the useMemo so it can
@@ -53,7 +55,7 @@ function groupsWithCustomRoleFrom(policiesData: unknown, projectId: string): Set
   );
 }
 
-describe('members-view non-array guard — ProjectGroupGrantsCard derivation', () => {
+describe('members-tab non-array guard — ProjectGroupGrantsCard derivation', () => {
   test('does NOT throw on the exact prod failure shape: a defined non-array policies value', () => {
     // The shape that fired in prod: `policiesQuery.data` is a defined non-array
     // (e.g. an empty object or an error envelope). The old `(data ?? []).filter`
@@ -82,34 +84,32 @@ describe('members-view non-array guard — ProjectGroupGrantsCard derivation', (
   });
 });
 
-describe('members-view source guard — no unguarded (query.data ?? []).filter/.map', () => {
+describe('members-tab source guard — no unguarded (query.data ?? []).filter/.map', () => {
   // The prod throw was a `(policiesQuery.data ?? []).filter(...)` inside a
   // useMemo. Every query-data-derived array in this file must go through
   // `toArray(...)` so a non-array response can never reach `.filter` / `.map`.
   test('imports toArray from the shared customize utils', () => {
-    expect(membersViewSource).toContain('from \'@/features/workspace/customize/shared/utils\'');
-    expect(membersViewSource).toContain('toArray(');
+    expect(membersTabSource).toContain('from \'@/features/workspace/customize/shared/utils\'');
+    expect(membersTabSource).toContain('toArray(');
   });
 
   test('ProjectGroupGrantsCard groupsWithCustomRole routes through toArray, not (data ?? []).filter', () => {
     // The exact line that threw in prod.
-    expect(membersViewSource).not.toContain('(policiesQuery.data ?? []).filter(');
-    expect(membersViewSource).toContain('toArray(policiesQuery.data)');
+    expect(membersTabSource).not.toContain('(policiesQuery.data ?? []).filter(');
+    expect(membersTabSource).toContain('toArray(policiesQuery.data)');
   });
 
   test('no remaining unguarded (query.data ?? []).filter or .map in the file', () => {
     // Any `(X ?? []).filter(` or `(X ?? []).map(` whose receiver is a query data
     // field would re-open the same class of throw. Catch them all.
-    const unguarded = membersViewSource.match(/\(\w+Query\.data(?:\?\.\w+)? \?\? \[\]\)\.(?:filter|map)\(/g);
+    const unguarded = membersTabSource.match(/\(\w+Query\.data(?:\?\.\w+)? \?\? \[\]\)\.(?:filter|map)\(/g);
     expect(unguarded).toBeNull();
   });
 
   test('no remaining unguarded query.data ?? [] used directly as a filtered/mapped array', () => {
     // `const x = query.data ?? []` followed by `x.filter(` is safe ONLY for
     // null/undefined; a non-array still throws. Guard these at the source too.
-    // (The members prop and the grants/policies/roles/agents/groups derivations
-    //  all now use toArray.)
-    const directAssign = membersViewSource.match(/=\s*\w+Query\.data(?:\?\.\w+)?\s*\?\s*\[\]/g);
+    const directAssign = membersTabSource.match(/=\s*\w+Query\.data(?:\?\.\w+)?\s*\?\s*\[\]/g);
     // These are allowed only when the result is never .filter/.map'd directly
     // (e.g. a `.length` count). Assert none remain that feed a .filter/.map.
     expect(directAssign).toBeNull();
