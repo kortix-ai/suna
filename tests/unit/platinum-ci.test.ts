@@ -22,8 +22,8 @@ const lockHash = 'b'.repeat(64);
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v6-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v6-bbbbbbbbbbbbbbbb-base');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v7-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v7-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -44,6 +44,9 @@ describe('Platinum CI worker plan', () => {
     expect(spec.entrypoint).toContain('supabase stop --no-backup');
     expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');
     expect(spec.entrypoint).not.toContain('& &&');
+    expect(spec.entrypoint).toContain(
+      'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &\ndockerd_pid=$!',
+    );
     expect(buildPlatinumWarmTemplateRequest(lockHash)).toEqual({
       name: platinumTemplateName(lockHash),
       capture_condition: {
