@@ -5,6 +5,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
   isShowContentUnavailable,
+  isShowPayloadEmpty,
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
@@ -153,6 +154,25 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     () => prefersPreviewLink(preview.previewUrl),
     [preview.previewUrl],
   );
+
+  // Nothing was handed over: no items, no path, no url, no content — only
+  // metadata about an artifact that never arrived. Every branch of
+  // `ShowContentRenderer` is guarded on one of those fields, so the cascade
+  // falls through to a fallback with all four sub-conditions false and the card
+  // renders as a header over an empty box. Draw nothing instead.
+  //
+  // The chat transcript drops the part one level higher (`isEmptyShowPart`, so
+  // no blank row or rail is left behind); this is the same verdict applied at
+  // the renderer, which is what the Action Panel and /debug/tools reach.
+  //
+  // `running` is the guard, not the status: a call still streaming its
+  // arguments has an empty input because the input has not arrived yet, and its
+  // header carries the spinner that says so.
+  const hasNothingToShow = useMemo(
+    () => isShowPayloadEmpty({ items, path, url, content }),
+    [items, path, url, content],
+  );
+  if (!running && hasNothingToShow) return null;
 
   let body: ReactNode;
 

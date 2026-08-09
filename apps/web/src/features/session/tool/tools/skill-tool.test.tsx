@@ -76,10 +76,21 @@ describe('SkillTool', () => {
     expect(markup).not.toContain('Build a web app.');
   });
 
-  test('a skill with NO directory anywhere falls back to expanding in place', () => {
-    // There is no path to hand the panel, and `/SKILL.md` would be a lie. The
-    // inline body is the fallback, and it still carries the whole document.
+  test('a NAMED skill opens the panel even with no directory in the payload', () => {
+    // The regression this file kept missing. `OUTPUT_NO_DIR` is what the runtime
+    // really sends, every location probe returned '', so the row rendered a
+    // disclosure instead of a button and the click expanded in place — the exact
+    // thing three rounds of fixes were supposed to remove. The name is enough:
+    // the product installs skills at `.kortix/opencode/skills/<name>/`.
     const markup = render(part({ name: 'webapp' }, OUTPUT_NO_DIR), true);
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('Build a web app.');
+  });
+
+  test('a skill with no usable name at all falls back to expanding in place', () => {
+    // Nothing to point the panel at, and a made-up path would open an error.
+    // The inline body is the fallback, and it still carries the whole document.
+    const markup = render(part({}, OUTPUT_NO_DIR), true);
     expect(markup).toContain('Build a web app.');
     expect(markup).toContain('reference.md');
     expect(markup).toContain('templates/page.tsx');

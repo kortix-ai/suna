@@ -92,6 +92,61 @@ describe('skillDocumentPath — payload shapes the runtime might send', () => {
   });
 });
 
+describe('skillDocumentPath — the install layout, when nothing says otherwise', () => {
+  // The payload archaeology above was the wrong instinct. A skill's location is
+  // not something to be recovered from the runtime's output at all: this product
+  // OWNS where skills live. `injectManagedSkills` copies each one to
+  // `<configDir>/skills/<name>/`, `resolveOpencodeConfigDir` defaults configDir
+  // to `.kortix/opencode`, and the whole app already writes that path in prose
+  // (entity-modal.tsx, use-configure-thread.ts). The skill's NAME is the join.
+
+  test('a name alone is enough — no directory anywhere in the payload', () => {
+    // This is the case that made three attempts do nothing on click. The runtime
+    // sends `{ name }` and no location, every probe returned '', `onClick` came
+    // out undefined, and `BasicTool` fell back to a disclosure — the collapsible.
+    expect(skillDocumentPath('<skill_content>\n# Webapp\n</skill_content>', '', 'webapp')).toBe(
+      '.kortix/opencode/skills/webapp/SKILL.md',
+    );
+  });
+
+  test('a directory the runtime DID state still wins', () => {
+    expect(skillDocumentPath(output(`Base directory: ${DIR}`), '', 'webapp')).toBe(
+      `${DIR}/SKILL.md`,
+    );
+    expect(skillDocumentPath(output('# Webapp'), DIR, 'webapp')).toBe(`${DIR}/SKILL.md`);
+  });
+
+  test('a listed SKILL.md resolves against the conventional directory', () => {
+    const out = output('<skill_files>\n<file>docs/SKILL.md</file>\n</skill_files>');
+    expect(skillDocumentPath(out, '', 'webapp')).toBe(
+      '.kortix/opencode/skills/webapp/docs/SKILL.md',
+    );
+  });
+
+  test('the skills directory is flat, so a namespaced name uses its last segment', () => {
+    expect(skillDocumentPath('', '', 'personal/webapp')).toBe(
+      '.kortix/opencode/skills/webapp/SKILL.md',
+    );
+  });
+
+  test('a name is trimmed of whitespace and slashes', () => {
+    expect(skillDocumentPath('', '', '  webapp/  ')).toBe('.kortix/opencode/skills/webapp/SKILL.md');
+  });
+
+  test('a traversing name is refused rather than pointed outside the skills dir', () => {
+    expect(skillDocumentPath('', '', '../../etc/passwd')).toBeNull();
+    expect(skillDocumentPath('', '', '..')).toBeNull();
+  });
+
+  test('the placeholder name the row falls back to is not a skill', () => {
+    // `SkillTool` renders `(input.name as string) || 'skill'`, so 'skill' can
+    // mean "the call carried no name at all".
+    expect(skillDocumentPath('', '', 'skill')).toBeNull();
+    expect(skillDocumentPath('', '', '')).toBeNull();
+    expect(skillDocumentPath('')).toBeNull();
+  });
+});
+
 describe('skillInputDir', () => {
   test('finds the directory under any of the names the runtime may use', () => {
     expect(skillInputDir({ dir: DIR })).toBe(DIR);

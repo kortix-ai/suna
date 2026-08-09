@@ -55,14 +55,20 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
    */
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   /**
-   * The document behind the row, or null when the call did not say where it is.
+   * The document behind the row.
    *
-   * Resolved from the OUTPUT as well as the input: `input.dir` is not
-   * dependable — the skill tool lives in the OpenCode runtime, not here, and a
-   * call can arrive with only a name. Keying the click off `dir` alone left the
-   * row silently doing nothing. See `skillDocumentPath`.
+   * The NAME is what resolves it. Earlier versions read only the payload — an
+   * `input.dir`, then a tag attribute, then a `Base directory:` line — and a
+   * real call carries none of those, so the path came out null, `onClick` came
+   * out undefined, and `BasicTool` quietly fell back to the inline disclosure
+   * this row exists to replace. The skill's location was never the runtime's to
+   * tell us: this product installs skills at `.kortix/opencode/skills/<name>/`.
+   * See `skillDocumentPath`.
    */
-  const docPath = useMemo(() => skillDocumentPath(output, skillDir), [output, skillDir]);
+  const docPath = useMemo(
+    () => skillDocumentPath(output, skillDir, skillName),
+    [output, skillDir, skillName],
+  );
   const openSkillDoc = useCallback(() => {
     if (docPath) openPreview(docPath);
   }, [openPreview, docPath]);
