@@ -279,6 +279,16 @@ describe('Platinum CI worker plan', () => {
     expect(states).toEqual(['provisioning', 'starting', 'running']);
   });
 
+  test('allows 45 minutes for a capacity-blocked Platinum worker to start', async () => {
+    await expect(observePlatinumSandboxStart({
+      sandbox: { id: 'worker', state: 'provisioning' },
+      startedAt: 0,
+      now: () => 2_700_001,
+      sleep: async () => {},
+      readSandbox: async () => ({ id: 'worker', state: 'running' }),
+    })).rejects.toThrow('within 2700000ms');
+  });
+
   test('rejects values that could alter the Git fetch command', () => {
     expect(() =>
       validatePlatinumCiInput({
