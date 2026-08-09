@@ -583,7 +583,8 @@ const envSchema = z.object({
   // Every provider is optional; the transport tries each configured one in
   // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
   EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
-  // AWS SES (SigV4-signed SESv2 HTTP API; IAM user kortix-ses-sender).
+  // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
+  // credentials remain optional for local and self-hosted deployments.
   AWS_SES_REGION: optStrDefault('us-east-2'),
   AWS_SES_ACCESS_KEY_ID: optStr,
   AWS_SES_SECRET_ACCESS_KEY: optStr,

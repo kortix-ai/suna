@@ -183,3 +183,9 @@ variable "secrets_blob_arn" {
   type        = string
   default     = ""
 }
+
+variable "enable_ses_send" {
+  description = "Grant the ECS task role permission to send from this account's SES identities."
+  type        = bool
+  default     = false
+}

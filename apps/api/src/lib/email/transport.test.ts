@@ -16,9 +16,22 @@ mock.module('../../config', () => ({
   config: mockConfig,
 }));
 
+let providerCredentials = {
+  accessKeyId: 'ASIATASKROLE',
+  secretAccessKey: 'task-secret',
+  sessionToken: 'task-session-token',
+};
+
+mock.module('@aws-sdk/credential-provider-node', () => ({
+  defaultProvider: () => async () => providerCredentials,
+}));
+
 const { configuredEmailProviders, isEmailConfigured, sendEmail } = await import('./transport');
 
 const originalFetch = globalThis.fetch;
+const originalContainerCredentialsRelativeUri = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+const originalContainerCredentialsFullUri = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+const originalWebIdentityTokenFile = process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
 let calls: Array<{ url: string; init: RequestInit }> = [];
 let responder: (url: string) => Response;
 
@@ -31,6 +44,9 @@ beforeEach(() => {
   mockConfig.RESEND_API_KEY = '';
   mockConfig.RESEND_FROM_EMAIL = '';
   mockConfig.MAILTRAP_API_TOKEN = '';
+  delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+  delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+  delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
   globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
     return responder(String(url));
@@ -39,6 +55,21 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalContainerCredentialsRelativeUri === undefined) {
+    delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+  } else {
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = originalContainerCredentialsRelativeUri;
+  }
+  if (originalContainerCredentialsFullUri === undefined) {
+    delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+  } else {
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI = originalContainerCredentialsFullUri;
+  }
+  if (originalWebIdentityTokenFile === undefined) {
+    delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+  } else {
+    process.env.AWS_WEB_IDENTITY_TOKEN_FILE = originalWebIdentityTokenFile;
+  }
 });
 
 const MSG = {
@@ -59,6 +90,11 @@ describe('configuredEmailProviders', () => {
     mockConfig.RESEND_API_KEY = 're_test';
     mockConfig.EMAIL_PROVIDER_ORDER = 'mailtrap,resend,ses';
     expect(configuredEmailProviders()).toEqual(['mailtrap', 'resend']);
+  });
+
+  test('recognizes the ECS task-role credential endpoint as SES configuration', () => {
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = '/v2/credentials/test';
+    expect(configuredEmailProviders()).toEqual(['ses']);
   });
 });
 
@@ -84,6 +120,26 @@ describe('sendEmail', () => {
     expect(payload.FromEmailAddress).toBe('Kortix Test <noreply@example.test>');
     expect(payload.Destination.ToAddresses).toEqual(['user@example.test']);
     expect(payload.EmailTags).toEqual([{ Name: 'category', Value: 'unit-test' }]);
+  });
+
+  test('ses leg uses temporary ECS credentials and signs the session token', async () => {
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI = 'http://127.0.0.1/ecs-credentials';
+    providerCredentials = {
+      accessKeyId: 'ASIATASKROLE',
+      secretAccessKey: 'task-secret',
+      sessionToken: 'task-session-token',
+    };
+
+    const result = await sendEmail(MSG);
+    expect(result).toEqual({ ok: true, provider: 'ses', status: 200 });
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://email.us-east-2.amazonaws.com/v2/email/outbound-emails',
+    ]);
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers['X-Amz-Security-Token']).toBe('task-session-token');
+    expect(headers.Authorization).toMatch(
+      /^AWS4-HMAC-SHA256 Credential=ASIATASKROLE\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-security-token;x-amz-date, Signature=[0-9a-f]{64}$/,
+    );
   });
 
   test('resend leg sends the Resend payload with the category tag', async () => {

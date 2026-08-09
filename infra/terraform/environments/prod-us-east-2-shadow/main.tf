@@ -78,6 +78,7 @@ module "api" {
   }
   secrets          = local.secrets
   secrets_blob_arn = var.secret_arn
+  enable_ses_send  = true
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 

@@ -89,6 +89,7 @@ module "api" {
   environment      = var.api_environment
   secrets          = var.api_secrets
   secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
+  enable_ses_send  = true
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

@@ -150,6 +150,21 @@ resource "aws_iam_role" "task" {
   }
 }
 
+resource "aws_iam_role_policy" "ses_send" {
+  count = var.enable_ses_send ? 1 : 0
+  name  = "${local.name}-ses-send"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "SendEmail"
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail", "ses:SendBounce"]
+      Resource = ["arn:${data.aws_partition.current.partition}:ses:*:${data.aws_caller_identity.current.account_id}:identity/*"]
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
