@@ -444,7 +444,23 @@ function ActivityBurstImpl({
    */
   const bare = steps.length === 1 && summary.total === 1;
 
-  if (parts.length === 0) return null;
+  /**
+   * No rows, no burst.
+   *
+   * `mergeBurstSteps` drops plumbing outright (memory writes, context
+   * compaction) and skips blank reasoning fragments, so a run made only of
+   * those merges to nothing — and the burst used to draw a summary line
+   * ("Housekeeping", or "Worked" with no plumbing) over an empty chain. A
+   * disclosure the reader can open onto nothing is worse than silence: it
+   * advertises work it cannot show, and the caret promises a body that is not
+   * there.
+   *
+   * The test is `steps`, not `parts`: `parts.length > 0` is exactly the case
+   * that produced the empty row, because every one of those parts was filtered
+   * out downstream. `steps` IS the list the chain below maps over, so this
+   * cannot drift from what renders.
+   */
+  if (steps.length === 0) return null;
 
   return (
     <Disclosure

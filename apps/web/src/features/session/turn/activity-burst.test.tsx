@@ -599,10 +599,41 @@ describe('ActivityBurst', () => {
     expect(markup).not.toContain('aria-label="1 step failed"');
   });
 
-  test('a burst of nothing but machinery is housekeeping', () => {
-    expect(renderBurst([tool('1', 'prune', { status: 'completed', output: 'ok' })])).toContain(
-      'Housekeeping',
-    );
+  /**
+   * A burst renders only when it has rows. Plumbing is dropped by
+   * `mergeBurstSteps` and blank reasoning is skipped, so a run made only of
+   * those merges to nothing — and a summary line over an empty chain is a
+   * caret that promises a body it does not have. `parts.length > 0` is exactly
+   * the case that used to produce it, which is why the guard tests `steps`.
+   */
+  test('a burst of nothing but machinery renders nothing at all', () => {
+    expect(renderBurst([tool('1', 'prune', { status: 'completed', output: 'ok' })])).toBe('');
+  });
+
+  test('a burst of blank reasoning renders nothing at all', () => {
+    const blank = { id: 'r', type: 'reasoning', text: '   ', time: { start: 1, end: 2 } };
+    expect(renderBurst([blank as unknown as Part])).toBe('');
+  });
+
+  test('a running burst with no rows yet renders nothing', () => {
+    // The trailing burst is forced open while the turn works, so without the
+    // guard this is the loudest empty row on the surface.
+    const markup = renderBurst([tool('1', 'prune', { status: 'running' })], {
+      working: true,
+      isTrailing: true,
+    });
+    expect(markup).toBe('');
+  });
+
+  test('one real call still renders once machinery is filtered out', () => {
+    // The guard must not swallow a burst that has work in it — plumbing beside
+    // a real call leaves one step, and one step is a bare row.
+    const markup = renderBurst([
+      tool('1', 'prune', { status: 'completed', output: 'ok' }),
+      done('2', 'bash', { command: 'pnpm build' }),
+    ]);
+    expect(markup).not.toBe('');
+    expect(markup).toContain('pnpm build');
   });
 
   /**
