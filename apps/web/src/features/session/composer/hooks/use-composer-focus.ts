@@ -1,6 +1,6 @@
 'use client';
 
-import { type RefObject, useEffect } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 
 /** True for elements that already handle their own typing. */
 function isTextEditingElement(el: Element | null): boolean {
@@ -49,6 +49,16 @@ export function useComposerFocus({
   const shouldAutoFocus =
     autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
 
+  // Mirror the latest onTypeAhead into a ref so the keydown listener effect
+  // below doesn't need it as a dependency — a consumer passing an inline
+  // callback (the intended usage) would otherwise tear down and re-add both
+  // window listeners on every render, which matters here since the composer
+  // re-renders on every streamed token.
+  const onTypeAheadRef = useRef(onTypeAhead);
+  useEffect(() => {
+    onTypeAheadRef.current = onTypeAhead;
+  }, [onTypeAhead]);
+
   // 1 — focus on mount, or when revealed.
   useEffect(() => {
     if (!shouldAutoFocus) return;
@@ -73,9 +83,33 @@ export function useComposerFocus({
 
   // 2 + 3 — one listener pair, both guarded on visibility.
   useEffect(() => {
+    // The `focus-session-textarea` event (dispatched when a session tab is
+    // activated from the sidebar or dashboard) can fire before React has
+    // finished rendering the newly-revealed tab, so `offsetParent` is still
+    // null on the first frame. Retry across a bounded number of animation
+    // frames — mirrors session-chat-input.tsx:451-467 — and cancel any
+    // in-flight chain on unmount so a pending rAF can't fire after teardown.
+    let rafId: number | null = null;
+
     const onFocusRequest = () => {
-      const el = ref.current;
-      if (isVisible(el)) el.focus();
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      const tryFocus = (retries: number) => {
+        const el = ref.current;
+        if (isVisible(el)) {
+          el.focus();
+          rafId = null;
+          return;
+        }
+        if (retries > 0) {
+          rafId = requestAnimationFrame(() => tryFocus(retries - 1));
+        } else {
+          rafId = null;
+        }
+      };
+      tryFocus(10);
     };
 
     const onGlobalKeyDown = (e: KeyboardEvent) => {
@@ -91,14 +125,15 @@ export function useComposerFocus({
       // must receive it through its own transaction API, not the DOM.
       e.preventDefault();
       el.focus();
-      onTypeAhead?.(e.key);
+      onTypeAheadRef.current?.(e.key);
     };
 
     window.addEventListener('focus-session-textarea', onFocusRequest);
     window.addEventListener('keydown', onGlobalKeyDown);
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('focus-session-textarea', onFocusRequest);
       window.removeEventListener('keydown', onGlobalKeyDown);
     };
-  }, [ref, disabled, onTypeAhead]);
+  }, [ref, disabled]);
 }
