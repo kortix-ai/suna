@@ -1,11 +1,26 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import type { TriggerList } from '@kortix/api-contract';
-import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import {
+  connectors,
+  projectSessions,
+  projectTriggerRuntime,
+  projects,
+  sessionLifecycleCommands,
+} from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import {
+  createProjectGoalEvaluation,
+  reconcileProjectTaskGitWrites,
+  settleProjectGoalEvaluation,
+  sweepTaskLivenessBounds,
+} from '../generated-state-store';
+import { reconcileProjectTaskGitRemoteRef } from '../../git-proxy/task-write-reconcile';
+import { getSessionResourceUsage } from '../../shared/session-costs';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
@@ -170,6 +185,7 @@ export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
+export let taskLivenessSweepRunning = false;
 
 // In-memory heartbeat for the trigger scheduler, surfaced at /health so an
 // operator can tell at a glance whether the leader's sweep is alive and what
@@ -887,18 +903,23 @@ async function enqueueTriggerPrompt(input: {
   source: 'cron' | 'webhook' | 'manual';
   triggerSlug: string;
   idempotencyKey?: string | null;
-}): Promise<'queued' | 'no-session' | 'failed'> {
+}): Promise<{
+  status: 'queued' | 'no-session' | 'failed';
+  commandId?: string;
+  sessionId?: string;
+  deduped?: boolean;
+}> {
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!session) return 'no-session';
-  if (session.status === 'failed') return 'failed';
+  if (!session) return { status: 'no-session' };
+  if (session.status === 'failed') return { status: 'failed' };
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
-  if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  if (typeof sessionMeta.deletedAt === 'string') return { status: 'no-session' };
 
-  await enqueueContinueSessionCommand({
+  const command = await enqueueContinueSessionCommand({
     source: `trigger:${input.source}`,
     projectId: input.project.projectId,
     accountId: input.project.accountId,
@@ -912,7 +933,12 @@ async function enqueueTriggerPrompt(input: {
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
-  return 'queued';
+  return {
+    status: 'queued',
+    commandId: command.commandId,
+    sessionId: command.sessionId,
+    deduped: command.deduped,
+  };
 }
 
 /**
@@ -921,7 +947,18 @@ async function enqueueTriggerPrompt(input: {
  * in metadata so audits can still reconstruct the firing path.
  */
 
-export async function fireGitTrigger(input: {
+export interface GitTriggerFireResult {
+  status: 'fired' | 'queued' | 'failed';
+  sessionId?: string;
+  commandId?: string;
+  error?: string;
+  reason?: string;
+  deduped?: boolean;
+  evaluationId?: string;
+  evaluationState?: 'queued' | 'fired' | 'failed';
+}
+
+export interface FireGitTriggerInput {
   spec: GitTriggerSpec;
   project: ProjectRow;
   payload: Record<string, unknown>;
@@ -929,14 +966,67 @@ export async function fireGitTrigger(input: {
   source: 'cron' | 'webhook' | 'manual';
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
-}): Promise<{
-  status: 'fired' | 'queued' | 'failed';
-  sessionId?: string;
-  commandId?: string;
-  error?: string;
-  reason?: string;
-  deduped?: boolean;
-}> {
+}
+
+export async function fireGitTrigger(input: FireGitTriggerInput): Promise<GitTriggerFireResult> {
+  const rawGoal = input.payload.goal;
+  const payloadGoalSlug =
+    rawGoal &&
+    typeof rawGoal === 'object' &&
+    typeof (rawGoal as { slug?: unknown }).slug === 'string'
+      ? (rawGoal as { slug: string }).slug
+      : null;
+  const goalSlug = input.spec.goalSlug ?? payloadGoalSlug;
+  const isGoalPush =
+    input.source !== 'webhook' &&
+    goalSlug !== null &&
+    input.spec.slug === goalPushTriggerSlug(goalSlug);
+  if (!isGoalPush) return deliverGitTrigger(input);
+
+  const now = new Date();
+  const idempotencyKey = input.idempotencyKey ?? `goal:manual:${randomUUID()}`;
+  const evaluation = await createProjectGoalEvaluation(db, {
+    projectId: input.project.projectId,
+    goalSlug,
+    triggerSlug: input.spec.slug,
+    source: input.source === 'cron' ? 'cron' : 'manual',
+    idempotencyKey,
+    now,
+  });
+  let result: GitTriggerFireResult;
+  try {
+    result = await deliverGitTrigger({
+      ...input,
+      idempotencyKey,
+      payload: {
+        ...input.payload,
+        evaluation: { id: evaluation.evaluationId },
+      },
+      renderedPrompt: `${input.renderedPrompt}\n\nGoal evaluation id: ${evaluation.evaluationId}. Record every metric observation against this exact evaluation.`,
+    });
+  } catch (error) {
+    await settleProjectGoalEvaluation(db, {
+      evaluationId: evaluation.evaluationId,
+      state: 'failed',
+      now: new Date(),
+    });
+    throw error;
+  }
+  const settled = await settleProjectGoalEvaluation(db, {
+    evaluationId: evaluation.evaluationId,
+    state: result.status,
+    lifecycleCommandId: result.commandId ?? null,
+    sessionId: result.sessionId ?? null,
+    now: new Date(),
+  });
+  return {
+    ...result,
+    evaluationId: evaluation.evaluationId,
+    evaluationState: settled.state as GitTriggerFireResult['evaluationState'],
+  };
+}
+
+async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTriggerFireResult> {
   const { spec, project, payload, renderedPrompt, source } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
@@ -946,12 +1036,45 @@ export async function fireGitTrigger(input: {
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
 
+  let replayingCreateSession = false;
+  if (input.idempotencyKey) {
+    const [existing] = await db
+      .select({
+        commandId: sessionLifecycleCommands.commandId,
+        commandType: sessionLifecycleCommands.commandType,
+        status: sessionLifecycleCommands.status,
+        projectId: sessionLifecycleCommands.projectId,
+        sessionId: sessionLifecycleCommands.sessionId,
+      })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+    if (existing?.commandId) {
+      if (
+        existing.projectId !== project.projectId ||
+        !['create_session', 'continue_session'].includes(existing.commandType)
+      ) {
+        return { status: 'failed', error: 'Idempotency key belongs to another delivery' };
+      }
+      if (existing.commandType === 'continue_session') {
+        return {
+          status: existing.status === 'succeeded' ? 'fired' : 'queued',
+          commandId: existing.commandId,
+          sessionId: existing.sessionId ?? undefined,
+          deduped: true,
+          reason: `delivery replay (${existing.status})`,
+        };
+      }
+      replayingCreateSession = true;
+    }
+  }
+
   // Session pinning — when a trigger opts into `session_mode = "pinned"`, always
   // re-prompt the EXACT session the user chose (`spec.pinnedSessionId`), not
   // "whatever this trigger last created" (that's `reuse`). If the pinned session
   // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
   // (the trigger's own last session), then to a brand-new session.
-  if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
+  if (!replayingCreateSession && spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
     const outcome = await enqueueTriggerPrompt({
       project,
       sessionId: spec.pinnedSessionId,
@@ -961,10 +1084,12 @@ export async function fireGitTrigger(input: {
       triggerSlug: spec.slug,
       idempotencyKey: input.idempotencyKey ?? null,
     });
-    if (outcome === 'queued') {
+    if (outcome.status === 'queued') {
       return {
         status: 'queued',
-        sessionId: spec.pinnedSessionId,
+        commandId: outcome.commandId,
+        sessionId: outcome.sessionId,
+        deduped: outcome.deduped,
         reason: 'prompt queued for delivery',
       };
     }
@@ -984,7 +1109,7 @@ export async function fireGitTrigger(input: {
   // customer / repo. A key that renders empty falls through to a fresh session
   // rather than blending every keyless delivery into a shared one.
   const sessionKey = renderSessionKey(spec, payload);
-  if (sessionKey) {
+  if (!replayingCreateSession && sessionKey) {
     const keyed = await findKeyedTriggerSession(project.projectId, spec.slug, sessionKey);
     if (keyed) {
       const outcome = await enqueueTriggerPrompt({
@@ -996,10 +1121,12 @@ export async function fireGitTrigger(input: {
         triggerSlug: spec.slug,
         idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'queued') {
+      if (outcome.status === 'queued') {
         return {
           status: 'queued',
-          sessionId: keyed.sessionId,
+          commandId: outcome.commandId,
+          sessionId: outcome.sessionId,
+          deduped: outcome.deduped,
           reason: 'prompt queued for delivery',
         };
       }
@@ -1008,7 +1135,7 @@ export async function fireGitTrigger(input: {
     }
   }
 
-  if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
+  if (!replayingCreateSession && (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned')) {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
       const outcome = await enqueueTriggerPrompt({
@@ -1020,13 +1147,15 @@ export async function fireGitTrigger(input: {
         triggerSlug: spec.slug,
         idempotencyKey: input.idempotencyKey ?? null,
       });
-      if (outcome === 'queued') {
+      if (outcome.status === 'queued') {
         // The prompt is durably queued (drain retries until delivered or
         // dead-letters loudly) — treat as a successful fire so the scheduler
         // records last_fired_at and doesn't immediately create a dupe.
         return {
           status: 'queued',
-          sessionId: reusable.sessionId,
+          commandId: outcome.commandId,
+          sessionId: outcome.sessionId,
+          deduped: outcome.deduped,
           reason: 'prompt queued for delivery',
         };
       }
@@ -1045,6 +1174,7 @@ export async function fireGitTrigger(input: {
     // make them project-visible so the whole team can find them.
     visibility: 'project',
     request: input.request,
+    platformMetaGoalPush: spec.platformMetaGoalPush === true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: input.idempotencyKey ?? null,
     body: {
@@ -1253,6 +1383,28 @@ export async function drainTriggerExecutionQueue(
   }
 }
 
+export async function runTaskLivenessSweep(
+  leader = isLeader(),
+  sweep: () => Promise<number> = async () => {
+    const now = new Date();
+    // Reconcile expired receive-pack requests first. A terminal liveness sweep
+    // in this tick can then proceed only from a confirmed remote observation.
+    await reconcileProjectTaskGitWrites(db, {
+      now,
+      reconcileRemoteRef: reconcileProjectTaskGitRemoteRef,
+    });
+    return sweepTaskLivenessBounds(db, now, 100, getSessionResourceUsage);
+  },
+): Promise<number | null> {
+  if (!leader || taskLivenessSweepRunning) return null;
+  taskLivenessSweepRunning = true;
+  try {
+    return await sweep();
+  } finally {
+    taskLivenessSweepRunning = false;
+  }
+}
+
 export function startProjectTriggerScheduler(): void {
   if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
@@ -1271,6 +1423,16 @@ export function startProjectTriggerScheduler(): void {
         },
       );
     }
+
+    runTaskLivenessSweep()
+      .then((finalized) => {
+        if (finalized && finalized > 0) {
+          console.log('[task-liveness] deadline sweep finalized tasks', { finalized });
+        }
+      })
+      .catch((error) => {
+        console.error('[task-liveness] deadline sweep failed:', error);
+      });
 
     drainSessionLifecycleQueue({ limit: 10 })
       .then((result) => {

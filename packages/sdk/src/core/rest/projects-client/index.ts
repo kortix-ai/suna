@@ -15,6 +15,8 @@ export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
 export * from './triggers';
+export * from './goals';
+export * from './tasks';
 export * from './session-sandbox';
 export * from './model-defaults';
 export * from './model-enablement';

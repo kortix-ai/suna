@@ -21,6 +21,7 @@ import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
 import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { createSession } from '../session-lifecycle';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
@@ -951,6 +952,7 @@ projectsApp.openapi(
       sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
     },
     request: requestAuditContext(c),
+    callerSessionId: callerKortixSessionId(c),
     queuePolicy: 'never',
   });
   if (result.error) return sendSessionCreateError(c, result.error);

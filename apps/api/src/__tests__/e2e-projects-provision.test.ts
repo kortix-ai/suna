@@ -120,6 +120,9 @@ mock.module('../middleware/auth', () => ({
     const auth = getTestAuth();
     c.set('userId', auth.userId);
     c.set('userEmail', auth.userEmail);
+    if (auth.authType) c.set('authType', auth.authType);
+    if (auth.sessionId) c.set('sessionId', auth.sessionId);
+    if (auth.agentGrant) c.set('agentGrant', auth.agentGrant);
     await next();
   },
 }));
@@ -448,6 +451,28 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.seeded).toBe(false);
   });
 
+  test('never returns a provision push token to a project session principal', async () => {
+    (globalThis as any)[TEST_AUTH_KEY] = {
+      userId: USER_ID,
+      userEmail: 'agent@example.test',
+      authType: 'pat',
+      sessionId: '00000000-0000-4000-a000-000000000301',
+      agentGrant: { agent: 'worker', connectors: [], kortixCli: ['project.cr.open'], env: [] },
+    };
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Session Project' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.push_token).toBeNull();
+    expect(body.git_username).toBeNull();
+    expect(JSON.stringify(body)).not.toContain(PUSH_TOKEN);
+  });
+
   test('does not report an active project when the seed pushed but left no default branch', async () => {
     remoteBranchAfterSeed = false;
 
@@ -530,6 +555,27 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.error).toContain('org-wide token');
     expect(body.error).toContain('git_origin_url');
     expect(body.git_origin_url).toBeTruthy();
+  });
+
+  test('git-token denies a runtime principal even when its immutable grant includes raw push', async () => {
+    (globalThis as any)[TEST_AUTH_KEY] = {
+      userId: USER_ID,
+      userEmail: 'agent@example.test',
+      authType: 'pat',
+      sessionId: '00000000-0000-4000-a000-000000000301',
+      agentGrant: { agent: 'worker', connectors: 'all', kortixCli: 'all', env: 'all' },
+    };
+
+    const res = await createApp().request(`/v1/projects/${PROJECT_ID}/git-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('runtime_git_credential_export_denied');
+    expect(JSON.stringify(body)).not.toContain(PUSH_TOKEN);
   });
 
   test('rejects an explicit account the caller has no membership in', async () => {

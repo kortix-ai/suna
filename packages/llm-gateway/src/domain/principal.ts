@@ -27,6 +27,9 @@ export interface AuthedPrincipal {
   // post-hoc deduct — closing the check-then-act race where concurrent
   // requests could all be admitted against the same unspent balance.
   billingHold?: { amountUsd: number };
+  // Durable bound-worker request fence acquired by the control plane. The
+  // gateway copies this id onto every usage or pre-dispatch settlement event.
+  livenessAdmissionId?: string;
 }
 
 export type BillingMode = 'credits' | 'platform-fee' | 'none';

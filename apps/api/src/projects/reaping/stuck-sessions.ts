@@ -57,7 +57,13 @@ export async function reconcileStuckActiveSessions(
     .where(
       and(
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-        lt(projectSessions.updatedAt, cutoff),
+        or(
+          lt(projectSessions.updatedAt, cutoff),
+          and(
+            sql`${projectSessions.metadata}->>'task_liveness_binding_status' = 'pending'`,
+            sql`(${projectSessions.metadata}->>'task_liveness_reservation_expires_at')::timestamptz <= ${now.toISOString()}`,
+          ),
+        ),
         or(
           sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
           sql`(${projectSessions.metadata}->>'deletedAt') is not null`,

@@ -1,5 +1,9 @@
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, isNull, lte, ne, or } from 'drizzle-orm';
+import {
+  projectGoalEvaluations,
+  projectSessions,
+  sessionLifecycleCommands,
+} from '@kortix/db/schema';
+import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type {
@@ -11,11 +15,43 @@ import type {
 
 export type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;
 
-export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
+export interface LifecycleCommandClaim {
+  lockedBy: string;
+  /** Monotonically increasing claim generation. This fences the same worker ID after reclaim. */
+  attempt: number;
+}
+
+// A continue command can spend 5 minutes waiting for runtime readiness and then
+// 45 seconds delivering. The extra 75 seconds covers DB/network scheduling.
+export const LIFECYCLE_COMMAND_LEASE_MS = 7 * 60_000;
+export const LIFECYCLE_COMMAND_HEARTBEAT_MS = 60_000;
+
+export function lifecycleCommandClaim(
+  row: Pick<SessionLifecycleCommandRow, 'lockedBy' | 'attempts'>,
+): LifecycleCommandClaim {
+  if (!row.lockedBy) throw new Error('Claimed lifecycle command is missing lock owner');
+  return { lockedBy: row.lockedBy, attempt: row.attempts };
+}
+
+function claimedCommandWhere(commandId: string, claim?: LifecycleCommandClaim) {
+  return claim
+    ? and(
+        eq(sessionLifecycleCommands.commandId, commandId),
+        eq(sessionLifecycleCommands.status, 'running'),
+        eq(sessionLifecycleCommands.lockedBy, claim.lockedBy),
+        eq(sessionLifecycleCommands.attempts, claim.attempt),
+      )
+    : eq(sessionLifecycleCommands.commandId, commandId);
+}
+
+export function createSessionCommandPayload(
+  command: CreateSessionCommand,
+): QueuedCreateSessionPayload {
   return {
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
     metadata: command.metadata,
+    platformMetaGoalPush: command.platformMetaGoalPush,
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,
     mayManageSystemConnections: command.mayManageSystemConnections,
@@ -30,6 +66,8 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
 
 export interface QueuedContinueSessionPayload {
   text: string;
+  /** Stable OpenCode message ID for idempotent retry after a process crash. */
+  messageId?: string | null;
   /** When set, the drain SKIPS delivery if this execution's decision was
    *  already consumed in-band (a live held/poll request resumed the turn) —
    *  the follow-up prompt would just be noise. */
@@ -53,6 +91,7 @@ export interface EnqueueContinueSessionCommandInput {
   sessionId: string;
   actorUserId: string | null;
   text: string;
+  messageId?: string | null;
   executionId?: string | null;
   triggerSlug?: string | null;
   availableAt?: Date;
@@ -65,6 +104,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
   const now = new Date();
   const payload: QueuedContinueSessionPayload = {
     text: input.text,
+    messageId: input.messageId ?? null,
     executionId: input.executionId ?? null,
     triggerSlug: input.triggerSlug ?? null,
   };
@@ -84,18 +124,128 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
   };
 }
 
+/**
+ * Repair lifecycle prompts persisted before OpenCode 1.17.11 required IDs to
+ * start with `msg`. Queued rows are normalized in place. Dead-lettered rows are
+ * requeued because the invalid ID can be the only reason all delivery attempts
+ * failed before this deployment.
+ */
+export async function repairLegacyLifecycleMessageIds(): Promise<number> {
+  const now = new Date();
+  const repaired = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`jsonb_set(
+        ${sessionLifecycleCommands.payload},
+        '{messageId}',
+        to_jsonb('msg_' || (${sessionLifecycleCommands.payload}->>'messageId')),
+        true
+      )`,
+      status: sql`case
+        when ${sessionLifecycleCommands.status} = 'dead_lettered' then 'queued'
+        else ${sessionLifecycleCommands.status}
+      end`,
+      attempts: sql`case
+        when ${sessionLifecycleCommands.status} = 'dead_lettered' then 0
+        else ${sessionLifecycleCommands.attempts}
+      end`,
+      availableAt: sql`case
+        when ${sessionLifecycleCommands.status} = 'dead_lettered' then ${now.toISOString()}::timestamptz
+        else ${sessionLifecycleCommands.availableAt}
+      end`,
+      lockedBy: null,
+      lockedUntil: null,
+      lastError: sql`case
+        when ${sessionLifecycleCommands.status} = 'dead_lettered' then null
+        else ${sessionLifecycleCommands.lastError}
+      end`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'dead_lettered']),
+        sql`${sessionLifecycleCommands.payload}->>'messageId' is not null`,
+        sql`left(${sessionLifecycleCommands.payload}->>'messageId', 3) <> 'msg'`,
+      ),
+    )
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return repaired.length;
+}
+
 export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
-): Promise<void> {
+): Promise<{
+  commandId: string;
+  commandType: 'continue_session';
+  projectId: string;
+  sessionId: string;
+  status: SessionLifecycleCommandRow['status'];
+  deduped: boolean;
+}> {
   const values = buildContinueSessionCommandValues(input);
   if (!input.idempotencyKey) {
-    await db.insert(sessionLifecycleCommands).values(values);
-    return;
+    const [created] = await db.insert(sessionLifecycleCommands).values(values).returning({
+      commandId: sessionLifecycleCommands.commandId,
+      commandType: sessionLifecycleCommands.commandType,
+      projectId: sessionLifecycleCommands.projectId,
+      sessionId: sessionLifecycleCommands.sessionId,
+      status: sessionLifecycleCommands.status,
+    });
+    if (!created) throw new Error('continue-session command insert returned no row');
+    return {
+      ...created,
+      commandType: 'continue_session',
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      deduped: false,
+    };
   }
-  await db
+  const [created] = await db
     .insert(sessionLifecycleCommands)
     .values(values)
-    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+    .returning({
+      commandId: sessionLifecycleCommands.commandId,
+      commandType: sessionLifecycleCommands.commandType,
+      projectId: sessionLifecycleCommands.projectId,
+      sessionId: sessionLifecycleCommands.sessionId,
+      status: sessionLifecycleCommands.status,
+    });
+  if (created) {
+    return {
+      ...created,
+      commandType: 'continue_session',
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      deduped: false,
+    };
+  }
+  const [existing] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      commandType: sessionLifecycleCommands.commandType,
+      projectId: sessionLifecycleCommands.projectId,
+      sessionId: sessionLifecycleCommands.sessionId,
+      status: sessionLifecycleCommands.status,
+    })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+  if (!existing) throw new Error('continue-session command idempotency lookup returned no row');
+  if (
+    existing.commandType !== 'continue_session' ||
+    existing.projectId !== input.projectId ||
+    !existing.sessionId
+  ) {
+    throw new Error('continue-session idempotency key belongs to another delivery');
+  }
+  return {
+    ...existing,
+    commandType: 'continue_session',
+    sessionId: existing.sessionId,
+    deduped: true,
+  };
 }
 
 export async function claimCreateSessionCommand(
@@ -137,7 +287,9 @@ export async function claimCreateSessionCommand(
     .limit(1);
 
   if (!existing) {
-    throw new Error(`Idempotent command ${command.idempotencyKey} conflicted but could not be loaded`);
+    throw new Error(
+      `Idempotent command ${command.idempotencyKey} conflicted but could not be loaded`,
+    );
   }
   return { row: existing, existing: true };
 }
@@ -150,9 +302,7 @@ export function resultFromExistingCommand(row: SessionLifecycleCommandRow): Sess
     (typeof result.sessionId === 'string' ? result.sessionId : null);
   const reason = typeof result.reason === 'string' ? result.reason : undefined;
   const error =
-    typeof row.lastError === 'string'
-      ? { status: 500, body: { error: row.lastError } }
-      : undefined;
+    typeof row.lastError === 'string' ? { status: 500, body: { error: row.lastError } } : undefined;
 
   if (row.status === 'succeeded') {
     return {
@@ -197,8 +347,9 @@ export function resultFromExistingCommand(row: SessionLifecycleCommandRow): Sess
 export async function markCommandQueued(
   commandId: string,
   reason: string | null,
-): Promise<void> {
-  await db
+  claim?: LifecycleCommandClaim,
+): Promise<boolean> {
+  const rows = await db
     .update(sessionLifecycleCommands)
     .set({
       status: 'queued',
@@ -208,25 +359,70 @@ export async function markCommandQueued(
       lockedUntil: null,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    .where(claimedCommandWhere(commandId, claim))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return rows.length > 0;
+}
+
+/** Requeue a claimed command behind a durable prerequisite without spending its retry budget. */
+export async function deferLifecycleCommand(
+  commandId: string,
+  claim: LifecycleCommandClaim,
+  reason: string,
+  availableAt = new Date(Date.now() + 2_000),
+): Promise<boolean> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      result: { reason },
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(claimedCommandWhere(commandId, claim))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return rows.length > 0;
 }
 
 export async function markCommandSucceeded(
   commandId: string,
   result: Record<string, unknown>,
   sessionId?: string | null,
-): Promise<void> {
-  await db
-    .update(sessionLifecycleCommands)
-    .set({
-      status: 'succeeded',
-      sessionId: sessionId ?? null,
-      result,
-      lockedBy: null,
-      lockedUntil: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+  claim?: LifecycleCommandClaim,
+): Promise<boolean> {
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(sessionLifecycleCommands)
+      .set({
+        status: 'succeeded',
+        sessionId: sessionId ?? null,
+        result,
+        lockedBy: null,
+        lockedUntil: null,
+        updatedAt: now,
+      })
+      .where(claimedCommandWhere(commandId, claim))
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    if (rows.length === 0) return false;
+    await tx
+      .update(projectGoalEvaluations)
+      .set({
+        state: 'fired',
+        firedAt: now,
+        ...(sessionId === undefined ? {} : { sessionId }),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(projectGoalEvaluations.lifecycleCommandId, commandId),
+          eq(projectGoalEvaluations.state, 'queued'),
+        ),
+      );
+    return true;
+  });
 }
 
 export async function markCommandFailed(
@@ -237,25 +433,45 @@ export async function markCommandFailed(
     attempts: number;
     sessionId?: string | null;
     result?: Record<string, unknown>;
+    /** Stop commands are safety fences and must not expire before convergence. */
+    unbounded?: boolean;
+    /** Required for queue-drain mutations. Inline commands are never reclaimable. */
+    claim?: LifecycleCommandClaim;
   },
-): Promise<void> {
-  const retry = opts.retryable && opts.attempts < 5;
-  const [row] = await db
-    .update(sessionLifecycleCommands)
-    .set({
-      status: retry ? 'queued' : 'dead_lettered',
-      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-      ...(opts.result ? { result: opts.result } : {}),
-      attempts: opts.attempts,
-      availableAt: new Date(Date.now() + Math.min(60_000, 2_000 * Math.max(opts.attempts, 1))),
-      lockedBy: null,
-      lockedUntil: null,
-      lastError: error,
-      updatedAt: new Date(),
-    })
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
-    .returning();
-  if (retry || !row) return;
+): Promise<boolean> {
+  const retry = opts.retryable && (opts.unbounded || opts.attempts < 5);
+  const now = new Date();
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(sessionLifecycleCommands)
+      .set({
+        status: retry ? 'queued' : 'dead_lettered',
+        ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+        ...(opts.result ? { result: opts.result } : {}),
+        attempts: opts.attempts,
+        availableAt: new Date(now.getTime() + Math.min(60_000, 2_000 * Math.max(opts.attempts, 1))),
+        lockedBy: null,
+        lockedUntil: null,
+        lastError: error,
+        updatedAt: now,
+      })
+      .where(claimedCommandWhere(commandId, opts.claim))
+      .returning();
+    if (updated && !retry) {
+      await tx
+        .update(projectGoalEvaluations)
+        .set({ state: 'failed', firedAt: null, updatedAt: now })
+        .where(
+          and(
+            eq(projectGoalEvaluations.lifecycleCommandId, commandId),
+            eq(projectGoalEvaluations.state, 'queued'),
+          ),
+        );
+    }
+    return updated;
+  });
+  if (!row) return false;
+  if (retry) return true;
 
   // Dead-lettered = this command's work is being ABANDONED. That used to be a
   // console.warn deep in the drain — invisible to alerting while the user's
@@ -299,6 +515,23 @@ export async function markCommandFailed(
       });
     }
   }
+  return true;
+}
+
+export async function renewLifecycleCommandLease(
+  commandId: string,
+  claim: LifecycleCommandClaim,
+  now = new Date(),
+): Promise<boolean> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      lockedUntil: new Date(now.getTime() + LIFECYCLE_COMMAND_LEASE_MS),
+      updatedAt: now,
+    })
+    .where(claimedCommandWhere(commandId, claim))
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  return rows.length > 0;
 }
 
 export async function claimDueLifecycleCommands(input: {
@@ -318,12 +551,21 @@ export async function claimDueLifecycleCommands(input: {
     .from(sessionLifecycleCommands)
     .where(
       and(
-        eq(sessionLifecycleCommands.status, 'queued'),
+        or(
+          eq(sessionLifecycleCommands.status, 'queued'),
+          and(
+            eq(sessionLifecycleCommands.status, 'running'),
+            lte(sessionLifecycleCommands.lockedUntil, now),
+          ),
+        ),
         input.idempotencyKey
           ? eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey)
           : undefined,
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
-        or(isNull(sessionLifecycleCommands.lockedUntil), lte(sessionLifecycleCommands.lockedUntil, now)),
+        or(
+          isNull(sessionLifecycleCommands.lockedUntil),
+          lte(sessionLifecycleCommands.lockedUntil, now),
+        ),
       ),
     )
     .orderBy(asc(sessionLifecycleCommands.availableAt), asc(sessionLifecycleCommands.createdAt))
@@ -337,13 +579,19 @@ export async function claimDueLifecycleCommands(input: {
         status: 'running',
         attempts: row.attempts + 1,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_COMMAND_LEASE_MS),
         updatedAt: now,
       })
       .where(
         and(
           eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'queued'),
+          or(
+            eq(sessionLifecycleCommands.status, 'queued'),
+            and(
+              eq(sessionLifecycleCommands.status, 'running'),
+              lte(sessionLifecycleCommands.lockedUntil, now),
+            ),
+          ),
         ),
       )
       .returning();

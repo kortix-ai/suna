@@ -9,6 +9,7 @@ import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
 import {
   agentMayPerform,
+  agentMayPerformExact,
   agentMayUseConnector,
   agentMayUseEnv,
   assertAgentScope,
@@ -35,6 +36,15 @@ describe('isProjectSessionPrincipal', () => {
   test('recognizes a project-scoped token session', () => {
     expect(
       isProjectSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
+    ).toBe(true);
+  });
+
+  test('recognizes a stale agent grant even when the session id is absent', () => {
+    expect(
+      isProjectSessionPrincipal(context({
+        authType: 'pat',
+        agentGrant: { agent: 'worker', kortixCli: 'all', connectors: 'all' },
+      })),
     ).toBe(true);
   });
 });
@@ -234,6 +244,12 @@ describe('agentMayPerform — kortix_cli gate', () => {
   test('"all" → allowed', () => {
     expect(agentMayPerform({ agent: 'kortix', kortixCli: 'all', connectors: 'all' }, 'project.cr.merge')).toBe(true);
   });
+  test('reserved meta is denied both merge actions even with a stale all grant', () => {
+    const staleMetaGrant = { agent: 'meta', kortixCli: 'all' as const, connectors: [] };
+    expect(agentMayPerform(staleMetaGrant, 'project.cr.merge')).toBe(false);
+    expect(agentMayPerform(staleMetaGrant, 'project.gitops.merge')).toBe(false);
+    expect(agentMayPerform(staleMetaGrant, 'project.cr.open')).toBe(true);
+  });
   test('granted action → allowed', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] }, 'project.cr.open')).toBe(true);
   });
@@ -252,6 +268,19 @@ describe('agentMayPerform — kortix_cli gate', () => {
     // merge pair is independent — cr.open does NOT unlock merge
     expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
     expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
+  });
+  test('raw push authorization never aliases project.cr.open', () => {
+    const meta = { agent: 'meta', kortixCli: ['project.cr.open'], connectors: [] };
+    expect(agentMayPerform(meta, 'project.cr.open')).toBe(true);
+    expect(agentMayPerformExact(meta, 'project.gitops.push')).toBe(false);
+
+    const releaseBot = { agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerformExact(releaseBot, 'project.gitops.push')).toBe(true);
+  });
+  test('raw push authorization denies stale unrestricted meta grants', () => {
+    const staleMeta = { agent: 'meta', kortixCli: 'all' as const, connectors: [] };
+    expect(agentMayPerform(staleMeta, 'project.cr.open')).toBe(true);
+    expect(agentMayPerformExact(staleMeta, 'project.gitops.push')).toBe(false);
   });
   test('cr.merge ≡ gitops.merge alias', () => {
     const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };

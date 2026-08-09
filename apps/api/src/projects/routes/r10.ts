@@ -24,6 +24,7 @@ import {
 import { auth, errors, json } from '../../openapi';
 import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
@@ -129,6 +130,7 @@ async function handleMarketplaceInstallSession(c: any) {
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
     inSession: isProjectSessionPrincipal(c),
+    callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
     queuePolicy: 'never',
   });

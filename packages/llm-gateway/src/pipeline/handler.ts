@@ -168,9 +168,10 @@ async function admit(
   token: string,
   lap: () => number,
   step: (event: string, fields?: Record<string, unknown>) => void,
+  requestId: string,
 ): Promise<AuthorizeResult> {
   if (hooks.authorize) {
-    const outcome = await hooks.authorize(token);
+    const outcome = await hooks.authorize(token, requestId);
     if (!outcome.ok) step('authorize_denied', { ms: lap(), code: outcome.errorCode });
     else step('authorized', { ms: lap() });
     return outcome;
@@ -183,7 +184,7 @@ async function admit(
   }
 
   try {
-    const billing = await hooks.assertBillingActive(principal.accountId);
+    const billing = await hooks.assertBillingActive(principal.accountId, requestId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     step('billing_ok', { ms: lap() });
   } catch (err) {
@@ -206,7 +207,10 @@ async function admit(
 
   if (hooks.assertBudget) {
     try {
-      await hooks.assertBudget(principal);
+      const admission = await hooks.assertBudget(principal, requestId);
+      if (admission?.livenessAdmissionId) {
+        principal = { ...principal, livenessAdmissionId: admission.livenessAdmissionId };
+      }
       step('budget_ok', { ms: lap() });
     } catch (err) {
       step('budget_exceeded', { ms: lap(), reason: errorMessage(err) });
@@ -262,9 +266,9 @@ export async function handleChatCompletions(
   // zero-cost event with `billingHoldUsd` set always resolves to a full
   // refund. Fire-and-forget — never blocks or fails the response being
   // returned to the caller.
-  const refundBillingHold = (target: AuthedPrincipal | undefined): void => {
+  const settleUndispatchedAdmission = (target: AuthedPrincipal | undefined): void => {
     const hold = target?.billingHold;
-    if (!hold) return;
+    if (!hold && !target?.livenessAdmissionId) return;
     const refundEvent: UsageEvent = {
       promptTokens: 0,
       completionTokens: 0,
@@ -281,10 +285,13 @@ export async function handleChatCompletions(
       billingMode: 'none',
       streaming: false,
       requestId,
-      billingHoldUsd: hold.amountUsd,
+      ...(hold ? { billingHoldUsd: hold.amountUsd } : {}),
+      ...(target.livenessAdmissionId
+        ? { livenessAdmissionId: target.livenessAdmissionId }
+        : {}),
     };
     void hooks.recordUsage(refundEvent).catch((err) =>
-      logger.warn(`[llm-gateway] billing-hold refund failed for ${requestId}:`, err),
+      logger.warn(`[llm-gateway] pre-dispatch admission settlement failed for ${requestId}:`, err),
     );
   };
 
@@ -306,11 +313,11 @@ export async function handleChatCompletions(
   // cross-process RPCs into one), use it; otherwise run the granular hooks (the
   // in-process mount, where the three direct calls are free). Both yield the same
   // outcome: a principal, or a 401/402 denial with the same response + trace.
-  const gate = await admit(hooks, token, lap, step);
+  const gate = await admit(hooks, token, lap, step, requestId);
   if (!gate.ok) {
     // Billing succeeded (hold taken) but a LATER gate (budget) denied the
     // request — the hold must not be kept for a request that never dispatched.
-    refundBillingHold(gate.principal);
+    settleUndispatchedAdmission(gate.principal);
     const denyId = gate.principal ? idOf(gate.principal) : {};
     emit({
       ...denyId,
@@ -343,7 +350,7 @@ export async function handleChatCompletions(
   // that silently drops an over-limit request into an immediate, actionable 413
   // instead of a multi-second retry storm that ends in a generic 502.
   if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
-    refundBillingHold(principal);
+    settleUndispatchedAdmission(principal);
     step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
     emit({
       ...id,
@@ -363,7 +370,7 @@ export async function handleChatCompletions(
   try {
     body = JSON.parse(req.rawBody) as Record<string, unknown>;
   } catch {
-    refundBillingHold(principal);
+    settleUndispatchedAdmission(principal);
     step('invalid_json');
     emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
     return gatewayErrorResponse(400, {
@@ -384,7 +391,7 @@ export async function handleChatCompletions(
       requires: { imageInput: requestHasImage(body) },
     }) ?? null;
   } catch (err) {
-    refundBillingHold(principal);
+    settleUndispatchedAdmission(principal);
     const message = errorMessage(err);
     step('route_resolution_failed', { ms: lap(), error: message });
     emit({
@@ -508,7 +515,7 @@ export async function handleChatCompletions(
     })),
   });
   if (!candidates.length) {
-    refundBillingHold(principal);
+    settleUndispatchedAdmission(principal);
     const errorCode = resolutionError?.code ?? 'model_unavailable';
     const message = resolutionError?.message ?? `No upstream configured for model "${routedModel}"`;
     const suggestion =
@@ -658,7 +665,7 @@ export async function handleChatCompletions(
       // eventually-*successful*-candidate path below folds discarded usage
       // in. Billing a fully-failed turn is a judgment call left as a
       // follow-up rather than done here.)
-      refundBillingHold(principal);
+      settleUndispatchedAdmission(principal);
       step('all_candidates_empty', { ms: lap(), tried, hadErrorFrame: Boolean(lastErrorFrame) });
       // Prefer the real upstream cause (overloaded, request too large, content
       // filter) that a candidate reported over the generic "empty" message that
@@ -725,7 +732,7 @@ export async function handleChatCompletions(
     });
 
     if (result.kind === 'response') {
-      refundBillingHold(principal);
+      settleUndispatchedAdmission(principal);
       step('upstream_failed', { ms: lap(), status: result.response.status });
       return result.response;
     }
@@ -939,7 +946,7 @@ export async function handleChatCompletions(
     // reserved real dollars at admission that must be refunded, or the hold
     // itself becomes a (small, but real) overcharge on every zero-usage
     // request.
-    if (billedTokenTotal > 0 || principal.billingHold) {
+    if (billedTokenTotal > 0 || principal.billingHold || principal.livenessAdmissionId) {
       const event: UsageEvent = {
         ...counts,
         accountId: principal.accountId,
@@ -954,6 +961,9 @@ export async function handleChatCompletions(
         streaming,
         requestId,
         ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
+        ...(principal.livenessAdmissionId
+          ? { livenessAdmissionId: principal.livenessAdmissionId }
+          : {}),
       };
       try {
         await hooks.recordUsage(event);

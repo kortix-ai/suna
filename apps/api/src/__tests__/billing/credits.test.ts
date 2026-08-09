@@ -299,6 +299,29 @@ describe('grantCredits', () => {
     expect(rpcCalls[0].params.p_stripe_event_id).toBe('evt_idempotent_123');
   });
 
+  test('an explicit settlement key never uses the non-atomic fallback after an RPC error', async () => {
+    const rpcError = { message: 'RPC response lost after commit' };
+    mockRegistry.supabaseRpc = {
+      rpc: (name: string, params?: any) => {
+        rpcCalls.push({ name, params });
+        return Promise.resolve({ data: null, error: rpcError });
+      },
+    };
+
+    await expect(grantCredits(
+      'acc_test_123',
+      0.01,
+      'llm_reservation_refund',
+      'LLM hold refund',
+      false,
+      undefined,
+      'llm-gateway:acc_test_123:req-1:settlement-refund',
+    )).rejects.toEqual(rpcError);
+
+    expect(insertLedgerCalls).toHaveLength(0);
+    expect(updateCalls).toHaveLength(0);
+  });
+
   test('fallback on RPC error: inserts ledger + updates balance additively (not overwrite)', async () => {
     // Mock RPC to return error so fallback path is taken
     mockRegistry.supabaseRpc = {

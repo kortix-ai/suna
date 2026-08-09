@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -10,6 +11,7 @@ import {
   numeric,
   pgSchema,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -35,6 +37,16 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
+
+export const projectTaskStatusEnum = kortixSchema.enum('project_task_status', [
+  'backlog',
+  'todo',
+  'doing',
+  'blocked',
+  'review',
+  'done',
+  'cancelled',
+]);
 
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
@@ -807,6 +819,452 @@ export const projectSessions = kortixSchema.table(
     // It is intentionally NOT declared here: re-adding it would make `db:generate`
     // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
     // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
+  ],
+);
+
+/**
+ * Non-overridable platform ceilings for caller-selected task worker bounds.
+ * Coordinators can choose smaller values. They cannot widen platform authority.
+ */
+export const TASK_WORKER_PLATFORM_CEILINGS = {
+  max_wall_seconds: 3_600,
+  max_tokens: 1_000_000,
+  max_cost_usd: 25,
+  max_iterations: 128,
+} as const;
+
+/**
+ * Durable generated task state. A task UUID is globally unique, while every
+ * lookup and relationship remains project-scoped. `parent_id` models structure
+ * only; dependency semantics live exclusively in `blocked_by`.
+ */
+export const projectTasks = kortixSchema.table(
+  'project_tasks',
+  {
+    taskId: uuid('task_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    parentId: uuid('parent_id'),
+    title: text('title').notNull(),
+    body: text('body').default('').notNull(),
+    status: projectTaskStatusEnum('status').default('backlog').notNull(),
+    /** Higher values sort before lower values. Zero is the neutral default. */
+    priority: integer('priority').default(0).notNull(),
+    assigneeAgent: text('assignee_agent'),
+    assigneeUserId: uuid('assignee_user_id'),
+    blockedBy: uuid('blocked_by').array().default(sql`array[]::uuid[]`).notNull(),
+    origin: text('origin').notNull(),
+    /** Transition output: verifier evidence, blocker detail, or other generated state. */
+    result: jsonb('result').default({}).$type<Record<string, unknown>>().notNull(),
+    originFingerprint: text('origin_fingerprint'),
+    claimSessionId: text('claim_session_id').references(() => projectSessions.sessionId),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    /** Immutable, server-enforced bounds for the one worker bound to this claim. */
+    livenessWorkerSessionId: text('liveness_worker_session_id').references(
+      () => projectSessions.sessionId,
+    ),
+    livenessCoordinatorSessionId: text('liveness_coordinator_session_id').references(
+      () => projectSessions.sessionId,
+    ),
+    livenessWorkerContract: jsonb('liveness_worker_contract').$type<{
+      max_wall_seconds: number;
+      max_tokens: number;
+      max_cost_usd: number;
+      max_iterations: number;
+    }>(),
+    livenessStartedAt: timestamp('liveness_started_at', { withTimezone: true }),
+    livenessDeadlineAt: timestamp('liveness_deadline_at', { withTimezone: true }),
+    livenessIterationsAdmitted: integer('liveness_iterations_admitted').default(0).notNull(),
+    /** Server-owned identity for the one semantic outcome allowed in the current worker turn. */
+    livenessTurnId: uuid('liveness_turn_id'),
+    /** Durable single-request gateway fence. Cleared only by its matching request. */
+    livenessAdmissionId: text('liveness_admission_id'),
+    livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
+    /** Durable receive-pack state. Only `settled` proves upstream can no longer mutate. */
+    gitWriteRequestId: text('git_write_request_id'),
+    gitWriteLeaseExpiresAt: timestamp('git_write_lease_expires_at', { withTimezone: true }),
+    gitWriteState: varchar('git_write_state', { length: 16 }),
+    gitWriteRef: text('git_write_ref'),
+    gitWriteOldOid: varchar('git_write_old_oid', { length: 64 }),
+    gitWriteNewOid: varchar('git_write_new_oid', { length: 64 }),
+    /** Rotation cursor for starvation-free recurring bounded-worker sweeps. */
+    livenessLastSweptAt: timestamp('liveness_last_swept_at', { withTimezone: true }),
+    noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
+    continuationConsumedAt: timestamp('continuation_consumed_at', { withTimezone: true }),
+    lastProgressAt: timestamp('last_progress_at', { withTimezone: true }),
+    lastProgressRef: text('last_progress_ref'),
+    lastNoProgressSettlementId: text('last_no_progress_settlement_id'),
+    lastNoProgressAction: text('last_no_progress_action'),
+    lastNoProgressCommandId: uuid('last_no_progress_command_id'),
+    escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+    livenessBlocker: text('liveness_blocker'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('project_tasks_project_task_unique').on(table.projectId, table.taskId),
+    foreignKey({
+      name: 'project_tasks_project_parent_fkey',
+      columns: [table.projectId, table.parentId],
+      foreignColumns: [table.projectId, table.taskId],
+    }),
+    index('idx_project_tasks_project_goal_status').on(
+      table.projectId,
+      table.goalSlug,
+      table.status,
+      table.priority,
+    ),
+    index('idx_project_tasks_project_parent').on(table.projectId, table.parentId),
+    index('idx_project_tasks_claim_expiry')
+      .on(table.claimExpiresAt)
+      .where(sql`${table.claimSessionId} is not null`),
+    index('idx_project_tasks_liveness_deadline')
+      .on(table.status, table.livenessDeadlineAt)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
+    index('idx_project_tasks_liveness_sweep')
+      .on(table.status, table.livenessLastSweptAt, table.taskId)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
+    index('idx_project_tasks_git_write_reconcile')
+      .on(table.gitWriteLeaseExpiresAt, table.taskId)
+      .where(sql`${table.gitWriteState} = 'live'`),
+    uniqueIndex('idx_project_tasks_active_claim_session')
+      .on(table.claimSessionId)
+      .where(sql`${table.status} = 'doing' and ${table.claimSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_active_liveness_coordinator')
+      .on(table.livenessCoordinatorSessionId)
+      .where(sql`${table.status} = 'doing' and ${table.livenessCoordinatorSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_liveness_worker')
+      .on(table.livenessWorkerSessionId)
+      .where(sql`${table.livenessWorkerSessionId} is not null`),
+    index('idx_project_tasks_blocked_by').using('gin', table.blockedBy),
+    uniqueIndex('idx_project_tasks_project_origin_fingerprint')
+      .on(table.projectId, table.originFingerprint)
+      .where(sql`${table.originFingerprint} is not null`),
+    check('project_tasks_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_tasks_title_nonempty', sql`btrim(${table.title}) <> ''`),
+    check('project_tasks_origin_nonempty', sql`btrim(${table.origin}) <> ''`),
+    check(
+      'project_tasks_origin_fingerprint_nonempty',
+      sql`${table.originFingerprint} is null or btrim(${table.originFingerprint}) <> ''`,
+    ),
+    check(
+      'project_tasks_one_assignee',
+      sql`num_nonnulls(${table.assigneeAgent}, ${table.assigneeUserId}) <= 1`,
+    ),
+    check(
+      'project_tasks_assignee_agent_nonempty',
+      sql`${table.assigneeAgent} is null or btrim(${table.assigneeAgent}) <> ''`,
+    ),
+    check(
+      'project_tasks_claim_complete',
+      sql`num_nonnulls(${table.claimSessionId}, ${table.claimedAt}, ${table.claimExpiresAt}) in (0, 3)`,
+    ),
+    check(
+      'project_tasks_claim_expiry_after_claim',
+      sql`${table.claimExpiresAt} is null or ${table.claimExpiresAt} > ${table.claimedAt}`,
+    ),
+    check('project_tasks_not_self_blocked', sql`not (${table.taskId} = any(${table.blockedBy}))`),
+    check(
+      'project_tasks_liveness_complete',
+      sql`num_nonnulls(${table.livenessWorkerSessionId}, ${table.livenessCoordinatorSessionId}, ${table.livenessWorkerContract}, ${table.livenessStartedAt}, ${table.livenessDeadlineAt}) in (0, 5)`,
+    ),
+    check(
+      'project_tasks_liveness_admission_complete',
+      sql`num_nonnulls(${table.livenessAdmissionId}, ${table.livenessAdmissionExpiresAt}) in (0, 2)`,
+    ),
+    check(
+      'project_tasks_liveness_admission_within_deadline',
+      sql`${table.livenessAdmissionExpiresAt} is null or ${table.livenessAdmissionExpiresAt} <= ${table.livenessDeadlineAt}`,
+    ),
+    check(
+      'project_tasks_git_write_complete',
+      sql`num_nonnulls(
+        ${table.gitWriteRequestId}, ${table.gitWriteLeaseExpiresAt}, ${table.gitWriteState},
+        ${table.gitWriteRef}, ${table.gitWriteOldOid}, ${table.gitWriteNewOid}
+      ) in (0, 2, 6)`,
+    ),
+    check(
+      'project_tasks_git_write_state_valid',
+      sql`${table.gitWriteState} is null or ${table.gitWriteState} in ('live', 'settled')`,
+    ),
+    check(
+      'project_tasks_git_write_ref_valid',
+      sql`${table.gitWriteRef} is null or ${table.gitWriteRef} = 'refs/heads/' || ${table.livenessWorkerSessionId}`,
+    ),
+    check(
+      'project_tasks_git_write_oid_valid',
+      sql`${table.gitWriteOldOid} is null or (
+        ${table.gitWriteOldOid} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'
+        and ${table.gitWriteNewOid} ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'
+        and length(${table.gitWriteOldOid}) = length(${table.gitWriteNewOid})
+        and ${table.gitWriteNewOid} !~ '^0+$'
+      )`,
+    ),
+    check(
+      'project_tasks_git_write_requires_doing_worker',
+      sql`${table.gitWriteRequestId} is null or (
+        ${table.status} = 'doing'
+        and ${table.livenessWorkerSessionId} is not null
+        and ${table.livenessDeadlineAt} is not null
+      )`,
+    ),
+    check(
+      'project_tasks_turn_requires_doing_worker',
+      sql`${table.livenessTurnId} is null or (
+        ${table.status} = 'doing'
+        and ${table.livenessWorkerSessionId} is not null
+      )`,
+    ),
+    check(
+      'project_tasks_terminal_has_no_live_fences',
+      sql`${table.status} not in ('done', 'blocked') or num_nonnulls(
+        ${table.livenessAdmissionId},
+        ${table.livenessAdmissionExpiresAt},
+        ${table.gitWriteRequestId},
+        ${table.gitWriteLeaseExpiresAt},
+        ${table.gitWriteState},
+        ${table.gitWriteRef},
+        ${table.gitWriteOldOid},
+        ${table.gitWriteNewOid}
+      ) = 0`,
+    ),
+    check(
+      'project_tasks_liveness_deadline_after_start',
+      sql`${table.livenessDeadlineAt} is null or ${table.livenessDeadlineAt} > ${table.livenessStartedAt}`,
+    ),
+    check(
+      'project_tasks_claim_covers_liveness',
+      sql`${table.livenessDeadlineAt} is null or ${table.claimExpiresAt} >= ${table.livenessDeadlineAt}`,
+    ),
+    check(
+      'project_tasks_liveness_worker_not_claimant',
+      sql`${table.livenessWorkerSessionId} is null or ${table.livenessWorkerSessionId} <> ${table.claimSessionId}`,
+    ),
+    check(
+      'project_tasks_no_progress_settlements_range',
+      sql`${table.noProgressSettlements} between 0 and 2`,
+    ),
+    check(
+      'project_tasks_continuation_has_settlement',
+      sql`${table.continuationConsumedAt} is null or ${table.noProgressSettlements} >= 1`,
+    ),
+    check(
+      'project_tasks_liveness_contract_valid',
+      sql`${table.livenessWorkerContract} is null or (
+        jsonb_typeof(${table.livenessWorkerContract}) = 'object'
+        and ${table.livenessWorkerContract} ?& array['max_wall_seconds','max_tokens','max_cost_usd','max_iterations']
+        and (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric <= 86400
+        and (${table.livenessWorkerContract}->>'max_tokens')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric > 0
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric <= 2147483647
+      )`,
+    ),
+    check(
+      'project_tasks_liveness_contract_platform_ceiling',
+      sql`${table.livenessWorkerContract} is null or (
+        (${table.livenessWorkerContract}->>'max_wall_seconds')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_wall_seconds))}
+        and (${table.livenessWorkerContract}->>'max_tokens')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_tokens))}
+        and (${table.livenessWorkerContract}->>'max_cost_usd')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_cost_usd))}
+        and (${table.livenessWorkerContract}->>'max_iterations')::numeric <= ${sql.raw(String(TASK_WORKER_PLATFORM_CEILINGS.max_iterations))}
+      )`,
+    ),
+    check(
+      'project_tasks_last_no_progress_action_valid',
+      sql`${table.lastNoProgressAction} is null or ${table.lastNoProgressAction} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
+  ],
+);
+
+/**
+ * Append-only ledger for every accepted no-progress settlement.
+ *
+ * The task snapshot and measured usage are the original API result. They let a
+ * retry of any earlier settlement return byte-equivalent state after the live
+ * task has advanced. Deleting the owning task cascades its settlement history.
+ */
+export const projectTaskNoProgressSettlements = kortixSchema.table(
+  'project_task_no_progress_settlements',
+  {
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    settlementId: text('settlement_id').notNull(),
+    claimSessionId: text('claim_session_id').notNull(),
+    workerSessionId: text('worker_session_id').notNull(),
+    action: text('action').notNull(),
+    commandId: uuid('command_id').notNull(),
+    taskSnapshot: jsonb('task_snapshot').$type<Record<string, unknown>>().notNull(),
+    measuredUsage: jsonb('measured_usage')
+      .$type<{
+        total_cost: number;
+        input_tokens: number;
+        output_tokens: number;
+        cached_tokens: number;
+        cache_write_tokens: number;
+        total_tokens: number;
+        request_count: number;
+      }>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.settlementId] }),
+    foreignKey({
+      name: 'project_task_no_progress_settlements_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_no_progress_settlements_project').on(table.projectId),
+    check(
+      'project_task_no_progress_settlements_id_nonempty',
+      sql`btrim(${table.settlementId}) <> ''`,
+    ),
+    check(
+      'project_task_no_progress_settlements_action_valid',
+      sql`${table.action} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
+    check(
+      'project_task_no_progress_settlements_snapshots_objects',
+      sql`jsonb_typeof(${table.taskSnapshot}) = 'object' and jsonb_typeof(${table.measuredUsage}) = 'object'`,
+    ),
+  ],
+);
+
+/** Exactly one semantic outcome for one settled bounded-worker turn. */
+export const projectTaskTurnOutcomes = kortixSchema.table(
+  'project_task_turn_outcomes',
+  {
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    settlementId: text('settlement_id').notNull(),
+    claimSessionId: text('claim_session_id').notNull(),
+    workerSessionId: text('worker_session_id').notNull(),
+    outcome: varchar('outcome', { length: 16 }).notNull(),
+    taskSnapshot: jsonb('task_snapshot').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.settlementId] }),
+    foreignKey({
+      name: 'project_task_turn_outcomes_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_turn_outcomes_project').on(table.projectId),
+    check('project_task_turn_outcomes_id_nonempty', sql`btrim(${table.settlementId}) <> ''`),
+    check(
+      'project_task_turn_outcomes_outcome_valid',
+      sql`${table.outcome} in ('progress', 'no_progress')`,
+    ),
+    check(
+      'project_task_turn_outcomes_snapshot_valid',
+      sql`(${table.outcome} = 'progress') = (${table.taskSnapshot} is not null)`,
+    ),
+  ],
+);
+
+/** Durable identity and delivery state for one authored goal push. */
+export const projectGoalEvaluations = kortixSchema.table(
+  'project_goal_evaluations',
+  {
+    evaluationId: uuid('evaluation_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    triggerSlug: text('trigger_slug').notNull(),
+    source: varchar('source', { length: 16 }).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    state: varchar('state', { length: 16 }).default('queued').notNull(),
+    firedAt: timestamp('fired_at', { withTimezone: true }),
+    lifecycleCommandId: uuid('lifecycle_command_id'),
+    sessionId: text('session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_project_goal_evaluations_idempotency').on(table.idempotencyKey),
+    foreignKey({
+      name: 'project_goal_evaluations_session_fkey',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('set null'),
+    index('idx_project_goal_evaluations_goal_created').on(
+      table.projectId,
+      table.goalSlug,
+      table.createdAt,
+    ),
+    index('idx_project_goal_evaluations_goal_fired')
+      .on(table.projectId, table.goalSlug, table.firedAt.desc())
+      .where(sql`${table.state} = 'fired'`),
+    check('project_goal_evaluations_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_goal_evaluations_trigger_slug_nonempty', sql`btrim(${table.triggerSlug}) <> ''`),
+    check(
+      'project_goal_evaluations_idempotency_nonempty',
+      sql`btrim(${table.idempotencyKey}) <> ''`,
+    ),
+    check('project_goal_evaluations_source_valid', sql`${table.source} in ('cron', 'manual')`),
+    check(
+      'project_goal_evaluations_state_valid',
+      sql`${table.state} in ('queued', 'fired', 'failed')`,
+    ),
+    check(
+      'project_goal_evaluations_fired_at_valid',
+      sql`(${table.state} = 'fired') = (${table.firedAt} is not null)`,
+    ),
+  ],
+);
+
+/** Append-only observations used to evaluate one goal metric over time. */
+export const projectGoalObservations = kortixSchema.table(
+  'project_goal_observations',
+  {
+    observationId: uuid('observation_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    goalSlug: text('goal_slug').notNull(),
+    evaluationId: uuid('evaluation_id'),
+    metric: text('metric').notNull(),
+    value: doublePrecision('value').notNull(),
+    source: text('source').notNull(),
+    sessionId: text('session_id'),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_goal_observations_evaluation_fkey',
+      columns: [table.evaluationId],
+      foreignColumns: [projectGoalEvaluations.evaluationId],
+    }),
+    foreignKey({
+      name: 'project_goal_observations_session_fkey',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('set null'),
+    uniqueIndex('idx_project_goal_observations_evaluation_metric').on(
+      table.evaluationId,
+      table.metric,
+    ),
+    index('idx_project_goal_observations_evaluation').on(table.evaluationId),
+    index('idx_project_goal_observations_range').on(
+      table.projectId,
+      table.goalSlug,
+      table.metric,
+      table.observedAt,
+    ),
+    check('project_goal_observations_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
+    check('project_goal_observations_metric_nonempty', sql`btrim(${table.metric}) <> ''`),
+    check('project_goal_observations_source_nonempty', sql`btrim(${table.source}) <> ''`),
+    check(
+      'project_goal_observations_value_finite',
+      sql`${table.value} not in ('NaN'::double precision, 'Infinity'::double precision, '-Infinity'::double precision)`,
+    ),
   ],
 );
 
@@ -2532,6 +2990,8 @@ export const usageEvents = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
     sessionId: text('session_id'),
+    /** Server-owned dedupe key. Gateway usage uses `llm-gateway:<requestId>`. */
+    idempotencyKey: text('idempotency_key'),
     /**
      * Kortix-as-a-Backend attribution: which of the wrapper's END-USERS this
      * spend belongs to. A server-derived COPY of project_sessions.origin_ref,
@@ -2566,6 +3026,9 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    uniqueIndex('idx_usage_events_account_idempotency')
+      .on(table.accountId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
     // Per-end-user metering: "spend for origin_ref X in a window", and the
     // group_by=origin_ref rollup. Partial — the vast majority of rows are
     // non-backend spend with a NULL origin_ref and never match this predicate.

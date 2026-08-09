@@ -1,0 +1,8 @@
+ALTER TABLE "kortix"."project_tasks" ADD COLUMN "liveness_admission_id" text;--> statement-breakpoint
+ALTER TABLE "kortix"."project_tasks" ADD COLUMN "liveness_admission_expires_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "kortix"."project_tasks" ADD COLUMN "liveness_last_swept_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "idx_project_tasks_liveness_sweep" ON "kortix"."project_tasks" USING btree ("status","liveness_last_swept_at","task_id") WHERE "kortix"."project_tasks"."liveness_worker_session_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_project_tasks_active_claim_session" ON "kortix"."project_tasks" USING btree ("claim_session_id") WHERE "kortix"."project_tasks"."status" = 'doing' and "kortix"."project_tasks"."claim_session_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_project_tasks_active_liveness_coordinator" ON "kortix"."project_tasks" USING btree ("liveness_coordinator_session_id") WHERE "kortix"."project_tasks"."status" = 'doing' and "kortix"."project_tasks"."liveness_coordinator_session_id" is not null;--> statement-breakpoint
+ALTER TABLE "kortix"."project_tasks" ADD CONSTRAINT "project_tasks_liveness_admission_complete" CHECK (num_nonnulls("kortix"."project_tasks"."liveness_admission_id", "kortix"."project_tasks"."liveness_admission_expires_at") in (0, 2));--> statement-breakpoint
+ALTER TABLE "kortix"."project_tasks" ADD CONSTRAINT "project_tasks_liveness_admission_within_deadline" CHECK ("kortix"."project_tasks"."liveness_admission_expires_at" is null or "kortix"."project_tasks"."liveness_admission_expires_at" <= "kortix"."project_tasks"."liveness_deadline_at");

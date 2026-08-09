@@ -11,6 +11,7 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { projectTaskWorkerPromptAdmission } from '../../projects/task-worker-prompt-admission';
 import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
@@ -26,6 +27,7 @@ import {
   extendSandboxDeadline,
   isPreviewUseObservation,
   isSandboxAuthored,
+  isSessionAgentLoopMutationRequest,
   isTurnStartRequest,
   observeTurnStart,
   previewGrantMs,
@@ -41,6 +43,7 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { db } from '../../shared/db';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -104,6 +107,56 @@ function jsonProxyError(body: Record<string, unknown>, status: number, origin?: 
     status,
     headers,
   });
+}
+
+async function taskWorkerPromptRefusal(
+  sessionId: string,
+  origin: string,
+  routeAllowed: boolean,
+): Promise<Response | null> {
+  const admission = await projectTaskWorkerPromptAdmission(db, sessionId);
+  if (admission.state === 'not_worker') return null;
+  if (admission.state === 'stale_runtime') {
+    return jsonProxyError(
+      {
+        error: 'A stale runtime principal cannot start another turn',
+        code: 'TASK_WORKER_CONFINED',
+      },
+      409,
+      origin,
+    );
+  }
+  if (admission.state === 'spawned_unbound') {
+    return jsonProxyError(
+      {
+        error: 'Spawned task worker is not bound to a task',
+        code: 'TASK_LIVENESS_WORKER_UNBOUND',
+      },
+      409,
+      origin,
+    );
+  }
+  if (admission.binding.status !== 'doing') {
+    return jsonProxyError(
+      {
+        error: 'A terminal task worker cannot start another turn',
+        code: 'TASK_WORKER_CONFINED',
+        task_id: admission.binding.taskId,
+      },
+      409,
+      origin,
+    );
+  }
+  if (routeAllowed) return null;
+  return jsonProxyError(
+    {
+      error: 'Task workers cannot use this mutating agent-loop route',
+      code: 'TASK_WORKER_ROUTE_FORBIDDEN',
+      task_id: admission.binding.taskId,
+    },
+    403,
+    origin,
+  );
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -427,7 +480,11 @@ function requestedPromptAgent(
  */
 function isConnectorGatedTurn(port: number, method: string, path: string): boolean {
   if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(path.replace(/^\/proxy\/\d+(?=\/)/, ''));
+  const normalized = path.replace(/^\/proxy\/\d+(?=\/)/, '');
+  return ![
+    /^\/session\/[^/?#]+\/summarize(?:$|[/?#])/,
+    /^\/api\/session\/[^/?#]+\/compact(?:$|[/?#])/,
+  ].some((pattern) => pattern.test(normalized));
 }
 
 /**
@@ -903,6 +960,17 @@ export async function forwardToSandbox(
       origin,
     );
   }
+  // A metadata-marked task child must not execute before its registration
+  // commits. Bound workers remain prompt-capable only while their task is doing.
+  // For workers, every session-scoped mutation is fail-closed against the known
+  // turn-start allowlist. Run this before wake, connector checks, title
+  // generation, env sync, and dedupe.
+  const turnStart = isTurnStartRequest(upstreamPort, method, remainingPath);
+  if (isSessionAgentLoopMutationRequest(upstreamPort, method, remainingPath)) {
+    const refusal = await taskWorkerPromptRefusal(record.sessionId, origin, turnStart);
+    if (refusal) return refusal;
+  }
+
   // A turn whose required connectors cannot serve it is refused HERE — before the
   // sandbox is woken, before the dedupe claim, before the title is generated from
   // a prompt that will never run.
@@ -1253,6 +1321,15 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        if (turnStart) {
+          // Registration and task status can change during wake/env sync. This
+          // final re-check is adjacent to the upstream prompt dispatch.
+          const refusal = await taskWorkerPromptRefusal(record.sessionId, origin, true);
+          if (refusal) {
+            if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+            return refusal;
+          }
+        }
         if (promptDelivery) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,

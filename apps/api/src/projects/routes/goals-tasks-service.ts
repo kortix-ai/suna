@@ -1,0 +1,379 @@
+export type GoalEvaluationState = 'queued' | 'fired' | 'failed';
+export type GoalMetricHealthStatus = 'unmeasurable' | 'stalled' | 'measuring';
+
+export interface GoalHealthEvaluation {
+  evaluationId: string;
+  state: GoalEvaluationState;
+  observations: Record<string, number>;
+}
+
+export interface ProjectGoalHealthResult {
+  goal_slug: string;
+  desired_status: 'active' | 'achieved' | 'paused' | 'abandoned';
+  health_status: GoalMetricHealthStatus;
+  metrics: Array<{
+    metric: string;
+    status: GoalMetricHealthStatus;
+    evaluation_id: string | null;
+    evaluation_state: GoalEvaluationState | null;
+    observation_value: number | null;
+  }>;
+}
+
+export function deriveProjectGoalHealth(input: {
+  goalSlug: string;
+  desiredStatus: ProjectGoalHealthResult['desired_status'];
+  metricNames: string[];
+  evaluations: GoalHealthEvaluation[];
+}): ProjectGoalHealthResult {
+  const fired = input.evaluations.filter((evaluation) => evaluation.state === 'fired');
+  const latest = fired[0] ?? null;
+  const metrics = input.metricNames.map((metric) => {
+    const latestFiredValue = fired[0]?.observations[metric];
+    let status: GoalMetricHealthStatus = Number.isFinite(latestFiredValue)
+      ? 'measuring'
+      : 'unmeasurable';
+    if (fired.length >= 3) {
+      const values = fired.slice(0, 3).map((evaluation) => evaluation.observations[metric]);
+      if (values.every(Number.isFinite) && values[0] === values[1] && values[1] === values[2]) {
+        status = 'stalled';
+      }
+    }
+    const latestValue = latest?.observations[metric];
+    return {
+      metric,
+      status,
+      evaluation_id: latest?.evaluationId ?? null,
+      evaluation_state: latest?.state ?? null,
+      observation_value:
+        typeof latestValue === 'number' && Number.isFinite(latestValue) ? latestValue : null,
+    };
+  });
+  const healthStatus: GoalMetricHealthStatus = metrics.some(({ status }) => status === 'stalled')
+    ? 'stalled'
+    : metrics.length === 0 || metrics.some(({ status }) => status === 'unmeasurable')
+      ? 'unmeasurable'
+      : 'measuring';
+  return {
+    goal_slug: input.goalSlug,
+    desired_status: input.desiredStatus,
+    health_status: healthStatus,
+    metrics,
+  };
+}
+
+export const MIN_TASK_LEASE_SECONDS = 30;
+export const MAX_TASK_LEASE_SECONDS = 86_400;
+
+export interface TaskEvidence {
+  ref: string;
+  summary?: string;
+}
+
+export class GoalsTasksServiceError extends Error {
+  constructor(
+    readonly status: 400 | 403 | 404 | 409,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GoalsTasksServiceError';
+  }
+}
+
+export function mapGeneratedStateError(
+  error: unknown,
+): { status: 409; code: string; error: string } | null {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : '';
+  if (
+    code !== 'TASK_CLAIM_CONFLICT' &&
+    code !== 'TASK_TRANSITION_CONFLICT' &&
+    code !== 'TASK_LIVENESS_CONFLICT' &&
+    code !== 'TASK_GIT_WRITE_IN_FLIGHT' &&
+    code !== 'GOAL_OBSERVATION_CONFLICT'
+  )
+    return null;
+  return {
+    status: 409,
+    code: code.toLowerCase(),
+    error: error instanceof Error ? error.message : 'Task has a live claim',
+  };
+}
+
+export async function claimTaskForProject<T>(
+  dependencies: {
+    sessionBelongsToProject(projectId: string, sessionId: string): Promise<boolean>;
+    claimTask(input: {
+      projectId: string;
+      taskId: string;
+      sessionId: string;
+      now: Date;
+      leaseMs: number;
+    }): Promise<T>;
+  },
+  input: {
+    projectId: string;
+    taskId: string;
+    sessionId: string;
+    authenticatedSessionId?: string | null;
+    leaseSeconds: number;
+    now: Date;
+  },
+): Promise<T> {
+  if (
+    !Number.isSafeInteger(input.leaseSeconds) ||
+    input.leaseSeconds < MIN_TASK_LEASE_SECONDS ||
+    input.leaseSeconds > MAX_TASK_LEASE_SECONDS
+  ) {
+    throw new GoalsTasksServiceError(
+      400,
+      'invalid_lease_seconds',
+      `lease_seconds must be an integer between ${MIN_TASK_LEASE_SECONDS} and ${MAX_TASK_LEASE_SECONDS}`,
+    );
+  }
+  assertSessionIdentity(input);
+  if (!(await dependencies.sessionBelongsToProject(input.projectId, input.sessionId))) {
+    throw new GoalsTasksServiceError(
+      400,
+      'session_not_in_project',
+      'session_id must belong to this project',
+    );
+  }
+  try {
+    return await dependencies.claimTask({
+      projectId: input.projectId,
+      taskId: input.taskId,
+      sessionId: input.sessionId,
+      now: input.now,
+      leaseMs: input.leaseSeconds * 1_000,
+    });
+  } catch (error) {
+    const conflict = mapGeneratedStateError(error);
+    if (conflict) throw new GoalsTasksServiceError(409, conflict.code, conflict.error);
+    throw error;
+  }
+}
+
+export async function completeTaskForProject<T>(
+  dependencies: {
+    sessionBelongsToProject: (projectId: string, sessionId: string) => Promise<boolean>;
+    loadTaskEvidence(input: { projectId: string; taskId: string }): Promise<{
+      livenessCoordinatorSessionId: string | null;
+      livenessWorkerSessionId: string | null;
+      lastProgressRef: string | null;
+    } | null>;
+    transitionTask(input: {
+      projectId: string;
+      taskId: string;
+      status: 'done';
+      expectedClaimSessionId: string;
+      result: {
+        evidence: TaskEvidence[];
+        verifier?: {
+          coordinator_session_id: string;
+          worker_session_id: string;
+          progress_ref: string;
+          verified_at: string;
+        };
+      };
+      now: Date;
+    }): Promise<T | null>;
+  },
+  input: {
+    projectId: string;
+    taskId: string;
+    evidence: TaskEvidence[];
+    sessionId: string;
+    authenticatedSessionId?: string | null;
+    now: Date;
+  },
+): Promise<T> {
+  if (
+    !Array.isArray(input.evidence) ||
+    input.evidence.length === 0 ||
+    input.evidence.some(
+      (evidence) =>
+        !evidence || typeof evidence.ref !== 'string' || evidence.ref.trim().length === 0,
+    )
+  ) {
+    throw new GoalsTasksServiceError(
+      400,
+      'evidence_required',
+      'evidence must be a non-empty array of cited refs',
+    );
+  }
+  assertSessionIdentity(input);
+  await assertProjectSession(dependencies, input);
+  const evidenceState = await dependencies.loadTaskEvidence({
+    projectId: input.projectId,
+    taskId: input.taskId,
+  });
+  if (!evidenceState) {
+    throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+  }
+  const progressRef = evidenceState.lastProgressRef?.trim() ?? '';
+  const citesRecordedProgress = input.evidence.some(
+    (evidence) => evidence.ref.trim() === progressRef,
+  );
+  const workerSessionId = evidenceState.livenessWorkerSessionId;
+  const hasLivenessBinding =
+    workerSessionId !== null || evidenceState.livenessCoordinatorSessionId !== null;
+  if (
+    hasLivenessBinding &&
+    (evidenceState.livenessCoordinatorSessionId !== input.sessionId ||
+      !workerSessionId ||
+      workerSessionId === input.sessionId ||
+      !progressRef ||
+      !citesRecordedProgress)
+  ) {
+    throw new GoalsTasksServiceError(
+      400,
+      'verified_progress_required',
+      'a liveness-bound task requires evidence citing server-recorded progress from its distinct worker',
+    );
+  }
+  const verifier =
+    workerSessionId && hasLivenessBinding
+      ? {
+          coordinator_session_id: input.sessionId,
+          worker_session_id: workerSessionId,
+          progress_ref: progressRef,
+          verified_at: input.now.toISOString(),
+        }
+      : undefined;
+  try {
+    const task = await dependencies.transitionTask({
+      projectId: input.projectId,
+      taskId: input.taskId,
+      status: 'done',
+      expectedClaimSessionId: input.sessionId,
+      result: {
+        evidence: input.evidence,
+        ...(verifier ? { verifier } : {}),
+      },
+      now: input.now,
+    });
+    if (!task) throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+    return task;
+  } catch (error) {
+    if (error instanceof GoalsTasksServiceError) throw error;
+    const conflict = mapGeneratedStateError(error);
+    if (conflict) throw new GoalsTasksServiceError(409, conflict.code, conflict.error);
+    throw error;
+  }
+}
+
+export async function blockTaskForProject<T>(
+  dependencies: {
+    sessionBelongsToProject: (projectId: string, sessionId: string) => Promise<boolean>;
+    transitionTask(input: {
+      projectId: string;
+      taskId: string;
+      status: 'blocked';
+      expectedClaimSessionId: string;
+      result: { blocker: string };
+      now: Date;
+    }): Promise<T | null>;
+  },
+  input: {
+    projectId: string;
+    taskId: string;
+    blocker: string;
+    sessionId: string;
+    authenticatedSessionId?: string | null;
+    now: Date;
+  },
+): Promise<T> {
+  const blocker = typeof input.blocker === 'string' ? input.blocker.trim() : '';
+  if (!blocker) {
+    throw new GoalsTasksServiceError(400, 'blocker_required', 'blocker must be non-empty');
+  }
+  assertSessionIdentity(input);
+  await assertProjectSession(dependencies, input);
+  try {
+    const task = await dependencies.transitionTask({
+      projectId: input.projectId,
+      taskId: input.taskId,
+      status: 'blocked',
+      expectedClaimSessionId: input.sessionId,
+      result: { blocker },
+      now: input.now,
+    });
+    if (!task) throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+    return task;
+  } catch (error) {
+    if (error instanceof GoalsTasksServiceError) throw error;
+    const conflict = mapGeneratedStateError(error);
+    if (conflict) throw new GoalsTasksServiceError(409, conflict.code, conflict.error);
+    throw error;
+  }
+}
+
+export async function resolveObservationSessionId(
+  dependencies: {
+    sessionBelongsToProject(projectId: string, sessionId: string): Promise<boolean>;
+  },
+  input: {
+    projectId: string;
+    requestedSessionId?: string | null;
+    authenticatedSessionId?: string | null;
+  },
+): Promise<string | null> {
+  const authenticated = input.authenticatedSessionId ?? null;
+  if (authenticated) {
+    if (input.requestedSessionId != null && input.requestedSessionId !== authenticated) {
+      throw new GoalsTasksServiceError(
+        403,
+        'session_identity_mismatch',
+        'A project session can record observations only as its own session_id',
+      );
+    }
+    if (!(await dependencies.sessionBelongsToProject(input.projectId, authenticated))) {
+      throw new GoalsTasksServiceError(
+        400,
+        'session_not_in_project',
+        'authenticated session must belong to this project',
+      );
+    }
+    return authenticated;
+  }
+  if (input.requestedSessionId != null) {
+    throw new GoalsTasksServiceError(
+      403,
+      'session_identity_mismatch',
+      'A human observation cannot impersonate a project session',
+    );
+  }
+  return null;
+}
+
+function assertSessionIdentity(input: {
+  sessionId: string;
+  authenticatedSessionId?: string | null;
+}): void {
+  if (input.authenticatedSessionId != null && input.authenticatedSessionId !== input.sessionId) {
+    throw new GoalsTasksServiceError(
+      403,
+      'session_identity_mismatch',
+      'A project session can coordinate tasks only as its own session_id',
+    );
+  }
+}
+
+async function assertProjectSession(
+  dependencies: {
+    sessionBelongsToProject: (projectId: string, sessionId: string) => Promise<boolean>;
+  },
+  input: { projectId: string; sessionId: string },
+): Promise<void> {
+  if (!(await dependencies.sessionBelongsToProject(input.projectId, input.sessionId))) {
+    throw new GoalsTasksServiceError(
+      400,
+      'session_not_in_project',
+      'session_id must belong to this project',
+    );
+  }
+}

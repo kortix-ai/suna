@@ -148,22 +148,12 @@ export interface UpdateProjectTriggerInput {
 }
 
 export async function listProjectTriggers(projectId: string) {
-  return unwrap(
-    await backendApi.get<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
-    ),
-  );
+  return unwrap(await backendApi.get<ProjectTriggerListing>(`/projects/${projectId}/triggers`));
 }
 
-export async function createProjectTrigger(
-  projectId: string,
-  input: CreateProjectTriggerInput,
-) {
+export async function createProjectTrigger(projectId: string, input: CreateProjectTriggerInput) {
   return unwrap(
-    await backendApi.post<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
-      input,
-    ),
+    await backendApi.post<ProjectTriggerListing>(`/projects/${projectId}/triggers`, input),
   );
 }
 
@@ -173,18 +163,13 @@ export async function updateProjectTrigger(
   input: UpdateProjectTriggerInput,
 ) {
   return unwrap(
-    await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/${slug}`,
-      input,
-    ),
+    await backendApi.patch<ProjectTriggerListing>(`/projects/${projectId}/triggers/${slug}`, input),
   );
 }
 
 export async function deleteProjectTrigger(projectId: string, slug: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/triggers/${slug}`,
-    ),
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/triggers/${slug}`),
   );
 }
 
@@ -193,30 +178,41 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
  * kill-switch — see {@link ProjectTriggerListing.triggers_paused}). Returns the
  * updated trigger listing, including the new `triggers_paused` value.
  */
-export async function setProjectTriggersActivation(
-  projectId: string,
-  paused: boolean,
-) {
+export async function setProjectTriggersActivation(projectId: string, paused: boolean) {
   return unwrap(
-    await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/activation`,
-      { paused },
-    ),
+    await backendApi.patch<ProjectTriggerListing>(`/projects/${projectId}/triggers/activation`, {
+      paused,
+    }),
   );
 }
 
+export interface FireProjectTriggerOptions {
+  idempotencyKey?: string;
+}
+
 export interface FireProjectTriggerResponse {
-  status: 'fired' | 'queued' | 'failed';
+  status: 'fired' | 'queued' | 'deduped' | 'failed';
   session_id?: string | null;
+  command_id?: string | null;
+  evaluation_id?: string | null;
+  evaluation_state?: 'queued' | 'fired' | 'failed' | null;
+  deduped?: boolean;
   reason?: string;
   error?: string;
 }
 
-export async function fireProjectTrigger(projectId: string, slug: string) {
+export async function fireProjectTrigger(
+  projectId: string,
+  slug: string,
+  options: FireProjectTriggerOptions = {},
+) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
       `/projects/${projectId}/triggers/${slug}/fire`,
       {},
+      options.idempotencyKey
+        ? { headers: { 'Idempotency-Key': options.idempotencyKey } }
+        : undefined,
     ),
   );
 }

@@ -22,7 +22,11 @@ This document answers that, and specifies the surface built on top of it: the
 AGI agent, goals, tasks, and the loop that keeps them advancing without a human
 prompt.
 
-Everything here ships behind one experimental feature key, `agi`.
+Implementation update (2026-08-07): the shipped feature key is `meta_agent`,
+and it gates only platform-launched reserved-meta sessions. Goal and task API,
+SDK, and CLI surfaces remain available through their leaf IAM actions. The
+older single-key `agi` proposal below is superseded by
+`2026-08-06-autonomous-agent-harness.md`.
 
 ### 1.1 Prior art
 
@@ -336,6 +340,49 @@ R-33 — A session that ends without either advancing a task, changing a status,
 or recording why it could not, MUST be recorded as having made no progress, and
 that fact MUST be visible.
 
+### 8.1 Implemented task-worker enforcement
+
+PostgreSQL owns the restart-safe worker binding and settlement ledger on
+`kortix.project_tasks`. The serialized fields are
+`liveness_worker_session_id`, `liveness_coordinator_session_id`,
+`liveness_worker_contract`, `liveness_started_at`, `liveness_deadline_at`,
+`liveness_iterations_admitted`, `no_progress_settlements`,
+`continuation_consumed_at`, `last_progress_at`, `last_progress_ref`,
+`last_no_progress_settlement_id`, `last_no_progress_action`,
+`last_no_progress_command_id`, `escalated_at`, and `liveness_blocker`.
+
+The API exposes three project-task mutations. `POST .../worker` atomically binds
+one spawned worker, its immutable wall/token/cost/iteration bounds, and its
+initial prompt outbox command. `POST .../progress` records authenticated
+semantic evidence. `POST .../no-progress` consumes an idempotent
+`settlement_id`; the first distinct settlement queues one continuation, while a
+second distinct settlement or exhausted bound blocks and releases the task.
+The finalizer inserts server-owned worker `stop_session` and coordinator
+continuation commands into the existing lifecycle outbox.
+
+The LLM gateway reads server-ledger token and cost aggregates and atomically
+increments `liveness_iterations_admitted` before provider dispatch. Non-worker
+sessions use only the indexed binding probe and skip aggregation. Actual usage
+is checked again after recording the response. The existing project-trigger
+scheduler leader sweeps all bounded active workers for wall, token, cost, and
+iteration exhaustion. No scheduler or workflow engine was added.
+
+A durable PostgreSQL admission fence permits one in-flight provider request per
+bounded worker. Every gateway completion and pre-dispatch error settles the
+matching request ID. A crashed gateway leaves a lease only until the immutable
+worker wall deadline; the recurring sweep then blocks the task and releases its
+sessions. Token and cost limits can still overshoot by the usage of that one
+admitted provider request because current-request usage is known only after the
+response. Concurrent requests cannot multiply the overshoot. Iteration admission
+remains exact because its counter increments with fence acquisition. Sandbox
+compute cost can grow without an LLM request; the leader sweep loads the server
+compute ledger and finalizes it.
+
+The `/worker` response reports only local API delivery state: `drained` means
+the immediate local drain succeeded, while `queued` means the durable outbox
+will retry. Neither value proves remote user-visible delivery. This mechanism
+does not claim AGI.
+
 ---
 
 ## 9. The AGI agent
@@ -389,15 +436,10 @@ costs the entire control while failing closed cannot touch a human flow.
 Kill switch: `KORTIX_GIT_PROXY_DEFAULT_BRANCH_PROTECTION`
 (`enforce` default | `observe` | `off`). See `apps/api/src/git-proxy/`.
 
-R-38b.2 — The "MUST NOT merge its own change request" half remains UNENFORCED
-and is carried only by the AGI's behavior file. CR merge runs server-side from
-the API's bare mirror straight to the upstream and never traverses the git
-proxy, so no ref-level control can see it; the AGI's grant (`kortixCli: 'all'`)
-satisfies `assertAgentScope(c, 'project.cr.merge')`. R-9.6 is therefore only
-HALF enforced today. Closing it is a separate change in the grant/CR layer —
-either drop `project.cr.merge`/`project.gitops.merge` from `agiAgentGrant()`, or
-add a no-self-merge rule keyed on `change_requests.created_by` versus the acting
-principal. Recommended as the immediate follow-up.
+R-38b.2 — Implemented. The reserved `meta` grant excludes merge and raw push.
+The IAM principal fold also denies those exact actions for stale meta tokens,
+including tokens stamped with `kortixCli: 'all'`. Agents land work through a
+change request and an independently authorized principal performs the merge.
 
 R-39 — Its grant is the full authority of the human who launched it, and no
 more. It MUST NOT be able to grant itself capability the launching user lacks.
@@ -428,10 +470,10 @@ UI-only capability is out of contract (R-8.1, 2026-07-24 spec).
 
 ### 10.2 Experimental gate
 
-R-44 — All of it ships behind a single key, `agi`, in
-`apps/api/src/experimental/features.ts`: `available: () => true`,
-`platformDefault: () => false`, per-project opt-in. When off, no routes, no CLI
-commands, no UI, no manifest keys.
+R-44 — Superseded. `meta_agent` is default-off and controls only reserved-meta
+launch. Goal/task routes, CLI commands, SDK methods, and manifest validation use
+leaf IAM and schema enforcement rather than the removed all-or-nothing `agi`
+gate.
 
 ---
 
@@ -464,7 +506,7 @@ commands, no UI, no manifest keys.
 
 Each step is independently shippable and independently useful.
 
-1. **Experimental key `agi`** — gate exists, everything below hangs off it.
+1. **Reserved-meta gate** — `meta_agent` gates platform meta launch only.
 2. **Tasks** — table, claim semantics, `kortix tasks` CLI, API routes. Usable by
    existing agents immediately, with no AGI and no goals.
 3. **Goals** — `kortix.yaml` block, `validate` enforcement, `push` desugaring to

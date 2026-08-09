@@ -25,7 +25,12 @@ import {
   loadProjectForUser,
   loadVisibleSession,
 } from '../lib/access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import {
+  assertAgentScope,
+  assertAgentScopeExact,
+  getAgentGrant,
+  isProjectSessionPrincipal,
+} from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -34,6 +39,14 @@ import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
 import { refreshCrTips } from './shared';
+
+function assertHumanReviewPrincipal(c: any): boolean {
+  return (
+    c.get('authType') !== 'service_account' &&
+    !isProjectSessionPrincipal(c) &&
+    getAgentGrant(c) === null
+  );
+}
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -53,7 +66,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 404, 409),
     },
   }),
   async (c) => {
@@ -105,9 +118,11 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    if (result.error) return c.json(result.error.body as any, 409);
+    const start = result.start!;
     return c.json(
       {
-        ...result.start,
+        ...start,
         runtime_transport: 'rest' as const,
       },
       200,
@@ -335,19 +350,35 @@ projectsApp.openapi(
       return c.json({ error: 'head_ref and base_ref must differ' }, 400);
     }
 
-    let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
-    if (originSessionId) {
-      const [sessionRow] = await db
-        .select({ sessionId: projectSessions.sessionId })
-        .from(projectSessions)
-        .where(
-          and(
-            eq(projectSessions.sessionId, originSessionId),
-            eq(projectSessions.projectId, projectId),
-          ),
-        )
-        .limit(1);
-      if (!sessionRow) originSessionId = null;
+    const requestedOriginSessionId: string | null = normalizeString(
+      body.session_id ?? body.sessionId,
+    );
+    const callerOriginSessionId = callerKortixSessionId(c);
+    const runtimePrincipal = isProjectSessionPrincipal(c) || getAgentGrant(c) !== null;
+    let originSessionId: string | null = null;
+    if (runtimePrincipal) {
+      if (!callerOriginSessionId) {
+        return c.json({ error: 'Runtime principal has no live session identity' }, 403);
+      }
+      if (requestedOriginSessionId && requestedOriginSessionId !== callerOriginSessionId) {
+        return c.json(
+          {
+            error: 'An agent can open a change request only for its own session',
+            code: 'session_identity_mismatch',
+          },
+          403,
+        );
+      }
+      originSessionId = callerOriginSessionId;
+    } else if (c.get('authType') === 'service_account' && requestedOriginSessionId) {
+      return c.json(
+        { error: 'A service account cannot assign change-request session provenance' },
+        403,
+      );
+    } else if (requestedOriginSessionId) {
+      const visibleOrigin = await loadVisibleSession(loaded, requestedOriginSessionId, null);
+      if (!visibleOrigin) return c.json({ error: 'Session not found' }, 404);
+      originSessionId = visibleOrigin.row.sessionId;
     }
 
     // Resolve current tips so the CR has anchored SHAs from the start, and
@@ -461,6 +492,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
     );
+    assertAgentScopeExact(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     // The capability check above is PROJECT-wide, and in Kortix-as-a-Backend the
     // sandbox's own token holds it — every KaaB session shares the wrapper's
@@ -629,6 +661,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!assertHumanReviewPrincipal(c)) {
+      return c.json({ error: 'Change-request review decisions require a human principal' }, 403);
+    }
     // Per-agent gate: editing a CR is part of the change-request capability.
     assertAgentScope(c, 'project.cr.open');
 
@@ -713,11 +748,15 @@ projectsApp.openapi(
 
     // Deliver to the originating session's agent (best-effort, background — a
     // sandbox boot can take seconds, so we never block the response on it).
-    const willDeliver = Boolean(cr.originSessionId);
-    if (cr.originSessionId) {
+    const visibleOrigin = cr.originSessionId
+      ? await loadVisibleSession(loaded, cr.originSessionId, null)
+      : null;
+    const deliverySessionId = visibleOrigin?.row.sessionId ?? null;
+    const willDeliver = deliverySessionId !== null;
+    if (deliverySessionId) {
       void continueSession({
         source: 'ui',
-        sessionId: cr.originSessionId,
+        sessionId: deliverySessionId,
         text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
         userId: loaded.userId,
       })
@@ -728,7 +767,7 @@ projectsApp.openapi(
           if (outcome !== 'delivered') {
             console.error('[change-requests] request-changes prompt not delivered', {
               crId,
-              sessionId: cr.originSessionId,
+              sessionId: deliverySessionId,
               outcome,
             });
           }

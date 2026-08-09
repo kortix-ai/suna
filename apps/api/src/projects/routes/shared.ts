@@ -19,7 +19,10 @@ import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
-import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import {
+  allocateSessionRuntime,
+  allocateSessionRuntimeAndWaitForKickoff,
+} from '../lib/session-runtime-allocator';
 import {
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
@@ -305,7 +308,9 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
+  options: { awaitKickoff?: boolean } = {},
 ): Promise<void> {
+  if (session.metadata?.task_liveness_binding_status === 'pending') return;
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
@@ -319,7 +324,10 @@ export async function allocateRuntimeOnOpen(
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
 
-  allocateSessionRuntime({
+  const allocate = options.awaitKickoff
+    ? allocateSessionRuntimeAndWaitForKickoff
+    : allocateSessionRuntime;
+  await allocate({
     sessionId,
     accountId: loaded.row.accountId,
     projectId,
@@ -717,6 +725,17 @@ export async function openSession(args: {
 }): Promise<SessionStartResult> {
   const { loaded, visible, projectId, sessionId } = args;
   const accountId = visible.row.accountId;
+
+  if (visible.row.metadata?.task_liveness_binding_status === 'pending') {
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'pending_task_binding',
+    };
+  }
 
   let [row] = await db
     .select()

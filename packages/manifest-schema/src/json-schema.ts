@@ -48,6 +48,8 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  GOAL_METRIC_DIRECTIONS_V2,
+  GOAL_STATUSES_V2,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
@@ -517,6 +519,40 @@ function agentEntryV1Schema(): JsonSchemaFragment {
   };
 }
 
+/** One metric attached to a v2 durable goal. */
+function goalMetricV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    required: ['name', 'direction'],
+    properties: {
+      name: NON_EMPTY_STRING,
+      direction: { type: 'string', enum: [...GOAL_METRIC_DIRECTIONS_V2] },
+      target: { type: 'number' },
+      unit: NON_EMPTY_STRING,
+    },
+    additionalProperties: true,
+  };
+}
+
+/** One v2 durable goal. Cron/timezone and collision checks stay imperative. */
+function goalV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    required: ['slug', 'title', 'done_when', 'status'],
+    properties: {
+      slug: SLUG_SCHEMA,
+      title: NON_EMPTY_STRING,
+      done_when: NON_EMPTY_STRING,
+      status: { type: 'string', enum: [...GOAL_STATUSES_V2] },
+      push: NON_EMPTY_STRING,
+      timezone: NON_EMPTY_STRING,
+      agent: SLUG_SCHEMA,
+      metrics: { type: 'array', items: goalMetricV2Schema() },
+    },
+    additionalProperties: true,
+  };
+}
+
 /** `agents.<name>` (v2) — GOVERNANCE ONLY (spec §2.2). Every OpenCode
  *  behavioral field is a hard validation error here — modeled by simply
  *  never listing them in `properties` + `additionalProperties: false`, so
@@ -675,6 +711,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV2Schema(),
       },
+      goals: { type: 'array', items: goalV2Schema() },
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,

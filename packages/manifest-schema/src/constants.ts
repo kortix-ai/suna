@@ -14,6 +14,38 @@ export const RESERVED_SANDBOX_SLUG = 'default';
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
+/** Manifest goal lifecycle states. */
+export const GOAL_STATUSES_V2 = ['active', 'achieved', 'paused', 'abandoned'] as const;
+
+/** Direction in which a goal metric must move. */
+export const GOAL_METRIC_DIRECTIONS_V2 = ['increase', 'decrease'] as const;
+
+/** Namespace reserved for cron triggers synthesized from `goals[].push`. */
+export const GOAL_PUSH_TRIGGER_PREFIX = 'kortix-goal-push-';
+
+/**
+ * Build the runtime trigger slug for one pushed goal.
+ *
+ * Legal goal slugs can consume the full 128-character manifest limit. The
+ * reserved prefix therefore needs truncation. The suffix hashes the complete
+ * goal slug so two long slugs with the same retained prefix remain distinct.
+ * Callers still diagnose the extremely unlikely hash collision instead
+ * of overwriting a trigger.
+ */
+export function goalPushTriggerSlug(goalSlug: string): string {
+  const candidate = `${GOAL_PUSH_TRIGGER_PREFIX}${goalSlug}`;
+  if (candidate.length <= 128) return candidate;
+
+  let hash = BigInt('0xcbf29ce484222325');
+  for (let index = 0; index < goalSlug.length; index += 1) {
+    hash ^= BigInt(goalSlug.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * BigInt('0x100000001b3'));
+  }
+  const suffix = hash.toString(16).padStart(16, '0');
+  const retainedLength = 128 - GOAL_PUSH_TRIGGER_PREFIX.length - suffix.length - 1;
+  return `${GOAL_PUSH_TRIGGER_PREFIX}${goalSlug.slice(0, retainedLength)}-${suffix}`;
+}
+
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
@@ -98,6 +130,10 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.session.start',
   'project.session.stop',
   'project.session.bindings.write',
+  'project.goal.read',
+  'project.goal.write',
+  'project.task.read',
+  'project.task.write',
   'project.members.read',
   'project.members.manage',
   'project.trigger.read',

@@ -12,6 +12,24 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-09 — session `core-rlm-harness-v1` claim
+
+No **Now** task claimed. This is the isolated AGI co-worker V1 implementation.
+
+Claimed SDK scope:
+
+- Add durable goal and task clients for the existing project-scoped REST contract.
+- Expose task claims, worker coordination, evidence, progress, liveness, and goal health.
+- Preserve every existing published name and keep all changes additive.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke before delivery.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
 ### 2026-08-09 — session `computers-connector-grouping` claim
 
 No **Now** task claimed. This is the user-directed Computers connector profile refactor.
@@ -7874,8 +7892,6 @@ would now fail to compile. Flagging rather than burying it.
 made; this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
-||||||| f398f755c2
-
 ### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
 
 Additive, host-driven. `apps/web`'s connectors catalogue was rebuilt to paginate

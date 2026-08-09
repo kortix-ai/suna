@@ -44,8 +44,12 @@ export function classifyWaitPoll(
   statuses: Record<string, { type?: string; [key: string]: unknown } | undefined>,
   opencodeSessionId: string,
   pending: { permissions: number; questions: number },
+  hasPrompt = true,
 ): WaitPollState {
   if (pending.permissions > 0 || pending.questions > 0) return 'blocked';
+  // A newly created worker session is empty until its durable initial-prompt
+  // command drains. Empty is pending delivery, not completed no-progress.
+  if (!hasPrompt) return 'working';
   const current = statuses[opencodeSessionId];
   if (!current || current.type === 'idle') return 'idle';
   return 'working';
@@ -129,7 +133,7 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     while (Date.now() < deadline) {
       let state: WaitPollState | null = null;
       try {
-        const [statuses, permissions, questions] = await Promise.all([
+        const [statuses, permissions, questions, messages] = await Promise.all([
           handle.runtime.session.status().then((r) => r.data ?? {}),
           handle.runtime.permission
             .list()
@@ -139,6 +143,10 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
             .list()
             .then((r) => (r.data ?? []) as Array<{ sessionID?: string }>)
             .catch(() => []),
+          handle.runtime.session
+            .messages({ sessionID: ready.opencodeSessionId, limit: 1 })
+            .then((r) => r.data ?? [])
+            .catch(() => []),
         ]);
         state = classifyWaitPoll(
           statuses as Record<string, { type?: string }>,
@@ -147,6 +155,7 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
             permissions: permissions.filter((p) => p.sessionID === ready.opencodeSessionId).length,
             questions: questions.filter((q) => q.sessionID === ready.opencodeSessionId).length,
           },
+          messages.length > 0,
         );
       } catch {
         // Transient proxy/runtime error — count as unknown, keep waiting.

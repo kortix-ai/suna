@@ -1,8 +1,8 @@
-import { sessionSandboxes } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
-import { type SandboxProviderName, config } from '../../config';
+import { config, type SandboxProviderName } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
@@ -34,15 +34,87 @@ export async function stopSession(input: {
     .limit(1);
 
   if (!sandbox) {
+    const [session] = await db
+      .select({ status: projectSessions.status })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+          eq(projectSessions.accountId, accountId),
+        ),
+      )
+      .limit(1);
+    if (session && ['queued', 'branching', 'provisioning'].includes(session.status)) {
+      await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectSessions.sessionId, sessionId),
+            eq(projectSessions.projectId, projectId),
+            eq(projectSessions.accountId, accountId),
+          ),
+        );
+      return {
+        status: 409,
+        body: {
+          error: 'Session is still provisioning',
+          status: 'provisioning',
+          retryable: true,
+        },
+      };
+    }
+    return { status: 404, body: { error: 'Session sandbox not found' } };
+  }
+  if (sandbox.status === 'archived') {
     return { status: 404, body: { error: 'Session sandbox not found' } };
   }
   const cancellingWake =
     sandbox.status === 'stopped' &&
     runtimeWakeInProgress((sandbox.metadata ?? {}) as Record<string, unknown>);
-  if (sandbox.status !== 'active' && !cancellingWake) {
+  if (sandbox.status === 'stopped' && !cancellingWake) {
     return {
       status: 409,
-      body: { error: 'Session is not running', status: sandbox.status },
+      body: { error: 'Session is not running', status: 'stopped' },
+    };
+  }
+  if (sandbox.status === 'error' && !sandbox.externalId) {
+    // Provisioning failed before a provider runtime existed. Reconcile the
+    // logical rows to the same stopped terminal state as a provider-confirmed
+    // stop; there is no external process left to stop.
+    const now = new Date();
+    await applyStoppedState({
+      sandboxId: sandbox.sandboxId,
+      sessionId,
+      externalId: null,
+      stopReason: 'manual',
+      metadata: { stoppedBy: userId },
+      now,
+    });
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  }
+  if (sandbox.status === 'provisioning' && !sandbox.externalId) {
+    // Fence the logical session before returning. The provisioning controller
+    // checks this server-owned state before publishing its provider result. The
+    // durable stop command remains queued until the sandbox row becomes stopped.
+    await db
+      .update(projectSessions)
+      .set({ status: 'stopped', updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+          eq(projectSessions.accountId, accountId),
+        ),
+      );
+    return {
+      status: 409,
+      body: {
+        error: 'Session is still provisioning',
+        status: 'provisioning',
+        retryable: true,
+      },
     };
   }
   if (
@@ -58,10 +130,6 @@ export async function stopSession(input: {
   const provider = getProvider(sandbox.provider as SandboxProviderName);
   const now = new Date();
   if (cancellingWake) {
-    // Cancel the durable wake before the provider call. The in-flight wake task
-    // then loses its finalize CAS and stops any provider start that completes
-    // after this request. The cleanup guard covers a task or pod that never
-    // returns from provider.start().
     await applyStoppedState({
       sandboxId: sandbox.sandboxId,
       sessionId,

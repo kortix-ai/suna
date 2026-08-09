@@ -1,6 +1,11 @@
 import { parseSharingIntent } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
+import {
+  agentMayUseEnv,
+  getAgentGrant,
+  isProjectSessionPrincipal,
+} from '../../iam/agent-scope';
+import { config } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
@@ -22,6 +27,7 @@ import {
   connectors,
   projectSecrets,
   projectSessionSecretHandles,
+  projectSessions,
   projects,
   sessionSandboxes,
 } from '@kortix/db';
@@ -33,7 +39,7 @@ import {
 } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
-import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, deriveKortixApiRoot, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
 import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
@@ -173,8 +179,8 @@ projectsApp.openapi(
   // fresh project token, the new token would carry NO grant — letting a scoped
   // agent issue an unscoped sibling and escape its own ceiling. Token minting
   // is a human/manage operation; agents are denied outright.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+  if (isProjectSessionPrincipal(c)) {
+    return c.json({ error: 'Project session principals cannot mint project tokens' }, 403);
   }
 
   // One body field: `name`. Defaults to "cli · <project name>".
@@ -238,8 +244,8 @@ projectsApp.openapi(
   // Token management is a human/manage operation: an agent-session token must
   // not revoke project tokens (it could knock out its own siblings / the human
   // CLI token as a DoS). Symmetric with the mint guard above.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+  if (isProjectSessionPrincipal(c)) {
+    return c.json({ error: 'Project session principals cannot manage project tokens' }, 403);
   }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
@@ -271,6 +277,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const authType = (c as any).get('authType') as string | undefined;
   const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
+  const authorization = c.req.header('Authorization') as string | undefined;
+  const callerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
+  let runtimePrincipal = isProjectSessionPrincipal(c) || getAgentGrant(c) !== null;
 
   let projectRow: typeof projects.$inferSelect | null = null;
 
@@ -283,6 +292,7 @@ projectsApp.openapi(
     await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     projectRow = loaded.row;
   } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    runtimePrincipal = true;
     const accountId = (c as any).get('accountId') as string | undefined;
     const sandboxId = (c as any).get('sandboxId') as string | undefined;
     if (!accountId || !sandboxId) {
@@ -327,6 +337,22 @@ projectsApp.openapi(
     return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
   }
   if (!projectRow) return c.json({ error: 'Not found' }, 404);
+
+  if (runtimePrincipal) {
+    if (!callerToken) {
+      return c.json({ error: 'runtime proxy credential is unavailable' }, 403);
+    }
+    return c.json({
+      repo_url: `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`,
+      auth: {
+        username: 'x-access-token',
+        token: callerToken,
+        type: 'basic',
+      },
+      source: 'kortix_git_proxy',
+      expires_at: null,
+    });
+  }
 
   const gitAuth = await resolveProjectGitAuth(projectRow);
   const upstream = await resolveProjectUpstream(projectRow, 'write');

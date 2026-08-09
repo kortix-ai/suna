@@ -4,13 +4,11 @@ import { Hono } from 'hono';
 let authCalls = 0;
 
 mock.module('../middleware/auth', () => ({
-  supabaseAuth: async (c: any, next: () => Promise<void>) => {
+  supabaseAuth: async (c: any) => {
     authCalls += 1;
-    c.set('user', {
-      id: '00000000-0000-4000-a000-000000000001',
-      email: 'marketplace-http@example.test',
-    });
-    await next();
+    // Stop at the auth boundary. Source management needs a real database after
+    // auth, but this hermetic HTTP contract intentionally uses a fake DATABASE_URL.
+    return c.json({ authenticated: true });
   },
 }));
 
@@ -75,10 +73,11 @@ describe('marketplace HTTP contract', () => {
   test('GET /marketplace/sources still requires auth middleware', async () => {
     authCalls = 0;
     const res = await fetch(`${baseUrl}/marketplace/sources`);
-    // The test auth middleware accepts when it runs; this pins that source
-    // management still passes through auth instead of staying public.
-    expect(res.status).not.toBe(404);
-    expect(authCalls).toBeGreaterThan(0);
+    // The test auth middleware terminates the request before the DB-backed
+    // handler. This pins auth without leaking a query to the fake DATABASE_URL.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ authenticated: true });
+    expect(authCalls).toBe(1);
   });
 
   test('GET /marketplace/items/:id exposes the starter project detail and its skills; managed system skills stay unreachable', async () => {

@@ -355,7 +355,7 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
-  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
+  test('meta sessions receive a bounded project grant without a standing service-account ceiling', async () => {
     await provisionSessionSandbox({
       ...baseOpts(),
       agentName: 'meta',
@@ -370,12 +370,48 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',
-        kortixCli: 'all',
         connectors: [],
         env: [],
       },
       serviceAccountId: null,
     });
+    const grant = accountTokenCreateCalls[0]?.agentGrant as { kortixCli?: unknown };
+    const kortixCli = grant.kortixCli;
+    expect(Array.isArray(kortixCli)).toBe(true);
+    if (!Array.isArray(kortixCli)) throw new Error('meta grant must be an action allowlist');
+    expect(kortixCli).toEqual([
+      'project.read',
+      'project.goal.read',
+      'project.goal.write',
+      'project.task.read',
+      'project.task.write',
+      'project.cr.open',
+      'project.session.read',
+      'project.session.start',
+      'project.file.read',
+      'project.gitops.read',
+    ]);
+    for (const forbidden of [
+      'project.write',
+      'project.delete',
+      'project.cr.merge',
+      'project.session.stop',
+      'project.session.bindings.write',
+      'project.members.manage',
+      'project.trigger.create',
+      'project.trigger.update',
+      'project.trigger.delete',
+      'project.gateway.keys.manage',
+      'project.secret.write',
+      'project.connector.write',
+      'project.connector.connections.manage',
+      'project.gitops.push',
+      'project.gitops.merge',
+      'project.review.submit',
+      'project.review.act',
+    ]) {
+      expect(kortixCli).not.toContain(forbidden);
+    }
     expect(serviceAccountCreateCalls).toHaveLength(0);
   });
 

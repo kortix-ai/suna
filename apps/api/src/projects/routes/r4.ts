@@ -117,6 +117,8 @@ import {
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { manualTriggerIdempotencyKey } from '../lib/manual-trigger-idempotency';
+import { taskWorkerDelegationDenied } from '../task-worker-delegation';
 import {
   type ConnectionOwnerType,
   type ConnectorAuthorizationStrategy,
@@ -408,10 +410,7 @@ projectsApp.openapi(
         connectorConfig: connectors.config,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows
@@ -482,10 +481,7 @@ projectsApp.openapi(
         status: connectorConnections.status,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows.map((row) => ({
@@ -533,10 +529,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     const body = await readBody(c);
     const connectorAlias = canonicalConnectorAlias(
@@ -636,10 +629,7 @@ projectsApp.openapi(
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
     if (ownerType === 'member' && c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     // Backwards-compatible manager path: a submitted member owner is always
     // rewritten to the caller. Managers may create their own member connection,
@@ -2391,8 +2381,10 @@ projectsApp.openapi(
       // is the natural retry point — the generator is idempotent (needsTitle +
       // CAS) so an already-titled session is a cheap no-op. The stored
       // `title_source` outranks the supplied text inside the generator.
-      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
-        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      const titleRetrySource = [
+        turnStreamMetadata.title_source,
+        turnStreamMetadata.initial_prompt,
+      ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
       if (titleRetrySource && turnStreamSession.createdBy) {
         void generateSessionTitleFromFirstPrompt({
           projectId,
@@ -3513,6 +3505,20 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
+    if (
+      await taskWorkerDelegationDenied(db, {
+        callerSessionId: callerKortixSessionId(c),
+        hasAgentGrant: getAgentGrant(c) !== null,
+      })
+    ) {
+      return c.json(
+        {
+          error: 'Task workers cannot fire triggers that create independent sessions',
+          code: 'task_worker_delegation_denied',
+        },
+        403,
+      );
+    }
 
     const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
     const spec = specs.find((s) => s.slug === slug);
@@ -3527,6 +3533,16 @@ projectsApp.openapi(
       message: { text: '', source: 'manual_test' },
     };
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+    let idempotencyKey: string | undefined;
+    try {
+      idempotencyKey = manualTriggerIdempotencyKey(
+        projectId,
+        spec.slug,
+        c.req.header('Idempotency-Key'),
+      );
+    } catch (error) {
+      return c.json({ error: (error as Error).message, code: 'invalid_idempotency_key' }, 400);
+    }
 
     const result = await fireGitTrigger({
       spec,
@@ -3534,31 +3550,22 @@ projectsApp.openapi(
       payload,
       renderedPrompt,
       source: 'manual',
+      idempotencyKey,
       request: requestAuditContext(c),
     });
 
-    if (result.status === 'queued') {
-      await markGitTriggerFired(projectId, slug, now);
-      return c.json(
-        {
-          status: 'queued',
-          command_id: result.commandId ?? null,
-          session_id: result.sessionId ?? null,
-          reason: result.reason ?? null,
-          deduped: result.deduped ?? false,
-        },
-        202,
-      );
-    }
     if (result.status === 'failed') {
       return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
     }
-    await markGitTriggerFired(projectId, slug, now);
+    if (!result.deduped) await markGitTriggerFired(projectId, slug, now);
     return c.json(
       {
-        status: result.deduped ? 'deduped' : 'fired',
+        status: result.deduped ? 'deduped' : result.status,
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
+        evaluation_id: result.evaluationId ?? null,
+        evaluation_state: result.evaluationState ?? null,
+        reason: result.reason ?? null,
         deduped: result.deduped ?? false,
       },
       202,

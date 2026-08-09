@@ -1183,3 +1183,204 @@ describe('validateAgentMdFrontmatter', () => {
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
   });
 });
+
+describe('validateManifest — v2 goals', () => {
+  const manifestWithGoals = (goals: string, triggers = '') => `
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+${goals}
+${triggers}
+`;
+
+  test('accepts a complete goal with push scheduling and metrics', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: grow-revenue
+    title: Grow recurring revenue
+    done_when: Monthly recurring revenue reaches 100000 with churn below 2%.
+    status: active
+    push: "0 0 9 * * *"
+    timezone: America/New_York
+    agent: worker
+    metrics:
+      - name: monthly_recurring_revenue
+        direction: increase
+        target: 100000
+        unit: USD
+      - name: churn
+        direction: decrease
+        target: 2
+        unit: percent`),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errorPaths).toEqual([]);
+  });
+
+  test('rejects a valid goal agent slug that is not declared', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: delegated
+    title: Delegated
+    done_when: Done
+    status: active
+    agent: ghost`),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errorPaths).toContain('goals[0].agent');
+  });
+
+  test('rejects a goal agent that is declared but disabled', () => {
+    const result = summarize(`
+kortix_version: 2
+default_agent: worker
+agents:
+  worker: {}
+  paused:
+    enabled: false
+goals:
+  - slug: delegated
+    title: Delegated
+    done_when: Done
+    status: active
+    agent: paused
+`);
+
+    expect(result.valid).toBe(false);
+    expect(result.errorPaths).toContain('goals[0].agent');
+  });
+
+  test('allows the reserved platform meta agent explicitly without declaring it', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: coordinated
+    title: Coordinated
+    done_when: Done
+    status: active
+    agent: meta`),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errorPaths).toEqual([]);
+  });
+
+  test('allows an omitted goal agent for the reserved platform meta coordinator', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: coordinated
+    title: Coordinated
+    done_when: Done
+    status: active`),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errorPaths).toEqual([]);
+  });
+
+  test.each([
+    ['missing slug', '    title: T\n    done_when: Done\n    status: active', 'goals[0].slug'],
+    [
+      'invalid slug',
+      '    slug: Bad Goal\n    title: T\n    done_when: Done\n    status: active',
+      'goals[0].slug',
+    ],
+    ['missing title', '    slug: goal\n    done_when: Done\n    status: active', 'goals[0].title'],
+    [
+      'empty done_when',
+      '    slug: goal\n    title: T\n    done_when: "  "\n    status: active',
+      'goals[0].done_when',
+    ],
+    [
+      'invalid status',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: pending',
+      'goals[0].status',
+    ],
+    [
+      'non-string push',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    push: 42',
+      'goals[0].push',
+    ],
+    [
+      'invalid cron',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    push: not-a-cron',
+      'goals[0].push',
+    ],
+    [
+      'invalid timezone',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    timezone: Mars/Olympus',
+      'goals[0].timezone',
+    ],
+    [
+      'invalid agent',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    agent: Bad Agent',
+      'goals[0].agent',
+    ],
+    [
+      'metrics not a list',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    metrics: nope',
+      'goals[0].metrics',
+    ],
+    [
+      'invalid metric direction',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    metrics:\n      - name: revenue\n        direction: flat',
+      'goals[0].metrics[0].direction',
+    ],
+    [
+      'non-number target',
+      '    slug: goal\n    title: T\n    done_when: Done\n    status: active\n    metrics:\n      - name: revenue\n        direction: increase\n        target: high',
+      'goals[0].metrics[0].target',
+    ],
+  ])('rejects %s', (_name, body, expectedPath) => {
+    const result = summarize(manifestWithGoals(`goals:\n  -\n${body}`));
+    expect(result.errorPaths).toContain(expectedPath);
+  });
+
+  test('rejects duplicate goal slugs and duplicate metric names', () => {
+    const result = summarize(
+      manifestWithGoals(`goals:
+  - slug: growth
+    title: Growth
+    done_when: Done
+    status: active
+    metrics:
+      - name: revenue
+        direction: increase
+      - name: revenue
+        direction: decrease
+  - slug: growth
+    title: Growth again
+    done_when: Done again
+    status: paused`),
+    );
+
+    expect(result.errorPaths).toContain('goals[0].metrics[1].name');
+    expect(result.errorPaths).toContain('goals[1].slug');
+  });
+
+  test('reports a generated goal-push slug collision with an explicit trigger', () => {
+    const result = summarize(
+      manifestWithGoals(
+        `goals:
+  - slug: growth
+    title: Growth
+    done_when: Revenue reaches 100000.
+    status: active
+    push: "0 0 9 * * *"`,
+        `triggers:
+  - slug: kortix-goal-push-growth
+    type: cron
+    cron: "0 0 8 * * *"
+    prompt: Explicit trigger`,
+      ),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errorPaths).toContain('goals[0].push');
+    expect(result.issues.find((issue) => issue.path === 'goals[0].push')?.message).toContain(
+      'collides with explicit trigger',
+    );
+  });
+});

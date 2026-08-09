@@ -90,6 +90,11 @@ import {
   resolveSessionSandboxSlug,
   workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
+import {
+  assertTaskWorkerReservationSlot,
+  getProjectTaskWorkerBinding,
+  TaskWorkerReservationConflictError,
+} from '../generated-state-store';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
   buildSessionRuntimeContextEnv,
@@ -99,7 +104,7 @@ import {
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
-  projectMetaAgentEnabled,
+  platformMetaAgentEnabledForSession,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 
@@ -560,6 +565,8 @@ export async function createProjectSession(input: {
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
+  /** Trusted server-only proof that this create came from a goal push. */
+  platformMetaGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
   /**
@@ -594,9 +601,71 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
 }> {
   const { project, userId, body } = input;
-  const visibility = input.visibility ?? 'private';
+  const requestMetadata = normalizeJsonObject(body.metadata);
   const projectId = project.projectId;
   const accountId = project.accountId;
+  let callerIsMeta = false;
+  if (input.callerSessionId) {
+    const [caller] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, input.callerSessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    callerIsMeta = Boolean(caller && isMetaAgentName(caller.agentName));
+  }
+  if (
+    callerIsMeta &&
+    (Object.prototype.hasOwnProperty.call(body, 'initial_prompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'initialPrompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'pending_prompt') ||
+      Object.prototype.hasOwnProperty.call(body, 'pendingPrompt'))
+  ) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error:
+            'A spawned session cannot include an initial or pending prompt; register the worker task to deliver its first prompt atomically',
+          code: 'SPAWN_INITIAL_PROMPT_FORBIDDEN',
+        },
+      },
+    };
+  }
+  if (input.callerSessionId) {
+    const binding = await getProjectTaskWorkerBinding(db, input.callerSessionId);
+    if (binding) {
+      return {
+        error: {
+          status: 403,
+          body: {
+            error: 'Bound task workers cannot create child sessions',
+            code: 'TASK_WORKER_CONFINED',
+            task_id: binding.taskId,
+          },
+        },
+      };
+    }
+  }
+  const reservedMetadataKey = Object.keys(requestMetadata).find(
+    (key) => key === 'spawned_by_session' || key.startsWith('task_liveness_'),
+  );
+  if (reservedMetadataKey) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: `metadata.${reservedMetadataKey} is server-owned`,
+          code: 'RESERVED_SESSION_METADATA',
+        },
+      },
+    };
+  }
+  const visibility = input.visibility ?? 'private';
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -722,31 +791,17 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // The meta coordinator is a per-project experimental opt-in
-  // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
-  // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
-  // agent name.
-  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  const metaAgentEnabled = platformMetaAgentEnabledForSession(
+    project.metadata,
+    requestedAgent,
+    input.platformMetaGoalPush === true,
+  );
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
   // to the project default (the observed failure was meta "spawning a worker"
   // and getting another coordinator), and an explicit meta request is
   // rejected.
-  let callerIsMeta = false;
-  if (metaAgentEnabled && input.callerSessionId) {
-    const [caller] = await db
-      .select({ agentName: projectSessions.agentName })
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.sessionId, input.callerSessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
-      )
-      .limit(1);
-    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
-  }
   const agentName =
     metaAgentEnabled && !requestedAgent && !callerIsMeta
       ? META_AGENT_NAME
@@ -1154,7 +1209,6 @@ export async function createProjectSession(input: {
     connectorBindingCount: validatedConnectorBindings.bindings.length,
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
-  const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
@@ -1170,6 +1224,14 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    ...(callerIsMeta
+      ? {
+          task_liveness_binding_required: true,
+          task_liveness_binding_status: 'pending',
+          task_liveness_reserved_at: new Date().toISOString(),
+          task_liveness_reservation_expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        }
+      : {}),
     workspace_mode: workspaceMode,
     sandbox_slug: sandboxSlug,
     audit_v2: {
@@ -1185,6 +1247,13 @@ export async function createProjectSession(input: {
   let sessionRow: ProjectSessionRow | null = null;
   try {
     sessionRow = await db.transaction(async (tx) => {
+      if (callerIsMeta && input.callerSessionId) {
+        await assertTaskWorkerReservationSlot(tx as unknown as typeof db, {
+          projectId,
+          coordinatorSessionId: input.callerSessionId,
+          now: new Date(),
+        });
+      }
       const [row] = await tx
       .insert(projectSessions)
       .values({
@@ -1198,7 +1267,7 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
-        status: 'provisioning',
+        status: callerIsMeta ? 'queued' : 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).
         createdBy: userId,
@@ -1250,6 +1319,14 @@ export async function createProjectSession(input: {
       return row;
     });
   } catch (error) {
+    if (error instanceof TaskWorkerReservationConflictError) {
+      return {
+        error: {
+          status: 409,
+          body: { error: error.message, code: error.code },
+        },
+      };
+    }
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
     // but the target DB's type is missing fails here with 22P02, not upstream —
@@ -1272,6 +1349,8 @@ export async function createProjectSession(input: {
   }
 
   setContextField('sessionId', sessionId);
+
+  if (callerIsMeta) return { row: sessionRow, headers: responseHeaders };
 
   // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
   // inside the box — it never crosses the API again, so this is the only moment

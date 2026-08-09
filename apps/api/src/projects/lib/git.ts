@@ -21,9 +21,14 @@ import { ttlMemo } from '../../shared/ttl-memo';
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { agentMayPerformExact } from '../../iam/agent-scope';
 import { authorize } from '../../iam/dispatcher';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import {
+  getProjectTaskWorkerBinding,
+  projectTaskWorkerAdmissionState,
+} from '../generated-state-store';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
 import {
   sessionWorkspaceAllowsRepositoryAccess,
@@ -619,7 +624,7 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow }
+  | { ok: true; project: ProjectRow; taskWorkerSessionId?: string }
   | { ok: false; status: number; message: string };
 
 /**
@@ -706,6 +711,30 @@ export async function authorizeGitProxy(
         message: 'session workspace does not allow repository access',
       };
     }
+    let taskWorkerSessionId: string | undefined;
+    if (scope === 'write' && (result.agentGrant || result.sessionId)) {
+      if (
+        !result.agentGrant ||
+        !agentMayPerformExact(result.agentGrant, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)
+      ) {
+        return {
+          ok: false,
+          status: 403,
+          message: 'session token is not explicitly authorized to push',
+        };
+      }
+      if (result.sessionId) {
+        const admissionState = await projectTaskWorkerAdmissionState(db, result.sessionId);
+        if (admissionState === 'spawned_unbound') {
+          return { ok: false, status: 403, message: 'spawned worker is not bound to a task' };
+        }
+        const workerBinding = await getProjectTaskWorkerBinding(db, result.sessionId);
+        if (workerBinding && workerBinding.status !== 'doing') {
+          return { ok: false, status: 403, message: 'terminal task workers cannot push' };
+        }
+        if (workerBinding) taskWorkerSessionId = result.sessionId;
+      }
+    }
     if (result.accountId !== project.accountId) {
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
@@ -713,7 +742,7 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project };
+    return { ok: true, project, ...(taskWorkerSessionId ? { taskWorkerSessionId } : {}) };
   }
 
   if (isKortixToken(token)) {
@@ -751,6 +780,13 @@ export async function authorizeGitProxy(
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
+      }
+      if (scope === 'write') {
+        return {
+          ok: false,
+          status: 403,
+          message: 'sandbox tokens are read-only; use the session token to push',
+        };
       }
       return { ok: true, project };
     }

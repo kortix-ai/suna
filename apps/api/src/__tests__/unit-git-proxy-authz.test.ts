@@ -239,15 +239,21 @@ describe('authorizeGitProxy — sandbox token', () => {
     });
   });
 
-  test('branch sessions retain Git access', async () => {
+  test('branch sessions can read but sandbox tokens cannot push', async () => {
     sandboxRow = {
       sandboxId: 'sandbox-1',
       sessionMetadata: { workspace_mode: 'branch' },
     };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const read = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+    const write = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
 
-    expect(res.ok).toBe(true);
+    expect(read.ok).toBe(true);
+    expect(write).toMatchObject({
+      ok: false,
+      status: 403,
+      message: 'sandbox tokens are read-only; use the session token to push',
+    });
   });
 
   test('legacy sessions without a workspace mode retain Git access', async () => {

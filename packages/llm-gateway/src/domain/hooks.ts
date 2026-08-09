@@ -12,7 +12,7 @@ export type AuthorizeResult =
   | { ok: true; principal: AuthedPrincipal }
   | {
       ok: false;
-      status: 401 | 402;
+      status: 401 | 402 | 409 | 429;
       errorCode: string;
       message?: string;
       principal?: AuthedPrincipal;
@@ -26,7 +26,7 @@ export interface GatewayHooks {
   // gateway sets this to fold three sequential cross-process RPCs into one. The
   // in-process mount omits it (its three direct calls are free) and keeps using
   // the granular hooks below. listModels still uses authenticate directly.
-  authorize?: (token: string) => Promise<AuthorizeResult>;
+  authorize?: (token: string, requestId: string) => Promise<AuthorizeResult>;
   // The host/control plane owns model names, catalog state, defaults, and
   // fallback policy. The gateway sends only opaque model ids + request traits
   // and executes the returned finite route generically.
@@ -39,8 +39,14 @@ export interface GatewayHooks {
   // return a `holdUsd` when it took an atomic admission hold against the
   // wallet — the handler attaches it to the principal so settle() can
   // reconcile it to the real cost (see AuthedPrincipal.billingHold).
-  assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
-  assertBudget?: (principal: AuthedPrincipal) => Promise<void>;
+  assertBillingActive: (
+    accountId: string,
+    requestId: string,
+  ) => Promise<{ holdUsd?: number } | void>;
+  assertBudget?: (
+    principal: AuthedPrincipal,
+    requestId: string,
+  ) => Promise<{ livenessAdmissionId?: string } | void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace?: (trace: GatewayTrace) => Promise<void>;
   listModels?: (principal: AuthedPrincipal) => Promise<ModelCatalog>;

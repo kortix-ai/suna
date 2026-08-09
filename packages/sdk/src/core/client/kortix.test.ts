@@ -114,6 +114,24 @@ test('top-level connectors supports a project-scoped agent token without a proje
   });
 });
 
+test('project(id) exposes goal and task control-plane clients', async () => {
+  const project = kortix.project('PID123');
+
+  await project.goals.list();
+  expect(last().url).toBe('http://test.local/projects/PID123/goals');
+
+  await project.goals.observations.record('ship-kernel', {
+    evaluation_id: '11111111-1111-4111-8111-111111111111',
+    metric: 'rank',
+    value: 1,
+    source: 'search console',
+  });
+  expect(last().url).toBe('http://test.local/projects/PID123/goals/ship-kernel/observations');
+
+  await project.tasks.claim('TASK1', { session_id: 'SESSION1' });
+  expect(last().url).toBe('http://test.local/projects/PID123/tasks/TASK1/claim');
+});
+
 test('project(id).secrets.broker binds the project and encoded identifier', async () => {
   await kortix.project('PID123').secrets.broker('primary/key', {
     url: 'https://api.example.com/v1/items',
@@ -1553,4 +1571,23 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
   expect(waits.length).toBeGreaterThan(0);
   // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
   expect(Math.max(...waits)).toBeLessThanOrEqual(300);
+});
+
+test('project tasks facade exposes worker liveness mutations', async () => {
+  const tasks = kortix.project('PID123').tasks;
+  expect(typeof tasks.registerWorker).toBe('function');
+  expect(typeof tasks.recordProgress).toBe('function');
+  expect(typeof tasks.settleNoProgress).toBe('function');
+
+  await tasks.registerWorker('TASK1', {
+    session_id: 'COORDINATOR',
+    worker_session_id: 'WORKER',
+    prompt: 'Perform the bounded task.',
+    contract: { max_wall_seconds: 900, max_tokens: 50_000, max_cost_usd: 2.5, max_iterations: 8 },
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/tasks/TASK1/worker',
+    method: 'POST',
+    body: expect.objectContaining({ worker_session_id: 'WORKER' }),
+  });
 });

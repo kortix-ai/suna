@@ -194,6 +194,14 @@ export function buildGitAuthArgs(
 interface CloneCredential {
   username: string
   token: string
+  repoUrl?: string
+}
+
+function repoUrlForCredential(
+  cfg: Pick<Config, 'repoUrl'>,
+  credential: CloneCredential | undefined,
+): string | undefined {
+  return credential?.repoUrl || cfg.repoUrl
 }
 
 async function gitWithAuth(
@@ -227,15 +235,17 @@ export function __clearCloneTokenCacheForTests(): void {
 
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
-  // Universal proxy origin: when the repo is served by the Kortix git proxy
-  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
-  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
-  // the real upstream + host credential server-side. No clone-credential round
-  // trip, and a real GitHub token never enters the sandbox.
+  // Universal proxy origin: the session PAT carries the immutable agent grant
+  // used to authorize receive-pack. The sandbox token is a read-only fallback
+  // for boot-time clone/fetch when session token minting failed.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return { username: 'x-access-token', token: cfg.sandboxToken }
+    return {
+      username: 'x-access-token',
+      token: cfg.sessionToken ?? cfg.sandboxToken,
+      repoUrl: cfg.repoUrl,
+    }
   }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
+  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}\0${cfg.sessionToken ?? ''}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
@@ -274,11 +284,22 @@ async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | un
         throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
       }
       const body = await res.json().catch(() => null) as
-        | { auth?: { username?: string | null; token?: string | null } | null }
+        | {
+            repo_url?: string | null
+            auth?: { username?: string | null; token?: string | null } | null
+          }
         | null
-      const token = body?.auth?.token?.trim()
+      const responseToken = body?.auth?.token?.trim()
       const username = body?.auth?.username?.trim() || 'x-access-token'
-      const value = token ? { username, token } : undefined
+      const repoUrl = body?.repo_url?.trim() || undefined
+      // clone-credential returns the caller's sandbox token. Once it directs us
+      // to the Kortix proxy, prefer the session PAT so receive-pack can enforce
+      // the immutable agent grant. Neither response path contains an upstream
+      // provider credential.
+      const token = repoUrl && /\/v1\/git\//.test(repoUrl)
+        ? (cfg.sessionToken ?? responseToken)
+        : responseToken
+      const value = token ? { username, token, repoUrl } : undefined
       cachedCloneToken = { key: cacheKey, value }
       return value
     } catch (err) {
@@ -345,10 +366,10 @@ export async function configureGitCredentialHelper(
   home: string,
 ): Promise<void> {
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
-  const host = deriveAuthHost(cfg.repoUrl)
+  const credential = await resolveCloneCredential(cfg).catch(() => undefined)
+  const host = deriveAuthHost(repoUrlForCredential(cfg, credential) ?? '')
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = credential?.username ?? 'x-access-token'
 
   const env = { HOME: home }
   // `--replace-all` keeps re-boots idempotent instead of appending duplicate
@@ -385,10 +406,10 @@ export async function configureGitCredentialHelper(
 export async function configureRepoCredentialHelper(cfg: Config, target: string): Promise<void> {
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   if (!(await pathExists(`${target}/.git`))) return
-  const host = deriveAuthHost(cfg.repoUrl)
+  const credential = await resolveCloneCredential(cfg).catch(() => undefined)
+  const host = deriveAuthHost(repoUrlForCredential(cfg, credential) ?? '')
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = credential?.username ?? 'x-access-token'
 
   const setHelper = await execGit(
     ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
@@ -515,7 +536,7 @@ async function checkoutSessionBranch(
   // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
   // this fetch with no reset. On failure/timeout we fall through to a local
   // branch from the base checkout (below), so the session still boots.
-  const fetched = await gitWithAuth(credential, cfg.repoUrl, [
+  const fetched = await gitWithAuth(credential, repoUrlForCredential(cfg, credential), [
     '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
     '-C',
     target,
@@ -527,7 +548,7 @@ async function checkoutSessionBranch(
 
   if (fetched.code === 0) {
     await clearStaleGitLock(target)
-    const checkout = await gitWithAuth(credential, cfg.repoUrl, [
+    const checkout = await gitWithAuth(credential, repoUrlForCredential(cfg, credential), [
       '-C',
       target,
       'checkout',
@@ -551,7 +572,7 @@ async function checkoutSessionBranch(
   }
 
   await clearStaleGitLock(target)
-  const local = await gitWithAuth(credential, cfg.repoUrl, [
+  const local = await gitWithAuth(credential, repoUrlForCredential(cfg, credential), [
     '-C',
     target,
     'checkout',
@@ -625,7 +646,7 @@ async function checkoutLocalSessionBranch(target: string, branch: string): Promi
  *
  * `dir` is the tmp clone target; the caller renames it into place afterwards.
  */
-async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Promise<void> {
+async function initLocalRepoAtBase(cfg: Config, dir: string, base: string, repoUrl: string): Promise<void> {
   await rm(dir, { recursive: true, force: true }).catch(() => {})
   await mkdir(dir, { recursive: true })
   const init = await execGit(['-C', dir, 'init'])
@@ -634,10 +655,8 @@ async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Prom
   // needs git ≥ 2.28.
   const branch = await execGit(['-C', dir, 'checkout', '-b', base])
   if (branch.code !== 0) throw new Error(`git checkout -b ${base} (empty upstream) failed: ${branch.stderr}`)
-  if (cfg.repoUrl) {
-    const addRemote = await execGit(['-C', dir, 'remote', 'add', 'origin', cfg.repoUrl])
-    if (addRemote.code !== 0) throw new Error(`git remote add origin (empty upstream) failed: ${addRemote.stderr}`)
-  }
+  const addRemote = await execGit(['-C', dir, 'remote', 'add', 'origin', repoUrl])
+  if (addRemote.code !== 0) throw new Error(`git remote add origin (empty upstream) failed: ${addRemote.stderr}`)
   const commit = await execGit(
     ['-C', dir, 'commit', '--allow-empty', '-m', 'chore: initialize Kortix project'],
     { env: buildGitIdentityEnv(cfg) },
@@ -690,6 +709,8 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
   await mkdir(target, { recursive: true })
+  const cloneCredential = await resolveCloneCredential(cfg)
+  const repoUrl = repoUrlForCredential(cfg, cloneCredential)!
 
   if (await pathExists(`${target}/.git`)) {
     await configureSafeDirectory(target)
@@ -704,7 +725,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     const mismatched = cfg.sessionFresh && !!cfg.baseSha && bakedHead !== cfg.baseSha
     if (!mismatched) {
       logger.info('[git] using baked repo checkout (warm)', { target, head: bakedHead })
-      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)
@@ -714,7 +735,6 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await clearDirContents(target)
   }
   {
-    const cloneCredential = await resolveCloneCredential(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).
@@ -737,7 +757,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
-      repoUrl: cfg.repoUrl,
+      repoUrl,
       base,
       target,
       depth: cfg.cloneDepth || 'full',
@@ -785,10 +805,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Blobless partial clone keeps full history but defers file blobs, cutting
       // the boot-time transfer from a full-history pack to roughly the working
       // tree. This is the dominant per-session boot cost on large repos.
-      cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+      cloned = await gitWithAuth(cloneCredential, repoUrl, [
         ...baseCloneArgs,
         ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
-        cfg.repoUrl,
+        repoUrl,
         tmpTarget,
       ], { timeoutMs: 35_000 })
       if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr) && !isEmptyUpstream(cloned.stderr)) {
@@ -799,7 +819,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
+        cloned = await gitWithAuth(cloneCredential, repoUrl, [...baseCloneArgs, repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
       // Empty upstream is terminal-but-fine: stop retrying and init locally below.
@@ -819,7 +839,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           base,
           stderr: cloned.stderr.slice(0, 200),
         })
-        await initLocalRepoAtBase(cfg, tmpTarget, base)
+        await initLocalRepoAtBase(cfg, tmpTarget, base, repoUrl)
       } else {
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
         throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
@@ -836,8 +856,6 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Fresh session → branch == freshly-cloned base; local, no extra fetch.
       await checkoutLocalSessionBranch(target, cfg.branchName)
     } else {
-      // resolveCloneCredential is memoized — this second call is now ~free.
-      const cloneCredential = await resolveCloneCredential(cfg)
       await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
     }
   }
@@ -865,7 +883,7 @@ export function scheduleHistoryBackfill(cfg: Config, target: string): void {
       if (!(await isShallowRepo(target))) return
       const started = Date.now()
       const credential = await resolveCloneCredential(cfg)
-      const res = await gitWithAuth(credential, cfg.repoUrl, [
+      const res = await gitWithAuth(credential, repoUrlForCredential(cfg, credential), [
         '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
         '-C', target, 'fetch', '--unshallow', '--tags', 'origin',
       ], { timeoutMs: 300_000 })
@@ -961,14 +979,15 @@ async function tryScaffoldDeltaFetch(
   base: string,
   cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
-  if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
+  const repoUrl = repoUrlForCredential(cfg, cloneCredential)
+  if (!existsSync(SCAFFOLD_REPO_PATH) || !repoUrl) return false
   const tmp = await createStagePath(target, 'scaffold')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
     const local = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
     if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
-    const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
+    const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', repoUrl])
     if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
     // ZERO-NETWORK fast path: the image-baked scaffold's root commit is shared,
     // byte-for-byte, with every project seeded from the starter. When the
@@ -985,7 +1004,7 @@ async function tryScaffoldDeltaFetch(
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
-    const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+    const fetched = await gitWithAuth(cloneCredential, repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
       'fetch', '-q', 'origin', base,
@@ -1100,7 +1119,7 @@ export async function commitAndPushWorkingTree(
 
   // 2. Push HEAD to the session branch on origin.
   const cloneCredential = await resolveCloneCredential(cfg)
-  const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
+  const authRepoUrl = repoUrlForCredential(cfg, cloneCredential) ?? before.remoteUrl ?? undefined
   const push = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
@@ -1131,19 +1150,20 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   }
 
   const cloneCredential = await resolveCloneCredential(cfg)
-  if (cfg.repoUrl) {
-    const setUrl = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+  const effectiveRepoUrl = repoUrlForCredential(cfg, cloneCredential)
+  if (effectiveRepoUrl) {
+    const setUrl = await gitWithAuth(cloneCredential, effectiveRepoUrl, [
       '-C',
       target,
       'remote',
       'set-url',
       'origin',
-      cfg.repoUrl,
+      effectiveRepoUrl,
     ])
     if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
   }
 
-  const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
+  const authRepoUrl = repoUrlForCredential(cfg, cloneCredential) ?? before.remoteUrl ?? undefined
   const branch = cfg.branchName || before.branch || cfg.defaultBranch
   const fetched = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
@@ -1218,14 +1238,14 @@ export async function syncWorkspaceToBase(
 
   const cloneCredential = await resolveCloneCredential(cfg)
   const base = cfg.defaultBranch
-  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, repoUrlForCredential(cfg, cloneCredential), [
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
 
   const branch = cfg.branchName || before.branch || base
   const targetRef = baseSha ?? `refs/remotes/origin/${base}`
-  const reset = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+  const reset = await gitWithAuth(cloneCredential, repoUrlForCredential(cfg, cloneCredential), [
     '-C', target, 'checkout', '-B', branch, targetRef,
   ])
   if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
@@ -1301,7 +1321,7 @@ export async function syncOpencodeConfigDirToBase(
   const base = cfg.defaultBranch
   const cloneCredential = await resolveCloneCredential(cfg)
 
-  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, repoUrlForCredential(cfg, cloneCredential), [
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) {

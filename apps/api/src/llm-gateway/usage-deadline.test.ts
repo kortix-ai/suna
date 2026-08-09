@@ -19,6 +19,7 @@ let extendCalls: Array<{ target: unknown; grantMs: number | undefined }> = [];
 let usageRows = 0;
 
 mock.module('../config', () => ({
+  SANDBOX_VERSION: 'test',
   config: new Proxy(
     {},
     {
@@ -52,6 +53,10 @@ mock.module('../projects/sandbox-deadline', () => ({
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extendCalls.push({ target, grantMs });
   },
+  observeTurnStart: async () => 'granted',
+  shortenSandboxDeadline: async () => undefined,
+  shortenSandboxDeadlineOnTurnEnd: async () => undefined,
+  grantWarmPoolLifetime: async () => undefined,
 }));
 
 const { recordGatewayUsage } = await import('./hooks');

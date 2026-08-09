@@ -17,23 +17,23 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
-import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
-import { getSessionHealth } from '../session/health';
-import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import { getClient, getClientForUrl } from '../runtime/client';
 import { setCurrentRuntime } from '../session/current-runtime';
-import {
-  clearSessionRuntime,
-  getSessionRuntime,
-  type SessionRuntimeEntry,
-} from '../session/session-runtime-registry';
+import { getSessionHealth } from '../session/health';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import {
-  openEventStream,
+  type SessionRuntimeEntry,
+  clearSessionRuntime,
+  getSessionRuntime,
+} from '../session/session-runtime-registry';
+import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import {
   type EventStreamHandle,
   type OpenCodeEvent,
+  openEventStream,
 } from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -534,6 +534,43 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.fireProjectTrigger(projectId, ...a),
         setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
           P.setProjectTriggersActivation(projectId, ...a),
+      },
+
+      goals: {
+        list: () => P.listProjectGoals(projectId),
+        get: (...a: DropFirst<Parameters<typeof P.getProjectGoal>>) =>
+          P.getProjectGoal(projectId, ...a),
+        health: (...a: DropFirst<Parameters<typeof P.getProjectGoalHealth>>) =>
+          P.getProjectGoalHealth(projectId, ...a),
+        push: (...a: DropFirst<Parameters<typeof P.pushProjectGoal>>) =>
+          P.pushProjectGoal(projectId, ...a),
+        observations: {
+          list: (...a: DropFirst<Parameters<typeof P.listProjectGoalObservations>>) =>
+            P.listProjectGoalObservations(projectId, ...a),
+          record: (...a: DropFirst<Parameters<typeof P.recordProjectGoalObservation>>) =>
+            P.recordProjectGoalObservation(projectId, ...a),
+        },
+      },
+
+      tasks: {
+        list: (...a: DropFirst<Parameters<typeof P.listProjectTasks>>) =>
+          P.listProjectTasks(projectId, ...a),
+        get: (...a: DropFirst<Parameters<typeof P.getProjectTask>>) =>
+          P.getProjectTask(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createProjectTask>>) =>
+          P.createProjectTask(projectId, ...a),
+        claim: (...a: DropFirst<Parameters<typeof P.claimProjectTask>>) =>
+          P.claimProjectTask(projectId, ...a),
+        complete: (...a: DropFirst<Parameters<typeof P.completeProjectTask>>) =>
+          P.completeProjectTask(projectId, ...a),
+        block: (...a: DropFirst<Parameters<typeof P.blockProjectTask>>) =>
+          P.blockProjectTask(projectId, ...a),
+        registerWorker: (...a: DropFirst<Parameters<typeof P.registerProjectTaskWorker>>) =>
+          P.registerProjectTaskWorker(projectId, ...a),
+        recordProgress: (...a: DropFirst<Parameters<typeof P.recordProjectTaskProgress>>) =>
+          P.recordProjectTaskProgress(projectId, ...a),
+        settleNoProgress: (...a: DropFirst<Parameters<typeof P.settleNoProgressProjectTask>>) =>
+          P.settleNoProgressProjectTask(projectId, ...a),
       },
 
       files: {

@@ -35,11 +35,13 @@
 import {
   MANIFEST_FILENAME_YAML,
   type ManifestFormat,
+  goalPushTriggerSlug,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
   serializeManifestObject,
 } from '@kortix/manifest-schema';
+import { META_AGENT_NAME } from '@kortix/shared';
 import { type GitBackedProject, readManifestFromRepo } from './git';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
@@ -102,6 +104,10 @@ export interface GitTriggerSpec {
   type: GitTriggerType;
   /** Agent name (default: "default"). */
   agent: string;
+  /** Server-owned provenance for a trigger synthesized from `goals[].push`. */
+  platformMetaGoalPush?: true;
+  /** Server-owned goal identity for every trigger synthesized from `goals[].push`. */
+  goalSlug?: string;
   /**
    * Model for this trigger's runs (wire form `provider/model`), or null for
    * "Default" — resolve the chain at fire time (agent → project → account →
@@ -174,6 +180,30 @@ export interface GitTriggerSpec {
   filter: Record<string, string> | null;
 }
 
+export type GitGoalStatus = 'active' | 'achieved' | 'paused' | 'abandoned';
+export type GitGoalMetricDirection = 'increase' | 'decrease';
+
+export interface GitGoalMetricSpec {
+  name: string;
+  direction: GitGoalMetricDirection;
+  target: number | null;
+  unit: string | null;
+}
+
+/** A validated durable goal parsed from a v2 `kortix.yaml`. */
+export interface GitGoalSpec {
+  slug: string;
+  path: string;
+  title: string;
+  doneWhen: string;
+  status: GitGoalStatus;
+  pushCron: string | null;
+  timezone: string;
+  /** Null means the reserved platform meta agent owns automatic pushes. */
+  agent: string | null;
+  metrics: GitGoalMetricSpec[];
+}
+
 export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
 
 export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
@@ -210,6 +240,13 @@ export interface ParsedManifest {
 export interface LoadedTriggers {
   specs: GitTriggerSpec[];
   errors: GitTriggerParseError[];
+}
+
+export type GitGoalParseError = GitTriggerParseError;
+
+export interface LoadedGoals {
+  specs: GitGoalSpec[];
+  errors: GitGoalParseError[];
 }
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
@@ -390,31 +427,92 @@ export function serializeManifest(manifest: ParsedManifest): string {
 export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   const filename = manifest.path || MANIFEST_FILENAME;
   const rawTriggers = manifest.raw.triggers;
-  if (rawTriggers === undefined || rawTriggers === null) {
-    return { specs: [], errors: [] };
+  const specs: GitTriggerSpec[] = [];
+  const errors: GitTriggerParseError[] = [];
+  const seenSlugs = new Set<string>();
+
+  if (rawTriggers !== undefined && rawTriggers !== null) {
+    if (!Array.isArray(rawTriggers)) {
+      errors.push({
+        slug: '(top-level)',
+        path: filename,
+        error:
+          manifest.format === 'yaml'
+            ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
+            : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+      });
+    } else {
+      rawTriggers.forEach((entry, index) => {
+        const result = parseTriggerEntry(entry, index, filename);
+        if (!result.ok) {
+          errors.push(result.error);
+          return;
+        }
+        if (seenSlugs.has(result.spec.slug)) {
+          errors.push({
+            slug: result.spec.slug,
+            path: result.spec.path,
+            error: `Duplicate trigger slug "${result.spec.slug}" — slugs must be unique within a project`,
+          });
+          return;
+        }
+        seenSlugs.add(result.spec.slug);
+        specs.push(result.spec);
+      });
+    }
   }
-  if (!Array.isArray(rawTriggers)) {
+
+  const goals = extractGoals(manifest);
+  errors.push(...goals.errors);
+  for (const goal of goals.specs) {
+    if (goal.status !== 'active' || !goal.pushCron) continue;
+    const generated = goalSpecToTrigger(goal);
+    if (seenSlugs.has(generated.slug)) {
+      errors.push({
+        slug: generated.slug,
+        path: generated.path,
+        error: `Generated goal-push trigger slug "${generated.slug}" collides with explicit trigger "${generated.slug}". Rename the explicit trigger.`,
+      });
+      continue;
+    }
+    seenSlugs.add(generated.slug);
+    specs.push(generated);
+  }
+
+  specs.sort((a, b) => a.slug.localeCompare(b.slug));
+  errors.sort((a, b) => a.slug.localeCompare(b.slug));
+  return { specs, errors };
+}
+
+/** Parse and validate the durable `goals:` list from a v2 YAML manifest. */
+export function extractGoals(manifest: ParsedManifest): LoadedGoals {
+  const filename = manifest.path || MANIFEST_FILENAME;
+  const rawGoals = manifest.raw.goals;
+  if (rawGoals === undefined || rawGoals === null) return { specs: [], errors: [] };
+  if (manifest.schemaVersion !== 2 || manifest.format !== 'yaml') {
     return {
       specs: [],
       errors: [
         {
           slug: '(top-level)',
           path: filename,
-          error:
-            manifest.format === 'yaml'
-              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
-              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+          error: '`goals` is supported only in kortix_version 2 YAML manifests.',
         },
       ],
     };
   }
+  if (!Array.isArray(rawGoals)) {
+    return {
+      specs: [],
+      errors: [{ slug: '(top-level)', path: filename, error: '`goals` must be a YAML list.' }],
+    };
+  }
 
-  const specs: GitTriggerSpec[] = [];
-  const errors: GitTriggerParseError[] = [];
+  const specs: GitGoalSpec[] = [];
+  const errors: GitGoalParseError[] = [];
   const seenSlugs = new Set<string>();
-
-  rawTriggers.forEach((entry, index) => {
-    const result = parseTriggerEntry(entry, index, filename);
+  rawGoals.forEach((entry, index) => {
+    const result = parseGoalEntry(entry, index, filename);
     if (!result.ok) {
       errors.push(result.error);
       return;
@@ -423,7 +521,7 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
       errors.push({
         slug: result.spec.slug,
         path: result.spec.path,
-        error: `Duplicate trigger slug "${result.spec.slug}" — slugs must be unique within a project`,
+        error: `Duplicate goal slug "${result.spec.slug}" — slugs must be unique within a project`,
       });
       return;
     }
@@ -434,6 +532,142 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
   return { specs, errors };
+}
+
+function goalSpecToTrigger(goal: GitGoalSpec): GitTriggerSpec {
+  return {
+    slug: goalPushTriggerSlug(goal.slug),
+    path: `${goal.path}.push`,
+    name: `Goal push: ${goal.title}`,
+    type: 'cron',
+    agent: goal.agent ?? META_AGENT_NAME,
+    ...(goal.agent && goal.agent !== META_AGENT_NAME
+      ? {}
+      : { platformMetaGoalPush: true as const }),
+    goalSlug: goal.slug,
+    model: null,
+    enabled: true,
+    promptTemplate: buildGoalPushPrompt(goal),
+    cron: goal.pushCron,
+    runAt: null,
+    timezone: goal.timezone,
+    secretEnv: null,
+    sessionMode: 'reuse',
+    pinnedSessionId: null,
+    sessionKey: null,
+    filter: null,
+  };
+}
+
+function buildGoalPushPrompt(goal: GitGoalSpec): string {
+  const metrics =
+    goal.metrics.length > 0
+      ? `\nMetrics:\n${goal.metrics.map((metric) => `- ${metric.name}: ${metric.direction}${metric.target === null ? '' : ` toward ${metric.target}${metric.unit ? ` ${metric.unit}` : ''}`}`).join('\n')}\n`
+      : '';
+  return `Advance the durable goal "${goal.title}" (slug: ${goal.slug}).\n\nCompletion rules (done_when):\n${goal.doneWhen}\n${metrics}\nOn this push:\n1. Read the current goal state and its open tasks.\n2. Determine the single most valuable next move.\n3. Take that move or create the tasks that constitute it.\n4. Record what changed.\n\nThe push must measurably advance the goal or state why it could not. Do not mark the goal achieved unless the completion rules are satisfied by cited evidence and an explicit status change.`;
+}
+
+interface GoalParseOk {
+  ok: true;
+  spec: GitGoalSpec;
+}
+
+function parseGoalEntry(entry: unknown, index: number, filename: string): GoalParseOk | ParseErr {
+  const err = (slug: string, message: string): ParseErr => ({
+    ok: false,
+    error: { slug, path: `${filename}#goals.${slug}`, error: message },
+  });
+  if (!isPlainObject(entry)) return err('(invalid)', `goals entry #${index + 1} is not an object`);
+
+  const slug = typeof entry.slug === 'string' ? entry.slug.trim() : '';
+  if (!slug) return err(`(index-${index})`, `goals entry #${index + 1} is missing a slug`);
+  if (!SLUG_RE.test(slug)) return err(slug, `Invalid goal slug "${slug}"`);
+
+  const title = typeof entry.title === 'string' ? entry.title.trim() : '';
+  if (!title) return err(slug, 'title is required and may not be empty');
+  const doneWhen = typeof entry.done_when === 'string' ? entry.done_when.trim() : '';
+  if (!doneWhen) return err(slug, 'done_when is required and may not be empty');
+
+  const status = typeof entry.status === 'string' ? entry.status.trim() : '';
+  if (!['active', 'achieved', 'paused', 'abandoned'].includes(status)) {
+    return err(slug, 'status must be "active", "achieved", "paused", or "abandoned"');
+  }
+
+  const timezone =
+    entry.timezone === undefined
+      ? 'UTC'
+      : typeof entry.timezone === 'string'
+        ? entry.timezone.trim()
+        : '';
+  if (!timezone) return err(slug, 'timezone must be a non-empty IANA time zone');
+  const timezoneError = validateTriggerTimezone(timezone);
+  if (timezoneError) return err(slug, timezoneError);
+
+  let pushCron: string | null = null;
+  if (entry.push !== undefined) {
+    if (typeof entry.push !== 'string' || !entry.push.trim()) {
+      return err(slug, 'push must be a non-empty cron expression');
+    }
+    pushCron = entry.push.trim();
+    const cronError = validateTriggerCron(pushCron, timezone);
+    if (cronError) return err(slug, cronError);
+  }
+
+  let agent: string | null = null;
+  if (entry.agent !== undefined) {
+    if (typeof entry.agent !== 'string' || !SLUG_RE.test(entry.agent.trim())) {
+      return err(slug, 'agent must be a valid non-empty agent slug');
+    }
+    agent = entry.agent.trim();
+  }
+
+  const metrics: GitGoalMetricSpec[] = [];
+  if (entry.metrics !== undefined && entry.metrics !== null) {
+    if (!Array.isArray(entry.metrics)) return err(slug, 'metrics must be a list');
+    const seenNames = new Set<string>();
+    for (let metricIndex = 0; metricIndex < entry.metrics.length; metricIndex += 1) {
+      const metric = entry.metrics[metricIndex];
+      if (!isPlainObject(metric)) return err(slug, `metrics[${metricIndex}] must be an object`);
+      const name = typeof metric.name === 'string' ? metric.name.trim() : '';
+      if (!name) return err(slug, `metrics[${metricIndex}].name is required and may not be empty`);
+      if (seenNames.has(name)) return err(slug, `duplicate metric name "${name}"`);
+      seenNames.add(name);
+      const direction = typeof metric.direction === 'string' ? metric.direction.trim() : '';
+      if (direction !== 'increase' && direction !== 'decrease') {
+        return err(slug, `metrics[${metricIndex}].direction must be "increase" or "decrease"`);
+      }
+      if (
+        metric.target !== undefined &&
+        (typeof metric.target !== 'number' || !Number.isFinite(metric.target))
+      ) {
+        return err(slug, `metrics[${metricIndex}].target must be a number`);
+      }
+      if (metric.unit !== undefined && (typeof metric.unit !== 'string' || !metric.unit.trim())) {
+        return err(slug, `metrics[${metricIndex}].unit must be a non-empty string`);
+      }
+      metrics.push({
+        name,
+        direction,
+        target: typeof metric.target === 'number' ? metric.target : null,
+        unit: typeof metric.unit === 'string' ? metric.unit.trim() : null,
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    spec: {
+      slug,
+      path: `${filename}#goals.${slug}`,
+      title,
+      doneWhen,
+      status: status as GitGoalStatus,
+      pushCron,
+      timezone,
+      agent,
+      metrics,
+    },
+  };
 }
 
 /**

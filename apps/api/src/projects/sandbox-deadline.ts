@@ -53,6 +53,7 @@ export {
   idleGraceMs,
   isPreviewUseObservation,
   isSandboxAuthored,
+  isSessionAgentLoopMutationRequest,
   isTerminalTurnEnd,
   isTurnStartRequest,
   isWarmPoolBox,

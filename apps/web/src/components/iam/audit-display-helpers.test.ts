@@ -75,6 +75,12 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
       'Streamed session turn',
     );
+    expect(describeAuditAction(`POST /v1/projects/${UID}/goals/latency/push`).title).toBe(
+      'Pushed project goal',
+    );
+    expect(describeAuditAction(`POST /v1/projects/${UID}/tasks/${UID2}/done`).title).toBe(
+      'Completed project task',
+    );
     expect(
       describeAuditAction(`PUT /v1/projects/${UID}/secrets/ANTHROPIC_API_KEY/strategy`).title,
     ).toBe('Updated secret delivery strategy');

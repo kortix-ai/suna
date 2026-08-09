@@ -160,10 +160,17 @@ export async function deductForLlmUsage(opts: {
   usageEventId?: string | null;
   upstreamCostUsd?: number | null;
   markup?: number | null;
+  idempotencyKey?: string;
 }) {
   if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
   const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
-  const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
+  const result = await deductCredits(
+    opts.accountId,
+    opts.costUsd,
+    description,
+    'llm_debit',
+    opts.idempotencyKey,
+  );
   if (
     result.success &&
     result.transactionId &&
@@ -248,9 +255,11 @@ export async function grantCredits(
   description: string,
   isExpiring = true,
   stripeEventId?: string,
+  explicitIdempotencyKey?: string,
 ) {
   const supabase = getSupabase();
-  const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
+  const idempotencyKey =
+    explicitIdempotencyKey ?? (stripeEventId ? `grant:${accountId}:${stripeEventId}` : null);
 
   const { data, error } = await supabase.rpc('atomic_add_credits', {
     p_account_id: accountId,
@@ -265,6 +274,12 @@ export async function grantCredits(
 
   if (error) {
     console.error('[Credits] Grant RPC error:', error);
+
+    // A response can be lost after PostgreSQL commits. The request-scoped LLM
+    // key makes a retry safe inside atomic_add_credits. Do not run the legacy
+    // read/insert/update fallback here: it is outside one transaction and could
+    // apply a committed refund a second time.
+    if (explicitIdempotencyKey) throw error;
 
     const account = await getCreditAccount(accountId);
     const currentBalance = account ? Number(account.balance) : 0;

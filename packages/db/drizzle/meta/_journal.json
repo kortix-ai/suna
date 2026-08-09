@@ -316,6 +316,104 @@
       "when": 1786196649694,
       "tag": "20260808134409_centralized_audit_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786196649695,
+      "tag": "20260806225037_add_project_generated_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786196649696,
+      "tag": "20260807002636_fast_lady_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786196649697,
+      "tag": "20260807011838_add_task_no_progress_settlement_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786196649698,
+      "tag": "20260807013057_flaky_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786196649699,
+      "tag": "20260807013744_usage_event_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786196649700,
+      "tag": "20260807031938_add_task_worker_platform_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1786196649701,
+      "tag": "20260807032447_claim_covers_liveness",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786196649702,
+      "tag": "20260807032927_task_git_write_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786196649703,
+      "tag": "20260807033625_task_git_write_requires_doing_worker",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786196649704,
+      "tag": "20260807040708_terminal_task_live_fence_invariant",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1786196649705,
+      "tag": "20260807051915_task_git_write_confirmed_settlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1786196649706,
+      "tag": "20260807053554_goal_objective_health_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1786196649707,
+      "tag": "20260807071000_final_autonomy_audit_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1786196649708,
+      "tag": "20260807071001_goal_evaluation_fired_index",
+      "breakpoints": true
     }
   ]
 }

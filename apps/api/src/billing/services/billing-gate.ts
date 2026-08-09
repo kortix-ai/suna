@@ -94,6 +94,7 @@ export class BillingGateError extends HTTPException {
 
 export async function checkBillingActive(
   accountId: string,
+  requestId?: string,
 ): Promise<BillingGateOk | BillingGateBlocked> {
   // Self-hosted / billing-disabled deploys treat every account as billing-active.
   // No subscription, no credit balance, no 402 — the entire wallet pipeline is
@@ -162,6 +163,7 @@ export async function checkBillingActive(
       MINIMUM_CREDIT_FOR_RUN,
       'LLM gateway admission hold',
       'llm_debit',
+      requestId ? `llm-gateway:${accountId}:${requestId}:hold` : undefined,
     );
     return { ok: true, holdUsd: MINIMUM_CREDIT_FOR_RUN };
   } catch {
@@ -245,8 +247,11 @@ function blockedResult(
       };
 }
 
-export async function assertBillingActive(accountId: string): Promise<BillingGateOk> {
-  const result = await checkBillingActive(accountId);
+export async function assertBillingActive(
+  accountId: string,
+  requestId?: string,
+): Promise<BillingGateOk> {
+  const result = await checkBillingActive(accountId, requestId);
   if (result.ok) return result;
   throw new BillingGateError(result.reason, result.balance, result.message, accountId, {
     billingModel: result.billingModel,

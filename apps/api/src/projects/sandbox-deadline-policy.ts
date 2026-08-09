@@ -193,19 +193,34 @@ const AGENT_PORT = 8000;
  * client uses prompt_async), and widening it would change that module's proxy
  * attempt-timeout behaviour.
  */
-const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
+const TURN_START = [
+  /^\/session\/[^/?#]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/,
+  /^\/api\/session\/[^/?#]+\/(?:prompt|compact)(?:$|[/?#])/,
+] as const;
+const SESSION_AGENT_LOOP_MUTATION = /^\/(?:api\/)?session(?:$|[/?#])/;
+
+function normalizedAgentPath(port: number, path: string): string | null {
+  if (port !== AGENT_PORT && !isOpencodePort(port)) return null;
+  return path.replace(/^\/proxy\/\d+(?=\/)/, '');
+}
 
 /** Does this proxied request START a turn? Used by the proxy to observe a run
  *  beginning without trusting anything the sandbox says about itself. */
 export function isTurnStartRequest(port: number, method: string, path: string): boolean {
   if (method.toUpperCase() !== 'POST') return false;
-  // Either half of the opencode pair counts. A verified reload swaps which one
-  // is live, and letting the other through here would let the box's own agent
-  // traffic read as a human using a preview — extending the deadline, which is
-  // exactly the self-renewal bounded lifetimes exist to prevent.
-  if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
-  const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
-  return TURN_START.test(p);
+  const normalized = normalizedAgentPath(port, path);
+  return normalized !== null && TURN_START.some((pattern) => pattern.test(normalized));
+}
+
+/** Fail closed for unrecognized mutating OpenCode session-loop routes. */
+export function isSessionAgentLoopMutationRequest(
+  port: number,
+  method: string,
+  path: string,
+): boolean {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) return false;
+  const normalized = normalizedAgentPath(port, path);
+  return normalized !== null && SESSION_AGENT_LOOP_MUTATION.test(normalized);
 }
 
 /**

@@ -1,0 +1,200 @@
+import { beforeEach, expect, mock, test } from 'bun:test';
+import { configureKortix } from '../../http/config';
+import {
+  blockProjectTask,
+  claimProjectTask,
+  completeProjectTask,
+  createProjectTask,
+  getProjectTask,
+  listProjectTasks,
+  recordProjectTaskProgress,
+  registerProjectTaskWorker,
+  settleNoProgressProjectTask,
+} from './tasks';
+
+let calls: Array<{ url: string; method: string; body?: unknown }> = [];
+
+beforeEach(() => {
+  calls = [];
+  globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
+    calls.push({
+      url: String(url),
+      method: options.method ?? 'GET',
+      body: typeof options.body === 'string' ? JSON.parse(options.body) : undefined,
+    });
+    return new Response(JSON.stringify({ tasks: [], task: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+});
+
+configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+const last = () => calls[calls.length - 1];
+
+test('task reads bind identifiers and encode list filters', async () => {
+  await listProjectTasks('project-1', {
+    goal_slug: 'ship kernel',
+    statuses: ['todo', 'doing'],
+    limit: 25,
+  });
+  expect(last().url).toBe(
+    'http://test.local/projects/project-1/tasks?goal_slug=ship+kernel&status=todo&status=doing&limit=25',
+  );
+
+  await getProjectTask('project-1', 'task/one');
+  expect(last().url).toBe('http://test.local/projects/project-1/tasks/task%2Fone');
+});
+
+test('task creation carries the idempotent origin fingerprint', async () => {
+  await createProjectTask('project-1', {
+    goal_slug: 'ship-kernel',
+    title: 'Verify API',
+    origin: 'meta',
+    origin_fingerprint: 'ship-kernel:verify-api:v1',
+    blocked_by: [],
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks',
+    method: 'POST',
+    body: {
+      goal_slug: 'ship-kernel',
+      title: 'Verify API',
+      origin: 'meta',
+      origin_fingerprint: 'ship-kernel:verify-api:v1',
+      blocked_by: [],
+    },
+  });
+});
+
+test('task claim and terminal transitions carry session ownership and evidence', async () => {
+  await claimProjectTask('project-1', 'task-1', {
+    session_id: 'session-1',
+    lease_seconds: 900,
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/claim',
+    method: 'POST',
+    body: { session_id: 'session-1', lease_seconds: 900 },
+  });
+
+  await completeProjectTask('project-1', 'task-1', {
+    session_id: 'session-1',
+    evidence: [{ ref: 'ke2e://run/123', summary: '14 flows passed' }],
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/done',
+    method: 'POST',
+    body: {
+      session_id: 'session-1',
+      evidence: [{ ref: 'ke2e://run/123', summary: '14 flows passed' }],
+    },
+  });
+
+  await blockProjectTask('project-1', 'task-2', {
+    session_id: 'session-2',
+    blocker: 'Human approval is required',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-2/block',
+    method: 'POST',
+    body: { session_id: 'session-2', blocker: 'Human approval is required' },
+  });
+});
+
+test('worker registration, progress, and no-progress use separate durable contracts', async () => {
+  await registerProjectTaskWorker('project-1', 'task-1', {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    prompt: 'Implement and verify the bounded task.',
+    contract: {
+      max_wall_seconds: 900,
+      max_tokens: 50_000,
+      max_cost_usd: 2.5,
+      max_iterations: 8,
+    },
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/worker',
+    method: 'POST',
+    body: expect.objectContaining({
+      worker_session_id: 'worker-session',
+      prompt: 'Implement and verify the bounded task.',
+    }),
+  });
+
+  await recordProjectTaskProgress('project-1', 'task-1', {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    settlement_id: '11111111-1111-4111-8111-111111111111',
+    ref: 'commit:abc123',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/progress',
+    method: 'POST',
+    body: {
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      ref: 'commit:abc123',
+    },
+  });
+
+  await settleNoProgressProjectTask('project-1', 'task-1', {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    settlement_id: '33333333-3333-4333-8333-333333333333',
+    reason: 'Worker settled without verifier evidence or a delivered blocker',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/no-progress',
+    method: 'POST',
+    body: {
+      session_id: 'coordinator-session',
+      worker_session_id: 'worker-session',
+      settlement_id: '33333333-3333-4333-8333-333333333333',
+      reason: 'Worker settled without verifier evidence or a delivered blocker',
+    },
+  });
+});
+
+test('worker registration accepts the exact platform ceilings', async () => {
+  const input = {
+    session_id: 'coordinator-session',
+    worker_session_id: 'worker-session',
+    prompt: 'Execute the bounded task.',
+    contract: {
+      max_wall_seconds: 3_600,
+      max_tokens: 1_000_000,
+      max_cost_usd: 25,
+      max_iterations: 128,
+    },
+  };
+  await registerProjectTaskWorker('project-1', 'task-1', input);
+  expect(last().body).toEqual(input);
+});
+
+test.each([
+  ['max_wall_seconds', 3_601, 'max_wall_seconds must be between 1 and 3600'],
+  ['max_tokens', 1_000_001, 'max_tokens must be between 1 and 1000000'],
+  ['max_cost_usd', 25.000_001, 'max_cost_usd must be between 0 (exclusive) and 25'],
+  ['max_iterations', 129, 'max_iterations must be between 1 and 128'],
+] as const)(
+  'worker registration rejects %s above the platform ceiling',
+  async (field, value, message) => {
+    await expect(
+      registerProjectTaskWorker('project-1', 'task-1', {
+        session_id: 'coordinator-session',
+        worker_session_id: 'worker-session',
+        prompt: 'Execute the bounded task.',
+        contract: {
+          max_wall_seconds: 3_600,
+          max_tokens: 1_000_000,
+          max_cost_usd: 25,
+          max_iterations: 128,
+          [field]: value,
+        },
+      }),
+    ).rejects.toThrow(message);
+    expect(calls).toHaveLength(0);
+  },
+);

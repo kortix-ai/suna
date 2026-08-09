@@ -83,6 +83,7 @@ export {
   sunaAccountMigrations,
   kortixApiKeys,
   accountTokens,
+  TASK_WORKER_PLATFORM_CEILINGS,
   workerLeaderLease,
   // Relations
   projectsRelations,

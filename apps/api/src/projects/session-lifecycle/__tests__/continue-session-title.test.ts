@@ -14,6 +14,11 @@ let sessionRow: Record<string, unknown> | null = null;
 let titleCalls: Array<Record<string, unknown>> = [];
 let actor: string | null = 'automation-user-1';
 
+mock.module('../../task-worker-prompt-admission', () => ({
+  projectTaskWorkerPromptAdmission: async () => ({ state: 'not_worker' }),
+  taskWorkerPromptIsAllowed: () => true,
+}));
+
 mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({
@@ -44,6 +49,9 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
   forwardToSandbox: async () => {
     throw new Error('forwardToSandbox: not expected in this test');
   },
+  preview: async () => {
+    throw new Error('preview: not expected in this test');
+  },
 }));
 mock.module('../../lib/sessions', () => ({
   createProjectSession: async () => {
@@ -51,6 +59,9 @@ mock.module('../../lib/sessions', () => ({
   },
 }));
 mock.module('../../routes/shared', () => ({
+  allocateRuntimeOnOpen: async () => {
+    throw new Error('allocateRuntimeOnOpen: not expected in continue-session tests');
+  },
   openSession: async () => {
     throw new Error('openSession: reached — the title hook already fired');
   },
@@ -61,7 +72,19 @@ mock.module('../actor', () => ({
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+mock.module('../stop', () => ({
+  stopSession: async () => {
+    throw new Error('not expected in this test');
+  },
+}));
 mock.module('../store', () => ({
+  LIFECYCLE_COMMAND_HEARTBEAT_MS: 60_000,
+  lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
+  renewLifecycleCommandLease: async () => true,
+  repairLegacyLifecycleMessageIds: async () => 0,
+  deferLifecycleCommand: async () => {
+    throw new Error('not expected in continue-session tests');
+  },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected in this test');
   },

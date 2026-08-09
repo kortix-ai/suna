@@ -307,6 +307,143 @@ timezone?, secret_env? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
 
+#### `p.goals` — authored goals and metric observations
+
+Goals come from the project's default-branch v2 manifest. Observation writes
+create PostgreSQL time-series state. They do not edit the manifest.
+
+| method | what |
+| --- | --- |
+| `list()` | Return `{ goals, errors }`, including per-entry manifest parse diagnostics. |
+| `get(slug)` | Return one authored goal. |
+| `health(slug)` | Return deterministic aggregate and per-metric health with evaluation identity. |
+| `push(slug)` | Request the goal's generated trigger. Returns `evaluation_id`, `evaluation_state`, and delivery state. |
+| `observations.record(slug, input)` | Record `{ evaluation_id, metric, value, source, observed_at? }`. Session attribution comes from authentication. |
+| `observations.list(slug, options)` | List one metric by `{ metric, from?, to?, limit? }`. |
+
+`observed_at` defaults to now. Observation-list `to` defaults to now. Its
+`from` defaults to 30 days before `to`. `limit` is 1–10,000.
+
+An observation is an authenticated metric assertion. It never completes a goal.
+The SDK has no goal-completion method. Goal status changes only through the
+reviewed `kortix.yaml` declaration.
+
+```ts
+const project = kortix.project(projectId);
+const { goals, errors } = await project.goals.list();
+const pushed = await project.goals.push('reduce-api-latency', { idempotencyKey: crypto.randomUUID() });
+const { observation } = await project.goals.observations.record('reduce-api-latency', {
+  evaluation_id: pushed.evaluation_id,
+  metric: 'api_p95_ms',
+  value: 184,
+  source: 'prometheus:api-p95',
+});
+const { health } = await project.goals.health('reduce-api-latency');
+```
+
+Each declared metric is `unmeasurable` until an evaluation-bound observation
+exists. Three consecutive fired evaluations with the same finite value produce
+`stalled`. Other observed metrics produce `measuring`. The aggregate prioritizes
+`stalled`, then `unmeasurable`, then `measuring`. `desired_status` is copied from
+Git and never inferred from health.
+
+A `ProjectGoal` contains `slug`, `path`, `title`, `done_when`, `status`,
+`push_cron`, `timezone`, `agent`, and `metrics`. Status is `active`, `achieved`,
+`paused`, or `abandoned`. Metric direction is `increase` or `decrease`.
+
+#### `p.tasks` — generated task state
+
+| method | what |
+| --- | --- |
+| `list(options?)` | List tasks by `goal_slug?`, `statuses?`, and `limit?`. |
+| `get(taskId)` | Return one project task. |
+| `create(input)` | Create a task, or reuse the matching `origin_fingerprint`. Returns `{ task, created }`. |
+| `claim(taskId, input)` | Claim ready work with `{ session_id, lease_seconds? }` and set its status to `doing`. All dependencies must be `done`. The lease defaults to 900 seconds. |
+| `registerWorker(taskId, input)` | Bind one spawned worker with `{ session_id, worker_session_id, prompt, contract }`. The API persists the immutable bounds and initial prompt atomically. |
+| `recordProgress(taskId, input)` | Persist `{ session_id, worker_session_id, settlement_id, ref }` for the matching live worker binding. |
+| `settleNoProgress(taskId, input)` | Submit `{ session_id, worker_session_id, settlement_id, reason }`. The first distinct settlement queues one continuation. The second or an exhausted bound blocks and escalates. |
+| `complete(taskId, input)` | Complete with `{ session_id, evidence: [{ ref, summary? }] }`. Evidence cannot be empty. A liveness-bound task must cite its server-recorded `last_progress_ref`. |
+| `block(taskId, input)` | Block with `{ session_id, blocker }`. |
+
+`create(input)` requires `goal_slug`, `title`, and `origin`. Optional fields are
+`parent_id`, `body`, `status`, `priority`, `assignee_agent`,
+`assignee_user_id`, `blocked_by`, and `origin_fingerprint`. A creation status
+can be `backlog`, `todo`, `doing`, `review`, or `cancelled`. The two assignee
+fields are mutually exclusive.
+
+```ts
+const { task, created } = await project.tasks.create({
+  goal_slug: 'reduce-api-latency',
+  title: 'Profile the slowest endpoint',
+  status: 'todo',
+  priority: 10,
+  origin: 'session',
+  origin_fingerprint: 'profile:slowest-endpoint:v1',
+});
+
+await project.tasks.claim(task.task_id, {
+  session_id: coordinatorSessionId,
+  lease_seconds: 900,
+});
+const registration = await project.tasks.registerWorker(task.task_id, {
+  session_id: coordinatorSessionId,
+  worker_session_id: workerSessionId,
+  prompt: 'Profile the endpoint and return a verifier reference.',
+  contract: {
+    max_wall_seconds: 900,
+    max_tokens: 50_000,
+    max_cost_usd: 2.5,
+    max_iterations: 8,
+  },
+});
+console.log(registration.worker.state); // "queued" or "drained"
+
+The platform ceilings are `max_wall_seconds <= 3,600`, `max_tokens <= 1,000,000`,
+`max_cost_usd <= 25`, and `max_iterations <= 128`. A coordinator, including
+meta, can select smaller positive bounds. It cannot widen these server-owned
+ceilings.
+
+await project.tasks.recordProgress(task.task_id, {
+  session_id: coordinatorSessionId,
+  worker_session_id: workerSessionId,
+  settlement_id: registration.task.liveness_turn_id!,
+  ref: 'profile-report://runs/4f34a2d',
+});
+await project.tasks.complete(task.task_id, {
+  session_id: coordinatorSessionId,
+  evidence: [{
+    ref: 'profile-report://runs/4f34a2d',
+    summary: 'The independent profile confirms the result.',
+  }],
+});
+```
+
+If the worker settles without evidence or a blocker, call
+`settleNoProgress()` with the current server-owned `task.liveness_turn_id`. Retrying the same ID returns
+the same decision. The response contains `action`, `command_id`,
+`measured_usage`, and the updated task.
+
+A `ProjectTask` contains its project and goal IDs, hierarchy (`parent_id`),
+dependencies (`blocked_by`), assignee, status, priority, origin, claim lease,
+worker contract, current `liveness_turn_id`, progress, settlement, escalation, result, and timestamps.
+`parent_id` is structure. Only `blocked_by` declares a dependency. The API
+rejects a claim held by another live session with `409`.
+
+For a liveness-bound task, the server enforces evidence provenance and
+transition order. The worker is a distinct child of the coordinator.
+`recordProgress()` must match that live binding. Progress and no-progress share one settlement ledger; the same settlement id cannot record both outcomes. `complete()` must cite the
+persisted `last_progress_ref`. The terminal result includes server-owned
+coordinator, worker, progress-ref, and timestamp provenance. A general task
+without a liveness worker preserves the original contract: `complete()` is the
+explicit evidence transition, and its evidence array cannot be empty.
+
+The generic API does not dereference or evaluate arbitrary evidence refs. Their
+content remains an authenticated caller assertion. Goal observation `source`
+and `value` fields have the same boundary. This SDK has no goal-completion route.
+A goal becomes `achieved` only through its reviewed Git declaration, not from an
+observation or a model response. Independent domain verifier adapters that fetch
+external systems remain outside this generic SDK contract.
+
 #### `p.marketplace` / `p.registry` — installed items
 
 Installs a catalog item's files onto the project's default branch.

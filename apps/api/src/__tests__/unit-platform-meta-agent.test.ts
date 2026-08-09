@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
+  platformMetaAgentEnabledForSession,
   projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
@@ -45,7 +47,7 @@ describe('platform meta agent', () => {
       scope: {
         env: [],
         connectors: [],
-        kortix_cli: 'all',
+        kortix_cli: expect.any(Array),
       },
     });
     expect(config.open_code_default_agent).toBe('meta');
@@ -58,7 +60,7 @@ describe('platform meta agent', () => {
           description: 'Starts specialized Kortix sessions and coordinates their work.',
           mode: 'primary',
           prompt:
-            'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',
+            'Follow /workspace/AGENTS.md. Coordinate through the Kortix CLI. You are the only coordinator. Claim each task, spawn one specialized worker, then register its immutable bounds and initial prompt with `kortix tasks worker` before waiting. A `queued` worker state or empty new session means prompt delivery is pending, not no-progress. For each settled turn, submit exactly one outcome with its stable settlement id: evidence through `kortix tasks progress --settlement-id`, or no evidence through `kortix tasks no-progress --settlement-id`. Reuse an id only to retry the same outcome; the server permits one continuation, then blocks and escalates. Never ask a worker to spawn another session.',
         },
       },
     });
@@ -70,13 +72,45 @@ describe('platform meta agent', () => {
     expect(() => resolvePlatformMetaSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
   });
 
-  test('grants the coordinator every project action without secrets or connectors', () => {
+  test('denies merge authority by construction while retaining other project actions', () => {
+    const expectedActions = [
+      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_READ,
+      PROJECT_ACTIONS.PROJECT_GOAL_WRITE,
+      PROJECT_ACTIONS.PROJECT_TASK_READ,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+      PROJECT_ACTIONS.PROJECT_CR_OPEN,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+      PROJECT_ACTIONS.PROJECT_FILE_READ,
+      PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+    ];
+
     expect(platformMetaAgentGrant()).toEqual({
       agent: 'meta',
-      kortixCli: 'all',
+      kortixCli: expectedActions,
       connectors: [],
       env: [],
     });
+    expect(platformMetaAgentGrant().kortixCli).not.toBe('all');
+    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_WRITE);
+    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    expect(
+      addPlatformMetaAgent({
+        agents: [],
+        commands: [],
+        skills: [],
+        is_kortix_repo: true,
+        signals: {},
+        manifest_raw: null,
+        manifest: {},
+        manifest_version: resolveManifestVerdict({ raw: null, format: 'yaml', path: null }),
+        env: { required: [], optional: [] },
+        open_code_raw: null,
+        open_code_default_agent: null,
+        agent_discovery: 'opencode',
+      }).agents[0]?.scope?.kortix_cli,
+    ).toEqual(expectedActions);
   });
 
   test('is gated on the meta_agent feature flag, default off', () => {
@@ -85,5 +119,20 @@ describe('platform meta agent', () => {
     expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);
     expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
     expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
+  });
+
+  test('enables meta only for a trusted generated goal push when the project flag is off', () => {
+    expect(platformMetaAgentEnabledForSession(null, 'meta', true)).toBe(true);
+    expect(
+      platformMetaAgentEnabledForSession({ experimental: { meta_agent: false } }, 'meta', true),
+    ).toBe(true);
+  });
+
+  test('keeps arbitrary and forged meta requests gated off by default', () => {
+    expect(platformMetaAgentEnabledForSession(null, 'meta', false)).toBe(false);
+    expect(platformMetaAgentEnabledForSession(null, 'worker', true)).toBe(false);
+    expect(
+      platformMetaAgentEnabledForSession({ experimental: { meta_agent: true } }, 'meta', false),
+    ).toBe(true);
   });
 });
