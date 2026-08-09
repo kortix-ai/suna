@@ -18,14 +18,17 @@
  *   on that file); this tab does NOT carry the Session-panel or Layout
  *   sections from that file — those belong to the session-panel experience,
  *   not user preferences, and have no home in this task's six-section list.
- * - `sounds-tab.tsx`, `notifications-tab.tsx`, `keyboard-shortcuts-tab.tsx`,
- *   `language-switcher.tsx` — no exported pieces worth reusing (each is a
- *   single self-contained component with no sub-parts split out), so their
- *   JSX bodies are re-implemented here against `SettingsSectionHeader`
- *   instead of the old bare `<label>` headers. This task's report documents
- *   this as the precise duplication: the markup shape of these four
- *   sections, not any shared logic (every store call is a live import, not a
- *   copy).
+ * - `notifications-tab.tsx` — `NotificationToggle` is exported from there and
+ *   reused directly here (same treatment as `WallpaperCard` above; only the
+ *   `export` keyword and an `idPrefix` prop were added, both no-ops for
+ *   `NotificationsTab` itself — see that file's comment on the prop).
+ * - `sounds-tab.tsx`, `keyboard-shortcuts-tab.tsx`, `language-switcher.tsx`
+ *   — no exported pieces worth reusing (each is a single self-contained
+ *   component with no sub-parts split out), so their JSX bodies are
+ *   re-implemented here against `SettingsSectionHeader` instead of the old
+ *   bare `<label>` headers. This task's report documents this as the
+ *   precise duplication: the markup shape of these three sections, not any
+ *   shared logic (every store call is a live import, not a copy).
  *
  * None of the five source files call `useTranslations` results into this
  * tab — like `ProfileTab` (Task 7), copy here is plain English, matching the
@@ -69,6 +72,7 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
+import { NotificationToggle } from '@/features/accounts/settings/notifications-tab';
 import { THEME_OPTIONS } from '@/features/layout/user-menu';
 import { useLanguage } from '@/hooks/use-language';
 import { locales, type Locale } from '@/i18n/config';
@@ -183,42 +187,6 @@ function shortcutList(modLabel: string): { label: string; keys: string }[] {
     { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
     { label: 'Toggle session action panel', keys: `${modLabel}+I` },
   ];
-}
-
-function NotificationToggle({
-  icon: Icon,
-  label,
-  description,
-  enabled,
-  onToggle,
-  disabled,
-}: {
-  icon: PhosphorIcon;
-  label: string;
-  description: string;
-  enabled: boolean;
-  onToggle: (value: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <div className="flex flex-1 items-start gap-3">
-        <Icon className="text-muted-foreground mt-1 size-4" />
-        <div className="flex-1 space-y-0.5">
-          <Label htmlFor={`pref-notif-${label}`} className="cursor-pointer text-sm font-medium">
-            {label}
-          </Label>
-          <p className="text-muted-foreground text-xs">{description}</p>
-        </div>
-      </div>
-      <Switch
-        id={`pref-notif-${label}`}
-        checked={enabled}
-        onCheckedChange={onToggle}
-        disabled={disabled}
-      />
-    </div>
-  );
 }
 
 export interface PreferencesTabViewProps {
@@ -446,6 +414,7 @@ export function PreferencesTabView({
                 }
                 enabled={notificationPreferences.enabled}
                 onToggle={onToggleNotificationsEnabled}
+                idPrefix="pref-notif-"
               />
             </div>
 
@@ -464,6 +433,7 @@ export function PreferencesTabView({
                         description={toggle.description}
                         enabled={notificationPreferences[toggle.key] as boolean}
                         onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
+                        idPrefix="pref-notif-"
                       />
                     ))}
                   </div>
@@ -480,6 +450,7 @@ export function PreferencesTabView({
                         description={toggle.description}
                         enabled={notificationPreferences[toggle.key] as boolean}
                         onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
+                        idPrefix="pref-notif-"
                       />
                     ))}
                   </div>

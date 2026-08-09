@@ -27,28 +27,46 @@ interface NotificationToggleProps {
   enabled: boolean;
   onToggle: (value: boolean) => void;
   disabled?: boolean;
+  /**
+   * Prefixes the generated `id`/`htmlFor` pair. Defaults to `''` — this
+   * component's original behavior, `id={label}` — so `NotificationsTab`
+   * below (which still backs the live legacy `SidePanelUserSettings`) is
+   * byte-identical to before this prop was added. `features/workspace/
+   * settings/tabs/preferences-tab.tsx` passes `pref-notif-` so its copy of
+   * this row can mount in the same document as this one (both are reachable
+   * from the same account, e.g. one open in a background tab) without two
+   * elements sharing one DOM id.
+   */
+  idPrefix?: string;
 }
 
-function NotificationToggle({
+/** Exported so `features/workspace/settings/tabs/preferences-tab.tsx` can
+ *  reuse this row instead of re-implementing it — see that file's header
+ *  for why this tab still imports pieces of this one rather than
+ *  duplicating them, mirroring the `WallpaperCard` export in
+ *  `appearance-tab.tsx`. */
+export function NotificationToggle({
   icon: Icon,
   label,
   description,
   enabled,
   onToggle,
   disabled,
+  idPrefix = '',
 }: NotificationToggleProps) {
+  const id = `${idPrefix}${label}`;
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-3">
       <div className="flex flex-1 items-start gap-3">
         <Icon className="text-muted-foreground mt-1 size-4" />
         <div className="flex-1 space-y-0.5">
-          <Label htmlFor={label} className="cursor-pointer text-sm font-medium">
+          <Label htmlFor={id} className="cursor-pointer text-sm font-medium">
             {label}
           </Label>
           <p className="text-muted-foreground text-xs">{description}</p>
         </div>
       </div>
-      <Switch id={label} checked={enabled} onCheckedChange={onToggle} disabled={disabled} />
+      <Switch id={id} checked={enabled} onCheckedChange={onToggle} disabled={disabled} />
     </div>
   );
 }
