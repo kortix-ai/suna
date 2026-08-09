@@ -80,7 +80,7 @@ describe('local test runner contract', () => {
     expect(source).toContain('--parallel="$api_test_workers"');
   });
 
-  it('runs process-heavy CLI and sandbox-agent test files in parallel', () => {
+  it('keeps process-heavy package tests on their proven concurrency settings', () => {
     const cliPackage = JSON.parse(readFileSync(resolve(root, 'apps/cli/package.json'), 'utf8'));
     const agentPackage = JSON.parse(
       readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/package.json'), 'utf8'),
@@ -88,7 +88,7 @@ describe('local test runner contract', () => {
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
     expect(cliPackage.scripts.test).toContain('bun test --isolate --parallel=4');
-    expect(agentPackage.scripts.test).toBe('bun test --parallel=4');
+    expect(agentPackage.scripts.test).toBe('bun test');
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
 
