@@ -117,10 +117,20 @@
  * invites / access requests sections below it.
  */
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
+// Reused, not reimplemented — see `MembersTabInner`'s "Invite deep-link
+// intent" comment below for why this stays imported from `members-view.tsx`
+// rather than moved: it's an exported pure function with its own dedicated,
+// already-passing test coverage (`members-view.test.ts`'s "reviewer-found
+// sequence" — the JAY-530 stale-intent fix), and `members-view.tsx` staying
+// unreachable as a mounted React tree is fine per the coordinator (a
+// separate decision from deleting it); importing one exported pure helper
+// from it doesn't change that.
+import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
 
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
@@ -678,6 +688,16 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
 function MembersTabInner({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  // Invite deep-link intent (e.g. Cmd+K "Invite members" —
+  // `command-palette.tsx:1146`, `openSettings('members', { membersTab:
+  // 'invite' })`). `membersTab` is a ONE-SHOT instruction, not persistent
+  // state — see `consumeMembersTabIntent`'s doc comment in
+  // `members-view.tsx`, and the JAY-530 stale-intent fix it documents.
+  // Consumed and cleared together below (`useEffect`), same shape
+  // `MembersView` used before this task's rewire unmounted it — that
+  // producer (`command-palette.tsx:1146`) never stopped firing, only the
+  // consumer went away, which is the bug this wiring restores.
+  const { membersTab: requestedMembersTab, activeTab, navigate } = useSettingsNav();
 
   // project.members.manage — the single leaf every write control on this
   // page gates on. See this file's header comment.
@@ -774,6 +794,26 @@ function MembersTabInner({ projectId }: { projectId: string }) {
   }
 
   const [inviteOpen, setInviteOpen] = useState(false);
+
+  // Consume-and-clear in one shot (JAY-530 shape — see the comment above
+  // `requestedMembersTab`). Only ever runs while THIS tab is the active
+  // one: `MembersTabInner` is only ever constructed by `MembersTab`, which
+  // `SettingsTabPane` (`settings-panel.tsx`) only renders past its own
+  // `if (!active) return null;` guard — confirmed by reading that gate
+  // directly, not assumed (there is no other call site: `grep -rn
+  // "<MembersTab\b" src` outside tests matches only
+  // `settings-panel.tsx`'s `case 'members'`). So this effect neither fires
+  // nor opens the dialog for an inactive pane; it fires once per activation
+  // (and on a `membersTab`/`activeTab`/`navigate` identity change while
+  // active), exactly mirroring `MembersView`'s own former effect.
+  useEffect(() => {
+    const consumed = consumeMembersTabIntent({
+      membersTab: requestedMembersTab,
+      activeTab,
+      navigate,
+    });
+    if (consumed) setInviteOpen(true);
+  }, [requestedMembersTab, activeTab, navigate]);
 
   const [pendingInviteBusyIds, setPendingInviteBusyIds] = useState<Set<string>>(() => new Set());
   const markInvitePending = (id: string) => setPendingInviteBusyIds((prev) => new Set(prev).add(id));
