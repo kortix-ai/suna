@@ -1,26 +1,15 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { Command } from '@kortix/sdk/react';
-import { ReactRenderer } from '@tiptap/react';
-import { PluginKey } from '@tiptap/pm/state';
-import type { SuggestionOptions } from '@tiptap/suggestion';
 
-import type { MenuController } from '../editor/suggestion';
-import { baseSuggestion } from '../editor/suggestion';
-import type { SlashAction } from './slash-actions';
-import { buildSlashSections } from './slash-items';
 import type { SlashRow, SlashSection } from './slash-items';
-import { clampSelection, moveSelection } from './menu-selection';
-
-export const SLASH_PLUGIN_KEY = new PluginKey('slashSuggestion');
 
 /**
  * Purely presentational, same as `MentionMenu`. Unlike the `@` menu there is
  * no async data source here (commands + actions are both already resolved by
- * the time `createSlashSuggestion` builds a row list), so there is no
- * "Host" wrapper component — the controller below computes `sections`
- * directly and hands them down as a prop.
+ * the time `createSlashSuggestion` — `slash-controller.ts` — builds a row
+ * list), so there is no "Host" wrapper component: the controller computes
+ * `sections` directly and hands them down as a prop.
  */
 export function SlashMenu({
   sections,
@@ -80,101 +69,4 @@ export function SlashMenu({
       </div>
     </div>
   );
-}
-
-export interface CreateSlashSuggestionOptions {
-  getCommands: () => Command[];
-  /** A real OpenCode command was picked. This STAGES it — mirrors the live
-   *  `handleSelectCommand` (session-chat-input.tsx:875-883): the host shows
-   *  an args input and waits for a submit, it does not run the command here. */
-  onSelectCommand?: (command: Command) => void;
-  /** A composer action was picked (switch-model, set-scope, ...). The host
-   *  owns what each action id opens or does — this callback is the only
-   *  handoff point. */
-  onSelectAction?: (action: SlashAction) => void;
-  /** Toggled true on open, false on exit — see composer-editor.tsx's
-   *  `suggestionActiveRef`. */
-  onActiveChange?: (active: boolean) => void;
-}
-
-/**
- * Builds the `/` slash Suggestion options. Registered through
- * `createSuggestionExtension` in composer-editor.tsx, exactly like the `@`
- * mention menu — the "one `@tiptap/suggestion` code path" both triggers run
- * through.
- */
-export function createSlashSuggestion(
-  opts: CreateSlashSuggestionOptions,
-): Omit<SuggestionOptions<never, SlashRow>, 'editor'> {
-  let renderer: ReactRenderer | null = null;
-  let unmount: (() => void) | null = null;
-  let selectedIndex = 0;
-  let rows: SlashRow[] = [];
-  let latestCommand: ((row: SlashRow) => void) | null = null;
-
-  const recompute = (query: string): SlashSection[] =>
-    buildSlashSections({ commands: opts.getCommands(), query });
-
-  const controller: MenuController<SlashRow> = {
-    onStart(props) {
-      const sections = recompute(props.query);
-      rows = sections.flatMap((s) => s.rows);
-      selectedIndex = 0;
-      latestCommand = props.command;
-      opts.onActiveChange?.(true);
-      renderer = new ReactRenderer(SlashMenu, {
-        editor: props.editor,
-        props: { sections, selectedIndex, onSelect: (row: SlashRow) => props.command(row) },
-      });
-      unmount = props.mount(renderer.element);
-    },
-    onUpdate(props) {
-      const sections = recompute(props.query);
-      rows = sections.flatMap((s) => s.rows);
-      selectedIndex = clampSelection(selectedIndex, rows.length);
-      latestCommand = props.command;
-      renderer?.updateProps({
-        sections,
-        selectedIndex,
-        onSelect: (row: SlashRow) => props.command(row),
-      });
-    },
-    onKeyDown({ event }) {
-      if (!rows.length) return false;
-      if (event.key === 'ArrowDown') {
-        selectedIndex = moveSelection(selectedIndex, 1, rows.length);
-        renderer?.updateProps({ selectedIndex });
-        return true;
-      }
-      if (event.key === 'ArrowUp') {
-        selectedIndex = moveSelection(selectedIndex, -1, rows.length);
-        renderer?.updateProps({ selectedIndex });
-        return true;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const row = rows[clampSelection(selectedIndex, rows.length)];
-        if (row) latestCommand?.(row);
-        return true;
-      }
-      return false;
-    },
-    onExit() {
-      opts.onActiveChange?.(false);
-      unmount?.();
-      renderer?.destroy();
-      renderer = null;
-      unmount = null;
-      latestCommand = null;
-      rows = [];
-    },
-  };
-
-  return {
-    ...baseSuggestion('/', SLASH_PLUGIN_KEY, controller),
-    command: ({ editor, range, props: row }) => {
-      editor.chain().focus().deleteRange(range).run();
-      if (row.type === 'command' && row.command) opts.onSelectCommand?.(row.command);
-      else if (row.type === 'action' && row.action) opts.onSelectAction?.(row.action);
-    },
-  };
 }

@@ -46,6 +46,24 @@ export interface MenuController<TSelected> {
  * `startOfLine: false` is the fix for `/` being stuck at position 0. The old
  * regex was `/^\/(\S*)$/`, which made a slash command after a newline
  * impossible.
+ *
+ * `minQueryLength: Infinity` — neither menu uses the plugin's own
+ * `items()`/`loading` machinery at all (both `items: () => []` above and
+ * `command`/`onUpdate` computing rows themselves), but the plugin runs it
+ * regardless of what `items()` returns: with the default `minQueryLength: 0`,
+ * `exceedsMinQueryLength` is always true, so every keystroke transition takes
+ * the async-fetch branch and dispatches the renderer TWICE (`loading: true`,
+ * then `loading: false` once the — trivially resolved — promise settles),
+ * on top of the ONE dispatch `onStart` already gets for free (verified
+ * against the installed package's `plugin/view.ts`, `dist/index.js:587-625`:
+ * `dispatchStateUpdate("started", ...)` at 588, then unconditionally re-enters
+ * the `willFetch` branch and dispatches "updated" again at 597, then a FINAL
+ * "updated" dispatch at 623 once the fetch settles — three renders for the
+ * opening keystroke, two for every keystroke after). `state.query.length >=
+ * Infinity` is never true, so `exceedsMinQueryLength` is always false, which
+ * takes the cheap synchronous branch (582-583) and skips both extra
+ * dispatches — exactly one render per keystroke, matching how many times the
+ * query actually changed.
  */
 export function baseSuggestion<TSelected>(
   char: string,
@@ -58,6 +76,7 @@ export function baseSuggestion<TSelected>(
     startOfLine: false,
     allowedPrefixes: [' ', '\n'],
     items: () => [],
+    minQueryLength: Infinity,
     render: () => ({
       onStart: (props) => controller.onStart(props),
       onUpdate: (props) => controller.onUpdate(props),

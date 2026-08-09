@@ -7,8 +7,8 @@ import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
-import { createMentionSuggestion } from '../menus/mention-menu';
-import { createSlashSuggestion } from '../menus/slash-menu';
+import { createMentionSuggestion } from '../menus/mention-controller';
+import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
@@ -56,13 +56,13 @@ export interface ComposerEditorProps {
    */
   onEmptyChange: (isEmpty: boolean) => void;
 
-  /** `@` mention menu data sources — see `menus/mention-menu.tsx`. */
+  /** `@` mention menu data sources — see `menus/mention-controller.ts`. */
   agents?: Agent[];
   sessions?: Session[];
   /** Excluded from the `@` session list — you can't mention the session you're in. */
   currentSessionId?: string;
 
-  /** `/` menu data + the two things a row selection can produce — see `menus/slash-menu.tsx`. */
+  /** `/` menu data + the two things a row selection can produce — see `menus/slash-controller.ts`. */
   commands?: Command[];
   /**
    * A real OpenCode command was picked from the `/` menu. This STAGES it —
@@ -240,12 +240,32 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
      * (verified against the installed `prosemirror-view`'s `someProp`:
      * `this._props` first, then `directPlugins`, then `state.plugins`) — so
      * without this the submit handler would always win the race and a
-     * `@`/`/` menu would never get a chance to consume Enter. Both
-     * suggestion controllers write to this SAME ref safely: only one trigger
-     * char can match at a given cursor position, so at most one of them is
-     * ever active.
+     * `@`/`/` menu would never get a chance to consume Enter.
+     *
+     * Each controller writes ONLY its own flag — fix round 1, Critical:
+     * TipTap reverses the extension list when building ProseMirror plugins
+     * (`@tiptap/core`'s `resolveExtensions`), so `slashSuggestion`'s plugin
+     * view actually updates BEFORE `mentionSuggestion`'s inside a single
+     * transaction. A caret move from inside `@foo` straight into `/bar`
+     * therefore fires `slash.onStart` (rows found → flag on) followed by
+     * `mention.onExit` (→ flag off) in the SAME transaction. A single shared
+     * ref would have the mention controller's "off" clobber the slash
+     * controller's "on" a moment earlier, leaving the guard off while the
+     * slash menu is still open. Two independent flags, OR'd together below,
+     * make that ordering irrelevant — each controller can only ever turn its
+     * own flag on or off.
+     *
+     * Each flag tracks "does at least one row currently exist", NOT "is a
+     * trigger match active" — see `MenuNavState`'s doc comment
+     * (`menus/menu-nav-state.ts`). A match with zero rows (`@nonexistentfile`,
+     * `/xyzzy`) must leave its flag `false` for its entire lifetime, so Enter
+     * falls through to submit exactly like the live
+     * `mentionItems.length > 0` / `filteredCommands.length > 0` guards at
+     * `session-chat-input.tsx:932`/`:958`/`:990` — not stay `true` from open
+     * to close and swallow Enter into a no-op paragraph split.
      */
-    const suggestionActiveRef = useRef(false);
+    const mentionHasRowsRef = useRef(false);
+    const slashHasRowsRef = useRef(false);
 
     const handleUpdate = useMemo(
       () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
@@ -256,7 +276,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       () =>
         createSubmitOnEnterHandler(
           () => onSubmitRef.current(),
-          () => disabledRef.current || suggestionActiveRef.current,
+          () => disabledRef.current || mentionHasRowsRef.current || slashHasRowsRef.current,
         ),
       [],
     );
@@ -281,8 +301,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getAgents: () => agentsRef.current,
             getSessions: () => sessionsRef.current,
             getCurrentSessionId: () => currentSessionIdRef.current,
-            onActiveChange: (active) => {
-              suggestionActiveRef.current = active;
+            onHasRowsChange: (hasRows) => {
+              mentionHasRowsRef.current = hasRows;
             },
           }),
         ),
@@ -292,8 +312,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getCommands: () => commandsRef.current,
             onSelectCommand: (command) => onSelectCommandRef.current?.(command),
             onSelectAction: (action) => onSelectActionRef.current?.(action),
-            onActiveChange: (active) => {
-              suggestionActiveRef.current = active;
+            onHasRowsChange: (hasRows) => {
+              slashHasRowsRef.current = hasRows;
             },
           }),
         ),
