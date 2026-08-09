@@ -15,6 +15,7 @@ import { WebSourceRow } from '@/features/session/tool/shared/web-source-row';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
+import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import {
   parseWebSearchOutput,
   type WebSearchQueryResult,
@@ -46,7 +47,7 @@ function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[]
           {queryResults.length > 1 && qr.sources.length > 0 && (
             <div className="text-muted-foreground/70 flex items-center gap-2 px-2 pt-2 pb-1 text-xs">
               <Search className="size-3 shrink-0" />
-              <span className="truncate">{qr.query}</span>
+              <span className="truncate">{humanizeSearchQuery(qr.query)}</span>
             </div>
           )}
           {qr.sources.map((src) => (
@@ -84,12 +85,16 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   // A non-technical reader doesn't need to be told this is "a web search" —
   // the magnifying-glass icon already says that. The row is just what was
   // searched for, so it reads the same way a search-results page would.
+  //
+  // Which is exactly why the query cannot go through raw: models write engine
+  // syntax (`site:daytona.io Daytona sandboxes`), and a search-results page
+  // never shows you your own operators back. See `humanizeSearchQuery`.
   const triggerLabel =
     queryResults.length === 1
-      ? queryResults[0].query || query
+      ? humanizeSearchQuery(queryResults[0].query) || humanizeSearchQuery(query)
       : queryResults.length > 1
         ? `${queryResults.length} searches`
-        : query;
+        : humanizeSearchQuery(query);
 
   // "results", never "sources"/"queries" — one word, used consistently
   // whether it's one query or several.

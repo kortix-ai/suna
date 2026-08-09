@@ -8,6 +8,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
@@ -100,7 +101,12 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}
           </span>
-          <span className="text-muted-foreground truncate font-mono text-xs">{displayQuery}</span>
+          {/* Humanised at the render site, not at each of the seven places
+              `displayQuery` is assigned — the "N queries" branch carries no
+              operators, so one call covers every path. */}
+          <span className="text-muted-foreground truncate font-mono text-xs">
+            {humanizeSearchQuery(displayQuery)}
+          </span>
           {imageResults.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
               {isBatch ? `${batchCount}q, ` : ''}

@@ -18,6 +18,7 @@ import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
+import { humanizeSearchQuery } from '../../tool/shared/search-query';
 import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
@@ -471,7 +472,10 @@ function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
     if (results.length > 0) {
       return results.map((r) => ({ url: r.url, label: r.title || wsDomain(r.url) }));
     }
-    const query = typeof input.query === 'string' ? input.query : '';
+    // No results to name it with, so the query itself is the label — which
+    // means it has to be readable. Models write engine syntax (`site:x foo`);
+    // see `humanizeSearchQuery`.
+    const query = humanizeSearchQuery(typeof input.query === 'string' ? input.query : '');
     return query ? [{ url: '', label: query }] : [];
   }
 
