@@ -533,7 +533,7 @@ not a prediction: if the measured delta exceeds 100 KB gz, the extension list
 gets cut before the PR opens." That rule was written as an estimate before any
 of this code existed, with no real `next build` behind it.
 
-Two real `next build` runs (verification doc §7.1) measured the composer
+Two real `next build` runs (verification doc §8.1) measured the composer
 chunk at **+136.0 KB gz** with the full markdown extension set spec §2 Goal 4
 requires — 36 KB over the ceiling. The cut rule was then actually attempted:
 `Blockquote`/`Bold`/`Italic`/`Strike`/`Code`/`CodeBlock`/`Link`/`BulletList`/
@@ -551,7 +551,7 @@ system and markdown support at all — the maximal cut only reached 102.9 KB,
 still over budget. Closing the remaining ~36–37 KB gap means either raising
 the budget or dropping the markdown requirement. **That trade-off is open,
 left for the user to decide — not resolved by this task.** See verification
-doc §7.2 for the full measurement, the reverted cut commit, and the
+doc §8.2 for the full measurement, the reverted cut commit, and the
 byte-for-byte restore proof.
 
 ---
