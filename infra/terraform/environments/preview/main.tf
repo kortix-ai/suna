@@ -203,7 +203,7 @@ resource "aws_security_group" "alb" {
   tags = merge(local.tags, { Name = "${local.name}-alb" })
 }
 
-#trivy:ignore:AVD-AWS-0104 Preview tasks call external HTTPS APIs and PostgreSQL through the existing dev NAT gateway; those services have no stable CIDR allowlist.
+#trivy:ignore:AVD-AWS-0104 Preview tasks call external HTTPS APIs through the existing dev NAT gateway; those services have no stable CIDR allowlist.
 resource "aws_security_group" "service" {
   #checkov:skip=CKV2_AWS_5:Per-PR ECS services attach this shared security group out-of-band in ecs-preview.sh.
   name        = "${local.name}-service"
@@ -243,7 +243,7 @@ resource "aws_security_group" "service" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.postgres_egress_cidrs
   }
   tags = merge(local.tags, { Name = "${local.name}-service" })
 }
@@ -372,10 +372,65 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-#checkov:skip=CKV2_AWS_76:The existing account-wide regional WAF is managed outside this root and includes the AWS managed known-bad-inputs rule group.
+# A dedicated ACL keeps preview protections reviewable in this root instead of
+# relying on an opaque account-wide ACL that static checks cannot inspect.
+resource "aws_wafv2_web_acl" "preview" {
+  name  = "${local.name}-waf"
+  scope = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "aws-known-bad-inputs"
+    priority = 10
+    override_action {
+      none {}
+    }
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "preview-known-bad-inputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "rate-limit"
+    priority = 20
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type = "IP"
+        limit              = 2000
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "preview-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "preview-waf"
+    sampled_requests_enabled   = true
+  }
+  tags = local.tags
+}
+
 resource "aws_wafv2_web_acl_association" "preview" {
   resource_arn = aws_lb.preview.arn
-  web_acl_arn  = var.preview_waf_arn
+  web_acl_arn  = aws_wafv2_web_acl.preview.arn
 }
 
 resource "cloudflare_record" "preview_wildcard" {
@@ -402,10 +457,13 @@ resource "aws_iam_role" "github_preview_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:pull_request"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:kortix-ai/suna:pull_request",
+            "repo:kortix-ai/suna:ref:refs/heads/main",
+          ]
         }
         StringLike = {
-          "token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/*"
+          "token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/main"
         }
       }
     }]

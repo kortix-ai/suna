@@ -2,7 +2,10 @@ name: Deploy Preview (PR)
 
 on:
   pull_request_target:
+    branches: [main]
     types: [labeled, unlabeled, opened, synchronize, reopened, closed]
+  schedule:
+    - cron: "17 6 * * *"
 
 concurrency:
   group: deploy-preview-${{ github.event.pull_request.number }}
@@ -25,7 +28,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: false
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - run: git submodule sync --recursive && git submodule update --init --recursive
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
@@ -162,6 +165,7 @@ jobs:
       - name: Upsert branch-scoped backend URLs and redeploy
         env:
           NUM: ${{ github.event.pull_request.number }}
+          COMMIT: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
@@ -182,7 +186,35 @@ jobs:
             "${auth[@]}" -H 'Content-Type: application/json' \
             -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" \
               '{name:$n,target:"preview",gitSource:{type:"github",repoId:$r,ref:$b}}')")"
+          deployment_id="$(printf '%s' "$deployment" | jq -r '.id // error("Vercel deployment response has no id")')"
           frontend="https://$(printf '%s' "$deployment" | jq -r '.url // error("Vercel deployment response has no URL")')"
+          ready=false
+          for _ in $(seq 1 60); do
+            current="$(curl -fsS "${api}/v13/deployments/${deployment_id}?teamId=${TEAM_ID}" "${auth[@]}")"
+            state="$(printf '%s' "$current" | jq -r '.readyState // .state // empty')"
+            deployed_sha="$(printf '%s' "$current" | jq -r '.meta.githubCommitSha // empty')"
+            deployed_branch="$(printf '%s' "$current" | jq -r '.meta.githubCommitRef // empty')"
+            if [ "$state" = "ERROR" ] || [ "$state" = "CANCELED" ]; then
+              echo "::error::Vercel deployment ${deployment_id} entered ${state}."
+              exit 1
+            fi
+            if [ "$state" = "READY" ] && [ "$deployed_sha" = "$COMMIT" ] && [ "$deployed_branch" = "$BRANCH" ]; then
+              ready=true
+              break
+            fi
+            sleep 10
+          done
+          [ "$ready" = true ] || { echo "::error::Vercel deployment was not READY for exact SHA ${COMMIT}."; exit 1; }
+          deployed_envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
+          for key in $ENV_KEYS; do
+            count="$(printf '%s' "$deployed_envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$backend" \
+              '[.envs[] | select(.key==$k and .gitBranch==$b and .value==$v)] | length')"
+            [ "$count" = 1 ] || {
+              echo "::error::${key} does not uniquely target ${backend} for branch ${BRANCH}."
+              exit 1
+            }
+          done
+          curl -fsS --max-time 20 "$frontend" >/dev/null
           marker='<!-- preview-status -->'
           body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
             "- **Backend:** https://pr-${NUM}.preview-api.kortix.com" \
@@ -235,13 +267,20 @@ jobs:
           auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
           api="https://api.vercel.com"
           envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
+          expected="https://pr-${NUM}.preview-api.kortix.com/v1"
+          deleted=0
+          conflicts=0
           for key in $ENV_KEYS; do
             ids="$(printf '%s' "$envs" | jq -r --arg k "$key" --arg b "$BRANCH" \
-              '.envs[] | select(.key==$k and .gitBranch==$b) | .id')"
+              --arg v "$expected" '.envs[] | select(.key==$k and .gitBranch==$b and .value==$v) | .id')"
+            conflicts="$((conflicts + $(printf '%s' "$envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$expected" \
+              '[.envs[] | select(.key==$k and .gitBranch==$b and .value!=$v)] | length')))"
             for id in $ids; do
               curl -fsS -X DELETE "${api}/v9/projects/${PROJECT_ID}/env/${id}?teamId=${TEAM_ID}" "${auth[@]}" >/dev/null
+              deleted=$((deleted + 1))
             done
           done
+          echo "Deleted ${deleted} Vercel variables owned by PR ${NUM}; preserved ${conflicts} variables with a different backend value."
       - name: Mark sticky status comment torn down
         run: |
           set -euo pipefail
@@ -249,5 +288,31 @@ jobs:
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The ECS service, listener rule, target group, task definitions, and Vercel branch overrides were deleted.')"
+            'The ECS service, listener rule, target group, and task definitions were deleted.' \
+            'Vercel cleanup deleted only branch variables whose value still targeted this PR backend.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
+
+  reconcile:
+    name: Reconcile stale preview backends
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    env:
+      AWS_REGION: us-west-2
+      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PREVIEW_MAX_AGE_HOURS: "72"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ env.PREVIEW_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: bash infra/scripts/ecs-preview.sh reconcile 0
