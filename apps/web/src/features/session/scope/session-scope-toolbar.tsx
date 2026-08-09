@@ -26,6 +26,14 @@ export interface SessionScopeToolbarProps {
   sessionId?: string;
   agentName?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
+  /**
+   * Forwarded to `SessionScopeControl` — see its own doc comment. Omit both
+   * to keep the popover uncontrolled (its long-standing default); pass both
+   * to open it from outside a trigger click (e.g. the composer's
+   * `/set-scope` slash action).
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface CommitSessionScopeDraftInput {
@@ -155,6 +163,8 @@ export function SessionScopeToolbar({
   sessionId,
   agentName,
   onCommittedDraft,
+  open,
+  onOpenChange,
 }: SessionScopeToolbarProps) {
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
@@ -253,6 +263,8 @@ export function SessionScopeToolbar({
       retroactive={retroactive}
       onChange={(draft) => setDraftState((current) => ({ ...current, draft }))}
       onSave={handleSave}
+      open={open}
+      onOpenChange={onOpenChange}
     />
   );
 }

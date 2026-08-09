@@ -1,15 +1,20 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
+import { createMentionSuggestion } from '../menus/mention-menu';
+import { createSlashSuggestion } from '../menus/slash-menu';
+import type { SlashAction } from '../menus/slash-actions';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
+import { createSuggestionExtension } from './suggestion';
 
 export interface ComposerEditorHandle {
   getContent(): { text: string; mentions: TrackedMention[] };
@@ -50,6 +55,28 @@ export interface ComposerEditorProps {
    * whole reason the toolbar stops re-rendering per keystroke.
    */
   onEmptyChange: (isEmpty: boolean) => void;
+
+  /** `@` mention menu data sources — see `menus/mention-menu.tsx`. */
+  agents?: Agent[];
+  sessions?: Session[];
+  /** Excluded from the `@` session list — you can't mention the session you're in. */
+  currentSessionId?: string;
+
+  /** `/` menu data + the two things a row selection can produce — see `menus/slash-menu.tsx`. */
+  commands?: Command[];
+  /**
+   * A real OpenCode command was picked from the `/` menu. This STAGES it —
+   * mirrors the live `handleSelectCommand` (session-chat-input.tsx:875-883):
+   * the host shows an args input and waits for a submit. `ComposerEditor`
+   * never executes a command itself.
+   */
+  onSelectCommand?: (command: Command) => void;
+  /**
+   * A composer action was picked from the `/` menu (switch-model, set-scope,
+   * ...). The host owns what each action id opens or does — see
+   * `menus/slash-actions.ts` for the full list.
+   */
+  onSelectAction?: (action: SlashAction) => void;
 }
 
 /**
@@ -126,7 +153,22 @@ function textToParagraphs(text: string): JSONContent[] {
 const EMPTY_DOC: JSONContent = { type: 'doc', content: textToParagraphs('') };
 
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
-  function ComposerEditor({ placeholder, disabled, autoFocus, onSubmit, onEmptyChange }, ref) {
+  function ComposerEditor(
+    {
+      placeholder,
+      disabled,
+      autoFocus,
+      onSubmit,
+      onEmptyChange,
+      agents,
+      sessions,
+      currentSessionId,
+      commands,
+      onSelectCommand,
+      onSelectAction,
+    },
+    ref,
+  ) {
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
     // resyncs `onUpdate`/other callback options when some OTHER option also
     // changed (it explicitly ignores their identity in its own option
@@ -153,6 +195,58 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       placeholderRef.current = placeholder;
     }, [placeholder]);
 
+    // Same "extensions are frozen at construction" reasoning as
+    // `placeholderRef` above (see extensions.ts) — the mention/slash
+    // suggestion extensions built below only run their `getX()` getters at
+    // the moment a menu opens or updates, never at construction, so these
+    // refs are what keeps the `@`/`/` menus reading LIVE data instead of
+    // whatever was current the moment the editor first mounted.
+    const agentsRef = useRef(agents ?? []);
+    useEffect(() => {
+      agentsRef.current = agents ?? [];
+    }, [agents]);
+
+    const sessionsRef = useRef(sessions ?? []);
+    useEffect(() => {
+      sessionsRef.current = sessions ?? [];
+    }, [sessions]);
+
+    const currentSessionIdRef = useRef(currentSessionId);
+    useEffect(() => {
+      currentSessionIdRef.current = currentSessionId;
+    }, [currentSessionId]);
+
+    const commandsRef = useRef(commands ?? []);
+    useEffect(() => {
+      commandsRef.current = commands ?? [];
+    }, [commands]);
+
+    const onSelectCommandRef = useRef(onSelectCommand);
+    useEffect(() => {
+      onSelectCommandRef.current = onSelectCommand;
+    }, [onSelectCommand]);
+
+    const onSelectActionRef = useRef(onSelectAction);
+    useEffect(() => {
+      onSelectActionRef.current = onSelectAction;
+    }, [onSelectAction]);
+
+    /**
+     * Guards `createSubmitOnEnterHandler` (below) against submitting the
+     * whole message when Enter is actually meant to accept a highlighted
+     * `@`/`/` row. ProseMirror's `EditorView.someProp` checks the view's OWN
+     * direct props (what `editorProps.handleKeyDown` below becomes) BEFORE
+     * any plugin's `props.handleKeyDown` — including the Suggestion plugins'
+     * (verified against the installed `prosemirror-view`'s `someProp`:
+     * `this._props` first, then `directPlugins`, then `state.plugins`) — so
+     * without this the submit handler would always win the race and a
+     * `@`/`/` menu would never get a chance to consume Enter. Both
+     * suggestion controllers write to this SAME ref safely: only one trigger
+     * char can match at a given cursor position, so at most one of them is
+     * ever active.
+     */
+    const suggestionActiveRef = useRef(false);
+
     const handleUpdate = useMemo(
       () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
       [],
@@ -162,7 +256,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       () =>
         createSubmitOnEnterHandler(
           () => onSubmitRef.current(),
-          () => disabledRef.current,
+          () => disabledRef.current || suggestionActiveRef.current,
         ),
       [],
     );
@@ -171,7 +265,39 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       immediatelyRender: false, // required: Next SSR
       autofocus: autoFocus,
       editable: !disabled,
-      extensions: [...baseExtensions(() => placeholderRef.current), MentionNode],
+      extensions: [
+        ...baseExtensions(() => placeholderRef.current),
+        MentionNode,
+        // The one `@tiptap/suggestion` code path both `@` and `/` register
+        // through (editor/suggestion.ts's `createSuggestionExtension`).
+        // Built fresh every render like every extension above, but only the
+        // FIRST evaluation is ever used — `Editor.setOptions()` never
+        // rebuilds the extension manager (see extensions.ts) — which is
+        // exactly why every value each factory needs is read through a ref
+        // getter (`agentsRef.current`, ...) instead of closed over directly.
+        createSuggestionExtension(
+          'mentionSuggestion',
+          createMentionSuggestion({
+            getAgents: () => agentsRef.current,
+            getSessions: () => sessionsRef.current,
+            getCurrentSessionId: () => currentSessionIdRef.current,
+            onActiveChange: (active) => {
+              suggestionActiveRef.current = active;
+            },
+          }),
+        ),
+        createSuggestionExtension(
+          'slashSuggestion',
+          createSlashSuggestion({
+            getCommands: () => commandsRef.current,
+            onSelectCommand: (command) => onSelectCommandRef.current?.(command),
+            onSelectAction: (action) => onSelectActionRef.current?.(action),
+            onActiveChange: (active) => {
+              suggestionActiveRef.current = active;
+            },
+          }),
+        ),
+      ],
       editorProps: {
         attributes: {
           role: 'textbox',

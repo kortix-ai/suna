@@ -42,6 +42,15 @@ export interface SessionScopeControlContentProps {
 
 export interface SessionScopeControlProps extends SessionScopeControlContentProps {
   triggerLabel?: string;
+  /**
+   * Controlled open state — e.g. the composer's `/set-scope` slash action
+   * opening this popover without a trigger click. Uncontrolled (Radix's own
+   * internal state) when omitted, exactly as before; only passing BOTH `open`
+   * and `onOpenChange` switches it to controlled, matching Radix
+   * `Popover.Root`'s own contract.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function setAllSessionSecrets(
@@ -444,10 +453,12 @@ export function SessionScopeControlContent({
 
 export function SessionScopeControl({
   triggerLabel = 'Scope',
+  open,
+  onOpenChange,
   ...contentProps
 }: SessionScopeControlProps) {
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
           type="button"
