@@ -83,8 +83,17 @@
  * entitlement-gated, showing `EnterpriseUpsell` in place of the real view
  * on a non-`rbac` account); Roles additionally requires `role.create` as a
  * whole-tab gate on top of that same entitlement content-gate. The
- * remaining four (`identity`, `audit`, `api-keys`, `experimental`, plus
- * `snapshots` from Task 5b2) stay placeholders — later phases build them.
+ * remaining three (`audit`, `api-keys`, `experimental`, plus `snapshots`
+ * from Task 5b2) stay placeholders — later phases build them.
+ *
+ * **Task 14 update.** `identity` is wired to the real `IdentityTab` (see
+ * `tabs/identity-tab.tsx`) — same account-scoped shape as `billing`/
+ * `usage`/`roles`. It gates the whole tab on `account.write`
+ * (`app/(app)/accounts/[id]/page.tsx:358`), and separately gates its
+ * CONTENT on `!!(entitlements?.sso || entitlements?.scim)` — an OR, and
+ * deliberately NOT `rbac` — showing `EnterpriseUpsell` in place of the
+ * real `SsoCard`/`ScimCard` on a non-entitled account, same mechanism
+ * split as `groups`/`roles`.
  *
  * **Task 13b update.** Found in review of Task 13: `billing`/`usage`/`roles`
  * enforced their whole-tab permission gate ONLY by returning `null` from
@@ -168,6 +177,7 @@ import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { BillingTab } from './tabs/billing-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { GroupsTab } from './tabs/groups-tab';
+import { IdentityTab } from './tabs/identity-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import { RolesTab } from './tabs/roles-tab';
@@ -230,17 +240,25 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
  * different here — see `tabs/groups-tab.tsx`'s and `tabs/roles-tab.tsx`'s
  * header comments.
  *
- * `identity`, `audit`, and `api-keys` stay absent too — they are still
- * placeholders (see `SettingsTabPane` below) with no container to enforce a
- * gate yet. `isTabAllowed` falls through to "allowed" for them, same as the
- * pre-13b default; the task that wires their real content is expected to add
- * an entry here alongside it, the same way `billing`/`usage`/`roles` should
- * have.
+ * **Task 14 update.** `identity` is wired to the real `IdentityTab` (see
+ * `tabs/identity-tab.tsx`) and added below — same `account.write` whole-tab
+ * gate as `billing`/`usage` (`app/(app)/accounts/[id]/page.tsx:358`), with
+ * its own separate `!!(entitlements?.sso || entitlements?.scim)`
+ * content-gate (an OR, not `rbac`) handled entirely inside `IdentityTab`,
+ * same mechanism split as `groups`/`roles`.
+ *
+ * `audit` and `api-keys` stay absent — they are still placeholders (see
+ * `SettingsTabPane` below) with no container to enforce a gate yet.
+ * `isTabAllowed` falls through to "allowed" for them, same as the pre-13b
+ * default; the task that wires their real content is expected to add an
+ * entry here alongside it, the same way `billing`/`usage`/`roles`/`identity`
+ * did.
  */
 export const ACCOUNT_TAB_PERMISSION: Partial<Record<SettingsTab, string>> = {
   billing: 'account.write',
   usage: 'account.write',
   roles: 'role.create',
+  identity: 'account.write',
 };
 
 /** Distinct account actions to probe — one batched call over every
@@ -831,13 +849,14 @@ export function SettingsPanelShell({
  * `TabsContent` behaviour.
  *
  * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11),
- * `usage` (Task 12), and `groups`/`roles` (Task 13) are handled above the
- * switch (account-scoped, no `projectId` needed). The switch below is the
- * Task 5b2 mapping of the legacy panel's `SectionContent` (14 `case` labels
- * + the `llm-*` prefix branch) onto the new tab ids. A tab NOT listed here
- * or above — `snapshots`, `identity`, `audit`, `api-keys`, `experimental` —
- * is a genuinely new surface with no legacy source to port; it keeps the
- * placeholder header until a later phase builds it. `snapshots` in
+ * `usage` (Task 12), `groups`/`roles` (Task 13), and `identity` (Task 14)
+ * are handled above the switch (account-scoped, no `projectId` needed). The
+ * switch below is the Task 5b2 mapping of the legacy panel's
+ * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
+ * new tab ids. A tab NOT listed here or above — `snapshots`, `audit`,
+ * `api-keys`, `experimental` — is a genuinely new surface with no legacy
+ * source to port; it keeps the placeholder header until a later phase
+ * builds it. `snapshots` in
  * particular is HALF of the legacy `sandbox` case
  * (`SandboxView` renders templates and the build log together); splitting
  * them is a later task, so `sandbox` alone gets the full unsplit view for
@@ -900,6 +919,13 @@ function SettingsTabPane({
   // rather than here.
   if (item.tab === 'roles') {
     return <RolesTab accountId={accountId} />;
+  }
+  // Same shape as `billing`/`usage` above — see `tabs/identity-tab.tsx`'s
+  // header comment. Renders nothing at all without `account.write` on the
+  // resolved account; its content separately gates on the `sso`/`scim`
+  // entitlement OR (not `rbac`).
+  if (item.tab === 'identity') {
+    return <IdentityTab accountId={accountId} />;
   }
 
   if (projectId) {
