@@ -202,3 +202,75 @@ describe('MenuNavState — move()', () => {
     expect(nav.getSelectedRow()).toBeUndefined();
   });
 });
+
+/**
+ * Task 9's seam: `useMenuRevalidation` needs to know when a `@`/`/` menu
+ * OPENS, independent of whether it ever has any rows — `onHasRowsChange`
+ * above deliberately answers a different question (`@nonexistentfile` never
+ * reports `hasRows(true)`, but it DID open, and revalidating agents/commands
+ * on that open is still correct: the user might keep typing into a query
+ * that matches something newly created).
+ */
+describe('MenuNavState — onOpenChange fires on open()/close(), independent of rows', () => {
+  test('open() fires true exactly once, even with zero rows for the whole session', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onOpenChange: (v) => calls.push(v) });
+
+    nav.open('nonexistentfile');
+    nav.setRows([]); // never resolves to anything
+
+    expect(calls).toEqual([true]);
+  });
+
+  test('close() fires false exactly once', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onOpenChange: (v) => calls.push(v) });
+
+    nav.open('a');
+    nav.setRows(['r0']);
+    nav.close();
+
+    expect(calls).toEqual([true, false]);
+  });
+
+  test('setQuery/setRows/move between open() and close() do not re-fire onOpenChange', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onOpenChange: (v) => calls.push(v) });
+
+    nav.open('a');
+    nav.setRows(['r0', 'r1']);
+    nav.setQuery('ab');
+    nav.setRows(['r0']);
+    nav.move(1);
+
+    expect(calls).toEqual([true]);
+  });
+
+  test('a fresh open()/close() cycle re-fires both, in order', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onOpenChange: (v) => calls.push(v) });
+
+    nav.open('a');
+    nav.close();
+    nav.open('b');
+    nav.close();
+
+    expect(calls).toEqual([true, false, true, false]);
+  });
+
+  test('onHasRowsChange and onOpenChange are independent callbacks', () => {
+    const opens: boolean[] = [];
+    const hasRows: boolean[] = [];
+    const nav = new MenuNavState<string>({
+      onOpenChange: (v) => opens.push(v),
+      onHasRowsChange: (v) => hasRows.push(v),
+    });
+
+    nav.open('a');
+    nav.setRows(['r0']);
+    nav.close();
+
+    expect(opens).toEqual([true, false]);
+    expect(hasRows).toEqual([true, false]);
+  });
+});

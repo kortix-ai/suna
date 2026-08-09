@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 import { searchWorkspaceFiles } from '@/features/files';
-import { useActiveSandboxProxyContext } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
+import { runtimeKeys, useActiveSandboxProxyContext } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useDebouncedValue } from './use-debounced-value';
 
@@ -106,4 +108,72 @@ export function useFileSearch(query: string, enabled: boolean) {
   });
 
   return { files: data ?? [], isLoading: isFetching && !data };
+}
+
+/**
+ * The pure decision at the heart of `useMenuRevalidation`, below: given the
+ * previous and current "is a `@`/`/` menu open" signal, should this render
+ * trigger a cache revalidation? Extracted and tested on its own — per this
+ * project's discipline (see `canKeepPlaceholderFiles` above,
+ * `trackEmptyBoundary` in `editor/composer-editor.tsx`) — because the hook
+ * itself calls `useQueryClient().invalidateQueries`, which needs a real
+ * `QueryClientProvider` and isn't directly exercisable in this repo's
+ * DOM-free `bun test` (see `composer-editor.test.ts`'s file header for the
+ * same constraint).
+ *
+ * `true` on, and only on, the false->true transition — never on every
+ * render while the menu stays open, and never on close. Revalidating per
+ * keystroke would undo Task 8's work removing a 3x-per-keystroke render
+ * storm; revalidating on close buys nothing (the menu is already gone) and
+ * would double the invalidation traffic for free.
+ */
+export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean {
+  return isOpen && !wasOpen;
+}
+
+/**
+ * Task 9. The user's own words: "we should get the latest updated skills
+ * and files whenever we type @. We need proper caching also, some level of
+ * caching and revalidation, like query revalidate."
+ *
+ * `useRuntimeAgents`/`useRuntimeCommands` (`@kortix/sdk/react`, backed by
+ * `packages/sdk/src/react/use-opencode-sessions/{agents,commands}.ts`) both
+ * set `staleTime: Infinity` — correct for the SDK's other consumers, which
+ * have no equivalent of "the user is about to pick from this list right
+ * now" to hang a refetch off of, so `packages/sdk` is deliberately left
+ * untouched (zero diff) rather than lowering that value for every
+ * downstream install. This hook is the host-side revalidation Infinity
+ * asks for: call it with whether the `@`/`/` menu is currently open (OR'd
+ * across both — see `composer-editor.tsx`'s `onMenuOpenChange`), and on the
+ * closed->open transition it invalidates both caches so a skill, agent, or
+ * command created after page load is in the list the next time either menu
+ * opens, without a full reload.
+ *
+ * Invalidates by the two-segment PREFIX (`['opencode', 'agents']` /
+ * `['opencode', 'commands']`), not the full three-segment key `runtimeKeys`
+ * itself returns (`[..., activeServerKey()]`) — `invalidateQueries` prefix-
+ * matches by default, so the shorter key reaches every sandbox's cache
+ * entry, not just whichever one happens to be active this render. Derived
+ * from the real `runtimeKeys.agents()`/`.commands()` (public API,
+ * `use-opencode-sessions/keys.ts:128,135`) by dropping the trailing
+ * server-scope segment, rather than a hand-copied literal — so a rename of
+ * the leading `'opencode'`/`'agents'`/`'commands'` segments (which would be
+ * a breaking SDK change under that package's own naming rules, and thus
+ * rare) still can't drift silently out of step with this file. An
+ * `invalidateQueries` call against a key that no longer matches anything
+ * fails with no error and no warning — it just leaves the menus stale
+ * forever — which is exactly why this reads the key from the SDK instead of
+ * re-typing the strings.
+ */
+export function useMenuRevalidation(isOpen: boolean): void {
+  const queryClient = useQueryClient();
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isMenuOpenTransition(wasOpenRef.current, isOpen)) {
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.agents().slice(0, -1) });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.commands().slice(0, -1) });
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen, queryClient]);
 }

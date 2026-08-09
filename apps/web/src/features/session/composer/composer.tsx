@@ -77,6 +77,7 @@ import {
 } from './composer-logic';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
+import { useMenuRevalidation } from './hooks/use-file-search';
 import type { SlashAction } from './menus/slash-actions';
 import { QueuedMessages, type QueuedMessageView } from './queued-messages';
 import type { AttachedFile, TrackedMention } from './types';
@@ -397,6 +398,13 @@ function ComposerImpl({
   // `canSubmit`/`hasText` below feed `ComposerToolbar` without re-rendering
   // it on every character.
   const [isEmpty, setIsEmpty] = useState(true);
+  // Flips ONLY on the closed<->open boundary of EITHER the `@` or `/` menu
+  // (`ComposerEditor`'s `onMenuOpenChange`, already OR'd there) — Task 9.
+  // Feeds `useMenuRevalidation` below, which invalidates the agents/commands
+  // caches on the open transition so a skill, agent, or command created
+  // after page load shows up without a reload.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useMenuRevalidation(menuOpen);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1254,6 +1262,7 @@ function ComposerImpl({
                 actions={stagedCommand ? EMPTY_ACTIONS : undefined}
                 onSelectCommand={handleSelectCommand}
                 onSelectAction={handleSelectAction}
+                onMenuOpenChange={setMenuOpen}
               />
             </Suspense>
           </div>

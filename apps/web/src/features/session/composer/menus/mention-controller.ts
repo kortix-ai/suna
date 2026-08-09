@@ -26,6 +26,15 @@ export interface CreateMentionSuggestionOptions {
    * composer does.
    */
   onHasRowsChange?: (hasRows: boolean) => void;
+  /**
+   * Fires on the false<->true boundary of "is the `@` menu open at all" --
+   * see `MenuNavState`'s own `onOpenChange` doc comment. Task 9's seam for
+   * `useMenuRevalidation` (`../hooks/use-file-search.ts`): the composer
+   * shell ORs this with `slash-controller.ts`'s equivalent and revalidates
+   * the agents/commands caches the instant either menu opens, so a skill,
+   * agent, or command created after page load shows up without a reload.
+   */
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
 /**
@@ -46,7 +55,10 @@ export function createMentionSuggestion(
   let unmount: (() => void) | null = null;
   let latestCommand: ((row: MenuRow) => void) | null = null;
 
-  const nav = new MenuNavState<MenuRow>({ onHasRowsChange: opts.onHasRowsChange });
+  const nav = new MenuNavState<MenuRow>({
+    onHasRowsChange: opts.onHasRowsChange,
+    onOpenChange: opts.onOpenChange,
+  });
 
   // A STABLE reference — read `latestCommand` fresh at call time instead of
   // closing over `props.command` directly, so `updateProps`'s shallow prop

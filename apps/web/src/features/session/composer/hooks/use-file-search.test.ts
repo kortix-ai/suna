@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { runtimeKeys } from '@kortix/sdk/react';
 
-import { canKeepPlaceholderFiles, composerFileSearchKey } from './use-file-search';
+import {
+  canKeepPlaceholderFiles,
+  composerFileSearchKey,
+  isMenuOpenTransition,
+} from './use-file-search';
 
 /**
  * Task 14. `useFileSearch` itself needs React + a QueryClient + the SDK's
@@ -71,5 +76,54 @@ describe('canKeepPlaceholderFiles', () => {
 
   test('a foreign key shape never matches by accident', () => {
     expect(canKeepPlaceholderFiles('https://a', ['web', 'files', 'https://a'])).toBe(false);
+  });
+});
+
+/**
+ * Task 9. `useMenuRevalidation` calls `useQueryClient().invalidateQueries`,
+ * which needs a real `QueryClientProvider` and cannot run in this repo's
+ * DOM-free `bun test` — same constraint `canKeepPlaceholderFiles` above
+ * exists to work around for `useFileSearch`. `isMenuOpenTransition` is the
+ * decision the hook delegates to, extracted so it stays directly provable.
+ */
+describe('isMenuOpenTransition', () => {
+  test('closed -> open is a transition', () => {
+    expect(isMenuOpenTransition(false, true)).toBe(true);
+  });
+
+  test('open -> open (still open on a later render) is NOT a transition', () => {
+    // The regression this guards: revalidating on every render while the
+    // menu stays open would refire on every keystroke typed into an already
+    // -open `@`/`/` query, undoing Task 8's removal of a 3x-per-keystroke
+    // render storm.
+    expect(isMenuOpenTransition(true, true)).toBe(false);
+  });
+
+  test('open -> closed is NOT a transition (no revalidation on close)', () => {
+    expect(isMenuOpenTransition(true, false)).toBe(false);
+  });
+
+  test('closed -> closed is NOT a transition', () => {
+    expect(isMenuOpenTransition(false, false)).toBe(false);
+  });
+});
+
+/**
+ * Binds `useMenuRevalidation`'s invalidation keys to the SDK's REAL,
+ * PUBLIC `runtimeKeys.agents()`/`.commands()` rather than a hand-typed
+ * literal — so a rename of the underlying segments in
+ * `packages/sdk/src/react/use-opencode-sessions/keys.ts` fails THIS test
+ * instead of silently leaving `useMenuRevalidation`'s `invalidateQueries`
+ * calls matching nothing (an `invalidateQueries` miss throws no error and
+ * emits no warning; the menus would just stay stale forever with no signal
+ * anything is wrong).
+ */
+describe('the agents/commands cache-key prefixes useMenuRevalidation invalidates', () => {
+  test('runtimeKeys.agents() drops to the 2-segment ["opencode", "agents"] prefix', () => {
+    expect(runtimeKeys.agents().slice(0, -1)).toEqual(['opencode', 'agents']);
+  });
+
+  test('runtimeKeys.commands() drops to the 2-segment ["opencode", "commands"] prefix', () => {
+    expect(runtimeKeys.commands().slice(0, -1)).toEqual(['opencode', 'commands']);
   });
 });

@@ -142,6 +142,16 @@ export interface ComposerEditorProps {
    * Pass `[]` to suppress the menu completely in that state.
    */
   actions?: SlashAction[];
+
+  /**
+   * Fires on the false<->true boundary of "is EITHER the `@` or the `/`
+   * menu open right now" — the OR of `mention-controller.ts`'s and
+   * `slash-controller.ts`'s own `onOpenChange` (each already fires on its
+   * own open<->close boundary; this combines the two into the single signal
+   * a host needs). Task 9's seam for `useMenuRevalidation`
+   * (`../hooks/use-file-search.ts`) — see `composer.tsx`'s call site.
+   */
+  onMenuOpenChange?: (isOpen: boolean) => void;
 }
 
 /**
@@ -259,6 +269,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSelectCommand,
       onSelectAction,
       actions,
+      onMenuOpenChange,
     },
     ref,
   ) {
@@ -333,6 +344,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSelectActionRef.current = onSelectAction;
     }, [onSelectAction]);
 
+    const onMenuOpenChangeRef = useRef(onMenuOpenChange);
+    useEffect(() => {
+      onMenuOpenChangeRef.current = onMenuOpenChange;
+    }, [onMenuOpenChange]);
+
     /**
      * Guards `createSubmitOnEnterHandler` (below) against submitting the
      * whole message when Enter is actually meant to accept a highlighted
@@ -368,6 +384,32 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
      */
     const mentionHasRowsRef = useRef(false);
     const slashHasRowsRef = useRef(false);
+
+    /**
+     * Task 9's `onMenuOpenChange` — the OR of the two controllers' own
+     * `onOpenChange`, same two-independent-flags-OR'd-together shape as
+     * `mentionHasRowsRef`/`slashHasRowsRef` above and for the identical
+     * reason (TipTap's reversed extension order can fire one controller's
+     * `onExit` and the other's `onStart` inside a single transaction).
+     * `reportedMenuOpenRef` is the boundary guard: without it, a caret move
+     * from inside `@foo` straight into `/bar` would report `true` (mention
+     * opens) then immediately `false` then `true` again in one transaction
+     * instead of staying `true` throughout — which would fire
+     * `useMenuRevalidation`'s effect on every such move instead of only on
+     * a genuine closed->open transition.
+     */
+    const mentionMenuOpenRef = useRef(false);
+    const slashMenuOpenRef = useRef(false);
+    const reportedMenuOpenRef = useRef(false);
+    const reportMenuOpenChange = useMemo(
+      () => () => {
+        const next = mentionMenuOpenRef.current || slashMenuOpenRef.current;
+        if (next === reportedMenuOpenRef.current) return;
+        reportedMenuOpenRef.current = next;
+        onMenuOpenChangeRef.current?.(next);
+      },
+      [],
+    );
 
     const handleUpdate = useMemo(
       () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
@@ -406,6 +448,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             onHasRowsChange: (hasRows) => {
               mentionHasRowsRef.current = hasRows;
             },
+            onOpenChange: (isOpen) => {
+              mentionMenuOpenRef.current = isOpen;
+              reportMenuOpenChange();
+            },
           }),
         ),
         createSuggestionExtension(
@@ -417,6 +463,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             onSelectAction: (action) => onSelectActionRef.current?.(action),
             onHasRowsChange: (hasRows) => {
               slashHasRowsRef.current = hasRows;
+            },
+            onOpenChange: (isOpen) => {
+              slashMenuOpenRef.current = isOpen;
+              reportMenuOpenChange();
             },
           }),
         ),

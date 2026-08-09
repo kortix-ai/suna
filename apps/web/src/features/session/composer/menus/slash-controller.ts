@@ -40,6 +40,15 @@ export interface CreateSlashSuggestionOptions {
    * does.
    */
   onHasRowsChange?: (hasRows: boolean) => void;
+  /**
+   * Fires on the false<->true boundary of "is the `/` menu open at all" --
+   * see `MenuNavState`'s own `onOpenChange` doc comment. Task 9's seam for
+   * `useMenuRevalidation` (`../hooks/use-file-search.ts`): the composer
+   * shell ORs this with `mention-controller.ts`'s equivalent and revalidates
+   * the agents/commands caches the instant either menu opens, so a skill,
+   * agent, or command created after page load shows up without a reload.
+   */
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
 /**
@@ -59,7 +68,10 @@ export function createSlashSuggestion(
   let unmount: (() => void) | null = null;
   let latestCommand: ((row: SlashRow) => void) | null = null;
 
-  const nav = new MenuNavState<SlashRow>({ onHasRowsChange: opts.onHasRowsChange });
+  const nav = new MenuNavState<SlashRow>({
+    onHasRowsChange: opts.onHasRowsChange,
+    onOpenChange: opts.onOpenChange,
+  });
 
   // Same stabilization as `mention-controller.ts`'s `onSelect` — a fixed
   // reference so `updateProps`'s shallow diff isn't forced to treat every

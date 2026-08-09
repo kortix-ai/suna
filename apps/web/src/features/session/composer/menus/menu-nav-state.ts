@@ -16,6 +16,22 @@ export interface MenuNavStateOptions {
    * `true` from open to close and block Enter from doing anything at all.
    */
   onHasRowsChange?: (hasRows: boolean) => void;
+  /**
+   * Fires on the false<->true boundary of "is a trigger match active at
+   * all" -- the OPPOSITE half of what `onHasRowsChange` answers. `open()`
+   * and `close()` are already 1:1 with a real `@tiptap/suggestion`
+   * `onStart`/`onExit` pair (the plugin never calls either one twice in a
+   * row without the other between), so this needs no extra dedupe of its
+   * own -- every `open()` call fires `true` exactly once, every `close()`
+   * call fires `false` exactly once.
+   *
+   * Task 9's seam for cache revalidation: a menu with zero rows (e.g.
+   * `@nonexistentfile`) still just OPENED -- the user might still type a
+   * query that matches something newly created -- so this must fire on
+   * `open()` regardless of what `onHasRowsChange` says, which is exactly why
+   * it is a second callback and not folded into the first.
+   */
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
 /**
@@ -54,14 +70,17 @@ export class MenuNavState<TRow> {
    */
   private isOpen = false;
   private readonly onHasRowsChange?: (hasRows: boolean) => void;
+  private readonly onOpenChange?: (isOpen: boolean) => void;
 
   constructor(options: MenuNavStateOptions = {}) {
     this.onHasRowsChange = options.onHasRowsChange;
+    this.onOpenChange = options.onOpenChange;
   }
 
   /** Call once when a new trigger match starts (the menu just opened). */
   open(query: string): void {
     this.isOpen = true;
+    this.onOpenChange?.(true);
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = query;
@@ -118,6 +137,7 @@ export class MenuNavState<TRow> {
    */
   close(): void {
     this.isOpen = false;
+    this.onOpenChange?.(false);
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = null;
