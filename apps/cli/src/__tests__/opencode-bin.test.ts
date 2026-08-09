@@ -7,6 +7,7 @@ import * as tar from 'tar';
 
 import {
   ensureOpencodeBin,
+  isValidOpencodeVersion,
   managedOpencodePath,
   opencodePlatformPackage,
   parseOpencodeVersion,
@@ -61,6 +62,23 @@ describe('parseOpencodeVersion', () => {
   });
 });
 
+describe('isValidOpencodeVersion', () => {
+  test('accepts exact semver with optional prerelease tag', () => {
+    expect(isValidOpencodeVersion('1.17.11')).toBe(true);
+    expect(isValidOpencodeVersion('1.2.3-beta.1')).toBe(true);
+  });
+
+  test('rejects anything that could steer a URL or path', () => {
+    expect(isValidOpencodeVersion('1.2.3/../../evil-pkg/-/evil-pkg-1.0.0')).toBe(false);
+    expect(isValidOpencodeVersion('1.2.3/evil')).toBe(false);
+    expect(isValidOpencodeVersion('1.2.3\nX')).toBe(false);
+    expect(isValidOpencodeVersion('1.2.3 ')).toBe(false);
+    expect(isValidOpencodeVersion('../1.2.3')).toBe(false);
+    expect(isValidOpencodeVersion('1.2')).toBe(false);
+    expect(isValidOpencodeVersion('')).toBe(false);
+  });
+});
+
 describe('opencodePlatformPackage', () => {
   test('maps darwin/arm64', () => {
     expect(opencodePlatformPackage('darwin', 'arm64')).toBe('opencode-darwin-arm64');
@@ -81,6 +99,16 @@ describe('opencodePlatformPackage', () => {
 });
 
 describe('ensureOpencodeBin', () => {
+  test('refuses a malformed version outright — no path build, no download', async () => {
+    await expect(
+      ensureOpencodeBin({
+        version: '1.2.3/../../evil-pkg/-/evil-pkg-1.0.0',
+        fetchImpl: neverFetch,
+        probePathVersion: noPathBinary,
+      }),
+    ).rejects.toThrow(/malformed OpenCode version/);
+  });
+
   test('KORTIX_OPENCODE_BIN overrides everything', async () => {
     process.env.KORTIX_OPENCODE_BIN = '/custom/opencode';
 

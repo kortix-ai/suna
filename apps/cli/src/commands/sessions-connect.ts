@@ -7,7 +7,7 @@ import {
   withKortixScope,
 } from '../api/sdk.ts';
 import { takeFlagValue } from '../command-helpers.ts';
-import { ensureOpencodeBin } from '../opencode-bin.ts';
+import { ensureOpencodeBin, isValidOpencodeVersion } from '../opencode-bin.ts';
 import { C, help, status } from '../style.ts';
 import {
   ensureOpencodeSession,
@@ -131,6 +131,10 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
  * `/global/health` — the sandbox image may be newer or older than this CLI's
  * baked pin, and the TUI must match the server, not the pin. Falls back to
  * undefined (→ the runtime-versions pin) when the probe fails.
+ *
+ * The value crosses a trust boundary: it comes from inside the sandbox and
+ * ends up in a download URL and an executable path, so anything that is not
+ * strictly `X.Y.Z(-tag)` is discarded, not truncated.
  */
 async function runtimeOpencodeVersion(resolved: ResolvedSession): Promise<string | undefined> {
   try {
@@ -138,7 +142,7 @@ async function runtimeOpencodeVersion(resolved: ResolvedSession): Promise<string
       await withKortixScope(resolved.auth, () => resolved.runtime.global.health()),
     );
     const version = (health as { version?: unknown }).version;
-    return typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) ? version : undefined;
+    return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
   } catch {
     return undefined;
   }

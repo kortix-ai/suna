@@ -45,9 +45,21 @@ export function managedOpencodePath(version: string): string {
   return join(managedRoot(), version, 'opencode');
 }
 
+/**
+ * Strict full-string semver check. The version reaches us from the session
+ * runtime's health endpoint — attacker-influenceable if the sandbox is
+ * compromised — and is spliced into both the registry download URL and the
+ * managed cache path, where anything beyond `X.Y.Z(-tag)` (a `/`, `..`, a
+ * newline) would redirect the download or escape the cache dir. Reject
+ * everything that is not exactly a version.
+ */
+export function isValidOpencodeVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version);
+}
+
 /** Pull an X.Y.Z(-tag) out of whatever `opencode --version` prints. */
 export function parseOpencodeVersion(output: string): string | null {
-  const match = output.match(/\b(\d+\.\d+\.\d+(?:-[\w.]+)?)\b/);
+  const match = output.match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\b/);
   return match ? match[1] : null;
 }
 
@@ -100,6 +112,9 @@ export async function ensureOpencodeBin(
   if (envBin) return { bin: envBin, source: 'env', version: null };
 
   const version = opts.version ?? OPENCODE_VERSION;
+  if (!isValidOpencodeVersion(version)) {
+    throw new Error(`Refusing malformed OpenCode version "${version}".`);
+  }
   const managed = managedOpencodePath(version);
   if (existsSync(managed)) return { bin: managed, source: 'managed', version };
 
