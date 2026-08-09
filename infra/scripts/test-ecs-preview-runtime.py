@@ -66,6 +66,8 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn('"containerPort": 3000', SCRIPT)
         self.assertIn('"name": "NEXT_PUBLIC_APP_URL", "value": web_url', SCRIPT)
         self.assertIn('"name": "NEXT_PUBLIC_BACKEND_URL", "value": backend_url', SCRIPT)
+        self.assertIn('"name": "KORTIX_PUBLIC_VERSION"', SCRIPT)
+        self.assertIn("f\"pr-{family.removeprefix('kortix-pr-')}\"", SCRIPT)
         self.assertNotIn("kortix-prod-env", SCRIPT)
         self.assertIn("rollback_deploy", SCRIPT)
         self.assertIn("PREVIOUS_TASK_DEFINITION", SCRIPT)
