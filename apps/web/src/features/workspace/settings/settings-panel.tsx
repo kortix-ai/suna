@@ -65,7 +65,14 @@
  * `tabs/billing-tab.tsx`) — same account-scoped shape as `connected` (reads
  * `accountId`, no `projectId` required). It renders nothing at all without
  * `billing.write` on the resolved account AND `isBillingEnabled()` — see
- * that file's header comment. The remaining six (`usage`, `groups`, `roles`,
+ * that file's header comment.
+ *
+ * **Task 12 update.** `usage` is wired to the real `UsageTab` (see
+ * `tabs/usage-tab.tsx`) — same account-scoped shape as `billing`/`connected`.
+ * It renders nothing without `account.write` on the resolved account, but —
+ * unlike `billing` — does NOT also require `isBillingEnabled()`: session
+ * costs stay available with billing off, matching `sectionVisible.
+ * transactions` on the source page. The remaining five (`groups`, `roles`,
  * `identity`, `audit`, `api-keys`, `experimental`) stay placeholders — the
  * rest of phase 3 and phase 4 build them.
  *
@@ -131,6 +138,7 @@ import { BillingTab } from './tabs/billing-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
+import { UsageTab } from './tabs/usage-tab';
 import type { RailGroup, RailItem } from './type';
 
 /**
@@ -607,14 +615,14 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * `profile`, `preferences`, `connected` (Task 9), and `billing` (Task 11)
- * are handled above the switch (account-scoped, no `projectId` needed). The
- * switch below is the Task 5b2 mapping of the legacy panel's
- * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
- * new tab ids. A tab NOT listed here or above — `snapshots`, `usage`,
- * `groups`, `roles`, `identity`, `audit`, `api-keys`, `experimental` — is a
- * genuinely new surface with no legacy source to port; it keeps the
- * placeholder header until a later phase builds it. `snapshots` in
+ * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11), and
+ * `usage` (Task 12) are handled above the switch (account-scoped, no
+ * `projectId` needed). The switch below is the Task 5b2 mapping of the
+ * legacy panel's `SectionContent` (14 `case` labels + the `llm-*` prefix
+ * branch) onto the new tab ids. A tab NOT listed here or above —
+ * `snapshots`, `groups`, `roles`, `identity`, `audit`, `api-keys`,
+ * `experimental` — is a genuinely new surface with no legacy source to port;
+ * it keeps the placeholder header until a later phase builds it. `snapshots` in
  * particular is HALF of the legacy `sandbox` case
  * (`SandboxView` renders templates and the build log together); splitting
  * them is a later task, so `sandbox` alone gets the full unsplit view for
@@ -656,6 +664,13 @@ function SettingsTabPane({
   // `isBillingEnabled()`.
   if (item.tab === 'billing') {
     return <BillingTab accountId={accountId} />;
+  }
+  // Same no-`projectId`-required, `accountId`-reading shape as `billing`
+  // above — see `tabs/usage-tab.tsx`'s header comment. Renders nothing at
+  // all without `account.write` on the resolved account; unlike `billing`,
+  // does NOT also require `isBillingEnabled()`.
+  if (item.tab === 'usage') {
+    return <UsageTab accountId={accountId} />;
   }
 
   if (projectId) {

@@ -211,15 +211,16 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        // `usage` is still a genuinely unbuilt placeholder — `profile`,
-        // `preferences`, `connected`, and (Task 11) `billing` moved into
-        // `REAL_VIEW_TABS`-equivalent coverage below once each was wired to
-        // its real view. Confirmed by grep: `grep -n "'billing'"
-        // settings-panel.test.tsx` before this change showed only this one
-        // placeholder reference plus `buildSettingsPanelSettingsNav`'s
-        // arbitrary-tab-id test further down (unrelated to placeholder
-        // status) — so moving this example to `usage` doesn't drop coverage.
-        tab: 'usage',
+        // `experimental` is still a genuinely unbuilt placeholder — `profile`,
+        // `preferences`, `connected`, (Task 11) `billing`, and (Task 12)
+        // `usage` moved into `REAL_VIEW_TABS`-equivalent coverage below once
+        // each was wired to its real view. This example previously used
+        // `usage`; Task 12 wired that tab to `UsageTab`, so this moved to
+        // `experimental` — confirmed by grep: `grep -n "'experimental'"
+        // settings-panel.test.tsx` before this change showed no reference at
+        // all, so moving this example here doesn't drop coverage of anything
+        // that was already being exercised.
+        tab: 'experimental',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,
@@ -292,6 +293,23 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('billing mounts its real view even with no project id — it is account-scoped like profile/preferences/connected, unlike every REAL_VIEW_TABS entry below', () => {
     expect(() => render({ tab: 'billing', projectId: undefined, accountId: undefined })).toThrow();
+  });
+
+  test('activating usage mounts its real view — it probes account.write with no auth context present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'usage',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('usage mounts its real view even with no project id — it is account-scoped like profile/preferences/connected/billing, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'usage', projectId: undefined, accountId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {
