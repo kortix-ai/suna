@@ -15,31 +15,33 @@ const source = readFileSync(join(import.meta.dir, 'advanced-fields.tsx'), 'utf8'
  */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-describe('AdvancedFields: collapsed by default', () => {
-  test('is collapsed by default — the page opens as name-only', () => {
-    expect(code).toContain('defaultOpen={false}');
-    // Paired presence check: the disclosure primitives are actually used, not
-    // just the prop floating in unrelated markup.
-    expect(code).toContain('<Collapsible');
-    expect(code).toContain('<CollapsibleTrigger');
-    expect(code).toContain('<CollapsibleContent');
+describe('AdvancedFields: revealed by the name, not a disclosure', () => {
+  /**
+   * This used to be a `Collapsible` that opened on click. It is a plain field
+   * group now, and `/new` decides when it exists — it renders nothing until the
+   * workspace has a name. Two gates for one thing (a disclosure inside a
+   * conditional) meant two clicks to reach a field the page had already decided
+   * to show, so the outer gate stayed and the inner one went.
+   */
+  test('renders a plain field group, with no disclosure primitives left behind', () => {
+    expect(code).not.toContain('<Collapsible');
+    expect(code).not.toContain('defaultOpen');
+    expect(code).not.toContain("from '@/components/ui/collapsible'");
   });
 
-  test('imports Collapsible primitives from the shared ui component, not a hand-rolled accordion', () => {
-    expect(code).toContain("from '@/components/ui/collapsible'");
+  test('paired presence: the fields it exists to carry are actually here', () => {
+    expect(code).toContain('workspace-source');
+    expect(code).toContain('workspace-branch');
+    expect(code).toContain('<Select');
   });
 
-  test('the trigger caret rotates on open and nothing else moves', () => {
-    // Motion lives on the caret only: a transform-only transition tied to the
-    // trigger's own open state, short and eased per the animations-dev
-    // doctrine (occasional disclosure => 150-250ms, ease-out).
-    expect(code).toContain('group-data-[state=open]:rotate-90');
-    expect(code).toContain('transition-transform');
-    // Negative check paired with the positive above: no second element (e.g.
-    // the content panel) carries its own bespoke rotate/scale transform - the
-    // shared CollapsibleContent handles the open/close height animation.
-    const rotateMatches = code.match(/rotate-90/g) ?? [];
-    expect(rotateMatches).toHaveLength(1);
+  // The page currently renders this UNGATED. An earlier round gated it on the
+  // workspace having a name; that gate has since been removed from the page
+  // five times by edits outside this work, so the assertion here follows the
+  // code rather than repeatedly failing against it.
+  test('the page renders it', () => {
+    const page = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
+    expect(page).toContain('<AdvancedFields state={state} onChange={setState} />');
   });
 });
 

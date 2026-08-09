@@ -11,6 +11,7 @@ import { glyphComponent } from '@/components/ui/glyph-registry';
 import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
@@ -78,7 +79,26 @@ export function ProjectIconField({
   onGlyphChange,
   onClear,
   disabled,
+  triggerClassName,
+  fallbackLabel,
 }: {
+  /**
+   * Sizing override for the trigger. `/new` renders this as the page's own
+   * `size-12` subject above the name field; everywhere else it sits inline
+   * beside a `size="sm"` input and keeps the `size-9` default that matches it.
+   */
+  triggerClassName?: string;
+  /**
+   * What the unset face shows instead of the generic smiley: the workspace's
+   * own initial, through `EntityAvatar`, chalk colour and all — the same tile
+   * the switcher and the project cards draw.
+   *
+   * A smiley says "pick something". An initial says "this is what it will look
+   * like if you pick nothing", which is true and is what a default should
+   * communicate. Blank or absent falls back to the smiley, since an initial
+   * derived from an empty name is just "?".
+   */
+  fallbackLabel?: string;
   /** `null` renders the unset face. The field can DISPLAY "no icon". */
   value: ProjectIconValue;
   /**
@@ -225,6 +245,9 @@ export function ProjectIconField({
           // borrowing a neutral fill.
           className={cn(
             'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
+            // Last, so `cn`'s tailwind-merge lets a caller's own `size-*` beat
+            // the `size-9` default rather than both landing in the class list.
+            triggerClassName,
             emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:inset-ring-2'],
             glyphFace && [
               glyphTint(glyphFace.color),
@@ -241,7 +264,14 @@ export function ProjectIconField({
 
               size-6 (22.07px), not size-5: a text-lg emoji measures 21px wide,
               so a size-5 box left it hanging 2.61px out of the shared box. */}
-          <span className="relative inline-flex size-6 items-center justify-center">
+          <span
+            className={cn(
+              'relative inline-flex items-center justify-center',
+              // The initial tile fills the trigger; an emoji or glyph keeps the
+              // measured size-6 box the comment above explains.
+              !emoji && !glyphFace && fallbackLabel?.trim() ? 'size-full' : 'size-6',
+            )}
+          >
             <AnimatePresence initial={false} mode="popLayout">
               <m.span
                 key={identity}
@@ -263,6 +293,16 @@ export function ProjectIconField({
                   <span aria-hidden className="text-lg leading-none">
                     {emoji}
                   </span>
+                ) : fallbackLabel?.trim() ? (
+                  // The default face: the initial this workspace would carry
+                  // anyway. `size-full` so the tile fills whatever the trigger
+                  // is sized to (`size-12` on /new, `size-9` inline elsewhere)
+                  // rather than sitting as a smaller square inside a larger box.
+                  <EntityAvatar
+                    label={fallbackLabel}
+                    size="md"
+                    className="size-full rounded-md text-xl"
+                  />
                 ) : (
                   <SmileyIcon className="text-muted-foreground size-4" />
                 )}

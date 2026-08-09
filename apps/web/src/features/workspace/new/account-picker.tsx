@@ -45,10 +45,10 @@ export function AccountPicker({
   const selected = accounts.find((account) => account.account_id === value) ?? null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col space-y-3">
       <Label htmlFor="workspace-account">Account</Label>
       <Select value={value ?? undefined} onValueChange={onChange}>
-        <SelectTrigger id="workspace-account" className="w-full">
+        <SelectTrigger id="workspace-account" className="w-full" size="md">
           {selected ? (
             <span className="flex min-w-0 items-center gap-2">
               <EntityAvatar label={selected.name} size="sm" />

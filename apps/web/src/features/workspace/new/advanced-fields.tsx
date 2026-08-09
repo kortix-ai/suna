@@ -1,6 +1,5 @@
 'use client';
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -14,7 +13,6 @@ import type {
   NewWorkspaceFormState,
   RepositorySource,
 } from '@/features/workspace/new/new-workspace-form';
-import { CaretRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 /**
@@ -91,49 +89,48 @@ export function AdvancedFields({
   onChange: (next: NewWorkspaceFormState) => void;
 }) {
   return (
-    <Collapsible defaultOpen={false} className="mt-2">
-      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex cursor-pointer items-center gap-1.5 text-sm transition-colors">
-        <CaretRightIcon className="size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]:rotate-90" />
-        Advanced
-      </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col gap-3 pt-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="workspace-source">Repository</Label>
-          <Select
-            value={state.source}
-            onValueChange={(value) => onChange({ ...state, source: value as RepositorySource })}
-          >
-            <SelectTrigger id="workspace-source" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(SOURCE_LABELS) as RepositorySource[]).map((source) => (
-                // `github-create`/`github-import` need inputs `/provision`
-                // does not accept (see `GitHubSourceNote`'s doc comment
-                // above) — `canSubmit` already refuses them. Disabling the
-                // option here makes that constraint visible BEFORE the user
-                // picks it, not only in the note that used to appear after —
-                // same reasoning Task 12 applied one field up.
-                <SelectItem key={source} value={source} disabled={source !== 'managed'}>
-                  {SOURCE_LABELS[source]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">{SOURCE_DESCRIPTIONS[state.source]}</p>
-          {state.source !== 'managed' ? <GitHubSourceNote accountId={state.accountId} /> : null}
-        </div>
+    <>
+      <div className="flex flex-col space-y-3">
+        <Label htmlFor="workspace-source">Repository</Label>
+        <Select
+          value={state.source}
+          onValueChange={(value) => onChange({ ...state, source: value as RepositorySource })}
+        >
+          <SelectTrigger id="workspace-source" className="w-full" size="md">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(SOURCE_LABELS) as RepositorySource[]).map((source) => (
+              // `github-create`/`github-import` need inputs `/provision`
+              // does not accept (see `GitHubSourceNote`'s doc comment
+              // above) — `canSubmit` already refuses them. Disabling the
+              // option here makes that constraint visible BEFORE the user
+              // picks it, not only in the note that used to appear after —
+              // same reasoning Task 12 applied one field up.
+              <SelectItem key={source} value={source} disabled={source !== 'managed'}>
+                {SOURCE_LABELS[source]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {/* No per-source description. Every option but "Kortix managed" is
+              disabled, so a paragraph explaining the one selectable choice was
+              restating the label underneath itself. `GitHubSourceNote` still
+              fires for the disabled sources, where there IS something the label
+              cannot say. */}
+        {state.source !== 'managed' ? <GitHubSourceNote accountId={state.accountId} /> : null}
+      </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="workspace-branch">Default branch</Label>
-          <Input
-            id="workspace-branch"
-            value={state.defaultBranch}
-            onChange={(event) => onChange({ ...state, defaultBranch: event.target.value })}
-            placeholder="main"
-          />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+      <div className="flex flex-col space-y-3">
+        <Label htmlFor="workspace-branch">Default branch</Label>
+        <Input
+          id="workspace-branch"
+          size="md"
+          value={state.defaultBranch}
+          onChange={(event) => onChange({ ...state, defaultBranch: event.target.value })}
+          placeholder="main"
+        />
+      </div>
+    </>
   );
 }

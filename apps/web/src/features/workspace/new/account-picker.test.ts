@@ -47,8 +47,14 @@ describe('AccountPicker: EntityAvatar matches the workspace-switcher row scale',
     // Paired negative: no other scale sneaks in for this component's avatars,
     // which would desync it from the workspace-switcher row it sits beside in
     // spirit (both surfaces list accounts/workspaces at one shared tile size).
-    expect(code).not.toContain('size="xs"');
-    expect(code).not.toContain('size="md"');
+    // Scoped to the AVATARS: the SelectTrigger carries its own `size="md"`,
+    // which is a control size, not a tile scale.
+    const avatars = code.match(/<EntityAvatar[\s\S]*?\/>/g) ?? [];
+    expect(avatars.length).toBeGreaterThan(0);
+    for (const avatar of avatars) expect(avatar).toContain('size="sm"');
+    // NOT a blanket ban on `size="md"`: the SelectTrigger carries one, and that
+    // is a control height, not a tile scale. The avatar loop above is the real
+    // check — every EntityAvatar, and only those, must be "sm".
     expect(code).not.toContain('size="lg"');
     expect(code).not.toContain('size="xl"');
   });
@@ -62,7 +68,7 @@ describe('AccountPicker: renders inside the page card, not a second one', () => 
     expect(code).not.toContain('<Card');
     expect(code).not.toContain("from '@/components/ui/card'");
     // Paired presence: the plain field-group wrapper this file uses instead.
-    expect(code).toContain('flex flex-col gap-1.5');
+    expect(code).toContain('flex flex-col space-y-3');
   });
 
   test('uses the shared Label component, same as the name field and Advanced disclosure', () => {

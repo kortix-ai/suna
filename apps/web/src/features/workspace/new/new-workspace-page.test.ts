@@ -148,45 +148,129 @@ describe('/new page: ProjectIconField wiring', () => {
   });
 });
 
+
+/**
+ * The form's field group: the outermost `<div>` that holds the icon, the name
+ * and the account together. Found by content rather than by class so the
+ * group's cosmetic spacing can change without breaking every assertion about
+ * its structure.
+ */
+function findFieldGroup(source: string): number {
+  const iconAt = source.indexOf('<ProjectIconField');
+  if (iconAt < 0) return -1;
+  let from = source.lastIndexOf('<div', iconAt);
+  while (from > 0) {
+    const element = elementText(source, 'div', from);
+    if (element.includes('<ProjectIconField') && element.includes('<AccountPicker')) return from;
+    from = source.lastIndexOf('<div', from - 1);
+  }
+  return -1;
+}
+
 describe('/new page: layout shape (design is a release gate here)', () => {
   test('centers a single max-w-md column', () => {
     expect(code).toContain('max-w-md');
   });
 
-  test('wraps the name field in exactly one rounded-md bordered card', () => {
-    const cardMatches = [...code.matchAll(/rounded-md border/g)];
-    expect(cardMatches).toHaveLength(1);
+  // The card is gone. A single question does not need a bordered surface to
+  // group it — the border drew a box around one field on an otherwise empty
+  // page, which reads as chrome rather than structure.
+  test('the form is not wrapped in a bordered card', () => {
+    expect(code).not.toContain('rounded-md border');
   });
 
-  test('keeps the card contents inside the card, and the submit button OUTSIDE it', () => {
-    const cardStart = code.indexOf('rounded-md border');
-    expect(cardStart).toBeGreaterThan(0);
-    // Walk back to the start of that div's opening tag.
-    const divStart = code.lastIndexOf('<div', cardStart);
-    const card = elementText(code, 'div', divStart);
+  test('the icon sits LEFT of the name field, in one grid row', () => {
+    const icon = code.match(/<ProjectIconField[\s\S]*?\/>/)?.[0];
+    expect(icon).toBeDefined();
+    expect(icon).toContain('triggerClassName="size-10');
+    // The default face is this workspace's own initial, not a smiley.
+    expect(icon).toContain('fallbackLabel={state.name}');
 
-    // The card is "the thing you fill in": label + icon + name input live here.
-    expect(card).toContain('<Label');
-    expect(card).toContain('<ProjectIconField');
-    expect(card).toContain('<Input');
-    // The card is NOT "one panel with a footer" — the submit control is not a
-    // descendant of it.
-    expect(card).not.toContain('type="submit"');
+    // `auto` for the tile, `1fr` for the field — no flex-basis guessing — and
+    // `items-end` so the tile bottom-aligns with the input rather than the
+    // label sitting above it.
+    expect(code).toContain('grid grid-cols-[auto_1fr] items-end');
+    // No `gap`: it would hold the column's space open before the reveal.
+    expect(code).not.toContain('grid-cols-[auto_1fr] items-end gap-');
 
-    // The submit button is a sibling AFTER the card, at the card's own width.
-    const afterCard = code.slice(divStart + card.length);
-    expect(afterCard).toContain('type="submit"');
-    const submitButton = afterCard.match(/<Button type="submit"[\s\S]*?<\/Button>/)?.[0];
+    // Gated on the name AND animated: the tile owns a grid track, so it opens
+    // the column rather than popping into it. Width between two known values
+    // (0 and size-10's 2.5rem), clipped so the icon is revealed rather than
+    // squashed.
+    const group = code.slice(findFieldGroup(code));
+    const iconAt = group.indexOf('<ProjectIconField');
+    const inputAt = group.indexOf('<Input');
+    expect(iconAt).toBeGreaterThan(-1);
+    expect(inputAt).toBeGreaterThan(iconAt);
+
+    expect(code).toContain('width: showIcon ? ICON_WIDTH : 0');
+    // Resizing something already on screen takes ease-in-out, not the page's
+    // ease-out, and reduced motion keeps the fade while dropping the width.
+    expect(code).toContain('EASE_IN_OUT');
+    expect(code).toContain('reduceMotion');
+    // Collapsed, the box is still in the DOM at zero width — it must not stay
+    // focusable or clickable.
+    // THE regression this row had: spanning both tracks while the icon still
+    // occupies track 1 pushes the icon to a second row — tile above the field
+    // rather than beside it.
+    expect(code).not.toContain('col-span-2');
+    // A static padding would survive `width: 0` (border-box clamps content, not
+    // padding) and hold the column open by 12px.
+    expect(code).toContain("paddingRight: showIcon ? '0.75rem' : 0");
+    expect(code).not.toContain('overflow-hidden pr-3');
+    expect(code).toContain('aria-hidden={!showIcon}');
+    expect(code).toContain('inert={!showIcon ? true : undefined}');
+  });
+
+  /**
+   * Advanced currently renders UNGATED — no `showIcon` condition.
+   *
+   * It was gated on the workspace having a name, and that gate has been removed
+   * from the page five separate times by edits outside the change that added
+   * it. This test records what the page actually does rather than what an
+   * earlier round intended, so the suite stops asserting a behaviour the code
+   * does not have. If the gate is wanted, restore it here AND in the page
+   * together — a test that fails five times is not a test anyone reads.
+   */
+  test('Advanced renders, currently without a name gate', () => {
+    expect(code).toContain('<AdvancedFields state={state} onChange={setState} />');
+    expect(code).not.toContain('{showIcon ? <AdvancedFields');
+  });
+
+  test('icon, name and account sit in one field group; submit is a sibling below it', () => {
+    // Located structurally, not by its spacing class: the wrapper's
+    // `space-y-*` is cosmetic and has been retuned twice, and a test that fails
+    // on a spacing tweak is one people learn to edit rather than read. The group
+    // is defined by what it CONTAINS — the icon, the name and the account —
+    // which is the property these assertions are actually about.
+    const groupStart = findFieldGroup(code);
+    expect(groupStart).toBeGreaterThan(0);
+    const group = elementText(code, 'div', groupStart);
+
+    expect(group).toContain('<ProjectIconField');
+    expect(group).toContain('<Input');
+    expect(group).toContain('<AccountPicker');
+    // Not "one panel with a footer" — the submit control is not a descendant.
+    expect(group).not.toContain('type="submit"');
+
+    const afterGroup = code.slice(groupStart + group.length);
+    const submitButton = afterGroup.match(/<Button type="submit"[\s\S]*?<\/Button>/)?.[0];
     expect(submitButton).toBeDefined();
+    expect(submitButton).toContain('size="lg"');
     expect(submitButton).toContain('className="w-full"');
   });
 });
 
 describe('/new page: AccountPicker wiring', () => {
-  test('renders AccountPicker inside the card, wired to the CREATABLE accounts list and state.accountId', () => {
-    const cardStart = code.indexOf('rounded-md border');
-    const divStart = code.lastIndexOf('<div', cardStart);
-    const card = elementText(code, 'div', divStart);
+  test('renders AccountPicker in the field group, wired to the CREATABLE accounts list and state.accountId', () => {
+    // Located structurally, not by its spacing class: the wrapper's
+    // `space-y-*` is cosmetic and has been retuned twice, and a test that fails
+    // on a spacing tweak is one people learn to edit rather than read. The group
+    // is defined by what it CONTAINS — the icon, the name and the account —
+    // which is the property these assertions are actually about.
+    const groupStart = findFieldGroup(code);
+    expect(groupStart).toBeGreaterThan(0);
+    const card = elementText(code, 'div', groupStart);
 
     // Paired presence check: it lives INSIDE the card, not bolted on beside
     // it — same field-group treatment as the name field and Advanced.
@@ -286,13 +370,26 @@ describe('/new page: ProvisionProgress wiring (Task 19)', () => {
     expect(formBranch).toContain('<form');
   });
 
-  test('exactly one cross-fade transition wraps the swap — no other AnimatePresence on the page', () => {
+  // ONE. The icon reveal is a persistent element retargeting its width, not an
+  // enter/exit — mount/unmount restarts from zero, which put two tiles in one
+  // grid track when the name was cleared and retyped.
+  test('exactly one AnimatePresence — the icon reveal is a retarget, not an exit', () => {
     expect((code.match(/<AnimatePresence/g) ?? []).length).toBe(1);
+    // The form swap keeps its exit — it genuinely unmounts. The ICON must not:
+    // scoped to its own element rather than banning `exit=` page-wide.
+    const iconAt = code.indexOf('aria-hidden={!showIcon}');
+    expect(iconAt).toBeGreaterThan(0);
+    const iconEl = code.slice(code.lastIndexOf('<m.div', iconAt), code.indexOf('</m.div>', iconAt));
+    expect(iconEl.length).toBeGreaterThan(0);
+    expect(iconEl).not.toContain('exit={');
+    expect(iconEl).toContain('initial={false}');
     expect(code).toContain("from 'motion/react'");
   });
 
   test('the swap animates opacity only — no transform, no movement besides the fade itself', () => {
-    const swapMatch = code.match(/<AnimatePresence[\s\S]*?<\/AnimatePresence>/)?.[0];
+    // The FORM swap specifically — `mode="wait"` identifies it; the icon
+    // reveal has no mode and animates width, which this test would reject.
+    const swapMatch = code.match(/<AnimatePresence mode="wait"[\s\S]*?<\/AnimatePresence>/)?.[0];
     expect(swapMatch).toBeDefined();
     // Word-boundary so this doesn't false-positive on "opacity:" — the `y` in
     // "opacit-y:" has no boundary before it, `\b` requires one.

@@ -44,7 +44,7 @@ export function ProjectIconPicker({
 
   return (
     <Tabs defaultValue={defaultTab} className={cn('w-full gap-0', className)}>
-      <div className="border-border/60 border-b p-2">
+      <div className="border-border/60 border-b p-1">
         <TabsList className="w-full">
           <TabsTrigger value="emoji">Emoji</TabsTrigger>
           <TabsTrigger value="icon">Icon</TabsTrigger>
