@@ -484,8 +484,28 @@ class PlatinumApi {
 async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Promise<PlatinumTemplate> {
   const deadline = Date.now() + TEMPLATE_TIMEOUT_MS;
   let lastState = '';
+  let observationFailures = 0;
   while (Date.now() < deadline) {
-    const current = await api.json<PlatinumTemplate>(`/v1/templates/${template.id}`);
+    let current: PlatinumTemplate;
+    try {
+      current = await api.json<PlatinumTemplate>(`/v1/templates/${template.id}`);
+      if (observationFailures > 0) {
+        console.warn(
+          `[platinum-ci] template polling recovered after ${observationFailures} failure(s)`,
+        );
+        observationFailures = 0;
+      }
+    } catch (error) {
+      if (!isRetryablePlatinumError(error)) throw error;
+      observationFailures += 1;
+      if (shouldReportObservationFailure(observationFailures)) {
+        console.warn(
+          `[platinum-ci] template status unavailable failures=${observationFailures} error=${String(error)}`,
+        );
+      }
+      await Bun.sleep(POLL_MS);
+      continue;
+    }
     const state = String(current.state ?? '').toLowerCase();
     if (state !== lastState) {
       console.log(`[platinum-ci] template=${current.name ?? current.id} state=${state}`);
@@ -505,7 +525,11 @@ async function ensureTemplate(
   spec: PlatinumTemplateSpec,
 ): Promise<PlatinumTemplate> {
   const existing = selectReusablePlatinumTemplate(
-    await api.json<PlatinumTemplate[]>(`/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`),
+    await api.json<PlatinumTemplate[]>(
+      `/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`,
+      {},
+      { attempts: 20 },
+    ),
     spec.name,
   );
   if (existing) {
@@ -528,7 +552,11 @@ async function ensureWarmTemplate(
 ): Promise<PlatinumTemplate> {
   const name = platinumTemplateName(lockHash);
   const existing = selectReusablePlatinumTemplate(
-    await api.json<PlatinumTemplate[]>(`/v1/templates?name=${encodeURIComponent(name)}&limit=20`),
+    await api.json<PlatinumTemplate[]>(
+      `/v1/templates?name=${encodeURIComponent(name)}&limit=20`,
+      {},
+      { attempts: 20 },
+    ),
     name,
   );
   if (existing) {
@@ -546,13 +574,25 @@ async function ensureWarmTemplate(
 
 async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
   const deadline = Date.now() + WARM_PREPARE_TIMEOUT_MS;
+  let observationFailures = 0;
   while (Date.now() < deadline) {
-    if (await stat(api, sandboxId, '/workspace/.kortix-ci-warm-ready', 1)) {
-      const marker = new TextDecoder().decode(
-        await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
-      ).trim();
-      console.log(`[platinum-ci] warm_sandbox_ready=1 ${marker}`);
-      return;
+    try {
+      if (await stat(api, sandboxId, '/workspace/.kortix-ci-warm-ready', 1)) {
+        const marker = new TextDecoder().decode(
+          await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
+        ).trim();
+        console.log(`[platinum-ci] warm_sandbox_ready=1 ${marker}`);
+        return;
+      }
+      observationFailures = 0;
+    } catch (error) {
+      if (!isRetryablePlatinumError(error)) throw error;
+      observationFailures += 1;
+      if (shouldReportObservationFailure(observationFailures)) {
+        console.warn(
+          `[platinum-ci] warm marker unavailable failures=${observationFailures} error=${String(error)}`,
+        );
+      }
     }
     await Bun.sleep(POLL_MS);
   }
