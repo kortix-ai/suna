@@ -81,7 +81,13 @@ export function TokenProgress({ messages, models, selectedModel, onContextClick 
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="relative inline-flex">
+          {/* `data-slot` is this repo's standard stable hook (see
+              components/ui/*). It is what lets composer-toolbar.test.tsx find
+              this control in rendered markup and assert that nothing above it
+              hides it below the `sm` breakpoint — matrix row 18, where a
+              `hidden sm:flex` wrapper made the context modal unreachable on
+              mobile. */}
+          <span data-slot="token-progress" className="relative inline-flex">
             <button
               type="button"
               className="flex size-6 cursor-pointer items-center justify-center"

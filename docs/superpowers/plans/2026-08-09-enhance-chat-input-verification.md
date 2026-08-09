@@ -15,29 +15,29 @@ from `git show 1fd281f897:apps/web/src/features/session/session-chat-input.tsx`
 
 ## 0. Summary
 
-**Four of the 24 rows regressed. All four are now fixed.** The most consequential
-was row 10: `Shift+Enter` produced a `hardBreak` node that the send-path
-serializer turned into the empty string, so **every multi-line message reached
-the agent with its line breaks deleted and the surrounding words glued together**
-(`line one` + Shift+Enter + `line two` was sent as `line oneline two`). It hid
-because the existing test asserted `editor.getText()`, which walks the document
-by a different route and *does* return the newline — the tested path and the
-shipped path disagreed.
+**Four of the 24 rows regressed. All four are now fixed, and all four are
+PROVEN by mutation.** The most consequential was row 10: `Shift+Enter` produced
+a `hardBreak` node that the send-path serializer turned into the empty string,
+so **every multi-line message reached the agent with its line breaks deleted and
+the surrounding words glued together** (`line one` + Shift+Enter + `line two`
+was sent as `line oneline two`). It hid because the existing test asserted
+`editor.getText()`, which walks the document by a different route and *does*
+return the newline — the tested path and the shipped path disagreed.
 
-| | Count |
-|---|---|
-| PROVEN | 4 |
-| CODE-VERIFIED | 16 |
-| UNVERIFIABLE HERE | 1 |
-| REGRESSED, now fixed | 3 (rows 1, 10, 21 — all PROVEN) |
-| REGRESSED, now fixed, not test-bound | 1 (row 18 — CODE-VERIFIED) |
-| **Total** | **24** |
+Every row carries exactly one verdict. The three below partition all 24:
 
-Rows 1, 10 and 21 are each bound by tests and **proven by mutation** — the fix
-was reverted, the named tests were watched to fail, and it was restored. Row 18
-is a JSX/CSS change with no headless test path; it is proven instead by a
-byte-comparison of the rendered element against base, and is recorded as
-CODE-VERIFIED rather than PROVEN. Fix disposition in §4.
+| Verdict | Count | Rows |
+|---|---|---|
+| PROVEN | **6** | 1, 10, 18, 21, 23, 24 |
+| CODE-VERIFIED | **17** | 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 15, 16, 17, 19, 20, 22 |
+| UNVERIFIABLE HERE | **1** | 12 |
+| **Total** | **24** | |
+
+"Regressed, then fixed" is **not** a fourth verdict — it is a property of four
+rows that already appear above. Those four are **rows 1, 10, 18 and 21**, a
+subset of the six PROVEN: each was found broken, fixed in this task, and bound
+by a test whose binding was confirmed by reverting the fix and watching the
+named tests fail.
 
 All four regressions restore documented pre-rewrite behaviour. None of them is a
 new product direction.
@@ -46,7 +46,7 @@ new product direction.
 
 | Gate | Result | Baseline |
 |---|---|---|
-| `bun test src/features/session` | **1391 pass, 0 fail** (120 files) | 1360 pass — +31 added here, all additive |
+| `bun test src/features/session` | **1394 pass, 0 fail** (121 files) | 1360 pass — +34 added here, all additive |
 | `npx tsc --noEmit` | **15 errors**, none in `composer/` | 15 pre-existing (2 `src/app/`, 6 `preview-fit.test.tsx`, 7 `easy-panel-logic.test.ts`) |
 | `npx eslint src/features/session/composer/` | **3 warnings, 0 errors** | 3 warnings, 0 errors |
 | `git diff -- packages/sdk` | **empty** | required zero-diff |
@@ -96,7 +96,7 @@ user-visible behaviours the spec omitted, identified during Task 6.
 | 7 | Paste-to-attach images and files | CODE-VERIFIED |
 | 8 | Staged command badge, args entry, Esc to cancel | CODE-VERIFIED |
 | 9 | `Tab` cycles agents when no menu is open | CODE-VERIFIED |
-| 10 | `Enter` sends, `Shift+Enter` newline | **REGRESSED — fixed here** |
+| 10 | `Enter` sends, `Shift+Enter` newline | **REGRESSED — fixed here**, now **PROVEN** |
 | 11 | Typing anywhere on the page focuses the composer | CODE-VERIFIED |
 | 12 | `focus-session-textarea` focuses the visible composer | UNVERIFIABLE HERE |
 | 13 | autoFocus when revealed inside a hidden tab | CODE-VERIFIED |
@@ -104,7 +104,7 @@ user-visible behaviours the spec omitted, identified during Task 6.
 | 15 | Sub-session "back to parent" indicator | CODE-VERIFIED |
 | 16 | Reply-to banner and clear | CODE-VERIFIED |
 | 17 | Model connection gate bar and hard-disabled send | CODE-VERIFIED |
-| 18 | Token progress and context click-through | **REGRESSED — fixed here**, CODE-VERIFIED |
+| 18 | Token progress and context click-through | **REGRESSED — fixed here**, now **PROVEN** |
 | 19 | Session scope toolbar, incl. new-session draft commit | CODE-VERIFIED |
 | 20 | `clearOnSend={false}` does not clear or revoke URLs | CODE-VERIFIED |
 | 21 | Voice transcription appends to existing text | **REGRESSED — fixed here**, now **PROVEN** |
@@ -419,7 +419,7 @@ for free is gone from the code. No test covers Tab.
 
 ### Row 10 — `Enter` sends, `Shift+Enter` newline
 
-**Verdict: REGRESSED — FIXED IN THIS TASK**
+**Verdict: REGRESSED — FIXED IN THIS TASK. Now PROVEN by mutation.**
 
 **Enter-sends is PROVEN by mutation.** Changing
 `if (event.key === 'Enter' && !event.shiftKey)` to
@@ -648,7 +648,7 @@ untouched. Self-documented at `composer.tsx:767-772`.
 
 ### Row 18 — Token progress and context click-through
 
-**Verdict: REGRESSED — FIXED IN THIS TASK. CODE-VERIFIED (not test-bound).**
+**Verdict: REGRESSED — FIXED IN THIS TASK. Now PROVEN by mutation.**
 
 (Desktop was never affected; the control was gone below 640 px.)
 
@@ -691,20 +691,40 @@ deletes the dead `undefined`-wrapper branch and its stale doc comment ("the old
 toolbar is still-live"), since `composer.tsx` is now the only `ComposerToolbar`
 call site.
 
-**Verified by byte-comparison rather than by a test.** This is JSX plus a
-Tailwind class: there is no headless assertion that would fail if the wrapper
-came back, and a test that greps its own source file for a class name would be
-worse than none. Instead the rendered element was diffed against base:
+**Bound by 3 new tests** in the new `composer/composer-toolbar.test.tsx`,
+under `describe('ComposerToolbar — TokenProgress is visible at every viewport
+(matrix row 18)')`. They SSR-render the real `ComposerToolbar` with
+`renderToStaticMarkup` — the shell `attachment-tiles.test.tsx` and
+`projects/project-card.test.tsx` already use, which needs no jsdom and commits
+no effects — and assert on the **rendered markup**, never on source text:
 
-```
-$ diff <(base composer-toolbar.tsx | grep -A6 '<TokenProgress') \
-       <(HEAD composer-toolbar.tsx | grep -A6 '<TokenProgress')
-==> TokenProgress render is BYTE-IDENTICAL to base
-```
+1. the ring renders at all (a guard, so the next two cannot pass vacuously);
+2. no ancestor of it carries an unprefixed `hidden`;
+3. no ancestor carries a breakpoint-gated display class at all
+   (`sm:flex`, `md:block`, `max-sm:hidden`, …) — broader than the specific
+   regression, so a different spelling of the same idea is also caught.
 
-`grep -n "hidden sm:|sm:flex|max-sm:hidden" composer/*.tsx` now matches only the
-explanatory comment. Recorded as CODE-VERIFIED, not PROVEN — the distinction
-this document draws everywhere else applies to my own fix too.
+Ancestors are found by walking the markup with a tag-depth stack and snapshotting
+it at the element carrying `data-slot="token-progress"`. That `data-slot` is a
+one-line addition to `token-progress.tsx` and is this repo's standard stable
+hook — 262 uses across `components/ui/*` — not a test-only marker.
+
+**Mutation-verified:** reintroducing the exact `<div className="hidden sm:flex">`
+wrapper kills **2 of the 3** tests; the third is the render guard and correctly
+survives, since the ring still renders, just hidden. Reverted; 3 pass.
+
+**An earlier draft of this document claimed no headless assertion was possible
+here and recorded the row as CODE-VERIFIED. That was wrong** — the premise, not
+the principle. The principle (a test that greps its own source for a class name
+is false confidence) still holds; what I missed is that SSR-rendering the
+component sidesteps source-grepping entirely. Two providers were needed
+(`TooltipProvider`, `QueryClientProvider`), both DOM-free. There was no wall.
+
+Also removed with the prop: the dead `undefined`-wrapper branch and its stale
+doc comment ("the old toolbar is still-live"), since `composer.tsx` is now the
+only `ComposerToolbar` call site. The rendered element is byte-identical to
+base, and `grep -n "hidden sm:|sm:flex|max-sm:hidden" composer/*.tsx` now
+matches only explanatory comments.
 
 ---
 
@@ -1049,13 +1069,15 @@ matrix deviation.
 | 10 | Shift+Enter line breaks dropped from every sent message | `hardBreak` serializes to `'\n'` | 5 tests; mutation kills 4 |
 | 1 | Merge-mode prefill: ordering inverted, dedupe gone, blank lines on files-only | `planPrefillMerge` -> `mergeFailedSubmissionDocument` | 9 tests; two mutations kill 6 and 4 |
 | 21 | Voice transcription: block separator, caret insertion, focus steal | `appendTranscribedText` + `setDocumentWithoutStealingFocus` | 9 tests; mutation kills 5 |
-| 18 | `TokenProgress` and the only route to the context modal hidden below 640 px | `tokenProgressWrapperClassName` removed entirely | byte-identical to base; no test (JSX/CSS) |
+| 18 | `TokenProgress` and the only route to the context modal hidden below 640 px | `tokenProgressWrapperClassName` removed entirely | 3 tests; mutation kills 2 |
 
-Row 18 is the one fix in this set that is **not** test-bound, and that is stated
-in its own row rather than smoothed over. A test that inspected its own source
-file for a class name would give false confidence, not coverage; the honest
-evidence is that the rendered element is byte-identical to base and no
-responsive-hiding class remains in `composer/`.
+All four are test-bound and mutation-verified. Row 18 was the doubtful one: an
+earlier draft of this document argued no headless assertion was available and
+recorded it as CODE-VERIFIED. That was an overstated premise —
+`renderToStaticMarkup` SSR-renders the real toolbar with no jsdom, so the
+assertion can be made against rendered markup rather than source text. The
+principle that motivated the doubt (never let a test grep its own source for a
+class name) is preserved; the conclusion drawn from it was wrong.
 
 ### Dependency removal
 
@@ -1123,7 +1145,7 @@ both empty.
 Ordered by how much a defect there would cost.
 
 1. **`composer.tsx`'s wiring has no test at all — this is the single largest
-   gap on the branch, and it is why 16 rows are CODE-VERIFIED rather than
+   gap on the branch, and it is why 17 rows are CODE-VERIFIED rather than
    PROVEN.** Nothing imports `composer/composer`. Every CODE-VERIFIED row above
    rests on reading the call site, not on a test protecting it. This is
    measured, not assumed: during Task 13 a reviewer replaced the whole
@@ -1135,7 +1157,7 @@ Ordered by how much a defect there would cost.
    (`planPrefillMerge`, `appendTranscribedText`) whose output is additionally
    round-tripped through a real editor — so the call site is reduced to a few
    lines that pass values through. But nothing proves `composer.tsx` still
-   calls them. Deleting the `handleTranscription` body would leave all 1391
+   calls them. Deleting the `handleTranscription` body would leave all 1394
    tests green.
 
    *Would verify it:* React Testing Library plus a DOM environment for
@@ -1212,6 +1234,8 @@ removal (`progress.md:36`).
 | `composer/composer-toolbar.tsx` | `tokenProgressWrapperClassName` prop and its dead branch removed; `TokenProgress` always visible (row 18) |
 | `composer/editor/composer-editor.tsx` | Imports the shared `textToParagraphs` instead of defining its own |
 | `composer/editor/composer-editor.test.ts` | +12 tests: row 10 through `serializeDocument`, plus rows 1 and 21 round-tripped through a real editor |
+| `composer/composer-toolbar.test.tsx` | New — 3 SSR-rendered tests asserting nothing hides `TokenProgress` at any viewport (row 18) |
+| `composer/token-progress.tsx` | `data-slot="token-progress"` — the repo-standard stable hook the row-18 test locates it by |
 | `composer/composer-logic.test.ts` | +11 tests: `planPrefillMerge` and `appendTranscribedText` |
 | `composer/hooks/use-file-search.ts` | Placeholder data restricted to the same sandbox (deferred item 4) |
 | `composer/hooks/use-file-search.test.ts` | New — 8 tests for the placeholder guard and key shape |
@@ -1219,6 +1243,6 @@ removal (`progress.md:36`).
 | `docs/superpowers/specs/…-design.md` | Matrix rows 23 and 24 added |
 | This document, `.superpowers/sdd/…/task-14-report.md` | Verification record and working notes |
 
-Net: **1391 tests pass** (from 1360, all additive), tsc at the 15-error baseline
+Net: **1394 tests pass** (from 1360, all additive), tsc at the 15-error baseline
 with none in `composer/`, eslint 3 warnings / 0 errors, `packages/sdk` zero
 diff, protected suites byte-identical.
