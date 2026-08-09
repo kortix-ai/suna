@@ -62,6 +62,7 @@ import type { SessionChatInputProps } from '../session-chat-input';
 
 import { AttachmentTiles } from './attachment-tiles';
 import { ComposerToolbar } from './composer-toolbar';
+import { resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import type { SlashAction } from './menus/slash-actions';
@@ -73,30 +74,34 @@ import type { AttachedFile } from './types';
 const EMPTY_QUEUE: QueuedMessageView[] = [];
 
 /**
+ * Fix round 1, Important: `/` while a command is staged used to be
+ * impossible — `session-chat-input.tsx:1001`'s `handleInput` gated slash
+ * detection on `!stagedCommand` entirely, at the regex level, before any
+ * popover could open. `ComposerEditor`'s `/` trigger has no such gate (it
+ * reacts to the live document, not a "staged" concept the shell tracks
+ * separately), so typing `/` while filling in a staged command's args used
+ * to open the `/` palette, and selecting a COMMAND row from it would
+ * re-stage — silently discarding the args being typed. Passing this empty
+ * list while staged empties the Commands/Skills/MCP sections, which is the
+ * part that could re-stage; the `/` menu can still surface its own
+ * `SLASH_ACTIONS` (switch-model, switch-agent, ...) while staged, since
+ * those are a fixed list internal to `composer/menus/slash-controller.ts`
+ * with no override this file can reach — but selecting one of those never
+ * re-stages a command, so the specific discard-args bug is closed.
+ */
+const EMPTY_COMMANDS: Command[] = [];
+
+/**
  * `ComposerEditor` (`./editor/composer-editor.tsx`) wraps `@tiptap/react` +
  * `prosemirror-*` — real weight that must not land in the first paint (T15
- * measures this). The brief for this task says to reach for
- * `next/dynamic(() => import(...), { ssr: false })`, but that wrapper's ref
- * forwarding is broken for a `forwardRef` target: `next@16.3.0`'s
- * `loadable.shared-runtime.js`'s `LoadableComponent(props, ref)` does
- * `useImperativeHandle(ref, () => ({ retry }), [])` — a ref attached to the
- * dynamic wrapper only ever resolves to `{ retry }`, and its
- * `createElement(resolve(state.loaded), props)` never forwards a `ref`
- * argument to the actually-loaded component at all (read line by line
- * against the installed package; this is not a version guess). `Composer`
- * needs the REAL `ComposerEditorHandle` (`getContent`/`setContent`/`clear`/
- * `focus`/`getElement`) for everything below it, so `next/dynamic` cannot be
- * used here as written — using it anyway would silently break every
- * imperative call site (submit, prefill, Tab-cycle, ARIA wiring).
- *
- * `React.lazy` + `Suspense` gets the SAME code-splitting outcome — `import()`
- * is what webpack/Turbopack actually key chunk-splitting off; `next/dynamic`
- * is a convenience wrapper around it, not the mechanism itself — while
- * correctly resolving to the real `forwardRef` component, so a `ref` on
- * `<ComposerEditorLazy>` reaches the genuine `ComposerEditorHandle`. Defined
- * at module scope, not inside `ComposerImpl`: calling `lazy()` fresh every
- * render would hand React a new component type each time, forcing an
- * unmount/remount of the editor (and losing its content) on every render.
+ * measures this). `React.lazy` + `Suspense` (`next/dynamic` is `React.lazy`
+ * + `Suspense` internally — see `node_modules/next/dist/shared/lib/
+ * lazy-dynamic/loadable.js` — so this is equivalent, just without a wrapper
+ * this file doesn't need) gets `ComposerEditor`'s `import()` code-split into
+ * its own chunk. Defined at module scope, not inside `ComposerImpl`: calling
+ * `lazy()` fresh every render would hand React a new component type each
+ * time, forcing an unmount/remount of the editor (and losing its content)
+ * on every render.
  */
 const ComposerEditorLazy = lazy(() =>
   import('./editor/composer-editor').then((mod) => ({ default: mod.ComposerEditor })),
@@ -106,6 +111,36 @@ const ComposerEditorLazy = lazy(() =>
  *  doesn't shift layout once the real chunk resolves. */
 function ComposerEditorFallback() {
   return <div className="min-h-[3rem]" aria-hidden />;
+}
+
+/**
+ * Fix round 1, Minor: `ComposerEditorHandle.setContent` always ends with
+ * `editor.commands.focus('end')` (composer-editor.tsx, closed to this
+ * task) — every call moves focus AND the caret into the editor, with no
+ * way to opt out. That's correct for prefill (the old code focused the
+ * textarea there too) and for `onTypeAhead` (the editor IS the intended
+ * focus target). It is a regression for failed-send recovery and the
+ * question-unlock restore: the old code's equivalents
+ * (`setText(current => merge(...))`, `setText(saved)`) never moved focus,
+ * so a user reading something else in the transcript when a send failed,
+ * or when a question resolved, kept their attention where they'd put it.
+ * This snapshots whatever had focus before the call and restores it
+ * afterward whenever the editor itself wasn't already the focus target —
+ * the only way to counteract a forced-focus primitive from outside it.
+ */
+function setContentWithoutStealingFocus(
+  handle: ComposerEditorHandle | null,
+  text: string,
+  mode: 'replace' | 'merge',
+): void {
+  if (!handle) return;
+  const el = handle.getElement();
+  const wasFocused = !!el && (document.activeElement === el || el.contains(document.activeElement));
+  const previouslyFocused = wasFocused ? null : (document.activeElement as HTMLElement | null);
+  handle.setContent(text, mode);
+  if (!wasFocused) {
+    previouslyFocused?.focus?.();
+  }
 }
 
 function ComposerImpl({
@@ -372,11 +407,39 @@ function ComposerImpl({
   // `aria-controls` nor `aria-activedescendant`, so a screen reader has no
   // way to associate the two. `composer/menus/` is closed for this task, so
   // this observes that already-shipped, stable contract from the outside
-  // (a `MutationObserver` on `document.body`) rather than adding a new
-  // prop-driven channel. Mirrors whichever listbox is currently mounted
-  // onto the editor element's `aria-controls`/`aria-activedescendant`;
-  // clears both when neither menu is open. Unverifiable without a browser —
-  // see the task report. ─────────────────────────────────────────────────
+  // rather than adding a new prop-driven channel. Unverifiable without a
+  // browser — see the task report.
+  //
+  // Fix round 1, Important — two defects in the original version of this
+  // effect, both from the same root cause: the `MutationObserver` ran
+  // unconditionally, for the full lifetime of EVERY mounted composer.
+  // `session-chat.tsx:1506-1512` pre-mounts every open session tab at
+  // once, so with N tabs open this was N permanent, document.body-wide,
+  // `subtree: true` observers, each doing a full-document
+  // `querySelectorAll('[role="listbox"]')` on every mutation batch
+  // anywhere in the app — including every streamed-token update from every
+  // OTHER tab. Work proportional to activity, exactly what this whole
+  // project exists to remove, just relocated outside React where a
+  // profiler won't show it. Second: all N observers would find the SAME
+  // one open listbox (there can only be one open at a time) and each
+  // would write `aria-controls`/`aria-activedescendant` onto ITS OWN
+  // editor — so N-1 HIDDEN composers would advertise ownership of a menu
+  // they do not own.
+  //
+  // The fix scopes observation to exactly the composer that could
+  // plausibly have a menu open: a suggestion menu can only be triggered by
+  // typing in a FOCUSED editor, so the body-wide observer now only runs
+  // while `editorElement` itself has focus (`focusin`/`focusout` on the
+  // element — both bubble, unlike `focus`/`blur`). `mention-menu.tsx` /
+  // `slash-menu.tsx` rows use `onMouseDown={e => e.preventDefault()}`
+  // specifically to keep the editor focused through a mouse-driven
+  // selection, so this does not flicker on/off during normal menu use. An
+  // explicit `document.activeElement` check on setup covers the case
+  // where the effect (re)runs while the editor is already focused — e.g.
+  // `editorElement` just became available (see its own doc comment) while
+  // the user was already typing. Also fixes the missing-initial-sync gap
+  // the review caught: starting observation now runs one reconcile pass
+  // immediately, instead of waiting for the first future mutation. ───────
   useEffect(() => {
     if (!editorElement) return;
 
@@ -389,6 +452,7 @@ function ComposerImpl({
 
     let attached: HTMLElement | null = null;
     let attrObserver: MutationObserver | null = null;
+    let bodyObserver: MutationObserver | null = null;
 
     const sync = () => {
       if (!attached) return;
@@ -402,7 +466,7 @@ function ComposerImpl({
       else editorElement.removeAttribute('aria-activedescendant');
     };
 
-    const detach = () => {
+    const detachListbox = () => {
       attrObserver?.disconnect();
       attrObserver = null;
       attached = null;
@@ -410,7 +474,7 @@ function ComposerImpl({
       editorElement.removeAttribute('aria-activedescendant');
     };
 
-    const attach = (el: HTMLElement) => {
+    const attachListbox = (el: HTMLElement) => {
       attached = el;
       attrObserver = new MutationObserver(sync);
       attrObserver.observe(el, { attributes: true, attributeFilter: ['aria-activedescendant'] });
@@ -425,20 +489,43 @@ function ComposerImpl({
       return null;
     };
 
-    const bodyObserver = new MutationObserver(() => {
+    const reconcile = () => {
       const found = findListbox();
       if (found && found !== attached) {
-        detach();
-        attach(found);
+        detachListbox();
+        attachListbox(found);
       } else if (!found && attached) {
-        detach();
+        detachListbox();
       }
-    });
-    bodyObserver.observe(document.body, { childList: true, subtree: true });
+    };
+
+    const startObserving = () => {
+      if (bodyObserver) return;
+      reconcile(); // initial sync — no waiting for the first future mutation
+      bodyObserver = new MutationObserver(reconcile);
+      bodyObserver.observe(document.body, { childList: true, subtree: true });
+    };
+
+    const stopObserving = () => {
+      bodyObserver?.disconnect();
+      bodyObserver = null;
+      detachListbox();
+    };
+
+    const onFocusIn = () => startObserving();
+    const onFocusOut = () => stopObserving();
+
+    editorElement.addEventListener('focusin', onFocusIn);
+    editorElement.addEventListener('focusout', onFocusOut);
+
+    if (document.activeElement === editorElement || editorElement.contains(document.activeElement)) {
+      startObserving();
+    }
 
     return () => {
-      bodyObserver.disconnect();
-      detach();
+      editorElement.removeEventListener('focusin', onFocusIn);
+      editorElement.removeEventListener('focusout', onFocusOut);
+      stopObserving();
     };
   }, [editorElement]);
 
@@ -451,17 +538,21 @@ function ComposerImpl({
     () => ({ current: editorElement }),
     [editorElement],
   );
+  // Fix round 1, Important: redirecting into a NON-empty, unfocused editor
+  // (an everyday state — type something, click a message to read it, type
+  // again) and inserting via `setContent(char, 'merge')` splits the
+  // document at whatever the stale cursor position happens to be
+  // (`insertContent([{type:'paragraph'}, ...])`, per composer-editor.tsx) —
+  // real corruption, not a display quirk. The handle exposes no raw
+  // "insert inline at cursor" primitive, so the only content-safe fix
+  // available from this file is to redirect ONLY while the editor is
+  // empty — the overwhelming common case for this feature (nothing typed
+  // yet) — and otherwise just let the focus move `useComposerFocus` already
+  // performed stand, dropping the keystroke instead of risking the draft.
   const handleTypeAhead = useCallback((char: string) => {
-    // The handle exposes no raw "insert at cursor" primitive (by design —
-    // see composer-editor.tsx's own comment on `setContent`). `merge` mode
-    // is the closest equivalent: when the editor is empty (the overwhelming
-    // common case for this redirect — it only fires while nothing is
-    // focused, which is usually before anything has been typed at all) it
-    // is a plain, correct insert. When the editor already has content, it
-    // appends the character as a new paragraph rather than inline at the
-    // exact cursor position — a known, minor deviation from the old
-    // `ta.setRangeText(...)`, documented in the task report.
-    editorRef.current?.setContent(char, 'merge');
+    if (editorRef.current?.isEmpty()) {
+      editorRef.current.setContent(char, 'merge');
+    }
   }, []);
   useComposerFocus({
     ref: composerFocusRef,
@@ -500,15 +591,37 @@ function ComposerImpl({
   // ── Prefill: ported from session-chat-input.tsx:344-381. `setContent`'s
   // own `mode` already implements exactly what this needs (`replace` for a
   // starter prompt, `merge` for failed-first-turn recovery — see that
-  // handle's own doc comment), so this is thinner than the original. ──────
+  // handle's own doc comment), so this is thinner than the original.
+  //
+  // Fix round 1, Critical: `editorElement` MUST be a dependency here, not
+  // just the four `prefill*` values. `ComposerEditor` is lazy-loaded
+  // (`ComposerEditorLazy` above) and its own `useEditor({immediatelyRender:
+  // false})` doesn't finish constructing a real `Editor` until after the
+  // chunk resolves — `editorRef.current` is a no-op stub for the entire
+  // window in between (see `editorElement`'s own doc comment). A prefill
+  // that arrives, or is already present on mount (a cold-loaded
+  // failed-first-turn recovery — session-chat.tsx:3953-3958 — or the
+  // rewind/"Ask for changes" hand-off, whose parent clears its store one
+  // commit later on the assumption the child already consumed it —
+  // session-chat.tsx:1749-1756), during that window used to be silently
+  // discarded: `setContent` no-opped, and since none of the four `prefill*`
+  // values necessarily change again on their own, the effect had nothing
+  // left to re-run for. Watching `editorElement` is what makes the effect
+  // re-fire the MOMENT the editor becomes real, with whatever prefill is
+  // still current at that point. ──────────────────────────────────────────
   const prefillId = prefill?.id;
   const prefillText = prefill?.text ?? '';
   const prefillFiles = prefill?.files;
   const prefillMode = prefill?.mode;
   useEffect(() => {
     if (
-      prefillId === undefined ||
-      (!prefillText && !prefillFiles?.length && prefillMode !== 'replace')
+      !shouldApplyPrefill({
+        prefillId,
+        prefillText,
+        prefillFiles,
+        prefillMode,
+        editorReady: editorElement != null,
+      })
     ) {
       return;
     }
@@ -522,7 +635,7 @@ function ComposerImpl({
     }
     setStagedCommand(null);
     editorRef.current?.focus();
-  }, [prefillId, prefillText, prefillFiles, prefillMode]);
+  }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
 
   // ── Question lock: save/restore the draft, ported from
   // session-chat-input.tsx:383-394. Loses mention richness in the saved
@@ -533,7 +646,7 @@ function ComposerImpl({
       savedTextBeforeQuestionRef.current = editorRef.current?.getContent().text ?? '';
       editorRef.current?.clear();
     } else if (savedTextBeforeQuestionRef.current) {
-      editorRef.current?.setContent(savedTextBeforeQuestionRef.current, 'replace');
+      setContentWithoutStealingFocus(editorRef.current, savedTextBeforeQuestionRef.current, 'replace');
       savedTextBeforeQuestionRef.current = '';
     }
   }, [lockForQuestion]);
@@ -669,7 +782,7 @@ function ComposerImpl({
       if (clearOnSend) {
         const currentText = editorRef.current?.getContent().text ?? '';
         const merged = mergeFailedSubmissionText(currentText, trimmed);
-        editorRef.current?.setContent(merged, 'replace');
+        setContentWithoutStealingFocus(editorRef.current, merged, 'replace');
         setAttachedFiles((current) => mergeFailedSubmissionFiles(current, filesToSend ?? []));
       }
     }
@@ -691,15 +804,13 @@ function ComposerImpl({
     onQuestionAction,
   ]);
 
-  const editorPlaceholder = stagedCommand
-    ? 'Enter details and press Enter, or press Esc to cancel'
-    : lockForApproval
-      ? 'Approve or deny the action above to continue…'
-      : lockForQuestion
-        ? questionButtonLabel
-          ? 'Or type your own answer...'
-          : 'Type your answer...'
-        : placeholder;
+  const editorPlaceholder = resolveEditorPlaceholder({
+    stagedCommand: !!stagedCommand,
+    lockForApproval,
+    lockForQuestion,
+    questionButtonLabel,
+    placeholder,
+  });
 
   return (
     <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
@@ -822,7 +933,21 @@ function ComposerImpl({
             </div>
           )}
 
-          <div className="flex max-h-[320px] flex-col gap-1 px-3.5 py-3">
+          <div
+            className={cn(
+              'flex max-h-[320px] flex-col gap-1 px-3.5 py-3',
+              // Fix round 1, Minor: restores the amber placeholder emphasis
+              // the old textarea overlay had for a paused connector approval
+              // (session-chat-input.tsx:1233's `text-amber-600
+              // dark:text-amber-400`) — a deliberate "the run is waiting on
+              // you" affordance, not just muted placeholder text. Scopes the
+              // color override to the placeholder pseudo-element only (see
+              // globals.css's `.composer-locked-approval` rule) rather than
+              // this div's own `color`, so the class can't accidentally
+              // recolor the user's actual typed text.
+              lockForApproval && 'composer-locked-approval',
+            )}
+          >
             <Suspense fallback={<ComposerEditorFallback />}>
               <ComposerEditorLazy
                 ref={setEditorRef}
@@ -833,7 +958,7 @@ function ComposerImpl({
                 agents={agents}
                 sessions={allSessions ?? []}
                 currentSessionId={sessionId}
-                commands={commands}
+                commands={stagedCommand ? EMPTY_COMMANDS : commands}
                 onSelectCommand={handleSelectCommand}
                 onSelectAction={handleSelectAction}
               />

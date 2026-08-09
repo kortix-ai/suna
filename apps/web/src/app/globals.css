@@ -2040,3 +2040,16 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   color: var(--muted-foreground);
   pointer-events: none;
 }
+
+/* Fix round 1, Minor: the paused-on-approval placeholder keeps the old
+   amber warning emphasis (session-chat-input.tsx:1233 —
+   `text-amber-600 dark:text-amber-400`) instead of the plain muted color
+   above. `composer.tsx` applies `.composer-locked-approval` to the
+   editor's own wrapper only while `lockForApproval` is true; scoped to the
+   placeholder `::before` alone so it can never affect real typed text. */
+.composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--color-amber-600);
+}
+.dark .composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--color-amber-400);
+}
