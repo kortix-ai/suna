@@ -40,8 +40,12 @@ GitHub OIDC provider, ACM certificate, and regional WAF. It must not target a
 production VPC, secret, certificate, or DNS record.
 
 Set `TF_VAR_cloudflare_api_token` only for this apply. Do not commit the token.
-After apply, re-run this PR's `Deploy Preview (PR)` workflow. A passing bootstrap
-requires all of the following evidence:
+The workflow uses `pull_request_target` and executes lifecycle scripts only from
+the default branch. This prevents a PR from changing code that runs with AWS or
+Vercel credentials. It also means this PR cannot bootstrap its own live preview.
+After this code reaches the default branch through an approved bootstrap, rerun
+`Deploy Preview (PR)` on a labeled PR. A passing bootstrap requires all of the
+following evidence:
 
 1. `https://pr-<PR>.preview-api.kortix.com/v1/health` reports
    `environment=preview` and this PR's full commit SHA.

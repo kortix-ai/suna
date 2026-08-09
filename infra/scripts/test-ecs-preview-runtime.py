@@ -15,6 +15,8 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn("needs: [build-api, build-gateway]", WORKFLOW)
         self.assertIn("needs: deploy", WORKFLOW)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", WORKFLOW)
+        self.assertIn("pull_request_target:", WORKFLOW)
+        self.assertIn("ref: ${{ github.event.repository.default_branch }}", WORKFLOW)
         self.assertIn('[ "$environment" = "preview" ]', WORKFLOW)
         self.assertIn('[ "$commit" = "$COMMIT" ]', WORKFLOW)
         self.assertIn("KORTIX_PUBLIC_BACKEND_URL", WORKFLOW)
@@ -24,7 +26,7 @@ class PreviewRuntimeContract(unittest.TestCase):
     def test_close_and_unlabel_run_complete_base_branch_teardown(self):
         self.assertIn("github.event.action == 'closed'", WORKFLOW)
         self.assertIn("github.event.label.name == 'preview'", WORKFLOW)
-        self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", WORKFLOW)
+        self.assertNotIn("bash infra/scripts/ecs-preview.sh", WORKFLOW.split("ref: ${{ github.event.pull_request.head.sha }}")[1].split("deploy:")[0])
         self.assertIn("ecs-preview.sh teardown", WORKFLOW)
         for command in (
             "aws ecs delete-service",
@@ -55,6 +57,7 @@ class PreviewRuntimeContract(unittest.TestCase):
             "proxied = false",
             'name = "kortix-gha-preview-deploy"',
             '"token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:pull_request"',
+            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/*"',
             'description = "DNS over UDP"',
             'resource "aws_iam_role_policy" "execution_logs_kms"',
         ):

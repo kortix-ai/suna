@@ -1,7 +1,7 @@
 name: Deploy Preview (PR)
 
 on:
-  pull_request:
+  pull_request_target:
     types: [labeled, unlabeled, opened, synchronize, reopened, closed]
 
 concurrency:
@@ -11,15 +11,6 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
-
-env:
-  AWS_REGION: us-west-2
-  PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
-  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-  PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-  TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-  ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
-  BRANCH: ${{ github.event.pull_request.head.ref }}
 
 jobs:
   build-api:
@@ -94,6 +85,8 @@ jobs:
       contents: read
       pull-requests: write
     env:
+      AWS_REGION: us-west-2
+      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
       NUM: ${{ github.event.pull_request.number }}
       COMMIT: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
@@ -101,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.repository.default_branch }}
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ env.PREVIEW_ROLE }}
@@ -154,6 +147,11 @@ jobs:
       NUM: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
+      BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Require Vercel credentials
         run: |
@@ -208,13 +206,20 @@ jobs:
       contents: read
       pull-requests: write
     env:
+      AWS_REGION: us-west-2
+      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
       NUM: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
+      BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.repository.default_branch }}
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ env.PREVIEW_ROLE }}
