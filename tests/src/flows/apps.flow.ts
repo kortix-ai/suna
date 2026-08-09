@@ -11,6 +11,7 @@ flow(
   {
     domain: "apps",
     routes: [
+      "PATCH /v1/projects/:projectId/experimental",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -23,6 +24,15 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
+
+    await ctx.step("enable the apps experiment", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/experimental",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
 
     await ctx.step("list starts empty", async () => {
       const response = await owner.get("/v1/projects/:projectId/apps", {
@@ -122,6 +132,7 @@ flow(
   {
     domain: "apps",
     routes: [
+      "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/apps/artifacts",
       "POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
       "POST /v1/projects/:projectId/apps/:appId/deployments",
@@ -137,6 +148,16 @@ flow(
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
+
+    await ctx.step("enable the apps experiment", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/experimental",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
+
     const slug = ctx.fixtures
       .name("deploy")
       .toLowerCase()
@@ -218,7 +239,7 @@ flow(
           "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
           { params: deploymentParams },
         );
-        logs.status(409);
+        logs.status(404);
       },
     );
 
