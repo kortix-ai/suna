@@ -536,7 +536,7 @@ resource "aws_iam_role" "github_preview_deploy" {
 }
 
 resource "aws_iam_role_policy" "github_preview_deploy" {
-  #checkov:skip=CKV_AWS_355:ECS registration and describe/list APIs do not support resource-level permissions. Mutations are scoped to preview names, tags, cluster, listener, and roles.
+  #checkov:skip=CKV_AWS_355:ECS task-definition registration/deregistration and describe/list APIs do not support resource-level permissions. Other mutations are scoped to preview names, tags, cluster, listener, and roles.
   #checkov:skip=CKV_AWS_111:Write actions are restricted by preview resource names, request/resource tags, the one listener, and two preview roles.
   name = "preview-lifecycle"
   role = aws_iam_role.github_preview_deploy.id
@@ -571,7 +571,7 @@ resource "aws_iam_role_policy" "github_preview_deploy" {
         Sid      = "DeletePreviewTaskDefinition"
         Effect   = "Allow"
         Action   = ["ecs:DeregisterTaskDefinition"]
-        Resource = "arn:${data.aws_partition.current.partition}:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/kortix-pr-*:*"
+        Resource = "*"
       },
       {
         Sid      = "PreviewRuntimeRead"
