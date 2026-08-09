@@ -6,7 +6,6 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
@@ -44,7 +43,6 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
-import { WorkspaceSwitcher } from './workspace-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -120,14 +118,19 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             and the session header no longer has to carry a toggle while the
             panel is docked open.
 
-            The Kortix mark used to be a separate button sitting beside the
-            switcher. Same subject, two mismatched controls, and dead space
-            between them. It is one segmented control now (see
-            WorkspaceSwitcher): the mark still links to the project's home, the
-            name still opens the switcher, and the whole row between them is
-            live instead of inert. */}
+            ONE control answers "who am I / where am I / where can I go". It was
+            three: a `<Link>` carrying the Kortix mark fused to a separate
+            dropdown trigger carrying the workspace name up here, plus the user
+            menu as a third control down in the footer — two of the three being
+            dropdowns. The link is gone, because a control that is half
+            navigation and half disclosure makes you guess which half you are
+            pointing at. The workspace directory is now a second VIEW of this
+            menu, behind "Switch Workspace", which is why there is no footer
+            control below any more. */}
         <div className="flex w-full items-center gap-1">
-          <WorkspaceSwitcher variant="sidebar" className="min-w-0 flex-1" />
+          <div className="min-w-0 flex-1">
+            <UserMenu user={user} variant="sidebar" showWorkspaces />
+          </div>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
@@ -254,9 +257,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
-        <UserMenu user={user} variant="sidebar" />
-      </SidebarFooter>
+      {/* No footer control. This menu moved to the header, where it is now the
+          single control carrying identity AND the workspace directory; a copy
+          down here would put the same dropdown at both ends of one panel. */}
 
       {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
       {isExpanded && <SidebarRail />}

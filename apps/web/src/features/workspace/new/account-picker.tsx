@@ -21,7 +21,7 @@ import type { KortixAccount } from '@kortix/sdk';
  * transparent, borderless grid system, not a bordered panel, and Task 11 next
  * to this one already had to fix a card-inside-a-card.
  *
- * `EntityAvatar` at `size="sm"` — the same size `workspace-switcher.tsx` uses
+ * `EntityAvatar` at `size="sm"` — the same size `workspace-menu-section.tsx` uses
  * for its own account/workspace rows, so the two surfaces share one tile
  * scale, and it sits correctly beside this default `h-9` `SelectTrigger`.
  *

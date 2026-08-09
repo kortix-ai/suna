@@ -41,7 +41,7 @@ describe('AccountPicker: vocabulary', () => {
 });
 
 describe('AccountPicker: EntityAvatar matches the workspace-switcher row scale', () => {
-  test('sizes every account avatar "sm" — the same size workspace-switcher.tsx uses for its rows', () => {
+  test('sizes every account avatar "sm" — the same size workspace-menu-section.tsx uses for its rows', () => {
     expect(code).toContain('<EntityAvatar');
     expect(code).toContain('size="sm"');
     // Paired negative: no other scale sneaks in for this component's avatars,

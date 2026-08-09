@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
+import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { Monitor } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
@@ -48,8 +49,10 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
+  ArrowsLeftRightIcon,
   ArticleIcon,
   BookOpenIcon,
+  CaretLeftIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
@@ -57,6 +60,7 @@ import {
   LifebuoyIcon,
   SignOutIcon as LogOut,
   PaperPlaneTiltIcon,
+  PlusIcon,
   QuestionIcon,
   ScrollIcon,
   ShieldCheckIcon,
@@ -132,9 +136,22 @@ export interface UserMenuUser {
 export function UserMenu({
   user,
   variant = 'sidebar',
+  showWorkspaces = false,
 }: {
   user: UserMenuUser;
   variant?: UserMenuVariant;
+  /**
+   * Add "Switch Workspace", which swaps this menu's content for the workspace
+   * directory. On for the project sidebar, off in the header.
+   *
+   * The directory used to be its own control at the top of the sidebar — a
+   * `<Link>` carrying the Kortix mark fused to a separate dropdown trigger
+   * carrying the workspace name — with this menu a third control in the footer.
+   * Three controls, two of them dropdowns, for "who am I / where am I / where
+   * can I go". It is one control now, and this flag is what makes it answer the
+   * middle question too.
+   */
+  showWorkspaces?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -145,6 +162,14 @@ export function UserMenu({
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  /**
+   * Which face of the menu is showing. Deliberately NOT animated: this is a
+   * menu people live in, and the motion rule for that frequency is remove or
+   * drastically reduce. The height jump the swap could cause is handled in
+   * layout instead — the workspace view carries its own `min-h` — because
+   * height is not a property worth animating even when a swap is worth marking.
+   */
+  const [view, setView] = useState<'main' | 'workspaces'>('main');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
@@ -278,14 +303,60 @@ export function UserMenu({
     );
 
   const dropdown = (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu
+      open={menuOpen}
+      onOpenChange={(open) => {
+        setMenuOpen(open);
+        // Reset here rather than in an effect keyed on `menuOpen`: this is the
+        // event that closes the menu, so the reset belongs in it. An effect
+        // would set state during render-commit to fix up state the same commit
+        // already knew about — a second pass for something with no second cause.
+        if (!open) setView('main');
+      }}
+    >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align={variant === 'sidebar' ? 'start' : 'end'}
-        side={variant === 'sidebar' ? (sidebar?.isMobile ? 'bottom' : 'top') : 'bottom'}
+        // `bottom` for both variants now. The sidebar copy opened upward while
+        // it lived in the FOOTER; it is the control at the TOP of the sidebar
+        // since the merge, where `top` would fly the menu off the viewport.
+        side="bottom"
         sideOffset={variant === 'sidebar' ? 6 : 8}
         className="w-[256px] space-y-0.5 overflow-hidden"
       >
+        {view === 'workspaces' ? (
+          <>
+            {/* `preventDefault` — every other row here closes the menu on
+                select, which is what Radix does by default and what you want
+                everywhere except the one row whose entire job is to stay and
+                show you something else. */}
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                setView('main');
+              }}
+              size="sm"
+            >
+              <CaretLeftIcon />
+              Switch Workspace
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <WorkspaceMenuSection />
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onSelect={() => deferAfterClose(() => router.push('/new'))}
+              size="sm"
+            >
+              <PlusIcon />
+              Create a workspace…
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <>
         {currentAccount && (
           <>
             <DropdownMenuItem
@@ -388,6 +459,22 @@ export function UserMenu({
           </DropdownMenuPortal>
         </DropdownMenuSub>
 
+        {/* Sits with Theme and Help — all three are things you open from here
+            rather than places this menu sends you — and above the separator, so
+            it stays clear of the row that ends your session. */}
+        {showWorkspaces && (
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              setView('workspaces');
+            }}
+            size="sm"
+          >
+            <ArrowsLeftRightIcon />
+            Switch Workspace
+          </DropdownMenuItem>
+        )}
+
         {/* Log out is the only row that ends something, so it gets its own
             group. Nothing sits below it — the last item in a menu is the one a
             slipped pointer lands on. */}
@@ -397,6 +484,8 @@ export function UserMenu({
           <LogOut />
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
         </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

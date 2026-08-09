@@ -3,13 +3,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The sidebar header row: the merged brand/switcher control, search, and the
- * panel's own collapse toggle.
+ * The sidebar header row: the account control, search, and the panel's own
+ * collapse toggle.
  *
- * The Kortix mark used to be its own button next to the switcher. Both answered
- * "which project am I in / where do I go", looked nothing alike, and left dead
- * space between them. They are one segmented control now, owned by
- * WorkspaceSwitcher — the mark keeps its link to the project's home.
+ * That first control used to be three. A `<Link>` carrying the Kortix mark was
+ * fused to a separate dropdown trigger carrying the workspace name, and the user
+ * menu was a third control down in the footer — two of the three being
+ * dropdowns, all answering some slice of "who am I / where am I / where can I
+ * go". It is one `UserMenu` now: the link is gone, and the workspace directory
+ * is a second view of that menu behind "Switch Workspace".
  *
  * Asserted against the source because the alternative is mounting the whole
  * sidebar (sidebar + auth + query + i18n providers) to observe which controls
@@ -20,14 +22,22 @@ const source = readFileSync(join(import.meta.dir, 'project-sidebar.tsx'), 'utf8'
 const header = source.slice(source.indexOf('<SidebarHeader'), source.indexOf('</SidebarHeader>'));
 
 describe('project sidebar header', () => {
-  test('the merged brand/switcher control leads the row', () => {
-    expect(header).toContain('<WorkspaceSwitcher variant="sidebar"');
+  test('the account control leads the row, and carries the workspace directory', () => {
+    expect(header).toContain('<UserMenu user={user} variant="sidebar" showWorkspaces />');
   });
 
-  // The whole point of the merge: one control, not a mark button parked beside
-  // a switcher. The mark now lives inside WorkspaceSwitcher.
-  test('no standalone Kortix mark button is left beside it', () => {
+  // The whole point of the merge: one control. Neither the old split brand/name
+  // control nor a standalone mark button may come back.
+  test('no standalone Kortix mark button and no separate switcher', () => {
     expect(header).not.toContain('<Icon.Kortix');
+    expect(header).not.toContain('WorkspaceSwitcher');
+  });
+
+  // The user menu was the third control, at the other end of the same panel.
+  // One dropdown per panel, not two.
+  test('the footer no longer carries a second copy of the same menu', () => {
+    expect(source).not.toContain('<SidebarFooter');
+    expect(source.match(/<UserMenu/g)?.length).toBe(1);
   });
 
   // A `w-fit` trigger inside a full-width wrapper left an inert strip between

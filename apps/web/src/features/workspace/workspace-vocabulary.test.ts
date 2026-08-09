@@ -24,7 +24,7 @@ import { join } from 'node:path';
  * would leave every absence check green.
  */
 const SURFACES = [
-  'project-sidebar/workspace-switcher.tsx',
+  'project-sidebar/workspace-menu-section.tsx',
   'new/new-workspace-page.tsx',
   'new/advanced-fields.tsx',
   'new/account-picker.tsx',
@@ -88,16 +88,24 @@ describe('workspace vocabulary', () => {
  * three periods, in the two surfaces that use one).
  */
 describe('workspace vocabulary: each surface actually renders its Workspace copy', () => {
-  test('workspace-switcher.tsx renders the search placeholder, the create item, and the empty state', () => {
+  test('workspace-menu-section.tsx renders the search placeholder and the empty state', () => {
     const code = stripComments(
-      readFileSync(
-        join(import.meta.dir, 'project-sidebar/workspace-switcher.tsx'),
-        'utf8',
-      ),
+      readFileSync(join(import.meta.dir, 'project-sidebar/workspace-menu-section.tsx'), 'utf8'),
     );
     expect(code).toContain('Find workspace…');
-    expect(code).toContain('Create a workspace…');
     expect(code).toContain('No workspaces yet');
+  });
+
+  // "Create a workspace…" sits with the back row in `user-menu.tsx`, which owns
+  // the workspace VIEW; the section above is only the list inside it. Asserted
+  // where the string actually lives — a guard pointed at the wrong file passes
+  // for the wrong reason the moment someone moves the row again.
+  test('user-menu.tsx renders the create item in its workspace view', () => {
+    const code = stripComments(
+      readFileSync(join(import.meta.dir, '../layout/user-menu.tsx'), 'utf8'),
+    );
+    expect(code).toContain('Create a workspace…');
+    expect(code).toContain('Switch Workspace');
   });
 
   test('new-workspace-page.tsx renders the page heading', () => {

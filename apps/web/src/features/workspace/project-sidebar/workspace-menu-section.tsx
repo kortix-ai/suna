@@ -1,0 +1,218 @@
+'use client';
+
+/**
+ * The workspace-picker VIEW of the sidebar's account menu: search, every
+ * workspace in every account, and the create row.
+ *
+ * Reached from "Switch Workspace" in that menu's main view, which swaps its
+ * content for this rather than flying a submenu out to the side — a search box
+ * and a grouped list need the full menu width, and side-flyouts are miserable on
+ * touch. The back control lives with the parent, which owns the view state.
+ *
+ * Rendered INSIDE an open `DropdownMenuContent`, so it emits menu children only:
+ * no `DropdownMenu`, no trigger, no portal of its own.
+ */
+
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  filterWorkspaceGroups,
+  groupWorkspacesByAccount,
+} from '@/features/workspace/project-sidebar/workspace-grouping';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
+import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+
+export function WorkspaceMenuSection() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useParams<{ id?: string }>();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
+  const switching = useIsSwitchingProject();
+  const [query, setQuery] = useState('');
+
+  const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
+
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+  });
+
+  // Every account the user belongs to, and every workspace in each. This menu is
+  // the ONLY complete workspace directory now that the /projects index is gone,
+  // so it lists all accounts' workspaces, not just the selected one.
+  // `GET /projects` with no `account_id` scopes server-side to a single default
+  // account (apps/api resolveProjectAccount -> resolveAccountId), so there is no
+  // single unscoped call that returns everything — one listProjectsForAccount per
+  // account, fanned out and flattened below.
+  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const workspaceQueries = useQueries({
+    queries: accounts.map((account) => ({
+      queryKey: qk.projects.list(account.account_id),
+      queryFn: () => listProjectsForAccount(account.account_id),
+      ...contract('inventory'),
+    })),
+  });
+
+  // Loading until accounts themselves are known AND every account's workspaces
+  // are in. Without `accountsQuery.isLoading` this is `false` while accounts are
+  // still in flight (`workspaceQueries` starts as `[]`, and `[].some(...)` is
+  // `false` by definition) — the view would paint "No workspaces yet" before it
+  // had even asked how many accounts exist.
+  const workspacesLoading = accountsQuery.isLoading || workspaceQueries.some((q) => q.isLoading);
+  const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
+
+  // Accounts whose workspace fetch failed. `workspaceQueries[i]` belongs to
+  // `accounts[i]` — both built from the same array in the same order — so this is
+  // a zip by index, not a second fetch. A failed account still gets its group
+  // header and a retry row instead of silently looking empty:
+  // `groupWorkspacesByAccount` drops any account with zero workspaces, and
+  // `undefined` data folds to `[]` on error, so without this the account would
+  // vanish indistinguishably from "genuinely has no workspaces".
+  const failedAccounts = accounts
+    .map((account, i) => ({ account, result: workspaceQueries[i] }))
+    .filter(({ result }) => result.isError);
+
+  const groups = useMemo(
+    () =>
+      groupWorkspacesByAccount({
+        accounts,
+        workspaces: allWorkspaces,
+        activeWorkspaceId: activeProjectId ?? null,
+      }),
+    [accounts, allWorkspaces, activeProjectId],
+  );
+  const visibleGroups = useMemo(() => filterWorkspaceGroups(groups, query), [groups, query]);
+
+  // A failed account never appears in `groups` (it has zero workspaces, and
+  // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
+  // either — that would show "No workspaces yet" over an account we simply failed
+  // to load, instead of that account's own retry row.
+  const isEmpty = visibleGroups.length === 0 && failedAccounts.length === 0;
+
+  // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
+  // on select unless the handler calls `preventDefault`.
+  const switchProject = (project: KortixProject) => {
+    if (project.project_id === activeProjectId) return;
+    beginSwitch(project.project_id);
+    // Keep the account store in step with the workspace actually being opened;
+    // otherwise account-scoped surfaces keep answering for the previous one.
+    if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
+    router.push(`/projects/${project.project_id}`);
+  };
+
+  return (
+    <>
+      {/* Always mounted. The /projects index is gone, so this view is the whole
+          directory — a conditional search box would make workspace N+7
+          unreachable for anyone with more than a handful. */}
+      <div className="px-1 pb-1">
+        <div className="relative">
+          <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find workspace…"
+            // A Radix menu owns keyboard input: it runs typeahead on printable
+            // keys to jump between items, moving focus off whatever you are
+            // typing into. Stopping propagation keeps the keystrokes in the
+            // field. Without it, searching drives the menu's selection instead
+            // of this input — which is the whole reason a search box is here.
+            onKeyDown={(e) => e.stopPropagation()}
+            className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-8 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Bounded so a long list scrolls inside the menu rather than growing it
+          past the viewport. `min-h` keeps the menu from collapsing to a sliver
+          on an empty or one-workspace account, which is what stops the swap
+          between views from jolting — a layout answer, not an animated one. */}
+      <div className="max-h-[240px] min-h-[120px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        {workspacesLoading ? (
+          <div className="space-y-1 p-1">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton key={i} className="h-7 rounded-md" />
+            ))}
+          </div>
+        ) : isEmpty ? (
+          <div className="text-muted-foreground/60 px-2 py-3 text-xs">
+            {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
+          </div>
+        ) : (
+          <>
+            {visibleGroups.map((group) => (
+              <DropdownMenuGroup key={group.accountId}>
+                <DropdownMenuLabel>{group.accountName}</DropdownMenuLabel>
+                {group.workspaces.map((workspace) => {
+                  const active = workspace.project_id === activeProjectId;
+                  const loading = switching && workspace.project_id !== activeProjectId;
+                  return (
+                    <DropdownMenuItem
+                      key={workspace.project_id}
+                      disabled={loading}
+                      onSelect={() => switchProject(workspace)}
+                      className={cn('cursor-pointer', active && 'bg-muted/80')}
+                    >
+                      <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {workspace.name}
+                      </span>
+                      {loading ? (
+                        <Loading className="text-muted-foreground size-3.5" />
+                      ) : active ? (
+                        <CheckCircleSolid
+                          weight="fill"
+                          className="text-kortix-green size-3.5 shrink-0"
+                        />
+                      ) : null}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+            ))}
+            {/* Rendered after the successful groups, and NOT filtered by `query`:
+                a search match could be hiding inside the account that failed, so
+                hiding this on a search would tell the user something false. */}
+            {failedAccounts.map(({ account, result }) => (
+              <DropdownMenuGroup key={account.account_id}>
+                <DropdownMenuLabel>{account.name?.trim() || 'Account'}</DropdownMenuLabel>
+                <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
+                  <span className="min-w-0 flex-1 truncate">Couldn&apos;t load</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={result.isFetching}
+                    onClick={() => result.refetch()}
+                    className="shrink-0"
+                  >
+                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : 'Retry'}
+                  </Button>
+                </div>
+              </DropdownMenuGroup>
+            ))}
+          </>
+        )}
+      </div>
+    </>
+  );
+}
