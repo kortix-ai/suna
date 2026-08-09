@@ -34,11 +34,13 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
+import { contract, modelKeyToWire, qk, type ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { resolveAvailableSelectedModel } from './model-availability';
 import { pickerGroupId, pickerGroupLabel } from './model-grouping';
+import { computeModelExtrasRows } from './model-popover-extras';
 import { shouldShowFreeTag } from './model-tags';
+import { reasoningEffortValuesFor, useReasoningEffortControl } from './reasoning-effort-selector';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
@@ -109,6 +111,27 @@ export interface ModelSelectorProps {
   disabled?: boolean;
   /** True while the runtime provider catalog request has not resolved. */
   modelsLoading?: boolean;
+  /** Overrides the trigger label's `max-w-[120px]` (twMerge picks the last
+   *  conflicting utility, so this cleanly replaces rather than stacks).
+   *  Composer passes `max-w-[7rem]` so a long model name can't widen the
+   *  toolbar row; every other call site leaves this unset and keeps the
+   *  120px default unchanged. */
+  triggerLabelClassName?: string;
+
+  /**
+   * Variant (thinking-mode) and reasoning-effort controls, folded into the
+   * popover below the model list (Task 10) instead of sitting inline in the
+   * composer toolbar. All optional — every non-composer call site (schedules,
+   * gateway playground/routing/view, channels, agent detail/editor) omits
+   * them, so the extras section renders nothing and their layout is
+   * unchanged. See `computeModelExtrasRows` for the exact show/hide rule.
+   */
+  variants?: string[];
+  selectedVariant?: string | null;
+  onVariantChange?: (variant: string | null) => void;
+  /** Scopes the reasoning-effort control to a project's routing policy —
+   *  same meaning as `ReasoningEffortSelector`'s `projectId`. */
+  projectId?: string;
 }
 
 export function ModelSelector({
@@ -119,6 +142,17 @@ export function ModelSelector({
   unsetLabel = 'No model',
   disabled = false,
   modelsLoading = false,
+  triggerLabelClassName,
+  variants = [],
+  selectedVariant = null,
+  onVariantChange,
+  // Aliased: this component ALSO derives a `projectId` internally from the
+  // route (`params.id`, below) for gateway catalog filtering — a different
+  // concept (which catalog to show) from this prop (which project's routing
+  // policy the reasoning-effort control reads/writes). Keep them distinct
+  // rather than quietly conflating "current route project" with "project
+  // this picker was told to scope reasoning effort to".
+  projectId: extrasProjectId,
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -167,6 +201,21 @@ export function ModelSelector({
       m.modelID === availableSelectedModel?.modelID,
   );
   const displayName = current?.modelName || unsetLabel;
+
+  // Extras section (variant + reasoning effort) — show/hide is a pure
+  // function of what the caller wired up, so the 8 non-composer call sites
+  // (which pass none of this) are provably unaffected. `reasoningEffortValuesFor`
+  // is the SAME capability-gate function `ReasoningEffortSelector` uses —
+  // reused, not re-derived, so a model's effort ladder can never disagree
+  // between the two.
+  const wireModel = availableSelectedModel ? modelKeyToWire(availableSelectedModel) : undefined;
+  const reasoningEffortValues = useMemo(() => reasoningEffortValuesFor(wireModel), [wireModel]);
+  const extrasRows = computeModelExtrasRows({
+    variants,
+    hasVariantHandler: !!onVariantChange,
+    reasoningEffortValues,
+    hasProjectId: !!extrasProjectId,
+  });
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -275,7 +324,9 @@ export function ModelSelector({
                   disabled && 'cursor-not-allowed opacity-60',
                 )}
               >
-                <span className="max-w-[120px] truncate">{displayName}</span>
+                <span className={cn('max-w-[120px] truncate', triggerLabelClassName)}>
+                  {displayName}
+                </span>
                 <ChevronDown
                   className={cn(
                     'size-3 opacity-50 transition-transform duration-200',
@@ -439,6 +490,23 @@ export function ModelSelector({
                 </div>
               )}
             </CommandList>
+            {extrasRows.showSection && availableSelectedModel ? (
+              <div className="border-border/60 flex flex-col gap-2 border-t p-2">
+                {extrasRows.showVariantRow && (
+                  <ModelPopoverVariantRow
+                    variants={variants}
+                    selectedVariant={selectedVariant}
+                    onSelect={onVariantChange!}
+                  />
+                )}
+                {extrasRows.showReasoningEffortRow && (
+                  <ModelPopoverReasoningEffortRow
+                    model={availableSelectedModel}
+                    projectId={extrasProjectId}
+                  />
+                )}
+              </div>
+            ) : null}
             {defaultControls && availableSelectedModel ? (
               <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
                 <button
@@ -484,5 +552,125 @@ export function ModelSelector({
         </CommandPopoverContent>
       </CommandPopover>
     </>
+  );
+}
+
+// ─── Model popover extras (variant + reasoning effort) ──────────────────────
+//
+// Both rows render as a flat chip list rather than reusing the standalone
+// `VariantSelector` (a single cycling button) or `ReasoningEffortSelector`
+// (its own `CommandPopover`) verbatim. Nesting a second Radix `Popover`
+// inside this already-open one is fragile — the child's portaled content
+// sits outside the parent's content subtree, so the parent's outside-click
+// dismissal can treat a click inside the child as "outside" and close both.
+// A flat row sidesteps that entirely and reads better in a footer anyway.
+// Neither standalone component is modified: this reuses their exported pure
+// logic (`reasoningEffortValuesFor`, `useReasoningEffortControl`) directly,
+// so `reasoning-effort-selector.tsx`'s gating predicate is untouched and its
+// own tests keep covering it unchanged.
+
+const extrasChipBase =
+  'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 shrink-0 cursor-pointer items-center rounded-full px-2.5 text-[11px] font-medium capitalize transition-colors duration-200';
+const extrasChipSelected = 'bg-foreground/[0.06] text-foreground';
+const extrasChipLocked =
+  'hover:text-muted-foreground pointer-events-none cursor-not-allowed opacity-60 hover:bg-transparent';
+const extrasRowLabel =
+  'text-muted-foreground/60 px-1 text-[10px] font-semibold tracking-wide uppercase';
+
+function ModelPopoverVariantRow({
+  variants,
+  selectedVariant,
+  onSelect,
+}: {
+  variants: string[];
+  selectedVariant: string | null;
+  onSelect: (variant: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={extrasRowLabel}>Thinking mode</span>
+      <div className="flex flex-wrap gap-1 px-1">
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          className={cn(extrasChipBase, !selectedVariant && extrasChipSelected)}
+        >
+          Default
+        </button>
+        {variants.map((variant) => (
+          <button
+            key={variant}
+            type="button"
+            onClick={() => onSelect(variant)}
+            className={cn(extrasChipBase, selectedVariant === variant && extrasChipSelected)}
+          >
+            {variant}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModelPopoverReasoningEffortRow({
+  model,
+  projectId,
+}: {
+  model: ModelRef;
+  projectId: string | undefined;
+}) {
+  const { values, current, canWrite, pending, wireModel, setEffort } = useReasoningEffortControl(
+    model,
+    projectId,
+  );
+  const locked = !canWrite;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={extrasRowLabel}>Reasoning effort</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex flex-wrap gap-1 px-1">
+            <button
+              type="button"
+              disabled={locked || pending}
+              onClick={() => setEffort(null)}
+              className={cn(
+                extrasChipBase,
+                current === null && extrasChipSelected,
+                (locked || pending) && extrasChipLocked,
+              )}
+            >
+              Auto
+            </button>
+            {values.map((value) => (
+              <button
+                key={value}
+                type="button"
+                disabled={locked || pending}
+                onClick={() => setEffort(value)}
+                className={cn(
+                  extrasChipBase,
+                  current === value && extrasChipSelected,
+                  (locked || pending) && extrasChipLocked,
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[240px]">
+          {locked ? (
+            <p>Only project editors can change reasoning effort for this model.</p>
+          ) : (
+            <p>
+              Reasoning effort for <span className="font-mono">{wireModel}</span> — applies to
+              every session in this project using this model.
+            </p>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

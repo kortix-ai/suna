@@ -168,7 +168,7 @@ export function AgentSelector({
             )}
           >
             {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
-            <span className="max-w-[100px] truncate">{displayName}</span>
+            <span className="max-w-[7rem] truncate">{displayName}</span>
             <CaretDownIcon
               className={cn(
                 'size-3 opacity-50 transition-transform duration-200',
