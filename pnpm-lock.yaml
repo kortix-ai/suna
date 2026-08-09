@@ -925,7 +925,7 @@ importers:
         specifier: ^3.13.12
         version: 3.14.5(react-dom@19.2.8)(react@19.2.8)
       '@tiptap/core':
-        specifier: ^3.14.0
+        specifier: 3.27.1
         version: 3.27.1(@tiptap/pm@3.27.1)
       '@tiptap/extension-blockquote':
         specifier: ^3.14.0
@@ -1018,7 +1018,7 @@ importers:
         specifier: ^3
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
       '@tiptap/pm':
-        specifier: ^3.3.0
+        specifier: 3.27.1
         version: 3.27.1
       '@tiptap/react':
         specifier: ^3.3.0

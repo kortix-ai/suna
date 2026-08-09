@@ -16,9 +16,9 @@
  * `promptRuntimeMessage`) only ever carries `model` / `agent` / `variant` /
  * `directory` — there is no per-message reasoning-effort field to set on a
  * chat send today. Separately, models.dev-sourced models don't populate
- * OpenCode's legacy per-model `variant` map, which is why the composer's
- * `VariantSelector` renders nothing for a model like `openai/gpt-5.6-sol`
- * even though it's very much a reasoning model.
+ * OpenCode's legacy per-model `variant` map, so a model like
+ * `openai/gpt-5.6-sol` has no per-model variant to cycle even though it's
+ * very much a reasoning model.
  *
  * The one path that reliably reaches the wire today is the per-project
  * **model_generation_config** the gateway injects at resolution time —
@@ -41,25 +41,10 @@
  * stays discoverable.
  */
 
-import {
-  BrainIcon as Brain,
-  CheckIcon as Check,
-  CaretDownIcon as ChevronDown,
-} from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
-import {
-  CommandGroup,
-  CommandItem,
-  CommandList,
-  CommandPopover,
-  CommandPopoverContent,
-  CommandPopoverTrigger,
-} from '@/components/ui/command';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
 import { modelKeyToWire } from '@kortix/sdk/react';
-import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
 import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
@@ -158,93 +143,4 @@ export function useReasoningEffortControl(
     wireModel,
     setEffort,
   };
-}
-
-export function ReasoningEffortSelector({
-  model,
-  projectId,
-}: {
-  model: ReasoningEffortModelKey | null;
-  projectId: string | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const { visible, values, current, canWrite, pending, wireModel, setEffort } =
-    useReasoningEffortControl(model, projectId);
-
-  if (!visible) return null;
-
-  const locked = !canWrite;
-  const displayValue = current ?? 'auto';
-
-  return (
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(locked || pending ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={locked || pending || undefined}
-              aria-label="Reasoning effort"
-              className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                open && 'bg-muted text-foreground',
-                current && 'text-foreground',
-                (locked || pending) &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-              )}
-            >
-              <Brain className="size-3.5 shrink-0" />
-              <span className="max-w-[80px] truncate">{displayValue}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px]">
-          {locked ? (
-            <p>Only project editors can change reasoning effort for this model.</p>
-          ) : (
-            <p>
-              Reasoning effort for <span className="font-mono">{wireModel}</span> — applies to every
-              session in this project using this model.
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
-
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[180px]">
-        <CommandList>
-          <CommandGroup heading="Reasoning effort">
-            <CommandItem
-              value="reasoning-effort-default"
-              onSelect={() => {
-                setEffort(null);
-                setOpen(false);
-              }}
-            >
-              <span className="flex-1 truncate">Model default</span>
-              {current === null && <Check className="text-foreground size-3.5 shrink-0" />}
-            </CommandItem>
-            {values.map((value) => (
-              <CommandItem
-                key={value}
-                value={`reasoning-effort-${value}`}
-                onSelect={() => {
-                  setEffort(value);
-                  setOpen(false);
-                }}
-              >
-                <span className="flex-1 truncate capitalize">{value}</span>
-                {current === value && <Check className="text-foreground size-3.5 shrink-0" />}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandPopoverContent>
-    </CommandPopover>
-  );
 }

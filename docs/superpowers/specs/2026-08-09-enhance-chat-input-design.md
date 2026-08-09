@@ -251,21 +251,29 @@ before calling `setContent`, and never hands TipTap a bare string.
 
 #### 4.2.4 Dependency pinning
 
-`@tiptap/extension-mention` and `@tiptap/suggestion` are pinned to `3.27.1` to
-match `@tiptap/core`. Left on `^3` they resolve to `3.29.2`, which declares an
-exact peer of `@tiptap/core: 3.29.2` — a mismatch silenced only by
-`legacy-peer-deps=true` in `.npmrc`, and one that surfaces when §5.1/§5.2 wire
-them.
+`@tiptap/suggestion` is the one genuinely new package this branch adds — it is
+pinned to `3.27.1`. (`@tiptap/extension-mention` was evaluated but has zero
+imports in `src/`; the mention node is hand-built in
+`composer/editor/mention-node.ts` instead, so that declaration was dropped, not
+added.) `@tiptap/suggestion@3.27.1` declares **exact** peer dependencies —
+`@tiptap/core: 3.27.1` and `@tiptap/pm: 3.27.1` — so both are pinned to
+`3.27.1` too, not left on `^3.14.0`/`^3.3.0`. A caret range on either would
+resolve past `3.27.1` on the next `pnpm update` and reproduce the same
+unmet-exact-peer condition, silenced only by `legacy-peer-deps=true` in
+`.npmrc`.
 
 Four further packages — `@tiptap/extension-bold`, `-italic`, `-code` and
 `@tiptap/extensions` — are declared explicitly. This repo uses
 `nodeLinker: isolated` with empty `hoistPattern`, so transitive packages are not
-resolvable from app source even when present. **Bundle delta is zero**: all four
-were already in the lockfile as `starter-kit` transitives.
+resolvable from app source even when present. These four cost nothing on their
+own: all four were already in the lockfile as `starter-kit` transitives.
 
 The editor module is `dynamic(() => import(...), { ssr: false })` so ProseMirror
-stays out of the first paint. Estimated added weight ~85–100 KB gz on the
-composer chunk; this is a real cost and is measured in the plan, not assumed.
+stays out of the first paint. **Superseded by measurement (see §6):** this
+section originally estimated ~85–100 KB gz added to the composer chunk. Two
+real `next build` runs measured **+136.0 KB gz** with the full markdown
+extension set. §6 records the correction and the open trade-off; this
+estimate should not be treated as current.
 
 ### 4.3 Mention node
 
@@ -518,8 +526,33 @@ so a failed send stays retryable).
 | Composer chunk (gz) | baseline | baseline + ≤ 100 KB | `pnpm build` + bundle report, recorded both sides |
 | Mention menu open → first paint | — | < 100 ms warm cache | Performance marks |
 
-The bundle row is a budget, not a prediction. If the measured delta exceeds
-100 KB gz, the extension list gets cut before the PR opens.
+**Correction — the 100 KB ceiling and its cut rule did not survive contact
+with a real measurement, and the branch says so rather than quietly
+overriding it.** The row above originally read "the bundle row is a budget,
+not a prediction: if the measured delta exceeds 100 KB gz, the extension list
+gets cut before the PR opens." That rule was written as an estimate before any
+of this code existed, with no real `next build` behind it.
+
+Two real `next build` runs (verification doc §7.1) measured the composer
+chunk at **+136.0 KB gz** with the full markdown extension set spec §2 Goal 4
+requires — 36 KB over the ceiling. The cut rule was then actually attempted:
+`Blockquote`/`Bold`/`Italic`/`Strike`/`Code`/`CodeBlock`/`Link`/`BulletList`/
+`OrderedList`/`ListItem` were removed from `extensions.ts` and the chunk
+re-measured at **+102.9 KB gz** — still ~2.9 KB over the ceiling even with
+markdown support gone entirely. That cut was **reverted**: every one of those
+ten extensions is load-bearing for markdown input rules and send-time
+serialization, an explicit user requirement ("we need to make this essential
+input markdown-friendly. Markdown should be supported properly"), not
+something the compat matrix happened to omit.
+
+**The cut rule in this section is explicitly overridden for this branch.**
+The 100 KB ceiling was never achievable with ProseMirror plus the `@`/`/` menu
+system and markdown support at all — the maximal cut only reached 102.9 KB,
+still over budget. Closing the remaining ~36–37 KB gap means either raising
+the budget or dropping the markdown requirement. **That trade-off is open,
+left for the user to decide — not resolved by this task.** See verification
+doc §7.2 for the full measurement, the reverted cut commit, and the
+byte-for-byte restore proof.
 
 ---
 

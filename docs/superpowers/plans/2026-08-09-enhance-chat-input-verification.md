@@ -1212,15 +1212,17 @@ The task constraint was "no new dependencies". Six `@tiptap/*` entries were
 added to `apps/web/package.json` during the plan. Four
 (`extension-bold`, `extension-code`, `extension-italic`, `extensions`) were
 already resolved in `pnpm-lock.yaml` at base and are promotions of existing
-transitives. **Two were genuinely new packages** — `@tiptap/extension-mention`
-and `@tiptap/suggestion` (both absent from the base lockfile, both pinned to
-`3.27.1`). `@tiptap/suggestion` is load-bearing: it is the single code path both
-the `@` and `/` menus register through, and the spec plans for it explicitly
-(§4, "To add: `@tiptap/suggestion`"). **`@tiptap/extension-mention` has zero
-imports in `src/`** — the mention node is hand-built in
-`composer/editor/mention-node.ts` — so that declaration can be dropped.
-Separately, `@tiptap/starter-kit` also has zero imports and was already noted for
-removal (`progress.md:36`).
+transitives. **Only one is a genuinely new package** — `@tiptap/suggestion`
+(absent from the base lockfile, pinned to `3.27.1`, along with `@tiptap/core`
+and `@tiptap/pm` since `3.27.1` declares exact peers on both). It is
+load-bearing: it is the single code path both the `@` and `/` menus register
+through, and the spec plans for it explicitly (§4, "To add:
+`@tiptap/suggestion`"). `@tiptap/extension-mention` was evaluated alongside
+it, found to have **zero imports in `src/`** — the mention node is hand-built
+in `composer/editor/mention-node.ts` — and **has already been dropped**
+(Task 14; `apps/web/package.json`, `pnpm-lock.yaml`), not merely a candidate
+to drop. Separately, `@tiptap/starter-kit` also has zero imports and was
+already noted for removal (`progress.md:36`).
 
 ---
 
@@ -1249,7 +1251,7 @@ diff, protected suites byte-identical.
 
 ---
 
-## 7. Measurements (Task 15)
+## 8. Measurements (Task 15)
 
 Spec §6 sets five targets. This section reports what was actually measured on
 this machine, on this branch, and states plainly which of the five could be
@@ -1278,10 +1280,10 @@ independent of markdown) stays removed.
 | React commits per keystroke: 1 → 0 | Source-verified | **0**, confirmed against installed `@tiptap/react` source (below) |
 | Commits per 60 s idle, empty composer: 10 → 0 | Source-verified (grep) | **0** — no `setInterval` anywhere in `composer/` |
 | `ModelSelector` renders per keystroke: 1 → 0 | Source-verified | **0** in steady state — boundary-only re-render, traced below |
-| Composer chunk (gz), with markdown: baseline → ≤ baseline + 100 KB | **Measured**, real builds | **+136.0 KB gz — exceeds the 100 KB ceiling by ~36 KB. Open — see 7.2.** |
+| Composer chunk (gz), with markdown: baseline → ≤ baseline + 100 KB | **Measured**, real builds | **+136.0 KB gz — exceeds the 100 KB ceiling by ~36 KB. Open — see 8.2.** |
 | Mention menu open → first paint: — → < 100 ms warm | Not measurable here | Requires a browser; not attempted |
 
-### 7.1 Bundle — measured, not estimated
+### 8.1 Bundle — measured, not estimated
 
 Turbopack's `next build` (Next 16.3.0) prints no per-route "First Load JS"
 table and this repo has no bundle analyzer, so the delta was measured by
@@ -1310,7 +1312,25 @@ carries the composer's TipTap/ProseMirror code.
 Delta with markdown, no cut: **+136.0 KB gz — over the 100 KB ceiling by
 ~36 KB.**
 
-### 7.2 The cut that was tried, reverted, and why — open decision for the user
+**Caveat — this measurement may under-count, not over-count.** The chunk was
+identified by grepping emitted chunks for string markers, and most of those
+markers (`prosemirror-`, `@tiptap`, and similar) are import specifiers —
+Turbopack rewrites them away during bundling, so a marker like this only
+survives in a chunk if the literal string also appears in run-time code (an
+error message, a package's own internal string). The one marker discarded
+above that would actually catch a *view-only* chunk — `.ProseMirror`, the CSS
+class ProseMirror stamps onto its DOM, which survives bundling because it is
+a real class name, not an import path — was ruled a false positive without
+recording which chunk it matched or how large that chunk was. "Exactly one
+chunk matched" (step 1 above) is an observation about which chunks contain
+the specific import-specifier markers grepped for, not proof that the entire
+TipTap/ProseMirror surface — including any view/render code Turbopack split
+into a separate chunk that happens not to contain those particular literals —
+lives in that one chunk. **+136.0 KB gz should be read as a floor, not a
+verified exact total**: it is everything the marker sweep could find, and the
+sweep had a known, undocumented gap.
+
+### 8.2 The cut that was tried, reverted, and why — open decision for the user
 
 Per the original T15 brief, a bundle cut was attempted: `Blockquote`,
 `Bold`, `Italic`, `Strike`, `Code`, `CodeBlock`, `Link`,
@@ -1382,7 +1402,7 @@ deliverable, covering matrix rows 8, 9, 23, 24), markdown input rules and
 correct send-time serialization (spec §2 Goal 4), and the uncontrolled-editor
 architecture that removed per-keystroke React re-rendering across
 `ModelSelector`/`AgentSelector`/`VariantSelector`/`ReasoningEffortSelector`/
-`TokenProgress`/`VoiceRecorder` (§7.3 below) — a target this plan could not
+`TokenProgress`/`VoiceRecorder` (§8.3 below) — a target this plan could not
 have hit with a controlled `<textarea>` + React state at all.
 
 **Real-world context, not a mitigation:** this chunk is **lazy-loaded**
@@ -1394,7 +1414,24 @@ in the app, and not before first paint on the pages that do. This changes
 transfer and parse cost for anyone who opens a composer, stated here as
 context for judging the number, not as a reason the ceiling doesn't apply.
 
-### 7.3 Render metrics — source-verified against installed code
+**Caveat — "lazy-loaded" is not "opt-in."** "Not part of the initial route
+paint" is literally true and should not be read as "most users never pay this
+cost." The composer mounts **eagerly on hydration**, with no click, focus, or
+other user action gating it: `ComposerChatInput` is imported and rendered
+unconditionally in the project-home welcome body
+(`project-home.tsx:33` import, `:204` render — every project page before a
+session exists), in the instant-session shell
+(`instant-session-shell.tsx:7` import, `:187` render — the first-message
+flow), and `Composer` (aliased `SessionChatInput`) is rendered unconditionally
+for every non-read-only session in `session-chat.tsx:53` (import), `:3925`
+(render, gated only on `!readOnly`, which is the normal case). So the
+`Suspense` boundary resolves, and the 136 KB gz chunk downloads and parses, on
+essentially every project or session page view — not only for a user who
+deliberately "engages the composer." The lazy boundary saves this cost from
+landing on pages that never render a composer at all (marketing pages,
+settings, etc.); it does not save it for the product's own core surfaces.
+
+### 8.3 Render metrics — source-verified against installed code
 
 `@tiptap/react@3.27.1` (`dist/index.cjs:536-556`, `useEditor`) builds a
 selector that returns a **constant `null`** on every transaction unless
@@ -1444,7 +1481,7 @@ subscribe/notify mechanism. The trace above is sufficient to rule out
 re-rendering *from typing*, which is what the target measures — but it is
 source-tracing, not a live capture, and is reported as such.
 
-### 7.4 What this branch actually changed — numbers, all by command
+### 8.4 What this branch actually changed — numbers, all by command
 
 **Tests**, `bun test src/features/session`, both ends checked out clean (not
 the mid-plan "1360" checkpoint Task 14 logged internally, which was its own

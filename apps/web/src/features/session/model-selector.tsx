@@ -557,16 +557,17 @@ export function ModelSelector({
 
 // ─── Model popover extras (variant + reasoning effort) ──────────────────────
 //
-// Both rows render as a flat chip list rather than reusing the standalone
-// `VariantSelector` (a single cycling button) or `ReasoningEffortSelector`
-// (its own `CommandPopover`) verbatim. Nesting a second Radix `Popover`
-// inside this already-open one is fragile — the child's portaled content
-// sits outside the parent's content subtree, so the parent's outside-click
-// dismissal can treat a click inside the child as "outside" and close both.
-// A flat row sidesteps that entirely and reads better in a footer anyway.
-// Neither standalone component is modified: this reuses their exported pure
-// logic (`reasoningEffortValuesFor`, `useReasoningEffortControl`) directly,
-// so `reasoning-effort-selector.tsx`'s gating predicate is untouched and its
+// Both rows render as a flat chip list rather than nesting a second Radix
+// `Popover` inside this already-open one — that pattern is fragile: the
+// child's portaled content sits outside the parent's content subtree, so the
+// parent's outside-click dismissal can treat a click inside the child as
+// "outside" and close both. A flat row sidesteps that entirely and reads
+// better in a footer anyway. (The standalone cycling-button and popover
+// components this replaced — a single-cycling-button variant selector and a
+// `CommandPopover`-based reasoning-effort selector — are gone; this was
+// their only render site.) This reuses the reasoning-effort pure logic
+// (`reasoningEffortValuesFor`, `useReasoningEffortControl`) directly, so
+// `reasoning-effort-selector.tsx`'s gating predicate is untouched and its
 // own tests keep covering it unchanged.
 
 const extrasChipBase =

@@ -301,39 +301,35 @@ function ComposerEditorFallback() {
  * they'd put it. This snapshots whatever had focus before the call and
  * restores it afterward whenever the editor itself wasn't already the focus
  * target — the only way to counteract a forced-focus primitive from outside
- * it. Generic over which handle method actually applies the change, since
- * Task 13 needs this for both the doc-based restore (mention-preserving
- * recovery, question-unlock) below.
+ * it.
+ *
+ * The mention-preserving counterpart to `handle.setContent` — Task 13. Used
+ * by the failed-send recovery merge, the transcription append, and the
+ * question-unlock restore, all of which snapshot/restore the full
+ * ProseMirror document (`getDocument`/`setDocument`) instead of plain text,
+ * specifically so any mention ATOM nodes present survive the round trip. See
+ * `ComposerEditorHandle.getDocument`'s own doc comment (composer-editor.tsx)
+ * for why `setContent` cannot do this.
+ *
+ * Previously a generic `withoutStealingFocus(handle, apply)` wrapper sat
+ * between this and `handle.setDocument`, parameterized over which handle
+ * method to apply and threading a `'replace' | 'merge'` mode through to it.
+ * Every call site always passed `'replace'` (the merge itself is computed up
+ * front, as a document, by `composer-logic.ts`), leaving `withoutStealingFocus`
+ * with exactly one instantiation. Inlined here now that there is only one.
  */
-function withoutStealingFocus(
+function setDocumentWithoutStealingFocus(
   handle: ComposerEditorHandle | null,
-  apply: (handle: ComposerEditorHandle) => void,
+  doc: JSONContent,
 ): void {
   if (!handle) return;
   const el = handle.getElement();
   const wasFocused = !!el && (document.activeElement === el || el.contains(document.activeElement));
   const previouslyFocused = wasFocused ? null : (document.activeElement as HTMLElement | null);
-  apply(handle);
+  handle.setDocument(doc);
   if (!wasFocused) {
     previouslyFocused?.focus?.();
   }
-}
-
-/**
- * The mention-preserving counterpart to `handle.setContent` — Task 13. Used
- * by the failed-send recovery merge and the question-unlock restore, both of
- * which now snapshot/restore the full ProseMirror document (`getDocument`/
- * `setDocument`) instead of plain text, specifically so any mention ATOM
- * nodes present survive the round trip. See `ComposerEditorHandle.
- * getDocument`'s own doc comment (composer-editor.tsx) for why `setContent`
- * cannot do this.
- */
-function setDocumentWithoutStealingFocus(
-  handle: ComposerEditorHandle | null,
-  doc: JSONContent,
-  mode: 'replace' | 'merge',
-): void {
-  withoutStealingFocus(handle, (h) => h.setDocument(doc, mode));
 }
 
 function ComposerImpl({
@@ -848,9 +844,9 @@ function ComposerImpl({
         currentDoc: editorRef.current?.getDocument() ?? EMPTY_DOCUMENT,
         currentIsEmpty: editorRef.current?.isEmpty() ?? true,
       });
-      if (merged) editorRef.current?.setDocument(merged, 'replace');
+      if (merged) editorRef.current?.setDocument(merged);
     } else {
-      editorRef.current?.setContent(prefillText, 'replace');
+      editorRef.current?.setContent(prefillText);
     }
     if (prefillFiles?.length) {
       setAttachedFiles((current) =>
@@ -884,7 +880,7 @@ function ComposerImpl({
       savedDocBeforeQuestionRef.current = wasEmpty ? null : (editorRef.current?.getDocument() ?? null);
       editorRef.current?.clear();
     } else if (savedDocBeforeQuestionRef.current) {
-      setDocumentWithoutStealingFocus(editorRef.current, savedDocBeforeQuestionRef.current, 'replace');
+      setDocumentWithoutStealingFocus(editorRef.current, savedDocBeforeQuestionRef.current);
       savedDocBeforeQuestionRef.current = null;
     }
   }, [lockForQuestion]);
@@ -909,7 +905,7 @@ function ComposerImpl({
       handle.isEmpty(),
       transcribedText,
     );
-    setDocumentWithoutStealingFocus(handle, next, 'replace');
+    setDocumentWithoutStealingFocus(handle, next);
   }, []);
 
   const handleSelectCommand = useCallback((cmd: Command) => {
@@ -1057,7 +1053,7 @@ function ComposerImpl({
         sentFiles,
       });
       if (plan?.restoreDoc) {
-        setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc, 'replace');
+        setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
       }
       if (plan) {
         // `attachedFiles` above is whatever this `handleSubmit` closure

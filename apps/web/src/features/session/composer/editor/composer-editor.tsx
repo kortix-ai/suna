@@ -26,16 +26,23 @@ export interface ComposerEditorHandle {
    * syntax; it only ever inserts literal characters. Markdown parsing on
    * prefill (starter prompts, failed-send recovery) is deliberately out of
    * scope for this task.
+   *
+   * Always replaces the whole document. An earlier `'replace' | 'merge'`
+   * mode existed here, but every production caller always passed
+   * `'replace'` — merging (failed-send recovery, transcription append, the
+   * question-lock restore) is computed up front by pure functions in
+   * `composer-logic.ts` and written back with a plain replace, so this
+   * never needed a second mode of its own. Removed as dead code.
    */
-  setContent(text: string, mode?: 'replace' | 'merge'): void;
+  setContent(text: string): void;
   /**
    * The JSON-content-aware counterpart to `getContent`/`setContent` — Task
    * 13. `getContent().mentions` is a ONE-WAY projection: it's derived by
    * walking the live document for `mention` atom nodes (`serialize.ts`) and
    * has no path back to those nodes from the returned `{ text, mentions }`
    * pair. A caller that snapshots via `getContent()` and later tries to
-   * restore via `setContent(text, mode)` therefore can never bring the
-   * mention nodes back — `setContent` only ever builds plain paragraph text
+   * restore via `setContent(text)` therefore can never bring the mention
+   * nodes back — `setContent` only ever builds plain paragraph text
    * (`textToParagraphs`, below), never atoms. `getDocument`/`setDocument`
    * round-trip the actual ProseMirror JSON, atoms included, which is what a
    * failed-send retry or a question-lock save/restore needs: the mentions
@@ -46,28 +53,30 @@ export interface ComposerEditorHandle {
    */
   getDocument(): JSONContent;
   /**
-   * `mode` mirrors `setContent`'s: `'replace'` (default) swaps the whole
-   * document; `'merge'` concatenates `doc.content` as a new paragraph after
-   * whatever's already there (a ProseMirror fragment concat, not a string
-   * concat — this is what keeps mention atoms intact through a merge, unlike
-   * `setContent('merge')`'s `textToParagraphs`, which only ever knows how to
-   * build plain text).
+   * Always replaces the whole document, same as `setContent`. A `mode`
+   * parameter (`'replace' | 'merge'`) existed here too, mirroring
+   * `setContent`'s — removed for the same reason: every production caller
+   * always passed `'replace'`. Merging mention atoms into the existing
+   * document is computed as a pure ProseMirror fragment concat by
+   * `composer-logic.ts` (which is what keeps mention atoms intact through a
+   * merge, unlike `setContent`'s `textToParagraphs`, which only ever knows
+   * how to build plain text) and written back through this method.
    */
-  setDocument(doc: JSONContent, mode?: 'replace' | 'merge'): void;
+  setDocument(doc: JSONContent): void;
   /**
    * Insert literal text at the CURRENT cursor/selection — Task 13. The old
    * plain `<textarea>` gave this for free via `setRangeText`; nothing here
-   * replaced it until now. `setContent(char, 'merge')` cannot substitute:
-   * its `merge` mode always inserts a NEW paragraph and force-focuses the
-   * end of the document (see that method's own callers), which is correct
-   * for a multi-line draft restore but wrong for a single redirected
-   * keystroke — it would split whatever the user was mid-typing at their
-   * actual (possibly mid-document) cursor position. This inserts inline,
-   * at the selection, and does not move focus itself (the caller —
-   * `useComposerFocus`'s `onTypeAhead` — has already focused the element
-   * via the DOM before this fires, so the existing ProseMirror selection is
-   * exactly where the old textarea's `selectionStart` would have pointed).
-   * A no-op on an empty string (ProseMirror text nodes must be non-empty).
+   * replaced it until now. `setContent`/`setDocument` cannot substitute:
+   * both always replace the whole document and force-focus its end (see
+   * those methods' own callers), which is correct for a whole-draft restore
+   * but wrong for a single redirected keystroke — it would discard whatever
+   * the user was mid-typing instead of inserting at their actual (possibly
+   * mid-document) cursor position. This inserts inline, at the selection,
+   * and does not move focus itself (the caller — `useComposerFocus`'s
+   * `onTypeAhead` — has already focused the element via the DOM before this
+   * fires, so the existing ProseMirror selection is exactly where the old
+   * textarea's `selectionStart` would have pointed). A no-op on an empty
+   * string (ProseMirror text nodes must be non-empty).
    */
   insertAtCursor(text: string): void;
   clear(): void;
@@ -206,18 +215,10 @@ export function getEditorDocument(editor: Editor | null): JSONContent {
   return editor ? (editor.getJSON() as JSONContent) : EMPTY_DOC;
 }
 
-export function setEditorDocument(
-  editor: Editor | null,
-  doc: JSONContent,
-  mode: 'replace' | 'merge' = 'replace',
-): void {
+export function setEditorDocument(editor: Editor | null, doc: JSONContent): void {
   if (!editor) return;
   const content = doc.content ?? [];
-  if (mode === 'merge' && !editor.isEmpty) {
-    editor.commands.insertContent([{ type: 'paragraph' }, ...content]);
-  } else {
-    editor.commands.setContent({ type: 'doc', content });
-  }
+  editor.commands.setContent({ type: 'doc', content });
   editor.commands.focus('end');
 }
 
@@ -225,12 +226,11 @@ export function setEditorDocument(
  * Task 13, fix round 1, Important 2's specific regression guard: this must
  * insert INLINE at the current selection (`editor.commands.insertContent`
  * with no leading `{ type: 'paragraph' }`), never split the document into a
- * new paragraph the way `setContent`/`setDocument`'s `merge` mode
- * deliberately does. `composer-editor.test.ts` asserts `childCount === 1`
- * after inserting mid-word specifically to pin this down — the bug this
- * primitive exists to fix (round 1's `insertContent([{type:'paragraph'},
- * ...])`-based `onTypeAhead` corrupting a non-empty document) produces
- * `childCount > 1` at the same position.
+ * new paragraph. `composer-editor.test.ts` asserts `childCount === 1` after
+ * inserting mid-word specifically to pin this down — the bug this primitive
+ * exists to fix (round 1's `insertContent([{type:'paragraph'}, ...])`-based
+ * `onTypeAhead` corrupting a non-empty document) produces `childCount > 1`
+ * at the same position.
  */
 export function insertTextAtCursor(editor: Editor | null, text: string): void {
   if (!editor || !text) return;
@@ -463,18 +463,14 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       (): ComposerEditorHandle => ({
         getContent: () =>
           editor ? serializeDocument(editor.state.doc) : { text: '', mentions: [] },
-        setContent: (text, mode = 'replace') => {
+        setContent: (text) => {
           if (!editor) return;
           const paragraphs = textToParagraphs(text);
-          if (mode === 'merge' && !editor.isEmpty) {
-            editor.commands.insertContent([{ type: 'paragraph' }, ...paragraphs]);
-          } else {
-            editor.commands.setContent({ type: 'doc', content: paragraphs });
-          }
+          editor.commands.setContent({ type: 'doc', content: paragraphs });
           editor.commands.focus('end');
         },
         getDocument: () => getEditorDocument(editor),
-        setDocument: (doc, mode = 'replace') => setEditorDocument(editor, doc, mode),
+        setDocument: (doc) => setEditorDocument(editor, doc),
         insertAtCursor: (text) => insertTextAtCursor(editor, text),
         clear: () => editor?.commands.setContent(EMPTY_DOC),
         focus: () => editor?.commands.focus('end'),

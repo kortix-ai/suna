@@ -401,7 +401,7 @@ describe('getEditorDocument / setEditorDocument — the mention-preserving snaps
       content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }],
     };
 
-    setEditorDocument(editor, doc, 'replace');
+    setEditorDocument(editor, doc);
 
     const { mentions } = serializeDocument(editor.state.doc);
     expect(mentions).toEqual([{ kind: 'file', label: 'README.md' }]);
@@ -416,65 +416,17 @@ describe('getEditorDocument / setEditorDocument — the mention-preserving snaps
     // the same one, is what actually exercises that the SNAPSHOT itself
     // (not just editor-internal state) carries the mention.
     const source = createHeadlessEditor(() => {});
-    setEditorDocument(
-      source,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('agent', 'Analyst')] }] },
-      'replace',
-    );
+    setEditorDocument(source, {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [mentionNode('agent', 'Analyst')] }],
+    });
     const snapshot = getEditorDocument(source);
 
     const target = createHeadlessEditor(() => {});
-    setEditorDocument(target, snapshot, 'replace');
+    setEditorDocument(target, snapshot);
 
     const { mentions } = serializeDocument(target.state.doc);
     expect(mentions).toEqual([{ kind: 'agent', label: 'Analyst' }]);
-  });
-
-  test('setDocument(merge) concatenates as a new paragraph, keeping mentions from BOTH sides', () => {
-    const editor = createHeadlessEditor(() => {});
-    setEditorDocument(
-      editor,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'a.ts')] }] },
-      'replace',
-    );
-
-    setEditorDocument(
-      editor,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'b.ts')] }] },
-      'merge',
-    );
-
-    const { mentions } = serializeDocument(editor.state.doc);
-    expect(mentions).toEqual([
-      { kind: 'file', label: 'a.ts' },
-      { kind: 'file', label: 'b.ts' },
-    ]);
-  });
-
-  test('two mentions sharing the SAME label both survive a merge, undropped', () => {
-    // The exact bug the whole mention-atom-node redesign exists to kill: a
-    // string-based merge (`text.indexOf('@README.md')`) cannot distinguish
-    // two mentions sharing a label. Each is its own atom node, so nothing
-    // can collapse them.
-    const editor = createHeadlessEditor(() => {});
-    setEditorDocument(
-      editor,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }] },
-      'replace',
-    );
-
-    setEditorDocument(
-      editor,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }] },
-      'merge',
-    );
-
-    const { mentions } = serializeDocument(editor.state.doc);
-    expect(mentions).toHaveLength(2);
-    expect(mentions).toEqual([
-      { kind: 'file', label: 'README.md' },
-      { kind: 'file', label: 'README.md' },
-    ]);
   });
 
   test('getEditorDocument/setEditorDocument/insertTextAtCursor no-op safely with a null editor', () => {
@@ -507,12 +459,11 @@ describe('insertTextAtCursor — inserts inline, never splits the document', () 
 
   test('the OLD paragraph-splitting approach, same position, DOES split the document (comparison)', () => {
     // Not a call into production code — this reconstructs the exact
-    // `insertContent([{ type: 'paragraph' }, ...])` shape `setDocument`'s
-    // own `merge` mode (correctly) uses for a multi-line draft restore, and
-    // `onTypeAhead` incorrectly used for a single redirected keystroke
-    // before this fix. Included so the "regression guard" claim above is
-    // falsifiable: if `insertTextAtCursor` ever regressed back to this
-    // shape, `childCount` would jump from 1 to 2 exactly as it does here.
+    // `insertContent([{ type: 'paragraph' }, ...])` shape `onTypeAhead`
+    // incorrectly used for a single redirected keystroke before this fix.
+    // Included so the "regression guard" claim above is falsifiable: if
+    // `insertTextAtCursor` ever regressed back to this shape, `childCount`
+    // would jump from 1 to 2 exactly as it does here.
     const editor = createHeadlessEditor(() => {});
     for (const char of 'hello world') typeChar(editor, char);
     editor.commands.setTextSelection(6);
@@ -600,17 +551,13 @@ describe('serializeDocument — Shift+Enter hard breaks reach the wire (matrix r
 
   test('paragraph boundaries keep serializing to a newline (unchanged behaviour)', () => {
     const editor = createHeadlessEditor(() => {});
-    setEditorDocument(
-      editor,
-      {
-        type: 'doc',
-        content: [
-          { type: 'paragraph', content: [{ type: 'text', text: 'para one' }] },
-          { type: 'paragraph', content: [{ type: 'text', text: 'para two' }] },
-        ],
-      },
-      'replace',
-    );
+    setEditorDocument(editor, {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'para one' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'para two' }] },
+      ],
+    });
 
     expect(serializeDocument(editor.state.doc).text).toBe('para one\npara two');
   });
@@ -643,7 +590,7 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
       currentIsEmpty: editor.isEmpty,
     });
     expect(merged).not.toBeNull();
-    setEditorDocument(editor, merged!, 'replace');
+    setEditorDocument(editor, merged!);
 
     expect(serializeDocument(editor.state.doc).text).toBe(
       mergeFailedSubmissionText('my draft', 'recovered'),
@@ -690,11 +637,10 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
 
   test('row 1: mentions on both sides survive the merge as structured entries', () => {
     const editor = createHeadlessEditor(() => {});
-    setEditorDocument(
-      editor,
-      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'draft.ts')] }] },
-      'replace',
-    );
+    setEditorDocument(editor, {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [mentionNode('file', 'draft.ts')] }],
+    });
 
     const merged = planPrefillMerge({
       prefillDoc: {
@@ -705,7 +651,7 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
       currentDoc: getEditorDocument(editor),
       currentIsEmpty: editor.isEmpty,
     });
-    setEditorDocument(editor, merged!, 'replace');
+    setEditorDocument(editor, merged!);
 
     expect(serializeDocument(editor.state.doc).mentions).toEqual([
       { kind: 'file', label: 'recovered.ts' },
@@ -720,7 +666,6 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
     setEditorDocument(
       editor,
       appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
-      'replace',
     );
 
     expect(serializeDocument(editor.state.doc).text).toBe('hello transcribed');
@@ -735,7 +680,6 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
     setEditorDocument(
       editor,
       appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'dictated'),
-      'replace',
     );
 
     // The regression produced "hello\n\ndictated\n world" — the transcript
@@ -749,7 +693,6 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
     setEditorDocument(
       editor,
       appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
-      'replace',
     );
 
     expect(serializeDocument(editor.state.doc).text).toBe('transcribed');
