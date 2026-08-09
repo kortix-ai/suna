@@ -350,6 +350,25 @@ describe('SettingsPanelShell — real tab content gating', () => {
     expect(() => render({ tab: 'roles', projectId: undefined, accountId: undefined })).toThrow();
   });
 
+  test('activating organization mounts its real view — it probes account.write with no auth context present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'organization',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('organization mounts its real view even with no project id — it is account-scoped like billing/usage/groups/roles, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() =>
+      render({ tab: 'organization', projectId: undefined, accountId: undefined }),
+    ).toThrow();
+  });
+
   for (const tab of REAL_VIEW_TABS) {
     test(`activating ${tab} mounts its real view — it calls react-query with no provider present, so it throws`, () => {
       expect(() =>
@@ -453,12 +472,13 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
     };
   }
 
-  test('billing, usage, roles, identity, audit, and api-keys are the only gated account tabs', () => {
+  test('billing, usage, roles, identity, audit, api-keys, and organization are the only gated account tabs', () => {
     expect(gatedAccountTabs.sort()).toEqual([
       'api-keys',
       'audit',
       'billing',
       'identity',
+      'organization',
       'roles',
       'usage',
     ]);

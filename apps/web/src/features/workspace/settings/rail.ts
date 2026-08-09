@@ -117,6 +117,7 @@ const STATIC_GROUPS: readonly RailGroup[] = [
   {
     label: 'Organization',
     items: [
+      { tab: 'organization', label: 'General', icon: Settings },
       { tab: 'billing', label: 'Billing', icon: CreditCard },
       { tab: 'usage', label: 'Usage', icon: Coins },
       { tab: 'groups', label: 'Groups', icon: Network },

@@ -38,6 +38,7 @@ export type SettingsTab =
   | 'voice'
   | 'sandbox'
   | 'snapshots'
+  | 'organization'
   | 'billing'
   | 'usage'
   | 'groups'
@@ -75,6 +76,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'voice',
   'sandbox',
   'snapshots',
+  'organization',
   'billing',
   'usage',
   'groups',

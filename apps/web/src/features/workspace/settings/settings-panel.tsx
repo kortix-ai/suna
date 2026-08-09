@@ -249,6 +249,7 @@ import { IdentityTab } from './tabs/identity-tab';
 // the un-aliased `MembersTab` name, matching every sibling tab's naming
 // convention (`GeneralTab`, `ApiKeysTab`, …).
 import { MembersTab as MembersTabPane } from './tabs/members-tab';
+import { OrganizationTab } from './tabs/organization-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import { RolesTab } from './tabs/roles-tab';
@@ -333,6 +334,20 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
  * with no separate entitlement content-gate on top (see that file's header
  * comment for why `tokens` differs from `audit`/`identity` on this point).
  * No account-scoped tab is left as a placeholder after this task.
+ *
+ * **Task 26 update (JAY-546).** `organization` is a NEW 27th tab — id
+ * `organization`, label "General", placed first in the Organization group
+ * (`rail.ts`) — wired to the real `OrganizationTab` (see
+ * `tabs/organization-tab.tsx`) and added below. Same `account.write`
+ * whole-tab gate as `billing`/`usage`/`identity`/`api-keys`
+ * (`app/(app)/accounts/[id]/page.tsx:621 activeSection === 'settings' &&
+ * canWriteAccount`). Its content carries its own two further axes, both
+ * handled entirely inside `OrganizationTab` (not this map): the Enterprise
+ * features group's negative entitlement gate
+ * (`!entitlementsLoading && !enterprise_license_available`) and the Danger
+ * zone's own `account.delete` gate — neither is `rbac`/`sso`/`scim`/
+ * `auditAccess`, and neither is re-derived from `account.write`. See that
+ * file's header comment.
  */
 export const ACCOUNT_TAB_PERMISSION: Partial<Record<SettingsTab, string>> = {
   billing: 'account.write',
@@ -341,6 +356,7 @@ export const ACCOUNT_TAB_PERMISSION: Partial<Record<SettingsTab, string>> = {
   'api-keys': 'account.write',
   identity: 'account.write',
   audit: 'audit.read',
+  organization: 'account.write',
 };
 
 /** Distinct account actions to probe — one batched call over every
@@ -932,8 +948,9 @@ export function SettingsPanelShell({
  *
  * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11),
  * `usage` (Task 12), `groups`/`roles` (Task 13), `identity` (Task 14),
- * `audit` (Task 15), and `api-keys` (Task 16) are handled above the switch
- * (account-scoped, no `projectId` needed). The switch below is the Task 5b2
+ * `audit` (Task 15), `api-keys` (Task 16), and `organization` (Task 26) are
+ * handled above the switch (account-scoped, no `projectId` needed). The
+ * switch below is the Task 5b2
  * mapping of the legacy panel's `SectionContent` (14 `case` labels + the
  * `llm-*` prefix branch) onto the new tab ids, PLUS `general` (rewired, Task
  * 18) and `experimental` (newly wired, Task 18) — see this file's header
@@ -1023,6 +1040,14 @@ function SettingsTabPane({
   // `identity`, its content has no separate entitlement gate on top.
   if (item.tab === 'api-keys') {
     return <ApiKeysTab accountId={accountId} />;
+  }
+  // Same shape as `billing`/`usage`/`identity`/`api-keys` above — see
+  // `tabs/organization-tab.tsx`'s header comment. Renders nothing at all
+  // without `account.write` on the resolved account; its content separately
+  // gates the Enterprise features group on a negative entitlement check and
+  // the Danger zone on `account.delete`.
+  if (item.tab === 'organization') {
+    return <OrganizationTab accountId={accountId} />;
   }
 
   if (projectId) {

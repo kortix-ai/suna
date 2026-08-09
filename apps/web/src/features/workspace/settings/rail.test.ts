@@ -47,12 +47,12 @@ describe('railGroups', () => {
     expect(tabs).toContain('voice');
   });
 
-  test('every flag on yields 26 content tabs', () => {
+  test('every flag on yields 27 content tabs', () => {
     const all = flags({
       tunnelEnabled: true, marketplaceEnabled: true,
       llmGatewayAvailable: true, voiceEnabled: true, reviewEnabled: true,
     });
-    expect(tabsOf(all)).toHaveLength(26);
+    expect(tabsOf(all)).toHaveLength(27);
   });
 
   test('no tab appears in two groups', () => {
@@ -118,6 +118,19 @@ describe('railGroups', () => {
   test('models is reachable in the rail regardless of the llm gateway flag — unlike the legacy llm-management row, it is not flag-gated', () => {
     expect(tabsOf(flags())).toContain('models');
     expect(tabsOf(flags({ llmGatewayAvailable: true }))).toContain('models');
+  });
+
+  test('organization (JAY-546) is first in the Organization group, before billing', () => {
+    const org = railGroups(flags()).find((g) => g.label === 'Organization');
+    expect(org?.items.map((i) => i.tab)[0]).toBe('organization');
+    expect(org?.items.map((i) => i.tab)).toContain('billing');
+  });
+
+  test('organization uses "General" as its user-facing label', () => {
+    const organization = railGroups(flags())
+      .flatMap((g) => g.items)
+      .find((i) => i.tab === 'organization');
+    expect(organization?.label).toBe('General');
   });
 
   test('a tab reachable in the rail is the one the panel can activate', () => {

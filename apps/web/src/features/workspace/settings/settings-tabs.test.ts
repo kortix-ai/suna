@@ -22,7 +22,7 @@ describe('SETTINGS_TABS', () => {
       'general', 'members', 'secrets', 'channels', 'repositories',
       'schedules', 'webhooks', 'computers',
       'models', 'instructions', 'marketplace', 'review', 'voice', 'sandbox', 'snapshots',
-      'billing', 'usage', 'groups', 'roles', 'identity', 'audit',
+      'organization', 'billing', 'usage', 'groups', 'roles', 'identity', 'audit',
       'api-keys', 'experimental', 'upgrades',
     ]) {
       expect(SETTINGS_TABS).toContain(tab as never);
