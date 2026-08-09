@@ -5,6 +5,7 @@ import {
   PLATINUM_CI_PNPM_VERSION,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
+  buildPlatinumWorkerRequest,
   buildPlatinumWarmTemplateRequest,
   buildWorkerScript,
   cleanupPlatinumCiSandboxes,
@@ -95,6 +96,32 @@ describe('Platinum CI worker plan', () => {
         '1',
       ),
     ).toEqual(['exact']);
+  });
+
+  test('uses Platinum persistent restore but still treats every worker as disposable', () => {
+    expect(buildPlatinumWorkerRequest({
+      templateId: 'tpl_warm',
+      repository: 'kortix-ai/suna',
+      sha,
+      runId: '31295265205',
+      runAttempt: '4',
+    })).toEqual({
+      name: 'kortix-ci-31295265205-4',
+      template: 'tpl_warm',
+      type: 'persistent',
+      auto_stop_minutes: 15,
+      auto_archive_days: 1,
+      auto_delete_days: 1,
+      cpu: 8,
+      ram_mb: 16_384,
+      disk_gb: 50,
+      metadata: {
+        owner: 'kortix-ci',
+        repository: 'kortix-ai/suna',
+        git_sha: sha,
+        run_id: '31295265205',
+      },
+    });
   });
 
   test('post cleanup reads paginated sandbox rows before deleting the exact worker', async () => {

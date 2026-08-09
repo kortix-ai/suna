@@ -88,7 +88,8 @@ Keep the test command unchanged. GitHub Actions invokes
 - Record `via=restore` or `via=cold-boot` for every worker benchmark.
 - Fetch the public pull-request or branch ref inside the sandbox.
 - Verify the full 40-character SHA before installing or testing.
-- Use an ephemeral 8 vCPU, 16 GiB RAM, 50 GiB disk worker.
+- Use a persistent 8 vCPU, 16 GiB RAM, 50 GiB disk worker for Platinum's
+  stateful restore path. Treat it as disposable and always delete it.
 - Stream the worker log through the Platinum file API.
 - Download `tests/test-results` before deleting the sandbox.
 - Delete the sandbox in an unconditional cleanup path.

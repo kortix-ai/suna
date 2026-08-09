@@ -347,9 +347,10 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- GitHub Actions runs `pnpm test -- --full` inside an ephemeral Platinum
-  sandbox through `.github/workflows/test.yml`. CI must fetch and verify the
-  exact SHA, upload `tests/test-results`, and delete the sandbox.
+- GitHub Actions runs `pnpm test -- --full` inside a disposable persistent
+  Platinum sandbox through `.github/workflows/test.yml`. The persistent type
+  selects Platinum's stateful-restore path. CI must fetch and verify the exact
+  SHA, upload `tests/test-results`, and delete the sandbox.
 - The Platinum CI worker is infrastructure only. Do not add CI-only test logic.
 
 ### Product flow source of truth

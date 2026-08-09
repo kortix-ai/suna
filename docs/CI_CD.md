@@ -22,12 +22,13 @@ The workflow performs this sequence:
 
 1. Resolve `kortix-ci-v*-<lock-hash>`.
 2. Build the template only when the lockfile hash is new.
-3. Create an ephemeral 8 vCPU, 16 GiB RAM, 50 GiB disk sandbox.
+3. Create a persistent 8 vCPU, 16 GiB RAM, 50 GiB disk sandbox. This type uses
+   Platinum's stateful-restore path. The worker remains disposable.
 4. Fetch the requested public Git ref inside the sandbox.
 5. Verify the full Git SHA.
 6. Run `pnpm test -- --full`.
 7. Upload `tests/test-results` to the GitHub workflow.
-8. Delete the sandbox.
+8. Delete the sandbox in unconditional runner and workflow cleanup paths.
 
 The template contains pinned Node, Bun, pnpm, Docker, Chromium, and a warm pnpm
 store. Product flows that test sandbox lifecycle create separate sandboxes.

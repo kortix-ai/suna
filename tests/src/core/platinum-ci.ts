@@ -304,6 +304,36 @@ export function buildPlatinumWarmTemplateRequest(lockHash: string): {
   };
 }
 
+export function buildPlatinumWorkerRequest(input: {
+  templateId: string;
+  repository: string;
+  sha: string;
+  runId: string;
+  runAttempt: string;
+}): Record<string, unknown> {
+  return {
+    name: `kortix-ci-${input.runId}-${input.runAttempt}`.slice(0, 64),
+    template: input.templateId,
+    // Platinum's ephemeral stateful-restore path can terminalize the create
+    // command before the guest starts. The persistent path restores the same
+    // captured template successfully. Both paths are disposable here because
+    // the runner and the workflow cleanup always delete the worker.
+    type: 'persistent',
+    auto_stop_minutes: 15,
+    auto_archive_days: 1,
+    auto_delete_days: 1,
+    cpu: 8,
+    ram_mb: 16_384,
+    disk_gb: 50,
+    metadata: {
+      owner: 'kortix-ci',
+      repository: input.repository,
+      git_sha: input.sha,
+      run_id: input.runId,
+    },
+  };
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
@@ -964,23 +994,13 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       {
         method: 'POST',
         headers: { 'idempotency-key': `kortix-ci-${input.runId}-${input.runAttempt}` },
-        body: JSON.stringify({
-          name: `kortix-ci-${input.runId}-${input.runAttempt}`.slice(0, 64),
-          template: template.id,
-          type: 'ephemeral',
-          auto_stop_minutes: 15,
-          auto_archive_days: 1,
-          auto_delete_days: 1,
-          cpu: 8,
-          ram_mb: 16_384,
-          disk_gb: 50,
-          metadata: {
-            owner: 'kortix-ci',
-            repository: input.repository,
-            git_sha: input.sha,
-            run_id: input.runId,
-          },
-        }),
+        body: JSON.stringify(buildPlatinumWorkerRequest({
+          templateId: template.id,
+          repository: input.repository,
+          sha: input.sha,
+          runId: input.runId,
+          runAttempt: input.runAttempt,
+        })),
       },
     );
     sandboxId = created.id;

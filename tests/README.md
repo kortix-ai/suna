@@ -44,8 +44,10 @@ code.
 ## Platinum CI workers
 
 GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
-tests. The workflow starts an ephemeral Platinum sandbox and runs the same
-`pnpm test -- --full` command inside it.
+tests. The workflow starts a persistent Platinum sandbox and runs the same
+`pnpm test -- --full` command inside it. The persistent type selects Platinum's
+working stateful-restore path. The worker remains disposable. Both the runner
+and workflow cleanup delete it after every result.
 
 The template name includes the `pnpm-lock.yaml` hash. Platinum first builds a
 base OCI template with pinned Node, Bun, pnpm, Docker, Chromium, linked
