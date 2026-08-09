@@ -9,7 +9,7 @@ Owner: Security and Infrastructure
 Review cadence: quarterly and whenever the affected resource or trust boundary
 changes.
 
-Last reviewed: 2026-08-03
+Last reviewed: 2026-08-09
 
 Evidence run: `8a1f9479-23fd-4031-8411-babcb41aec28`
 
@@ -23,6 +23,18 @@ Evidence run: `8a1f9479-23fd-4031-8411-babcb41aec28`
 | 8011 Public Access Restricted              | High     | `module.ecs-api.aws_lb.this`                                                             |     1 | Intended public edge              | The ALB is the public HTTPS entry point. Security groups restrict origin ingress. TLS, WAF, access logs, and regional alarms protect and monitor the edge.                                                                                                                 |
 | 8028 Resource Tagging                      | Moderate | IAM, KMS, S3, SNS, subnet, instance, security-group, network-ACL, and DynamoDB resources |    24 | Parser false positive             | The Terraform resources use explicit tag maps, provider default tags, or module tag expressions. The scanner reports empty maps because it does not evaluate those expressions. Live inventory remains subject to the account tagging control.                             |
 | 8025 Access Policies Restrict Broad Access | Critical | `security-baseline.aws_iam_role_policy.gha_nacl_audit`                                   |     1 | Explicit Drata exclusion required | The policy grants only `ec2:DescribeRegions` and `ec2:DescribeNetworkAcls`. AWS does not support resource-level permissions for either action. GitHub OIDC trust is scoped to `kortix-ai/suna`. The policy grants no write action.                                         |
+
+## Not-flagged wildcard policies (recorded for review, not accepted findings)
+
+These policies use `Resource: "*"` but are **not** flagged by testId 8025 because
+the scanner evaluates the statement effect and does not raise a broad-access
+finding for `Effect: "Deny"` (a deny-all is the opposite of a broad allow). They
+are recorded here so a future change in scanner behaviour is caught against an
+explicit baseline, and so the wildcard use is justified for SOC 2 reviewers.
+
+| Resource                                                        | Why `Resource: "*"`                                                                                       | Scanner status                                                                                                              |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `security-baseline.aws_iam_policy.mfa_required`                 | DCF-67 MFA enforcement — deny-all-except-MFA-enrollment cannot be resource-scoped; grants no permission. | Not flagged (verified: scan `0c4a4878-9b23-4751-a7d0-84d68c6b0050`, PR #6289; critical count unchanged from main baseline). |
 
 ## Change rule
 
