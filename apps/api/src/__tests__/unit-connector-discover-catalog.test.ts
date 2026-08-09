@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createConnectorCatalog } from '../connectors/connector-catalog';
-import { isPipedreamOAuthApp } from '../connectors/pipedream-catalog';
+import { isCatalogApp } from '../connectors/pipedream-catalog';
 
 const INDEX = {
   version: 1,
@@ -209,13 +209,22 @@ describe('Discover integrations.sh catalogue', () => {
   });
 });
 
-describe('Pipedream OAuth-only catalogue', () => {
-  test('accepts OAuth and rejects API-key, none, missing-auth, utility, and native apps', () => {
-    expect(isPipedreamOAuthApp({ slug: 'github', authType: 'oauth' })).toBe(true);
-    expect(isPipedreamOAuthApp({ slug: 'github', authType: 'keys' })).toBe(false);
-    expect(isPipedreamOAuthApp({ slug: 'github', authType: 'none' })).toBe(false);
-    expect(isPipedreamOAuthApp({ slug: 'github', authType: null })).toBe(false);
-    expect(isPipedreamOAuthApp({ slug: 'schedule', authType: 'oauth' })).toBe(false);
-    expect(isPipedreamOAuthApp({ slug: 'slack', authType: 'oauth' })).toBe(false);
+describe('Pipedream catalogue membership', () => {
+  test('accepts any auth type, so long as the app has actions', () => {
+    expect(isCatalogApp({ slug: 'github', hasActions: true })).toBe(true);
+    // The regression this predicate was changed to fix: every SAP and Oracle
+    // hit on the live catalogue is `auth_type: "keys"`, and requiring OAuth
+    // made the page report "No matches for SAP" over a catalogue that had it.
+    expect(isCatalogApp({ slug: 'sap_s_4hana_cloud', hasActions: true })).toBe(true);
+    expect(isCatalogApp({ slug: 'oracle_cloud_infrastructure', hasActions: true })).toBe(true);
+  });
+
+  test('rejects apps with no actions — a connector with no tools is a dead end', () => {
+    expect(isCatalogApp({ slug: 'github', hasActions: false })).toBe(false);
+  });
+
+  test('rejects workflow utilities and natively-handled apps', () => {
+    expect(isCatalogApp({ slug: 'schedule', hasActions: true })).toBe(false);
+    expect(isCatalogApp({ slug: 'slack', hasActions: true })).toBe(false);
   });
 });

@@ -91,9 +91,10 @@ import {
 } from './manifest-crud';
 import { graphToken } from '../channels/teams-auth';
 import {
-  browsePipedreamApps,
   finalizePipedreamConnection,
   finalizePipedreamConnectionAuthorization,
+  pipedreamCatalogPage,
+  pipedreamCatalogSections,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
@@ -1834,7 +1835,10 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       }
     : undefined,
   listPipedreamApps: pipedreamConfigured()
-    ? (query, cursor) => browsePipedreamApps(query, cursor)
+    ? (input) => pipedreamCatalogPage(input)
+    : undefined,
+  listPipedreamSections: pipedreamConfigured()
+    ? (input) => pipedreamCatalogSections(input)
     : undefined,
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
