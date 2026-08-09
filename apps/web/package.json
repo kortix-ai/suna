@@ -106,7 +106,6 @@
     "@tiptap/extension-link": "^3.3.0",
     "@tiptap/extension-list": "^3.3.0",
     "@tiptap/extension-mathematics": "^3.3.0",
-    "@tiptap/extension-mention": "3.27.1",
     "@tiptap/extension-paragraph": "^3.14.0",
     "@tiptap/extension-placeholder": "^3.3.0",
     "@tiptap/extension-strike": "^3.14.0",

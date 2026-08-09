@@ -67,7 +67,14 @@ import { useModelConnectionGate } from '../use-model-connection-gate';
 
 import { AttachmentTiles } from './attachment-tiles';
 import { ComposerToolbar } from './composer-toolbar';
-import { planFailedSendRecovery, resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
+import {
+  appendTranscribedText,
+  planFailedSendRecovery,
+  planPrefillMerge,
+  resolveEditorPlaceholder,
+  shouldApplyPrefill,
+  textToDocument,
+} from './composer-logic';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import type { SlashAction } from './menus/slash-actions';
@@ -228,6 +235,12 @@ export interface SessionChatInputProps {
 /** Stable empty list — mirrors `session-chat-input.tsx`'s `EMPTY_QUEUE`, same
  *  reasoning (never hand a fresh array to a memoized child). */
 const EMPTY_QUEUE: QueuedMessageView[] = [];
+
+/** Stands in for `getDocument()` when the lazy editor handle isn't there yet.
+ *  Paired with `currentIsEmpty: true`, so `planPrefillMerge` takes its
+ *  "current is empty → use the prefill verbatim" branch, matching what the old
+ *  `setText(current => …)` did with an empty `current`. */
+const EMPTY_DOCUMENT = textToDocument('');
 
 /**
  * Fix round 1, Important: `/` while a command is staged used to be
@@ -821,7 +834,24 @@ function ComposerImpl({
     ) {
       return;
     }
-    editorRef.current?.setContent(prefillText, prefillMode === 'merge' ? 'merge' : 'replace');
+    if (prefillMode === 'merge') {
+      // Task 14, matrix row 1: `setContent(prefillText, 'merge')` appended at
+      // the caret with no dedupe, which inverted the old ordering, let a
+      // retry double the message, and injected blank paragraphs for a
+      // files-only recovery. `planPrefillMerge` restores
+      // `mergeFailedSubmissionText`'s exact three-branch contract on the
+      // document (so mention atoms survive too), and returns `null` for the
+      // two branches that must leave the draft untouched.
+      const merged = planPrefillMerge({
+        prefillDoc: textToDocument(prefillText),
+        prefillIsEmpty: prefillText.length === 0,
+        currentDoc: editorRef.current?.getDocument() ?? EMPTY_DOCUMENT,
+        currentIsEmpty: editorRef.current?.isEmpty() ?? true,
+      });
+      if (merged) editorRef.current?.setDocument(merged, 'replace');
+    } else {
+      editorRef.current?.setContent(prefillText, 'replace');
+    }
     if (prefillFiles?.length) {
       setAttachedFiles((current) =>
         prefillMode === 'merge'
@@ -859,8 +889,27 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
+  /**
+   * Task 14, matrix row 21. Restores `session-chat-input.tsx:1050-1052`'s
+   * behaviour exactly: append at the END of the draft, separated by a single
+   * SPACE, without moving focus. `setContent(text, 'merge')` did none of the
+   * three — it inserted at the caret (so dictating mid-draft dropped the
+   * transcript into the middle of a sentence), separated with a block
+   * boundary (so `"hello transcribed"` reached the agent as
+   * `"hello\n\ntranscribed"`), and force-focused the editor.
+   * `setDocumentWithoutStealingFocus` is what keeps focus where the user put
+   * it — the same wrapper the failed-send and question-unlock restores use,
+   * and for the same reason.
+   */
   const handleTranscription = useCallback((transcribedText: string) => {
-    editorRef.current?.setContent(transcribedText, 'merge');
+    const handle = editorRef.current;
+    if (!handle) return;
+    const next = appendTranscribedText(
+      handle.getDocument(),
+      handle.isEmpty(),
+      transcribedText,
+    );
+    setDocumentWithoutStealingFocus(handle, next, 'replace');
   }, []);
 
   const handleSelectCommand = useCallback((cmd: Command) => {
@@ -1247,10 +1296,6 @@ function ComposerImpl({
             messages={messages}
             onContextClick={onContextClick}
             toolbarSlot={toolbarSlot}
-            // Assigned item 5: the responsive collapse belongs to the new
-            // shell, not the (shared, still-live) toolbar — see this prop's
-            // own doc comment in composer-toolbar.tsx.
-            tokenProgressWrapperClassName="hidden sm:flex"
             onTranscription={handleTranscription}
             voiceDisabled={submitDisabled || isBusy}
             isSending={isSending}

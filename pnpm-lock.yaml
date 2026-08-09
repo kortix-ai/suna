@@ -981,9 +981,6 @@ importers:
       '@tiptap/extension-mathematics':
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(katex@0.16.47)
-      '@tiptap/extension-mention':
-        specifier: 3.27.1
-        version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.27.1)
       '@tiptap/extension-paragraph':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)
@@ -13428,18 +13425,6 @@ packages:
       '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)
       '@tiptap/pm': 3.27.1
       katex: 0.16.47
-    dev: false
-
-  /@tiptap/extension-mention@3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.27.1):
-    resolution: {integrity: sha512-QfaKdl8PET01JvEFrIjMcOC1iYrBm2tsZEn07J1AaCqClW9iWcg/nCAdkdFhVir1fC54SLuaui43xslBawQRFg==}
-    peerDependencies:
-      '@tiptap/core': 3.27.1
-      '@tiptap/pm': 3.27.1
-      '@tiptap/suggestion': 3.27.1
-    dependencies:
-      '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)
-      '@tiptap/pm': 3.27.1
-      '@tiptap/suggestion': 3.27.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
     dev: false
 
   /@tiptap/extension-ordered-list@3.27.1(@tiptap/extension-list@3.27.1):

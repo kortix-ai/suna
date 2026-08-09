@@ -15,25 +15,38 @@ from `git show 1fd281f897:apps/web/src/features/session/session-chat-input.tsx`
 
 ## 0. Summary
 
+**Four of the 24 rows regressed. All four are now fixed.** The most consequential
+was row 10: `Shift+Enter` produced a `hardBreak` node that the send-path
+serializer turned into the empty string, so **every multi-line message reached
+the agent with its line breaks deleted and the surrounding words glued together**
+(`line one` + Shift+Enter + `line two` was sent as `line oneline two`). It hid
+because the existing test asserted `editor.getText()`, which walks the document
+by a different route and *does* return the newline — the tested path and the
+shipped path disagreed.
+
 | | Count |
 |---|---|
-| PROVEN | 2 |
-| CODE-VERIFIED | 17 |
+| PROVEN | 4 |
+| CODE-VERIFIED | 16 |
 | UNVERIFIABLE HERE | 1 |
-| **REGRESSED** | **4** |
+| REGRESSED, now fixed | 3 (rows 1, 10, 21 — all PROVEN) |
+| REGRESSED, now fixed, not test-bound | 1 (row 18 — CODE-VERIFIED) |
 | **Total** | **24** |
 
-**Regressed rows: 1, 10, 18, 21.**
+Rows 1, 10 and 21 are each bound by tests and **proven by mutation** — the fix
+was reverted, the named tests were watched to fail, and it was restored. Row 18
+is a JSX/CSS change with no headless test path; it is proven instead by a
+byte-comparison of the rendered element against base, and is recorded as
+CODE-VERIFIED rather than PROVEN. Fix disposition in §4.
 
-Row 10 was silent corruption of every multi-line message and is **fixed in this
-task**, with a mutation-verified test. Rows 1, 18 and 21 are reported, not
-fixed — each needs a product decision that is not this task's to make. See §4.
+All four regressions restore documented pre-rewrite behaviour. None of them is a
+new product direction.
 
 ### Gates
 
 | Gate | Result | Baseline |
 |---|---|---|
-| `bun test src/features/session` | **1373 pass, 0 fail** (120 files) | 1360 pass — +13 added here |
+| `bun test src/features/session` | **1391 pass, 0 fail** (120 files) | 1360 pass — +31 added here, all additive |
 | `npx tsc --noEmit` | **15 errors**, none in `composer/` | 15 pre-existing (2 `src/app/`, 6 `preview-fit.test.tsx`, 7 `easy-panel-logic.test.ts`) |
 | `npx eslint src/features/session/composer/` | **3 warnings, 0 errors** | 3 warnings, 0 errors |
 | `git diff -- packages/sdk` | **empty** | required zero-diff |
@@ -74,7 +87,7 @@ user-visible behaviours the spec omitted, identified during Task 6.
 
 | # | Behaviour | Verdict |
 |---|---|---|
-| 1 | Prefill: starter prompts, failed-send recovery in `merge` mode | **REGRESSED** |
+| 1 | Prefill: starter prompts, failed-send recovery in `merge` mode | **REGRESSED — fixed here**, now **PROVEN** |
 | 2 | Draft saved/restored around a structured question | CODE-VERIFIED |
 | 3 | Composer locked while a connector approval is pending | CODE-VERIFIED |
 | 4 | Submitting while busy enqueues instead of sending | CODE-VERIFIED |
@@ -91,10 +104,10 @@ user-visible behaviours the spec omitted, identified during Task 6.
 | 15 | Sub-session "back to parent" indicator | CODE-VERIFIED |
 | 16 | Reply-to banner and clear | CODE-VERIFIED |
 | 17 | Model connection gate bar and hard-disabled send | CODE-VERIFIED |
-| 18 | Token progress and context click-through | **REGRESSED** |
+| 18 | Token progress and context click-through | **REGRESSED — fixed here**, CODE-VERIFIED |
 | 19 | Session scope toolbar, incl. new-session draft commit | CODE-VERIFIED |
 | 20 | `clearOnSend={false}` does not clear or revoke URLs | CODE-VERIFIED |
-| 21 | Voice transcription appends to existing text | **REGRESSED** |
+| 21 | Voice transcription appends to existing text | **REGRESSED — fixed here**, now **PROVEN** |
 | 22 | Agent selector locked inside a meta-agent session | CODE-VERIFIED |
 | 23 | Sessions match on the files they changed | **PROVEN** (mutation) |
 | 24 | The `@` menu lists hidden agents and subagents | **PROVEN** (mutation) |
@@ -103,7 +116,9 @@ user-visible behaviours the spec omitted, identified during Task 6.
 
 ### Row 1 — Prefill: starter prompts, and failed-send recovery in `merge` mode
 
-**Verdict: REGRESSED** (`replace` mode is correct; `merge` mode is not)
+**Verdict: REGRESSED — FIXED IN THIS TASK. Now PROVEN by mutation.**
+
+(`replace` mode was always correct; `merge` mode was not.)
 
 - **Old** `session-chat-input.tsx:349-381` —
   `setText(current => prefillMode === 'merge' ? mergeFailedSubmissionText(current, prefillText) : prefillText)`.
@@ -166,10 +181,52 @@ from `shouldApplyPrefill` kills 1 test in `composer-logic.test.ts` (21 pass / 1
 fail); reverted clean. So the Task 12 Critical fix — a prefill arriving before
 the lazy editor chunk resolves — is bound.
 
-**Recommended fix (not applied):** route merge-mode prefill through
-`setDocument` + `mergeFailedSubmissionDocument` rather than
-`setContent(text, 'merge')`, which restores ordering, dedupe and the empty-text
-no-op in one move, and reuses a function that is already fully tested.
+**Fix (this task).** `composer.tsx`'s prefill effect now routes `merge` mode
+through `planPrefillMerge` (`composer-logic.ts`) instead of
+`setContent(prefillText, 'merge')`. `planPrefillMerge` delegates to
+`mergeFailedSubmissionDocument`, which already implements
+`mergeFailedSubmissionText`'s exact three-branch contract — on documents rather
+than strings, so mention atoms on either side survive, which the string version
+could never have done in this editor. It returns `null` for "leave the document
+alone", the same contract `planFailedSendRecovery.restoreDoc` uses, which
+restores both no-op branches *and* preserves the user's caret by skipping the
+write entirely.
+
+`textToParagraphs`/`textToDocument` moved from `editor/composer-editor.tsx` into
+`composer-logic.ts` so both files share one definition. That direction matters:
+`composer-editor.tsx` is behind the `React.lazy` boundary, so importing a value
+*from* it would have pulled TipTap and ProseMirror into the first-paint bundle.
+`composer-logic.ts` imports `JSONContent` as a type only and stays runtime-free
+of TipTap.
+
+**Bound by 9 new tests.** Five in `composer-logic.test.ts` under
+`describe('planPrefillMerge — merge-mode prefill restores the live semantics')`
+cover prefill-first ordering, the identical-prefill dedupe, the files-only
+no-op, the empty-composer case, and mentions carried through from both sides.
+Four more in `composer-editor.test.ts` drive the whole path through a real
+headless editor and assert the serialized result **equals
+`mergeFailedSubmissionText(current, prefill)` itself** — pinning the restored
+behaviour to the original implementation rather than to my reading of it — plus
+the spelled-out string, the `childCount` guard for the files-only case, and the
+structured `mentions` array after a merge.
+
+**Mutation-verified, twice:**
+
+| Mutation | Result |
+|---|---|
+| Swap the argument order so the prefill lands last again | **6 tests fail** |
+| Replace `merged === currentDoc ? null : merged` with `merged` (drops dedupe and the empty-prefill no-op) | **4 tests fail** |
+
+Both reverted; 70 pass across the two files.
+
+**Still true after the fix:** `mergeFailedSubmissionText` and
+`mergeFailedSubmissionMentions` remain without production consumers. The
+document-level `mergeFailedSubmissionDocument` genuinely subsumes them — it is
+now the single implementation behind both the failed-send catch block and
+merge-mode prefill. `mergeFailedSubmissionText` is still *referenced* by the new
+row-1 tests, deliberately, as the executable definition of the behaviour being
+preserved. Deleting the two orphans is a reasonable follow-up, but it would
+remove that oracle, so it is flagged rather than done.
 
 ---
 
@@ -591,7 +648,9 @@ untouched. Self-documented at `composer.tsx:767-772`.
 
 ### Row 18 — Token progress and context click-through
 
-**Verdict: REGRESSED** (desktop unaffected; the control is gone below 640 px)
+**Verdict: REGRESSED — FIXED IN THIS TASK. CODE-VERIFIED (not test-bound).**
+
+(Desktop was never affected; the control was gone below 640 px.)
 
 - **Old** — `composer-toolbar.tsx` rendered `<TokenProgress …/>` bare inside
   `<div className="flex shrink-0 items-center gap-0">`. **No responsive class
@@ -625,16 +684,27 @@ nonetheless a regression of a matrix row that was never authorized as a
 deviation, and it costs mobile users all access to context usage and
 compaction.
 
-**Not fixed here** — reverting trades a mobile capability loss for whatever
-toolbar crowding motivated the hide, and that trade needs a browser at <640 px
-and Jay's ruling. Two candidate resolutions: drop the wrapper (restores the old
-behaviour exactly), or keep it and add a second entry point to
-`SessionContextModal` that survives on mobile.
+**Fix (this task).** The `tokenProgressWrapperClassName` prop is removed
+outright — from `composer.tsx`'s call site, from `ComposerToolbarProps`, and
+from the destructure — and `TokenProgress` renders unwrapped again. That also
+deletes the dead `undefined`-wrapper branch and its stale doc comment ("the old
+toolbar is still-live"), since `composer.tsx` is now the only `ComposerToolbar`
+call site.
 
-**Also worth knowing:** `composer.tsx:1219` is now the only `ComposerToolbar`
-call site, so the `undefined`-wrapper branch at `composer-toolbar.tsx:212-219`
-is dead code, and the prop's doc comment ("the old toolbar is still-live") is
-stale.
+**Verified by byte-comparison rather than by a test.** This is JSX plus a
+Tailwind class: there is no headless assertion that would fail if the wrapper
+came back, and a test that greps its own source file for a class name would be
+worse than none. Instead the rendered element was diffed against base:
+
+```
+$ diff <(base composer-toolbar.tsx | grep -A6 '<TokenProgress') \
+       <(HEAD composer-toolbar.tsx | grep -A6 '<TokenProgress')
+==> TokenProgress render is BYTE-IDENTICAL to base
+```
+
+`grep -n "hidden sm:|sm:flex|max-sm:hidden" composer/*.tsx` now matches only the
+explanatory comment. Recorded as CODE-VERIFIED, not PROVEN — the distinction
+this document draws everywhere else applies to my own fix too.
 
 ---
 
@@ -692,7 +762,9 @@ the failed-send restore is still gated on `clearOnSend` via
 
 ### Row 21 — Voice transcription appends to existing text
 
-**Verdict: REGRESSED** (partial — it does append, but not the way it used to)
+**Verdict: REGRESSED — FIXED IN THIS TASK. Now PROVEN by mutation.**
+
+(It always appended; it did not append the way it used to.)
 
 - **Old** `:1050-1052` —
   `setText(prev => (prev ? \`${prev} ${transcribedText}\` : transcribedText))`.
@@ -722,11 +794,30 @@ Three user-visible changes:
    **not** use the `withoutStealingFocus` wrapper (`composer.tsx:295`) the
    others do.
 
-**Not fixed here** — the faithful port is
-`isEmpty() ? setContent(text, 'replace') : (focus() then insertAtCursor(' ' + text))`,
-but "append at the end with a space" versus "insert at the caret" is a
-deliberate UX choice about how dictation should behave in a rich editor, and
-that is Jay's call, not a verification task's.
+**Fix (this task).** `handleTranscription` now builds the next document with
+`appendTranscribedText` (`composer-logic.ts`) and writes it through
+`setDocumentWithoutStealingFocus` — the same wrapper the failed-send and
+question-unlock restores already use, which is what keeps focus where the user
+put it. `appendTranscribedText` appends the transcript to the **last block**
+with a single leading space, which is what makes the separator a space rather
+than a paragraph break. When the last block cannot hold inline text (a list,
+blockquote or code block holds child *blocks*, so pushing a text node in would
+build an invalid document) it starts a new paragraph instead, with no leading
+space.
+
+**Bound by 9 new tests.** Six in `composer-logic.test.ts` under
+`describe('appendTranscribedText — voice transcription appends at the end with a space')`
+cover the space separator, appending to the end of a multi-paragraph draft
+without touching earlier blocks, the empty-composer case, the
+non-paragraph-last-block fallback, the empty-transcription no-op, and a mention
+atom surviving in the target paragraph. Three more in `composer-editor.test.ts`
+assert the serialized result through a real editor: `"hello transcribed"` with
+`childCount === 1`, `"hello world dictated"` with the caret parked mid-draft
+(the regression produced `"hello\n\ndictated\n world"`), and no leading space
+into an empty composer.
+
+**Mutation-verified:** turning the space separator back into a pushed paragraph
+kills **5 tests**. Reverted; 70 pass across the two files.
 
 ---
 
@@ -949,17 +1040,46 @@ adding behaviour to assert. Verified by grep: the string
 
 ## 4. Regressed rows — disposition
 
-| Row | Regression | Disposition |
-|---|---|---|
-| 10 | Shift+Enter line breaks dropped from every sent message | **Fixed here**, 5 tests, mutation-verified |
-| 1 | Merge-mode prefill: ordering inverted, dedupe gone, blank lines on files-only | **Reported, not fixed** — needs the `setDocument` + `mergeFailedSubmissionDocument` route and a decision on intended ordering |
-| 18 | `TokenProgress` and the only path to the context modal hidden below 640 px | **Reported, not fixed** — deliberate per `progress.md:96`; reverting trades mobile capability for toolbar layout, needs a browser at <640 px and a product call |
-| 21 | Voice transcription: block separator instead of a space, inserts at the caret, steals focus | **Reported, not fixed** — "append at the end" vs "insert at the caret" is a UX decision |
+All four are fixed. Three restore behaviour that the old implementation
+documented in code; the fourth reverses a change that was never authorized as a
+matrix deviation.
 
-Row 10 was fixed because it is silent corruption of user content on the
-composer's primary path, the correct behaviour is not in question, and it is
-provable headlessly. The other three each require a judgement this task does not
-own.
+| Row | Regression | Fix | Bound by |
+|---|---|---|---|
+| 10 | Shift+Enter line breaks dropped from every sent message | `hardBreak` serializes to `'\n'` | 5 tests; mutation kills 4 |
+| 1 | Merge-mode prefill: ordering inverted, dedupe gone, blank lines on files-only | `planPrefillMerge` -> `mergeFailedSubmissionDocument` | 9 tests; two mutations kill 6 and 4 |
+| 21 | Voice transcription: block separator, caret insertion, focus steal | `appendTranscribedText` + `setDocumentWithoutStealingFocus` | 9 tests; mutation kills 5 |
+| 18 | `TokenProgress` and the only route to the context modal hidden below 640 px | `tokenProgressWrapperClassName` removed entirely | byte-identical to base; no test (JSX/CSS) |
+
+Row 18 is the one fix in this set that is **not** test-bound, and that is stated
+in its own row rather than smoothed over. A test that inspected its own source
+file for a class name would give false confidence, not coverage; the honest
+evidence is that the rendered element is byte-identical to base and no
+responsive-hiding class remains in `composer/`.
+
+### Dependency removal
+
+`@tiptap/extension-mention` is removed from `apps/web/package.json`. The
+standing constraint was "no new dependencies", and this one earned nothing: the
+mention node is hand-built in `composer/editor/mention-node.ts`.
+
+Verified **by symbol**, not by import path — the trap this plan hit twice:
+`grep -rn "extension-mention|MentionOptions|MentionPluginKey"` across
+`apps/` and `packages/` returns only the `package.json` line itself. After
+`pnpm install`, resolution genuinely fails:
+
+```
+$ node -e "require.resolve('@tiptap/extension-mention')"
+DOES NOT RESOLVE (correct): MODULE_NOT_FOUND
+```
+
+The lockfile change is 15 deletions, all `@tiptap/extension-mention`, and
+`@tiptap/suggestion` now resolves to a single `3.27.1` entry. All gates were
+re-run against the pruned tree, not just against the edited manifest.
+`@tiptap/suggestion` stays — it is the one code path both the `@` and `/` menus
+register through, and the spec plans for it explicitly. `@tiptap/starter-kit`
+also still has zero imports and remains a separate follow-up
+(`progress.md:36`).
 
 ---
 
@@ -1002,13 +1122,27 @@ both empty.
 
 Ordered by how much a defect there would cost.
 
-1. **`composer.tsx`'s wiring has no test at all.** Nothing imports
-   `composer/composer`. Every row above marked CODE-VERIFIED rests on reading
-   the call site, not on a test protecting it. This is measured, not assumed:
-   during Task 13 a reviewer replaced the whole failed-send recovery with
-   `if (false && …)` and the suite stayed green at 1340/1340.
+1. **`composer.tsx`'s wiring has no test at all — this is the single largest
+   gap on the branch, and it is why 16 rows are CODE-VERIFIED rather than
+   PROVEN.** Nothing imports `composer/composer`. Every CODE-VERIFIED row above
+   rests on reading the call site, not on a test protecting it. This is
+   measured, not assumed: during Task 13 a reviewer replaced the whole
+   failed-send recovery with `if (false && …)` and the suite stayed green at
+   1340/1340.
+
+   The fixes in this task narrow the gap without closing it. Rows 1 and 21 now
+   have their *decision logic* in pure, fully-tested functions
+   (`planPrefillMerge`, `appendTranscribedText`) whose output is additionally
+   round-tripped through a real editor — so the call site is reduced to a few
+   lines that pass values through. But nothing proves `composer.tsx` still
+   calls them. Deleting the `handleTranscription` body would leave all 1391
+   tests green.
+
    *Would verify it:* React Testing Library plus a DOM environment for
-   `bun test`, or Playwright driving the real composer.
+   `bun test`, or Playwright driving the real composer. Deliberately **not**
+   attempted here — building that harness is its own piece of work, not a fix
+   round, and doing it badly under time pressure would produce coverage that
+   looks like proof and is not.
 2. **`use-composer-focus.ts` has no test** — it carries rows 11, 12 and 13.
    *Would verify it:* a DOM environment with `IntersectionObserver` and layout,
    or a browser.
@@ -1072,13 +1206,19 @@ removal (`progress.md:36`).
 
 | File | Change |
 |---|---|
-| `composer/editor/serialize.ts` | `hardBreak` serializes to `'\n'` (row 10 fix) |
-| `composer/editor/composer-editor.test.ts` | +5 tests binding the row-10 fix through `serializeDocument` |
+| `composer/editor/serialize.ts` | `hardBreak` serializes to `'\n'` (row 10) |
+| `composer/composer-logic.ts` | `textToParagraphs`/`textToDocument` moved here from `composer-editor.tsx`; `planPrefillMerge` (row 1); `appendTranscribedText` (row 21) |
+| `composer/composer.tsx` | Merge-mode prefill routed through `planPrefillMerge` (row 1); `handleTranscription` rewritten (row 21); `tokenProgressWrapperClassName` call site removed (row 18); `editorDisabled` hoisted (deferred item 14) |
+| `composer/composer-toolbar.tsx` | `tokenProgressWrapperClassName` prop and its dead branch removed; `TokenProgress` always visible (row 18) |
+| `composer/editor/composer-editor.tsx` | Imports the shared `textToParagraphs` instead of defining its own |
+| `composer/editor/composer-editor.test.ts` | +12 tests: row 10 through `serializeDocument`, plus rows 1 and 21 round-tripped through a real editor |
+| `composer/composer-logic.test.ts` | +11 tests: `planPrefillMerge` and `appendTranscribedText` |
 | `composer/hooks/use-file-search.ts` | Placeholder data restricted to the same sandbox (deferred item 4) |
-| `composer/hooks/use-file-search.test.ts` | New — 8 tests for the placeholder guard and the key shape |
-| `composer/composer.tsx` | `editorDisabled` hoisted (deferred item 14) |
-| `docs/superpowers/plans/2026-08-09-enhance-chat-input-verification.md` | This document |
-| `.superpowers/sdd/…/task-14-report.md` | Working notes |
+| `composer/hooks/use-file-search.test.ts` | New — 8 tests for the placeholder guard and key shape |
+| `apps/web/package.json`, `pnpm-lock.yaml` | `@tiptap/extension-mention` removed |
+| `docs/superpowers/specs/…-design.md` | Matrix rows 23 and 24 added |
+| This document, `.superpowers/sdd/…/task-14-report.md` | Verification record and working notes |
 
-Net: 1373 tests pass (from 1360), tsc at the 15-error baseline with none in
-`composer/`, eslint 3 warnings / 0 errors.
+Net: **1391 tests pass** (from 1360, all additive), tsc at the 15-error baseline
+with none in `composer/`, eslint 3 warnings / 0 errors, `packages/sdk` zero
+diff, protected suites byte-identical.

@@ -11,6 +11,8 @@ import {
   setEditorDocument,
   trackEmptyBoundary,
 } from './composer-editor';
+import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
+import { appendTranscribedText, planPrefillMerge, textToDocument } from '../composer-logic';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 
@@ -611,5 +613,145 @@ describe('serializeDocument — Shift+Enter hard breaks reach the wire (matrix r
     );
 
     expect(serializeDocument(editor.state.doc).text).toBe('para one\npara two');
+  });
+});
+
+/**
+ * Task 14, matrix rows 1 and 21 — the round trip through a REAL editor.
+ *
+ * `composer-logic.test.ts` proves the two planners produce the right JSON.
+ * These prove the rest of the path: that feeding that JSON through the same
+ * `setEditorDocument` the component calls, and reading it back through the
+ * same `serializeDocument` the SEND path calls, produces the exact string the
+ * old string-based composer produced. Row 10 is the reason this second layer
+ * exists at all — there, the planner-equivalent logic was fine and the
+ * document was fine, and the bug was entirely in what came out the other end.
+ *
+ * Row 1 asserts against `mergeFailedSubmissionText` itself rather than a
+ * hardcoded string, so the restored behaviour is pinned to the ORIGINAL
+ * implementation rather than to my reading of it.
+ */
+describe('merge-mode prefill and transcription round-trip to the old strings', () => {
+  test('row 1: merge prefill serializes to exactly mergeFailedSubmissionText(current, prefill)', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'my draft' });
+
+    const merged = planPrefillMerge({
+      prefillDoc: textToDocument('recovered'),
+      prefillIsEmpty: false,
+      currentDoc: getEditorDocument(editor),
+      currentIsEmpty: editor.isEmpty,
+    });
+    expect(merged).not.toBeNull();
+    setEditorDocument(editor, merged!, 'replace');
+
+    expect(serializeDocument(editor.state.doc).text).toBe(
+      mergeFailedSubmissionText('my draft', 'recovered'),
+    );
+    // Spelled out, so a change to either side is visible in the diff.
+    expect(serializeDocument(editor.state.doc).text).toBe('recovered\n\nmy draft');
+  });
+
+  test('row 1: an identical prefill is a no-op — the message is not doubled', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'same' });
+
+    const merged = planPrefillMerge({
+      prefillDoc: textToDocument('same'),
+      prefillIsEmpty: false,
+      currentDoc: getEditorDocument(editor),
+      currentIsEmpty: editor.isEmpty,
+    });
+
+    expect(merged).toBeNull(); // nothing written, caret untouched
+    expect(serializeDocument(editor.state.doc).text).toBe(
+      mergeFailedSubmissionText('same', 'same'),
+    );
+    expect(serializeDocument(editor.state.doc).text).toBe('same');
+  });
+
+  test('row 1: a files-only prefill leaves the document structurally untouched', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'my draft' });
+    const before = editor.state.doc.childCount;
+
+    const merged = planPrefillMerge({
+      prefillDoc: textToDocument(''),
+      prefillIsEmpty: true,
+      currentDoc: getEditorDocument(editor),
+      currentIsEmpty: editor.isEmpty,
+    });
+
+    expect(merged).toBeNull();
+    // The regression added two blank paragraphs here (childCount 1 -> 3).
+    expect(editor.state.doc.childCount).toBe(before);
+    expect(serializeDocument(editor.state.doc).text).toBe('my draft');
+  });
+
+  test('row 1: mentions on both sides survive the merge as structured entries', () => {
+    const editor = createHeadlessEditor(() => {});
+    setEditorDocument(
+      editor,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'draft.ts')] }] },
+      'replace',
+    );
+
+    const merged = planPrefillMerge({
+      prefillDoc: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [mentionNode('file', 'recovered.ts')] }],
+      },
+      prefillIsEmpty: false,
+      currentDoc: getEditorDocument(editor),
+      currentIsEmpty: editor.isEmpty,
+    });
+    setEditorDocument(editor, merged!, 'replace');
+
+    expect(serializeDocument(editor.state.doc).mentions).toEqual([
+      { kind: 'file', label: 'recovered.ts' },
+      { kind: 'file', label: 'draft.ts' },
+    ]);
+  });
+
+  test('row 21: transcription serializes to "draft transcript" — a space, not a block break', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'hello' });
+
+    setEditorDocument(
+      editor,
+      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
+      'replace',
+    );
+
+    expect(serializeDocument(editor.state.doc).text).toBe('hello transcribed');
+    expect(editor.state.doc.childCount).toBe(1); // one paragraph, no block split
+  });
+
+  test('row 21: dictating with the caret mid-draft still appends at the END', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'hello world' });
+    editor.commands.setTextSelection(6); // between "hello" and " world"
+
+    setEditorDocument(
+      editor,
+      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'dictated'),
+      'replace',
+    );
+
+    // The regression produced "hello\n\ndictated\n world" — the transcript
+    // dropped into the middle of the sentence at the stale caret.
+    expect(serializeDocument(editor.state.doc).text).toBe('hello world dictated');
+  });
+
+  test('row 21: transcription into an empty composer has no leading space', () => {
+    const editor = createHeadlessEditor(() => {});
+
+    setEditorDocument(
+      editor,
+      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
+      'replace',
+    );
+
+    expect(serializeDocument(editor.state.doc).text).toBe('transcribed');
   });
 });

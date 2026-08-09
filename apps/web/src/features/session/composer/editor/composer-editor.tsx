@@ -7,6 +7,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
+import { textToParagraphs } from '../composer-logic';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashAction } from '../menus/slash-actions';
@@ -181,23 +182,6 @@ export function createSubmitOnEnterHandler(
     }
     return false;
   };
-}
-
-/**
- * Turn plain text into ProseMirror JSON paragraph nodes, one per `\n`-
- * separated line. Passed as JSON — never as a bare string — because
- * `editor.commands.setContent()` / `insertContent()` parse a bare string as
- * HTML (`elementFromString` -> `DOMParser`, verified in
- * `@tiptap/core/dist/index.js`'s `createNodeFromContent`), which would
- * corrupt literal `<`, `>`, `&` in prefilled plain text. This is what makes
- * `setContent` actually treat its input as plain text instead of merely
- * being named as if it does.
- */
-function textToParagraphs(text: string): JSONContent[] {
-  return text.split('\n').map((line) => ({
-    type: 'paragraph',
-    ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-  }));
 }
 
 /**

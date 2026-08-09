@@ -1,8 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
 
-import { planFailedSendRecovery, resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
+import {
+  appendTranscribedText,
+  planFailedSendRecovery,
+  planPrefillMerge,
+  resolveEditorPlaceholder,
+  shouldApplyPrefill,
+  textToDocument,
+} from './composer-logic';
 import type { AttachedFile } from './types';
+
+/** A one-paragraph document holding exactly this text. */
+const docOf = (text: string): JSONContent => textToDocument(text);
 
 describe('shouldApplyPrefill', () => {
   // Fix round 1, Critical: this is where the "prefill delivered before the
@@ -328,5 +338,183 @@ describe('planFailedSendRecovery', () => {
     });
 
     expect(plan).toEqual({ restoreDoc: null, attachedFiles: [] });
+  });
+});
+
+/**
+ * Task 14, matrix row 1. These pin the three behaviours the rewrite lost when
+ * merge-mode prefill moved to `setContent(text, 'merge')`. Each one is stated
+ * against the OLD `mergeFailedSubmissionText(current, prefillText)` contract
+ * (`session-chat-input.tsx:356-358`), which is the behaviour being restored —
+ * not against whatever the new code happens to do.
+ */
+describe('planPrefillMerge — merge-mode prefill restores the live semantics', () => {
+  test('puts the PREFILL FIRST and the in-flight draft after it', () => {
+    // Old: `${submitted}\n\n${current}` — the recovered content leads.
+    const merged = planPrefillMerge({
+      prefillDoc: docOf('recovered'),
+      prefillIsEmpty: false,
+      currentDoc: docOf('my draft'),
+      currentIsEmpty: false,
+    });
+
+    expect(merged).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'recovered' }] },
+        { type: 'paragraph' },
+        { type: 'paragraph', content: [{ type: 'text', text: 'my draft' }] },
+      ],
+    });
+  });
+
+  test('DEDUPES an identical prefill — a retry cannot double the message', () => {
+    // Old: `if (current === submitted) return current`. Regressed to
+    // "same" -> "same\n\nsame", i.e. the user watches their text duplicate.
+    expect(
+      planPrefillMerge({
+        prefillDoc: docOf('same'),
+        prefillIsEmpty: false,
+        currentDoc: docOf('same'),
+        currentIsEmpty: false,
+      }),
+    ).toBeNull();
+  });
+
+  test('leaves the draft completely alone for a files-only (empty-text) prefill', () => {
+    // Old: `if (!submitted) return current`. Regressed to injecting two blank
+    // paragraphs into whatever the user had typed.
+    expect(
+      planPrefillMerge({
+        prefillDoc: docOf(''),
+        prefillIsEmpty: true,
+        currentDoc: docOf('my draft'),
+        currentIsEmpty: false,
+      }),
+    ).toBeNull();
+  });
+
+  test('uses the prefill verbatim when the composer is empty', () => {
+    // Old: `if (!current) return submitted`.
+    expect(
+      planPrefillMerge({
+        prefillDoc: docOf('recovered'),
+        prefillIsEmpty: false,
+        currentDoc: docOf(''),
+        currentIsEmpty: true,
+      }),
+    ).toEqual(docOf('recovered'));
+  });
+
+  test('carries mention atom nodes through from BOTH sides', () => {
+    // The reason this operates on documents rather than strings: a mention
+    // flattened to plain "@label" text produces no <file_ref> on the next
+    // send. The string-based helper could not have preserved these.
+    const mention = (label: string): JSONContent => ({
+      type: 'mention',
+      attrs: { kind: 'file', label, value: label },
+    });
+    const merged = planPrefillMerge({
+      prefillDoc: { type: 'doc', content: [{ type: 'paragraph', content: [mention('a.ts')] }] },
+      prefillIsEmpty: false,
+      currentDoc: { type: 'doc', content: [{ type: 'paragraph', content: [mention('b.ts')] }] },
+      currentIsEmpty: false,
+    });
+
+    const labels = JSON.stringify(merged).match(/"label":"[^"]+"/g);
+    expect(labels).toEqual(['"label":"a.ts"', '"label":"b.ts"']);
+  });
+});
+
+/**
+ * Task 14, matrix row 21. Old behaviour was
+ * `setText(prev => prev ? `${prev} ${text}` : text)` — end of the draft,
+ * single space, no focus change.
+ */
+describe('appendTranscribedText — voice transcription appends at the end with a space', () => {
+  test('joins onto the existing paragraph with a SPACE, not a block break', () => {
+    expect(appendTranscribedText(docOf('hello'), false, 'transcribed')).toEqual({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'hello' },
+            { type: 'text', text: ' transcribed' },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('appends to the END of a multi-paragraph draft, never into an earlier block', () => {
+    const draft: JSONContent = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'first' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'second' }] },
+      ],
+    };
+
+    const next = appendTranscribedText(draft, false, 'dictated');
+
+    expect(next.content?.[0]).toEqual(draft.content![0]); // earlier block untouched
+    expect(next.content?.[1]).toEqual({
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'second' },
+        { type: 'text', text: ' dictated' },
+      ],
+    });
+  });
+
+  test('replaces the document outright when the composer is empty (no leading space)', () => {
+    expect(appendTranscribedText(docOf(''), true, 'transcribed')).toEqual(docOf('transcribed'));
+  });
+
+  test('starts a new paragraph when the last block cannot hold inline text', () => {
+    // A list/blockquote/code block holds child BLOCKS; pushing a text node
+    // into one would build an invalid document.
+    const draft: JSONContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'bulletList',
+          content: [
+            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'item' }] }] },
+          ],
+        },
+      ],
+    };
+
+    const next = appendTranscribedText(draft, false, 'dictated');
+
+    expect(next.content?.[0]).toEqual(draft.content![0]);
+    expect(next.content?.[1]).toEqual({
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'dictated' }],
+    });
+  });
+
+  test('an empty transcription leaves the document untouched', () => {
+    const draft = docOf('hello');
+    expect(appendTranscribedText(draft, false, '')).toBe(draft);
+  });
+
+  test('preserves a mention atom already in the last paragraph', () => {
+    const draft: JSONContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'mention', attrs: { kind: 'file', label: 'a.ts', value: 'a.ts' } }],
+        },
+      ],
+    };
+
+    const next = appendTranscribedText(draft, false, 'dictated');
+
+    expect(next.content?.[0].content?.[0]).toEqual(draft.content![0].content![0]);
+    expect(next.content?.[0].content?.[1]).toEqual({ type: 'text', text: ' dictated' });
   });
 });

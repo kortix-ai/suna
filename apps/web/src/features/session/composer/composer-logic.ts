@@ -13,6 +13,35 @@ import type { JSONContent } from '@tiptap/core';
 import { mergeFailedSubmissionDocument, mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import type { AttachedFile } from './types';
 
+/**
+ * Turn plain text into ProseMirror JSON paragraph nodes, one per `\n`-
+ * separated line.
+ *
+ * Lives HERE, not in `editor/composer-editor.tsx`, even though that file is
+ * its heaviest consumer. `composer.tsx` needs it too (merge-mode prefill has
+ * to build a document to merge against), and `composer-editor.tsx` is behind
+ * the `React.lazy` boundary — importing a VALUE from it would pull TipTap and
+ * ProseMirror into the first-paint bundle and undo the code-splitting. This
+ * module imports `JSONContent` as a type only, so it stays runtime-free of
+ * TipTap. One definition, imported by both, rather than the copy-paste that
+ * Task 11 had to undo.
+ *
+ * Passed as JSON — never as a bare string — because `setContent()` /
+ * `insertContent()` parse a bare string as HTML (`elementFromString` ->
+ * `DOMParser`), which would corrupt literal `<`, `>`, `&` in plain text.
+ */
+export function textToParagraphs(text: string): JSONContent[] {
+  return text.split('\n').map((line) => ({
+    type: 'paragraph',
+    ...(line ? { content: [{ type: 'text', text: line }] } : {}),
+  }));
+}
+
+/** `textToParagraphs` wrapped as a whole document. */
+export function textToDocument(text: string): JSONContent {
+  return { type: 'doc', content: textToParagraphs(text) };
+}
+
 export interface FailedSendRecoveryInput {
   /** `SessionChatInputProps.clearOnSend`. `false` means the composer never
    *  clears on send at all (project-home → new-session navigation), so
@@ -105,6 +134,102 @@ export function planFailedSendRecovery(
   }
 
   return { restoreDoc, attachedFiles };
+}
+
+/**
+ * What a `mode: 'merge'` prefill should put in the document — Task 14, matrix
+ * row 1.
+ *
+ * The rewrite had replaced this with `setContent(prefillText, 'merge')`, whose
+ * merge branch appends at the current selection with no dedupe. Measured
+ * against the old `setText(current => mergeFailedSubmissionText(current,
+ * prefillText))` (`session-chat-input.tsx:356-358`), that changed three
+ * things, all regressions:
+ *
+ *  1. **Ordering inverted.** Old put the recovered text FIRST and whatever the
+ *     user typed while the request was in flight after it
+ *     (`` `${submitted}\n\n${current}` ``). New produced the reverse, burying
+ *     the content the recovery exists to give back.
+ *  2. **Dedupe lost.** Old returned `current` unchanged when the two were
+ *     identical, so hitting retry could not double the message. New appended
+ *     regardless: `"same"` became `"same\n\nsame"`.
+ *  3. **Empty-text prefill.** A files-only failed start (`prefillText: ''`
+ *     plus `prefillFiles`) used to leave the draft completely alone; new
+ *     inserted two blank paragraphs into it.
+ *
+ * This restores all three by delegating to `mergeFailedSubmissionDocument`,
+ * which already implements exactly `mergeFailedSubmissionText`'s three-branch
+ * contract on documents instead of strings — so mention ATOM nodes on either
+ * side survive, which the string version could not have done in this editor.
+ *
+ * Returns `null` for "leave the document alone", the same contract
+ * `planFailedSendRecovery.restoreDoc` uses: that covers both the dedupe and
+ * the empty-prefill branches, and skipping the write also preserves the
+ * user's caret instead of resetting it for no reason.
+ */
+export function planPrefillMerge(input: {
+  /** `textToDocument(prefillText)`. */
+  prefillDoc: JSONContent;
+  /** `prefillText.length === 0` — matches the old code's falsy-string guard
+   *  (`if (!submitted) return current`), NOT a trimmed check: a prefill of
+   *  only whitespace was appended by the old code too. */
+  prefillIsEmpty: boolean;
+  /** `editorRef.current.getDocument()`. */
+  currentDoc: JSONContent;
+  /** `editorRef.current.isEmpty()`. */
+  currentIsEmpty: boolean;
+}): JSONContent | null {
+  const merged = mergeFailedSubmissionDocument(
+    input.currentDoc,
+    input.currentIsEmpty,
+    input.prefillDoc,
+    input.prefillIsEmpty,
+  );
+  return merged === input.currentDoc ? null : merged;
+}
+
+/**
+ * Where a voice transcription goes — Task 14, matrix row 21.
+ *
+ * Old behaviour (`session-chat-input.tsx:1050-1052`) was
+ * `setText(prev => (prev ? `${prev} ${text}` : text))`: append at the END of
+ * the whole draft, joined by a single SPACE, without moving focus. The
+ * rewrite had used `setContent(transcribedText, 'merge')`, which inserts at
+ * the CURRENT SELECTION, separates with a block boundary, and ends with
+ * `focus('end')`. Dictating with the caret parked mid-draft therefore dropped
+ * the transcript into the middle of a sentence, and `"hello transcribed"`
+ * went out as `"hello\n\ntranscribed"` — a different string reaching the
+ * agent.
+ *
+ * Appending to the last block rather than concatenating a new one is what
+ * makes the separator a space instead of a paragraph break. The fallback
+ * exists because the last block is not always something that can hold inline
+ * text directly: a list, blockquote or code block holds child blocks, so
+ * pushing a text node into it would build an invalid document. In that case a
+ * new paragraph is the only correct target, and a leading space would be
+ * meaningless at the start of a fresh block.
+ */
+export function appendTranscribedText(
+  doc: JSONContent,
+  isEmpty: boolean,
+  transcribedText: string,
+): JSONContent {
+  if (!transcribedText) return doc;
+  if (isEmpty) return textToDocument(transcribedText);
+
+  const blocks = [...(doc.content ?? [])];
+  const last = blocks[blocks.length - 1];
+
+  if (last?.type === 'paragraph') {
+    blocks[blocks.length - 1] = {
+      ...last,
+      content: [...(last.content ?? []), { type: 'text', text: ` ${transcribedText}` }],
+    };
+  } else {
+    blocks.push({ type: 'paragraph', content: [{ type: 'text', text: transcribedText }] });
+  }
+
+  return { type: 'doc', content: blocks };
 }
 
 export interface ShouldApplyPrefillInput {
