@@ -7,6 +7,8 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
+  BoundActivateContext,
+  ToolNavigationContext,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
@@ -100,6 +102,50 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     // Always open: the payload lives in the content plane, not behind a disclosure.
     expect(html).toContain('Hello from the payload.');
     expect(html).not.toContain('aria-expanded');
+  });
+
+  test('content-only inline show exposes Preview when the panel activation is available', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <BoundActivateContext.Provider value={() => {}}>
+          <ShowTool part={PART} />
+        </BoundActivateContext.Provider>,
+      ),
+    );
+
+    expect(html).toContain('Preview</button>');
+    // The Preview action adds the right toolbar tab.
+    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(2);
+    expect(html).not.toContain('rounded-tr-lg');
+  });
+
+  test('content-only inline show omits Preview when panel navigation is unavailable', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolNavigationContext.Provider value={false}>
+          <BoundActivateContext.Provider value={() => {}}>
+            <ShowTool part={PART} />
+          </BoundActivateContext.Provider>
+        </ToolNavigationContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('Preview</button>');
+    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(1);
+  });
+
+  test('panel surface omits content Preview because the artifact is already open', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <BoundActivateContext.Provider value={() => {}}>
+            <ShowTool part={PART} />
+          </BoundActivateContext.Provider>
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('Preview</button>');
   });
 
   test('panel surface fills the pane exactly as before — no shell wrapper', () => {

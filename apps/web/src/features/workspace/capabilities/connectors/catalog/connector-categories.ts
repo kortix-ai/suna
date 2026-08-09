@@ -386,58 +386,6 @@ export function groupIntoSections<T>(
 }
 
 /**
- * The categories a browse surface can actually offer, in the order it stacks
- * them. Exactly the set the `Select` lists and exactly the set the grid can
- * filter to — because it is one call, not two.
- *
- * That identity is the point. The dropdown and the grid each used to call
- * `groupIntoSections` on their own, so they could disagree about which
- * categories existed, and a picked value that survived into an entry set
- * without it filtered the grid to nothing while the dropdown showed its
- * placeholder.
- *
- * `POPULAR_SECTION` is excluded: it is synthesised from `popularity` rather
- * than published as a category, so filtering to it would narrow the grid to a
- * bucket the API cannot be queried for.
- */
-export function catalogCategoryKeys<T>(
-  entries: readonly T[],
-  getCategories: (entry: T) => readonly string[],
-): string[] {
-  return groupIntoSections(entries, getCategories)
-    .map((group) => group.category)
-    .filter((category) => category !== POPULAR_SECTION);
-}
-
-/**
- * The category the grid should actually filter by, which is not always the one
- * that was picked.
- *
- * A picked category is state with one writer and no natural expiry, while the
- * thing it filters — the loaded catalogue page — changes underneath it on a
- * refetch, on a search, and when `useCatalog` flips source from Easy Connect
- * to Discover (an entirely different category vocabulary). Every one of those
- * could leave the grid filtered by a value the UI no longer showed:
- *
- *   - during a search the `Select` is hidden, so the filter was invisible, and
- *     clearing the search snapped the grid back to it out of nowhere;
- *   - when the value was absent from the new entries, Radix rendered its
- *     placeholder ("All categories") while `groupIntoSections(...).find(...)`
- *     missed and `?? []` turned the grid empty.
- *
- * Deriving the answer means the illegal state cannot be rendered. Pass the
- * same `available` list the `Select` is built from — `catalogCategoryKeys`.
- */
-export function resolveActiveCategory(
-  category: string,
-  available: readonly string[],
-  opts: { searching: boolean },
-): string {
-  if (opts.searching || category === ALL_CATEGORIES) return ALL_CATEGORIES;
-  return available.includes(category) ? category : ALL_CATEGORIES;
-}
-
-/**
  * A catalogue category as a section heading. The values arrive kebab-case
  * (`sales-and-marketing`, `financial-services`), which reads as broken markup
  * when rendered raw. Hyphen -> space matches the existing transform at

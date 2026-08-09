@@ -74,6 +74,43 @@ async function verifyPublishablePackage(
   }
 }
 
+async function verifyAgentTunnelCli(): Promise<void> {
+  await verifyPublishablePackage("agent-tunnel");
+  const cli = resolve(root, "packages/agent-tunnel/dist/agent-cli.js");
+  const help = await Bun.$`node ${cli} help`.text();
+  for (const expected of [
+    "connect",
+    "run",
+    "install-service",
+    "service-status",
+    "uninstall-service",
+    "--daemon",
+    "--foreground",
+  ]) {
+    if (!help.includes(expected)) {
+      throw new Error(`packed agent-tunnel CLI help is missing ${expected}`);
+    }
+  }
+  if (help.includes("--keep-awake")) {
+    throw new Error("packed agent-tunnel CLI exposes removed --keep-awake flag");
+  }
+
+  const fallback = Bun.spawn(
+    [
+      "node",
+      "--input-type=module",
+      "-e",
+      `delete globalThis.WebSocket; process.argv[2] = "help"; await import(${JSON.stringify(cli)})`,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "inherit" },
+  );
+  const fallbackHelp = await new Response(fallback.stdout).text();
+  const fallbackCode = await fallback.exited;
+  if (fallbackCode !== 0 || !fallbackHelp.includes("install-service")) {
+    throw new Error("packed agent-tunnel CLI cannot load its WebSocket fallback");
+  }
+}
+
 async function runWorkspaceTests(
   filters: string[],
   workspaceConcurrency: number,
@@ -104,6 +141,7 @@ await run(["pnpm", "--filter", "@kortix/sdk", "run", "smoke:install"]);
 for (const directory of ["llm-catalog", "sdk", "executor-sdk"]) {
   await verifyPublishablePackage(directory, false);
 }
+await verifyAgentTunnelCli();
 
 // Keep process-heavy suites in explicit load classes. A generic workspace fan-out
 // makes their internal worker pools compete and breaks the repository's 5-second

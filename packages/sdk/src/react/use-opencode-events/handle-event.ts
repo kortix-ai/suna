@@ -26,7 +26,9 @@ import { applyPartDiagnostics } from './diagnostics';
 import {
   asStringOrUndefined,
   looksLikeAbortError,
+  patchKortixSessionTitleMirrors,
   readSessionInfo,
+  realRuntimeTitle,
   refetchKortixSessionMirrors,
   scheduleProjectMetadataRefetch,
 } from './helpers';
@@ -136,6 +138,12 @@ export function createEventHandler(deps: {
             return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
           });
           queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
+          patchKortixSessionTitleMirrors(
+            queryClient,
+            projectId,
+            info.id,
+            realRuntimeTitle(info.title),
+          );
           refetchKortixSessionMirrors(queryClient, projectId);
         }
         break;
@@ -170,7 +178,18 @@ export function createEventHandler(deps: {
             next[idx] = info;
             return next.sort((a, b) => b.time.updated - a.time.updated);
           });
-          if (titleChanged) refetchKortixSessionMirrors(queryClient, projectId);
+          if (titleChanged) {
+            // Instant local mirror first (the refetch below can race the
+            // server-side snapshot write and return the pre-title name),
+            // then the authoritative server read.
+            patchKortixSessionTitleMirrors(
+              queryClient,
+              projectId,
+              info.id,
+              realRuntimeTitle(info.title),
+            );
+            refetchKortixSessionMirrors(queryClient, projectId);
+          }
         }
         break;
       }

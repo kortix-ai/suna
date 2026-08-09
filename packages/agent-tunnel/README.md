@@ -11,9 +11,9 @@ npx --yes @kortix/agent-tunnel@latest connect \
   --api-url https://api.kortix.com/v1/tunnel
 ```
 
-The interactive flow asks whether the computer should remain online after the terminal closes.
+After approval, the interactive flow asks whether it should install a persistent background service. The default answer is yes.
 
-## Keep the computer online
+## Run in the background
 
 Install the operating-system background service during connection:
 
@@ -23,16 +23,8 @@ npx --yes @kortix/agent-tunnel@latest connect \
   --api-url https://api.kortix.com/v1/tunnel
 ```
 
-Add `--keep-awake` to also prevent the computer from sleeping while the service runs:
-
-```bash
-npx --yes @kortix/agent-tunnel@latest connect \
-  --daemon \
-  --keep-awake \
-  --api-url https://api.kortix.com/v1/tunnel
-```
-
 The service uses LaunchAgent on macOS, a user systemd service on Linux, and Task Scheduler on Windows.
+It starts at login and restarts after failures. It does not change the computer's sleep settings.
 
 ## Manage the background service
 

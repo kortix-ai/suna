@@ -1,8 +1,13 @@
 'use client';
 
-import { listDiscoverConnectors, listPipedreamApps } from '@kortix/sdk';
-import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import {
+  listDiscoverConnectors,
+  listPipedreamApps,
+  listPipedreamSections,
+  type PipedreamCategory,
+} from '@kortix/sdk';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
 
@@ -10,28 +15,56 @@ import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   computersCatalogEntry,
+  catalogSections,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
-import {
-  CATALOG_AUTOLOAD_MAX_PAGES,
-  CATALOG_FOCUS_TARGET,
-  CATALOG_INITIAL_PAGES,
-  shouldAutoLoadPage,
-} from './catalog-paging';
-import { countInSection } from './connector-categories';
+import { CATEGORY_ROW_CAP, sectionTitle } from './connector-categories';
+
+/** Apps per request. One page fills several rows of the widest grid, so a
+ *  scroll-triggered fetch is felt as the grid growing rather than as a jump. */
+const CATALOG_PAGE_SIZE = 48;
+
+/** Cards per section on the browse page, and how many sections it shows.
+ *  `CATEGORY_ROW_CAP` is two rows of `xl:grid-cols-3`; 12 sections is a browse
+ *  page you can scan without it becoming a directory of headings. */
+const SECTION_CARD_COUNT = CATEGORY_ROW_CAP;
+const SECTION_COUNT = 12;
+
+/**
+ * One browse section: a category, a fixed slice of it, and its true size.
+ *
+ * `total` is the catalogue's count for the category, not `items.length`. That
+ * separation is the whole point — it is what lets a heading say
+ * "Marketing · 207" over six cards without lying, and what stops the section
+ * from having to grow to justify its own label.
+ */
+export interface CatalogSection {
+  key: string;
+  label: string;
+  total: number;
+  items: CatalogEntry[];
+}
 
 export interface CatalogState {
-  /** Every page loaded so far, normalised and flattened. Grows as the user
-   *  scrolls — this is not a single page. */
+  /** The pages loaded for the current query and category, flattened. */
   entries: CatalogEntry[];
-  /** The catalogue's true size for the current query, straight from the API.
-   *  Falls back to `entries.length` when a source publishes no count. */
+  /** The catalogue's size for the current query and category. */
   total: number;
   /** The debounced query actually in flight, trimmed. Empty when browsing. */
   activeQuery: string;
   /** Which catalogue answered. Decides the add flow a card opens. */
   source: CatalogSource;
+  /** Categories the user can filter by, each with its true count. Empty for
+   *  the Discover source and while the Easy Connect index is still building. */
+  categories: PipedreamCategory[];
+  /** Apps matching the query that publish no actions, so the catalogue does
+   *  not offer them. Lets the no-match state say why instead of implying the
+   *  app does not exist — `q=SAP` is exactly this case. */
+  excludedNoActions: number;
+  /** The browse page. Empty while searching or inside a category — both are
+   *  one flat result set by definition. */
+  sections: CatalogSection[];
   isLoading: boolean;
   /**
    * Results for a PREVIOUS query are on screen while the current one is in
@@ -44,11 +77,8 @@ export interface CatalogState {
   /** The thrown value behind `isError`, for copy that names the real
    *  failure instead of blaming the user's connection. */
   error: unknown;
-  /** Whether the catalogue has more pages for the current query. */
   hasMore: boolean;
-  /** A page is in flight underneath a grid that has already painted. */
   isLoadingMore: boolean;
-  /** Pull the next page. Safe to call when there is nothing to pull. */
   loadMore: () => void;
   refetch: () => void;
 }
@@ -58,43 +88,25 @@ export interface CatalogState {
  * sources this project actually has.
  *
  * **Why two sources.** `connectors_api_discover` resolves to `false` by
- * default (`apps/api/src/experimental/features.ts:83`, asserted in
- * `unit-experimental-features.test.ts:74`), so the Discover catalogue is
- * unavailable to most projects. Easy Connect (Pipedream) is not flagged. If
- * the catalogue tabs read Discover alone, every unflagged project would open
- * this page onto empty tabs — and since the Add-connector modal no longer
- * carries an Easy Connect tab, its catalogue would be unreachable entirely.
- * Falling back keeps the page populated for every project.
+ * default (`apps/api/src/experimental/features.ts:83`), so the Discover
+ * catalogue is unavailable to most projects. Easy Connect (Pipedream) is not
+ * flagged. Falling back keeps the page populated for every project.
  *
  * **Why not merge them.** The two publish overlapping apps under different
- * slugs and different `id` namespaces, and each has its own add flow
- * (`DiscoverAddFlow` vs `ConnectorConnectionModal`). A merged list would need a
- * cross-catalogue identity that neither API provides; picking one source per
- * project is honest and keeps every card's click target unambiguous.
+ * slugs and different `id` namespaces, and each has its own add flow. A merged
+ * list would need a cross-catalogue identity that neither API provides.
  *
- * Both queries are declared unconditionally — hooks cannot be called in a
- * branch — and gated with `enabled`, so exactly one is ever in flight. The
- * query keys match `discover-catalogue.tsx` and `AppCatalogue` exactly, so
- * this shares their cache entries instead of racing a duplicate fetch, which
- * is also why `useInfiniteQuery` is load-bearing rather than stylistic: those
- * surfaces cache a `{pages, pageParams}` shape under the same keys.
+ * **One paging mechanism.** A scroll or a click on "Load more" fetches the next
+ * page. That is all. This replaces a three-layer arrangement — eager initial
+ * pages, a per-category auto-deepening effect chain, and a client-side reveal
+ * window over the top — that existed only because the client had to accumulate
+ * enough pages to fake a category filter. The server filters by category now
+ * (`pipedreamCatalogPage`), so the client asks for exactly the page it renders.
  *
- * **How the catalogue gets deep.** Three layers, in order of authority:
- *
- *   1. `CATALOG_INITIAL_PAGES` land eagerly on every load, so the first paint
- *      has real depth in every section rather than a handful of cards.
- *   2. A focused category keeps pulling pages until it holds
- *      `CATALOG_FOCUS_TARGET` entries, capped at `CATALOG_AUTOLOAD_MAX_PAGES`.
- *      Neither catalogue API accepts a category, so a category view is a
- *      client-side slice of what has been loaded — a thin one is thin because
- *      of the pages fetched, not because that is all the catalogue has.
- *   3. `loadMore` is unbounded and belongs to the user: `useCatalogAutoload`
- *      calls it when the foot of the grid comes into view, and the footer's
- *      button calls it from the keyboard.
- *
- * Layers 1 and 2 run from one effect that re-runs on `pages.length`, so each
- * landing page schedules the next — a chain that stops itself rather than a
- * loop that has to be broken.
+ * **Filtering happens server-side, over the whole catalogue.** Both `q` and
+ * `category` are query keys, so changing either starts a new list rather than
+ * re-slicing an accumulated one. Pipedream's own API cannot filter by category
+ * at all — see `apps/api/src/connectors/pipedream-index.ts`.
  */
 export function useCatalog(
   projectId: string,
@@ -102,13 +114,14 @@ export function useCatalog(
   opts: {
     enabled: boolean;
     discoverEnabled: boolean;
-    /** The category the grid is currently showing on its own, or `null` while
-     *  browsing everything. Drives layer 2 above. */
+    /** The category the grid is filtered to, or `null` for everything. */
     focusCategory?: string | null;
   },
 ): CatalogState {
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
+  const category = opts.focusCategory ?? null;
+  const searching = activeQuery.length > 0;
 
   const discoverQuery = useInfiniteQuery({
     queryKey: ['discover-connectors', projectId, activeQuery],
@@ -122,9 +135,14 @@ export function useCatalog(
   });
 
   const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery],
+    queryKey: ['easy-connect-apps', projectId, activeQuery, category],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listPipedreamApps(projectId, {
+        ...(activeQuery ? { q: activeQuery } : {}),
+        ...(category ? { category } : {}),
+        ...(pageParam ? { cursor: pageParam as string } : {}),
+        limit: CATALOG_PAGE_SIZE,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
@@ -132,15 +150,32 @@ export function useCatalog(
     placeholderData: keepPreviousData,
   });
 
+  // The browse page, in one request. Only while actually browsing: a search and
+  // an open category are each a single flat result set, so fetching sections
+  // for them would be work against a grid that will not render them.
+  const sectionsQuery = useQuery({
+    queryKey: ['easy-connect-sections', projectId],
+    queryFn: () =>
+      listPipedreamSections(projectId, {
+        perCategory: SECTION_CARD_COUNT,
+        maxCategories: SECTION_COUNT,
+      }),
+    staleTime: 5 * 60_000,
+    enabled: opts.enabled && source === 'easy-connect' && !searching && category === null,
+  });
+
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(() => {
     const native = computersCatalogEntry();
+    // The native Computers card is ours, not the catalogue's, so it is matched
+    // locally and hidden inside a category it does not claim.
     const includeComputers =
-      !activeQuery ||
-      `${native.name} ${native.description ?? ''}`
-        .toLowerCase()
-        .includes(activeQuery.toLowerCase());
+      category === null &&
+      (!activeQuery ||
+        `${native.name} ${native.description ?? ''}`
+          .toLowerCase()
+          .includes(activeQuery.toLowerCase()));
     const nativeEntries = includeComputers ? [native] : [];
     if (source === 'discover') {
       return nativeEntries.concat(
@@ -154,7 +189,7 @@ export function useCatalog(
         .flatMap((page) => page.apps)
         .map(catalogEntryFromEasyConnect),
     );
-  }, [activeQuery, source, discoverQuery.data, easyConnectQuery.data]);
+  }, [activeQuery, category, source, discoverQuery.data, easyConnectQuery.data]);
 
   const {
     fetchNextPage,
@@ -163,47 +198,6 @@ export function useCatalog(
     isPlaceholderData,
     refetch: activeRefetch,
   } = active;
-
-  const loadedPages = active.data?.pages.length ?? 0;
-  const focusCategory = opts.focusCategory ?? null;
-  // Counted with `countInSection`, the same membership rule `groupIntoSections`
-  // buckets by, so this number and the grid it is meant to fill can never
-  // disagree about what belongs to the category.
-  const focusLoaded = useMemo(
-    () =>
-      focusCategory === null
-        ? 0
-        : countInSection(entries, (entry) => entry.categories, focusCategory),
-    [entries, focusCategory],
-  );
-
-  useEffect(() => {
-    if (
-      !shouldAutoLoadPage({
-        enabled: opts.enabled,
-        loadedPages,
-        hasNextPage,
-        isFetchingNextPage,
-        isPlaceholderData,
-        focus:
-          focusCategory === null ? null : { loaded: focusLoaded, target: CATALOG_FOCUS_TARGET },
-        initialPages: CATALOG_INITIAL_PAGES,
-        maxPages: CATALOG_AUTOLOAD_MAX_PAGES,
-      })
-    ) {
-      return;
-    }
-    void fetchNextPage();
-  }, [
-    opts.enabled,
-    loadedPages,
-    hasNextPage,
-    isFetchingNextPage,
-    isPlaceholderData,
-    focusCategory,
-    focusLoaded,
-    fetchNextPage,
-  ]);
 
   // Stable identity: `useCatalogAutoload` lists this in its observer effect's
   // deps, and a new function every render would tear down and rebuild the
@@ -215,26 +209,59 @@ export function useCatalog(
 
   const refetch = useCallback(() => void activeRefetch(), [activeRefetch]);
 
-  // Both catalogues report their true size. Discover carries it on every page;
-  // Pipedream carries it as `page_info.total_count`, which the API forwards as
-  // `total`. Older API builds omit it, so the loaded count is the fallback —
-  // never a number larger than what is on screen.
+  /**
+   * The browse sections, normalised across both sources so `ConnectorBrowse`
+   * renders one shape.
+   *
+   * Easy Connect gets them from the server, complete and fixed. Discover has no
+   * such endpoint, so it keeps the original client-side bucketing of loaded
+   * entries — with `total` set to what is actually in hand, because that is all
+   * that source can honestly claim.
+   */
+  const sections = useMemo<CatalogSection[]>(() => {
+    if (searching || category !== null) return [];
+    if (source === 'discover') {
+      return catalogSections(entries, { popularCap: SECTION_CARD_COUNT }).map((section) => ({
+        key: section.category,
+        label: sectionTitle(section.category),
+        total: section.items.length,
+        items: section.items.slice(0, SECTION_CARD_COUNT),
+      }));
+    }
+    return (sectionsQuery.data?.sections ?? []).map((section) => ({
+      key: section.key,
+      label: section.label,
+      total: section.total,
+      items: section.apps.map(catalogEntryFromEasyConnect),
+    }));
+  }, [searching, category, source, entries, sectionsQuery.data]);
+
+  const easyConnectPage = easyConnectQuery.data?.pages[0];
+  const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];
+
+  const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
+
   const reportedTotal =
-    source === 'discover'
-      ? discoverQuery.data?.pages[0]?.total
-      : easyConnectQuery.data?.pages[0]?.total;
+    source === 'discover' ? discoverQuery.data?.pages[0]?.total : easyConnectPage?.total;
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
   const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
+
+  // The browse page is loading until its own request lands — the paged query
+  // behind it says nothing about whether the sections are ready.
+  const showingSections = !searching && category === null && source === 'easy-connect';
 
   return {
     entries,
     total,
     activeQuery,
     source,
+    categories,
+    excludedNoActions,
+    sections,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
     // so the grid dims instead of blanking to skeletons.
-    isLoading: opts.enabled && active.isLoading,
+    isLoading: opts.enabled && (active.isLoading || (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,
     isError: active.isError,
     error: active.error,

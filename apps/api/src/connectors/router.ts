@@ -384,21 +384,45 @@ export interface ConnectorRouterDeps {
   ): Promise<{ connected: boolean; accountId?: string } | null>;
   /** Pipedream webhook: verify sig + finalize. Returns false on bad signature. */
   pipedreamWebhook?(externalUserId: string, sig: string | null): Promise<boolean>;
-  /** Browse the Pipedream app catalogue (search + paginate). */
-  listPipedreamApps?(
-    query: string | undefined,
-    cursor: string | undefined,
-  ): Promise<{
+  /**
+   * A page of the Pipedream catalogue, filtered by query and/or category.
+   *
+   * Category filtering is served from a server-side snapshot of the whole
+   * catalogue — Pipedream's own `/apps` endpoint accepts a category parameter
+   * and ignores it, so it cannot answer this. `indexReady: false` means the
+   * snapshot is still building and `category` was ignored for this page.
+   */
+  listPipedreamApps?(input: {
+    q?: string;
+    category?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{
     apps: Array<{
       slug: string;
       name: string;
       description: string | null;
       imgSrc: string | null;
-      authType: 'oauth';
+      authType: string | null;
       categories: string[];
+      hasActions: boolean;
+      hasTriggers: boolean;
+      featuredWeight: number;
     }>;
+    categories: Array<{ key: string; label: string; count: number }>;
+    total: number;
     nextCursor?: string;
     hasMore: boolean;
+    indexReady: boolean;
+    excludedNoActions: number;
+  }>;
+
+  /** The browse page: a fixed top slice of each of the largest categories,
+   *  each with the category's true total, in one request. */
+  listPipedreamSections?(input: { perCategory?: number; maxCategories?: number }): Promise<{
+    sections: Array<{ key: string; label: string; total: number; apps: unknown[] }>;
+    categories: Array<{ key: string; label: string; count: number }>;
+    indexReady: boolean;
   }>;
   /** Browse the direct integrations.sh catalogue. */
   listDiscoverConnectors?(input: {
@@ -1304,7 +1328,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       ...auth,
       request: {
         params: ProjectParam,
-        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+        query: z.object({
+          q: z.string().optional(),
+          /** A category key from the same response's `categories` facet. */
+          category: z.string().optional(),
+          cursor: z.string().optional(),
+          limit: z.coerce.number().int().positive().max(100).optional(),
+        }),
       },
       responses: {
         200: json(OpaqueSchema, 'Pipedream apps page'),
@@ -1316,10 +1346,52 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.listPipedreamApps) return featureNotSupportedResponse(c, 'pipedream_apps');
-      const result = await deps.listPipedreamApps(
-        c.req.query('q') || undefined,
-        c.req.query('cursor') || undefined,
-      );
+      const limit = Number(c.req.query('limit'));
+      const result = await deps.listPipedreamApps({
+        q: c.req.query('q') || undefined,
+        category: c.req.query('category') || undefined,
+        cursor: c.req.query('cursor') || undefined,
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: the browse page, one request ──────────────────────────────────
+  // A fixed top slice of each of the largest categories. Exists so the
+  // Discovery sections are a complete, stable view of each category instead of
+  // a bucketing of whichever pages happened to have loaded — which is what made
+  // sections grow and reflow while the user was reading them.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/pipedream/sections',
+      tags: ['connector'],
+      summary: 'Browse the Pipedream catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Pipedream catalogue sections'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listPipedreamSections) return featureNotSupportedResponse(c, 'pipedream_apps');
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      const result = await deps.listPipedreamSections({
+        ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+        ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
+      });
       return c.json(result);
     },
   );

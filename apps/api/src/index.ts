@@ -924,6 +924,7 @@ app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
+import { warmPipedreamCatalog } from './connectors/pipedream';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
@@ -1384,6 +1385,12 @@ async function bootServices() {
     },
     { eligible },
   );
+  // Build the Pipedream catalogue index in the background. Deliberately NOT
+  // awaited: the crawl is ~33 requests / ~48s, and readiness must not wait on
+  // a third party. Until it lands, the catalogue routes answer from the live
+  // paged API (`indexReady: false`), so a cold pod serves correct results the
+  // whole time — just without category facets.
+  warmPipedreamCatalog();
 }
 
 // Graceful shutdown
