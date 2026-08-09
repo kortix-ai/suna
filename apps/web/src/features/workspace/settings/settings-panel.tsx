@@ -86,6 +86,24 @@
  * remaining four (`identity`, `audit`, `api-keys`, `experimental`, plus
  * `snapshots` from Task 5b2) stay placeholders — later phases build them.
  *
+ * **Task 13b update.** Found in review of Task 13: `billing`/`usage`/`roles`
+ * enforced their whole-tab permission gate ONLY by returning `null` from
+ * their container, same as this comment used to document as intentional —
+ * so a denied user still saw the rail row and clicked into an empty pane,
+ * unlike the source page (`app/(app)/accounts/[id]/page.tsx:354-365`'s
+ * `sectionVisible` map), which never rendered that row at all.
+ * `ACCOUNT_TAB_PERMISSION` below now gives the rail an account-scoped
+ * counterpart to `GATED_TAB_SECTION` (its project-scoped analogue), so a
+ * denied account-scoped tab is ABSENT from the rail — see that constant's
+ * comment and `isSettingsTabAllowed`'s for the full reasoning, including the
+ * fail-open contract and the residual gap it does NOT close. `groups` is
+ * deliberately still absent from that map: it has no whole-tab permission
+ * gate, only an entitlement gate on its CONTENT (`EnterpriseUpsell`), which
+ * must keep showing the tab — permission gating and entitlement gating stay
+ * two different mechanisms. The per-tab `return null` guards in
+ * `billing-tab.tsx`/`usage-tab.tsx`/`roles-tab.tsx` are UNCHANGED — they stay
+ * as a defensive backstop, not removed.
+ *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
  * block for the proof): `SettingsTabPane` renders `null` for every tab that
@@ -132,7 +150,9 @@ import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   isCustomizeSectionVisible,
   type CustomizeSection,
+  type ProjectAction,
 } from '@/lib/project-actions';
+import { usePermissions } from '@/lib/use-permission';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
@@ -152,22 +172,16 @@ import { ProfileTab } from './tabs/profile-tab';
 import { RolesTab } from './tabs/roles-tab';
 import { UsageTab } from './tabs/usage-tab';
 import type { RailGroup, RailItem } from './type';
+import { useSettingsAccountId } from './use-settings-account-id';
 
 /**
  * Maps a `SettingsTab` to the legacy `CustomizeSection` whose IAM read leaf
  * (`lib/project-actions.ts`) already gates it — reused as-is rather than
  * duplicated, since the leaves themselves didn't change, only the tab ids
- * that front them. Tabs with no entry here (profile, preferences, connected,
- * snapshots, billing, usage, groups, roles, identity, audit, api-keys,
- * experimental) are user- or account-scoped and get their own entitlement
- * gating in the tasks that build their content; until then `isTabAllowed`
- * falls through to "allowed" for them below, same as the fail-open default.
- * This is deliberate for `roles` too (Task 13): its `role.create` whole-tab
- * gate lives INSIDE `RolesTab`'s container (`tabs/roles-tab.tsx`), which
- * returns `null` rather than hiding the rail row — the same choice already
- * made for `billing`'s `billing.write` gate and `usage`'s `account.write`
- * gate, neither of which hide their rail row either. See `tabs/roles-tab.tsx`'s
- * header comment for the full reasoning.
+ * that front them. Tabs with no entry here are either ungated (profile,
+ * preferences, connected, snapshots, groups, experimental) or account-scoped
+ * and gated through `ACCOUNT_TAB_PERMISSION` below instead — see that
+ * constant's comment.
  */
 const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   general: 'settings',
@@ -186,6 +200,118 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   computers: 'computers',
   upgrades: 'upgrade',
 };
+
+/**
+ * **Task 13b.** The account-probe counterpart to `GATED_TAB_SECTION` above —
+ * every account-scoped tab whose CONTAINER enforces a whole-tab permission
+ * gate by returning `null` (`billing`'s `account.write` in
+ * `tabs/billing-tab.tsx:377,450`, `usage`'s `account.write` in
+ * `tabs/usage-tab.tsx:158,160`, `roles`'s `role.create` in
+ * `tabs/roles-tab.tsx`). Before this task NONE of these three fed
+ * `isTabAllowed` below, so a denied user still saw the rail row and clicked
+ * into an empty pane — the defect this task fixes (see this task's brief,
+ * `task-13b-brief.md`). `isTabAllowed` now consults this map exactly the way
+ * it already consulted `GATED_TAB_SECTION`, so a denied account-scoped tab is
+ * ABSENT from the rail instead of present-and-empty. The per-tab `return
+ * null` in each container STAYS as a defensive backstop — this map changes
+ * which rows the rail draws, not whether the containers still guard
+ * themselves.
+ *
+ * `groups` is DELIBERATELY absent, matching the source page's `groups: true`
+ * (`app/(app)/accounts/[id]/page.tsx:356`) exactly: it carries NO whole-tab
+ * permission gate — every member reaches the pane. Only its CONTENT is
+ * entitlement-gated (`EnterpriseUpsell` in place of the real view on a
+ * non-`rbac` account, same as `roles`'s content once past its `role.create`
+ * gate) — that is deliberate discoverability mirroring the server's `402`
+ * from `requireEntitlement`, and must NOT become a hidden row. Permission
+ * gating (this map) and entitlement gating (`EnterpriseUpsell`, handled
+ * entirely inside `GroupsTab`/`RolesTab`) are different mechanisms and stay
+ * different here — see `tabs/groups-tab.tsx`'s and `tabs/roles-tab.tsx`'s
+ * header comments.
+ *
+ * `identity`, `audit`, and `api-keys` stay absent too — they are still
+ * placeholders (see `SettingsTabPane` below) with no container to enforce a
+ * gate yet. `isTabAllowed` falls through to "allowed" for them, same as the
+ * pre-13b default; the task that wires their real content is expected to add
+ * an entry here alongside it, the same way `billing`/`usage`/`roles` should
+ * have.
+ */
+export const ACCOUNT_TAB_PERMISSION: Partial<Record<SettingsTab, string>> = {
+  billing: 'account.write',
+  usage: 'account.write',
+  roles: 'role.create',
+};
+
+/** Distinct account actions to probe — one batched call over every
+ *  `ACCOUNT_TAB_PERMISSION` entry, same shape as `CUSTOMIZE_SECTION_GATE_ACTIONS`
+ *  for the project probe. Declared at module scope (not `useMemo`'d) so the
+ *  probe list is a stable reference across renders without a dependency array —
+ *  `usePermissions`'s query key includes it, and an unstable array would
+ *  refetch every render. */
+const ACCOUNT_TAB_GATE_ACTIONS: readonly string[] = Array.from(
+  new Set(Object.values(ACCOUNT_TAB_PERMISSION)),
+);
+const ACCOUNT_TAB_PROBES = ACCOUNT_TAB_GATE_ACTIONS.map((action) => ({ action }));
+
+/**
+ * Whether `tab` is allowed to show in the rail — pure so it's unit-testable
+ * with no hooks, no `QueryClientProvider`, no DOM (`bun test` has none of
+ * those, see this file's `settings-panel.test.tsx`). Checks the project gate
+ * (`GATED_TAB_SECTION`) first, then the account gate
+ * (`ACCOUNT_TAB_PERMISSION`) — a tab is never in both, so this is an
+ * if/else-shaped lookup, not a merge of two verdicts. A tab in neither map is
+ * always allowed.
+ *
+ * **Both probes fail OPEN on "not yet resolved" — deliberately, including on
+ * error, not just while loading.** This is a VISIBILITY layer, not a
+ * security boundary: the API re-checks every mutation
+ * (`require-billing-write.ts`, `role.create`'s own route guard, etc.), so the
+ * worst case of failing open is a denied user briefly seeing a row that
+ * 403s on click, exactly the UX `billing-tab.tsx`'s `canManageBilling` split
+ * already accepts for its OWN mutating controls. Failing CLOSED instead — the
+ * account probe's own `usePermission` default (`use-permission.ts:26-27`,
+ * `false` while loading AND on error) — would blank rows on a slow or
+ * transiently-erroring probe, which is strictly worse: it reads as "you lost
+ * access" instead of "we're checking." That's why the caller below computes
+ * `accountPermsResolved` itself (requiring `!isLoading && !isError` for every
+ * probed action, PLUS a known account id) rather than reading
+ * `usePermission`'s `allowed` directly — the same `isLoading`/`isError`
+ * fields the hook already exposes are enough to tell "unresolved" apart from
+ * "resolved to denied"; nothing about the hook needed to change.
+ *
+ * **The residual gap, stated plainly.** Once the rail fails open on an
+ * ERRORED probe, the row is visible — but the TAB'S OWN container
+ * (`BillingTabInner`, `UsageTabInner`, `RolesTabInner`) reads the exact same
+ * action through plain `usePermission`, which fails CLOSED on that same
+ * error (`allowed: false`), so the container still returns `null` on click.
+ * A probe error therefore still produces a visible-row/empty-pane click in
+ * this one narrow case — a real, much rarer instance of the original defect,
+ * not a new one this task introduces. Fixing it fully would mean the
+ * containers treating a probe error as "show an inline error", not "deny" —
+ * out of scope here (it touches `usePermission`'s callers app-wide, not just
+ * these three tabs) and reported as an open finding rather than silently
+ * left unresolved.
+ */
+export interface SettingsTabAllowedParams {
+  projectCapsResolved: boolean;
+  projectCan: (action: ProjectAction) => boolean;
+  accountPermsResolved: boolean;
+  accountCan: (action: string) => boolean;
+}
+
+export function isSettingsTabAllowed(tab: SettingsTab, params: SettingsTabAllowedParams): boolean {
+  const section = GATED_TAB_SECTION[tab];
+  if (section) {
+    if (!params.projectCapsResolved) return true;
+    return isCustomizeSectionVisible(section, params.projectCan);
+  }
+  const accountAction = ACCOUNT_TAB_PERMISSION[tab];
+  if (accountAction) {
+    if (!params.accountPermsResolved) return true;
+    return params.accountCan(accountAction);
+  }
+  return true;
+}
 
 /**
  * Adapts `useSettingsPanelStore`'s state into the panel-agnostic
@@ -263,21 +389,58 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
       ),
     [caps],
   );
-  // A tab is permitted when its READ leaf resolved to allowed:true — a role
-  // that can read a tab SEES it (read-only unless it also holds the write
-  // leaf; edit controls inside each pane gate on can_manage separately). A
-  // role that omits a read leaf hides just that one tab. Until the probe
-  // resolves (or if it errored) we permit everything (optimistic) —
-  // visibility, not security. Tabs with no gated leaf yet (see
-  // GATED_TAB_SECTION) are always permitted.
-  const isTabAllowed = useCallback(
-    (t: SettingsTab) => {
-      if (!capsResolved) return true;
-      const section = GATED_TAB_SECTION[t];
-      if (!section) return true;
-      return isCustomizeSectionVisible(section, (action) => caps[action]?.allowed === true);
+
+  // Task 13b — the ACCOUNT-scoped counterpart of the probe above, for
+  // `ACCOUNT_TAB_PERMISSION` (`billing`/`usage`/`roles` today). Same accountId
+  // resolution every account-scoped tab container uses
+  // (`useSettingsAccountId` — project's account wins, falling back to the
+  // app-wide selected account), so this probe agrees with what
+  // `BillingTabInner`/`UsageTabInner`/`RolesTabInner` will themselves resolve
+  // — a mismatch here would make the rail show/hide a row the container then
+  // disagrees with.
+  const resolvedAccountId = useSettingsAccountId(project?.account_id);
+  // Only fire while the panel is open AND an account id is actually known —
+  // `usePermissions` reports a DISABLED query as `isLoading: false` in
+  // react-query v5 (no fetch in flight), so without this guard an unresolved
+  // accountId would read as "resolved, denied" instead of "not yet known".
+  // Same footgun `use-project-can.ts`'s `pendingWhileUnresolved` documents
+  // for the identical race on the project probe.
+  const accountProbeReady = open && !!resolvedAccountId;
+  const accountPerms = usePermissions(
+    accountProbeReady ? resolvedAccountId : undefined,
+    ACCOUNT_TAB_PROBES,
+  );
+  // Same fail-open contract as `capsResolved` above: resolved only once every
+  // probed action has settled with neither `isLoading` nor `isError` — a
+  // failed probe stays "unresolved" (renders the row) rather than "resolved
+  // denied" (hides it). See `isSettingsTabAllowed`'s header comment for why.
+  const accountPermsResolved = useMemo(
+    () => accountProbeReady && accountPerms.every((p) => !p.isLoading && !p.isError),
+    [accountProbeReady, accountPerms],
+  );
+  const accountCan = useCallback(
+    (action: string) => {
+      const idx = ACCOUNT_TAB_GATE_ACTIONS.indexOf(action);
+      return idx >= 0 && accountPerms[idx]?.allowed === true;
     },
-    [caps, capsResolved],
+    [accountPerms],
+  );
+
+  // A tab is permitted when its READ leaf (project-scoped) or its whole-tab
+  // permission (account-scoped) resolved to allowed:true — a role that can
+  // read a tab SEES it (read-only unless it also holds the write leaf; edit
+  // controls inside each pane gate on can_manage separately). Until a probe
+  // resolves (or if it errored) we permit everything it gates (optimistic) —
+  // visibility, not security. Tabs gated by neither map are always permitted.
+  const isTabAllowed = useCallback(
+    (t: SettingsTab) =>
+      isSettingsTabAllowed(t, {
+        projectCapsResolved: capsResolved,
+        projectCan: (action) => caps[action]?.allowed === true,
+        accountPermsResolved,
+        accountCan,
+      }),
+    [caps, capsResolved, accountPermsResolved, accountCan],
   );
 
   const tunnelEnabled = project?.experimental?.agent_tunnel ?? false;
@@ -335,16 +498,20 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     }
   }, [open, tabVisible, setTab]);
 
-  // If the active tab is denied once the probe resolves (e.g. a bookmarked
+  // If the active tab is denied once its probe resolves (e.g. a bookmarked
   // deep-link into a tab this role no longer grants), fall back to the first
-  // permitted tab. Only after the probe RESOLVES — never during the
-  // loading/optimistic window, or we'd clobber a valid deep-link.
+  // permitted tab. Only after the RELEVANT probe resolves — never during the
+  // loading/optimistic window, or we'd clobber a valid deep-link. No explicit
+  // `capsResolved`/`accountPermsResolved` check needed here: `isTabAllowed`
+  // (via `isSettingsTabAllowed`) already fails open per-tab while ITS OWN
+  // gating probe (project or account, whichever applies) is unresolved, so
+  // `activeAllowed` alone already carries that signal for both probe kinds.
   const activeAllowed = isTabAllowed(tab);
   useEffect(() => {
-    if (!open || !capsResolved || activeAllowed) return;
+    if (!open || activeAllowed) return;
     const fallback = allItems[0]?.tab ?? DEFAULT_SETTINGS_TAB;
     if (fallback !== tab) setTab(fallback);
-  }, [open, capsResolved, activeAllowed, allItems, tab, setTab]);
+  }, [open, activeAllowed, allItems, tab, setTab]);
 
   return (
     <SettingsNavProvider value={settingsNav}>

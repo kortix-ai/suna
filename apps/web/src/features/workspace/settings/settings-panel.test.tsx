@@ -4,9 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Modal } from '@/components/ui/modal';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
+  ACCOUNT_TAB_PERMISSION,
   buildSettingsPanelSettingsNav,
+  isSettingsTabAllowed,
   SettingsPanelShell,
   type SettingsPanelShellProps,
+  type SettingsTabAllowedParams,
 } from './settings-panel';
 import { UPGRADE_ITEM, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
@@ -418,6 +421,145 @@ describe('SettingsPanelShell — project-optional', () => {
 
   test('omits the related-projects switcher with no project', () => {
     expect(render({ project: undefined })).not.toContain('related-projects-switcher');
+  });
+});
+
+/**
+ * Task 13b — `isSettingsTabAllowed` is the pure decision function
+ * `SettingsPanel`'s `isTabAllowed` callback delegates to (see
+ * `settings-panel.tsx`). It's tested directly here, with no hooks and no
+ * `QueryClientProvider`, because the hook-driven container itself can't
+ * render under `renderToStaticMarkup` (see this file's header comment) — the
+ * same reason `buildSettingsPanelSettingsNav` above is tested as a pure
+ * function rather than through a mounted `SettingsPanel`.
+ *
+ * Per gated tab this pins the three states the task brief calls for:
+ * permitted shows the row (`true`), denied hides it (`false`), and
+ * unresolved (loading OR errored — both collapse to the same
+ * `accountPermsResolved: false` input, see `settings-panel.tsx`'s header
+ * comment on `isSettingsTabAllowed`) shows it (`true`, fail open).
+ */
+describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
+  const gatedAccountTabs = Object.keys(ACCOUNT_TAB_PERMISSION) as (keyof typeof ACCOUNT_TAB_PERMISSION)[];
+
+  function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
+    return {
+      projectCapsResolved: true,
+      projectCan: () => true,
+      accountPermsResolved: true,
+      accountCan: () => true,
+      ...overrides,
+    };
+  }
+
+  test('billing, usage, and roles are the only gated account tabs', () => {
+    expect(gatedAccountTabs.sort()).toEqual(['billing', 'roles', 'usage']);
+  });
+
+  test('permitted: every account-gated tab shows once its permission resolves allowed', () => {
+    for (const tab of gatedAccountTabs) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ accountCan: () => true }))).toBe(true);
+    }
+  });
+
+  test('denied: every account-gated tab is absent once its permission resolves denied', () => {
+    for (const tab of gatedAccountTabs) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ accountCan: () => false }))).toBe(false);
+    }
+  });
+
+  test('unresolved (loading): every account-gated tab stays visible — fail open', () => {
+    for (const tab of gatedAccountTabs) {
+      expect(
+        isSettingsTabAllowed(
+          tab,
+          paramsFor({ accountPermsResolved: false, accountCan: () => false }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test('unresolved (errored probe): every account-gated tab stays visible — fail open, not fail closed', () => {
+    // An errored probe and a loading probe are indistinguishable to this
+    // function BY DESIGN: the caller (`SettingsPanel`) folds `isLoading` and
+    // `isError` into the single `accountPermsResolved: false` input before
+    // calling here — see `settings-panel.tsx`'s decision writeup on
+    // `isSettingsTabAllowed`. A row must not disappear just because the
+    // probe failed to answer.
+    for (const tab of gatedAccountTabs) {
+      expect(
+        isSettingsTabAllowed(
+          tab,
+          paramsFor({ accountPermsResolved: false, accountCan: () => false }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test('groups carries no permission gate — always allowed, independent of the account probe', () => {
+    expect(isSettingsTabAllowed('groups', paramsFor({ accountCan: () => false }))).toBe(true);
+    expect(
+      isSettingsTabAllowed('groups', paramsFor({ accountPermsResolved: false, accountCan: () => false })),
+    ).toBe(true);
+  });
+
+  test('identity/audit/api-keys are still placeholders — no gate wired yet, always allowed', () => {
+    for (const tab of ['identity', 'audit', 'api-keys'] as const) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ accountCan: () => false }))).toBe(true);
+    }
+  });
+
+  test('a project-gated tab is unaffected by the account probe', () => {
+    expect(
+      isSettingsTabAllowed(
+        'secrets',
+        paramsFor({ projectCan: () => false, accountCan: () => true }),
+      ),
+    ).toBe(false);
+    expect(
+      isSettingsTabAllowed(
+        'secrets',
+        paramsFor({ projectCapsResolved: false, projectCan: () => false }),
+      ),
+    ).toBe(true);
+  });
+
+  test('an account-gated tab is unaffected by the project probe', () => {
+    expect(
+      isSettingsTabAllowed(
+        'billing',
+        paramsFor({ projectCapsResolved: false, projectCan: () => false, accountCan: () => true }),
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Task 13b — proof at the presentational layer: when `SettingsPanel` (the
+ * hook-driven container, not rendered here) computes `groups`/`allItems`
+ * with a denied account-gated tab filtered out — exactly what
+ * `isSettingsTabAllowed` returning `false` for it drives — the shell draws
+ * no row for it at all, and an entitlement-gated-but-permission-open tab
+ * (`groups`) stays present alongside it.
+ */
+describe('SettingsPanelShell — account-gated rows are absent when denied (Task 13b)', () => {
+  test('billing, usage, and roles disappear from the rail when their permission is denied; groups stays', () => {
+    const deniedTabs = new Set(Object.keys(ACCOUNT_TAB_PERMISSION));
+    const filteredGroups = allGroups
+      .map((g) => ({ ...g, items: g.items.filter((item) => !deniedTabs.has(item.tab)) }))
+      .filter((g) => g.items.length > 0);
+    const filteredItems = [...filteredGroups.flatMap((g) => g.items), UPGRADE_ITEM];
+    // `tab` stays on the default (`general`, a placeholder pane) rather than
+    // `groups` — mounting the real `GroupsTab` needs `AuthProvider`/
+    // `QueryClientProvider`, neither of which exists under
+    // `renderToStaticMarkup` (see this file's header comment). This test only
+    // asserts rail-ROW presence, which doesn't depend on which pane is active.
+    const html = render({ groups: filteredGroups, allItems: filteredItems });
+
+    expect(html).not.toContain('>Billing<');
+    expect(html).not.toContain('>Usage<');
+    expect(html).not.toContain('>Roles<');
+    expect(html).toContain('>Groups<');
   });
 });
 
