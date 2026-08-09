@@ -552,7 +552,7 @@ async function sendPromptToSession(
   }
 }
 
-async function prepareClientCreatedBranch(
+export async function prepareClientCreatedBranch(
   ctx: { client: { get<T>(path: string): Promise<T> }; projectId: string },
   body: Record<string, unknown>,
 ): Promise<'ok' | 'error'> {

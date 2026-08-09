@@ -85,18 +85,27 @@ Each session runs in its own sandbox, on its own branch. `--wait` blocks until t
 Attach to a session from your terminal:
 
 ```sh
+kortix
+```
+
+Bare `kortix` on an interactive, logged-in terminal opens a session picker for
+the bound project — running sessions attach immediately, stopped ones boot
+first, and `+ New session` starts a fresh sandbox — then lands you in the full
+OpenCode TUI attached to that session. The same flow is available explicitly as
+`kortix connect [<session-id>]` (alias: `attach`).
+
+The CLI manages the `opencode` binary for you: on first connect it downloads
+the exact version the session's server runs and caches it under
+`~/.kortix/opencode/<version>/`, so the TUI and server never skew. Set
+`KORTIX_OPENCODE_BIN` to force your own binary.
+
+For a lighter-weight line-based chat instead of the full TUI, run:
+
+```sh
 kortix sessions chat
 ```
 
 This opens an interactive chat with your most recent session. Add an id to target a specific session: `kortix sessions chat <id>`.
-
-To attach your local OpenCode client to the sandbox instead, run:
-
-```sh
-kortix sessions connect
-```
-
-This command attaches to the OpenCode REST process.
 
 To open a raw shell in the sandbox, with no agent involved, run:
 
@@ -243,7 +252,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
 | `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
-| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode REST compatibility process in the sandbox. Alias: `attach`. |
+| `kortix sessions connect [<id>] [-- <opencode args>]` | Attach the OpenCode TUI to the session's OpenCode server. Also available top-level: `kortix connect` / `kortix attach`, and bare `kortix` opens a session picker first. The CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. Aliases: `messages`, `history`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
