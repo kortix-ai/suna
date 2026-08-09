@@ -12,6 +12,7 @@ export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
 const WARM_PREPARE_TIMEOUT_MS = 45 * 60_000;
+export const PLATINUM_CI_WARM_TIMEOUT_MS = 2 * 60_000;
 const SANDBOX_START_TIMEOUT_MS = 45 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
@@ -730,7 +731,7 @@ export async function observePlatinumSandboxStart(input: {
 }
 
 async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
-  const deadline = Date.now() + WARM_PREPARE_TIMEOUT_MS;
+  const deadline = Date.now() + PLATINUM_CI_WARM_TIMEOUT_MS;
   let observationFailures = 0;
   while (Date.now() < deadline) {
     try {
@@ -767,7 +768,7 @@ async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<
     // The log is optional. The missing marker is the authoritative failure.
   }
   throw new Error(
-    `Platinum sandbox ${sandboxId} did not become warm within ${WARM_PREPARE_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
+    `Platinum sandbox ${sandboxId} did not become warm within ${PLATINUM_CI_WARM_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
   );
 }
 

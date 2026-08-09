@@ -48,6 +48,9 @@ tests. The workflow runs the same `pnpm test -- --full` command in Platinum or
 Daytona. Set `provider` to `auto`, `platinum`, or `daytona`. Auto tries Platinum
 first. It falls back to Daytona only when Platinum infrastructure throws. A
 non-zero test exit returns directly and does not trigger fallback.
+Platinum warm restore readiness is capped at 2 minutes. A missing marker or
+unreachable guest after that cap is an infrastructure error and triggers auto
+fallback. Cold template builds keep their separate 45-minute creation budget.
 
 Both providers use a content-addressed warm image. The image name includes the
 `pnpm-lock.yaml` hash. Both images contain pinned Node, Bun, pnpm, Docker,

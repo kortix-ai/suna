@@ -3,6 +3,7 @@ import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
+  PLATINUM_CI_WARM_TIMEOUT_MS,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
   buildPlatinumWorkerRequest,
@@ -29,6 +30,10 @@ afterEach(() => {
 });
 
 describe('Platinum CI worker plan', () => {
+  test('bounds warm restore readiness so auto mode can fail over quickly', () => {
+    expect(PLATINUM_CI_WARM_TIMEOUT_MS).toBe(120_000);
+  });
+
   test('uses one content-addressed template for one lockfile', () => {
     expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb');
     expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');

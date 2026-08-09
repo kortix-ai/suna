@@ -78,6 +78,9 @@ Keep the test command unchanged. GitHub Actions invokes
 - Use `auto` by default. Try Platinum first when its key exists.
 - Fall back to Daytona only when the Platinum runner throws an infrastructure
   error. Return a non-zero test exit without fallback.
+- Cap Platinum warm restore readiness at 2 minutes. Treat a missing marker or
+  unreachable guest after that cap as infrastructure failure. Keep the cold
+  template build budget separate.
 - Keep provider selection in sandbox infrastructure. Keep test behavior in the
   unchanged root command.
 - Give each provider one content-addressed warm image per lockfile hash.

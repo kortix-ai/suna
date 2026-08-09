@@ -351,6 +351,9 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   through `.github/workflows/test.yml`. Set `provider` to `platinum`, `daytona`,
   or `auto`. Auto tries Platinum first. It uses Daytona only when Platinum
   infrastructure throws. A non-zero test exit does not trigger fallback.
+- Platinum warm restore readiness is capped at 2 minutes. A missing marker or
+  unreachable guest after that cap triggers Daytona in `auto` mode. Cold
+  template creation retains its separate 45-minute budget.
 - Both providers fetch and verify the exact SHA, upload `tests/test-results`,
   and delete the sandbox. The sandbox worker is infrastructure only. Do not add
   CI-only test logic.
