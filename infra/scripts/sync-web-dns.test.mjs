@@ -27,9 +27,7 @@ describe('webDnsRecord', () => {
     expect(() => webDnsRecord('preview', 'example.com')).toThrow(
       'environment must be dev, staging, or prod',
     );
-    expect(() => webDnsRecord('dev', 'example.com')).toThrow(
-      'target must be an AWS ELB hostname',
-    );
+    expect(() => webDnsRecord('dev', 'example.com')).toThrow('target must be an AWS ELB hostname');
   });
 
   test('can never select a canonical Vercel hostname', () => {

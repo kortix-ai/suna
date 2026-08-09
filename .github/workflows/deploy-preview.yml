@@ -74,9 +74,54 @@ jobs:
             KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
           tags: kortix/kortix-gateway:pr-${{ github.event.pull_request.head.sha }}
 
+  build-web:
+    name: Build preview frontend image
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: false
+      - run: git submodule sync --recursive && git submodule update --init --recursive
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build standalone frontend
+        run: pnpm --filter ./apps/web build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_PUBLIC_KORTIX_VERSION: pr-${{ github.event.pull_request.number }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.event.pull_request.head.sha }}
+          NEXT_OUTPUT: standalone
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: kortix/kortix-frontend:pr-${{ github.event.pull_request.head.sha }}
+
   deploy:
-    name: Deploy preview backend
-    needs: [build-api, build-gateway]
+    name: Deploy preview API and frontend
+    needs: [build-api, build-gateway, build-web]
     if: >-
       contains(github.event.pull_request.labels.*.name, 'preview') &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -94,6 +139,7 @@ jobs:
       COMMIT: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -107,33 +153,55 @@ jobs:
           bash infra/scripts/ecs-preview.sh deploy "$NUM" \
             "kortix/kortix-api:pr-${COMMIT}" \
             "kortix/kortix-gateway:pr-${COMMIT}" \
+            "kortix/kortix-frontend:pr-${COMMIT}" \
             "$COMMIT"
-      - name: Require preview health
+      - name: Require isolated API and frontend health
         run: |
           set -euo pipefail
-          host="pr-${NUM}.preview-api.kortix.com"
+          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
+            echo "::error::WEB_PROTECTION_PASSWORD is required for preview verification."
+            exit 1
+          }
+          api_host="pr-${NUM}.preview-api.kortix.com"
+          web_host="pr-${NUM}.preview.kortix.com"
           for _ in $(seq 1 30); do
-            health="$(curl -fsS --max-time 8 "https://${host}/v1/health" 2>/dev/null || true)"
-            environment="$(printf '%s' "$health" | jq -r '.environment // empty' 2>/dev/null || true)"
-            commit="$(printf '%s' "$health" | jq -r '.commit // empty' 2>/dev/null || true)"
-            if [ "$environment" = "preview" ] && [ "$commit" = "$COMMIT" ]; then
-              printf '%s\n' "$health" > /tmp/preview-health.json
+            api_health="$(curl -fsS --max-time 8 "https://${api_host}/v1/health" 2>/dev/null || true)"
+            api_environment="$(printf '%s' "$api_health" | jq -r '.environment // empty' 2>/dev/null || true)"
+            api_commit="$(printf '%s' "$api_health" | jq -r '.commit // empty' 2>/dev/null || true)"
+            web_health="$(curl -fsS --max-time 8 "https://${web_host}/api/health" 2>/dev/null || true)"
+            web_commit="$(printf '%s' "$web_health" | jq -r '.commit // empty' 2>/dev/null || true)"
+            anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "https://${web_host}/" || true)"
+            wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -u 'kortix:wrong-password' "https://${web_host}/" || true)"
+            protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/" || true)"
+            runtime="$(curl -fsS --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/api/runtime-config" 2>/dev/null || true)"
+            echo "api_environment=${api_environment:-?} api_commit=${api_commit:-?} web_commit=${web_commit:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?}"
+            if [ "$api_environment" = "preview" ] \
+              && [ "$api_commit" = "$COMMIT" ] \
+              && [ "$web_commit" = "$COMMIT" ] \
+              && [ "$anonymous" = 401 ] \
+              && [ "$wrong" = 401 ] \
+              && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
+              && grep -q "https://${api_host}/v1" <<<"$runtime" \
+              && grep -q "https://${web_host}" <<<"$runtime"; then
+              printf '%s\n' "$api_health" > /tmp/preview-health.json
               exit 0
             fi
             sleep 10
           done
-          echo "::error::${host} did not report environment=preview for commit ${COMMIT}."
+          echo "::error::Preview API or frontend did not report commit ${COMMIT} with isolated runtime configuration."
           exit 1
       - name: Update sticky status comment
         run: |
           set -euo pipefail
           marker='<!-- preview-status -->'
           host="pr-${NUM}.preview-api.kortix.com"
+          web="pr-${NUM}.preview.kortix.com"
           body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
             "- **Backend:** https://${host}" \
             "- **Health:** https://${host}/v1/health" \
-            '- **Frontend:** see the Vercel preview deployment for this branch' '' \
-            '_One isolated Fargate service; automatic close/unlabel teardown._')"
+            "- **ECS frontend:** https://${web}" \
+            '- **Vercel frontend:** deployment is building' '' \
+            '_One isolated Fargate task with API, gateway, and frontend; automatic close/unlabel teardown._')"
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           if [ -n "$id" ]; then
@@ -219,8 +287,9 @@ jobs:
           body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
             "- **Backend:** https://pr-${NUM}.preview-api.kortix.com" \
             "- **Health:** https://pr-${NUM}.preview-api.kortix.com/v1/health" \
-            "- **Frontend:** ${frontend}" '' \
-            '_One isolated Fargate service; automatic close/unlabel teardown._')"
+            "- **ECS frontend:** https://pr-${NUM}.preview.kortix.com" \
+            "- **Vercel frontend:** ${frontend}" '' \
+            '_One isolated Fargate task plus a parallel Vercel frontend; automatic close/unlabel teardown._')"
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
@@ -288,7 +357,7 @@ jobs:
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The ECS service, listener rule, target group, and task definitions were deleted.' \
+            'The ECS service, two listener rules, two target groups, and task definitions were deleted.' \
             'Vercel cleanup deleted only branch variables whose value still targeted this PR backend.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
 

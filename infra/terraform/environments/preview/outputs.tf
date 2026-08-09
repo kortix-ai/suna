@@ -14,6 +14,10 @@ output "listener_arn" {
   value = aws_lb_listener.https.arn
 }
 
+output "frontend_certificate_arn" {
+  value = module.acm_frontend.certificate_arn
+}
+
 output "private_subnet_ids" {
   value = data.aws_subnets.dev_private.ids
 }

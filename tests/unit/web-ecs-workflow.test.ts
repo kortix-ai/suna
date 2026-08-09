@@ -16,7 +16,7 @@ describe('web ECS migration', () => {
       'bash',
       [
         '-c',
-        'source "$1"; SERVICE_PREFIX=kortix-dev; SECRET_NAME=kortix-dev-env; configure_service_coordinates web; printf "%s|%s|%s|%s" "$CLUSTER" "$SERVICE" "$CONTAINER" "$SECRET_NAME"',
+        'source "$1"; SERVICE_PREFIX=kortix-dev; SECRET_NAME=kortix-dev-env; configure_service_coordinates web; printf "%s|%s|%s|%s|%s" "$CLUSTER" "$SERVICE" "$CONTAINER" "$SECRET_NAME" "$VERSION_ENV_NAME"',
         'bash',
         script,
       ],
@@ -26,7 +26,9 @@ describe('web ECS migration', () => {
       },
     );
 
-    expect(output).toBe('kortix-dev-web|kortix-dev-web|web|kortix-dev-web-env');
+    expect(output).toBe(
+      'kortix-dev-web|kortix-dev-web|web|kortix-dev-web-env|KORTIX_PUBLIC_VERSION',
+    );
   });
 
   it('deploys the immutable frontend image and encrypted Dev profile to ECS', () => {
@@ -72,6 +74,49 @@ describe('web ECS migration', () => {
     expect(terraform).not.toContain('name    = "dev"');
     expect(variables).toContain('This stack never manages dev.kortix.com');
     expect(variables).not.toContain('manage_canonical_dns');
+  });
+
+  it('defines isolated staging and production services with environment-specific capacity', () => {
+    const staging = read('infra/terraform/environments/staging-web/main.tf');
+    const stagingVariables = read('infra/terraform/environments/staging-web/variables.tf');
+    const prod = read('infra/terraform/environments/prod-web/main.tf');
+    const prodVariables = read('infra/terraform/environments/prod-web/variables.tf');
+
+    expect(staging).toContain('name = "kortix-staging-web"');
+    expect(staging).toContain('name = "kortix-staging-web-env"');
+    expect(staging).toContain('staging-fe-ecs');
+    expect(staging).toContain('min_capacity     = 1');
+    expect(staging).toContain('max_capacity     = 4');
+    expect(stagingVariables).toContain('never manages staging.kortix.com');
+
+    expect(prod).toContain('name = "kortix-prod-web"');
+    expect(prod).toContain('name = "kortix-prod-web-env"');
+    expect(prod).toContain('prod-fe-ecs');
+    expect(prod).toContain('min_capacity     = 2');
+    expect(prod).toContain('max_capacity     = 12');
+    expect(prod).toContain('use_fargate_spot = false');
+    expect(prodVariables).toContain('never manages kortix.com');
+  });
+
+  it('deploys staging and production ECS frontends without replacing canonical Vercel hosts', () => {
+    const staging = read('.github/workflows/deploy-staging.yml');
+    const prod = read('.github/workflows/deploy-prod.yml');
+    const rollback = read('.github/workflows/rollback-prod.yml');
+
+    expect(staging).toContain('  deploy-web-ecs:');
+    expect(staging).toContain('bash infra/scripts/sync-web-env.sh staging');
+    expect(staging).toContain('kortix/kortix-frontend:staging-${SHA8}');
+    expect(staging).toContain('node infra/scripts/sync-web-dns.mjs staging "$alb"');
+    expect(staging).toContain('https://${ECS_WEB_HOST}');
+    expect(staging).toContain('Deploy staging web to Vercel');
+
+    expect(prod).toContain('  deploy-web-ecs:');
+    expect(prod).toContain('bash infra/scripts/sync-web-env.sh prod');
+    expect(prod).toContain('node infra/scripts/sync-web-dns.mjs prod "$alb"');
+    expect(prod).toContain('https://prod-fe-ecs.kortix.com');
+    expect(prod).toContain('https://kortix.com/api/runtime-config');
+    expect(rollback).toContain('kortix/kortix-frontend:${TARGET}');
+    expect(rollback).toContain('--service web');
   });
 
   it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {

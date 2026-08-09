@@ -56,6 +56,10 @@ data "aws_secretsmanager_secret" "preview" {
   name = "kortix-preview-env"
 }
 
+data "aws_secretsmanager_secret" "web" {
+  name = "kortix-dev-web-env"
+}
+
 locals {
   name = "kortix-preview"
   tags = {
@@ -128,9 +132,12 @@ resource "aws_iam_role_policy" "execution_secret" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-      Resource = data.aws_secretsmanager_secret.preview.arn
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+      Resource = [
+        data.aws_secretsmanager_secret.preview.arn,
+        data.aws_secretsmanager_secret.web.arn,
+      ]
     }]
   })
 }
@@ -163,7 +170,10 @@ data "aws_iam_policy_document" "logs_kms" {
     condition {
       test     = "ArnLike"
       variable = "kms:EncryptionContext:aws:logs:arn"
-      values   = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${local.name}"]
+      values = [
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${local.name}",
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:aws-waf-logs-${local.name}",
+      ]
     }
   }
 }
@@ -224,6 +234,13 @@ resource "aws_security_group" "service" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
+  ingress {
+    description     = "ALB to frontend"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
   egress {
     description = "External HTTPS APIs"
     from_port   = 443
@@ -262,6 +279,15 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
   from_port                    = 8008
   to_port                      = 8008
   description                  = "ALB to preview API tasks only"
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_web" {
+  security_group_id            = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.service.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3000
+  to_port                      = 3000
+  description                  = "ALB to preview frontend tasks only"
 }
 
 #trivy:ignore:AVD-AWS-0089 This is the terminal ALB access-log bucket; logging it recursively is invalid.
@@ -380,6 +406,22 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+module "acm_frontend" {
+  source      = "../../modules/acm-cloudflare"
+  domain_name = "*.preview.kortix.com"
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
+resource "aws_lb_listener_certificate" "frontend" {
+  listener_arn    = aws_lb_listener.https.arn
+  certificate_arn = module.acm_frontend.certificate_arn
+}
+
 # A dedicated ACL keeps preview protections reviewable in this root instead of
 # relying on an opaque account-wide ACL that static checks cannot inspect.
 resource "aws_wafv2_web_acl" "preview" {
@@ -449,6 +491,15 @@ resource "aws_wafv2_web_acl_logging_configuration" "preview" {
 resource "cloudflare_record" "preview_wildcard" {
   zone_id = var.cloudflare_zone_id
   name    = "*.preview-api"
+  type    = "CNAME"
+  content = aws_lb.preview.dns_name
+  proxied = false
+  ttl     = 60
+}
+
+resource "cloudflare_record" "preview_frontend_wildcard" {
+  zone_id = var.cloudflare_zone_id
+  name    = "*.preview"
   type    = "CNAME"
   content = aws_lb.preview.dns_name
   proxied = false

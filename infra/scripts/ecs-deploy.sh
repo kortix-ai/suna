@@ -48,6 +48,7 @@ derive_version_from_image() {
 
 configure_service_coordinates() {
   local service_kind="$1"
+  VERSION_ENV_NAME="KORTIX_VERSION"
   case "$service_kind" in
     api)
       CLUSTER="$SERVICE_PREFIX"
@@ -64,6 +65,7 @@ configure_service_coordinates() {
       SERVICE="${SERVICE_PREFIX}-web"
       CONTAINER="web"
       SECRET_NAME="${SERVICE_PREFIX}-web-env"
+      VERSION_ENV_NAME="KORTIX_PUBLIC_VERSION"
       ;;
     *)
       echo "unknown service: $service_kind (expected api|gateway|web)" >&2
@@ -176,6 +178,7 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
 NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
   --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json \
   | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
+       --arg version_env "$VERSION_ENV_NAME" \
        --argjson secrets "$SECRETS_JSON" '
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
@@ -193,9 +196,14 @@ NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
             | .secrets = $secrets
             | .environment = (
                 ((.environment // []) | map(
-                  select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")
+                  select(
+                    .name != "KORTIX_VERSION" and
+                    .name != "KORTIX_PUBLIC_VERSION" and
+                    .name != "NEXT_PUBLIC_KORTIX_VERSION" and
+                    .name != "KORTIX_COMMIT"
+                  )
                 ))
-                + (if $ver == "" then [] else [{name: "KORTIX_VERSION", value: $ver}] end))
+                + (if $ver == "" then [] else [{name: $version_env, value: $ver}] end))
           else . end)')"
 
 if [ "$DRY_RUN" = "1" ]; then
