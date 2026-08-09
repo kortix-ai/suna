@@ -34,6 +34,7 @@ BAKED_SUPABASE_URL="https://placeholder.supabase.co"
 BAKED_ANON_KEY="local-build-placeholder-anon-key"
 BAKED_BACKEND_URL="http://localhost:8008/v1"
 BAKED_BACKEND_HOST="http://localhost:8008"
+BAKED_APP_URL="http://localhost:3000"
 
 # Also handle local dev builds that may have localhost:54321 (Supabase CLI default)
 # or 127.0.0.1:54321 baked in instead of the placeholder
@@ -44,6 +45,7 @@ DEV_SUPABASE_URLS="127.0.0.1:54321 localhost:54321"
 RUNTIME_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-${KORTIX_PUBLIC_SUPABASE_URL:-}}"
 RUNTIME_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${KORTIX_PUBLIC_SUPABASE_ANON_KEY:-}}"
 RUNTIME_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-${KORTIX_PUBLIC_BACKEND_URL:-}}"
+RUNTIME_APP_URL="${NEXT_PUBLIC_APP_URL:-${KORTIX_PUBLIC_APP_URL:-${NEXT_PUBLIC_URL:-}}}"
 RUNTIME_BILLING="${NEXT_PUBLIC_BILLING_ENABLED:-${KORTIX_PUBLIC_BILLING_ENABLED:-false}}"
 
 # Derive backend host (strip /v1 suffix)
@@ -120,6 +122,15 @@ if [ -n "$RUNTIME_BACKEND_HOST" ] && [ "$RUNTIME_BACKEND_HOST" != "$BAKED_BACKEN
   if grep -rq "$BAKED_BACKEND_HOST" "$BUNDLE_DIR" 2>/dev/null; then
     printf 's|%s|%s|g\n' "$BAKED_BACKEND_HOST" "$RUNTIME_BACKEND_HOST" >> "$SED_SCRIPT"
     # Don't log separately — covered by backend URL above
+  fi
+fi
+
+# Public frontend URL used by callback and absolute-link code.
+if [ -n "$RUNTIME_APP_URL" ] && [ "$RUNTIME_APP_URL" != "$BAKED_APP_URL" ]; then
+  if grep -rq "$BAKED_APP_URL" "$BUNDLE_DIR" 2>/dev/null; then
+    printf 's|%s|%s|g\n' "$BAKED_APP_URL" "${RUNTIME_APP_URL%/}" >> "$SED_SCRIPT"
+    needs_rewrite=true
+    echo "[entrypoint] App URL: ${BAKED_APP_URL} -> ${RUNTIME_APP_URL}"
   fi
 fi
 
