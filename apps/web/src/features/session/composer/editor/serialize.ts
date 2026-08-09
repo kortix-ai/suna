@@ -86,8 +86,26 @@ export function serializeDocument(doc: ProseMirrorNode): {
   mentions: TrackedMention[];
 } {
   const flat = flattenDocument(doc);
-  const text = doc.textBetween(0, doc.content.size, '\n', (node) =>
-    node.type.name === 'mention' ? `@${node.attrs.label}` : '',
-  );
+  const text = doc.textBetween(0, doc.content.size, '\n', (node) => {
+    if (node.type.name === 'mention') return `@${node.attrs.label}`;
+    // Shift+Enter (and Mod+Enter) insert a `hardBreak` inline leaf —
+    // `@tiptap/extension-hard-break`'s keymap, and the node
+    // `insertTextAtCursor` builds for an embedded `\n`. It MUST serialize to
+    // a newline. Returning '' here dropped the break entirely and glued the
+    // lines together on the wire: "line one" + Shift+Enter + "line two" was
+    // sent as "line oneline two" (matrix row 10). Two things make this a
+    // silent failure rather than an obvious one. First, an explicit
+    // `leafText` FUNCTION argument makes `textBetween` ignore
+    // `node.type.spec.leafText` for every inline leaf, and `hardBreak` has
+    // no `spec.leafText` of its own anyway — so the fallback that would
+    // otherwise cover this does not exist. Second, `blockSeparator` (the
+    // '\n' above) applies only at block boundaries, so multi-PARAGRAPH text
+    // serialized correctly and hid the single-paragraph case. TipTap's own
+    // `editor.getText()` walks the doc by a different route and still
+    // reported "line one\nline two", which is why the pre-existing
+    // `getText()`-based assertions could not see this.
+    if (node.type.name === 'hardBreak') return '\n';
+    return '';
+  });
   return { text: text.trim(), mentions: collectMentions(flat) };
 }

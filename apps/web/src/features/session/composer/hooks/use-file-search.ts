@@ -2,7 +2,7 @@
 
 import { searchWorkspaceFiles } from '@/features/files';
 import { useActiveSandboxProxyContext } from '@kortix/sdk/react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { useDebouncedValue } from './use-debounced-value';
 
@@ -27,10 +27,34 @@ const UNBOUND_SERVER = 'unbound';
  * across a session switch must stop reusing its pre-switch entry the moment
  * the active sandbox changes — `server` is what makes both true.
  */
-const composerKeys = {
-  fileSearch: (server: string, query: string) =>
-    ['web', 'composer', 'file-search', server, query] as const,
-};
+export const composerFileSearchKey = (server: string, query: string) =>
+  ['web', 'composer', 'file-search', server, query] as const;
+
+/** Index of `server` inside `composerFileSearchKey`'s tuple. Named rather than
+ *  inlined so the coupling between the key shape and the placeholder guard
+ *  below is a single, testable fact instead of a magic `3`. */
+const SERVER_KEY_INDEX = 3;
+
+/**
+ * Whether a previous query's results may still be shown as placeholder data.
+ *
+ * `keepPreviousData` alone answers "yes" for ANY previous query, including one
+ * that ran against a DIFFERENT sandbox. A composer stays mounted across a
+ * session switch (session-chat.tsx pre-mounts every open tab), so switching
+ * runtime changes `server`, invalidates the key, and TanStack would hand the
+ * `@` menu the OLD sandbox's file list with `isLoading: false` — files that do
+ * not exist in the workspace the user is now in, presented as if they do.
+ * Selecting one produces a `<file_ref>` for a path the agent cannot resolve.
+ * Restricting the placeholder to the same `server` keeps the
+ * never-flash-empty behaviour while a query is merely being retyped, and drops
+ * it exactly when the workspace underneath changed.
+ */
+export function canKeepPlaceholderFiles(
+  server: string,
+  previousQueryKey: readonly unknown[] | undefined,
+): boolean {
+  return previousQueryKey?.[SERVER_KEY_INDEX] === server;
+}
 
 /**
  * File results for the `@` menu.
@@ -60,12 +84,24 @@ export function useFileSearch(query: string, enabled: boolean) {
   const server = serverUrl || UNBOUND_SERVER;
 
   const { data, isFetching } = useQuery({
-    queryKey: composerKeys.fileSearch(server, debounced),
+    queryKey: composerFileSearchKey(server, debounced),
     queryFn: () => searchWorkspaceFiles(debounced),
     enabled,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
+    // `keepPreviousData` (the stock helper) is deliberately NOT used — see
+    // `canKeepPlaceholderFiles`. This is otherwise the same behaviour: show
+    // the last query's rows while the next one is in flight so the `@` menu
+    // never flashes empty mid-word, but only while the sandbox underneath is
+    // the same one. Written inline rather than hoisted to a stable reference
+    // on purpose: query-core reuses the PREVIOUS placeholder result without
+    // re-consulting this function whenever the `placeholderData` option is
+    // referentially unchanged (`queryObserver.js`'s
+    // `prevResult?.isPlaceholderData && options.placeholderData ===
+    // prevResultOptions?.placeholderData` short-circuit), which would let a
+    // cross-sandbox result survive the very switch this guards against.
+    placeholderData: (previous: string[] | undefined, previousQuery) =>
+      canKeepPlaceholderFiles(server, previousQuery?.queryKey) ? previous : undefined,
     retry: false,
   });
 

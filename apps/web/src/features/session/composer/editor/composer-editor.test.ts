@@ -540,3 +540,76 @@ describe('insertTextAtCursor — inserts inline, never splits the document', () 
     expect(editor.state.doc.childCount).toBe(1); // still one paragraph — hardBreak, not a paragraph split
   });
 });
+
+/**
+ * Task 14, compatibility matrix row 10 (`Enter` sends, `Shift+Enter` newline).
+ *
+ * These assert through `serializeDocument` — the REAL send path
+ * (`composer-editor.tsx`'s `getContent()` -> `composer.tsx`'s `handleSubmit`
+ * -> `onSend(text, ...)`) — deliberately NOT through `editor.getText()`.
+ * The two disagree: `getText()` walks the document by its own route and
+ * reported `"line one\nline two"` even while `serializeDocument` returned
+ * `"line oneline two"`, which is exactly why every `getText()`-based
+ * assertion in this file stayed green through that regression. Any future
+ * assertion about what the user actually SENDS belongs here, on
+ * `serializeDocument`.
+ */
+describe('serializeDocument — Shift+Enter hard breaks reach the wire (matrix row 10)', () => {
+  test('a hard break between two lines serializes to a newline, not to nothing', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'line one' });
+    editor.commands.setHardBreak(); // exactly what Shift+Enter runs
+    editor.commands.insertContent({ type: 'text', text: 'line two' });
+
+    // One paragraph containing an inline hardBreak leaf — the block
+    // separator cannot supply the newline here, only `leafText` can.
+    expect(editor.state.doc.childCount).toBe(1);
+    expect(serializeDocument(editor.state.doc).text).toBe('line one\nline two');
+  });
+
+  test('the words are never glued together (the exact shape of the regression)', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'alpha' });
+    editor.commands.setHardBreak();
+    editor.commands.insertContent({ type: 'text', text: 'beta' });
+
+    expect(serializeDocument(editor.state.doc).text).not.toBe('alphabeta');
+  });
+
+  test('a multi-line insertAtCursor round-trips its newline through the send path', () => {
+    const editor = createHeadlessEditor(() => {});
+
+    insertTextAtCursor(editor, 'line one\nline two');
+
+    expect(serializeDocument(editor.state.doc).text).toBe('line one\nline two');
+  });
+
+  test('mentions still serialize as @label alongside a hard break', () => {
+    const editor = createHeadlessEditor(() => {});
+    editor.commands.insertContent({ type: 'text', text: 'see ' });
+    editor.commands.insertContent(mentionNode('file', 'auth.ts'));
+    editor.commands.setHardBreak();
+    editor.commands.insertContent({ type: 'text', text: 'please' });
+
+    const { text, mentions } = serializeDocument(editor.state.doc);
+    expect(text).toBe('see @auth.ts\nplease');
+    expect(mentions).toEqual([{ kind: 'file', label: 'auth.ts' }]);
+  });
+
+  test('paragraph boundaries keep serializing to a newline (unchanged behaviour)', () => {
+    const editor = createHeadlessEditor(() => {});
+    setEditorDocument(
+      editor,
+      {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'para one' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'para two' }] },
+        ],
+      },
+      'replace',
+    );
+
+    expect(serializeDocument(editor.state.doc).text).toBe('para one\npara two');
+  });
+});

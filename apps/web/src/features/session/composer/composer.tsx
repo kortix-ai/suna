@@ -425,6 +425,26 @@ function ComposerImpl({
     [agents],
   );
 
+  /**
+   * "The editor is inert." ONE definition, deliberately — Task 14.
+   *
+   * This condition previously appeared verbatim in two places: the
+   * `useComposerFocus({ disabled })` call and the `ComposerEditorLazy`
+   * `disabled` prop. They must agree, because the first decides whether a
+   * keystroke typed anywhere on the page is redirected INTO the editor and
+   * the second decides whether the editor accepts it — and they had already
+   * drifted once (Task 13, MINOR 2: `useComposerFocus` was passed bare
+   * `disabled`, so a stray character could land mid-draft in a composer
+   * locked for a pending connector approval). Hoisting removes the only way
+   * for that drift to recur.
+   *
+   * `lockForApproval` belongs here and `lockForQuestion` does not:
+   * an approval lock means the run is paused waiting on the user, so the
+   * composer is deliberately dead; a question lock still accepts a typed
+   * custom answer.
+   */
+  const editorDisabled = disabled || lockForApproval;
+
   // ── Files: ported unchanged from session-chat-input.tsx:501-588. ────────
   const appendAttachedFiles = useCallback((files: Iterable<File>) => {
     const newFiles: AttachedFile[] = [];
@@ -733,16 +753,7 @@ function ComposerImpl({
   useComposerFocus({
     ref: composerFocusRef,
     autoFocus,
-    // MINOR 2 (fix round 1): must match the SAME condition the editor
-    // itself is disabled under (`disabled || lockForApproval`, below at the
-    // `ComposerEditorLazy` render) — not just `disabled` alone.
-    // `lockForApproval` means a connector action is waiting on the user;
-    // the composer is deliberately inert. Missing this was already a latent
-    // gap, but dropping the old `isEmpty()` gate on the type-ahead redirect
-    // widened its blast radius from "one stray character lands in an empty
-    // locked composer" to "one stray character lands mid-draft in a locked
-    // composer" via `insertAtCursor`.
-    disabled: disabled || lockForApproval,
+    disabled: editorDisabled,
     onTypeAhead: handleTypeAhead,
   });
 
@@ -1188,7 +1199,7 @@ function ComposerImpl({
               <ComposerEditorLazy
                 ref={setEditorRef}
                 placeholder={editorPlaceholder}
-                disabled={disabled || lockForApproval}
+                disabled={editorDisabled}
                 onSubmit={handleSubmit}
                 onEmptyChange={setIsEmpty}
                 agents={agents}
