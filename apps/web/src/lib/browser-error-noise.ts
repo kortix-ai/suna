@@ -866,6 +866,18 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
   /^app:\/\/\/injectedScript\.bundle\.js$/,
+  // CAPTCHA / anti-bot browser-extension (DataDome, Cloudflare, or similar
+  // bot-detection service) injected content script. The extension injects an
+  // interceptor script into every page as the synthetic source
+  // `app:///content/captcha/mt_captcha/interceptor.js` (the same `app:///`
+  // empty-host origin shape as the other injected/extension sources above —
+  // distinct from a first-party `app:///_next/…` bundle frame and a
+  // de-minified `apps/web/src/…` source path). Its internal `widgetId`
+  // configuration race (see `isCaptchaInterceptorNoise`) leaks to Better Stack
+  // as a `TypeError: Cannot read properties of undefined (reading 'widgetId')`
+  // from a minified extension function (`d`); the throw is in the extension's
+  // own injected code, never in first-party Kortix code.
+  /^app:\/\/\/content\/captcha\/mt_captcha\/interceptor\.js$/,
 ] as const;
 
 // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
@@ -1524,6 +1536,102 @@ export function isInjectedScriptSendMessageNoise(input: {
   if (sources.some(isFirstPartyResolvedSource)) {
     return false;
   }
+  return sources.some(isInjectedAppSource);
+}
+
+// CAPTCHA / anti-bot browser-extension interceptor noise. A bot-detection
+// service extension (DataDome, Cloudflare, or similar) injects a content
+// script into every page as the synthetic source
+// `app:///content/captcha/mt_captcha/interceptor.js` (the same `app:///`
+// empty-host origin shape as the other injected/extension sources). The
+// interceptor's own internal code races on widget initialization: a minified
+// function (`d`) reaches for a widget configuration object that has not been
+// initialized yet (it is still `undefined`) and reads its `widgetId` property
+// → `TypeError: Cannot read properties of undefined (reading 'widgetId')`.
+// The throw is in the extension's OWN injected interceptor, NEVER in
+// first-party Kortix code: `app:///content/captcha/mt_captcha/interceptor.js`
+// is a synthetic extension-injection source (NOT an `app:///_next/…` bundle
+// frame and NOT a de-minified `apps/web/src/…` source path), `widgetId` is the
+// extension's internal widget-configuration property (NOT a Kortix API), and
+// the call-site function `d` is a minified extension function (NOT a
+// de-minified `apps/web/src/…` frame).
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — TWO
+// sibling fingerprints from the SAME extension interceptor, SAME type
+// (`TypeError`), SAME message
+// (`Cannot read properties of undefined (reading 'widgetId')`), SAME call-site
+// function (`d`), SAME call-site file
+// (`app:///content/captcha/mt_captcha/interceptor.js`):
+//   - `cfd5f828fe374568ec3fb9163e035c73690fc8d768e75751df44badaea3a0283`
+//     first 2026-08-08 17:03:49 UTC
+//   - `4a01a1690345a3763a2865e134a42635215f76b8a71939275f1bf81b4edc3ef3`
+//     first 2026-08-08 16:44:10 UTC
+// Both are extension-injected content-script race noise, not first-party
+// defects.
+//
+// `widgetId` is the extension's INTERNAL widget-configuration property name
+// — it is specific enough to anchor on (it is never a Kortix API surface; our
+// code never reads a `widgetId` property), but it is a property NAME (not a
+// canonical library string like `Paper Shaders: …`), so — mirroring
+// `isInjectedScriptSendMessageNoise` (the `sendMessage` wallet-extension
+// matcher) — this matcher requires BOTH the `widgetId` message anchor AND a
+// frame from the injected `app:///content/captcha/mt_captcha/interceptor.js`
+// source (via `isInjectedAppSource`, after adding the pattern there), so a
+// real first-party `something.widgetId` null/undefined deref keeps reporting.
+// A NEGATIVE guard preserves any event whose stack carries a resolved
+// first-party `apps/web/src/…` frame (our own code deref'd a `widgetId`
+// property → actionable). Returns false when there is no source anchor
+// (can't confirm extension origin — keep reporting rather than swallow a
+// possible app `widgetId` bug). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `widgetId` deref the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the
+// only safe gate.
+/**
+ * Whether a Sentry / window.onerror event is the CAPTCHA / anti-bot
+ * browser-extension interceptor noise class: the extension's injected
+ * `app:///content/captcha/mt_captcha/interceptor.js` content script races on
+ * widget initialization and a minified function reads `widgetId` on a widget
+ * configuration object that is still `undefined` →
+ * `TypeError: Cannot read properties of undefined (reading 'widgetId')`. The
+ * throw is in the extension's OWN injected interceptor, never first-party
+ * code. Requires BOTH the `widgetId` message anchor AND a frame from the
+ * injected `app:///content/captcha/mt_captcha/interceptor.js` source (via
+ * `isInjectedAppSource`), so a real first-party `widgetId` deref keeps
+ * reporting. A negative guard preserves any event whose stack carries a
+ * resolved first-party `apps/web/src/…` frame (our own code deref'd a
+ * `widgetId` property → actionable). Returns false when there is no source
+ * anchor (can't confirm extension origin — keep reporting). See the
+ * `isCaptchaInterceptorNoise` comment block above for the full rationale and
+ * the two Better Stack production patterns.
+ */
+export function isCaptchaInterceptorNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!stripped.includes('widgetId')) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code deref'd a `widgetId` property on an `undefined` value →
+  // actionable; keep reporting so the call site can be found + fixed. (Mirrors
+  // `isInjectedScriptSendMessageNoise`'s negative guard.)
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame (or the window.onerror `filename`) is
+  // an injected-app source — the CAPTCHA interceptor's
+  // `app:///content/captcha/mt_captcha/interceptor.js` or any other
+  // `INJECTED_APP_SOURCE_PATTERNS` source. Without an injected-source anchor
+  // we cannot confirm the extension origin — keep reporting rather than
+  // swallow a possible first-party `widgetId` bug.
   return sources.some(isInjectedAppSource);
 }
 
@@ -3577,6 +3685,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // CAPTCHA / anti-bot browser-extension interceptor noise — the extension's
+  // injected `app:///content/captcha/mt_captcha/interceptor.js` races on widget
+  // init and a minified function reads `widgetId` on an `undefined` widget
+  // config → `TypeError: Cannot read properties of undefined (reading
+  // 'widgetId')`. Requires BOTH the `widgetId` message anchor AND an
+  // injected-app source, with a negative guard preserving any resolved
+  // first-party `apps/web/src/…` frame. See `isCaptchaInterceptorNoise`.
+  if (isCaptchaInterceptorNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // TronLink browser-extension injected-Proxy `set`-trap noise — the
   // extension's `injected.js` wraps a page object in a Proxy and a `set` on
   // `tronlinkParams` is declined. Requires BOTH the TronLink property name AND
@@ -3933,6 +4052,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `apps/web/src/…` frame. See `isInjectedScriptSendMessageNoise` and the
   // production pattern `95a70e66…`.
   if (isInjectedScriptSendMessageNoise({ message, frames })) {
+    return true;
+  }
+
+  // CAPTCHA / anti-bot browser-extension interceptor noise — a bot-detection
+  // service extension injects `app:///content/captcha/mt_captcha/interceptor.js`
+  // whose internal `widgetId` configuration race throws
+  // `TypeError: Cannot read properties of undefined (reading 'widgetId')` from
+  // a minified extension function (`d`). The throw is in the extension's OWN
+  // injected interceptor, never first-party code. Requires BOTH the `widgetId`
+  // message anchor AND an injected-app source frame, with a negative guard
+  // preserving any resolved first-party `apps/web/src/…` frame. See
+  // `isCaptchaInterceptorNoise` and the two production patterns
+  // `cfd5f828…` / `4a01a169…`.
+  if (isCaptchaInterceptorNoise({ message, frames })) {
     return true;
   }
 
