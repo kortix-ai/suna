@@ -54,7 +54,7 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
-import { browsePipedreamApps, pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
@@ -804,17 +804,17 @@ export async function resolveCatalog(
       }
       case 'pipedream': {
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
-        const [raw, apps] = await Promise.all([
+        // `pipedreamAppIcon` is the UNFILTERED lookup on purpose: this
+        // connector already exists, so its icon must resolve even for an app
+        // the catalogue would no longer offer (no actions, a utility slug).
+        const [raw, iconUrl] = await Promise.all([
           pipedreamCatalog(spec.app),
-          browsePipedreamApps(spec.app).catch(() => ({
-            apps: [],
-            hasMore: false,
-          })),
+          pipedreamAppIcon(spec.app).catch(() => null),
         ]);
         return {
           actions: normalizePipedream(raw, spec.app),
           server: null,
-          iconUrl: apps.apps.find((app) => app.slug === spec.app)?.imgSrc ?? null,
+          iconUrl,
         };
       }
       case 'channel': {

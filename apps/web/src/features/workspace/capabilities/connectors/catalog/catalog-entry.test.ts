@@ -35,6 +35,9 @@ const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
   imgSrc: null,
   authType: 'oauth',
   categories: ['productivity'],
+  hasActions: true,
+  hasTriggers: false,
+  featuredWeight: 0,
   ...over,
 });
 

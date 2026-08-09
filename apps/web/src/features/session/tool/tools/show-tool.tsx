@@ -1,6 +1,8 @@
 'use client';
 
 import Loading from '@/components/ui/loading';
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
@@ -10,11 +12,13 @@ import {
 } from '@/features/session/show-availability';
 import {
   InlineServicePreview,
+  BoundActivateContext,
   partInput,
   ServicePreviewActions,
   type ServicePreviewState,
   ToolRunningContext,
   ToolSurfaceContext,
+  useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
@@ -55,6 +59,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const running = useContext(ToolRunningContext);
 
   const fill = useContext(ToolSurfaceContext) === 'panel';
+  const activate = useContext(BoundActivateContext);
+  const { enabled: navigationEnabled } = useToolNavigation();
 
   const title = (input.title as string) || '';
   const description = (input.description as string) || '';
@@ -115,6 +121,14 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     !isWebsitePreview && activePath ? (
       <ShowFileActions path={activePath} inPanel={fill} />
     ) : undefined;
+  const contentActions =
+    !isCarousel && !isWebsitePreview && !activePath && content && activate && navigationEnabled ? (
+      <Hint label="Open in the panel" side="top">
+        <Button type="button" onClick={activate} size="xs" className="active:scale-[0.96]">
+          Preview
+        </Button>
+      </Hint>
+    ) : undefined;
   const preview = useServicePreview(
     resolvedPreviewUrl,
     activeTitle || title || description || undefined,
@@ -145,7 +159,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const inlineToolbar = isWebsitePreview ? (
     <ServicePreviewActions preview={preview} />
   ) : (
-    fileActions
+    fileActions || contentActions
   );
 
   // `prefersPreviewLink` parses the candidate URL; it is an argument to the

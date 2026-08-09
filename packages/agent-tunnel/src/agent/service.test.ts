@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { platform } from 'os';
 import {
+  DEFAULT_INSTALL_BACKGROUND_SERVICE,
   SERVICE_LABEL,
   buildServiceShellCommand,
   getServicePaths,
@@ -10,23 +10,15 @@ import {
 } from './service';
 
 describe('agent tunnel service definitions', () => {
+  test('defaults the interactive connection flow to the background service', () => {
+    expect(DEFAULT_INSTALL_BACKGROUND_SERVICE).toBe(true);
+  });
+
   test('builds a command that runs the supervised tunnel agent', () => {
     const command = buildServiceShellCommand();
     expect(command).toContain("'run'");
     expect(command).toContain("'--service'");
     expect(command).toStartWith('exec ');
-  });
-
-  test('keep-awake command wraps the service on supported platforms', () => {
-    const command = buildServiceShellCommand({ keepAwake: true });
-    expect(command).toContain("'run'");
-    expect(command).toContain("'--service'");
-    if (platform() === 'darwin') {
-      expect(command).toContain('/usr/bin/caffeinate -dimsu');
-    }
-    if (platform() === 'linux') {
-      expect(command).toContain('systemd-inhibit');
-    }
   });
 
   test('launchd plist restarts and runs at login', () => {
@@ -47,12 +39,12 @@ describe('agent tunnel service definitions', () => {
     expect(unit).toContain('agent-tunnel.err.log');
   });
 
-  test('windows scheduled-task script restarts forever and can keep awake', () => {
-    const script = renderWindowsPowerShellScript(
-      { keepAwake: true },
-      { command: 'node', args: ['agent-tunnel.js', 'run', '--service'] },
-    );
-    expect(script).toContain('SetThreadExecutionState');
+  test('windows scheduled-task script restarts forever', () => {
+    const script = renderWindowsPowerShellScript({
+      command: 'node',
+      args: ['agent-tunnel.js', 'run', '--service'],
+    });
+    expect(script).not.toContain('SetThreadExecutionState');
     expect(script).toContain('while ($true)');
     expect(script).toContain("& 'node' 'agent-tunnel.js' 'run' '--service'");
     expect(script).toContain('Start-Sleep -Seconds 5');

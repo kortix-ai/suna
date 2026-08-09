@@ -48,10 +48,7 @@ import {
   type CatalogEntry,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
-import {
-  ALL_CATEGORIES,
-  catalogCategoryKeys,
-} from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
+import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
@@ -290,15 +287,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const scope: ConnectorScope = scopeChoice ?? 'discover';
   const catalogActive = scope !== 'connected';
 
-  // The category the catalogue should fetch FOR, as opposed to the one the
-  // user picked. `null` while browsing everything and while a search runs —
-  // the search is server-side across every category, so deepening one would be
-  // work against a grid that is ignoring it.
+  // The category the catalogue should FILTER by, server-side. `null` while
+  // browsing everything and while a search runs — the search is server-side
+  // across every category, so narrowing one would contradict the grid.
   //
   // Read off `query`, not `catalog.activeQuery`: this is an input to the hook
   // that produces `catalog`, so it cannot depend on its output. The 300ms
-  // debounce difference only means focus stops one tick earlier, which is the
-  // right direction.
+  // debounce difference only means the filter clears one tick earlier, which
+  // is the right direction.
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
@@ -309,11 +305,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
-  // resolves and the source flips, every entry is replaced and the picked
-  // category is a token from a namespace that no longer exists —
-  // `resolveActiveCategory` already stops the GRID rendering it, but
-  // `focusCategory` above would still spend the catalogue's whole page budget
-  // fetching for a bucket that can never have anything in it.
+  // resolves and the source flips, every entry is replaced and the open
+  // category is a token from a namespace that no longer exists — so
+  // `focusCategory` above would filter the new source by a key it has never
+  // published, and the grid would be empty with nothing on screen explaining
+  // why.
   //
   // Adjusted during render, not in an effect. React re-runs this component
   // before committing, so the reset lands in the same paint and `useCatalog`'s
@@ -325,13 +321,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     setCategorySource(catalog.source);
     setCategory(ALL_CATEGORIES);
   }
-
-  // Derived ONCE, for both the rail and the grid. Deriving it twice is what
-  // let the control and the content disagree about which categories exist.
-  const availableCategories = useMemo(
-    () => catalogCategoryKeys(catalog.entries, (entry) => entry.categories),
-    [catalog.entries],
-  );
 
   // Typing clears the category. The `Select` hides while a search runs (a
   // catalogue search is server-side across every category, so showing
@@ -457,7 +446,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           connectedKeys={connectedKeys}
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
-          availableCategories={availableCategories}
           onCategoryChange={setCategory}
           onSelect={setCatalogTarget}
           emptyTitle="Catalogue unavailable"
