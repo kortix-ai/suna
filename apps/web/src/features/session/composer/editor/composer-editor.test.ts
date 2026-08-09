@@ -1,11 +1,18 @@
-import { Editor } from '@tiptap/core';
+import { Editor, type JSONContent } from '@tiptap/core';
 import { PLUGIN_KEY as PLACEHOLDER_PLUGIN_KEY } from '@tiptap/extensions';
 import type { EditorView } from '@tiptap/pm/view';
 import { describe, expect, test } from 'bun:test';
 
 import { baseExtensions } from './extensions';
-import { createSubmitOnEnterHandler, trackEmptyBoundary } from './composer-editor';
+import {
+  createSubmitOnEnterHandler,
+  getEditorDocument,
+  insertTextAtCursor,
+  setEditorDocument,
+  trackEmptyBoundary,
+} from './composer-editor';
 import { MentionNode } from './mention-node';
+import { serializeDocument } from './serialize';
 
 /**
  * No jsdom/happy-dom is registered for `bun test` in this repo
@@ -366,5 +373,170 @@ describe('editor.setEditable — the mechanism the disabled effect depends on', 
 
     editor.setEditable(true);
     expect(editor.isEditable).toBe(true);
+  });
+});
+
+function mentionNode(kind: 'file' | 'agent' | 'session', label: string, value = ''): JSONContent {
+  return { type: 'mention', attrs: { kind, label, value } };
+}
+
+/**
+ * Task 13, fix round 1, Important 2 — `getEditorDocument`/`setEditorDocument`/
+ * `insertTextAtCursor` (`composer-editor.tsx`) were added but shipped with no
+ * test of their own; `composer.tsx`'s mention-preserving recovery and the
+ * `insertAtCursor` type-ahead fix both depend entirely on these three
+ * behaving as documented. These drive the same headless, no-DOM
+ * `@tiptap/core` `Editor` the suites above already use — `serializeDocument`
+ * (the exact function `getContent()` calls in production) is the assertion
+ * surface, so a mention surviving here is proof it survives through the
+ * REAL serialization path, not a hand-rolled stand-in for it.
+ */
+describe('getEditorDocument / setEditorDocument — the mention-preserving snapshot/restore primitives', () => {
+  test('setDocument(replace) with a mention atom node — serializeDocument reports it, label intact', () => {
+    const editor = createHeadlessEditor(() => {});
+    const doc: JSONContent = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }],
+    };
+
+    setEditorDocument(editor, doc, 'replace');
+
+    const { mentions } = serializeDocument(editor.state.doc);
+    expect(mentions).toEqual([{ kind: 'file', label: 'README.md' }]);
+  });
+
+  test('getDocument() -> setDocument() across two INDEPENDENT editors preserves the mention atom', () => {
+    // Mirrors the real shape of the fix: `composer.tsx` snapshots via
+    // `getDocument()` on one editor lifetime (before a send fails) and
+    // restores via `setDocument()` later — potentially after the editor
+    // itself was torn down and rebuilt (a fresh lazy-chunk mount). Using two
+    // separate `Editor` instances here, rather than round-tripping through
+    // the same one, is what actually exercises that the SNAPSHOT itself
+    // (not just editor-internal state) carries the mention.
+    const source = createHeadlessEditor(() => {});
+    setEditorDocument(
+      source,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('agent', 'Analyst')] }] },
+      'replace',
+    );
+    const snapshot = getEditorDocument(source);
+
+    const target = createHeadlessEditor(() => {});
+    setEditorDocument(target, snapshot, 'replace');
+
+    const { mentions } = serializeDocument(target.state.doc);
+    expect(mentions).toEqual([{ kind: 'agent', label: 'Analyst' }]);
+  });
+
+  test('setDocument(merge) concatenates as a new paragraph, keeping mentions from BOTH sides', () => {
+    const editor = createHeadlessEditor(() => {});
+    setEditorDocument(
+      editor,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'a.ts')] }] },
+      'replace',
+    );
+
+    setEditorDocument(
+      editor,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'b.ts')] }] },
+      'merge',
+    );
+
+    const { mentions } = serializeDocument(editor.state.doc);
+    expect(mentions).toEqual([
+      { kind: 'file', label: 'a.ts' },
+      { kind: 'file', label: 'b.ts' },
+    ]);
+  });
+
+  test('two mentions sharing the SAME label both survive a merge, undropped', () => {
+    // The exact bug the whole mention-atom-node redesign exists to kill: a
+    // string-based merge (`text.indexOf('@README.md')`) cannot distinguish
+    // two mentions sharing a label. Each is its own atom node, so nothing
+    // can collapse them.
+    const editor = createHeadlessEditor(() => {});
+    setEditorDocument(
+      editor,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }] },
+      'replace',
+    );
+
+    setEditorDocument(
+      editor,
+      { type: 'doc', content: [{ type: 'paragraph', content: [mentionNode('file', 'README.md')] }] },
+      'merge',
+    );
+
+    const { mentions } = serializeDocument(editor.state.doc);
+    expect(mentions).toHaveLength(2);
+    expect(mentions).toEqual([
+      { kind: 'file', label: 'README.md' },
+      { kind: 'file', label: 'README.md' },
+    ]);
+  });
+
+  test('getEditorDocument/setEditorDocument/insertTextAtCursor no-op safely with a null editor', () => {
+    expect(getEditorDocument(null)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    expect(() => setEditorDocument(null, { type: 'doc', content: [] })).not.toThrow();
+    expect(() => insertTextAtCursor(null, 'x')).not.toThrow();
+  });
+});
+
+/**
+ * Task 13, fix round 1, Important 2's named regression guard: `insertAtCursor`
+ * must insert INLINE at the current selection, never split the document into
+ * a new paragraph. This is the exact bug fix-round-1's review reproduced —
+ * `insertAtCursor` at position 6 of "hello world" gives "helloX world" with
+ * `childCount === 1`, while the OLD `insertContent([{type:'paragraph'}, ...])`
+ * path (what `onTypeAhead` used before this primitive existed) at the same
+ * position corrupts the document into more than one paragraph.
+ */
+describe('insertTextAtCursor — inserts inline, never splits the document', () => {
+  test('inserting mid-word keeps a single paragraph and lands exactly at the cursor', () => {
+    const editor = createHeadlessEditor(() => {});
+    for (const char of 'hello world') typeChar(editor, char);
+    editor.commands.setTextSelection(6); // between "hello" and " world"
+
+    insertTextAtCursor(editor, 'X');
+
+    expect(editor.getText()).toBe('helloX world');
+    expect(editor.state.doc.childCount).toBe(1);
+  });
+
+  test('the OLD paragraph-splitting approach, same position, DOES split the document (comparison)', () => {
+    // Not a call into production code — this reconstructs the exact
+    // `insertContent([{ type: 'paragraph' }, ...])` shape `setDocument`'s
+    // own `merge` mode (correctly) uses for a multi-line draft restore, and
+    // `onTypeAhead` incorrectly used for a single redirected keystroke
+    // before this fix. Included so the "regression guard" claim above is
+    // falsifiable: if `insertTextAtCursor` ever regressed back to this
+    // shape, `childCount` would jump from 1 to 2 exactly as it does here.
+    const editor = createHeadlessEditor(() => {});
+    for (const char of 'hello world') typeChar(editor, char);
+    editor.commands.setTextSelection(6);
+
+    editor.commands.insertContent([{ type: 'paragraph' }, { type: 'text', text: 'X' }]);
+
+    expect(editor.state.doc.childCount).toBeGreaterThan(1);
+  });
+
+  test('a no-op on an empty string — does not touch the document', () => {
+    const editor = createHeadlessEditor(() => {});
+    typeChar(editor, 'h');
+    const before = editor.getText();
+
+    insertTextAtCursor(editor, '');
+
+    expect(editor.getText()).toBe(before);
+  });
+
+  test('splits on newlines into hard breaks rather than corrupting via a bare-string HTML parse', () => {
+    const editor = createHeadlessEditor(() => {});
+
+    insertTextAtCursor(editor, 'line one\nline two');
+
+    expect(editor.getText()).toContain('line one');
+    expect(editor.getText()).toContain('line two');
+    expect(editor.state.doc.childCount).toBe(1); // still one paragraph — hardBreak, not a paragraph split
   });
 });

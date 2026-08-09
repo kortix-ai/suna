@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import type { JSONContent } from '@tiptap/core';
 
-import { resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
+import { planFailedSendRecovery, resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
+import type { AttachedFile } from './types';
 
 describe('shouldApplyPrefill', () => {
   // Fix round 1, Critical: this is where the "prefill delivered before the
@@ -161,5 +163,170 @@ describe('resolveEditorPlaceholder', () => {
         questionButtonLabel: '',
       }),
     ).toBe('Type your answer...');
+  });
+});
+
+/**
+ * `planFailedSendRecovery` — Task 13, fix round 1, Important 1. This is the
+ * ENTIRE decision behind `composer.tsx`'s failed-send `catch` block, pulled
+ * out specifically because `handleSubmit` itself cannot be unit-tested here
+ * (no DOM, a `React.lazy`-boundary client component) — the fix-round review
+ * proved that gap concretely: deleting the whole recovery block in
+ * `composer.tsx` left `bun test src/features/session` at 1340/1340 pass,
+ * unchanged. Every branch below is now bound to a dedicated assertion, so
+ * that specific blind spot is closed.
+ */
+function localFile(name: string, localUrl: string): AttachedFile {
+  return {
+    kind: 'local',
+    file: new File(['x'], name, { type: 'text/plain' }),
+    localUrl,
+    isImage: false,
+  };
+}
+
+function textDoc(text: string): JSONContent {
+  return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
+}
+
+const EMPTY_DOC: JSONContent = { type: 'doc', content: [{ type: 'paragraph' }] };
+
+describe('planFailedSendRecovery', () => {
+  test('clearOnSend=false → null: nothing was ever cleared, so nothing needs restoring', () => {
+    const plan = planFailedSendRecovery({
+      clearOnSend: false,
+      submittedDoc: textDoc('original prompt'),
+      submittedIsEmpty: false,
+      currentDoc: EMPTY_DOC,
+      currentIsEmpty: true,
+      currentAttachedFiles: [],
+      sentFiles: [],
+    });
+
+    expect(plan).toBeNull();
+  });
+
+  test('nothing typed since the clear → restoreDoc is the submitted document, verbatim', () => {
+    const submitted = textDoc('original prompt');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: submitted,
+      submittedIsEmpty: false,
+      currentDoc: EMPTY_DOC,
+      currentIsEmpty: true,
+      currentAttachedFiles: [],
+      sentFiles: [],
+    });
+
+    expect(plan?.restoreDoc).toBe(submitted);
+  });
+
+  test('something typed meanwhile → restoreDoc concatenates submitted-first, current-after', () => {
+    const submitted = textDoc('original prompt');
+    const current = textDoc('new follow-up');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: submitted,
+      submittedIsEmpty: false,
+      currentDoc: current,
+      currentIsEmpty: false,
+      currentAttachedFiles: [],
+      sentFiles: [],
+    });
+
+    expect(plan?.restoreDoc).toEqual({
+      type: 'doc',
+      content: [...submitted.content!, { type: 'paragraph' }, ...current.content!],
+    });
+  });
+
+  test('merge produces no change (files-only submitted doc) → restoreDoc is null, no pointless setDocument call', () => {
+    const current = textDoc('new follow-up');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: EMPTY_DOC, // files-only send: nothing in the doc itself
+      submittedIsEmpty: true,
+      currentDoc: current,
+      currentIsEmpty: false,
+      currentAttachedFiles: [],
+      sentFiles: [],
+    });
+
+    expect(plan?.restoreDoc).toBeNull();
+  });
+
+  // MINOR 1 — the real regression the fix-round review caught: files must
+  // restore whenever clearOnSend is true, regardless of whether a document
+  // was ever successfully snapshotted. Disable the `submittedDoc && ...`
+  // check's effect on `attachedFiles` (e.g. nest the files line inside it,
+  // as the pre-fix-round code did) and EVERY test in this block dies,
+  // because `attachedFiles` is asserted independently of `restoreDoc` in
+  // each one below.
+  test('submittedDoc is null (defensive: no handle at submit time) → files STILL restore', () => {
+    const sent = localFile('offer.pdf', 'blob:offer');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: null,
+      submittedIsEmpty: true,
+      currentDoc: null,
+      currentIsEmpty: true,
+      currentAttachedFiles: [],
+      sentFiles: [sent],
+    });
+
+    expect(plan?.restoreDoc).toBeNull(); // nothing to restore document-wise
+    expect(plan?.attachedFiles).toEqual([sent]); // but the file is NOT discarded
+  });
+
+  test('currentDoc is null (defensive) → files still restore even though the doc half is skipped', () => {
+    const sent = localFile('offer.pdf', 'blob:offer');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: textDoc('original prompt'),
+      submittedIsEmpty: false,
+      currentDoc: null,
+      currentIsEmpty: true,
+      currentAttachedFiles: [],
+      sentFiles: [sent],
+    });
+
+    expect(plan?.restoreDoc).toBeNull();
+    expect(plan?.attachedFiles).toEqual([sent]);
+  });
+
+  test('files restore ahead of newly attached files without duplicates, matching mergeFailedSubmissionFiles', () => {
+    const sent = localFile('offer.pdf', 'blob:offer');
+    const addedWhileSending = localFile('notes.txt', 'blob:notes');
+
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: textDoc('original prompt'),
+      submittedIsEmpty: false,
+      currentDoc: EMPTY_DOC,
+      currentIsEmpty: true,
+      currentAttachedFiles: [addedWhileSending],
+      sentFiles: [sent],
+    });
+
+    expect(plan?.attachedFiles).toEqual([sent, addedWhileSending]);
+  });
+
+  test('clearOnSend=true with everything empty and nothing sent → still returns a plan, empty files, null doc', () => {
+    const plan = planFailedSendRecovery({
+      clearOnSend: true,
+      submittedDoc: null,
+      submittedIsEmpty: true,
+      currentDoc: null,
+      currentIsEmpty: true,
+      currentAttachedFiles: [],
+      sentFiles: [],
+    });
+
+    expect(plan).toEqual({ restoreDoc: null, attachedFiles: [] });
   });
 });

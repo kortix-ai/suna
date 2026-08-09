@@ -8,6 +8,105 @@
  * is what makes that regression provable instead of re-introducible.
  */
 
+import type { JSONContent } from '@tiptap/core';
+
+import { mergeFailedSubmissionDocument, mergeFailedSubmissionFiles } from '../composer-draft-recovery';
+import type { AttachedFile } from './types';
+
+export interface FailedSendRecoveryInput {
+  /** `SessionChatInputProps.clearOnSend`. `false` means the composer never
+   *  clears on send at all (project-home → new-session navigation), so
+   *  there is nothing to restore — the user's draft was never touched. */
+  clearOnSend: boolean;
+  /** `editorRef.current?.getDocument()`, snapshotted BEFORE the pre-send
+   *  clear — `null` only in the defensive case where the handle didn't
+   *  exist yet at submit time (e.g. the lazy chunk hadn't resolved). */
+  submittedDoc: JSONContent | null;
+  /** `editorRef.current?.isEmpty()` at the same snapshot moment as `submittedDoc`. */
+  submittedIsEmpty: boolean;
+  /** `editorRef.current?.getDocument()`, read again inside the `catch` —
+   *  whatever the user typed (if anything) while the request was in
+   *  flight. `null` in the same defensive case as `submittedDoc`. */
+  currentDoc: JSONContent | null;
+  /** `editorRef.current?.isEmpty()` read at the same moment as `currentDoc`. */
+  currentIsEmpty: boolean;
+  /** The attached-files state as of the `catch` — NOT the pre-clear
+   *  snapshot; `setAttachedFiles`'s functional-updater form already reads
+   *  this fresh, so a caller passes whatever that updater receives. */
+  currentAttachedFiles: AttachedFile[];
+  /** The files that were part of the failed send (`filesToSend ?? []`). */
+  sentFiles: AttachedFile[];
+}
+
+export interface FailedSendRecoveryPlan {
+  /**
+   * `null` means "don't call `setDocument` at all" — either nothing was
+   * ever snapshotted (the defensive `submittedDoc`/`currentDoc` null case),
+   * or `mergeFailedSubmissionDocument` decided the current document already
+   * IS the right one (`merged === currentDoc`, e.g. a files-only submitted
+   * doc with nothing to restore) and calling `setDocument` anyway would
+   * only reset the cursor to no purpose.
+   */
+  restoreDoc: JSONContent | null;
+  /**
+   * The files to restore into `setAttachedFiles`. Computed unconditionally
+   * whenever `clearOnSend` is true — see the file-level comment on why this
+   * must NOT be nested inside whatever gates `restoreDoc`.
+   */
+  attachedFiles: AttachedFile[];
+}
+
+/**
+ * What a failed send should restore — the decision logic behind
+ * `composer.tsx`'s `handleSubmit` catch block, extracted so it is provable
+ * without a DOM (Task 13, fix round 1, Important 1). `handleSubmit` itself
+ * cannot be unit-tested in this repo (`bun test` has no DOM — see
+ * `composer-editor.test.ts`'s own header note — and `composer.tsx` is a
+ * client component behind a `React.lazy` boundary), so this pulls every
+ * branch of "what happens on a failed send" into one pure function the
+ * component calls with almost no logic of its own left at the call site:
+ * read `plan.restoreDoc`, call `setDocument` if it's non-null, call
+ * `setAttachedFiles(plan.attachedFiles)` unconditionally. A reviewer who
+ * deletes or mis-wires that call site changes three trivial lines instead
+ * of silently losing a branch inside a much larger `catch` block.
+ *
+ * Returns `null` when there is nothing to do at all (`clearOnSend` false —
+ * the draft was never cleared, so nothing needs restoring).
+ *
+ * MINOR 1 fix (fix round 1): the pre-fix-round version of this logic gated
+ * the ENTIRE recovery — including the files/mentions restore — behind
+ * `submittedDoc` being non-null. That is wrong: `submittedDoc` can only be
+ * `null` in the defensive case where `editorRef.current` was already gone
+ * at submit time, and `handleSubmit` explicitly tolerates that same null
+ * handle sixty lines earlier (the `stagedCommand`/`lockForQuestion`
+ * branches both do `editorRef.current?.getContent()`). Nesting the files
+ * restore inside the document-restore gate meant a failed send in that
+ * edge case discarded the user's attachments outright instead of restoring
+ * them — real data loss on a path the rest of the function already
+ * anticipates. `attachedFiles` here is computed independently of
+ * `restoreDoc`, so it always happens whenever `clearOnSend` is true.
+ */
+export function planFailedSendRecovery(
+  input: FailedSendRecoveryInput,
+): FailedSendRecoveryPlan | null {
+  if (!input.clearOnSend) return null;
+
+  const attachedFiles = mergeFailedSubmissionFiles(input.currentAttachedFiles, input.sentFiles);
+
+  let restoreDoc: JSONContent | null = null;
+  if (input.submittedDoc && input.currentDoc) {
+    const merged = mergeFailedSubmissionDocument(
+      input.currentDoc,
+      input.currentIsEmpty,
+      input.submittedDoc,
+      input.submittedIsEmpty,
+    );
+    if (merged !== input.currentDoc) restoreDoc = merged;
+  }
+
+  return { restoreDoc, attachedFiles };
+}
+
 export interface ShouldApplyPrefillInput {
   /** `prefill?.id` — `undefined` means "no prefill at all". */
   prefillId: number | undefined;

@@ -207,6 +207,59 @@ function textToParagraphs(text: string): JSONContent[] {
  */
 const EMPTY_DOC: JSONContent = { type: 'doc', content: textToParagraphs('') };
 
+/**
+ * `getDocument`/`setDocument`/`insertAtCursor`'s actual implementations —
+ * Task 13, fix round 1, Important 2. Pulled out of `useImperativeHandle`'s
+ * factory into standalone functions parameterized by `editor: Editor | null`
+ * for the same reason `trackEmptyBoundary`/`createSubmitOnEnterHandler`
+ * above are: this repo's `bun test` has no DOM, so anything living only
+ * inside the React ref-forwarding closure is unreachable from a test. These
+ * three, called against a headless `@tiptap/core` `Editor` (same
+ * `createHeadlessEditor` pattern the rest of this file's tests already use),
+ * are exercised directly in `composer-editor.test.ts`.
+ */
+export function getEditorDocument(editor: Editor | null): JSONContent {
+  return editor ? (editor.getJSON() as JSONContent) : EMPTY_DOC;
+}
+
+export function setEditorDocument(
+  editor: Editor | null,
+  doc: JSONContent,
+  mode: 'replace' | 'merge' = 'replace',
+): void {
+  if (!editor) return;
+  const content = doc.content ?? [];
+  if (mode === 'merge' && !editor.isEmpty) {
+    editor.commands.insertContent([{ type: 'paragraph' }, ...content]);
+  } else {
+    editor.commands.setContent({ type: 'doc', content });
+  }
+  editor.commands.focus('end');
+}
+
+/**
+ * Task 13, fix round 1, Important 2's specific regression guard: this must
+ * insert INLINE at the current selection (`editor.commands.insertContent`
+ * with no leading `{ type: 'paragraph' }`), never split the document into a
+ * new paragraph the way `setContent`/`setDocument`'s `merge` mode
+ * deliberately does. `composer-editor.test.ts` asserts `childCount === 1`
+ * after inserting mid-word specifically to pin this down — the bug this
+ * primitive exists to fix (round 1's `insertContent([{type:'paragraph'},
+ * ...])`-based `onTypeAhead` corrupting a non-empty document) produces
+ * `childCount > 1` at the same position.
+ */
+export function insertTextAtCursor(editor: Editor | null, text: string): void {
+  if (!editor || !text) return;
+  const segments = text.split('\n');
+  const content: JSONContent[] = [];
+  segments.forEach((segment, i) => {
+    if (segment) content.push({ type: 'text', text: segment });
+    if (i < segments.length - 1) content.push({ type: 'hardBreak' });
+  });
+  if (content.length === 0) return;
+  editor.commands.insertContent(content);
+}
+
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
   function ComposerEditor(
     {
@@ -436,28 +489,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           }
           editor.commands.focus('end');
         },
-        getDocument: () => (editor ? (editor.getJSON() as JSONContent) : EMPTY_DOC),
-        setDocument: (doc, mode = 'replace') => {
-          if (!editor) return;
-          const content = doc.content ?? [];
-          if (mode === 'merge' && !editor.isEmpty) {
-            editor.commands.insertContent([{ type: 'paragraph' }, ...content]);
-          } else {
-            editor.commands.setContent({ type: 'doc', content });
-          }
-          editor.commands.focus('end');
-        },
-        insertAtCursor: (text) => {
-          if (!editor || !text) return;
-          const segments = text.split('\n');
-          const content: JSONContent[] = [];
-          segments.forEach((segment, i) => {
-            if (segment) content.push({ type: 'text', text: segment });
-            if (i < segments.length - 1) content.push({ type: 'hardBreak' });
-          });
-          if (content.length === 0) return;
-          editor.commands.insertContent(content);
-        },
+        getDocument: () => getEditorDocument(editor),
+        setDocument: (doc, mode = 'replace') => setEditorDocument(editor, doc, mode),
+        insertAtCursor: (text) => insertTextAtCursor(editor, text),
         clear: () => editor?.commands.setContent(EMPTY_DOC),
         focus: () => editor?.commands.focus('end'),
         isEmpty: () => editor?.isEmpty ?? true,

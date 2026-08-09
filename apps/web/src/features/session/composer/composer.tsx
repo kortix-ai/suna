@@ -51,10 +51,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { extractClipboardFiles } from '../clipboard-files';
-import {
-  mergeFailedSubmissionDocument,
-  mergeFailedSubmissionFiles,
-} from '../composer-draft-recovery';
+import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
 import { shouldQueueInsteadOfSend } from '../message-queue-boundary';
 import type { FlatModel } from '../model-flatten';
@@ -70,7 +67,7 @@ import { useModelConnectionGate } from '../use-model-connection-gate';
 
 import { AttachmentTiles } from './attachment-tiles';
 import { ComposerToolbar } from './composer-toolbar';
-import { resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
+import { planFailedSendRecovery, resolveEditorPlaceholder, shouldApplyPrefill } from './composer-logic';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import type { SlashAction } from './menus/slash-actions';
@@ -736,7 +733,16 @@ function ComposerImpl({
   useComposerFocus({
     ref: composerFocusRef,
     autoFocus,
-    disabled,
+    // MINOR 2 (fix round 1): must match the SAME condition the editor
+    // itself is disabled under (`disabled || lockForApproval`, below at the
+    // `ComposerEditorLazy` render) — not just `disabled` alone.
+    // `lockForApproval` means a connector action is waiting on the user;
+    // the composer is deliberately inert. Missing this was already a latent
+    // gap, but dropping the old `isEmpty()` gate on the type-ahead redirect
+    // widened its blast radius from "one stray character lands in an empty
+    // locked composer" to "one stray character lands mid-draft in a locked
+    // composer" via `insertAtCursor`.
+    disabled: disabled || lockForApproval,
     onTypeAhead: handleTypeAhead,
   });
 
@@ -965,38 +971,54 @@ function ComposerImpl({
       await onSend(trimmed, filesToSend, mentionsToSend);
       for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
     } catch {
-      // Task 13 fix — mention-preserving recovery. Restore the submitted
-      // draft, merged with whatever the user typed while the request was in
-      // flight, same order as the original (`${submitted}\n\n${current}`).
-      // The version this replaced restored via `setContent`, string-only:
-      // it kept the TEXT readable but any mention the failed send carried
-      // — or that the user typed into the retry meanwhile — flattened to
-      // plain "@label" text with no way back to a mention atom node.
-      // `getContent().mentions` for the RETRY send is derived exclusively
-      // from atom nodes still present in the document (`serialize.ts`), so
-      // a flattened retry silently sent no `<file_ref>`/`<agent_ref>`/
-      // `<session_ref>` block at all — the agent never saw the mention.
-      // `mergeFailedSubmissionDocument` operates on the actual ProseMirror
-      // JSON (`submittedDoc`, snapshotted above before the clear) instead,
-      // so every mention atom node from both sides survives the merge.
-      if (clearOnSend && submittedDoc) {
-        const currentDoc = editorRef.current?.getDocument() ?? submittedDoc;
-        const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
-        const merged = mergeFailedSubmissionDocument(
-          currentDoc,
-          currentIsEmpty,
-          submittedDoc,
-          submittedIsEmpty,
+      // Task 13 fix — mention-preserving recovery, fix round 1: the decision
+      // logic now lives entirely in `planFailedSendRecovery`
+      // (`composer-logic.ts`), a pure function unit-tested without a DOM —
+      // `handleSubmit` itself can't be (this repo's `bun test` has no DOM,
+      // and this is a `React.lazy`-boundary client component). See that
+      // function's own doc comment for the full "why a document snapshot,
+      // not text" reasoning, and for MINOR 1's fix: a failed send must
+      // restore attached files whenever `clearOnSend` is true, never nested
+      // inside whatever gates the document restore — losing them in the
+      // defensive null-handle case would be real data loss on a path this
+      // function already tolerates a null `editorRef` for (the
+      // `stagedCommand`/`lockForQuestion` branches above).
+      const currentDoc = editorRef.current?.getDocument() ?? null;
+      const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
+      const sentFiles = filesToSend ?? [];
+
+      const plan = planFailedSendRecovery({
+        clearOnSend,
+        submittedDoc,
+        submittedIsEmpty,
+        currentDoc,
+        currentIsEmpty,
+        currentAttachedFiles: attachedFiles,
+        sentFiles,
+      });
+      if (plan?.restoreDoc) {
+        setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc, 'replace');
+      }
+      if (plan) {
+        // `attachedFiles` above is whatever this `handleSubmit` closure
+        // captured at CALL time — the user may have dropped in a new file
+        // while the request was in flight, which only shows up through a
+        // fresh functional-updater read, not the stale closure value.
+        // `restoreDoc` doesn't have this problem (it's derived only from
+        // `editorRef`, read imperatively, never from React state), so only
+        // the files half needs re-deriving against the true latest value.
+        setAttachedFiles(
+          (current) =>
+            planFailedSendRecovery({
+              clearOnSend,
+              submittedDoc,
+              submittedIsEmpty,
+              currentDoc,
+              currentIsEmpty,
+              currentAttachedFiles: current,
+              sentFiles,
+            })?.attachedFiles ?? current,
         );
-        // Skip the imperative call entirely when nothing actually changes —
-        // `setDocument` always dispatches a transaction and resets the
-        // cursor to the end, which would needlessly disturb an in-progress
-        // retry draft that didn't need restoring (the files-only-send case:
-        // `mergeFailedSubmissionDocument` returns `currentDoc` unchanged).
-        if (merged !== currentDoc) {
-          setDocumentWithoutStealingFocus(editorRef.current, merged, 'replace');
-        }
-        setAttachedFiles((current) => mergeFailedSubmissionFiles(current, filesToSend ?? []));
       }
     }
   }, [

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 
 import { createSlashSuggestion } from './slash-controller';
+import { SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import type { SlashRow } from './slash-items';
 
 /**
@@ -147,5 +148,70 @@ describe('createSlashSuggestion — Enter declines with zero rows, consumes with
 
     expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(false);
     expect(selected).toHaveLength(0);
+  });
+});
+
+/**
+ * Task 13, fix round 1, Important 3 — `getActions` (the option that lets a
+ * host, `composer.tsx`'s `EMPTY_ACTIONS` while a command is staged, override
+ * the Actions section) was added but had no test binding it to the real
+ * `createSlashSuggestion` — `slash-items.test.ts:121` covers
+ * `buildSlashSections`' `actions` parameter directly, and the JS default-
+ * parameter mechanics are sound, but nothing proved the NEW option actually
+ * reaches that call. These do, through the same real `onStart`/`onKeyDown`
+ * surface the suite above uses.
+ */
+describe('createSlashSuggestion — getActions threads through to buildSlashSections', () => {
+  test('getActions: () => [] suppresses the Actions section entirely — Enter declines with zero rows', () => {
+    // Mirrors composer.tsx's EMPTY_ACTIONS exactly: passing `[]` must leave
+    // onStart with NOTHING to select — not just an empty Commands section.
+    // This is the fix itself: before it, `getCommands: () => []` alone
+    // still left the (fixed, unreachable) SLASH_ACTIONS default populated.
+    const { onStart, onKeyDown } = createSlashSuggestion({
+      getCommands: () => [],
+      getActions: () => [],
+    }).render!();
+
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', () => {}));
+    });
+
+    expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(false);
+  });
+
+  test('a custom getActions list is what gets selected — proves an override, not just an empty', () => {
+    const customAction: SlashAction = {
+      id: 'attach-file',
+      label: 'Custom-only action',
+      description: 'proves getActions overrides SLASH_ACTIONS, not just empties it',
+    };
+    const selected: SlashRow[] = [];
+    const { onStart, onKeyDown } = createSlashSuggestion({
+      getCommands: () => [],
+      getActions: () => [customAction],
+    }).render!();
+
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', (row) => selected.push(row)));
+    });
+    onKeyDown!(fakeKeyDown('Enter'));
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].type).toBe('action');
+    expect(selected[0].action).toBe(customAction);
+  });
+
+  test('omitting getActions entirely falls back to the SLASH_ACTIONS default — unchanged pre-fix behavior', () => {
+    const selected: SlashRow[] = [];
+    const { onStart, onKeyDown } = createSlashSuggestion({ getCommands: () => [] }).render!();
+
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', (row) => selected.push(row)));
+    });
+    onKeyDown!(fakeKeyDown('Enter'));
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].type).toBe('action');
+    expect(SLASH_ACTIONS).toContainEqual(selected[0].action);
   });
 });
