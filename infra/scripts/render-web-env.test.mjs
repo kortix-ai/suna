@@ -3,8 +3,14 @@ import { describe, expect, test } from 'bun:test';
 import { renderWebEnvironment } from './render-web-env.mjs';
 
 function profile(name) {
-  const host = name === 'dev' ? 'dev.kortix.com' : name === 'staging' ? 'staging.kortix.com' : 'kortix.com';
-  const apiHost = name === 'dev' ? 'dev-api.kortix.com' : name === 'staging' ? 'staging-api.kortix.com' : 'api.kortix.com';
+  const host =
+    name === 'dev' ? 'dev.kortix.com' : name === 'staging' ? 'staging.kortix.com' : 'kortix.com';
+  const apiHost =
+    name === 'dev'
+      ? 'dev-api.kortix.com'
+      : name === 'staging'
+        ? 'staging-api.kortix.com'
+        : 'api.kortix.com';
   return {
     NEXT_PUBLIC_APP_URL: `https://${host}`,
     NEXT_PUBLIC_BACKEND_URL: `https://${apiHost}/v1`,
@@ -53,7 +59,7 @@ describe('renderWebEnvironment', () => {
 
   test('fails closed when a protected profile has no password', () => {
     const environment = profile('dev');
-    delete environment.WEB_PROTECTION_PASSWORD;
+    environment.WEB_PROTECTION_PASSWORD = undefined;
     expect(() => renderWebEnvironment('dev', environment)).toThrow(
       'WEB_PROTECTION_PASSWORD is required',
     );

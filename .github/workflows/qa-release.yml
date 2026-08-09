@@ -100,7 +100,7 @@ jobs:
             exit 1
           fi
           case "$gateway $dast $pentest" in
-            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+            *prod*|https://api.kortix.com*|https://kortix.com*)
               echo "::error::Refusing production-looking release targets: gateway=$gateway dast=$dast pentest=$pentest"
               exit 1
               ;;
