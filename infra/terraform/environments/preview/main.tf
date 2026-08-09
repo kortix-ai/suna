@@ -345,6 +345,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 
 #trivy:ignore:AVD-AWS-0053 This direct HTTPS preview edge is protected by the regional WAF. Cloudflare cannot proxy the multi-level wildcard with Universal SSL.
 resource "aws_lb" "preview" {
+  #checkov:skip=CKV2_AWS_76:The dedicated aws_wafv2_web_acl.preview includes AWSManagedRulesKnownBadInputsRuleSet and is attached below; this graph check does not follow the separate association resource.
   name                       = "${local.name}-alb"
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
