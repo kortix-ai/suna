@@ -2,21 +2,25 @@ import { pathToFileURL } from 'node:url';
 
 const ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d';
 
-export function webDnsRecord(environment, mode, target) {
-  if (environment !== 'dev') throw new Error('only the Dev DNS cutover is enabled');
-  if (!['origin', 'canonical'].includes(mode)) {
-    throw new Error('mode must be origin or canonical');
-  }
+const ECS_WEB_HOSTS = {
+  dev: 'dev-fe-ecs.kortix.com',
+  staging: 'staging-fe-ecs.kortix.com',
+  prod: 'prod-fe-ecs.kortix.com',
+};
+
+export function webDnsRecord(environment, target) {
+  const host = ECS_WEB_HOSTS[environment];
+  if (!host) throw new Error('environment must be dev, staging, or prod');
   if (!/^[a-z0-9.-]+\.elb\.amazonaws\.com$/.test(target)) {
     throw new Error('target must be an AWS ELB hostname');
   }
   return {
     type: 'CNAME',
-    name: mode === 'origin' ? 'dev-web-ecs-fargate.kortix.com' : 'dev.kortix.com',
+    name: host,
     content: target,
     proxied: true,
     ttl: 1,
-    comment: 'Kortix Dev web ECS Fargate origin',
+    comment: `Kortix ${environment} frontend on ECS Fargate; canonical remains on Vercel`,
   };
 }
 
@@ -38,8 +42,8 @@ async function cloudflare(path, options = {}) {
   return payload.result;
 }
 
-export async function syncWebDns(environment, mode, target) {
-  const record = webDnsRecord(environment, mode, target);
+export async function syncWebDns(environment, target) {
+  const record = webDnsRecord(environment, target);
   const query = new URLSearchParams({ type: record.type, name: record.name });
   const existing = await cloudflare(`/zones/${ZONE_ID}/dns_records?${query}`);
   if (existing.length > 1) throw new Error(`multiple DNS records exist for ${record.name}`);
@@ -56,6 +60,6 @@ export async function syncWebDns(environment, mode, target) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const result = await syncWebDns(process.argv[2], process.argv[3], process.argv[4]);
+  const result = await syncWebDns(process.argv[2], process.argv[3]);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

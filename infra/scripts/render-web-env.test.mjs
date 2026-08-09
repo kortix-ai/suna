@@ -21,6 +21,18 @@ function profile(name) {
 }
 
 describe('renderWebEnvironment', () => {
+  test('rewrites canonical profile URLs to isolated ECS frontend URLs', () => {
+    expect(renderWebEnvironment('dev', profile('dev')).NEXT_PUBLIC_APP_URL).toBe(
+      'https://dev-fe-ecs.kortix.com',
+    );
+    expect(renderWebEnvironment('staging', profile('staging')).NEXT_PUBLIC_APP_URL).toBe(
+      'https://staging-fe-ecs.kortix.com',
+    );
+    expect(renderWebEnvironment('prod', profile('prod')).NEXT_PUBLIC_APP_URL).toBe(
+      'https://prod-fe-ecs.kortix.com',
+    );
+  });
+
   test('protects dev and staging with the same supplied secret', () => {
     for (const name of ['dev', 'staging']) {
       const payload = renderWebEnvironment(name, profile(name));
@@ -55,6 +67,15 @@ describe('renderWebEnvironment', () => {
         NEXT_PUBLIC_BACKEND_URL: 'https://dev-api.kortix.com/v1',
       }),
     ).toThrow('NEXT_PUBLIC_BACKEND_URL must target https://staging-api.kortix.com');
+  });
+
+  test('rejects a profile whose canonical app URL belongs to another environment', () => {
+    expect(() =>
+      renderWebEnvironment('dev', {
+        ...profile('dev'),
+        NEXT_PUBLIC_APP_URL: 'https://staging.kortix.com',
+      }),
+    ).toThrow('NEXT_PUBLIC_APP_URL must target https://dev.kortix.com');
   });
 
   test('fails closed when a protected profile has no password', () => {
