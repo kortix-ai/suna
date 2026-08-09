@@ -24,11 +24,30 @@ export const MentionNode = Node.create({
   selectable: true,
   draggable: false,
 
+  // Each attribute renders to (and parses back from) its own `data-*`
+  // attribute. Without this, TipTap's default per-attribute fallback would
+  // still round-trip `kind`/`label`/`value` as bare, non-namespaced HTML
+  // attributes (`kind="file"`) — which happens to work but collides with
+  // `value`'s real HTML meaning on form elements and isn't the documented
+  // wire shape. Explicit `data-mention-*` names are what `parseHTML()`'s
+  // `span[data-mention]` selector below is actually meant to read back.
   addAttributes() {
     return {
-      kind: { default: 'file' as MentionKind },
-      label: { default: '' },
-      value: { default: '' },
+      kind: {
+        default: 'file' as MentionKind,
+        parseHTML: (element) => element.getAttribute('data-mention') as MentionKind | null,
+        renderHTML: (attrs) => ({ 'data-mention': attrs.kind }),
+      },
+      label: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-mention-label'),
+        renderHTML: (attrs) => ({ 'data-mention-label': attrs.label }),
+      },
+      value: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-mention-value'),
+        renderHTML: (attrs) => ({ 'data-mention-value': attrs.value }),
+      },
     };
   },
 
@@ -42,7 +61,6 @@ export const MentionNode = Node.create({
     return [
       'span',
       mergeAttributes(HTMLAttributes, {
-        'data-mention': kind,
         'aria-label': `${kind} mention: ${label}`,
         class:
           'bg-muted text-foreground rounded-md px-1 py-0.5 text-[0.9em] font-medium ' +
