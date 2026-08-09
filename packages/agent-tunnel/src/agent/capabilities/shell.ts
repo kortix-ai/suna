@@ -13,6 +13,21 @@ import type { Capability, RpcHandler } from './index';
 import { validateCommand } from '../security/command-validator';
 import { validatePath } from '../security/path-validator';
 import type { TunnelConfig } from '../config';
+import type { LocalPermission } from '../security/permission-guard';
+
+interface LocalShellScope {
+  commands?: string[];
+  workingDir?: string;
+  maxTimeout?: number;
+}
+
+function permissionShellScope(params: Record<string, unknown>): LocalShellScope {
+  const permission = params.__permission as LocalPermission | undefined;
+  if (permission?.capability !== 'shell') {
+    throw new Error('Permission denied: shell permission required');
+  }
+  return (permission.scope ?? {}) as LocalShellScope;
+}
 
 export function createShellCapability(config: TunnelConfig): Capability {
   const methods = new Map<string, RpcHandler>();
@@ -20,16 +35,35 @@ export function createShellCapability(config: TunnelConfig): Capability {
   methods.set('shell.exec', async (params) => {
     const command = params.command as string;
     const args = (params.args as string[]) || [];
+    if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) {
+      throw new Error('Command args must be an array of strings');
+    }
+    const scope = permissionShellScope(params);
     const cwd = (params.cwd as string) || config.workingDir;
+    const requestedTimeout =
+      params.timeout === undefined ? config.shellTimeout : Number(params.timeout);
+    if (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0) {
+      throw new Error('Command timeout must be a positive number');
+    }
     const timeout = Math.min(
-      (params.timeout as number) || config.shellTimeout,
+      requestedTimeout,
       config.shellMaxTimeout,
+      typeof scope.maxTimeout === 'number' ? scope.maxTimeout : config.shellMaxTimeout,
     );
 
-    validateCommand(command, config.allowedCommands, config.blockedCommands);
+    const scopedCommands = Array.isArray(scope.commands)
+      ? scope.commands.filter((value): value is string => typeof value === 'string')
+      : [];
+    const executable = validateCommand(command, config.allowedCommands, config.blockedCommands);
+    if (scopedCommands.length > 0) {
+      validateCommand(executable, scopedCommands, []);
+    }
 
     if (cwd) {
       validatePath(cwd, config.allowedPaths, config.blockedPaths);
+      if (typeof scope.workingDir === 'string' && scope.workingDir.length > 0) {
+        validatePath(cwd, [scope.workingDir], config.blockedPaths);
+      }
     }
 
     const safeEnv: Record<string, string> = { TERM: 'dumb' };
@@ -40,7 +74,7 @@ export function createShellCapability(config: TunnelConfig): Capability {
     }
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(command, args, {
+      const proc = spawn(executable, args, {
         cwd,
         shell: false,
         timeout,

@@ -1,9 +1,13 @@
-import { resolve, normalize } from 'path';
+import { posix, win32 } from 'path';
 import { eq, and } from 'drizzle-orm';
 import { tunnelPermissions } from '@kortix/db';
 import type { TunnelFilesystemScope, TunnelShellScope, TunnelPermissionScope } from '@kortix/db';
 import { db } from '../../shared/db';
-import type { TunnelCapability } from 'agent-tunnel';
+import {
+  desktopFeatureForMethod,
+  validateTunnelPermissionScope,
+  type TunnelCapability,
+} from 'agent-tunnel';
 
 export interface PermissionCheckResult {
   allowed: boolean;
@@ -33,7 +37,10 @@ export async function checkPermission(
     );
 
   if (permissions.length === 0) {
-    return { allowed: false, reason: `No active permission for capability "${capability}"` };
+    return {
+      allowed: false,
+      reason: `No active permission for capability "${capability}"`,
+    };
   }
 
   const now = new Date();
@@ -42,16 +49,29 @@ export async function checkPermission(
       continue;
     }
 
-    const scopeResult = validateScope(capability, perm.scope as TunnelPermissionScope, operation, args);
+    const validatedScope = validateTunnelPermissionScope(capability, perm.scope ?? {});
+    if (!validatedScope.valid) {
+      continue;
+    }
+
+    const scopeResult = validateScopeForOperation(
+      capability,
+      validatedScope.sanitized as TunnelPermissionScope,
+      operation,
+      args,
+    );
     if (scopeResult.allowed) {
       return { allowed: true, permissionId: perm.permissionId };
     }
   }
 
-  return { allowed: false, reason: `Operation "${operation}" not within any granted scope for "${capability}"` };
+  return {
+    allowed: false,
+    reason: `Operation "${operation}" not within any granted scope for "${capability}"`,
+  };
 }
 
-function validateScope(
+export function validateScopeForOperation(
   capability: TunnelCapability,
   scope: TunnelPermissionScope | null,
   operation: string,
@@ -69,7 +89,10 @@ function validateScope(
     case 'desktop':
       return validateDesktopScope(scope as TunnelDesktopScope, operation, args);
     default:
-      return { allowed: false, reason: `No scope validator for capability "${capability}"` };
+      return {
+        allowed: false,
+        reason: `No scope validator for capability "${capability}"`,
+      };
   }
 }
 
@@ -80,25 +103,37 @@ function validateFilesystemScope(
 ): PermissionCheckResult {
   if (scope.operations && scope.operations.length > 0) {
     if (!scope.operations.includes(operation as any)) {
-      return { allowed: false, reason: `Operation "${operation}" not in allowed operations` };
+      return {
+        allowed: false,
+        reason: `Operation "${operation}" not in allowed operations`,
+      };
     }
   }
 
-  const targetPath = (args.path as string) || '';
+  const targetPath = typeof args.path === 'string' ? args.path : '';
+  if (!targetPath) {
+    return { allowed: false, reason: 'A filesystem path is required' };
+  }
   if (scope.paths && scope.paths.length > 0 && targetPath) {
     const pathAllowed = scope.paths.some((allowed) => {
-      const normalizedTarget = normalize(resolve(targetPath));
-      const normalizedAllowed = normalize(resolve(allowed));
-      return normalizedTarget === normalizedAllowed || normalizedTarget.startsWith(normalizedAllowed + '/');
+      return isPathInside(targetPath, allowed);
     });
     if (!pathAllowed) {
-      return { allowed: false, reason: `Path "${targetPath}" not within allowed paths` };
+      return {
+        allowed: false,
+        reason: `Path "${targetPath}" not within allowed paths`,
+      };
     }
   }
 
-  if (scope.maxFileSize && typeof args.size === 'number') {
-    if (args.size > scope.maxFileSize) {
-      return { allowed: false, reason: `File size ${args.size} exceeds limit ${scope.maxFileSize}` };
+  if (scope.maxFileSize && operation === 'write' && typeof args.content === 'string') {
+    const encoding = args.encoding === 'base64' ? 'base64' : 'utf8';
+    const size = Buffer.byteLength(args.content, encoding);
+    if (size > scope.maxFileSize) {
+      return {
+        allowed: false,
+        reason: `File size ${size} exceeds limit ${scope.maxFileSize}`,
+      };
     }
   }
 
@@ -107,7 +142,10 @@ function validateFilesystemScope(
       return matchGlob(targetPath, pattern);
     });
     if (isExcluded) {
-      return { allowed: false, reason: `Path "${targetPath}" matches exclude pattern` };
+      return {
+        allowed: false,
+        reason: `Path "${targetPath}" matches exclude pattern`,
+      };
     }
   }
 
@@ -121,79 +159,35 @@ function validateShellScope(
 ): PermissionCheckResult {
   const command = (args.command as string) || '';
   if (scope.commands && scope.commands.length > 0 && command) {
-    const executable = command.split(/\s+/)[0];
+    const executable = command.trim();
     if (!scope.commands.includes(executable)) {
-      return { allowed: false, reason: `Command "${executable}" not in allowed commands` };
+      return {
+        allowed: false,
+        reason: `Command "${executable}" not in allowed commands`,
+      };
     }
   }
 
-  if (scope.workingDir && args.cwd) {
-    const normalizedCwd = normalize(resolve(args.cwd as string));
-    const normalizedAllowed = normalize(resolve(scope.workingDir));
-    if (!normalizedCwd.startsWith(normalizedAllowed) && normalizedCwd !== normalizedAllowed) {
-      return { allowed: false, reason: `Working directory "${args.cwd}" outside allowed directory` };
+  if (scope.workingDir) {
+    if (typeof args.cwd !== 'string' || !isPathInside(args.cwd, scope.workingDir)) {
+      return {
+        allowed: false,
+        reason: `Working directory "${args.cwd}" outside allowed directory`,
+      };
+    }
+  }
+
+  if (scope.maxTimeout !== undefined && args.timeout !== undefined) {
+    const timeout = Number(args.timeout);
+    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > scope.maxTimeout) {
+      return {
+        allowed: false,
+        reason: `Timeout exceeds limit ${scope.maxTimeout}`,
+      };
     }
   }
 
   return { allowed: true };
-}
-
-const DESKTOP_METHOD_FEATURES: Record<string, string> = {
-  'desktop.cua.ensure': 'computer_use',
-  'desktop.cua.start_daemon': 'computer_use',
-  'desktop.cua.status': 'computer_use',
-  'desktop.cua.version': 'computer_use',
-  'desktop.cua.list_tools': 'computer_use',
-  'desktop.cua.describe': 'computer_use',
-  'desktop.cua.bring_to_front': 'windows',
-  'desktop.cua.check_for_update': 'computer_use',
-  'desktop.cua.check_permissions': 'computer_use',
-  'desktop.cua.click': 'mouse',
-  'desktop.cua.double_click': 'mouse',
-  'desktop.cua.drag': 'mouse',
-  'desktop.cua.end_session': 'computer_use',
-  'desktop.cua.get_accessibility_tree': 'accessibility',
-  'desktop.cua.get_agent_cursor_state': 'mouse',
-  'desktop.cua.get_config': 'computer_use',
-  'desktop.cua.get_cursor_position': 'mouse',
-  'desktop.cua.get_recording_state': 'computer_use',
-  'desktop.cua.get_screen_size': 'screenshot',
-  'desktop.cua.get_window_state': 'accessibility',
-  'desktop.cua.hotkey': 'keyboard',
-  'desktop.cua.kill_app': 'apps',
-  'desktop.cua.launch_app': 'apps',
-  'desktop.cua.list_apps': 'apps',
-  'desktop.cua.list_windows': 'windows',
-  'desktop.cua.move_cursor': 'mouse',
-  'desktop.cua.page': 'accessibility',
-  'desktop.cua.press_key': 'keyboard',
-  'desktop.cua.replay_trajectory': 'computer_use',
-  'desktop.cua.right_click': 'mouse',
-  'desktop.cua.scroll': 'keyboard',
-  'desktop.cua.set_agent_cursor_enabled': 'mouse',
-  'desktop.cua.set_agent_cursor_motion': 'mouse',
-  'desktop.cua.set_agent_cursor_style': 'mouse',
-  'desktop.cua.set_config': 'computer_use',
-  'desktop.cua.set_value': 'accessibility',
-  'desktop.cua.start_recording': 'screenshot',
-  'desktop.cua.install_ffmpeg': 'computer_use',
-  'desktop.cua.start_session': 'computer_use',
-  'desktop.cua.stop_recording': 'screenshot',
-  'desktop.cua.type_text': 'keyboard',
-  'desktop.cua.zoom': 'screenshot',
-};
-
-export function desktopFeatureForMethod(method: string, args: Record<string, unknown> = {}): string | undefined {
-  if (method === 'desktop.cua.call') {
-    const tool = args.tool;
-    if (typeof tool !== 'string' || tool.length === 0) {
-      return undefined;
-    }
-    const toolMethod = tool.startsWith('desktop.cua.') ? tool : `desktop.cua.${tool}`;
-    return DESKTOP_METHOD_FEATURES[toolMethod];
-  }
-
-  return DESKTOP_METHOD_FEATURES[method];
 }
 
 function validateDesktopScope(
@@ -213,7 +207,10 @@ function validateDesktopScope(
   }
 
   if (!scope.features.includes(feature)) {
-    return { allowed: false, reason: `Feature "${feature}" not in allowed features` };
+    return {
+      allowed: false,
+      reason: `Feature "${feature}" not in allowed features`,
+    };
   }
 
   return { allowed: true };
@@ -226,4 +223,18 @@ function matchGlob(path: string, pattern: string): boolean {
     .replace(/\*/g, '[^/]*')
     .replace(/\{\{GLOBSTAR\}\}/g, '.*');
   return new RegExp(`^${regexStr}$`).test(path);
+}
+
+function isPathInside(target: string, allowed: string): boolean {
+  const windows = /^[a-zA-Z]:[\\/]/.test(target) || /^[a-zA-Z]:[\\/]/.test(allowed);
+  const pathApi = windows ? win32 : posix;
+  if (!pathApi.isAbsolute(target) || !pathApi.isAbsolute(allowed)) return false;
+  let normalizedTarget = pathApi.normalize(target);
+  let normalizedAllowed = pathApi.normalize(allowed);
+  if (windows) {
+    normalizedTarget = normalizedTarget.toLowerCase();
+    normalizedAllowed = normalizedAllowed.toLowerCase();
+  }
+  const relative = pathApi.relative(normalizedAllowed, normalizedTarget);
+  return relative === '' || (!relative.startsWith('..') && !pathApi.isAbsolute(relative));
 }

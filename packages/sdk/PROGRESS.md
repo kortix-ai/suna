@@ -62,6 +62,47 @@ after a refresh and already discards entries older than thirty minutes.
 
 **SDK package shippable to production: YES.**
 
+### 2026-08-09 — session `connector-finalize-unify` claim
+
+No **Now** task claimed. User-directed fix: Pipedream connector credentials never
+persisted through the setup-link flow. The hosted connect page has no callback,
+and the only path that could have saved the credential — the Pipedream connect
+webhook — answered every real payload `400 missing external_user_id` (it read
+`body.external_user_id`; the real CONNECTION_SUCCESS nests it at
+`account.external_id`). The API side gains an explicit finalize route; the SDK
+must expose it so `apps/web` does not raw-`fetch` it.
+
+Claimed SDK scope (additive only):
+
+- `core/rest/platform-client/host-boundary.ts`: new
+  `finalizeConnectorSetupLink(token, options)` → `POST
+  /setup-links/connectors/{token}/finalize` → `{ connected: boolean }`, beside
+  the existing `startConnectorSetupLink`. Anonymous, like its siblings.
+- Re-recorded `public-surface.snapshot.json` + `public-type-surface.snapshot.json`
+  (2 additions each, 0 removals/renames — reviewed as additive).
+- No published name renamed; no `package.json` change (same subpath), no
+  `version` touched.
+
+Signature note: the task text sketched `finalizeConnectorSetupLink(backendUrl,
+token)`. Shipped as `(token, options: HostRequestOptions)` to match
+`startConnectorSetupLink` / `getConnectorSetupLink` — one shape per concept.
+
+RED: 2 new tests in `host-boundary.test.ts` failed with
+`TypeError: boundary.finalizeConnectorSetupLink is not a function` (4 pass,
+2 fail).
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` (package + examples).
+- `pnpm --filter @kortix/sdk test`: `1831 pass`, `2 skip`, `0 fail`, `7049
+  expect()` calls, 141 files (baseline this session: 1829 pass / 2 skip, same
+  141 files).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `session-title-sidebar-sync` claim
 
 No **Now** task claimed. User-directed fix: the sidebar/tab never converge to the

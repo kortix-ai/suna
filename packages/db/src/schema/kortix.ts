@@ -3364,9 +3364,9 @@ export const tunnelPermissionRequestStatusEnum = kortixSchema.enum(
 
 /** Machine info reported by the local agent on connect. */
 export interface TunnelMachineInfo {
-  hostname: string;
-  platform: string;
-  arch: string;
+  hostname?: string;
+  platform?: string;
+  arch?: string;
   osVersion?: string;
   nodeVersion?: string;
   agentVersion?: string;
@@ -3509,9 +3509,9 @@ export const tunnelAuditLogs = kortixSchema.table(
   'tunnel_audit_logs',
   {
     logId: uuid('log_id').defaultRandom().primaryKey(),
-    tunnelId: uuid('tunnel_id')
-      .notNull()
-      .references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
+    // Keep the immutable tunnel identifier after a fleet record is deleted.
+    // Audit evidence must not cascade with the mutable connection row.
+    tunnelId: uuid('tunnel_id').notNull(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),

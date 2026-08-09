@@ -17,7 +17,7 @@ import type { AdminConnector } from '@kortix/sdk';
 export function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
-  if (p === 'computer') return 'Computers';
+  if (p === 'computer') return 'Computer Tunnel';
   if (p === 'postman') return 'Postman';
   return p.toUpperCase();
 }

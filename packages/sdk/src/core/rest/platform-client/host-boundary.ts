@@ -219,6 +219,23 @@ export function startConnectorSetupLink(
   });
 }
 
+/**
+ * Persist the connection the hosted Pipedream page just made, and tell the
+ * session that asked for it. The hosted page cannot call back into us, so the
+ * client that opened it polls this until `connected` is true. Idempotent: a
+ * repeat call on an already-connected connector returns `true` without
+ * re-notifying the session.
+ */
+export function finalizeConnectorSetupLink(
+  token: string,
+  options: HostRequestOptions,
+): Promise<{ connected: boolean }> {
+  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
+    method: 'POST',
+    body: {},
+  });
+}
+
 export interface SecretSetupLinkInfo {
   project_name: string;
   fields: Array<{

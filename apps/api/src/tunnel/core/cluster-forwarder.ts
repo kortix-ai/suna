@@ -1,8 +1,9 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
-import { TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
+import { capabilityForMethod, TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { fingerprintTunnelCredentialHash } from '../../shared/crypto';
 import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../shared/instance';
 import { tunnelRelay } from './relay';
 
@@ -44,7 +45,10 @@ export function relayOwnerPatch(now = new Date()) {
   };
 }
 
-export async function markTunnelRelayOwner(tunnelId: string, extra: Partial<typeof tunnelConnections.$inferInsert> = {}) {
+export async function markTunnelRelayOwner(
+  tunnelId: string,
+  extra: Partial<typeof tunnelConnections.$inferInsert> = {},
+) {
   const now = new Date();
   await db
     .update(tunnelConnections)
@@ -71,7 +75,12 @@ export async function clearTunnelRelayOwnerIfCurrent(
       relayOwnerHeartbeatAt: null,
       updatedAt: new Date(),
     })
-    .where(and(eq(tunnelConnections.tunnelId, tunnelId), eq(tunnelConnections.relayOwnerId, API_INSTANCE_ID)));
+    .where(
+      and(
+        eq(tunnelConnections.tunnelId, tunnelId),
+        eq(tunnelConnections.relayOwnerId, API_INSTANCE_ID),
+      ),
+    );
 }
 
 export async function relayRpcToConnectedAgent(input: {
@@ -80,28 +89,76 @@ export async function relayRpcToConnectedAgent(input: {
   method: string;
   params: Record<string, unknown>;
 }): Promise<unknown> {
-  if (tunnelRelay.isConnected(input.tunnelId)) {
-    return tunnelRelay.relayRPC(input.tunnelId, input.method, input.params);
-  }
-
   const [row] = await db
     .select()
     .from(tunnelConnections)
-    .where(and(eq(tunnelConnections.tunnelId, input.tunnelId), eq(tunnelConnections.accountId, input.accountId)))
+    .where(
+      and(
+        eq(tunnelConnections.tunnelId, input.tunnelId),
+        eq(tunnelConnections.accountId, input.accountId),
+      ),
+    )
     .limit(1);
 
-  if (!row || !isTunnelConnectionLive(row)) {
-    throw new TunnelRelayError(TunnelErrorCode.NOT_CONNECTED, `Tunnel agent ${input.tunnelId} is not connected`);
+  if (!row?.setupTokenHash) {
+    tunnelRelay.disconnectAgent(input.tunnelId, 4003, 'device credential revoked');
+    throw new TunnelRelayError(
+      TunnelErrorCode.AUTH_FAILED,
+      `Tunnel agent ${input.tunnelId} credential is no longer valid`,
+    );
+  }
+
+  if (tunnelRelay.isConnected(input.tunnelId)) {
+    const metadata = tunnelRelay.getAgentMetadata(input.tunnelId);
+    const connectedAccountId = metadata?.accountId;
+    if (connectedAccountId !== input.accountId) {
+      throw new TunnelRelayError(
+        TunnelErrorCode.AUTH_FAILED,
+        `Tunnel agent ${input.tunnelId} ownership does not match the RPC target`,
+      );
+    }
+    if (metadata?.credentialFingerprint !== fingerprintTunnelCredentialHash(row.setupTokenHash)) {
+      tunnelRelay.disconnectAgent(input.tunnelId, 4003, 'device credential rotated');
+      throw new TunnelRelayError(
+        TunnelErrorCode.AUTH_FAILED,
+        `Tunnel agent ${input.tunnelId} credential was rotated`,
+      );
+    }
+    const capability = capabilityForMethod(input.method);
+    if (
+      capability &&
+      Array.isArray(metadata?.capabilities) &&
+      !metadata.capabilities.includes(capability)
+    ) {
+      throw new TunnelRelayError(
+        TunnelErrorCode.CAPABILITY_NOT_REGISTERED,
+        `Capability is not registered by the connected Agent Tunnel: ${capability}`,
+      );
+    }
+    return tunnelRelay.relayRPC(input.tunnelId, input.method, input.params);
+  }
+
+  if (!isTunnelConnectionLive(row)) {
+    throw new TunnelRelayError(
+      TunnelErrorCode.NOT_CONNECTED,
+      `Tunnel agent ${input.tunnelId} is not connected`,
+    );
   }
 
   const ownerId = row.relayOwnerId;
   if (!ownerId) {
-    throw new TunnelRelayError(TunnelErrorCode.NOT_CONNECTED, `Tunnel agent ${input.tunnelId} has no relay owner`);
+    throw new TunnelRelayError(
+      TunnelErrorCode.NOT_CONNECTED,
+      `Tunnel agent ${input.tunnelId} has no relay owner`,
+    );
   }
 
   if (ownerId === API_INSTANCE_ID) {
     await clearTunnelRelayOwnerIfCurrent(input.tunnelId, { status: 'offline' });
-    throw new TunnelRelayError(TunnelErrorCode.NOT_CONNECTED, `Tunnel agent ${input.tunnelId} is not connected on this API replica`);
+    throw new TunnelRelayError(
+      TunnelErrorCode.NOT_CONNECTED,
+      `Tunnel agent ${input.tunnelId} is not connected on this API replica`,
+    );
   }
 
   return forwardRpcToOwner({
@@ -148,9 +205,11 @@ async function forwardRpcToOwner(input: {
       throw new TunnelRelayError(TunnelErrorCode.LOCAL_ERROR, 'Tunnel RPC forward disappeared');
     }
     if (row.status === 'completed') {
+      await deleteForwardBestEffort(request.requestId);
       return row.result;
     }
     if (row.status === 'error') {
+      await deleteForwardBestEffort(request.requestId);
       const error = row.error ?? {};
       throw new TunnelRelayError(
         typeof error.code === 'number' ? error.code : TunnelErrorCode.LOCAL_ERROR,
@@ -162,17 +221,12 @@ async function forwardRpcToOwner(input: {
     await sleep(FORWARD_POLL_MS);
   }
 
-  await db
-    .update(tunnelRpcForwards)
-    .set({
-      status: 'expired',
-      updatedAt: new Date(),
-      completedAt: new Date(),
-      error: { code: TunnelErrorCode.TIMEOUT, message: `RPC timeout after ${timeoutMs}ms for ${input.method}` },
-    })
-    .where(eq(tunnelRpcForwards.requestId, request.requestId));
+  await db.delete(tunnelRpcForwards).where(eq(tunnelRpcForwards.requestId, request.requestId));
 
-  throw new TunnelRelayError(TunnelErrorCode.TIMEOUT, `RPC timeout after ${timeoutMs}ms for ${input.method}`);
+  throw new TunnelRelayError(
+    TunnelErrorCode.TIMEOUT,
+    `RPC timeout after ${timeoutMs}ms for ${input.method}`,
+  );
 }
 
 export function startTunnelRpcForwarder(): void {
@@ -251,12 +305,59 @@ async function claimPendingForwards(): Promise<ForwardRow[]> {
 async function processForward(row: ForwardRow): Promise<void> {
   try {
     if (!tunnelRelay.isConnected(row.tunnelId)) {
-      throw new TunnelRelayError(TunnelErrorCode.NOT_CONNECTED, `Tunnel agent ${row.tunnelId} is not connected on relay owner`);
+      throw new TunnelRelayError(
+        TunnelErrorCode.NOT_CONNECTED,
+        `Tunnel agent ${row.tunnelId} is not connected on relay owner`,
+      );
+    }
+    const metadata = tunnelRelay.getAgentMetadata(row.tunnelId);
+    const connectedAccountId = metadata?.accountId;
+    if (connectedAccountId !== row.accountId) {
+      throw new TunnelRelayError(
+        TunnelErrorCode.AUTH_FAILED,
+        `Tunnel agent ${row.tunnelId} ownership does not match the forwarded RPC`,
+      );
+    }
+    const [connection] = await db
+      .select({ setupTokenHash: tunnelConnections.setupTokenHash })
+      .from(tunnelConnections)
+      .where(
+        and(
+          eq(tunnelConnections.tunnelId, row.tunnelId),
+          eq(tunnelConnections.accountId, row.accountId),
+        ),
+      )
+      .limit(1);
+    if (
+      !connection?.setupTokenHash ||
+      metadata?.credentialFingerprint !== fingerprintTunnelCredentialHash(connection.setupTokenHash)
+    ) {
+      tunnelRelay.disconnectAgent(row.tunnelId, 4003, 'device credential revoked');
+      throw new TunnelRelayError(
+        TunnelErrorCode.AUTH_FAILED,
+        `Tunnel agent ${row.tunnelId} credential is no longer valid`,
+      );
+    }
+    const capability = capabilityForMethod(row.method);
+    if (
+      capability &&
+      Array.isArray(metadata?.capabilities) &&
+      !metadata.capabilities.includes(capability)
+    ) {
+      throw new TunnelRelayError(
+        TunnelErrorCode.CAPABILITY_NOT_REGISTERED,
+        `Capability is not registered by the connected Agent Tunnel: ${capability}`,
+      );
     }
     const result = await tunnelRelay.relayRPC(row.tunnelId, row.method, row.params ?? {});
     await db
       .update(tunnelRpcForwards)
-      .set({ status: 'completed', result, updatedAt: new Date(), completedAt: new Date() })
+      .set({
+        status: 'completed',
+        result,
+        updatedAt: new Date(),
+        completedAt: new Date(),
+      })
       .where(eq(tunnelRpcForwards.requestId, row.requestId));
   } catch (err) {
     const code = err instanceof TunnelRelayError ? err.code : TunnelErrorCode.LOCAL_ERROR;
@@ -275,17 +376,26 @@ async function processForward(row: ForwardRow): Promise<void> {
 }
 
 async function expireOldForwards(): Promise<void> {
-  await db
-    .update(tunnelRpcForwards)
-    .set({
-      status: 'expired',
-      updatedAt: new Date(),
-      completedAt: new Date(),
-      error: { code: TunnelErrorCode.TIMEOUT, message: 'Tunnel RPC forward expired' },
-    })
-    .where(and(lt(tunnelRpcForwards.expiresAt, new Date()), inArray(tunnelRpcForwards.status, ['pending', 'processing'])));
+  // Forward rows contain raw RPC parameters and results. They are transport,
+  // not an audit ledger. Remove abandoned rows as soon as their short relay
+  // window closes instead of retaining file contents or shell output.
+  await db.delete(tunnelRpcForwards).where(lt(tunnelRpcForwards.expiresAt, new Date()));
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function deleteForwardBestEffort(requestId: string): Promise<void> {
+  try {
+    await db.delete(tunnelRpcForwards).where(eq(tunnelRpcForwards.requestId, requestId));
+  } catch (error) {
+    // The remote action already completed. Do not turn a transport-cleanup
+    // failure into a caller retry. The expiry sweep remains the backstop.
+    console.error(
+      '[tunnel-forwarder] failed to delete consumed forward',
+      requestId,
+      error instanceof Error ? error.message : error,
+    );
+  }
 }

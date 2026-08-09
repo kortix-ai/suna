@@ -971,16 +971,22 @@ flow(
   },
 );
 
-// Setup-links (connector half) — public, token-gated read + start. The minting
-// side (POST /v1/projects/:projectId/connect-requests) belongs to a different
-// coverage group; this covers the two public consume-side routes independently
-// via the boundary case (a bogus token can never resolve, regardless of who
-// eventually mints real ones), which is legitimate coverage on its own.
+// Setup-links (connector half) — public, token-gated read + start + finalize.
+// The minting side (POST /v1/projects/:projectId/connect-requests) belongs to a
+// different coverage group; this covers the three public consume-side routes
+// independently via the boundary case (a bogus token can never resolve,
+// regardless of who eventually mints real ones), which is legitimate coverage
+// on its own. `finalize` is the authoritative persist-and-notify call the
+// hosted connect page's opener polls; the Pipedream webhook is redundancy.
 flow(
   'COVD-2',
   {
     domain: 'connectors',
-    routes: ['GET /v1/setup-links/connectors/:token', 'POST /v1/setup-links/connectors/:token/start'],
+    routes: [
+      'GET /v1/setup-links/connectors/:token',
+      'POST /v1/setup-links/connectors/:token/start',
+      'POST /v1/setup-links/connectors/:token/finalize',
+    ],
   },
   async (ctx) => {
     await ctx.step('GET with a bogus token → 404 (invalid/unknown link)', async () => {
@@ -996,6 +1002,16 @@ flow(
         .as(ctx.P.ANON)
         .post(
           '/v1/setup-links/connectors/:token/start',
+          {},
+          { params: { token: 'bogus-connector-setup-link' } },
+        );
+      r.status(404).body().exists('$.error');
+    });
+    await ctx.step('POST .../finalize with a bogus token → 404 (invalid/unknown link)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          '/v1/setup-links/connectors/:token/finalize',
           {},
           { params: { token: 'bogus-connector-setup-link' } },
         );

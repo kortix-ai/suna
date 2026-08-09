@@ -12,10 +12,15 @@ interface RateLimitConfig {
 
 class TunnelRateLimiter {
   private buckets = new Map<string, Bucket>();
+  private readonly maxBuckets = 10_000;
 
   private configs: Record<string, RateLimitConfig> = {
     rpc: { limit: config.TUNNEL_RATE_LIMIT_RPC, windowMs: 60_000 },
-    permRequest: { limit: config.TUNNEL_RATE_LIMIT_PERM_REQUEST, windowMs: 60_000 },
+    permRequest: {
+      limit: config.TUNNEL_RATE_LIMIT_PERM_REQUEST,
+      windowMs: 60_000,
+    },
+    wsConnectIp: { limit: 60, windowMs: 60_000 },
     wsConnect: { limit: config.TUNNEL_RATE_LIMIT_WS_CONNECT, windowMs: 60_000 },
     permGrant: { limit: config.TUNNEL_RATE_LIMIT_PERM_GRANT, windowMs: 60_000 },
     deviceAuthCreateGlobal: { limit: 100, windowMs: 60_000 },
@@ -43,6 +48,10 @@ class TunnelRateLimiter {
     let bucket = this.buckets.get(key);
 
     if (!bucket) {
+      if (this.buckets.size >= this.maxBuckets) this.cleanup(true);
+      if (this.buckets.size >= this.maxBuckets) {
+        return { allowed: false, retryAfterMs: windowMs };
+      }
       bucket = { tokens: limit - 1, lastRefill: now };
       this.buckets.set(key, bucket);
       return { allowed: true };
@@ -64,9 +73,9 @@ class TunnelRateLimiter {
     return { allowed: true };
   }
 
-  cleanup(): void {
+  cleanup(force = false): void {
     const now = Date.now();
-    const maxAge = 120_000;
+    const maxAge = force ? 60_000 : 120_000;
     for (const [key, bucket] of this.buckets) {
       if (now - bucket.lastRefill > maxAge) {
         this.buckets.delete(key);
