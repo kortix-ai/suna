@@ -402,9 +402,11 @@ corepack enable
 pnpm install --offline --frozen-lockfile
 
 for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
-  modprobe "$module"
+  if ! modprobe "$module"; then
+    echo "[${provider}-ci] module_unavailable=$module; docker readiness will decide" >&2
+  fi
 done
-echo "[${provider}-ci] container_modules_ready=1"
+echo "[${provider}-ci] container_modules_checked=1"
 
 if ! docker info >/dev/null 2>&1; then
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &

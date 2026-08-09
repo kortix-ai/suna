@@ -193,8 +193,9 @@ describe('Platinum CI worker plan', () => {
     expect(script).not.toContain('rm -rf "$ROOT"');
     expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
     expect(script).not.toContain('nohup pnpm dev');
-    expect(script).toContain('modprobe "$module"');
-    expect(script).toContain('container_modules_ready=1');
+    expect(script).toContain('if ! modprobe "$module"; then');
+    expect(script).toContain('module_unavailable=$module; docker readiness will decide');
+    expect(script).toContain('container_modules_checked=1');
     expect(script).toContain('seq 1 180');
     expect(script).toContain('docker_bridge_ready=1');
     expect(script).not.toContain('supabase_bridge_ready=1');
