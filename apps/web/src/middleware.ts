@@ -1,4 +1,5 @@
 import { locales, type Locale } from '@/i18n/config';
+import { authorizeEnvironment } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
@@ -157,6 +158,31 @@ const DESKTOP_ALLOWED_ROUTES = [
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Dev and staging run behind one shared HTTP Basic credential. Read through
+  // dynamic keys so the standalone container uses ECS runtime values instead of
+  // build-time replacements. The gate fails closed when enabled without a secret.
+  const protection = authorizeEnvironment({
+    enabled: process.env['WEB_PROTECTION_ENABLED'],
+    password: process.env['WEB_PROTECTION_PASSWORD'],
+    authorization: request.headers.get('authorization'),
+    pathname,
+  });
+  if (!protection.allowed) {
+    const configurationError = protection.reason === 'configuration_error';
+    return new NextResponse(
+      configurationError ? 'Environment protection is not configured.' : 'Authentication required.',
+      {
+        status: configurationError ? 503 : 401,
+        headers: configurationError
+          ? { 'Cache-Control': 'no-store' }
+          : {
+              'Cache-Control': 'no-store',
+              'WWW-Authenticate': 'Basic realm="Kortix test environment", charset="UTF-8"',
+            },
+      },
+    );
+  }
 
   // Public HTML pages have canonical Markdown representations. Rewrite only
   // explicit Markdown requests. Browsers keep the normal HTML representation.

@@ -9,7 +9,7 @@
 # an optional JSON key cannot invalidate an already-registered task definition.
 #
 # Usage:
-#   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
+#   ecs-deploy.sh <env> <image> [--service api|gateway|web] [--version X.Y.Z]
 #                 [--database-migrated] [--no-wait] [--dry-run]
 #
 #   env        dev | staging | prod | prod-use2-shadow
@@ -44,6 +44,32 @@ derive_version_from_image() {
   if printf '%s' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     printf '%s' "$tag"
   fi
+}
+
+configure_service_coordinates() {
+  local service_kind="$1"
+  case "$service_kind" in
+    api)
+      CLUSTER="$SERVICE_PREFIX"
+      SERVICE="$SERVICE_PREFIX"
+      CONTAINER="api"
+      ;;
+    gateway)
+      CLUSTER="${SERVICE_PREFIX}-gateway"
+      SERVICE="${SERVICE_PREFIX}-gateway"
+      CONTAINER="gateway"
+      ;;
+    web)
+      CLUSTER="${SERVICE_PREFIX}-web"
+      SERVICE="${SERVICE_PREFIX}-web"
+      CONTAINER="web"
+      SECRET_NAME="${SERVICE_PREFIX}-web-env"
+      ;;
+    *)
+      echo "unknown service: $service_kind (expected api|gateway|web)" >&2
+      return 2
+      ;;
+  esac
 }
 
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
@@ -106,18 +132,8 @@ if [ "$DRY_RUN" != "1" ] \
   exit 2
 fi
 
-# Each service lives in its own cluster (the ecs-api module names cluster==service):
-#   api     → cluster/service <service-prefix>,         container "api"
-#   gateway → cluster/service <service-prefix>-gateway, container "gateway"
-if [ "$SVC_KIND" = "gateway" ]; then
-  CLUSTER="${SERVICE_PREFIX}-gateway"
-  SERVICE="${SERVICE_PREFIX}-gateway"
-  CONTAINER="gateway"
-else
-  CLUSTER="$SERVICE_PREFIX"
-  SERVICE="$SERVICE_PREFIX"
-  CONTAINER="api"
-fi
+# Each service lives in its own cluster (the ecs-api module names cluster==service).
+configure_service_coordinates "$SVC_KIND"
 
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"

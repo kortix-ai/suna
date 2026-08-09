@@ -71,10 +71,7 @@ jobs:
       KE2E_PROVISION_CONCURRENCY: 1
       KE2E_PROVISION_MIN_INTERVAL_MS: 5000
       KE2E_PROVISION_RATE_LIMIT_DELAY_MS: 180000
-      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
-      # Playwright configs send this as x-vercel-protection-bypass so the browser
-      # suite can reach the app instead of the Vercel login wall.
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
