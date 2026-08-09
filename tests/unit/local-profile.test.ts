@@ -14,6 +14,7 @@ import {
   localTopology,
   parseSupabaseEnvironment,
 } from "../src/core/local-stack";
+import { runExitCode } from "../src/core/result";
 
 function registeredFlow(id: string, requires: RegisteredFlow["meta"]["requires"] = [], todo?: string): RegisteredFlow {
   return {
@@ -83,6 +84,14 @@ describe("ke2e local profile", () => {
     expect(localRunExitCode({ failed: 0, skipped: 0, todo: 1 })).toBe(1);
   });
 
+  it("fails a strict deployed run when any flow is skipped or remains todo", () => {
+    expect(runExitCode({ failed: 0, skipped: 0, todo: 0 }, true)).toBe(0);
+    expect(runExitCode({ failed: 1, skipped: 0, todo: 0 }, false)).toBe(1);
+    expect(runExitCode({ failed: 0, skipped: 1, todo: 0 }, false)).toBe(0);
+    expect(runExitCode({ failed: 0, skipped: 1, todo: 0 }, true)).toBe(1);
+    expect(runExitCode({ failed: 0, skipped: 0, todo: 1 }, true)).toBe(1);
+  });
+
   it("uses bounded CPU-aware concurrency", () => {
     expect(localWorkerCount(2)).toBe(4);
     expect(localWorkerCount(10)).toBe(10);
@@ -115,10 +124,11 @@ describe("ke2e local profile", () => {
   it("parses the Supabase CLI environment without evaluating shell text", () => {
     expect(
       parseSupabaseEnvironment(
-        'API_URL="http://127.0.0.1:54321"\nANON_KEY="anon"\nSERVICE_ROLE_KEY="service"\nJWT_SECRET="jwt-secret"\nDB_URL="postgres://local"\n',
+        'API_URL="http://127.0.0.1:54321"\nMAILPIT_URL="http://127.0.0.1:54324"\nANON_KEY="anon"\nSERVICE_ROLE_KEY="service"\nJWT_SECRET="jwt-secret"\nDB_URL="postgres://local"\n',
       ),
-    ).toEqual({
-      API_URL: "http://127.0.0.1:54321",
+      ).toEqual({
+        API_URL: "http://127.0.0.1:54321",
+        MAILPIT_URL: "http://127.0.0.1:54324",
       ANON_KEY: "anon",
       SERVICE_ROLE_KEY: "service",
       JWT_SECRET: "jwt-secret",

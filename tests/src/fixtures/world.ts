@@ -26,7 +26,12 @@ import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
 import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
-import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
+import {
+  createDatabaseProject,
+  createDatabaseSession,
+  deleteDatabaseProject,
+  mergeDatabaseProjectMetadata,
+} from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
 import { createLocalGitRepository } from './local-git';
 import type { FixtureStats } from '../core/result';
@@ -126,6 +131,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       accountId?: string;
       seed?: boolean;
       managedGit?: boolean;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<CreatedProject> {
     const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
@@ -143,6 +149,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         userId: owner.userId!,
         name,
         repoUrl: localRepository?.repoUrl,
+        metadata: opts?.metadata,
       });
       databaseProjectCount++;
       databaseProjectIds.add(project.id);
@@ -157,6 +164,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     });
     managedProjectCount++;
     stack.push('project', id);
+    if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
     return { id, name } as CreatedProject;
   }
 

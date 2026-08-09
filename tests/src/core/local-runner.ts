@@ -21,7 +21,15 @@ export interface LocalTestLane {
 }
 
 export interface LocalTestPlan {
-  mode: 'core' | 'flows' | 'sdk' | 'browser' | 'packages' | 'target' | 'full';
+  mode:
+    | 'core'
+    | 'flows'
+    | 'sdk'
+    | 'browser'
+    | 'packages'
+    | 'target'
+    | 'target-full'
+    | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
 }
@@ -42,12 +50,19 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const browserOnly = args.includes('--browser-only');
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
-  const modes = [full, flowsOnly, sdkOnly, browserOnly, packagesOnly, targetSmoke].filter(
-    Boolean,
-  ).length;
+  const targetFull = args.includes('--target-full');
+  const modes = [
+    full,
+    flowsOnly,
+    sdkOnly,
+    browserOnly,
+    packagesOnly,
+    targetSmoke,
+    targetFull,
+  ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, or --target-smoke',
+      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, or --target-full',
     );
   }
 
@@ -58,7 +73,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--sdk-only' &&
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
-      arg !== '--target-smoke',
+      arg !== '--target-smoke' &&
+      arg !== '--target-full',
   );
   const flows: LocalTestLane = {
     name: 'api-cli-flows',
@@ -84,6 +100,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'browser',
     command: ['bun', 'run', 'test:browser'],
     cwd: 'tests',
+    env: { E2E_BROWSER_WORKERS: '2' },
   };
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
@@ -99,6 +116,22 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     cwd: 'tests',
     env: { E2E_BROWSER_WORKERS: '1' },
   };
+  const targetApiFull: LocalTestLane = {
+    name: 'target-api-full',
+    command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
+  };
+  const targetBrowserFull: LocalTestLane = {
+    name: 'target-browser-full',
+    command: ['bun', 'run', 'test:browser'],
+    cwd: 'tests',
+    env: {
+      E2E_BROWSER_WORKERS: '2',
+      E2E_ENABLE_SDK_ONLY_SESSION: '1',
+      E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
+      E2E_OAUTH_PROVIDER_INITIATION: '1',
+      E2E_REQUIRE_ALL_BROWSER: '1',
+    },
+  };
 
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
@@ -109,6 +142,10 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   if (targetSmoke) {
     const lanes = [targetApi, targetBrowser];
     return { mode: 'target', lanes, stages: [lanes] };
+  }
+  if (targetFull) {
+    const lanes = [targetApiFull, targetBrowserFull];
+    return { mode: 'target-full', lanes, stages: [lanes] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {
@@ -193,11 +230,34 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         E2E_BASE_URL: webUrl,
         E2E_API_URL: topology.apiUrl,
         E2E_SUPABASE_URL: supabase.API_URL,
+        E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? "",
         E2E_DATABASE_URL: supabase.DB_URL,
         KE2E_DATABASE_URL: supabase.DB_URL,
         DATABASE_URL: supabase.DB_URL,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
         SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+      };
+    } else if (lane.name === 'target-browser-full') {
+      const required = [
+        'KE2E_API_URL',
+        'KE2E_SUPABASE_URL',
+        'KE2E_SUPABASE_ANON_KEY',
+        'KE2E_SUPABASE_SERVICE_ROLE_KEY',
+        'KE2E_DATABASE_URL',
+        'E2E_AGENTMAIL_API_KEY',
+      ] as const;
+      const missing = required.filter((name) => !process.env[name]?.trim());
+      if (missing.length > 0) {
+        throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
+      }
+      env = {
+        ...env,
+        E2E_API_URL: process.env.KE2E_API_URL!,
+        E2E_SUPABASE_URL: process.env.KE2E_SUPABASE_URL!,
+        E2E_DATABASE_URL: process.env.KE2E_DATABASE_URL!,
+        DATABASE_URL: process.env.KE2E_DATABASE_URL!,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.KE2E_SUPABASE_ANON_KEY!,
+        SUPABASE_SERVICE_ROLE_KEY: process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY!,
       };
     }
     const child = Bun.spawn(lane.command, {
@@ -231,7 +291,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   console.log(`[test] mode=${plan.mode} lanes=${plan.lanes.map((lane) => lane.name).join(',')}`);
   const results: LaneResult[] = [];
   try {
-    if (plan.mode === 'target') {
+    if (plan.mode === 'target' || plan.mode === 'target-full') {
       const target = resolveTargetSmokeConfig();
       await assertTargetSmokeHealth(target);
       console.log(

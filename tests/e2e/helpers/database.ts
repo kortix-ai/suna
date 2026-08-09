@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Client } from "pg";
+import { Client, type QueryResultRow } from "pg";
 
 import { requireEnvValue } from "./env";
 
@@ -15,7 +15,16 @@ interface SeedProjectOptions {
   projectRole?: "manager" | "editor" | "member";
 }
 
-export async function runDatabaseSql(sql: string): Promise<void> {
+export async function runDatabaseSql(
+  sql: string,
+  values: unknown[] = [],
+): Promise<void> {
+  await queryDatabaseRows(sql, values);
+}
+
+export async function queryDatabaseRows<
+  T extends QueryResultRow = QueryResultRow,
+>(sql: string, values: unknown[] = []): Promise<T[]> {
   const databaseUrl = requireEnvValue(
     "DATABASE_URL",
     "apps/api/.env.local",
@@ -24,7 +33,8 @@ export async function runDatabaseSql(sql: string): Promise<void> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    await client.query(sql);
+    const result = await client.query<T>(sql, values);
+    return result.rows;
   } finally {
     await client.end();
   }

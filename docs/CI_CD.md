@@ -9,6 +9,8 @@ Local development and CI use one test command.
 - `pnpm test -- --full` adds Playwright and every app/package test.
 - `pnpm test -- --packages-only` isolates every app/package and publish check.
 - `pnpm test -- --target-smoke` proves the deployed staging SHA and web surface.
+- `pnpm test -- --target-full` runs every configured staging flow and browser
+  journey after the same SHA proof. Release QA uses this mode.
 - REST and CLI flows use local Supabase, PostgreSQL, API, gateway, and Git.
 - External Stripe, email, managed-Git, and cloud-sandbox flows remain explicit
   exclusions in the local profile.
@@ -53,7 +55,8 @@ hide a non-zero test result.
 6. Open the reviewed `staging` to `prod` release PR.
 7. `qa-release.yml` runs the three local lanes in warm sandboxes.
 8. Release QA also requires the deployed staging API and gateway to report
-   `RELEASE_SOURCE_SHA`. It runs tagged Playwright against staging web.
+   `RELEASE_SOURCE_SHA`. It runs every configured REST, CLI, and Playwright
+   journey against staging. Any excluded API flow fails the gate.
 9. Merge the release PR.
 10. `deploy-prod.yml` publishes and deploys the approved artifact.
 

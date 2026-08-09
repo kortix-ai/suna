@@ -43,6 +43,7 @@ export async function createDatabaseProject(
     name: string;
     repoUrl?: string | null;
     appsEnabled?: boolean;
+    metadata?: Record<string, unknown>;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
@@ -98,6 +99,7 @@ export async function createDatabaseProject(
           ke2e: { database_only: true },
           experimental: { apps: input.appsEnabled ?? true },
           onboarding_completed_at: "2026-01-01T00:00:00.000Z",
+          ...(input.metadata ?? {}),
         }),
       ],
     );
@@ -105,6 +107,26 @@ export async function createDatabaseProject(
     await client.end();
   }
   return { id: projectId, name: input.name };
+}
+
+export async function mergeDatabaseProjectMetadata(
+  env: Env,
+  projectId: string,
+  metadata: Record<string, unknown>,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update metadata for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.projects
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+       WHERE project_id = $1::uuid`,
+      [projectId, JSON.stringify(metadata)],
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 export async function createDatabaseSession(

@@ -1,7 +1,7 @@
-import type { Page } from '@playwright/test';
+import type { Page } from "@playwright/test";
 
-import { optionalEnvValue, requireEnvValue } from './env';
-import { json } from './http';
+import { optionalEnvValue, requireEnvValue } from "./env";
+import { json } from "./http";
 
 export interface AuthUser {
   id: string;
@@ -24,47 +24,52 @@ interface AuthOptions {
 }
 
 function envFiles(options: AuthOptions): string[] {
-  return options.envFiles ?? ['apps/web/.env', 'apps/api/.env'];
+  return options.envFiles ?? ["apps/web/.env", "apps/api/.env"];
 }
 
 function authCookieName(options: AuthOptions): string {
   const files = envFiles(options);
   const appUrl =
-    optionalEnvValue('KORTIX_PUBLIC_APP_URL', ...files)
-    || optionalEnvValue('NEXT_PUBLIC_APP_URL', ...files)
-    || optionalEnvValue('NEXT_PUBLIC_URL', ...files)
-    || optionalEnvValue('PUBLIC_URL', ...files);
-  if (!appUrl) return 'sb-kortix-auth-token';
+    optionalEnvValue("KORTIX_PUBLIC_APP_URL", ...files) ||
+    optionalEnvValue("NEXT_PUBLIC_APP_URL", ...files) ||
+    optionalEnvValue("NEXT_PUBLIC_URL", ...files) ||
+    optionalEnvValue("PUBLIC_URL", ...files);
+  if (!appUrl) return "sb-kortix-auth-token";
   try {
     const url = new URL(appUrl);
-    if (['localhost', '127.0.0.1'].includes(url.hostname) && url.port) {
+    if (["localhost", "127.0.0.1"].includes(url.hostname) && url.port) {
       return `sb-kortix-auth-token-${url.port}`;
     }
   } catch {
     // Match the application fallback for invalid or missing app URLs.
   }
-  return 'sb-kortix-auth-token';
+  return "sb-kortix-auth-token";
 }
 
 function trustedAuthHeader(value: string, name: string): string {
   if (!/^[A-Za-z0-9._~+/=-]+$/.test(value)) {
-    throw new Error(`${name} contains characters that are not valid in an auth header`);
+    throw new Error(
+      `${name} contains characters that are not valid in an auth header`,
+    );
   }
   return value;
 }
 
-export async function createAuthUser(email: string, options: AuthOptions): Promise<AuthUser> {
+export async function createAuthUser(
+  email: string,
+  options: AuthOptions,
+): Promise<AuthUser> {
   const serviceRoleKey = trustedAuthHeader(
-    requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', ...envFiles(options)),
-    'SUPABASE_SERVICE_ROLE_KEY',
+    requireEnvValue("SUPABASE_SERVICE_ROLE_KEY", ...envFiles(options)),
+    "SUPABASE_SERVICE_ROLE_KEY",
   );
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
-      method: 'POST',
+      method: "POST",
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         email,
@@ -80,21 +85,24 @@ export async function createAuthUser(email: string, options: AuthOptions): Promi
     const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
     return body.user ?? body;
   }
-  throw new Error('unreachable');
+  throw new Error("unreachable");
 }
 
 export async function deleteAuthUser(
   userId: string,
-  options: Omit<AuthOptions, 'password'>,
+  options: Omit<AuthOptions, "password">,
 ): Promise<void> {
   const serviceRoleKey = optionalEnvValue(
-    'SUPABASE_SERVICE_ROLE_KEY',
-    ...(options.envFiles ?? ['apps/web/.env', 'apps/api/.env']),
+    "SUPABASE_SERVICE_ROLE_KEY",
+    ...(options.envFiles ?? ["apps/web/.env", "apps/api/.env"]),
   );
   if (!serviceRoleKey) return;
-  const trustedServiceRoleKey = trustedAuthHeader(serviceRoleKey, 'SUPABASE_SERVICE_ROLE_KEY');
+  const trustedServiceRoleKey = trustedAuthHeader(
+    serviceRoleKey,
+    "SUPABASE_SERVICE_ROLE_KEY",
+  );
   await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     headers: {
       apikey: trustedServiceRoleKey,
       Authorization: `Bearer ${trustedServiceRoleKey}`,
@@ -102,19 +110,45 @@ export async function deleteAuthUser(
   }).catch(() => {});
 }
 
-export async function signIn(email: string, options: AuthOptions): Promise<AuthSession> {
+export async function confirmAuthUser(
+  userId: string,
+  options: Omit<AuthOptions, "password">,
+): Promise<void> {
+  const files = options.envFiles ?? ["apps/web/.env", "apps/api/.env"];
+  const serviceRoleKey = trustedAuthHeader(
+    requireEnvValue("SUPABASE_SERVICE_ROLE_KEY", ...files),
+    "SUPABASE_SERVICE_ROLE_KEY",
+  );
+  await json(
+    await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
+      method: "PUT",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email_confirm: true }),
+    }),
+    200,
+  );
+}
+
+export async function signIn(
+  email: string,
+  options: AuthOptions,
+): Promise<AuthSession> {
   const files = envFiles(options);
   const anonKey = trustedAuthHeader(
-    optionalEnvValue('SUPABASE_ANON_KEY', ...files) ||
-      requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', ...files),
-    'SUPABASE_ANON_KEY',
+    optionalEnvValue("SUPABASE_ANON_KEY", ...files) ||
+      requireEnvValue("NEXT_PUBLIC_SUPABASE_ANON_KEY", ...files),
+    "SUPABASE_ANON_KEY",
   );
   return json<AuthSession>(
     await fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
+      method: "POST",
       headers: {
         apikey: anonKey,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ email, password: options.password }),
     }),
@@ -138,20 +172,20 @@ export async function installBrowserSessionDirect(
   const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (vercelBypass) {
     await page.context().setExtraHTTPHeaders({
-      'x-vercel-protection-bypass': vercelBypass,
-      'x-vercel-set-bypass-cookie': 'true',
+      "x-vercel-protection-bypass": vercelBypass,
+      "x-vercel-set-bypass-cookie": "true",
     });
   }
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  await page.goto("/favicon.png", { waitUntil: "domcontentloaded" });
   if (vercelBypass) {
     await page.context().setExtraHTTPHeaders({});
   }
 
   const origin = new URL(page.url()).origin;
-  const encoded = `base64-${Buffer.from(JSON.stringify(session), 'utf8').toString('base64url')}`;
+  const encoded = `base64-${Buffer.from(JSON.stringify(session), "utf8").toString("base64url")}`;
   const originUrl = new URL(origin);
   const key =
-    ['localhost', '127.0.0.1'].includes(originUrl.hostname) && originUrl.port
+    ["localhost", "127.0.0.1"].includes(originUrl.hostname) && originUrl.port
       ? `sb-kortix-auth-token-${originUrl.port}`
       : authCookieName(options);
   const chunks = encoded.match(/.{1,3180}/g) ?? [];
@@ -160,8 +194,11 @@ export async function installBrowserSessionDirect(
       name: chunks.length === 1 ? key : `${key}.${index}`,
       value,
       url: origin,
-      sameSite: 'Lax' as const,
+      sameSite: "Lax" as const,
     })),
   );
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.goto(returnUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: 180_000,
+  });
 }

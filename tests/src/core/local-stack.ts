@@ -47,7 +47,8 @@ export function localTopology(
   marker: WorktreeMarker | null,
   slots: Record<string, RegistrySlot> = {},
 ): LocalTopology {
-  const worktreeName = Object.entries(slots).find(([, entry]) => entry.path === root)?.[0] ?? null;
+  const worktreeName =
+    Object.entries(slots).find(([, entry]) => entry.path === root)?.[0] ?? null;
   const apiPort = marker?.ports.api ?? 8008;
   return {
     root,
@@ -59,8 +60,14 @@ export function localTopology(
 
 export function resolveLocalTopology(root: string): LocalTopology {
   const markerPath = join(root, ".kortix-worktree.json");
-  const marker = existsSync(markerPath) ? (JSON.parse(readFileSync(markerPath, "utf8")) as WorktreeMarker) : null;
-  const registryPath = join(process.env.KORTIX_HOME || join(homedir(), ".kortix"), "worktrees", "registry.json");
+  const marker = existsSync(markerPath)
+    ? (JSON.parse(readFileSync(markerPath, "utf8")) as WorktreeMarker)
+    : null;
+  const registryPath = join(
+    process.env.KORTIX_HOME || join(homedir(), ".kortix"),
+    "worktrees",
+    "registry.json",
+  );
   const slots = existsSync(registryPath)
     ? ((
         JSON.parse(readFileSync(registryPath, "utf8")) as {
@@ -71,19 +78,33 @@ export function resolveLocalTopology(root: string): LocalTopology {
   return localTopology(root, marker, slots);
 }
 
-export function parseSupabaseEnvironment(output: string): LocalSupabaseEnvironment {
+export function parseSupabaseEnvironment(
+  output: string,
+): LocalSupabaseEnvironment {
   const parsed: LocalSupabaseEnvironment = {};
   for (const line of output.split("\n")) {
     const match = line.match(/^([A-Z0-9_]+)=(?:"([^"]*)"|(.*))$/);
     if (!match) continue;
     const key = match[1] as keyof LocalSupabaseEnvironment;
-    if (!["API_URL", "DB_URL", "ANON_KEY", "SERVICE_ROLE_KEY", "JWT_SECRET"].includes(key)) continue;
+    if (
+      ![
+        "API_URL",
+        "DB_URL",
+        "MAILPIT_URL",
+        "ANON_KEY",
+        "SERVICE_ROLE_KEY",
+        "JWT_SECRET",
+      ].includes(key)
+    )
+      continue;
     parsed[key] = match[2] ?? match[3] ?? "";
   }
   return parsed;
 }
 
-export async function readLocalSupabaseEnvironment(topology: LocalTopology): Promise<LocalSupabaseEnvironment> {
+export async function readLocalSupabaseEnvironment(
+  topology: LocalTopology,
+): Promise<LocalSupabaseEnvironment> {
   const args = localSupabaseCommand(topology);
   args.push("status", "-o", "env");
   const processResult = Bun.spawn(args, {
@@ -103,11 +124,18 @@ function localSupabaseCommand(topology: LocalTopology): string[] {
   const args = ["supabase"];
   if (topology.marker?.dbMode === "isolated") {
     if (!topology.worktreeName) {
-      throw new Error("isolated worktree is missing from the worktree registry");
+      throw new Error(
+        "isolated worktree is missing from the worktree registry",
+      );
     }
     args.push(
       "--workdir",
-      join(process.env.KORTIX_HOME || join(homedir(), ".kortix"), "worktrees", topology.worktreeName, "sb"),
+      join(
+        process.env.KORTIX_HOME || join(homedir(), ".kortix"),
+        "worktrees",
+        topology.worktreeName,
+        "sb",
+      ),
     );
   }
   return args;
@@ -223,7 +251,9 @@ export async function localApiUsesTestProfile(
   }
 }
 
-export async function localGatewayHealthy(gatewayUrl: string): Promise<boolean> {
+export async function localGatewayHealthy(
+  gatewayUrl: string,
+): Promise<boolean> {
   try {
     const response = await fetch(`${gatewayUrl}/health/live`, {
       signal: AbortSignal.timeout(2_000),
@@ -262,30 +292,34 @@ export async function ensureLocalWeb(
   if (!API_URL || !ANON_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
-  const web = Bun.spawn(["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"], {
-    cwd: topology.root,
-    env: {
-      ...process.env,
-      WEB_PORT: String(webPort),
-      KORTIX_API_PROXY_TARGET: topology.apiUrl.replace(/\/v1$/, ""),
-      NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
-      KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
-      BACKEND_URL: topology.apiUrl,
-      SUPABASE_URL: API_URL,
-      NEXT_PUBLIC_SUPABASE_URL: API_URL,
-      KORTIX_PUBLIC_SUPABASE_URL: API_URL,
-      SUPABASE_ANON_KEY: ANON_KEY,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-      KORTIX_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-      NEXT_PUBLIC_APP_URL: webUrl,
-      KORTIX_PUBLIC_APP_URL: webUrl,
-      NEXT_PUBLIC_URL: webUrl,
-      NEXT_PUBLIC_BILLING_ENABLED: "false",
+  const web = Bun.spawn(
+    ["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"],
+    {
+      cwd: topology.root,
+      detached: true,
+      env: {
+        ...process.env,
+        WEB_PORT: String(webPort),
+        KORTIX_API_PROXY_TARGET: topology.apiUrl.replace(/\/v1$/, ""),
+        NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
+        KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
+        BACKEND_URL: topology.apiUrl,
+        SUPABASE_URL: API_URL,
+        NEXT_PUBLIC_SUPABASE_URL: API_URL,
+        KORTIX_PUBLIC_SUPABASE_URL: API_URL,
+        SUPABASE_ANON_KEY: ANON_KEY,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
+        KORTIX_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
+        NEXT_PUBLIC_APP_URL: webUrl,
+        KORTIX_PUBLIC_APP_URL: webUrl,
+        NEXT_PUBLIC_URL: webUrl,
+        NEXT_PUBLIC_BILLING_ENABLED: "false",
+      },
+      stdin: "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
     },
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  );
 
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
@@ -296,7 +330,9 @@ export async function ensureLocalWeb(
       };
     }
     if (web.exitCode !== null) {
-      throw new Error(`local web exited with code ${web.exitCode} before readiness`);
+      throw new Error(
+        `local web exited with code ${web.exitCode} before readiness`,
+      );
     }
     await Bun.sleep(250);
   }
@@ -321,7 +357,9 @@ export async function ensureLocalStack(
     return { started: false, stop: async () => {} };
   }
   if (!options.autoStart) {
-    throw new Error(`local API is not running at ${topology.apiUrl}; start the stack or omit --no-start`);
+    throw new Error(
+      `local API is not running at ${topology.apiUrl}; start the stack or omit --no-start`,
+    );
   }
 
   const { DB_URL, API_URL, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
@@ -338,6 +376,7 @@ export async function ensureLocalStack(
     ? null
     : Bun.spawn(["bun", "--no-env-file", "run", "src/index.ts"], {
         cwd: join(topology.root, "apps/api"),
+        detached: true,
         env: {
           ...process.env,
           ENV_MODE: "local",
@@ -381,7 +420,11 @@ export async function ensureLocalStack(
           LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
           GATEWAY_INTERNAL_TOKEN: gatewayToken,
           TUNNEL_ENABLED: "false",
-          EMAIL_PROVIDER_ORDER: "disabled",
+          TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
+          EMAIL_PROVIDER_ORDER: "mailpit",
+          ...(options.supabase.MAILPIT_URL
+            ? { MAILPIT_API_URL: options.supabase.MAILPIT_URL }
+            : {}),
           KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
           KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
           KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",
@@ -395,6 +438,7 @@ export async function ensureLocalStack(
     ? null
     : Bun.spawn(["bun", "run", "src/main.ts"], {
         cwd: join(topology.root, "apps/llm-gateway"),
+        detached: true,
         env: {
           ...process.env,
           PORT: String(gatewayPort),
@@ -413,7 +457,10 @@ export async function ensureLocalStack(
 
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
-    if ((await localApiHealthy(topology.apiUrl)) && (await localGatewayHealthy(gatewayUrl))) {
+    if (
+      (await localApiHealthy(topology.apiUrl)) &&
+      (await localGatewayHealthy(gatewayUrl))
+    ) {
       return {
         started: true,
         stop: async () => stopOwnedProcesses(owned),
@@ -422,22 +469,37 @@ export async function ensureLocalStack(
     const exited = owned.find((process) => process.exitCode !== null);
     if (exited) {
       await stopOwnedProcesses(owned);
-      throw new Error(`local process exited with code ${exited.exitCode} before readiness`);
+      throw new Error(
+        `local process exited with code ${exited.exitCode} before readiness`,
+      );
     }
     await Bun.sleep(250);
   }
 
   await stopOwnedProcesses(owned);
-  throw new Error(`local API did not become ready at ${topology.apiUrl} within 180s`);
+  throw new Error(
+    `local API did not become ready at ${topology.apiUrl} within 180s`,
+  );
 }
 
 async function stopOwnedStack(stack: Bun.Subprocess): Promise<void> {
   if (stack.exitCode !== null) return;
-  stack.kill("SIGTERM");
+  signalOwnedProcessGroup(stack, "SIGTERM");
   await Promise.race([stack.exited, Bun.sleep(15_000)]);
   if (stack.exitCode === null) {
-    stack.kill("SIGKILL");
+    signalOwnedProcessGroup(stack, "SIGKILL");
     await stack.exited;
+  }
+}
+
+function signalOwnedProcessGroup(
+  stack: Bun.Subprocess,
+  signal: NodeJS.Signals,
+): void {
+  try {
+    process.kill(-stack.pid, signal);
+  } catch {
+    stack.kill(signal);
   }
 }
 

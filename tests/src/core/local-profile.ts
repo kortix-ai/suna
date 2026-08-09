@@ -22,6 +22,7 @@ export interface LocalWorktreeConfig {
 export interface LocalSupabaseEnvironment {
   API_URL?: string;
   DB_URL?: string;
+  MAILPIT_URL?: string;
   ANON_KEY?: string;
   SERVICE_ROLE_KEY?: string;
   JWT_SECRET?: string;

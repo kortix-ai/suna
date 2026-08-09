@@ -45,6 +45,7 @@ pnpm test -- --browser-only    # Browser only; owns the deterministic local stac
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
+pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
@@ -102,8 +103,10 @@ Daytona to avoid Platinum restore latency. Manual runs can select `auto`,
 - Give each parallel lane a unique sandbox run ID.
 
 Before a production merge, run `pnpm test -- --target-smoke` against the exact
-staging hosts. Require `RELEASE_SOURCE_SHA` to match both the API and gateway
-health commits. Keep the Vercel bypass header for the Playwright request. Reject
+staging hosts for a narrow rehearsal. The production release gate runs
+`pnpm test -- --target-full`. It fails when any selected API flow is skipped,
+todo, or failed. Both commands require `RELEASE_SOURCE_SHA` to match the API and
+gateway health commits. Keep the Vercel bypass header for Playwright. Reject
 development and production targets.
 
 For Platinum:

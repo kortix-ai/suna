@@ -46,11 +46,11 @@ describe('sandbox test workflow', () => {
     expect(testWorkflow).toContain('if: always()');
   });
 
-  test('release QA proves the deployed staging SHA and web surface', () => {
+  test('release QA proves every deployed staging flow and browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/qa-release.yml'), 'utf8');
 
     expect(release).toContain('name: deployed staging API + browser');
-    expect(release).toContain('pnpm test -- --target-smoke');
+    expect(release).toContain('pnpm test -- --target-full');
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
     expect(release).toContain('https://staging-api.kortix.com/v1');

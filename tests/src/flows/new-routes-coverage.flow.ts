@@ -11,9 +11,9 @@ import { flow } from '../core/flow';
 const ZERO_UUID = '00000000-0000-4000-a000-000000000000';
 
 flow(
-  'COV-1',
+  'SYS-9',
   {
-    domain: 'coverage',
+    domain: 'system',
     routes: ['GET /metrics', 'GET /v1/router/health'],
   },
   async (ctx) => {
@@ -34,14 +34,14 @@ flow(
   },
 );
 
-// COV-2 (warm-snapshot-config admin toggle) removed — the routes it covered
+// The warm-snapshot-config admin flow was removed with its deleted routes.
 // were deleted in #4095 ("remove the dead warm-fork sessions toggle") without
 // retiring this flow, leaving stale manifest drift.
 
 flow(
-  'COV-3',
+  'CONN-20',
   {
-    domain: 'coverage',
+    domain: 'connectors',
     routes: [
       'GET /v1/connectors/connect-status',
       'GET /v1/connectors/projects/:projectId/catalog',
@@ -74,9 +74,9 @@ flow(
 );
 
 flow(
-  'COV-4',
+  'GW-9',
   {
-    domain: 'coverage',
+    domain: 'llm-gateway',
     routes: [
       'GET /v1/projects/:projectId/gateway/overview',
       'GET /v1/projects/:projectId/gateway/series',
@@ -164,49 +164,47 @@ flow(
 );
 
 flow(
-  'COV-5',
+  'CHN-26',
   {
-    domain: 'coverage',
-    routes: [
-      'GET /v1/projects/:projectId/channels/slack/file',
-      'POST /v1/projects/:projectId/channels/slack/file/upload',
-      'PATCH /v1/projects/:projectId/triggers/activation',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-    ],
+    domain: 'channels',
+    routes: ['GET /v1/projects/:projectId/channels/slack/file'],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
-    const owner = ctx.client.as(ctx.P.OWNER);
-    const params = { projectId: p.id };
-
-    await ctx.step('Slack file proxy validates missing or unconfigured file inputs', async () => {
-      const download = await owner.get('/v1/projects/:projectId/channels/slack/file', { params });
-      download.status([400, 404]);
-
-      const upload = await owner.post(
-        '/v1/projects/:projectId/channels/slack/file/upload',
-        {},
-        { params },
-      );
-      upload.status([400, 404]);
-    });
-    await ctx.step('trigger activation validates paused boolean', async () => {
-      const r = await owner.patch('/v1/projects/:projectId/triggers/activation', {}, { params });
-      r.status(400);
-    });
-    await ctx.step('session transcript unknown session is a 404 boundary', async () => {
-      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
-        params: { ...params, sessionId: ZERO_UUID },
-      });
-      r.status(404);
+    const project = await ctx.fixtures.project();
+    await ctx.step('Slack file download rejects a request without a file reference', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/channels/slack/file', {
+          params: { projectId: project.id },
+        });
+      response.status([400, 404]);
     });
   },
 );
 
 flow(
-  'COV-6',
+  'SESS-20',
   {
-    domain: 'coverage',
+    domain: 'sessions',
+    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/transcript'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    await ctx.step('Session transcript returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+  },
+);
+
+flow(
+  'GW-10',
+  {
+    domain: 'llm-gateway',
     routes: [
       'POST /internal/gateway/authenticate',
       'POST /internal/gateway/billing',
@@ -236,9 +234,9 @@ flow(
 );
 
 flow(
-  'COV-7',
+  'SBX-6',
   {
-    domain: 'coverage',
+    domain: 'sandboxes',
     routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {
@@ -253,110 +251,60 @@ flow(
   },
 );
 
-// COV-8's original `marketplace`/`registry` CRUD routes (GET .../marketplace,
-// .../marketplace/updates, POST .../marketplace/{install,update,update-all},
-// DELETE .../marketplace/:name, POST .../registry/update-all) were DELETED by
-// the marketplace-as-projects rewrite (docs/specs/2026-07-13-marketplace-as-projects.md,
-// merge 444b6906e): the deterministic install/lock/update/remove engine is
-// gone, replaced by the agent-driven `POST /:projectId/marketplace/install-session`
-// covered below. Verified live against staging with a real authed project:
-// each of those paths now 404s "Not found" (not the 401 an unauthenticated
-// probe would suggest — /v1/projects/:projectId/* runs its auth gate before
-// routing, so an unauthed call to a genuinely-dead sibling path still reads
-// 401). `tests/spec/routes.generated.json` was stale (pre-dated that merge)
-// and has been regenerated; these route strings would now fail the coverage
-// gate's "declared but not in the manifest" (external) check, so they're
-// dropped rather than kept as dead weight.
 flow(
-  'COV-8',
+  'CHN-27',
   {
-    domain: 'coverage',
-    routes: [
-      'POST /v1/projects/:projectId/marketplace/install-session',
-      'GET /v1/projects/:projectId/llm-catalog',
-      'PATCH /v1/projects/:projectId/channels/email/installation',
-      'POST /v1/channels/slack/identity/bind',
-      'POST /internal/gateway/authorize',
-    ],
+    domain: 'channels',
+    routes: ['PATCH /v1/projects/:projectId/channels/email/installation'],
   },
   async (ctx) => {
-    const params = { projectId: ZERO_UUID };
-
-    await ctx.step('unauthenticated marketplace install-session is gated', async () => {
-      const r = await ctx.client
+    await ctx.step('Anonymous callers cannot update an email installation', async () => {
+      const response = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/projects/:projectId/marketplace/install-session', {}, { params });
-      r.status(401);
-    });
-
-    await ctx.step('unauthenticated project catalog route is gated', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/llm-catalog', { params });
-      r.status(401);
-    });
-
-    await ctx.step('unauthenticated email and Slack identity mutations are gated', async () => {
-      const email = await ctx.client
-        .as(ctx.P.ANON)
-        .patch('/v1/projects/:projectId/channels/email/installation', {}, { params });
-      email.status(401);
-
-      const slack = await ctx.client.as(ctx.P.ANON).post('/v1/channels/slack/identity/bind', {});
-      slack.status(401);
-    });
-
-    await ctx.step(
-      'internal gateway authorization rejects missing internal credentials',
-      async () => {
-        const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/authorize', {});
-        r.status([401, 503]);
-      },
-    );
-
-    // The project-scoped marketplace install-session route (the agent-driven
-    // replacement for the removed deterministic install/update/remove engine)
-    // is the one project write a non-member must NOT be able to trigger, and
-    // whose body validation runs AFTER auth — prove both boundaries against a
-    // real project so the route can never silently degrade to a 500.
-    const project = await ctx.fixtures.project();
-    const projParams = { projectId: project.id };
-
-    await ctx.step('NONMEMBER cannot start a marketplace install-session → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .post(
-          '/v1/projects/:projectId/marketplace/install-session',
-          { id: 'kortix/runtime' },
-          { params: projParams },
+        .patch(
+          '/v1/projects/:projectId/channels/email/installation',
+          {},
+          { params: { projectId: ZERO_UUID } },
         );
-      r.status([403, 404]);
-    });
-
-    await ctx.step('missing id body → 400 (not 500)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/marketplace/install-session', {}, { params: projParams });
-      r.status(400);
-    });
-
-    await ctx.step('unknown marketplace id → 400 (not 500)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/marketplace/install-session',
-          { id: 'no-such-item-' + ctx.fixtures.name('x') },
-          { params: projParams },
-        );
-      r.status(400);
+      response.status(401);
     });
   },
 );
 
 flow(
-  'COV-9',
+  'CHN-28',
   {
-    domain: 'coverage',
+    domain: 'channels',
+    routes: ['POST /v1/channels/slack/identity/bind'],
+  },
+  async (ctx) => {
+    await ctx.step('Anonymous callers cannot bind a Slack identity', async () => {
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .post('/v1/channels/slack/identity/bind', {});
+      response.status(401);
+    });
+  },
+);
+
+flow(
+  'GW-12',
+  {
+    domain: 'llm-gateway',
+    routes: ['POST /internal/gateway/authorize'],
+  },
+  async (ctx) => {
+    await ctx.step('Internal gateway authorization rejects missing credentials', async () => {
+      const response = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/authorize', {});
+      response.status([401, 503]);
+    });
+  },
+);
+
+flow(
+  'GW-11',
+  {
+    domain: 'llm-gateway',
     routes: ['GET /v1/generation', 'GET /v1/usage'],
   },
   async (ctx) => {
@@ -407,55 +355,60 @@ flow(
 );
 
 flow(
-  'COV-10',
+  'CONN-23',
   {
-    domain: 'coverage',
+    domain: 'connectors',
     routes: [
       'GET /v1/projects/:projectId/connections/all',
-      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
       'PUT /v1/projects/:projectId/connections/:connectionId/default',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await ctx.step('An unknown project hides the connection roster and default mutation', async () => {
+      const roster = await owner.get('/v1/projects/:projectId/connections/all', {
+        params: { projectId: ZERO_UUID },
+      });
+      roster.status(404);
+      const makeDefault = await owner.put(
+        '/v1/projects/:projectId/connections/:connectionId/default',
+        {},
+        { params: { projectId: ZERO_UUID, connectionId: ZERO_UUID } },
+      );
+      makeDefault.status(404);
+    });
+  },
+);
+
+flow(
+  'SESS-21',
+  {
+    domain: 'sessions',
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
       'PUT /v1/projects/:projectId/sessions/:sessionId/model',
       'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
     ],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const projectParams = { projectId: ZERO_UUID };
-    const profileParams = { ...projectParams, connectionId: ZERO_UUID };
-    const sessionParams = { ...projectParams, sessionId: ZERO_UUID };
-
-    await ctx.step('unknown project hides the connection roster', async () => {
-      const roster = await owner.get('/v1/projects/:projectId/connections/all', {
-        params: projectParams,
-      });
-      roster.status(404);
-    });
-
-    await ctx.step('unknown project blocks connector mutations', async () => {
-      const makeDefault = await owner.put(
-        '/v1/projects/:projectId/connections/:connectionId/default',
-        {},
-        { params: profileParams },
-      );
-      makeDefault.status(404);
-    });
-
-    await ctx.step('unknown project blocks session scope reads and mutations', async () => {
+    const params = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
+    await ctx.step('An unknown project hides session scope and model mutations', async () => {
       const scopeRead = await owner.get(
         '/v1/projects/:projectId/sessions/:sessionId/scope',
-        { params: sessionParams },
+        { params },
       );
       scopeRead.status(404);
       const model = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/model',
         { opencode_model: 'openai/gpt-5' },
-        { params: sessionParams },
+        { params },
       );
       model.status(404);
       const scope = await owner.put(
         '/v1/projects/:projectId/sessions/:sessionId/scope',
         { secrets: [] },
-        { params: sessionParams },
+        { params },
       );
       scope.status(404);
     });
@@ -463,9 +416,9 @@ flow(
 );
 
 flow(
-  'COV-11',
+  'SESS-19',
   {
-    domain: 'coverage',
+    domain: 'sessions',
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/config',
       'POST /v1/projects/:projectId/sessions/:sessionId/reload',
@@ -514,57 +467,29 @@ flow(
 );
 
 flow(
-  'COV-12',
+  'SESS-22',
   {
-    domain: 'coverage',
+    domain: 'sessions',
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/question',
       'POST /v1/projects/:projectId/sessions/:sessionId/question',
-      'POST /v1/projects/:projectId/secrets/sync',
-      'POST /v1/admin/api/accounts/:accountId/enterprise-entitlement',
     ],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const sessionParams = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
-
-    await ctx.step('an unknown project hides durable session questions', async () => {
+    const params = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
+    await ctx.step('An unknown project hides durable session questions', async () => {
       const read = await owner.get(
         '/v1/projects/:projectId/sessions/:sessionId/question',
-        { params: sessionParams },
+        { params },
       );
       read.status(404);
       const answer = await owner.post(
         '/v1/projects/:projectId/sessions/:sessionId/question',
         { answers: ['yes'] },
-        { params: sessionParams },
+        { params },
       );
       answer.status(404);
-    });
-
-    await ctx.step('an unknown project blocks forced secret synchronization', async () => {
-      const sync = await owner.post(
-        '/v1/projects/:projectId/secrets/sync',
-        {},
-        { params: { projectId: ZERO_UUID } },
-      );
-      sync.status(404);
-    });
-
-    await ctx.step('enterprise entitlement mutation stays platform-admin only', async () => {
-      const params = { accountId: ZERO_UUID };
-      const anonymous = await ctx.client.as(ctx.P.ANON).post(
-        '/v1/admin/api/accounts/:accountId/enterprise-entitlement',
-        { enabled: true },
-        { params },
-      );
-      anonymous.status(401);
-      const nonAdmin = await owner.post(
-        '/v1/admin/api/accounts/:accountId/enterprise-entitlement',
-        { enabled: true },
-        { params },
-      );
-      nonAdmin.status(403);
     });
   },
 );

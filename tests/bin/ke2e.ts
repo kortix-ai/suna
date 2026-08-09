@@ -25,6 +25,7 @@ import {
 } from '../src/core/local-stack';
 import { log } from '../src/core/log';
 import { renderStepSummary, writeResults } from '../src/core/report';
+import { runExitCode } from '../src/core/result';
 import { discoverFlows, runSuite } from '../src/core/runner';
 import { writeUiData } from '../src/core/ui-data';
 import { runCoverage } from '../src/coverage/check-coverage';
@@ -189,7 +190,9 @@ async function main(): Promise<number> {
       await Bun.write(process.env.GITHUB_STEP_SUMMARY, renderStepSummary(result));
     }
 
-    return localCommand ? localRunExitCode(s) : s.failed > 0 ? 1 : 0;
+    return localCommand
+      ? localRunExitCode(s)
+      : runExitCode(s, Boolean(flags['require-all']));
   } finally {
     if (localStack?.started) {
       log.info(log.dim('stopping the local stack started by ke2e'));

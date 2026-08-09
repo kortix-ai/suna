@@ -39,6 +39,7 @@ jobs:
       KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+      E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
@@ -67,12 +68,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Install target-smoke dependencies
+      - name: Install deployed-target dependencies
         run: |
           pnpm install --frozen-lockfile --filter @kortix/tests...
           pnpm --dir tests exec playwright install --with-deps chromium
-      - name: Run deployed staging proof through the root runner
-        run: pnpm test -- --target-smoke
+      - name: Run every deployed staging flow and browser journey through the root runner
+        run: pnpm test -- --target-full
       - name: Guard test artifacts against secrets
         if: always()
         run: |

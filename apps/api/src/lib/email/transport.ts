@@ -15,7 +15,7 @@ import { createHash, createHmac } from 'node:crypto';
 
 import { config } from '../../config';
 
-export type EmailProvider = 'ses' | 'resend' | 'mailtrap';
+export type EmailProvider = 'ses' | 'resend' | 'mailtrap' | 'mailpit';
 
 export interface EmailMessage {
   to: string[];
@@ -43,6 +43,8 @@ function isConfigured(provider: EmailProvider): boolean {
       return !!config.RESEND_API_KEY;
     case 'mailtrap':
       return !!config.MAILTRAP_API_TOKEN;
+    case 'mailpit':
+      return !!config.MAILPIT_API_URL;
   }
 }
 
@@ -51,7 +53,10 @@ export function configuredEmailProviders(): EmailProvider[] {
   return (config.EMAIL_PROVIDER_ORDER || 'ses,resend,mailtrap')
     .split(',')
     .map((p) => p.trim().toLowerCase())
-    .filter((p): p is EmailProvider => p === 'ses' || p === 'resend' || p === 'mailtrap')
+    .filter(
+      (p): p is EmailProvider =>
+        p === 'ses' || p === 'resend' || p === 'mailtrap' || p === 'mailpit',
+    )
     .filter(isConfigured);
 }
 
@@ -179,10 +184,36 @@ async function sendViaMailtrap(msg: EmailMessage): Promise<EmailSendResult> {
   return { ok: true, provider: 'mailtrap', status: res.status };
 }
 
+// ── Mailpit local capture ────────────────────────────────────────────────────
+
+async function sendViaMailpit(msg: EmailMessage): Promise<EmailSendResult> {
+  const from = resolveFrom(msg);
+  const baseUrl = config.MAILPIT_API_URL.replace(/\/+$/, '');
+  const res = await fetch(`${baseUrl}/api/v1/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      From: { Email: from.email, Name: from.name },
+      To: msg.to.map((email) => ({ Email: email })),
+      Subject: msg.subject,
+      HTML: msg.html,
+      Text: '',
+      Tags: [msg.category],
+    }),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, provider: 'mailpit', status: res.status, error: text || res.statusText };
+  }
+  return { ok: true, provider: 'mailpit', status: res.status };
+}
+
 const SENDERS: Record<EmailProvider, (msg: EmailMessage) => Promise<EmailSendResult>> = {
   ses: sendViaSes,
   resend: sendViaResend,
   mailtrap: sendViaMailtrap,
+  mailpit: sendViaMailpit,
 };
 
 /**

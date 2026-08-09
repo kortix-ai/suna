@@ -188,8 +188,17 @@ export class CliSandbox {
    * Mint `pat` as OWNER via `ctx.fixtures.pat()` (POST /v1/accounts/tokens) and
    * pass the returned `kortix_pat_…` secret here.
    */
-  async login(pat: string, opts: { noProject?: boolean } = {}): Promise<CliResult> {
-    return this.run(['login', '--token', pat, ...(opts.noProject ? ['--no-project'] : [])]);
+  async login(
+    pat: string,
+    opts: { noProject?: boolean; account?: string } = {},
+  ): Promise<CliResult> {
+    return this.run([
+      'login',
+      '--token',
+      pat,
+      ...(opts.noProject ? ['--no-project'] : []),
+      ...(opts.account ? ['--account', opts.account] : []),
+    ]);
   }
 
   /** Tear down the temp dirs. Best-effort; safe to call twice. */

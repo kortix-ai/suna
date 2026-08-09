@@ -3,6 +3,11 @@ import { discoverFlows } from "../core/runner";
 import { allFlows } from "../core/flow";
 import { log } from "../core/log";
 import { externalRoutes, uncoveredAllow, type AllowEntry } from "./allowlist";
+import {
+  compareFlowIds,
+  parseSpecificationFlowIds,
+  type FlowIdParity,
+} from "./spec-parity";
 
 export interface CoverageOptions {
   updateBaseline?: boolean;
@@ -20,6 +25,7 @@ export interface CoverageSummary {
   malformed: string[];
   resolvedSinceBaseline: string[];
   orphanFlows: string[];
+  flowIdParity: FlowIdParity;
 }
 
 interface Route {
@@ -34,6 +40,7 @@ interface Baseline {
 
 const MANIFEST = resolve(import.meta.dir, "../../spec/routes.generated.json");
 const BASELINE = resolve(import.meta.dir, "../../spec/coverage-baseline.json");
+const SPEC = resolve(import.meta.dir, "../../spec/end-to-end.md");
 
 function normalize(method: string, path: string): string {
   const segs = path.split("/").map((s) => (s.startsWith(":") ? ":*" : s));
@@ -71,6 +78,10 @@ function allowSet(entries: AllowEntry[]): Set<string> {
 export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> {
   await discoverFlows();
   const flows = allFlows();
+  const flowIdParity = compareFlowIds(
+    parseSpecificationFlowIds(await Bun.file(SPEC).text()),
+    flows.map((flow) => flow.id),
+  );
 
   const manifest = await readManifest();
   const manifestSet = new Map<string, Route>();
@@ -136,6 +147,7 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
     malformed,
     resolvedSinceBaseline,
     orphanFlows,
+    flowIdParity,
   };
 
   if (opts.json) {
@@ -144,6 +156,9 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
 
   const pass =
     malformed.length === 0 &&
+    flowIdParity.missingSpecifications.length === 0 &&
+    flowIdParity.missingFlows.length === 0 &&
+    flowIdParity.duplicateSpecifications.length === 0 &&
     (opts.updateBaseline || (newUncovered.length === 0 && newExternal.length === 0));
 
   if (!opts.json) renderReport(summary, declared, opts);
@@ -191,8 +206,30 @@ function renderReport(
     log.skip(`${s.orphanFlows.length} flow(s) declare no routes: ${s.orphanFlows.join(", ")}`);
   }
 
+  if (s.flowIdParity.missingSpecifications.length) {
+    log.fail(
+      `${s.flowIdParity.missingSpecifications.length} registered flow(s) have no specification:`,
+    );
+    for (const id of s.flowIdParity.missingSpecifications) log.info(log.dim(`  ${id}`));
+  }
+
+  if (s.flowIdParity.missingFlows.length) {
+    log.fail(`${s.flowIdParity.missingFlows.length} specification flow(s) are not registered:`);
+    for (const id of s.flowIdParity.missingFlows) log.info(log.dim(`  ${id}`));
+  }
+
+  if (s.flowIdParity.duplicateSpecifications.length) {
+    log.fail(
+      `${s.flowIdParity.duplicateSpecifications.length} specification flow id(s) appear more than once:`,
+    );
+    for (const id of s.flowIdParity.duplicateSpecifications) log.info(log.dim(`  ${id}`));
+  }
+
   const pass =
     s.malformed.length === 0 &&
+    s.flowIdParity.missingSpecifications.length === 0 &&
+    s.flowIdParity.missingFlows.length === 0 &&
+    s.flowIdParity.duplicateSpecifications.length === 0 &&
     (opts.updateBaseline || (s.newUncovered.length === 0 && s.newExternal.length === 0));
   log.info("");
   if (pass) log.pass("coverage gate passed");

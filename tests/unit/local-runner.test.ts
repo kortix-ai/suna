@@ -56,6 +56,7 @@ describe('local test runner', () => {
       name: 'browser',
       command: ['bun', 'run', 'test:browser'],
       cwd: 'tests',
+      env: { E2E_BROWSER_WORKERS: '2' },
     });
   });
 
@@ -88,6 +89,34 @@ describe('local test runner', () => {
       '--grep',
       '@target-smoke',
     ]);
+  });
+
+  it('runs every deployed API flow and browser journey through the release command', () => {
+    const plan = buildLocalTestPlan(['--target-full']);
+
+    expect(plan.mode).toBe('target-full');
+    expect(plan.lanes.map((lane) => lane.name)).toEqual([
+      'target-api-full',
+      'target-browser-full',
+    ]);
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+    ]);
+    expect(plan.lanes[1]).toEqual({
+      name: 'target-browser-full',
+      command: ['bun', 'run', 'test:browser'],
+      cwd: 'tests',
+      env: {
+        E2E_BROWSER_WORKERS: '2',
+        E2E_ENABLE_SDK_ONLY_SESSION: '1',
+        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
+        E2E_OAUTH_PROVIDER_INITIATION: '1',
+        E2E_REQUIRE_ALL_BROWSER: '1',
+      },
+    });
   });
 
   it('rejects conflicting modes', () => {

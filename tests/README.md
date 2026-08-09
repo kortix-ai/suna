@@ -25,6 +25,7 @@ pnpm test -- --browser-only    # Browser journeys with the deterministic local s
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
+pnpm test -- --target-full     # Every deployed staging API flow and browser journey
 ```
 
 Browser and full modes start local Supabase, apply migrations, and start the
@@ -65,10 +66,15 @@ Each worker fetches the requested ref, verifies the exact SHA, runs an offline
 lockfile install, starts nested Docker, and invokes the unchanged root command.
 Both runners stream logs, download `tests/test-results`, and delete the worker.
 
-Release QA also runs `pnpm test -- --target-smoke` against deployed staging.
-This mode rejects development and production hosts. It requires the API and
-gateway health commits to equal `RELEASE_SOURCE_SHA`. It then runs the tagged
-Playwright smoke against `staging.kortix.com` with the Vercel bypass header.
+Release QA runs `pnpm test -- --target-full` against deployed staging. This mode
+rejects development and production hosts. It requires the API and gateway
+health commits to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and
+CLI flow with `--require-all`, then runs all configured Playwright journeys
+against `staging.kortix.com` with the Vercel bypass header. A missing external
+capability fails the release gate instead of counting as a pass.
+
+`pnpm test -- --target-smoke` remains the narrow deployed rehearsal. It runs
+only smoke-tagged REST flows and the tagged Playwright smoke.
 
 ### Platinum
 

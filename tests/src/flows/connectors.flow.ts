@@ -642,7 +642,7 @@ flow(
 // already-covered POST /v1/connectors/projects/:projectId/connectors, then drives
 // the full connections surface against it.
 flow(
-  'COVD-1',
+  'CONN-21',
   {
     domain: 'connectors',
     routes: [
@@ -1001,7 +1001,7 @@ flow(
 // on its own. `finalize` is the authoritative persist-and-notify call the
 // hosted connect page's opener polls; the Pipedream webhook is redundancy.
 flow(
-  'COVD-2',
+  'CONN-22',
   {
     domain: 'connectors',
     routes: [
@@ -1049,7 +1049,7 @@ flow(
 // Pipedream connector on this project → 404 (or 501 if Pipedream isn't
 // configured on this deployment at all — both are legitimate real outcomes,
 // never a 200/201 without a real connector). The analogous public consume
-// routes (`GET/POST /v1/setup-links/connectors/:token[/start]`, COVD-2 above)
+// routes (`GET/POST /v1/setup-links/connectors/:token[/start]`, CONN-22 above)
 // belong to a different coverage group.
 flow(
   'CONN-18',

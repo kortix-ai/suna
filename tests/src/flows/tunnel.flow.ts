@@ -109,7 +109,10 @@ flow(
     await ctx.step("create a tunnel to attach permissions to", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/tunnel/connections", { name: ctx.fixtures.name("perm-tunnel"), capabilities: [] });
+        .post("/v1/tunnel/connections", {
+          name: ctx.fixtures.name("perm-tunnel"),
+          capabilities: ["shell"],
+        });
       r.status(201);
       tunnelId = r.json<any>().tunnelId;
       ctx.track("tunnelConnection", tunnelId);
@@ -238,7 +241,10 @@ flow(
     await ctx.step("create a tunnel for rpc/audit", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/tunnel/connections", { name: ctx.fixtures.name("rpc-tunnel"), capabilities: [] });
+        .post("/v1/tunnel/connections", {
+          name: ctx.fixtures.name("rpc-tunnel"),
+          capabilities: ["shell"],
+        });
       r.status(201);
       tunnelId = r.json<any>().tunnelId;
     });
@@ -251,10 +257,8 @@ flow(
     });
 
     await ctx.step("rpc on a tunnel with no live agent → not connected", async () => {
-      // No permission granted + no agent connected: handler may answer 403
-      // (permission required, opens a request) or 5xx (not connected) once a
-      // permission exists. For a bare tunnel the capability is ungranted →
-      // 403 with a requestId. Accept the not-connected family too.
+      // Shell is enabled but no permission is granted and no agent is online.
+      // The handler opens a permission request before relay delivery.
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/tunnel/rpc/:tunnelId", { method: "shell.exec", params: {} }, { params: { tunnelId } });

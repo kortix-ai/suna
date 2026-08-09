@@ -99,3 +99,12 @@ export function summarize(flows: FlowResult[], durationMs: number): RunSummary {
     durationMs,
   };
 }
+
+export function runExitCode(
+  summary: Pick<RunSummary, "failed" | "skipped" | "todo">,
+  requireAll = false,
+): 0 | 1 {
+  if (summary.failed > 0) return 1;
+  if (requireAll && (summary.skipped > 0 || summary.todo > 0)) return 1;
+  return 0;
+}

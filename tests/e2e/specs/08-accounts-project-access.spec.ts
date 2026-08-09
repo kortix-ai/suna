@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
-import { seedDatabaseProject } from "../helpers/database";
+import { runDatabaseSql, seedDatabaseProject } from "../helpers/database";
 import {
   authHeaders,
   createApiJsonClient,
   createApiStatusClient,
 } from "../helpers/http";
 import {
+  type DisposableInbox,
+  createDisposableInbox,
+} from "../helpers/inbox";
+import {
   type AuthSession,
   createAuthUser,
+  deleteAuthUser,
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
@@ -20,6 +25,9 @@ const password = "E2eAccountAccess123!";
 const api = createApiJsonClient(apiBase);
 const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
+const createdUserIds = new Set<string>();
+const createdAccountIds = new Set<string>();
+const disposableInboxes = new Set<DisposableInbox>();
 
 type AccountRole = "owner" | "admin" | "member";
 type ProjectRole = "manager" | "editor" | "member";
@@ -57,6 +65,8 @@ interface InviteResult {
   invite_id?: string;
   email: string;
   account_role: AccountRole;
+  email_sent?: boolean;
+  invite_url?: string;
 }
 
 interface ProjectAccessMember {
@@ -162,6 +172,24 @@ function toGitHubWebUrl(repoUrl: string): string {
 test.describe("08 — Accounts, invites, and project access", () => {
   test.setTimeout(300_000);
 
+  test.afterEach(async () => {
+    for (const accountId of createdAccountIds) {
+      await runDatabaseSql(
+        "delete from kortix.accounts where account_id = $1::uuid",
+        [accountId],
+      ).catch(() => {});
+    }
+    for (const userId of createdUserIds) {
+      await deleteAuthUser(userId, authOptions);
+    }
+    for (const inbox of disposableInboxes) {
+      await inbox.dispose().catch(() => {});
+    }
+    createdAccountIds.clear();
+    createdUserIds.clear();
+    disposableInboxes.clear();
+  });
+
   test("API and web enforce account roles plus project-scoped access", async ({
     page,
   }) => {
@@ -180,15 +208,21 @@ test.describe("08 — Accounts, invites, and project access", () => {
     });
 
     const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const inviteInbox = await createDisposableInbox();
+    disposableInboxes.add(inviteInbox);
     const ownerEmail = `e2e-owner-${runId}@example.test`;
     const memberEmail = `e2e-member-${runId}@example.test`;
-    const invitedEmail = `e2e-invite-${runId}@example.test`;
+    const invitedEmail = inviteInbox.email;
     const uiInvitedEmail = `e2e-ui-invite-${runId}@example.test`;
     const accountName = `E2E Org ${runId}`;
     const initialProjectName = `E2E Project ${runId}`;
 
     const owner = await createAuthUser(ownerEmail, authOptions);
+    createdUserIds.add(owner.id);
+    createdAccountIds.add(owner.id);
     const member = await createAuthUser(memberEmail, authOptions);
+    createdUserIds.add(member.id);
+    createdAccountIds.add(member.id);
     const ownerSession = await signIn(ownerEmail, authOptions);
     const memberSession = await signIn(memberEmail, authOptions);
 
@@ -213,6 +247,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       { name: accountName },
       201,
     );
+    createdAccountIds.add(account.account_id);
     expect(account.name).toBe(accountName);
     expect(account.account_role).toBe("owner");
 
@@ -226,6 +261,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     expect(addedMember.status).toBe("added");
     expect(addedMember.user_id).toBe(member.id);
 
+    const inviteSentAt = new Date();
     const pendingInvite = await api<InviteResult>(
       ownerSession.access_token,
       "POST",
@@ -234,10 +270,15 @@ test.describe("08 — Accounts, invites, and project access", () => {
       201,
     );
     expect(pendingInvite.status).toBe("pending");
+    expect(pendingInvite.email_sent).toBe(true);
     expect(pendingInvite.invite_id).toBeTruthy();
     if (!pendingInvite.invite_id)
       throw new Error("pending invite has no invite_id");
     const accountInviteId = pendingInvite.invite_id;
+    const deliveredInviteLink = await inviteInbox.waitForInviteLink(inviteSentAt);
+    expect(new URL(deliveredInviteLink).pathname).toBe(
+      `/invites/${accountInviteId}`,
+    );
 
     const memberAccounts = await api<AccountSummary[]>(
       memberSession.access_token,
@@ -480,7 +521,9 @@ test.describe("08 — Accounts, invites, and project access", () => {
     expect((await uiInviteResponse).status()).toBe(201);
     await expect(page.getByText(uiInvitedEmail, { exact: true })).toBeVisible();
 
-    await createAuthUser(uiInvitedEmail, authOptions);
+    const uiInvitedUser = await createAuthUser(uiInvitedEmail, authOptions);
+    createdUserIds.add(uiInvitedUser.id);
+    createdAccountIds.add(uiInvitedUser.id);
     const uiInvitedSession = await signIn(uiInvitedEmail, authOptions);
     const uiInvitedAccounts = await api<AccountSummary[]>(
       uiInvitedSession.access_token,
@@ -568,12 +611,14 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
+    createdUserIds.add(invitedUser.id);
+    createdAccountIds.add(invitedUser.id);
     const invitedSession = await signIn(invitedEmail, authOptions);
     expect(invitedUser.id).toBeTruthy();
     await installBrowserSessionDirect(
       page,
       invitedSession,
-      `/invites/${accountInviteId}`,
+      new URL(deliveredInviteLink).pathname,
       authOptions,
     );
     if (page.url().includes(`/invites/${accountInviteId}`)) {

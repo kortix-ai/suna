@@ -347,6 +347,9 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `pnpm test -- --target-smoke` verifies the deployed staging API and gateway
   SHA, then runs the tagged Playwright staging smoke. Release CI supplies the
   staging credentials and `RELEASE_SOURCE_SHA`.
+- `pnpm test -- --target-full` verifies the same deployed SHA, then runs every
+  configured staging REST, CLI, and Playwright journey. The production release
+  gate uses this command and fails on any excluded API flow.
 - Browser and full modes reuse only a running API that proves the deterministic
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
@@ -362,9 +365,10 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - Both providers fetch and verify the exact SHA, upload `tests/test-results`,
   and delete the sandbox. The sandbox worker is infrastructure only. Do not add
   CI-only test logic.
-- Release QA also runs the same root runner against deployed staging. It blocks
+- Release QA also runs `pnpm test -- --target-full` against deployed staging. It blocks
   production when API or gateway health reports a SHA other than
-  `RELEASE_SOURCE_SHA`, or when the tagged Playwright staging smoke fails.
+  `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
+  Playwright journey fails.
 
 ### Product flow source of truth
 

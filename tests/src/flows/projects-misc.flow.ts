@@ -663,11 +663,11 @@ flow(
   },
 );
 
-// PROJ-29 — manifest validation (dry-run, no commit). Body: { raw, format? }.
+// PROJ-9 — manifest validation (dry-run, no commit). Body: { raw, format? }.
 // Always resolves — the verdict lives in the body, never a raw parser 4xx —
 // except the caller-input guards (missing `raw`) which are the real 400s.
 flow(
-  'PROJ-29',
+  'PROJ-9',
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/manifest/validate'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();

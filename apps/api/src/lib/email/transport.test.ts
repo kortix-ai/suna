@@ -7,6 +7,7 @@ const mockConfig = {
   AWS_SES_SECRET_ACCESS_KEY: '',
   RESEND_API_KEY: '',
   RESEND_FROM_EMAIL: '',
+  MAILPIT_API_URL: '',
   MAILTRAP_API_TOKEN: '',
   MAILTRAP_FROM_EMAIL: 'noreply@example.test',
   MAILTRAP_FROM_NAME: 'Kortix Test',
@@ -30,6 +31,7 @@ beforeEach(() => {
   mockConfig.AWS_SES_SECRET_ACCESS_KEY = '';
   mockConfig.RESEND_API_KEY = '';
   mockConfig.RESEND_FROM_EMAIL = '';
+  mockConfig.MAILPIT_API_URL = '';
   mockConfig.MAILTRAP_API_TOKEN = '';
   globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
@@ -59,6 +61,23 @@ describe('configuredEmailProviders', () => {
     mockConfig.RESEND_API_KEY = 're_test';
     mockConfig.EMAIL_PROVIDER_ORDER = 'mailtrap,resend,ses';
     expect(configuredEmailProviders()).toEqual(['mailtrap', 'resend']);
+  });
+
+  test('mailpit leg stores the complete transactional message for local flows', async () => {
+    mockConfig.MAILPIT_API_URL = 'http://127.0.0.1:54324';
+    mockConfig.EMAIL_PROVIDER_ORDER = 'mailpit';
+    const result = await sendEmail(MSG);
+    expect(result).toEqual({ ok: true, provider: 'mailpit', status: 200 });
+    expect(calls[0].url).toBe('http://127.0.0.1:54324/api/v1/send');
+    const payload = JSON.parse(String(calls[0].init.body));
+    expect(payload).toEqual({
+      From: { Email: 'noreply@example.test', Name: 'Kortix Test' },
+      To: [{ Email: 'user@example.test' }],
+      Subject: 'Test',
+      HTML: '<p>hello</p>',
+      Text: '',
+      Tags: ['unit-test'],
+    });
   });
 });
 

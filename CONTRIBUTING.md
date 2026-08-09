@@ -60,6 +60,7 @@ pnpm test -- --browser-only    # Browser only; owns the deterministic local stac
 pnpm test -- --packages-only   # All app/package tests and publish contracts
 pnpm test -- --full            # Browser and all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
+pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
@@ -92,5 +93,5 @@ pnpm test -- --full
 - [ ] Mocks are at the boundary and reset per test; no real production data or credentials.
 
 CI runs core, browser, and package modes in parallel warm Platinum or Daytona
-sandboxes. Release QA also proves deployed staging with the target-smoke mode.
-A red required check blocks the merge.
+sandboxes. Release QA proves every configured deployed staging flow with
+`--target-full`. A red required check blocks the merge.

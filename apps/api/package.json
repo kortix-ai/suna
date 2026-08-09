@@ -11,7 +11,6 @@
     "dev:prod-env": "dotenvx run --overload -f .env.prod -- bun run --hot src/index.ts",
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
     "start": "dotenvx run -- bun run src/index.ts",
-    "e2e:flow": "bun run scripts/e2e-managed-flow.ts",
     "typecheck": "tsc --noEmit",
     "test": "bash scripts/test.sh",
     "test:coverage": "COVERAGE=1 bash scripts/test.sh",

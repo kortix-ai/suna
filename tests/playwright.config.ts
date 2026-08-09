@@ -20,7 +20,11 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   workers,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: '../test-results/html' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: '../test-results/html' }],
+    ['./e2e/strict-skip-reporter.ts'],
+  ],
   outputDir: '../test-results/artifacts',
   use: {
     baseURL,

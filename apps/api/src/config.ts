@@ -593,6 +593,9 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Local-only HTTP capture. The deterministic test profile points this at
+  // Supabase Mailpit. Deployed environments leave it unset.
+  MAILPIT_API_URL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
@@ -1140,6 +1143,7 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,

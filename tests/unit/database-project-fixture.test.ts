@@ -7,6 +7,7 @@ import {
   type OpenProjectDb,
   createDatabaseProject,
   deleteDatabaseProject,
+  mergeDatabaseProjectMetadata,
 } from "../src/fixtures/database-project";
 import { createLocalGitRepository } from "../src/fixtures/local-git";
 import { buildWorld } from "../src/fixtures/world";
@@ -147,6 +148,26 @@ describe("database-only project fixture", () => {
     expect(JSON.parse(db.query.mock.calls[0][1][5])).toMatchObject({
       experimental: { apps: false },
     });
+  });
+
+  it("merges setup-only metadata without replacing existing project metadata", async () => {
+    const db = database();
+
+    await mergeDatabaseProjectMetadata(
+      env(),
+      "33333333-3333-4333-8333-333333333333",
+      { telegram: { allowedUserIds: [12345] } },
+      db.open,
+    );
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining("COALESCE(metadata, '{}'::jsonb) || $2::jsonb"),
+      [
+        "33333333-3333-4333-8333-333333333333",
+        JSON.stringify({ telegram: { allowedUserIds: [12345] } }),
+      ],
+    );
+    expect(db.end).toHaveBeenCalledOnce();
   });
 
   it("creates a seeded local bare repository without a network dependency", async () => {
