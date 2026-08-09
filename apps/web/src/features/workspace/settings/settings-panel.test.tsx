@@ -448,6 +448,7 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
       projectCan: () => true,
       accountPermsResolved: true,
       accountCan: () => true,
+      billingEnabled: true,
       ...overrides,
     };
   }
@@ -530,6 +531,58 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
         'billing',
         paramsFor({ projectCapsResolved: false, projectCan: () => false, accountCan: () => true }),
       ),
+    ).toBe(true);
+  });
+
+  /**
+   * Fix round 1 — the reference model this task mirrors
+   * (`app/(app)/accounts/[id]/page.tsx:359`) is `billing: canWriteAccount
+   * === true && billingActive`, not `canWriteAccount === true` alone. These
+   * pin the deployment-flag half of that AND, which folding
+   * `billingEnabled` into `isSettingsTabAllowed` now reproduces.
+   */
+  test('billing: hidden when the billing deployment flag is off, regardless of permission', () => {
+    expect(
+      isSettingsTabAllowed('billing', paramsFor({ billingEnabled: false, accountCan: () => true })),
+    ).toBe(false);
+  });
+
+  test('billing: hidden by the flag even while the account probe is still unresolved — not subject to fail-open', () => {
+    // Unlike a permission probe, `billingEnabled` is a synchronous env read
+    // with no loading/error state — there is nothing to "fail open" about,
+    // so it overrides even the optimistic-while-loading path.
+    expect(
+      isSettingsTabAllowed(
+        'billing',
+        paramsFor({ billingEnabled: false, accountPermsResolved: false, accountCan: () => false }),
+      ),
+    ).toBe(false);
+  });
+
+  test('billing: visible when both the flag is on and the permission resolves allowed', () => {
+    expect(
+      isSettingsTabAllowed('billing', paramsFor({ billingEnabled: true, accountCan: () => true })),
+    ).toBe(true);
+  });
+
+  /**
+   * `usage` deliberately does NOT get the flag — the reference model's
+   * `transactions` line (`page.tsx:360`) is `canWriteAccount === true` with
+   * no `billingActive` term (confirmed against `tabs/usage-tab.tsx`'s own
+   * header comment: "Deliberately NOT combined with `isBillingEnabled()`").
+   * Session costs stay reachable with billing off; only the credit-ledger
+   * sub-section self-gates on the flag internally, inside
+   * `CreditTransactions` — a content-level concern, not a rail concern.
+   */
+  test('usage: NOT gated by the billing deployment flag — stays visible with billing off, permission allowing', () => {
+    expect(
+      isSettingsTabAllowed('usage', paramsFor({ billingEnabled: false, accountCan: () => true })),
+    ).toBe(true);
+  });
+
+  test('roles: NOT gated by the billing deployment flag either', () => {
+    expect(
+      isSettingsTabAllowed('roles', paramsFor({ billingEnabled: false, accountCan: () => true })),
     ).toBe(true);
   });
 });

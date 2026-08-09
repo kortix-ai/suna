@@ -145,6 +145,7 @@ import { SettingsView } from '@/features/workspace/customize/sections/view/setti
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
+import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
@@ -291,15 +292,39 @@ const ACCOUNT_TAB_PROBES = ACCOUNT_TAB_GATE_ACTIONS.map((action) => ({ action })
  * out of scope here (it touches `usePermission`'s callers app-wide, not just
  * these three tabs) and reported as an open finding rather than silently
  * left unresolved.
+ *
+ * **Fix round 1 — `billing`'s deployment-flag gate, folded in.** The
+ * reference model this task mirrors
+ * (`app/(app)/accounts/[id]/page.tsx:359`) is `billing: canWriteAccount ===
+ * true && billingActive` — the rail must reproduce BOTH terms, not just the
+ * permission half. `isBillingEnabled()` (`lib/config.ts:78-80`,
+ * `getEnv().BILLING_ENABLED`) is a synchronous env read with no loading/error
+ * state, so it needs none of the fail-open machinery above — it is threaded
+ * in as a plain `billingEnabled` boolean, checked FIRST and only for
+ * `billing`, kept as its own `if` rather than folded into the account-gate
+ * branch so the two concerns (a deployment flag vs. an IAM permission) stay
+ * visibly separate. `usage` deliberately does NOT get this check — the
+ * reference model's `transactions` line (`page.tsx:360`) is
+ * `canWriteAccount === true` with no `billingActive` term, matching
+ * `tabs/usage-tab.tsx`'s own header comment ("Deliberately NOT combined with
+ * `isBillingEnabled()`... session costs stay available with billing off").
  */
 export interface SettingsTabAllowedParams {
   projectCapsResolved: boolean;
   projectCan: (action: ProjectAction) => boolean;
   accountPermsResolved: boolean;
   accountCan: (action: string) => boolean;
+  /** Deployment flag, not a permission — `isBillingEnabled()`
+   *  (`lib/config.ts`). Only `billing` consults this; every other tab
+   *  ignores it. See this function's header comment, "Fix round 1". */
+  billingEnabled: boolean;
 }
 
 export function isSettingsTabAllowed(tab: SettingsTab, params: SettingsTabAllowedParams): boolean {
+  // Deployment-flag gate — a separate axis from permission, checked first
+  // and only for `billing`. See this function's header comment, "Fix round 1".
+  if (tab === 'billing' && !params.billingEnabled) return false;
+
   const section = GATED_TAB_SECTION[tab];
   if (section) {
     if (!params.projectCapsResolved) return true;
@@ -426,6 +451,10 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     [accountPerms],
   );
 
+  // Deployment flag, not a permission — see `isSettingsTabAllowed`'s header
+  // comment, "Fix round 1". Synchronous env read, so no memo needed.
+  const billingEnabled = isBillingEnabled();
+
   // A tab is permitted when its READ leaf (project-scoped) or its whole-tab
   // permission (account-scoped) resolved to allowed:true — a role that can
   // read a tab SEES it (read-only unless it also holds the write leaf; edit
@@ -439,8 +468,9 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         projectCan: (action) => caps[action]?.allowed === true,
         accountPermsResolved,
         accountCan,
+        billingEnabled,
       }),
-    [caps, capsResolved, accountPermsResolved, accountCan],
+    [caps, capsResolved, accountPermsResolved, accountCan, billingEnabled],
   );
 
   const tunnelEnabled = project?.experimental?.agent_tunnel ?? false;
