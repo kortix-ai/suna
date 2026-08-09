@@ -115,4 +115,73 @@ describe('BillingTabView', () => {
     expect(withoutSlots).not.toContain('claim-per-seat');
     expect(withoutSlots).not.toContain('seat-management');
   });
+
+  // Fix round 1, finding 1 — account.write (read) vs billing.write (write).
+  // `account.write` alone must still show every read-only section; only
+  // `billing.write` should unlock the mutating controls. See this file's
+  // header comment.
+  test('account.write without billing.write renders the read-only view — no mutating controls, an owner-only note instead', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView
+        canManageBilling={false}
+        canPurchaseCredits
+        billingEnabled
+        accountOverviewSlot={<div>account-overview</div>}
+        seatManagementSlot={<div>seat-management</div>}
+        autoTopupSlot={<div>auto-topup</div>}
+        creditTopupSlot={<div>credit-topup</div>}
+      />,
+    );
+    // Read-only content stays fully visible.
+    expect(out).toContain('account-overview');
+    expect(out).toContain('seat-management');
+    expect(headings(out)).toContain('Plan, wallet and spend');
+    // Mutating sections/controls disappear.
+    expect(headings(out)).not.toContain('Auto top-up');
+    expect(headings(out)).not.toContain('Buy credits');
+    expect(out).not.toContain('auto-topup');
+    expect(out).not.toContain('credit-topup');
+    // Billing portal section stays visible (an admin can see it exists) but
+    // its action button is replaced by the owner-only note.
+    expect(headings(out)).toContain('Billing portal');
+    expect(out).not.toContain('>Manage billing<');
+    expect(out).toContain('Only account owners can manage billing.');
+  });
+
+  test('billing.write renders every mutating control — auto top-up, buy credits, and the billing portal button', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView
+        canManageBilling
+        canPurchaseCredits
+        billingEnabled
+        accountOverviewSlot={<div>account-overview</div>}
+        autoTopupSlot={<div>auto-topup</div>}
+        creditTopupSlot={<div>credit-topup</div>}
+      />,
+    );
+    expect(headings(out)).toEqual([
+      'Plan, wallet and spend',
+      'Auto top-up',
+      'Buy credits',
+      'Billing portal',
+    ]);
+    expect(out).toContain('auto-topup');
+    expect(out).toContain('credit-topup');
+    expect(out).toContain('>Manage billing<');
+    expect(out).not.toContain('Only account owners can manage billing.');
+  });
+
+  test('team-checkout: billing.write shows the Subscribe and Manage billing actions', () => {
+    const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling />);
+    expect(out).toContain('Subscribe to Team');
+    expect(out).toContain('Manage billing');
+    expect(out).not.toContain('Only account owners can manage billing.');
+  });
+
+  test('team-checkout: without billing.write, the actions are replaced by the owner-only note', () => {
+    const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling={false} />);
+    expect(out).not.toContain('Subscribe to Team');
+    expect(out).not.toContain('Manage billing');
+    expect(out).toContain('Only account owners can manage billing.');
+  });
 });
