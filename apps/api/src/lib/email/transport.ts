@@ -39,17 +39,20 @@ const SEND_TIMEOUT_MS = 10_000;
 function isConfigured(provider: EmailProvider): boolean {
   switch (provider) {
     case 'ses':
-      return !!(
-        (config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY) ||
-        process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
-        process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
-        process.env.AWS_WEB_IDENTITY_TOKEN_FILE
-      );
+      return !!(config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY) || hasAwsWorkloadIdentity();
     case 'resend':
       return !!config.RESEND_API_KEY;
     case 'mailtrap':
       return !!config.MAILTRAP_API_TOKEN;
   }
+}
+
+function hasAwsWorkloadIdentity(): boolean {
+  return !!(
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
+    (process.env.AWS_WEB_IDENTITY_TOKEN_FILE && process.env.AWS_ROLE_ARN)
+  );
 }
 
 /** Providers that will be attempted, in order. Empty = no email delivery. */

@@ -32,6 +32,7 @@ const originalFetch = globalThis.fetch;
 const originalContainerCredentialsRelativeUri = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
 const originalContainerCredentialsFullUri = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
 const originalWebIdentityTokenFile = process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+const originalRoleArn = process.env.AWS_ROLE_ARN;
 let calls: Array<{ url: string; init: RequestInit }> = [];
 let responder: (url: string) => Response;
 
@@ -47,6 +48,7 @@ beforeEach(() => {
   delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
   delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
   delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+  delete process.env.AWS_ROLE_ARN;
   globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
     return responder(String(url));
@@ -69,6 +71,11 @@ afterEach(() => {
     delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
   } else {
     process.env.AWS_WEB_IDENTITY_TOKEN_FILE = originalWebIdentityTokenFile;
+  }
+  if (originalRoleArn === undefined) {
+    delete process.env.AWS_ROLE_ARN;
+  } else {
+    process.env.AWS_ROLE_ARN = originalRoleArn;
   }
 });
 
