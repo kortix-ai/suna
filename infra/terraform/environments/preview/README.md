@@ -34,7 +34,7 @@ terraform plan -var='postgres_egress_cidrs=["<verified-db-cidr>"]' -out=preview.
 terraform apply preview.tfplan
 ```
 
-The plan creates 27 shared non-production resources in account `935064898258`,
+The plan creates 29 shared non-production resources in account `935064898258`,
 region `us-west-2`. It reads the existing dev VPC, `kortix-preview-env` secret,
 GitHub OIDC provider, and ACM certificate. It must not target a production VPC,
 secret, certificate, or DNS record. Resolve the current shared preview database

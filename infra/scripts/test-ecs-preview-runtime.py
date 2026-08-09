@@ -82,6 +82,7 @@ class PreviewRuntimeContract(unittest.TestCase):
             'resource "aws_iam_role_policy" "execution_logs_kms"',
             'resource "aws_wafv2_web_acl" "preview"',
             'name        = "AWSManagedRulesKnownBadInputsRuleSet"',
+            'resource "aws_wafv2_web_acl_logging_configuration" "preview"',
         ):
             self.assertIn(fragment, TERRAFORM)
 
