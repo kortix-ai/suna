@@ -1,10 +1,7 @@
 import '../node-ws-polyfill';
 import { loadConfig, type TunnelConfig } from './config';
 import { TunnelAgent } from './agent';
-import { CapabilityRegistry } from './capabilities/index';
-import { createFilesystemCapability } from './capabilities/filesystem';
-import { createShellCapability } from './capabilities/shell';
-import { createDesktopCapability } from './capabilities/desktop';
+import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
   getServicePaths,
@@ -134,10 +131,12 @@ async function printStartup(config: { tunnelId: string; apiUrl: string }, capabi
 }
 
 function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
-  const registry = new CapabilityRegistry();
-  registry.register(createFilesystemCapability(config));
-  registry.register(createShellCapability(config));
-  registry.register(createDesktopCapability());
+  const registry = createEnabledCapabilityRegistry(config);
+  if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
+    console.error(
+      '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
+    );
+  }
 
   if (!options.service) {
     clearScreen();
@@ -272,7 +271,12 @@ function installBackgroundService(): void {
   console.log('');
 }
 
-function saveCredentials(tunnelId: string, token: string, apiUrl: string): void {
+function saveCredentials(
+  tunnelId: string,
+  token: string,
+  apiUrl: string,
+  enabledCapabilities?: string[],
+): void {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   try { chmodSync(CONFIG_DIR, 0o700); } catch {}
   let existing: Record<string, unknown> = {};
@@ -280,7 +284,14 @@ function saveCredentials(tunnelId: string, token: string, apiUrl: string): void 
     try { existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')); } catch {}
   }
   const tmpFile = join(CONFIG_DIR, `config.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmpFile, JSON.stringify({ ...existing, tunnelId, token, apiUrl }, null, 2), { mode: 0o600, flag: 'wx' });
+  const next = {
+    ...existing,
+    tunnelId,
+    token,
+    apiUrl,
+    ...(enabledCapabilities !== undefined ? { enabledCapabilities } : {}),
+  };
+  writeFileSync(tmpFile, JSON.stringify(next, null, 2), { mode: 0o600, flag: 'wx' });
   try { chmodSync(tmpFile, 0o600); } catch {}
   renameSync(tmpFile, CONFIG_FILE);
   try { chmodSync(CONFIG_FILE, 0o600); } catch {}
@@ -356,9 +367,21 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
           console.log(`  ${c.green}●${c.reset} ${c.bold}Authorized!${c.reset}`);
           console.log('');
 
-          // Save credentials
-          saveCredentials(data.tunnelId, data.token, config.apiUrl);
+          const enabledCapabilities = Array.isArray(data.capabilities)
+            ? [...new Set(data.capabilities)].filter(
+                (capability): capability is string =>
+                  typeof capability === 'string' &&
+                  ['filesystem', 'shell', 'desktop'].includes(capability),
+              )
+            : [];
+
+          // Persist the browser-approved capabilities as a local ceiling. A
+          // later server grant cannot silently enable another capability.
+          saveCredentials(data.tunnelId, data.token, config.apiUrl, enabledCapabilities);
           console.log(`  ${c.dim}Credentials saved to ${CONFIG_FILE}${c.reset}`);
+          console.log(
+            `  ${c.dim}Local capabilities: ${enabledCapabilities.join(', ') || 'none'}${c.reset}`,
+          );
           console.log('');
 
           const mode = await chooseConnectMode(flags);

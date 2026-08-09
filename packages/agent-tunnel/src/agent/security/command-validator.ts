@@ -4,7 +4,7 @@ export function validateCommand(
   command: string,
   allowedCommands: string[],
   blockedCommands: string[],
-): void {
+): string {
   if (!command || typeof command !== 'string') {
     throw new Error('Command is required');
   }
@@ -15,7 +15,7 @@ export function validateCommand(
     throw new Error(`Command contains disallowed characters: "${trimmed}"`);
   }
 
-  const executable = trimmed.split(/\s+/)[0];
+  const executable = trimmed;
 
   if (blockedCommands.length > 0 && blockedCommands.includes(executable)) {
     throw new Error(`Command "${executable}" is blocked`);
@@ -26,4 +26,6 @@ export function validateCommand(
       throw new Error(`Command "${executable}" is not in the allowed commands list`);
     }
   }
+
+  return executable;
 }

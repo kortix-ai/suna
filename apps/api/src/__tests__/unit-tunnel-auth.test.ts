@@ -1,10 +1,9 @@
 /**
  * Unit tests for the tunnel auth tiers (apps/api/src/tunnel/routes/auth.ts).
  *
- * Locks the regression that killed the cloud agent: the sandbox authenticates
- * with an `apiKey` (KORTIX_TOKEN), so it MUST be able to READ connections + RPC
- * (getTunnelReadContext), while tunnel MANAGEMENT stays user-credential-only
- * (getTunnelOwnerContext -> requireUserCredential rejects non-human tokens).
+ * Raw tunnel HTTP access is an account-level privileged surface. Project and
+ * session credentials must use a Computer Tunnel connector profile so its machine
+ * allowlist, grants, and tool policies cannot be bypassed.
  */
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -15,6 +14,7 @@ import {
   getTunnelOwnerContext,
 } from '../tunnel/routes/auth';
 import { createConnectionsRouter } from '../tunnel/routes/connections';
+import { effectiveRegisteredCapabilities } from '../tunnel';
 
 /** Minimal stand-in for a Hono context: only `c.get(key)` is used here. */
 function fakeCtx(values: Record<string, unknown>) {
@@ -44,21 +44,40 @@ describe('requireUserCredential', () => {
   }
 });
 
-describe('getTunnelReadContext — the agent (apiKey) path', () => {
-  test('apiKey with an accountId resolves WITHOUT requiring a user credential', async () => {
-    const ctx = await getTunnelReadContext(
-      fakeCtx({ authType: 'apiKey', accountId: ACCOUNT }),
-    );
+describe('getTunnelReadContext — privileged raw tunnel access', () => {
+  test('an account API key without a sandbox identity can read', async () => {
+    const ctx = await getTunnelReadContext(fakeCtx({ authType: 'apiKey', accountId: ACCOUNT }));
     expect(ctx.accountId).toBe(ACCOUNT);
     expect(ctx.userId).toBeUndefined();
     expect(ctx.ownerClause).toBeDefined();
   });
 
-  test('a team user (userId !== accountId) still resolves', async () => {
+  for (const values of [
+    { authType: 'apiKey', accountId: ACCOUNT, sandboxId: 'sandbox-1' },
+    {
+      authType: 'pat',
+      accountId: ACCOUNT,
+      userId: USER,
+      tokenProjectId: 'project-1',
+    },
+    { authType: 'service_account', accountId: ACCOUNT, userId: 'service-1' },
+  ]) {
+    test(`rejects ${values.authType} project/service credentials`, async () => {
+      let status = 0;
+      try {
+        await getTunnelReadContext(fakeCtx(values));
+      } catch (err) {
+        if (err instanceof HTTPException) status = err.status;
+      }
+      expect(status).toBe(403);
+    });
+  }
+
+  test('a personal user resolves their own fleet', async () => {
     const ctx = await getTunnelReadContext(
-      fakeCtx({ authType: 'supabase', userId: USER, accountId: ACCOUNT }),
+      fakeCtx({ authType: 'supabase', userId: USER, accountId: USER }),
     );
-    expect(ctx.accountId).toBe(ACCOUNT);
+    expect(ctx.accountId).toBe(USER);
     expect(ctx.userId).toBe(USER);
     expect(ctx.ownerClause).toBeDefined();
   });
@@ -97,9 +116,9 @@ describe('getTunnelOwnerContext — management stays user-only', () => {
 
   test('a user credential is accepted', async () => {
     const ctx = await getTunnelOwnerContext(
-      fakeCtx({ authType: 'supabase', userId: USER, accountId: ACCOUNT }),
+      fakeCtx({ authType: 'supabase', userId: USER, accountId: USER }),
     );
-    expect(ctx.accountId).toBe(ACCOUNT);
+    expect(ctx.accountId).toBe(USER);
     expect(ctx.ownerClause).toBeDefined();
   });
 });
@@ -126,5 +145,29 @@ describe('tunnel management routes', () => {
 
     expect(res.status).toBe(403);
     expect(await res.text()).toContain('User credentials are required');
+  });
+});
+
+describe('tunnel agent capability registration', () => {
+  test('uses the live handler list within the browser-approved ceiling', () => {
+    expect(
+      effectiveRegisteredCapabilities(
+        ['filesystem', 'desktop'],
+        ['filesystem', 'shell', 'desktop'],
+      ),
+    ).toEqual(['filesystem', 'desktop']);
+  });
+
+  test('rejects a live capability escalation above browser approval', () => {
+    expect(
+      effectiveRegisteredCapabilities(['filesystem', 'shell', 'desktop'], ['filesystem']),
+    ).toEqual(['filesystem']);
+  });
+
+  test('rejects malformed and duplicate live registrations', () => {
+    expect(
+      effectiveRegisteredCapabilities(['filesystem', 'filesystem'], ['filesystem']),
+    ).toBeNull();
+    expect(effectiveRegisteredCapabilities(['filesystem', 'camera'], ['filesystem'])).toBeNull();
   });
 });

@@ -57,7 +57,9 @@ function currentRunnerParts(): { command: string; args: string[] } {
   if (script && existsSync(script)) {
     return { command: exec, args: [script, 'run', '--service'] };
   }
-  return { command: 'npx', args: ['--yes', '@kortix/agent-tunnel@latest', 'run', '--service'] };
+  throw new Error(
+    'Cannot install the background service because the current Agent Tunnel executable was not found',
+  );
 }
 
 function currentRunnerCommand(): string {
@@ -106,6 +108,8 @@ export function renderLaunchdPlist(command: string, paths: ServicePaths = getSer
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>Umask</key>
+  <integer>63</integer>
   <key>StandardOutPath</key>
   <string>${xmlEscape(stdout)}</string>
   <key>StandardErrorPath</key>
@@ -132,6 +136,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+UMask=0077
 ExecStart=/bin/sh -lc ${shellQuote(command)}
 Restart=always
 RestartSec=5

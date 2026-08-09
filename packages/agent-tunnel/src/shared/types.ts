@@ -46,10 +46,7 @@ export const TunnelErrorCode = {
 
 export type TunnelErrorCodeValue = (typeof TunnelErrorCode)[keyof typeof TunnelErrorCode];
 
-export type TunnelCapability =
-  | 'filesystem'
-  | 'shell'
-  | 'desktop';
+export type TunnelCapability = 'filesystem' | 'shell' | 'desktop';
 
 export const TunnelMethods = {
   'fs.read': 'filesystem',
@@ -152,8 +149,18 @@ export interface TunnelRelayEvents {
   'agent:disconnect': { tunnelId: string; metadata?: Record<string, unknown> };
   'agent:timeout': { tunnelId: string };
   'rpc:request': { tunnelId: string; method: string; requestId: string };
-  'rpc:response': { tunnelId: string; method: string; requestId: string; durationMs: number };
-  'rpc:error': { tunnelId: string; method: string; requestId: string; error: Error };
+  'rpc:response': {
+    tunnelId: string;
+    method: string;
+    requestId: string;
+    durationMs: number;
+  };
+  'rpc:error': {
+    tunnelId: string;
+    method: string;
+    requestId: string;
+    error: Error;
+  };
   'connection:replaced': { tunnelId: string };
   'message:pong': { tunnelId: string; params?: Record<string, unknown> };
   'message:raw': { tunnelId: string; message: unknown };
@@ -173,6 +180,9 @@ export interface HeartbeatConfig {
 export interface TunnelAuthMessage {
   type: 'auth';
   token: string;
+  /** RPC capability handlers registered in this exact agent process. */
+  capabilities?: TunnelCapability[];
+  agentVersion?: string;
 }
 
 /** Result returned by onAuthenticate hook on success. */
@@ -190,12 +200,20 @@ export interface TunnelServerConfig {
    * Return { signingKey, metadata } to accept, or null to reject.
    * If not provided, all connections are rejected.
    */
-  onAuthenticate?: (tunnelId: string, token: string) => Promise<AuthResult | null>;
+  onAuthenticate?: (
+    tunnelId: string,
+    token: string,
+    auth: TunnelAuthMessage,
+  ) => Promise<AuthResult | null>;
   /**
    * Called before relaying an RPC to the agent.
    * Return false to deny. If not provided, all RPCs are allowed.
    */
-  onAuthorizeRPC?: (tunnelId: string, method: string, params: Record<string, unknown>) => Promise<boolean>;
+  onAuthorizeRPC?: (
+    tunnelId: string,
+    method: string,
+    params: Record<string, unknown>,
+  ) => Promise<boolean>;
   /**
    * Called before handling HTTP requests to relay routes (/connections, /rpc).
    * Return false to deny. If not provided, routes are open.

@@ -17,7 +17,7 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
 
 /** Human label for the computer connector (UI default name). */
 export function computerLabel(): string {
-  return 'Computers';
+  return 'Computer Tunnel';
 }
 
 /** Legacy aggregate slug. Kept for existing session bindings during migration. */
@@ -151,14 +151,14 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
   {
     path: 'shell.exec',
     method: 'shell.exec',
-    name: 'Run shell command',
+    name: 'Run executable',
     description:
-      'Run a shell command on the machine and return stdout/stderr/exitCode. Provide `command` (and optional `args`, `cwd`, `timeout`). Be deliberate — commands can be destructive.',
+      'Run one executable directly and return stdout/stderr/exitCode. No shell parses the command. Pass arguments through `args`; use `sh -c` or the platform equivalent only when shell syntax or built-ins are required. Be deliberate — executables can be destructive.',
     risk: 'write',
     properties: {
       command: {
         type: 'string',
-        description: 'The command (executable) to run.',
+        description: 'The executable name or path. Shell built-ins are not executables.',
       },
       args: { type: 'array', description: 'Optional argument list.' },
       cwd: { type: 'string', description: 'Optional working directory.' },
@@ -317,7 +317,7 @@ function toAction(def: ComputerActionDef): NormalizedAction {
   };
 }
 
-/** The fixed catalog for every Computers connector profile. */
+/** The fixed catalog for every Computer Tunnel connector profile. */
 export function computerCatalog(): NormalizedAction[] {
   return COMPUTER_ACTIONS.map(toAction);
 }

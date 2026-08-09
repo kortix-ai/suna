@@ -59,6 +59,7 @@ export function createRpcRouter() {
 
       const outcome = await executeTunnelRpc({
         tunnelId,
+        tunnelOwnerAccountId: tunnel.accountId,
         accountId,
         actorUserId: c.get('userId') as string | undefined,
         method,
@@ -81,7 +82,11 @@ export function createRpcRouter() {
           );
         case 'rate_limited':
           return c.json(
-            { error: outcome.message, code: TunnelErrorCode.RATE_LIMITED, retryAfterMs: outcome.retryAfterMs },
+            {
+              error: outcome.message,
+              code: TunnelErrorCode.RATE_LIMITED,
+              retryAfterMs: outcome.retryAfterMs,
+            },
             429,
           );
         case 'bad_request':

@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckIcon as Check } from '@phosphor-icons/react';
+import { CheckIcon } from '@phosphor-icons/react';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
@@ -38,9 +38,7 @@ function DeviceAuthorize() {
   const deny = useDenyDeviceAuth();
 
   const [name, setName] = useState('');
-  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(
-    new Set(['filesystem', 'shell', 'desktop']),
-  );
+  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
   const [done, setDone] = useState<'approved' | 'denied' | null>(null);
 
   useEffect(() => {
@@ -168,7 +166,14 @@ function DeviceAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <p className="text-muted-foreground text-sm font-medium">Allow this device to use</p>
+            <div className="space-y-1">
+              <p className="text-muted-foreground text-sm font-medium">
+                Grant Kortix agents access to
+              </p>
+              <p className="text-muted-foreground/70 text-xs text-pretty">
+                Nothing is selected by default. Selected access remains active until you revoke it.
+              </p>
+            </div>
             <div className="border-border divide-border/60 divide-y overflow-hidden rounded-md border">
               {CAPABILITY_REGISTRY.filter((cap) =>
                 ['filesystem', 'shell', 'desktop'].includes(cap.key),
@@ -211,7 +216,7 @@ function DeviceAuthorize() {
                         selected ? 'border-foreground bg-foreground' : 'border-border',
                       )}
                     >
-                      {selected && <Check className="text-background size-3" />}
+                      {selected && <CheckIcon className="text-background size-3" />}
                     </span>
                   </button>
                 );
