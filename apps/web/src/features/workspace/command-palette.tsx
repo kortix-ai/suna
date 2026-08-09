@@ -161,20 +161,23 @@ const LEGACY_PALETTE_HIDDEN = new Set([
  *
  * `tokens` -> `api-keys` and `transactions` -> `usage` mirror
  * `RENAMED_TABS` in `settings-tabs.ts` (same rename, same source
- * vocabulary). `appearance` and `sounds` merged into the new `preferences`
- * tab — `tabs/preferences-tab.tsx` already hosts both (wallpaper/theme and
- * sound-pack controls). `shortcuts` and `referrals` have no new-panel home
- * yet (`settings-panel.tsx`'s header: phases 2-4 build the remaining
- * account-scoped tabs) — falling through to `DEFAULT_SETTINGS_TAB` still
- * opens the overlay, rather than a Cmd+K selection silently doing nothing.
+ * vocabulary). `appearance`, `sounds`, and `shortcuts` all merged into the
+ * new `preferences` tab — `tabs/preferences-tab.tsx` already hosts all
+ * three (wallpaper/theme, sound-pack controls, and a full "Keyboard
+ * shortcuts" section with the modifier picker and shortcut list). Only
+ * `referrals` has no new-panel home (nothing under `features/workspace/
+ * settings/` renders referral content yet) — falling through to
+ * `DEFAULT_SETTINGS_TAB` still opens the overlay, rather than a Cmd+K
+ * selection silently doing nothing, until a real target exists.
  */
-const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
+export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
   general: 'general',
   billing: 'billing',
   tokens: 'api-keys',
   transactions: 'usage',
   appearance: 'preferences',
   sounds: 'preferences',
+  shortcuts: 'preferences',
 };
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
