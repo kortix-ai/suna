@@ -62,6 +62,17 @@ describe('findPipedreamAccount', () => {
     expect(h.slept).toHaveLength(PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS - 1);
   });
 
+  test('attempts: 1 does a single read and never sleeps — polling callers', async () => {
+    const h = harness([[]]);
+    const match = await findPipedreamAccount('proj-1:smartlead', 'smartlead', {
+      ...h.runtime,
+      attempts: 1,
+    });
+    expect(match).toBeNull();
+    expect(h.reads).toBe(1);
+    expect(h.slept).toEqual([]);
+  });
+
   test('prefers the account whose app matches, and falls back to the first', async () => {
     const matched = await findPipedreamAccount(
       'proj-1:smartlead',

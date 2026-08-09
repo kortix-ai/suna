@@ -313,11 +313,13 @@ export async function findPipedreamAccount(
   runtime: {
     listAccounts?: (extUserId: string) => Promise<PipedreamAccount[]>;
     sleep?: (ms: number) => Promise<void>;
+    attempts?: number;
   } = {},
 ): Promise<PipedreamAccount | null> {
   const listAccounts = runtime.listAccounts ?? ((id: string) => getProvider().listAccounts(id));
   const sleep = runtime.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  for (let attempt = 0; attempt < PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS; attempt++) {
+  const attempts = runtime.attempts ?? PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await sleep(PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS);
     const accounts = await listAccounts(extUserId);
     const match = accounts.find((a) => a.app === app) ?? accounts[0];
@@ -336,10 +338,18 @@ export async function finalizePipedreamConnection(opts: {
   app: string;
   connectorId: string;
   userId: string | null;
+  /**
+   * Lookup attempts override. A POLLING caller (the setup-link finalize route)
+   * passes 1 — its poll loop already is the retry, so the server must not stack
+   * a 2.4s three-read sweep on top of every poll. One-shot callers (webhook,
+   * authed finalize) keep the default bounded retry.
+   */
+  lookupAttempts?: number;
 }): Promise<{ connected: boolean; accountId?: string }> {
   const match = await findPipedreamAccount(
     externalUserId(opts.projectId, opts.slug, opts.userId),
     opts.app,
+    { attempts: opts.lookupAttempts },
   );
   if (!match) return { connected: false };
   await upsertCredential({ projectId: opts.projectId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });

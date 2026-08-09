@@ -274,6 +274,8 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
       app: link.app,
       connectorId: link.connectorId,
       userId: null,
+      // This route is polled; the poll loop is the retry. One read per poll.
+      lookupAttempts: 1,
     });
     connected = result.connected;
   } catch (err) {
