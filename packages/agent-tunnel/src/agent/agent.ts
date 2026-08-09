@@ -5,6 +5,8 @@ import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
 
+const AGENT_VERSION = '0.1.2';
+
 interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: string;
@@ -23,6 +25,7 @@ interface JsonRpcNotification {
 }
 
 type IncomingMessage = JsonRpcRequest | JsonRpcNotification;
+const MAX_RPC_MESSAGE_SIZE = 5 * 1024 * 1024;
 
 const c = {
   reset:   '\x1b[0m',
@@ -122,7 +125,12 @@ export class TunnelAgent {
       this.uptimeInterval = setInterval(() => { this.uptime++; }, 1000);
 
       // Send auth handshake as first message (token never in URL)
-      this.send({ type: 'auth', token: trustedCredential(this.config.token, 'token') });
+      this.send({
+        type: 'auth',
+        token: trustedCredential(this.config.token, 'token'),
+        capabilities: this.registry.getCapabilityNames(),
+        agentVersion: AGENT_VERSION,
+      });
     });
 
     this.ws.addEventListener('message', (event) => {
@@ -144,6 +152,18 @@ export class TunnelAgent {
           log(`${c.red}✗${c.reset}`, `Authentication failed — check your token`);
           return; // Don't reconnect on auth failure
         }
+        if (event.code === 4003) {
+          log(`${c.red}✗${c.reset}`, `Device credential was revoked — run connect again`);
+          return;
+        }
+        if (event.code === 4004) {
+          this.isShuttingDown = true;
+          log(
+            `${c.yellow}○${c.reset}`,
+            `Another Agent Tunnel process connected with these credentials — stopping this process`,
+          );
+          return;
+        }
         log(`${c.yellow}○${c.reset}`, `Disconnected ${c.gray}(code: ${event.code})${c.reset}`);
         this.scheduleReconnect();
       }
@@ -155,6 +175,11 @@ export class TunnelAgent {
   }
 
   private async handleMessage(raw: string): Promise<void> {
+    if (typeof raw !== 'string' || Buffer.byteLength(raw, 'utf8') > MAX_RPC_MESSAGE_SIZE) {
+      log(`${c.red}✗${c.reset}`, `Rejected oversized or non-text relay message`);
+      try { this.ws?.close(4002, 'message too large'); } catch {}
+      return;
+    }
     let msg: any;
     try {
       msg = JSON.parse(raw);
@@ -267,7 +292,7 @@ export class TunnelAgent {
     const { id, method, params = {} } = request;
 
     const permissionId = params.permissionId as string | undefined;
-    const permission = this.permissionGuard.getPermission(permissionId);
+    const permission = this.permissionGuard.getPermissionForMethod(permissionId, method);
     if (!permission) {
       this.sendSignedError(id, -32000, `Permission denied: ${permissionId ? 'invalid or expired permission' : 'no permissionId provided'}`);
       return;
@@ -310,7 +335,20 @@ export class TunnelAgent {
       const sig = signMessage(this.signingKey, payload, nonce);
       const signed = { ...data, _sig: sig, _nonce: nonce };
       try {
-        this.ws.send(JSON.stringify(signed));
+        const encoded = JSON.stringify(signed);
+        if (Buffer.byteLength(encoded, 'utf8') > MAX_RPC_MESSAGE_SIZE) {
+          if ('result' in data && typeof data.id === 'string') {
+            this.sendSignedError(
+              data.id,
+              -32003,
+              'RPC result exceeds the maximum tunnel message size',
+            );
+            return;
+          }
+          this.ws.close(4002, 'message too large');
+          return;
+        }
+        this.ws.send(encoded);
       } catch (err) {
         log(`${c.red}✗${c.reset}`, `Send failed`);
       }
@@ -339,7 +377,7 @@ export class TunnelAgent {
           platform: platform(),
           arch: arch(),
           osVersion: release(),
-          agentVersion: '0.1.2',
+          agentVersion: AGENT_VERSION,
         },
       },
     });
@@ -365,10 +403,6 @@ export class TunnelAgent {
     const base = trustedHttpUrl(this.config.apiUrl)
       .replace(/^http:/, 'ws:')
       .replace(/^https:/, 'wss:');
-
-    if (base.startsWith('ws://') && !base.includes('localhost') && !base.includes('127.0.0.1')) {
-      log(`${c.red}!${c.reset}`, `${c.red}WARNING: Connecting over unencrypted ws:// to a remote host. Token will be sent in plaintext. Use https:// API URL for production.${c.reset}`);
-    }
 
     const wsPath = this.config.wsPath || '/ws';
     const params = new URLSearchParams({

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { machineSelectionChanged, normalizeMachineSelection } from './computer-connector-account';
 
-describe('Computers profile machine selection', () => {
+describe('Computer Tunnel profile machine selection', () => {
   test('normalizes duplicates and ignores non-string values', () => {
     expect(normalizeMachineSelection(['b', 'a', 'b', null])).toEqual(['a', 'b']);
   });

@@ -755,7 +755,8 @@ supplied scope field without restarting the session.
 `SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
 `CONN-10` `POST /connectors/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
-`CONN-11` `POST /connectors/webhook/pipedream` → public; bad/unsigned payload → rejected.
+`CONN-11` `POST /connectors/webhook/pipedream` → public, HMAC-signed. Reads the external user id from `account.external_id` (the real Pipedream CONNECTION_SUCCESS shape) or top-level `external_user_id` (legacy); `event:"CONNECTION_ERROR"` → 200 `{ok,ignored}`; neither id present → 400; bad signature → 401; signed but Pipedream still reports no account → 503. AUXILIARY only — it never notifies a session.
+`COVD-2` public connector setup-link consume side: `GET /setup-links/connectors/:token` (what app does this link connect) · `POST /setup-links/connectors/:token/start` (mint a fresh Pipedream connect URL) · `POST /setup-links/connectors/:token/finalize` (the authoritative persist: 200 `{connected:true|false}`, notifies the requesting session exactly once on the first true). Bogus token → 404 on all three; wrong link kind → 400; expired → 410; non-project authorization strategy → 409.
 `CONN-12` `GET /connectors/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
 `DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
 

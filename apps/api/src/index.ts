@@ -1551,16 +1551,50 @@ export default {
 
       const tunnelId = url.searchParams.get('tunnelId');
 
-      if (!tunnelId) {
-        return new Response(JSON.stringify({ error: 'Missing tunnelId' }), {
+      if (
+        !tunnelId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
+      ) {
+        return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      // Rate limit WS connections (keyed by tunnelId to prevent connection spam)
+      // Agent Tunnel is a native CLI protocol. Browsers always send Origin on
+      // WebSocket upgrades; rejecting it prevents cross-site WebSocket use if
+      // a machine bearer is ever exposed to browser-accessible state.
+      if (req.headers.has('origin')) {
+        return new Response(
+          JSON.stringify({
+            error: 'Browser tunnel WebSockets are not allowed',
+          }),
+          {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
+      // Include the source address so an unauthenticated attacker who learns a
+      // tunnelId cannot consume the real machine's reconnect budget.
       const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-      const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
+      const clientIp =
+        req.headers.get('cf-connecting-ip')?.trim() ||
+        req.headers.get('x-real-ip')?.trim() ||
+        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        'unknown';
+      const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
+      if (!wsIpRateCheck.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: 'Too many connection attempts',
+            retryAfterMs: wsIpRateCheck.retryAfterMs,
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const wsRateCheck = tunnelRateLimiter.check('wsConnect', `${clientIp}:${tunnelId}`);
       if (!wsRateCheck.allowed) {
         return new Response(
           JSON.stringify({
@@ -1646,7 +1680,7 @@ export default {
       message: string | Buffer,
     ) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
+        tunnelWsHandlers.onMessage(ws.data.tunnelId, ws as any, message);
         return;
       }
       if (ws.data?.type === 'preview-ws') {
@@ -1661,7 +1695,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId);
+        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

@@ -14,8 +14,10 @@
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import {
   type TunnelCapability,
+  capabilityForMethod,
+  desktopFeatureForMethod,
+  operationForMethod,
   TunnelErrorCode,
-  TunnelMethods,
   TunnelRelayError,
 } from 'agent-tunnel';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -48,17 +50,7 @@ export type TunnelRpcOutcome =
 
 /** Map a tunnel method to its capability (explicit table first, then prefix). */
 export function resolveCapability(method: string): TunnelCapability | null {
-  const mapped = (TunnelMethods as Record<string, string | null>)[method];
-  if (mapped !== undefined) {
-    return mapped as TunnelCapability | null;
-  }
-  const prefix = method.split('.')[0];
-  const prefixMap: Record<string, TunnelCapability> = {
-    fs: 'filesystem',
-    shell: 'shell',
-    desktop: 'desktop',
-  };
-  return prefixMap[prefix] || null;
+  return capabilityForMethod(method);
 }
 
 /**
@@ -80,6 +72,7 @@ export async function executeTunnelRpc(input: {
   params: Record<string, unknown>;
 }): Promise<TunnelRpcOutcome> {
   const { tunnelId, accountId, method, params } = input;
+  const permissionOwnerAccountId = input.tunnelOwnerAccountId ?? accountId;
 
   const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
   if (!rpcRateCheck.allowed) {
@@ -111,12 +104,35 @@ export async function executeTunnelRpc(input: {
     };
   }
 
-  const capPrefix = method.indexOf('.');
-  const operation = capPrefix !== -1 ? method.slice(capPrefix + 1) : method;
+  const [connection] = await db
+    .select({
+      capabilities: tunnelConnections.capabilities,
+      machineInfo: tunnelConnections.machineInfo,
+    })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, tunnelId))
+    .limit(1);
+  const approvedCapabilities = Array.isArray(connection?.capabilities)
+    ? connection.capabilities
+    : [];
+  const registeredCapabilities = (connection?.machineInfo as Record<string, unknown> | null)
+    ?.registeredCapabilities;
+  const effectiveCapabilities = Array.isArray(registeredCapabilities)
+    ? approvedCapabilities.filter((item) => registeredCapabilities.includes(item))
+    : approvedCapabilities;
+  if (!effectiveCapabilities.includes(capability)) {
+    return {
+      ok: false,
+      kind: 'bad_request',
+      message: `Capability is not registered by the connected Agent Tunnel: ${capability}. Update and reconnect the local agent.`,
+    };
+  }
+
+  const operation = operationForMethod(method);
   const permCheck = await checkPermission(tunnelId, capability, operation, params);
 
   if (!permCheck.allowed) {
-    const permReqRateCheck = tunnelRateLimiter.check('permRequest', accountId);
+    const permReqRateCheck = tunnelRateLimiter.check('permRequest', permissionOwnerAccountId);
     if (!permReqRateCheck.allowed) {
       return {
         ok: false,
@@ -126,21 +142,20 @@ export async function executeTunnelRpc(input: {
       };
     }
 
-    const scopeValidation = validateScopeInput(capability, params);
-    const requestedScope = scopeValidation.valid ? scopeValidation.sanitized || params : params;
+    const requestedScope = requestedScopeForOperation(capability, method, operation, params);
 
     const [request] = await db
       .insert(tunnelPermissionRequests)
       .values({
         tunnelId,
-        accountId,
+        accountId: permissionOwnerAccountId,
         capability,
         requestedScope,
         reason: `Agent requested ${method} — ${permCheck.reason}`,
       })
       .returning();
 
-    notifyPermissionRequest(accountId, request);
+    notifyPermissionRequest(permissionOwnerAccountId, request);
 
     return {
       ok: false,
@@ -220,6 +235,42 @@ export async function executeTunnelRpc(input: {
   return { ok: true, result };
 }
 
+function requestedScopeForOperation(
+  capability: TunnelCapability,
+  method: string,
+  operation: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  let candidate: Record<string, unknown> = {};
+  if (capability === 'filesystem') {
+    candidate = {
+      operations: [operation],
+      ...(typeof params.path === 'string' && params.path.length > 0
+        ? { paths: [params.path] }
+        : {}),
+    };
+  } else if (capability === 'shell') {
+    const command = typeof params.command === 'string' ? params.command.trim() : '';
+    candidate = {
+      ...(command ? { commands: [command] } : {}),
+      ...(typeof params.cwd === 'string' && params.cwd.length > 0
+        ? { workingDir: params.cwd }
+        : {}),
+      ...(typeof params.timeout === 'number' &&
+      Number.isFinite(params.timeout) &&
+      params.timeout > 0
+        ? { maxTimeout: params.timeout }
+        : {}),
+    };
+  } else if (capability === 'desktop') {
+    const feature = desktopFeatureForMethod(method, params);
+    candidate = feature ? { features: [feature] } : {};
+  }
+
+  const validated = validateScopeInput(capability, candidate);
+  return validated.valid ? (validated.sanitized ?? {}) : {};
+}
+
 function estimateBytes(result: unknown): number {
   if (result === null || result === undefined) return 0;
   if (typeof result === 'string') return result.length;
@@ -274,7 +325,13 @@ export async function listAccountComputers(
     ownerAccountId: r.accountId,
     name: r.name,
     online: isTunnelConnectionLive(r),
-    capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
+    capabilities: (() => {
+      const approved = Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [];
+      const registered = (r.machineInfo as Record<string, unknown> | null)?.registeredCapabilities;
+      return Array.isArray(registered)
+        ? approved.filter((capability) => registered.includes(capability))
+        : approved;
+    })(),
     platform:
       ((r.machineInfo as Record<string, unknown> | null)?.platform as string | null) ?? null,
   }));
@@ -292,7 +349,7 @@ async function resolveComputerTunnel(
   if (machines.length === 0) {
     return {
       ok: false,
-      message: 'No machines are assigned to this Computers connector profile.',
+      message: 'No machines are assigned to this Computer Tunnel connector profile.',
     };
   }
   if (selector) {
@@ -358,7 +415,7 @@ export type ComputerCallOutcome =
   | { ok: false; kind: 'error'; message: string };
 
 /**
- * Execute one Computers connector action. Listing and selection use the same
+ * Execute one Computer Tunnel connector action. Listing and selection use the same
  * server-side allowlist. The DB query also verifies account ownership, so a
  * stale, deleted, unassigned, or cross-account tunnel fails closed.
  */

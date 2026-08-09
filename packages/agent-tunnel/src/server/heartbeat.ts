@@ -25,12 +25,11 @@ export class HeartbeatManager {
   start(): void {
     if (this.intervalHandle) return;
 
-    this.intervalHandle = setInterval(
-      () => this.tick(),
-      this.intervalMs,
-    );
+    this.intervalHandle = setInterval(() => this.tick(), this.intervalMs);
 
-    console.log(`[tunnel-heartbeat] Started (interval: ${this.intervalMs}ms, max missed: ${this.maxMissed})`);
+    console.log(
+      `[tunnel-heartbeat] Started (interval: ${this.intervalMs}ms, max missed: ${this.maxMissed})`,
+    );
   }
 
   stop(): void {
@@ -46,6 +45,11 @@ export class HeartbeatManager {
     this.states.set(tunnelId, {
       missedPongs: 0,
       lastPongAt: Date.now(),
+    });
+    // Collect the live handler list immediately. Waiting for the first interval
+    // can advertise stale DB capabilities for up to 30 seconds after connect.
+    this.relay.sendNotification(tunnelId, 'tunnel.ping', {
+      timestamp: Date.now(),
     });
   }
 
@@ -75,8 +79,11 @@ export class HeartbeatManager {
       state.missedPongs++;
 
       if (state.missedPongs >= this.maxMissed) {
-        console.warn(`[tunnel-heartbeat] Agent ${tunnelId} missed ${state.missedPongs} pongs — timing out`);
+        console.warn(
+          `[tunnel-heartbeat] Agent ${tunnelId} missed ${state.missedPongs} pongs — timing out`,
+        );
         this.relay.emitEvent('agent:timeout', { tunnelId });
+        this.relay.disconnectAgent(tunnelId, 4000, 'heartbeat timeout');
         this.states.delete(tunnelId);
       }
     }

@@ -30,6 +30,15 @@ interface ApprovalRequestProps {
   className?: string;
 }
 
+/**
+ * `dense` is the in-conversation rendering: the same parameters and the same
+ * two buttons, at the notice card's px-3 rhythm and without the page-scale
+ * chrome. The full-page and side-panel surfaces keep the default scale.
+ */
+interface DenseProp {
+  dense?: boolean;
+}
+
 const PRIORITY_ARGS = ['to', 'cc', 'bcc', 'recipient', 'recipients', 'channel', 'url', 'subject'];
 
 function riskTone(risk: string | null): 'destructive' | 'warning' | 'muted' {
@@ -69,6 +78,164 @@ function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
   return 'muted';
 }
 
+/**
+ * The redacted parameters the connector would receive — the whole reason an
+ * approval is decidable rather than a guess. Shared by the standalone page, the
+ * Audit panel, and the in-session notice so all three show the same values.
+ */
+export function ApprovalParameters({
+  argsPreview,
+  reviewComplete = true,
+  dense = false,
+  className,
+}: DenseProp & {
+  argsPreview: Record<string, unknown> | null;
+  reviewComplete?: boolean;
+  className?: string;
+}) {
+  const entries = argsPreview ? orderedArgEntries(argsPreview) : [];
+
+  return (
+    <div
+      className={cn(
+        dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'bg-primary/[0.03] border-border border-b',
+          dense ? 'px-3 py-1.5' : 'px-4 py-2',
+        )}
+      >
+        <p className="text-foreground text-xs font-medium">Parameters</p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+          {reviewComplete
+            ? 'These are the redacted values the connector will receive.'
+            : 'Some connector values could not be displayed in full.'}
+        </p>
+      </div>
+      {entries.length > 0 ? (
+        <dl>
+          {entries.map(([key, value]) => (
+            <div
+              key={key}
+              className={cn(
+                'border-border grid gap-1 border-b last:border-b-0 sm:gap-3',
+                dense
+                  ? 'px-3 py-2 sm:grid-cols-[6rem_minmax(0,1fr)]'
+                  : 'px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)]',
+              )}
+            >
+              <dt className="text-muted-foreground font-mono text-xs break-all">{key}</dt>
+              <dd
+                className={cn(
+                  'text-foreground min-w-0 wrap-break-word whitespace-pre-wrap',
+                  dense ? 'text-xs' : 'text-sm',
+                )}
+              >
+                {value === '[redacted]' ? (
+                  <span className="text-muted-foreground italic">Hidden credential</span>
+                ) : (
+                  renderArgValue(value)
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p
+          className={cn(
+            'text-muted-foreground text-xs text-pretty',
+            dense ? 'px-3 py-2' : 'px-4 py-4',
+          )}
+        >
+          This call has no recorded parameter preview. Review the session context before you approve
+          it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Why Approve is unavailable. Denying an unreviewable call is still allowed. */
+export function ApprovalIncompleteNotice({
+  dense = false,
+  className,
+}: DenseProp & { className?: string }) {
+  return (
+    <p
+      className={cn(
+        'text-kortix-orange text-xs text-pretty',
+        dense ? '' : 'border-border border-t px-4 py-3',
+        className,
+      )}
+    >
+      Kortix cannot approve this call because the complete parameters are not available. You can
+      deny it.
+    </p>
+  );
+}
+
+/**
+ * The only two decisions on offer, everywhere. Deliberately no "allow for
+ * session" / "always allow": a decision applies to exactly the call that asked
+ * for it — a one-click waiver would pre-authorise later calls with entirely
+ * different arguments. Standing permission is authored in the Policies panel.
+ */
+export function ApprovalDecisionActions({
+  onDecision,
+  busyDecision = null,
+  approveDisabled = false,
+  dense = false,
+  className,
+}: DenseProp & {
+  onDecision: (decision: ApprovalDecisionValue) => void;
+  busyDecision?: ApprovalDecisionValue | null;
+  approveDisabled?: boolean;
+  className?: string;
+}) {
+  const size = dense ? 'sm' : 'default';
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        dense ? '' : 'border-border border-t px-4 py-3',
+        className,
+      )}
+    >
+      <Button
+        type="button"
+        size={size}
+        variant="outline"
+        disabled={busyDecision !== null}
+        onClick={() => onDecision('deny')}
+      >
+        {busyDecision === 'deny' ? (
+          <Loading className="size-4 shrink-0" />
+        ) : (
+          <XIcon className="size-4 shrink-0" />
+        )}
+        Deny
+      </Button>
+      <Button
+        type="button"
+        size={size}
+        disabled={busyDecision !== null || approveDisabled}
+        onClick={() => onDecision('approve')}
+      >
+        {busyDecision === 'approve' ? (
+          <Loading className="size-4 shrink-0" />
+        ) : (
+          <CheckCircleIcon className="size-4 shrink-0" />
+        )}
+        Approve this call
+      </Button>
+    </div>
+  );
+}
+
 export function ApprovalRequest({
   request,
   onDecision,
@@ -77,7 +244,6 @@ export function ApprovalRequest({
   error = null,
   className,
 }: ApprovalRequestProps) {
-  const entries = request.argsPreview ? orderedArgEntries(request.argsPreview) : [];
   const reviewComplete = request.reviewComplete !== false;
   const actionable = request.pending && onDecision;
   const resolved = !request.pending || outcome !== null;
@@ -134,80 +300,20 @@ export function ApprovalRequest({
         ) : null}
       </header>
 
-      <div className="border-border border-t">
-        <div className="bg-primary/[0.03] border-border border-b px-4 py-2">
-          <p className="text-foreground text-xs font-medium">Parameters</p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {reviewComplete
-              ? 'These are the redacted values the connector will receive.'
-              : 'Some connector values could not be displayed in full.'}
-          </p>
-        </div>
-        {entries.length > 0 ? (
-          <dl>
-            {entries.map(([key, value]) => (
-              <div
-                key={key}
-                className="border-border grid gap-1 border-b px-4 py-3 last:border-b-0 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
-              >
-                <dt className="text-muted-foreground font-mono text-xs break-all">{key}</dt>
-                <dd className="text-foreground min-w-0 text-sm wrap-break-word whitespace-pre-wrap">
-                  {value === '[redacted]' ? (
-                    <span className="text-muted-foreground italic">Hidden credential</span>
-                  ) : (
-                    renderArgValue(value)
-                  )}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="text-muted-foreground px-4 py-4 text-xs text-pretty">
-            This call has no recorded parameter preview. Review the session context before you
-            approve it.
-          </p>
-        )}
-      </div>
+      <ApprovalParameters argsPreview={request.argsPreview} reviewComplete={reviewComplete} />
 
       {error ? (
         <p className="text-destructive border-border border-t px-4 py-3 text-xs">{error}</p>
       ) : null}
 
-      {!reviewComplete ? (
-        <p className="text-kortix-orange border-border border-t px-4 py-3 text-xs text-pretty">
-          Kortix cannot approve this call because the complete parameters are not available. You can
-          deny it.
-        </p>
-      ) : null}
+      {!reviewComplete ? <ApprovalIncompleteNotice /> : null}
 
       {actionable ? (
-        <footer className="border-border flex flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busyDecision !== null}
-            onClick={() => onDecision('deny')}
-          >
-            {busyDecision === 'deny' ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <XIcon className="size-4 shrink-0" />
-            )}
-            Deny
-          </Button>
-          <Button
-            type="button"
-            disabled={busyDecision !== null || !reviewComplete}
-            onClick={() => onDecision('approve')}
-          >
-            {busyDecision === 'approve' ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <CheckCircleIcon className="size-4 shrink-0" />
-            )}
-            Approve this call
-          </Button>
-        </footer>
+        <ApprovalDecisionActions
+          onDecision={actionable}
+          busyDecision={busyDecision}
+          approveDisabled={!reviewComplete}
+        />
       ) : null}
     </section>
   );

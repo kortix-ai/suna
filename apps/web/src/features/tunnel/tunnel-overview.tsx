@@ -2,24 +2,16 @@
 
 import { formatRelative } from '@kortix/shared';
 import {
-  PlugsConnectedIcon as Cable,
-  MonitorIcon as Monitor,
-  MagnifyingGlassIcon as Search,
+  MagnifyingGlassIcon,
+  MonitorIcon,
+  PlugsConnectedIcon,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Empty,
   EmptyContent,
@@ -60,16 +52,38 @@ import { TunnelSettingsDialog } from './tunnel-settings-dialog';
 function LoadingSkeleton() {
   return (
     <div className="space-y-1">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 rounded-md" />
+      {Array.from({ length: 4 }).map((_, index) => (
+        <Skeleton key={index} className="h-14 rounded-md" />
       ))}
     </div>
   );
 }
 
-export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
+export interface ComputerTunnelManagerProps {
+  canWrite?: boolean;
+  selectedIds?: readonly string[];
+  onSelectedIdsChange?: (ids: string[]) => void;
+  selectionDisabled?: boolean;
+  /** Restrict a read-only profile to its assigned machines. */
+  visibleIds?: readonly string[];
+}
+
+/**
+ * Canonical Computer Tunnel management surface.
+ *
+ * Create-profile and edit-profile flows use this same component. Pairing,
+ * search, selection, settings, permission, audit, and deletion behavior cannot
+ * drift between a connector profile and a separate fleet page.
+ */
+export function ComputerTunnelManager({
+  canWrite = false,
+  selectedIds,
+  onSelectedIdsChange,
+  selectionDisabled = false,
+  visibleIds,
+}: ComputerTunnelManagerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: connections = [], isLoading } = useTunnelConnections();
+  const { data: allConnections = [], isLoading } = useTunnelConnections();
   const deleteMutation = useDeleteTunnelConnection();
   useTunnelRealtimeSync();
 
@@ -78,66 +92,80 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
   const [deleteTarget, setDeleteTarget] = useState<TunnelConnection | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const visible = useMemo(() => (visibleIds ? new Set(visibleIds) : null), [visibleIds]);
+  const connections = useMemo(
+    () =>
+      visible === null
+        ? allConnections
+        : allConnections.filter((connection) => visible.has(connection.tunnelId)),
+    [allConnections, visible],
+  );
+  const selected = useMemo(() => new Set(selectedIds ?? []), [selectedIds]);
+  const selectable = selectedIds !== undefined && onSelectedIdsChange !== undefined;
   const hasConnections = connections.length > 0;
 
   const filtered = searchQuery
     ? connections.filter(
-        (c) =>
-          c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (c.machineInfo as Record<string, string>)?.hostname
+        (connection) =>
+          connection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (connection.machineInfo as Record<string, string>)?.hostname
             ?.toLowerCase()
-            ?.includes(searchQuery.toLowerCase()),
+            .includes(searchQuery.toLowerCase()),
       )
     : connections;
 
   const handleDelete = async (tunnelId: string) => {
     try {
       await deleteMutation.mutateAsync(tunnelId);
-      successToast('Tunnel deleted');
+      successToast('Computer Tunnel deleted');
       setDeleteTarget(null);
+      if (selectable && selected.has(tunnelId)) {
+        onSelectedIdsChange(selectedIds.filter((id) => id !== tunnelId));
+      }
       if (selectedTunnel?.tunnelId === tunnelId) {
         setSelectedTunnel(null);
         setSettingsOpen(false);
       }
-    } catch {
-      errorToast('Failed to delete tunnel');
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : 'Failed to delete Computer Tunnel');
     }
   };
 
-  const handleSelect = (conn: TunnelConnection) => {
-    setSelectedTunnel(conn);
+  const handleSelect = (connection: TunnelConnection) => {
+    setSelectedTunnel(connection);
     setSettingsOpen(true);
+  };
+
+  const toggleAssignment = (tunnelId: string, checked: boolean) => {
+    if (!selectable) return;
+    const next = new Set(selected);
+    if (checked) next.add(tunnelId);
+    else next.delete(tunnelId);
+    onSelectedIdsChange([...next]);
   };
 
   return (
     <>
-      <CustomizeSectionWrapper
-        title="Computers"
-        description="Connect Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel, then control agent permissions for each machine."
-      >
-        {hasConnections && canWrite && (
-          <div className="flex items-center justify-between gap-3">
-            <ConnectCommandPanel />
-          </div>
-        )}
+      <div className="space-y-5">
+        {hasConnections && canWrite ? <ConnectCommandPanel /> : null}
 
         <div className="space-y-4">
-          {hasConnections && (
+          {hasConnections ? (
             <InputGroupSearch>
               <InputGroupSearchIcon>
-                <Search />
+                <MagnifyingGlassIcon />
               </InputGroupSearchIcon>
               <InputGroupSearchInput
                 placeholder={tHardcodedUi.raw(
                   'componentsTunnelTunnelOverview.line348JsxAttrPlaceholderSearchConnections',
                 )}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(event) => setSearchQuery(event.target.value)}
                 variant="popover"
               />
               <InputGroupSearchClear onClick={() => setSearchQuery('')} />
             </InputGroupSearch>
-          )}
+          ) : null}
 
           {isLoading ? (
             <LoadingSkeleton />
@@ -145,37 +173,30 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <Cable />
+                  <PlugsConnectedIcon />
                 </EmptyMedia>
-                <EmptyTitle>
-                  {tHardcodedUi.raw(
-                    'componentsTunnelTunnelOverview.line234JsxTextConnectYourMachine',
-                  )}
-                </EmptyTitle>
+                <EmptyTitle>Pair a computer</EmptyTitle>
                 <EmptyDescription>
-                  {tHardcodedUi.raw(
-                    'componentsTunnelTunnelOverview.line236JsxTextRunThisCommandOnAnyMachineToConnect',
-                  )}
+                  Run the Agent Tunnel command on a Mac, Windows PC, or Linux machine. Approve the
+                  device code in your browser to add it to this profile.
                 </EmptyDescription>
               </EmptyHeader>
-              {canWrite && (
+              {canWrite ? (
                 <EmptyContent className="max-w-md">
                   <ConnectCommandPanel />
                 </EmptyContent>
-              )}
+              ) : null}
             </Empty>
           ) : filtered.length === 0 && searchQuery ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              {tHardcodedUi.raw(
-                'componentsTunnelTunnelOverview.line362JsxTextNoConnectionsMatchingLdquo',
-              )}
-              <span className="text-foreground font-mono">{searchQuery}</span>
-              {tHardcodedUi.raw('componentsTunnelTunnelOverview.line362JsxTextRdquo')}
+              No Computer Tunnels match{' '}
+              <span className="text-foreground font-mono">{searchQuery}</span>.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  {selectable ? <TableHead className="w-10" aria-label="Assigned" /> : null}
                   <TableHead className="size-8 p-0" />
                   <TableHead>Name</TableHead>
                   <TableHead>Host</TableHead>
@@ -200,17 +221,29 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
                       className="cursor-pointer"
                       onClick={() => handleSelect(connection)}
                     >
+                      {selectable ? (
+                        <TableCell className="w-10" onClick={(event) => event.stopPropagation()}>
+                          <Checkbox
+                            checked={selected.has(connection.tunnelId)}
+                            disabled={selectionDisabled}
+                            aria-label={`Assign ${connection.name}`}
+                            onCheckedChange={(checked) =>
+                              toggleAssignment(connection.tunnelId, checked === true)
+                            }
+                          />
+                        </TableCell>
+                      ) : null}
                       <TableCell className="size-8 pr-0 pl-4">
-                        <div
+                        <span
                           className={cn(
-                            'inline-flex size-8 shrink-0 items-center justify-center rounded-sm border',
+                            'inline-flex size-8 shrink-0 items-center justify-center rounded-sm',
                             isOnline
-                              ? 'bg-kortix-green/10 text-kortix-green'
-                              : 'bg-kortix-red/10 text-kortix-red',
+                              ? 'bg-kortix-green/15 text-kortix-green'
+                              : 'bg-primary/5 text-muted-foreground',
                           )}
                         >
-                          <Monitor className="size-5 shrink-0" />
-                        </div>
+                          <MonitorIcon className="size-5 shrink-0" weight="fill" />
+                        </span>
                       </TableCell>
                       <TableCell className="max-w-[200px]">
                         <div className="min-w-0">
@@ -230,7 +263,9 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{lastSeen}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs tabular-nums">
+                        {lastSeen}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -238,7 +273,7 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
             </Table>
           )}
         </div>
-      </CustomizeSectionWrapper>
+      </div>
 
       <TunnelSettingsDialog
         tunnel={selectedTunnel}
@@ -251,11 +286,22 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
         onDelete={canWrite ? () => selectedTunnel && setDeleteTarget(selectedTunnel) : undefined}
       />
 
-      <DeleteConnectionDialog
-        target={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && void handleDelete(deleteTarget.tunnelId)}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Computer Tunnel"
+        description={
+          <>
+            This permanently disconnects{' '}
+            <span className="text-foreground font-medium">{deleteTarget?.name}</span> and revokes
+            its active permissions. Existing audit events remain available.
+          </>
+        }
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        confirmIcon={<TrashIcon className="size-3.5 shrink-0" weight="fill" />}
         isPending={deleteMutation.isPending}
+        onConfirm={() => deleteTarget && void handleDelete(deleteTarget.tunnelId)}
       />
 
       <TunnelPermissionRequestDialog />
@@ -263,49 +309,13 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
   );
 }
 
-function DeleteConnectionDialog({
-  target,
-  onClose,
-  onConfirm,
-  isPending,
-}: {
-  target: TunnelConnection | null;
-  onClose: () => void;
-  onConfirm: () => void;
-  isPending: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
+export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
   return (
-    <AlertDialog open={!!target} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent className="sm:max-w-md">
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {tHardcodedUi.raw('componentsTunnelTunnelOverview.line126JsxTextDeleteConnection')}
-          </AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div>
-              {tHardcodedUi.raw(
-                'componentsTunnelTunnelOverview.line128JsxTextThisWillPermanentlyDelete',
-              )}
-              {target ? <span className="text-foreground font-medium">{target.name}</span> : null}
-              {tHardcodedUi.raw(
-                'componentsTunnelTunnelOverview.line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs',
-              )}
-            </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className={buttonVariants({ variant: 'destructive' })}
-            disabled={isPending}
-            onClick={onConfirm}
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <CustomizeSectionWrapper
+      title="Computer Tunnels"
+      description="Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel. Open a machine to control its permissions and review its audit history."
+    >
+      <ComputerTunnelManager canWrite={canWrite} />
+    </CustomizeSectionWrapper>
   );
 }

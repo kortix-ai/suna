@@ -26,6 +26,7 @@ describe('agent tunnel service definitions', () => {
     expect(plist).toContain(`<string>${SERVICE_LABEL}</string>`);
     expect(plist).toContain('<key>RunAtLoad</key>');
     expect(plist).toContain('<key>KeepAlive</key>');
+    expect(plist).toContain('<key>Umask</key>');
     expect(plist).toContain('agent-tunnel.out.log');
     expect(plist).toContain('agent-tunnel.err.log');
   });
@@ -34,6 +35,7 @@ describe('agent tunnel service definitions', () => {
     const unit = renderSystemdUnit('exec /bin/echo tunnel');
     expect(unit).toContain('Description=Kortix Agent Tunnel');
     expect(unit).toContain('Restart=always');
+    expect(unit).toContain('UMask=0077');
     expect(unit).toContain('WantedBy=default.target');
     expect(unit).toContain('agent-tunnel.out.log');
     expect(unit).toContain('agent-tunnel.err.log');
