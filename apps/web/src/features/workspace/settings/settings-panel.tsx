@@ -42,10 +42,15 @@
  * `sandbox`, `members`, `general`, `upgrades`, and `models`. `sandbox` here
  * still renders the UNSPLIT `SandboxView` (templates + build log together);
  * splitting off `snapshots` (build log only) is a later task, so `snapshots`
- * stays a placeholder. The eleven other still-new surfaces (`profile`,
- * `preferences`, `connected`, `billing`, `usage`, `groups`, `roles`,
- * `identity`, `audit`, `api-keys`, `experimental`) also stay placeholders —
- * phases 2-4 build them.
+ * stays a placeholder.
+ *
+ * **Task 7 update.** `profile` is wired to the real `ProfileTab` (see
+ * `tabs/profile-tab.tsx`) — the first of the ten still-new, account-scoped
+ * surfaces to get real content. It renders with no `projectId` dependency
+ * (see `SettingsTabPane` below), unlike every project-scoped case above it.
+ * The remaining nine (`preferences`, `connected`, `billing`, `usage`,
+ * `groups`, `roles`, `identity`, `audit`, `api-keys`, `experimental`) stay
+ * placeholders — phases 2-4 build them.
  *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
@@ -105,6 +110,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { ProfileTab } from './tabs/profile-tab';
 import type { RailGroup, RailItem } from './type';
 
 /**
@@ -571,9 +577,10 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * The switch below is the Task 5b2 mapping of the legacy panel's
+ * `profile` is handled above the switch (account-scoped, no `projectId`
+ * needed). The switch below is the Task 5b2 mapping of the legacy panel's
  * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
- * new tab ids. A tab NOT listed here — `profile`, `preferences`, `connected`,
+ * new tab ids. A tab NOT listed here or above — `preferences`, `connected`,
  * `snapshots`, `billing`, `usage`, `groups`, `roles`, `identity`, `audit`,
  * `api-keys`, `experimental` — is a genuinely new surface with no legacy
  * source to port; it keeps the placeholder header until a later phase builds
@@ -595,6 +602,12 @@ function SettingsTabPane({
   llmGatewayEnabled: boolean;
 }) {
   if (!active) return null;
+
+  // Account-scoped — renders with no dependency on the current project, so
+  // it works even while no project is selected (unlike every case below).
+  if (item.tab === 'profile') {
+    return <ProfileTab />;
+  }
 
   if (projectId) {
     switch (item.tab) {

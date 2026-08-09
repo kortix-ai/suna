@@ -150,6 +150,12 @@ describe('SettingsPanelShell — pane wiring', () => {
  * throws its own `No QueryClient set, use QueryClientProvider to set one`
  * error the INSTANT a real view's function actually runs.
  *
+ * Task 7 adds a sixteenth: `profile` (`ProfileTab`), tested separately below
+ * `REAL_VIEW_TABS` rather than folded into that array — it is account-scoped,
+ * so `SettingsTabPane` mounts it whether or not `projectId` is set, unlike
+ * every entry in `REAL_VIEW_TABS`, which all fall back to the placeholder
+ * header without one.
+ *
  * That gives a mechanical, unfakeable signal for "this component's render
  * function was invoked" — stronger than a markup-string match, since it fires
  * exactly where a network request would otherwise start. A tab that mounts
@@ -203,13 +209,32 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        tab: 'profile',
+        // `preferences` is still a genuinely unbuilt placeholder — `profile`
+        // moved into `REAL_VIEW_TABS`-equivalent coverage below once Task 7
+        // wired it to the real `ProfileTab`.
+        tab: 'preferences',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,
         allItems: allFlagsOnItems,
       }),
     ).not.toThrow();
+  });
+
+  test('activating profile mounts its real view — it calls react-query with no provider present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'profile',
+        projectId: 'p1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('profile mounts its real view even with no project id — it is account-scoped, not project-scoped, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'profile', projectId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {
