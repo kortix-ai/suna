@@ -1246,3 +1246,178 @@ removal (`progress.md:36`).
 Net: **1394 tests pass** (from 1360, all additive), tsc at the 15-error baseline
 with none in `composer/`, eslint 3 warnings / 0 errors, `packages/sdk` zero
 diff, protected suites byte-identical.
+
+---
+
+## 7. Measurements (Task 15)
+
+Spec §6 sets five targets. This section reports what was actually measured on
+this machine, on this branch, and states plainly which of the five could be
+measured directly and which could only be source-verified — no browser and no
+profiler session were available (standing project constraint). Full method,
+commands and raw numbers: `.superpowers/sdd/2026-08-09-enhance-chat-input/task-15-report.md`.
+
+| Target | Method | Result |
+|---|---|---|
+| React commits per keystroke: 1 → 0 | Source-verified | **0**, confirmed against installed `@tiptap/react` source (below) |
+| Commits per 60 s idle, empty composer: 10 → 0 | Source-verified (grep) | **0** — no `setInterval` anywhere in `composer/` |
+| `ModelSelector` renders per keystroke: 1 → 0 | Source-verified | **0** in steady state — boundary-only re-render, traced below |
+| Composer chunk (gz): baseline → ≤ baseline + 100 KB | **Measured**, two real builds | **+102.9 KB gz**, ~2.9 KB over the 100 KB ceiling after a bundle cut (was +136.0 KB before the cut) |
+| Mention menu open → first paint: — → < 100 ms warm | Not measurable here | Requires a browser; not attempted |
+
+### 7.1 Bundle — measured, not estimated
+
+Turbopack's `next build` (Next 16.3.0) prints no per-route "First Load JS"
+table and this repo has no bundle analyzer, so the delta was measured by
+building the app twice from the same tree and isolating the one chunk that
+carries the composer's TipTap/ProseMirror code.
+
+**Sequence** (full commands and logs in the task-15 report):
+1. Build HEAD (`d6cbb35de9`) with `next build`. Grep every
+   `.next/static/chunks/*.js` for markers that can only come from the
+   TipTap/ProseMirror stack (`prosemirror-`, `findSuggestionMatch`,
+   `MentionNode`, `composer-editor`, `trackEmptyBoundary`,
+   `serializeDocument`, `@tiptap`; two looser markers produced verified false
+   positives — `.ProseMirror` as a CSS-class check, `hardBreak` as a markdown
+   tokenizer name — and were discarded). Exactly one chunk matched:
+   `2rrrqe1i85hsv.js`, raw 437,383 bytes, **gz 136,028 bytes**.
+2. `git stash -u`, `git checkout 1fd281f897 -- apps/web`, confirm the old
+   `session-chat-input.tsx` has zero `tiptap` references
+   (`grep -c tiptap` → 0), `rm -rf .next`, rebuild. Same marker sweep: **zero**
+   matching chunks. (The only hit under a looser `data-mention` marker was
+   the old `mention-popover.tsx`'s unrelated `data-mention-index` attribute.)
+   Baseline confirmed as a real, verified 0, not assumed.
+3. Restore HEAD (`git checkout HEAD -- apps/web` + remove the 3 paths HEAD
+   deleted that a path-scoped checkout doesn't remove on its own); confirm
+   `git diff HEAD -- apps/web` is empty.
+
+Delta before any cut: **+136.0 KB gz — over the 100 KB ceiling by ~36 KB.**
+
+### 7.2 The cut, and the number after it
+
+Per the plan, cut from `composer/editor/extensions.ts` and re-measure.
+`@tiptap/starter-kit` was confirmed to have zero real imports anywhere in
+`apps/web/src` (checked by symbol — `grep -rn "StarterKit"`, not by import
+path) before touching anything.
+
+**Removed from `extensions.ts`:** `Blockquote`, `Bold`, `Italic`, `Strike`,
+`Code`, `CodeBlock`, `Link`, `BulletList`/`OrderedList`/`ListItem`. **Kept:**
+`Document`, `Paragraph`, `Text`, `HardBreak`, `UndoRedo`, `Placeholder`.
+
+This is safe against everything this document proves: the pre-rebuild
+composer was a plain `<textarea>` with **zero** rich-text formatting, so none
+of the 24 compat-matrix rows above reference bold, italic, lists, code spans,
+code blocks, blockquotes or links — cutting them removes capability the
+TipTap rebuild happened to add for free, not anything the old composer did.
+No test in `composer/` references any of these extensions by name (checked
+by grep before cutting), and the full suite is unchanged after the cut:
+**1394/1394 still pass.** `npx eslint composer/` stayed at 3 warnings / 0
+errors; `npx tsc --noEmit` stayed at 15 errors, none in `composer/`.
+
+`package.json` was pruned to match — 9 `@tiptap/*` entries removed
+(`extension-blockquote`, `-bold`, `-code`, `-code-block`, `-italic`, `-link`,
+`-list`, `-strike`, `starter-kit`), each confirmed zero-importer by
+`require.resolve` after `pnpm install`. `pnpm-lock.yaml`: 153 lines removed,
+nothing else touched. `git diff --stat -- packages/sdk` stayed empty.
+
+Rebuild, same marker sweep, exactly one match:
+
+| Build | raw | gz |
+|---|---:|---:|
+| Pre-cut | 437,383 | 136,028 |
+| Post-cut | 338,231 | **102,937** |
+| Saved | −99,152 (−22.7%) | **−33,091 (−24.3%)** |
+
+**Final: +102.9 KB gz, ~2.9 KB (≈2.9%) over the ≤ 100 KB ceiling.** A real
+24% reduction, and honestly still short of the target — reported as a miss,
+not rounded down. What's left in that chunk is `@tiptap/core` + `@tiptap/pm`
+(the ProseMirror engine) + `@tiptap/react` + `@tiptap/suggestion` +
+`MentionNode` + the `@`/`/` menu system (Tasks 6–8's actual deliverable,
+covering matrix rows 8, 9, 23, 24) + `Placeholder`/`HardBreak`/`UndoRedo`
+(back rows 3, 8, 10 and baseline undo/redo). None of that is cuttable without
+either gutting the feature this branch exists to ship or replacing TipTap
+entirely — a different, much larger undertaking, out of scope for a
+bundle-diet pass. No per-module byte breakdown was recoverable to find a
+smaller sub-cut: Turbopack strips module-path strings from production
+chunks, no source map ships alongside the deployed chunk, and this repo has
+no bundle analyzer installed.
+
+### 7.3 Render metrics — source-verified against installed code
+
+`@tiptap/react@3.27.1` (`dist/index.cjs:536-556`, `useEditor`) builds a
+selector that returns a **constant `null`** on every transaction unless
+`shouldRerenderOnTransaction` is explicitly set:
+
+```js
+selector: ({ transactionNumber }) => {
+  if (options.shouldRerenderOnTransaction === false || options.shouldRerenderOnTransaction === void 0) {
+    return null;
+  }
+  ...
+}
+```
+
+`composer/editor/composer-editor.tsx:386` calls `useEditor({...})` with no
+`shouldRerenderOnTransaction` key (grep confirms it appears nowhere in
+`composer/`). `useEditorState`'s `useSyncExternalStoreWithSelector` compares
+that constant `null` with `fast-equals`' `deepEqual` on every keystroke —
+`null === null` — so React never re-renders `ComposerEditor` (or anything
+above it) from typing alone. This is the mechanism, verified against the
+installed `.cjs`, not taken from prose.
+
+**Boundary-only propagation, traced end to end:** `trackEmptyBoundary`
+(`composer-editor.tsx:147`) wraps `onUpdate` and calls its callback only when
+`editor.isEmpty` flips (`:372-374,433`). `composer.tsx:403`'s
+`[isEmpty, setIsEmpty]` is that callback (`:1253`
+`onEmptyChange={setIsEmpty}`) — the only setState this path can trigger, and
+only on the empty↔non-empty boundary. `hasText={!isEmpty}`
+(`composer.tsx:1309`) is the one prop `ComposerToolbar` gets that changes
+from typing, and it feeds every child listed in the target —
+`ModelSelector`, `AgentSelector`, `VariantSelector`,
+`ReasoningEffortSelector`, `TokenProgress`, `VoiceRecorder`,
+`SendStopControl`. So these re-render on an empty↔non-empty crossing (twice
+per typical typing session), not once per keystroke — 0 renders per
+keystroke in steady state, matching the target.
+
+**Idle metric:** `grep -rn "setInterval" composer/` — zero hits anywhere in
+the directory. The old 6-second rotating-placeholder timer (the "10 commits
+per 60s idle" driver) has no equivalent; `Placeholder`'s decoration only
+recomputes on a transaction, and there are none at rest.
+
+**What a profiler run would add that this doesn't:** confirmation that no
+`React.memo`/prop-identity boundary around `ModelSelector` etc. is
+force-rerendered by something unrelated (a sibling's state, a context
+change), and a literal DevTools commit count rather than a traced
+subscribe/notify mechanism. The trace above is sufficient to rule out
+re-rendering *from typing*, which is what the target measures — but it is
+source-tracing, not a live capture, and is reported as such.
+
+### 7.4 What this branch actually changed — numbers, all by command
+
+**Tests**, `bun test src/features/session`, both ends checked out clean (not
+the mid-plan "1360" checkpoint Task 14 logged internally, which was its own
+pre/post fix-round delta, not the whole-branch before):
+
+| | pass | fail | files |
+|---|---:|---:|---:|
+| Before (`1fd281f897`) | 1177 | 0 | 102 |
+| After (incl. this task's cut) | 1394 | 0 | 121 |
+| Net | **+217** | — | **+19** |
+
+**ESLint**, `npx eslint src/features/session/composer/`: **7 warnings, 0
+errors → 3 warnings, 0 errors.**
+
+**tsc**, `npx tsc --noEmit`: **15 errors → 15 errors**, unchanged, none in
+`composer/` on either end.
+
+**Net line delta**, `git diff --stat 1fd281f897 <tree>`:
+- Full scope (apps/web + lockfile + docs): **61 files, +9832 / −2078**
+- Composer + `session-chat-input.tsx` only: **46 files, +7205 / −1863**
+
+**Dependencies, net, branch-point → final:** **−4.** Added
+`@tiptap/extensions`, `@tiptap/suggestion` (+2); removed
+`@tiptap/extension-blockquote`, `-code-block`, `-link`, `-list`, `-strike`,
+`@tiptap/starter-kit` (−6, all present at the branch point already and now
+zero-importer). (`@tiptap/extension-mention`, added mid-plan and removed by
+Task 14, and `-bold`/`-code`/`-italic`, added by Task 3 and removed by this
+task, each net to zero and aren't double-counted here.)

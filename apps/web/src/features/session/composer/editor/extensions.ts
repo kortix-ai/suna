@@ -1,15 +1,7 @@
-import Blockquote from '@tiptap/extension-blockquote';
-import Bold from '@tiptap/extension-bold';
-import Code from '@tiptap/extension-code';
-import CodeBlock from '@tiptap/extension-code-block';
 import Document from '@tiptap/extension-document';
 import HardBreak from '@tiptap/extension-hard-break';
-import Italic from '@tiptap/extension-italic';
-import Link from '@tiptap/extension-link';
-import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list';
 import Paragraph from '@tiptap/extension-paragraph';
 import Placeholder from '@tiptap/extension-placeholder';
-import Strike from '@tiptap/extension-strike';
 import Text from '@tiptap/extension-text';
 import { UndoRedo } from '@tiptap/extensions';
 
@@ -17,6 +9,23 @@ import { UndoRedo } from '@tiptap/extensions';
  * Deliberately NOT @tiptap/starter-kit — it pulls tables, images and
  * horizontal rules, none of which belong in a chat composer. Every extension
  * here is MIT and already installed.
+ *
+ * Deliberately NOT the rich-text formatting extensions either (Task 15,
+ * bundle-budget cut — see task-15-report.md): `Bold`, `Italic`, `Strike`,
+ * `Code`, `CodeBlock`, `Link`, `BulletList`/`OrderedList`/`ListItem` and
+ * `Blockquote` were in the extension list through Task 14 but are cut here.
+ * None of them back a compat-matrix row — the pre-rebuild composer was a
+ * plain `<textarea>` with zero rich-text formatting, so this is a reduction
+ * of *new* capability the rebuild added, not a regression against the old
+ * composer. No test in `composer/` references any of these extensions by
+ * name (verified by grep before cutting). Measured cost at Task 14: these
+ * ten extensions plus their ProseMirror dependents (`prosemirror-schema-list`,
+ * `linkifyjs`, `prosemirror-dropcursor`, `prosemirror-gapcursor`) were part of
+ * a single 136 KB gz composer chunk — the whole rich-text surface, not just
+ * these declarations — and no per-extension byte breakdown was recoverable
+ * from the production bundle (Turbopack strips module paths and this repo
+ * ships no bundle analyzer). Restore individually only after a real
+ * measurement shows headroom.
  *
  * `UndoRedo`, not `History`: the installed `@tiptap/extensions@3.27.1` does
  * not export a `History` symbol at all (verified against
@@ -53,15 +62,5 @@ export function baseExtensions(getPlaceholder: () => string) {
     HardBreak,
     UndoRedo,
     Placeholder.configure({ placeholder: () => getPlaceholder() }),
-    Bold,
-    Italic,
-    Strike,
-    Code,
-    CodeBlock,
-    Link.configure({ openOnClick: false, autolink: true }),
-    BulletList,
-    OrderedList,
-    ListItem,
-    Blockquote,
   ];
 }
