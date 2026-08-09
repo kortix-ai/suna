@@ -101,14 +101,14 @@ describe('Platinum CI worker plan', () => {
     vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       requests.push(`${init?.method ?? 'GET'} ${url}`);
-      if (url.endsWith('/v1/sandboxes?limit=100&offset=0')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=0')) {
         return Response.json({
           rows: [{ id: 'other', name: 'customer', metadata: {} }],
           total: 2,
           has_more: true,
         });
       }
-      if (url.endsWith('/v1/sandboxes?limit=100&offset=100')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=100')) {
         return Response.json({
           rows: [{
             id: 'exact',
@@ -132,8 +132,8 @@ describe('Platinum CI worker plan', () => {
       runAttempt: '1',
     })).resolves.toBe(1);
     expect(requests).toEqual([
-      'GET https://api.platinum.dev/v1/sandboxes?limit=100&offset=0',
-      'GET https://api.platinum.dev/v1/sandboxes?limit=100&offset=100',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=0',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=100',
       'DELETE https://api.platinum.dev/v1/sandboxes/exact',
     ]);
   });

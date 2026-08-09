@@ -530,7 +530,7 @@ export async function cleanupPlatinumCiSandboxes(input: {
   const limit = 100;
   for (let offset = 0; ; offset += limit) {
     const page = await api.json<PlatinumSandboxPage>(
-      `/v1/sandboxes?limit=${limit}&offset=${offset}`,
+      `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
     );
     sandboxes.push(...page.rows);
     if (!page.has_more || page.rows.length === 0) break;
