@@ -12,6 +12,28 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-09 — session `compliance-main-qa-baseline` claim
+
+No **Now** task claimed. This is the focused main QA baseline repair that unblocks compliance PR #6295.
+
+Claimed SDK scope:
+
+- Remove process-wide auth-module mock collisions from the file client regression suite.
+- Preserve all production behavior, published names, and the release-managed package version.
+- Reproduce the merged-main failure and run the focused suite, complete SDK suite, typecheck, and packed-install smoke.
+
+Verification:
+
+- Focused file client suite: `24 pass`, `0 fail`.
+- Complete SDK suite: `1825 pass`, `2 skip`, `0 fail`, `7035 expect()` calls.
+- SDK typecheck, including examples: exit `0`.
+- Packed-install smoke: built, packed, installed, imported, and constructed the SDK packages.
+- No production SDK source, published export, or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `computers-connector-grouping` claim
 
 No **Now** task claimed. This is the user-directed Computers connector profile refactor.

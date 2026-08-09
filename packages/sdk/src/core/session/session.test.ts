@@ -1,13 +1,14 @@
-import { describe, expect, it, mock } from 'bun:test';
-import * as realAuth from '../http/auth';
+import { describe, expect, it } from 'bun:test';
+import { configureKortix } from '../http/config';
 
 // Stub the SDK's authenticatedFetch so getSessionHealth doesn't require a
 // configured platform — same approach as files/client.test.ts.
 let respond: () => Response = () => new Response('{}', { status: 200 });
-mock.module('../http/auth', () => ({
-  ...realAuth,
-  authenticatedFetch: async () => respond(),
-}));
+configureKortix({
+  backendUrl: 'http://sbx.test',
+  getToken: async () => 'tok',
+  fetch: (async () => respond()) as unknown as typeof fetch,
+});
 
 import { setCurrentRuntime } from './current-runtime';
 import { getSessionHealth, isRuntimeReady } from './health';

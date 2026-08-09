@@ -14,7 +14,7 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
   });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision", "POST /v1/projects/provision-stream"] }, async (ctx) => {
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
@@ -26,6 +26,12 @@ flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v
     const r = await ctx.client
       .as(ctx.P.OWNER)
       .post("/v1/projects/provision", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
+    r.status(400);
+  });
+  await ctx.step("streaming provision rejects a name over 120 chars → 400", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post("/v1/projects/provision-stream", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
     r.status(400);
   });
 });

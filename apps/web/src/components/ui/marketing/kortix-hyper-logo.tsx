@@ -59,7 +59,8 @@ export function KortixHyperLogo({
   // Randomize the grid once mounted — after hydration, so it never diverges
   // from the deterministic server render.
   useEffect(() => {
-    setCells(buildCells(true));
+    const frame = requestAnimationFrame(() => setCells(buildCells(true)));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -114,8 +115,10 @@ export function KortixHyperLogo({
         }
       };
 
-      setProgress(0);
-      animationFrameId = requestAnimationFrame(animate);
+      animationFrameId = requestAnimationFrame((currentTime) => {
+        setProgress(0);
+        animate(currentTime);
+      });
     }
 
     return () => {

@@ -65,35 +65,41 @@ function GitHubSetup() {
   useEffect(() => {
     if (isLoading || !user) return;
 
-    if (setupAction === 'uninstall') {
-      setState('done');
-      setMessage('GitHub App removed from your account.');
-      redirectTimer.current = window.setTimeout(() => router.replace(appHome), 900);
-      return;
-    }
+    const frame = requestAnimationFrame(() => {
+      if (setupAction === 'uninstall') {
+        setState('done');
+        setMessage('GitHub App removed from your account.');
+        redirectTimer.current = window.setTimeout(() => router.replace(appHome), 900);
+        return;
+      }
 
-    if (selectingExistingInstallation) {
+      if (selectingExistingInstallation) {
+        setState('verify');
+        setMessage(
+          'Continue with GitHub to select an existing personal or organization App installation.',
+        );
+        return;
+      }
+
+      if (!installState || !installationId) {
+        setState('error');
+        setMessage(
+          'GitHub did not return the installation details. Try connecting again from your project or account settings.',
+        );
+        return;
+      }
+
       setState('verify');
       setMessage(
-        'Continue with GitHub to select an existing personal or organization App installation.',
+        'Confirm that your GitHub user owns this account or administers this organization.',
       );
-      return;
-    }
-
-    if (!installState || !installationId) {
-      setState('error');
-      setMessage(
-        'GitHub did not return the installation details. Try connecting again from your project or account settings.',
-      );
-      return;
-    }
-
-    setState('verify');
-    setMessage('Confirm that your GitHub user owns this account or administers this organization.');
+    });
+    return () => cancelAnimationFrame(frame);
   }, [
     installState,
     installationId,
     isLoading,
+    appHome,
     router,
     selectingExistingInstallation,
     setupAction,

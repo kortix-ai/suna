@@ -306,8 +306,11 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   );
 
   useEffect(() => {
-    setDefaultBranch(project.default_branch);
-    setManifestPath(project.manifest_path);
+    const frame = requestAnimationFrame(() => {
+      setDefaultBranch(project.default_branch);
+      setManifestPath(project.manifest_path);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [project.default_branch, project.manifest_path]);
 
   const mutation = useMutation({
@@ -645,8 +648,11 @@ function GeneralProjectCard({
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
 
   useEffect(() => {
-    setName(project.name);
-    setIcon(toIconValue(project.icon, project.icon_glyph));
+    const frame = requestAnimationFrame(() => {
+      setName(project.name);
+      setIcon(toIconValue(project.icon, project.icon_glyph));
+    });
+    return () => cancelAnimationFrame(frame);
   }, [project.name, project.icon, project.icon_glyph]);
 
   const mutation = useMutation({

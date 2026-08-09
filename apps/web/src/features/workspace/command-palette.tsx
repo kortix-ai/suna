@@ -457,7 +457,11 @@ export function CommandPalette() {
     return modelStore.getSelectedModel(currentAgent.name);
   }, [currentAgent, modelStore]);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery('');
+    setPage('root');
+  }, []);
 
   const triggerBackScale = useCallback(() => {
     setBackScale(true);
@@ -517,13 +521,6 @@ export function CommandPalette() {
     document.addEventListener('keydown', down);
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setPage('root');
-    }
-  }, [open]);
 
   useEffect(() => {
     const openFileSearch = () => {
@@ -736,7 +733,7 @@ export function CommandPalette() {
       })
       .catch(() => errorToast('Failed to create session'))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
+  }, [isCreating, projectId, newSession, createSession, close]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1348,7 +1345,10 @@ export function CommandPalette() {
     <>
       <CommandDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) setOpen(true);
+          else close();
+        }}
         className={cn(
           'origin-center transition-transform duration-150 ease-in-out sm:max-w-[680px]',
           backScale && 'scale-[0.99]',

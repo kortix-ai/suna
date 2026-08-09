@@ -141,19 +141,25 @@ export default function ProjectStartPage() {
         // list — retry in place, behind the same paint.
         setTimeout(() => {
           resolving.current = false;
-          void resolve();
+          window.dispatchEvent(new Event('kortix:retry-project-start'));
         }, delay);
         return;
       }
       setFailed(true);
     } finally {
-      if (attempts.current >= MAX_RESOLVE_ATTEMPTS) resolving.current = false;
+      resolving.current = false;
     }
-  }, [accountsQuery.data, selectedAccountId, router, user?.id]);
+  }, [accountsQuery.data, selectedAccountId, router, user]);
 
   useEffect(() => {
     if (attempts.current > 0) return;
     void resolve();
+  }, [resolve]);
+
+  useEffect(() => {
+    const retry = () => void resolve();
+    window.addEventListener('kortix:retry-project-start', retry);
+    return () => window.removeEventListener('kortix:retry-project-start', retry);
   }, [resolve]);
 
   if (terminal) {

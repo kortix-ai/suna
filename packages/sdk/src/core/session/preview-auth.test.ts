@@ -1,12 +1,9 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { configureKortix } from '../http/config';
 
 let token: string | null = 'jwt-token';
 
-mock.module('../http/auth', () => ({
-  getAuthToken: async () => token,
-}));
-
-const { ensurePreviewSessionCookie } = await import('./preview-auth');
+import { ensurePreviewSessionCookie } from './preview-auth';
 
 const originalFetch = globalThis.fetch;
 let requests: Array<{ url: string; init: RequestInit }> = [];
@@ -20,6 +17,7 @@ function stubFetch(handler: () => Response | Promise<Response>) {
 
 beforeEach(() => {
   token = 'jwt-token';
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => token });
   requests = [];
 });
 

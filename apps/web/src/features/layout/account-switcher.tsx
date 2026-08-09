@@ -55,10 +55,6 @@ export function AccountSwitcher({ className }: { className?: string }) {
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
-  useEffect(() => {
-    if (!menuOpen) setQuery('');
-  }, [menuOpen]);
-
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -85,7 +81,10 @@ export function AccountSwitcher({ className }: { className?: string }) {
     return sortedAccounts.filter((a) => (a.name || '').toLowerCase().includes(q));
   }, [sortedAccounts, query]);
 
-  const close = () => setMenuOpen(false);
+  const close = () => {
+    setMenuOpen(false);
+    setQuery('');
+  };
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
@@ -125,7 +124,13 @@ export function AccountSwitcher({ className }: { className?: string }) {
   }
 
   const dropdown = (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu
+      open={menuOpen}
+      onOpenChange={(nextOpen) => {
+        setMenuOpen(nextOpen);
+        if (!nextOpen) setQuery('');
+      }}
+    >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="bottom" sideOffset={6}>
         {showSearch && (

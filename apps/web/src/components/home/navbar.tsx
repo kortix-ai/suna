@@ -142,7 +142,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
+  const [selectedDrawerMenu, setSelectedDrawerMenu] = useState<number | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -201,16 +201,10 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
-  // The drawer expands one section at a time, seeded with the one holding the
-  // current page. An accordion is what keeps it from outgrowing a phone screen:
-  // every menu open at once is three groups of up to nine links.
-  useEffect(() => {
-    if (!isDrawerOpen) return;
-    const active = filteredNavLinks.find((item) =>
-      drawerSubLinks(item).some((link) => isNavActive(link.href)),
-    );
-    setOpenDrawerMenu(active ? active.id : null);
-  }, [isDrawerOpen, filteredNavLinks, isNavActive]);
+  const activeDrawerMenu = filteredNavLinks.find((item) =>
+    drawerSubLinks(item).some((link) => isNavActive(link.href)),
+  );
+  const openDrawerMenu = selectedDrawerMenu ?? activeDrawerMenu?.id ?? null;
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
 
@@ -564,7 +558,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         <Disclosure
                           className="group w-full"
                           open={openDrawerMenu === item.id}
-                          onOpenChange={(next) => setOpenDrawerMenu(next ? item.id : null)}
+                          onOpenChange={(next) => setSelectedDrawerMenu(next ? item.id : null)}
                         >
                           <DisclosureTrigger>
                             <button
