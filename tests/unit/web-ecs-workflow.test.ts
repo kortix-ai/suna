@@ -45,8 +45,13 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('https://dev-web-ecs-fargate.kortix.com');
     expect(workflow).toContain('  publish-web-origin-dns:');
     expect(workflow).toContain('  verify-web-origin:');
+    expect(workflow).toContain('  detach-web-dev-vercel-domain:');
     expect(workflow).toContain('  cutover-web-dev-dns:');
+    expect(workflow).toContain('node infra/scripts/detach-vercel-web-domain.mjs dev');
     expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev canonical "$alb"');
+    expect(workflow).toContain('consecutive_matches=0');
+    expect(workflow).toContain('/^x-vercel-/');
+    expect(workflow).toContain('canonical DNS still targets Vercel');
     expect(workflow).toContain('gateway: ${{ steps.outputs.outputs.gateway }}');
     expect(workflow).toContain('cli: ${{ steps.outputs.outputs.cli }}');
     expect(workflow).toContain('gateway=false');
