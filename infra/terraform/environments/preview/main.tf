@@ -576,7 +576,7 @@ resource "aws_iam_role_policy" "github_preview_deploy" {
       {
         Sid      = "PreviewRuntimeRead"
         Effect   = "Allow"
-        Action   = ["ecs:DescribeClusters", "ecs:DescribeTasks", "ecs:DescribeTaskDefinition", "ecs:ListTaskDefinitions", "ecs:ListTasks", "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "elasticloadbalancing:DescribeTargetGroups", "elasticloadbalancing:DescribeTargetHealth", "secretsmanager:DescribeSecret"]
+        Action   = ["ecs:DescribeClusters", "ecs:DescribeTasks", "ecs:DescribeTaskDefinition", "ecs:ListServices", "ecs:ListTaskDefinitions", "ecs:ListTasks", "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "elasticloadbalancing:DescribeLoadBalancers", "elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "elasticloadbalancing:DescribeTargetGroups", "elasticloadbalancing:DescribeTargetHealth", "secretsmanager:DescribeSecret"]
         Resource = "*"
       },
       {
