@@ -30,8 +30,8 @@ afterEach(() => {
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb-base');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -46,12 +46,12 @@ describe('Platinum CI worker plan', () => {
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
-    expect(JSON.stringify(spec.steps)).toContain('postgresql-client');
+    expect(JSON.stringify(spec.steps)).not.toContain('postgresql-client');
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
     expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
     expect(spec.entrypoint).toContain('supabase start --ignore-health-check');
-    expect(spec.entrypoint).toContain('docker pull postgres:16-alpine');
+    expect(spec.entrypoint).not.toContain('docker pull postgres:16-alpine');
     expect(spec.entrypoint).toContain('supabase stop --no-backup');
     expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');
     expect(spec.entrypoint).not.toMatch(/\$[A-Za-z_({!]/);

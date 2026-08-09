@@ -101,7 +101,7 @@ test.describe("12 — Sandbox templates UI", () => {
     expect(personalAccount?.account_id).toBeTruthy();
     if (!personalAccount) throw new Error("test user has no personal account");
     accountId = personalAccount.account_id;
-    projectId = seedDatabaseProject({
+    projectId = await seedDatabaseProject({
       accountId,
       userId: user.id,
       name: projectName,

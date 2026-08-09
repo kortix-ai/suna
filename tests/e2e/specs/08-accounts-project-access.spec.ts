@@ -101,7 +101,7 @@ async function createProjectForAccessTest(
     response.status === 409 &&
     body.includes("GitHub App installation required")
   ) {
-    const projectId = seedDatabaseProject({
+    const projectId = await seedDatabaseProject({
       accountId,
       userId: ownerUserId,
       name,

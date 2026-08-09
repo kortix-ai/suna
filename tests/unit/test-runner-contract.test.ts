@@ -81,4 +81,11 @@ describe('local test runner contract', () => {
     expect(start).toBeGreaterThan(-1);
     expect(source.slice(start, end)).toContain('serial: true');
   });
+
+  it('runs browser fixture SQL through the Node client without a host psql binary', () => {
+    const source = readFileSync(resolve(root, 'tests/e2e/helpers/database.ts'), 'utf8');
+
+    expect(source).toContain('new Client');
+    expect(source).not.toContain('execFileSync("psql"');
+  });
 });

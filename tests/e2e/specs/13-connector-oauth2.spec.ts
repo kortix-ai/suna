@@ -50,7 +50,7 @@ test.describe("13 — Custom connector OAuth2", () => {
     expect(personalAccount?.account_id).toBeTruthy();
     if (!personalAccount) throw new Error("test user has no personal account");
     accountId = personalAccount.account_id;
-    projectId = seedDatabaseProject({
+    projectId = await seedDatabaseProject({
       accountId,
       userId: user.id,
       name: `e2e-connector-oauth-${Date.now()}`,

@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { Client } from "pg";
 
 import { requireEnvValue } from "./env";
 
@@ -15,26 +15,32 @@ interface SeedProjectOptions {
   projectRole?: "manager" | "editor" | "member";
 }
 
-export function runDatabaseSql(sql: string): void {
+export async function runDatabaseSql(sql: string): Promise<void> {
   const databaseUrl = requireEnvValue(
     "DATABASE_URL",
     "apps/api/.env.local",
     "apps/api/.env",
   );
-  execFileSync("psql", [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", sql]);
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    await client.query(sql);
+  } finally {
+    await client.end();
+  }
 }
 
-export function seedDatabaseProject({
+export async function seedDatabaseProject({
   accountId,
   userId,
   name,
   repoUrl,
   projectRole = "editor",
-}: SeedProjectOptions): string {
+}: SeedProjectOptions): Promise<string> {
   const projectId = randomUUID();
   const projectRepoUrl =
     repoUrl ?? `https://github.com/kortix-ai/browser-${projectId}.git`;
-  runDatabaseSql(`
+  await runDatabaseSql(`
 insert into kortix.projects (
   project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata
 ) values (

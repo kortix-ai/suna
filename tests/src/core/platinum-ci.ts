@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v13';
-const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v11';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v12';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -223,7 +223,6 @@ function platinumWarmEntrypoint(): string {
     "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
     'pnpm exec supabase start --ignore-health-check',
-    'docker pull postgres:16-alpine',
     'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
     "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
@@ -269,7 +268,7 @@ export function buildPlatinumTemplateSpec(input: {
           'set -eux',
           'export DEBIAN_FRONTEND=noninteractive',
           'apt-get update',
-          'apt-get install -y --no-install-recommends ca-certificates curl docker.io git jq postgresql-client procps ripgrep unzip xz-utils',
+          'apt-get install -y --no-install-recommends ca-certificates curl docker.io git jq procps ripgrep unzip xz-utils',
           'rm -rf /var/lib/apt/lists/*',
           `npm install --global bun@${PLATINUM_CI_BUN_VERSION}`,
           `corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate`,

@@ -76,10 +76,10 @@ Keep the test command unchanged. GitHub Actions invokes
 
 - Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
 - Build one OCI base and one stateful derived template per lockfile hash.
-- Bake Node, Bun, pnpm, Docker, Chromium, `psql`, linked `node_modules`, and the
-  warm checkout into the base.
-- Pre-pull Supabase images and `postgres:16-alpine` during the stateful capture.
-  Remove the temporary database before capture.
+- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and the warm
+  checkout into the base.
+- Pre-pull Supabase images during the stateful capture. Remove the temporary
+  database before capture.
 - Ignore initial Supabase service health only until migrations create the schema.
 - Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
   it, then validate the lockfile with an offline install.
