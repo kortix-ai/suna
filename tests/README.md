@@ -61,8 +61,9 @@ dockerd against the captured image store. `pnpm dev` creates a fresh Supabase
 database from current migrations without registry pulls. Source changes do not
 require a template rebuild.
 
-The capture and worker load the required container modules before they start
-dockerd. This infrastructure does not change test logic.
+The base template requests Platinum's `kernel_modules: container` profile.
+The capture and worker load those modules before they start dockerd. This
+infrastructure does not change test logic.
 
 The worker logs whether Platinum used `via=restore` or `via=cold-boot`. It waits
 for the warm marker before it runs tests. It fetches the requested public Git
@@ -116,11 +117,10 @@ counts. Do not infer those counts from source files.
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
-The browser lane uses the current worktree web, API, and Supabase ports. Start
-the development stack first:
+The browser lane uses the current worktree web, API, and Supabase ports. It
+starts and owns the deterministic local stack. Run it directly:
 
 ```bash
-pnpm dev
 pnpm test -- --browser-only
 ```
 

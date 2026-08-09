@@ -82,7 +82,8 @@ Keep the test command unchanged. GitHub Actions invokes
   database before capture.
 - Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
   it, then validate the lockfile with an offline install.
-- Load the required container modules before starting dockerd.
+- Request Platinum's `kernel_modules: container` template profile.
+- Load the injected container modules before starting dockerd.
 - Record `via=restore` or `via=cold-boot` for every worker benchmark.
 - Fetch the public pull-request or branch ref inside the sandbox.
 - Verify the full 40-character SHA before installing or testing.

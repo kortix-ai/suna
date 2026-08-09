@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v8';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v9';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -36,6 +36,7 @@ export interface PlatinumTemplateSpec {
   steps: Array<
     | { op: 'run'; cmd: string }
     | { op: 'env'; key: string; value: string }
+    | { op: 'kernel_modules'; profile: 'container' }
   >;
   entrypoint: string;
   default_cpu: number;
@@ -83,7 +84,8 @@ export async function retryPlatinumOperation<T>(input: {
   sleep?: (ms: number) => Promise<void>;
 }): Promise<T> {
   const attempts = input.attempts ?? API_MAX_ATTEMPTS;
-  const sleep = input.sleep ?? Bun.sleep;
+  const sleep = input.sleep
+    ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -112,8 +114,16 @@ export function selectReusablePlatinumTemplate(
 
 interface PlatinumSandbox {
   id: string;
+  name?: string;
   state?: string;
   via?: 'restore' | 'cold-boot';
+  metadata?: Record<string, unknown>;
+}
+
+interface PlatinumSandboxPage {
+  rows: PlatinumSandbox[];
+  total: number;
+  has_more?: boolean;
 }
 
 interface PlatinumExecResult {
@@ -245,6 +255,7 @@ export function buildPlatinumTemplateSpec(input: {
     version: '1.0.0',
     base_image: PLATINUM_CI_NODE_IMAGE,
     steps: [
+      { op: 'kernel_modules', profile: 'container' },
       {
         op: 'run',
         cmd: [
@@ -483,6 +494,66 @@ class PlatinumApi {
       attempts,
     });
   }
+}
+
+export function selectOutstandingPlatinumSandboxIds(
+  sandboxes: PlatinumSandbox[],
+  runId: string,
+  runAttempt: string,
+): string[] {
+  const expectedName = `kortix-ci-${runId}-${runAttempt}`.slice(0, 64);
+  return sandboxes
+    .filter(
+      (sandbox) =>
+        sandbox.name === expectedName &&
+        sandbox.metadata?.owner === 'kortix-ci' &&
+        sandbox.metadata?.run_id === runId,
+    )
+    .map((sandbox) => sandbox.id);
+}
+
+export async function cleanupPlatinumCiSandboxes(input: {
+  apiUrl: string;
+  apiKey: string;
+  runId: string;
+  runAttempt: string;
+}): Promise<number> {
+  if (!input.apiKey) throw new Error('PLATINUM_API_KEY is required');
+  if (!/^https:\/\//.test(input.apiUrl)) throw new Error('PLATINUM_API_URL must use https');
+  if (!/^[a-z0-9_.-]+$/i.test(input.runId)) throw new Error(`invalid run id: ${input.runId}`);
+  if (!/^[a-z0-9_.-]+$/i.test(input.runAttempt)) {
+    throw new Error(`invalid run attempt: ${input.runAttempt}`);
+  }
+
+  const api = new PlatinumApi(input.apiUrl, input.apiKey);
+  const sandboxes: PlatinumSandbox[] = [];
+  const limit = 100;
+  for (let offset = 0; ; offset += limit) {
+    const page = await api.json<PlatinumSandboxPage>(
+      `/v1/sandboxes?limit=${limit}&offset=${offset}`,
+    );
+    sandboxes.push(...page.rows);
+    if (!page.has_more || page.rows.length === 0) break;
+  }
+  const ids = selectOutstandingPlatinumSandboxIds(
+    sandboxes,
+    input.runId,
+    input.runAttempt,
+  );
+  for (const id of ids) {
+    try {
+      await api.json(
+        `/v1/sandboxes/${id}`,
+        { method: 'DELETE', signal: AbortSignal.timeout(30_000) },
+        { attempts: CLEANUP_MAX_ATTEMPTS },
+      );
+    } catch (error) {
+      if (!(error instanceof PlatinumHttpError && error.status === 404)) throw error;
+    }
+    console.log(`[platinum-ci] post_deleted sandbox=${id}`);
+  }
+  if (ids.length === 0) console.log('[platinum-ci] post_cleanup sandbox=none');
+  return ids.length;
 }
 
 async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Promise<PlatinumTemplate> {

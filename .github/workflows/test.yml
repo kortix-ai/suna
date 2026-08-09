@@ -52,6 +52,9 @@ jobs:
             browser) bun tests/bin/platinum-ci.ts --browser-only ;;
             *) echo "::error::Invalid test mode: $TEST_MODE"; exit 2 ;;
           esac
+      - name: Delete the Platinum worker sandbox
+        if: always()
+        run: bun tests/bin/platinum-ci-cleanup.ts
       - name: Guard test artifacts against secrets
         if: always()
         run: |

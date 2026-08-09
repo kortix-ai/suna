@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
@@ -7,6 +7,8 @@ import {
   buildPlatinumTemplateSpec,
   buildPlatinumWarmTemplateRequest,
   buildWorkerScript,
+  cleanupPlatinumCiSandboxes,
+  selectOutstandingPlatinumSandboxIds,
   isRetryablePlatinumError,
   observePlatinumWorker,
   platinumBaseTemplateName,
@@ -20,10 +22,14 @@ import {
 const sha = 'a'.repeat(40);
 const lockHash = 'b'.repeat(64);
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v8-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v8-bbbbbbbbbbbbbbbb-base');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v9-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v9-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -35,6 +41,7 @@ describe('Platinum CI worker plan', () => {
     expect(spec.default_cpu).toBe(8);
     expect(spec.default_ram_mb).toBe(16_384);
     expect(spec.default_disk_gb).toBe(50);
+    expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
@@ -61,6 +68,74 @@ describe('Platinum CI worker plan', () => {
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
     }
+  });
+
+  test('post cleanup selects only the exact CI run sandbox', () => {
+    expect(
+      selectOutstandingPlatinumSandboxIds(
+        [
+          {
+            id: 'exact',
+            name: 'kortix-ci-31289428402-1',
+            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
+          },
+          {
+            id: 'other-attempt',
+            name: 'kortix-ci-31289428402-2',
+            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
+          },
+          {
+            id: 'not-ci-owned',
+            name: 'kortix-ci-31289428402-1',
+            metadata: { owner: 'customer', run_id: '31289428402' },
+          },
+        ],
+        '31289428402',
+        '1',
+      ),
+    ).toEqual(['exact']);
+  });
+
+  test('post cleanup reads paginated sandbox rows before deleting the exact worker', async () => {
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.endsWith('/v1/sandboxes?limit=100&offset=0')) {
+        return Response.json({
+          rows: [{ id: 'other', name: 'customer', metadata: {} }],
+          total: 2,
+          has_more: true,
+        });
+      }
+      if (url.endsWith('/v1/sandboxes?limit=100&offset=100')) {
+        return Response.json({
+          rows: [{
+            id: 'exact',
+            name: 'kortix-ci-31289428402-1',
+            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
+          }],
+          total: 2,
+          has_more: false,
+        });
+      }
+      if (url.endsWith('/v1/sandboxes/exact') && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    await expect(cleanupPlatinumCiSandboxes({
+      apiUrl: 'https://api.platinum.dev',
+      apiKey: 'test',
+      runId: '31289428402',
+      runAttempt: '1',
+    })).resolves.toBe(1);
+    expect(requests).toEqual([
+      'GET https://api.platinum.dev/v1/sandboxes?limit=100&offset=0',
+      'GET https://api.platinum.dev/v1/sandboxes?limit=100&offset=100',
+      'DELETE https://api.platinum.dev/v1/sandboxes/exact',
+    ]);
   });
 
   test('checks out the requested ref and rejects any SHA mismatch', () => {

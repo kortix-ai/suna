@@ -26,6 +26,11 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     expect(platinumJob).not.toContain('DOTENV_PRIVATE_KEY:');
   });
 
+  test('the Platinum job has an independent cancellation cleanup step', () => {
+    expect(platinumJob).toContain('if: always()');
+    expect(platinumJob).toContain('bun tests/bin/platinum-ci-cleanup.ts');
+  });
+
   test('full mode reaches every package and app test through package-quality', () => {
     expect(packageQuality).toContain('"./packages/**"');
     expect(packageQuality).toContain('"./apps/**"');
