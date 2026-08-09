@@ -152,6 +152,14 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
+// Heartbeat liveness is transport state, not DB persistence state. Record the
+// signed pong synchronously before the async capability/heartbeat DB handler
+// runs below. Without this wiring, every healthy agent times out after three
+// intervals even though its pongs update the connection row successfully.
+tunnelRelay.on('message:pong', ({ tunnelId }) => {
+  heartbeatManager.recordPong(tunnelId);
+});
+
 let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 async function syncActiveTunnelPermissions(
