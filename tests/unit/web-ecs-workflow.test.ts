@@ -26,9 +26,7 @@ describe('web ECS migration', () => {
       },
     );
 
-    expect(output).toBe(
-      'kortix-dev-web|kortix-dev-web|web|kortix-dev-web-env',
-    );
+    expect(output).toBe('kortix-dev-web|kortix-dev-web|web|kortix-dev-web-env');
   });
 
   it('deploys the immutable frontend image and encrypted Dev profile to ECS', () => {
@@ -45,6 +43,10 @@ describe('web ECS migration', () => {
     expect(webDeploy).toContain('--service web');
     expect(webDeploy).toContain('${{ needs.build-frontend.outputs.image }}');
     expect(workflow).toContain('https://dev-web-ecs-fargate.kortix.com');
+    expect(workflow).toContain('  publish-web-origin-dns:');
+    expect(workflow).toContain('  verify-web-origin:');
+    expect(workflow).toContain('  cutover-web-dev-dns:');
+    expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev canonical "$alb"');
     expect(workflow).not.toContain('Vercel auto-deploys');
   });
 

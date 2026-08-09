@@ -27,6 +27,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      surface:
+        description: Surface to deploy from a manual branch run
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - frontend
 
 concurrency:
   group: deploy-dev
@@ -40,7 +49,7 @@ jobs:
     outputs:
       api: ${{ steps.outputs.outputs.api }}
       gateway: ${{ steps.filter.outputs.gateway }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      frontend: ${{ steps.outputs.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       apps_router: ${{ steps.outputs.outputs.apps_router }}
     steps:
@@ -83,6 +92,7 @@ jobs:
               - 'infra/scripts/ecs-deploy.sh'
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
+              - 'infra/scripts/sync-web-dns.mjs'
               - 'infra/terraform/environments/dev/**'
               - 'infra/terraform/environments/dev-web/**'
               - 'infra/terraform/modules/ecs-api/**'
@@ -107,19 +117,30 @@ jobs:
         run: |
           api="${{ steps.filter.outputs.api }}"
           apps_router="${{ steps.filter.outputs.apps_router }}"
+          frontend="${{ steps.filter.outputs.frontend }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            api=true
-            apps_router=true
+            if [ "${{ inputs.surface }}" = "frontend" ]; then
+              api=false
+              apps_router=false
+              frontend=true
+            else
+              api=true
+              apps_router=true
+              frontend=true
+            fi
           fi
-          echo "api=$api" >> "$GITHUB_OUTPUT"
-          echo "apps_router=$apps_router" >> "$GITHUB_OUTPUT"
+          {
+            echo "api=$api"
+            echo "apps_router=$apps_router"
+            echo "frontend=$frontend"
+          } >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
           {
             echo "### Changes detected"
             echo "- API: ${{ steps.outputs.outputs.api }}"
             echo "- Gateway: ${{ steps.filter.outputs.gateway }}"
-            echo "- Frontend: ${{ steps.filter.outputs.frontend }}"
+            echo "- Frontend: ${{ steps.outputs.outputs.frontend }}"
             echo "- CLI: ${{ steps.filter.outputs.cli }}"
             echo "- Apps router: ${{ steps.outputs.outputs.apps_router }}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -624,7 +645,7 @@ jobs:
 
   verify-web-dev:
     name: Verify frontend Dev ECS and public behavior
-    needs: [detect-changes, dev-version, deploy-web-ecs]
+    needs: [detect-changes, dev-version, cutover-web-dev-dns]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     env:
@@ -669,6 +690,97 @@ jobs:
           done
           echo "::error::Frontend Dev parity failed for ${EXPECTED_COMMIT}."
           exit 1
+
+  publish-web-origin-dns:
+    name: Publish Dev web ECS origin DNS
+    needs: [detect-changes, deploy-web-ecs]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point the temporary origin hostname at the web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-dev-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs dev origin "$alb"
+
+  verify-web-origin:
+    name: Verify Dev web ECS origin
+    needs: [detect-changes, dev-version, publish-web-origin-dns]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+    steps:
+      - name: Verify health, protection, and runtime configuration
+        run: |
+          set -euo pipefail
+          base=https://dev-web-ecs-fargate.kortix.com
+          for attempt in $(seq 1 40); do
+            body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
+            commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
+            version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
+            anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
+            runtime="$(curl -fsS --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/api/runtime-config" || true)"
+            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} protected=${protected:-?}"
+            if [ "$commit" = "$EXPECTED_COMMIT" ] \
+              && [ "$version" = "$EXPECTED_VERSION" ] \
+              && [ "$anonymous" = 401 ] \
+              && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
+              && grep -q 'dev-api.kortix.com' <<<"$runtime" \
+              && grep -q 'dev.kortix.com' <<<"$runtime"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Dev web ECS origin verification failed."
+          exit 1
+
+  cutover-web-dev-dns:
+    name: Cut dev.kortix.com to ECS
+    needs: [detect-changes, verify-web-origin]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point the canonical Dev hostname at the verified web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-dev-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs dev canonical "$alb"
 
   # ── Move the self-host `:dev` channel tag onto the image that just built ────
   promote-dev-channel-frontend:
