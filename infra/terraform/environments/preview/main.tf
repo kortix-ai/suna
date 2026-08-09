@@ -372,8 +372,8 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+#checkov:skip=CKV2_AWS_76:The existing account-wide regional WAF is managed outside this root and includes the AWS managed known-bad-inputs rule group.
 resource "aws_wafv2_web_acl_association" "preview" {
-  #checkov:skip=CKV2_AWS_76:The existing account-wide regional WAF is managed outside this root and includes the AWS managed known-bad-inputs rule group.
   resource_arn = aws_lb.preview.arn
   web_acl_arn  = var.preview_waf_arn
 }
