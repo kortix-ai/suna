@@ -134,7 +134,7 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      icon={<GlobeIcon className="size-3.5 flex-shrink-0" />}
+      icon={<GlobeIcon className="size-3.5 shrink-0" />}
       trigger={
         <>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

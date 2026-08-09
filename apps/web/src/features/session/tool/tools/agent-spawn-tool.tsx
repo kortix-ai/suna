@@ -75,7 +75,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<Cpu className="size-3.5 flex-shrink-0" />}
+        icon={<Cpu className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Spawn agent',
           subtitle: isRunning
@@ -126,7 +126,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                         key={i}
                         className="text-muted-foreground flex items-center gap-1.5 truncate text-xs"
                       >
-                        <Check className="text-muted-foreground/50 size-2.5 flex-shrink-0" />
+                        <Check className="text-muted-foreground/50 size-2.5 shrink-0" />
                         {info.title}
                         {info.subtitle ? ` · ${info.subtitle}` : ''}
                       </div>

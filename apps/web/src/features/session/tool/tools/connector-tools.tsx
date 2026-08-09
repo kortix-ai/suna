@@ -52,7 +52,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      icon={<Plug className="size-3.5 flex-shrink-0" />}
+      icon={<Plug className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Connected apps',
         args: status === 'completed' ? [`${connectors.length} available`] : undefined,
@@ -66,7 +66,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
           <div className="space-y-0.5">
             {connectors.map((c, i) => (
               <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
-                <Plug className="text-muted-foreground/50 size-3 flex-shrink-0" />
+                <Plug className="text-muted-foreground/50 size-3 shrink-0" />
                 <span className="text-foreground truncate font-medium">
                   {String(c.name || c.slug || '')}
                 </span>
@@ -115,7 +115,7 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
         title: 'App actions',
         subtitle: query || undefined,
@@ -175,7 +175,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
 
   return (
     <BasicTool
-      icon={<Code2 className="size-3.5 flex-shrink-0" />}
+      icon={<Code2 className="size-3.5 shrink-0" />}
       trigger={{
         title: 'App details',
         subtitle: tool || undefined,
@@ -258,7 +258,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      icon={<Terminal className="size-3.5 flex-shrink-0" />}
+      icon={<Terminal className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Used an app',
         subtitle: ref || undefined,

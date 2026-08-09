@@ -23,7 +23,7 @@ export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Trash2 className="size-3.5 flex-shrink-0" />}
+      icon={<Trash2 className="size-3.5 shrink-0" />}
       trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
       forceOpen={forceOpen}
     >

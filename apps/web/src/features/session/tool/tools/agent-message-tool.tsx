@@ -34,7 +34,7 @@ export function AgentMessageTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+        icon={<MessageCircle className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Message agent',
           subtitle: taskId ? taskId.slice(-12) : undefined,

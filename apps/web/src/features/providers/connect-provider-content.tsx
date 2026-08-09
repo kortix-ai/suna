@@ -781,7 +781,7 @@ export function ConnectProviderContent({
           </div>
           {error && (
             <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-              <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
@@ -871,7 +871,7 @@ export function ConnectProviderContent({
               </div>
               {error && (
                 <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
@@ -910,7 +910,7 @@ export function ConnectProviderContent({
                 </h3>
                 <div className="text-muted-foreground space-y-2 text-sm">
                   <div className="flex items-start gap-2">
-                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       1
                     </span>
                     <span>
@@ -920,7 +920,7 @@ export function ConnectProviderContent({
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       2
                     </span>
                     <span>
@@ -930,7 +930,7 @@ export function ConnectProviderContent({
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       3
                     </span>
                     <span>
@@ -944,7 +944,7 @@ export function ConnectProviderContent({
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       4
                     </span>
                     <span>
@@ -986,7 +986,7 @@ export function ConnectProviderContent({
               </div>
               {error && (
                 <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
@@ -1050,7 +1050,7 @@ export function ConnectProviderContent({
           {showOAuthError && (
             <div className="space-y-3">
               <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-4 py-3 text-sm">
-                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error || 'Authorization failed'}</span>
               </div>
               <Button

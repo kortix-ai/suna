@@ -68,7 +68,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<ReadCvLogoIcon className="size-3.5 flex-shrink-0" />}
+        icon={<ReadCvLogoIcon className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Read',
           subtitle: isStalePending
@@ -93,9 +93,9 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   className="text-muted-foreground/80 flex items-center gap-1.5 font-mono text-xs"
                 >
                   {isDir ? (
-                    <Folder className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <Folder className="text-muted-foreground/40 size-3 shrink-0" />
                   ) : (
-                    <FileIcon className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <FileIcon className="text-muted-foreground/40 size-3 shrink-0" />
                   )}
                   <span className="truncate">{entry}</span>
                 </div>

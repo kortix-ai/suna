@@ -54,7 +54,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Searched sessions',
         subtitle: query ? `"${query}"` : '',
@@ -72,7 +72,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
                 <span className="text-foreground flex-1 truncate text-xs font-medium">
                   {h.title || '(untitled)'}
                 </span>
-                <span className="text-muted-foreground/40 bg-muted/40 flex-shrink-0 rounded px-1 font-mono text-xs">
+                <span className="text-muted-foreground/40 bg-muted/40 shrink-0 rounded px-1 font-mono text-xs">
                   {h.score}
                 </span>
               </div>

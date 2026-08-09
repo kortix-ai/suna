@@ -3799,7 +3799,7 @@ export function SessionChat({
                           <img
                             src="/kortix-logomark-white.svg"
                             alt="Kortix"
-                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                            className="h-[14px] w-auto shrink-0 invert dark:invert-0"
                           />
                           <div className="text-muted-foreground text-sm">
                             {tHardcodedUi.raw(

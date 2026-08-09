@@ -94,7 +94,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
 
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={<ImageIcon className="size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
@@ -102,7 +102,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
           </span>
           <span className="text-muted-foreground truncate font-mono text-xs">{displayQuery}</span>
           {imageResults.length > 0 && (
-            <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
               {isBatch ? `${batchCount}q, ` : ''}
               {imageResults.length} images
             </span>

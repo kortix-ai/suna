@@ -104,7 +104,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
                 {domain}
               </span>
             </span>
-            <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 flex-shrink-0" />
+            <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 shrink-0" />
           </a>
           <p className="text-muted-foreground/80 px-3 py-2 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
             {errorSummary}
@@ -128,7 +128,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
                 {domain}
               </span>
             </span>
-            <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 flex-shrink-0" />
+            <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-3 shrink-0" />
           </a>
 
           <p className="text-foreground/80 px-3 py-2 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">

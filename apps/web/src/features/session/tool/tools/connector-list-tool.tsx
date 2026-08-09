@@ -43,14 +43,14 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
               key={conn.name}
               className="hover:bg-muted/30 flex items-start gap-2 rounded px-2 py-1 text-xs"
             >
-              <Plug className="text-muted-foreground mt-0.5 size-3.5 flex-shrink-0" />
+              <Plug className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-foreground truncate font-medium">{conn.name}</div>
                 {conn.description && (
                   <div className="text-muted-foreground/60">{conn.description}</div>
                 )}
               </div>
-              <Badge variant="outline" className="h-5 flex-shrink-0 py-0 text-xs capitalize">
+              <Badge variant="outline" className="h-5 shrink-0 py-0 text-xs capitalize">
                 {conn.source}
               </Badge>
             </div>

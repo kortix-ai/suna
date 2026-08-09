@@ -61,7 +61,7 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={<ImageIcon className="size-3.5 shrink-0" />}
       trigger={{
         title: TITLE_BY_ACTION[action ?? ''] || 'Image Gen',
         subtitle: prompt?.slice(0, 60),

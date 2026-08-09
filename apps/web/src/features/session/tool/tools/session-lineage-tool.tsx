@@ -32,7 +32,7 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
 
   return (
     <BasicTool
-      icon={<ListTree className="size-3.5 flex-shrink-0" />}
+      icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Session history',
         subtitle: sid,

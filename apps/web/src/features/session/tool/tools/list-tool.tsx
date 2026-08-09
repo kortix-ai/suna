@@ -44,7 +44,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<ListTree className="size-3.5 flex-shrink-0" />}
+      icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
         title: 'List',
         subtitle: directory,

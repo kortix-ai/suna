@@ -50,7 +50,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
 
   return (
     <BasicTool
-      icon={<Layers className="size-3.5 flex-shrink-0" />}
+      icon={<Layers className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Background work',
         subtitle: project || 'all projects',
@@ -68,7 +68,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
                 tone={
                   w.status === 'running' ? 'info' : w.status === 'complete' ? 'success' : 'neutral'
                 }
-                className="flex-shrink-0"
+                className="shrink-0"
               />
               <span className="text-foreground/70 truncate font-mono text-xs">
                 {w.id.slice(-12)}

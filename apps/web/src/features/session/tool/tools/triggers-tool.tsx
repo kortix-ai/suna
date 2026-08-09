@@ -168,9 +168,9 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   className="hover:bg-muted/30 flex items-center gap-2 rounded px-1 py-1 text-xs"
                 >
                   {t.sourceType === 'webhook' ? (
-                    <Globe className="text-muted-foreground size-3 flex-shrink-0" />
+                    <Globe className="text-muted-foreground size-3 shrink-0" />
                   ) : (
-                    <CalendarClock className="text-muted-foreground size-3 flex-shrink-0" />
+                    <CalendarClock className="text-muted-foreground size-3 shrink-0" />
                   )}
                   <span className="text-foreground truncate font-medium">{t.name}</span>
                   <span className="text-muted-foreground ml-auto truncate font-mono text-xs">
@@ -185,7 +185,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                           : 'muted'
                     }
                     size="sm"
-                    className="flex-shrink-0"
+                    className="shrink-0"
                   >
                     {t.status}
                   </Badge>

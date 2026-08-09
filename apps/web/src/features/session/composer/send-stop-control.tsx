@@ -53,7 +53,7 @@ export function SendStopControl({
 }: SendStopControlProps) {
   if (isSending && !lockForQuestion) {
     return (
-      <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
+      <Button size="sm" disabled className="h-8 w-8 shrink-0 rounded-full p-0">
         <Loading className="size-4" />
       </Button>
     );
@@ -83,7 +83,7 @@ export function SendStopControl({
               size="sm"
               onClick={onStop}
               disabled={stopDisabled || !onStop}
-              className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+              className="h-8 w-8 shrink-0 rounded-full p-0"
             >
               <div className="h-3 w-3 rounded-[3px] bg-current" />
             </Button>
@@ -110,7 +110,7 @@ export function SendStopControl({
             size="sm"
             disabled={!questionCanAct || disabled}
             onClick={onSubmit}
-            className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
+            className="h-8 shrink-0 rounded-full px-3.5 text-xs font-medium"
           >
             {questionButtonLabel}
           </Button>
@@ -129,7 +129,7 @@ export function SendStopControl({
                   aria-label={
                     modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
                   }
-                  className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+                  className="h-8 w-8 shrink-0 rounded-full p-0"
                 >
                   {disabled ? (
                     <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />

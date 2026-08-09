@@ -63,7 +63,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<PencilSimpleIcon className="size-3.5 flex-shrink-0" />}
+      icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Write',
         subtitle: isStalePending

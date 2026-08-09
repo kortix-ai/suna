@@ -43,7 +43,7 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Searched',
         subtitle: directory,

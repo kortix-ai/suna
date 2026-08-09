@@ -39,7 +39,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
               key={project.path}
               className="text-muted-foreground/70 flex items-center gap-1.5 py-0.5 text-xs"
             >
-              <Folder className="text-muted-foreground/50 size-3.5 flex-shrink-0" />
+              <Folder className="text-muted-foreground/50 size-3.5 shrink-0" />
               <span className="truncate">{project.name}</span>
               <span className="text-muted-foreground/40 truncate font-mono text-xs">
                 {project.path}

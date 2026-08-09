@@ -91,7 +91,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
           </div>
           <Button
             variant="default"
-            className="h-10 w-[72px] flex-shrink-0 px-2 sm:w-auto sm:px-3"
+            className="h-10 w-[72px] shrink-0 px-2 sm:w-auto sm:px-3"
             onClick={shareReferralLink}
           >
             <Share2 className="h-4 w-4 sm:mr-1.5" />

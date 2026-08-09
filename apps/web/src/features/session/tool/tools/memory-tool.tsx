@@ -158,14 +158,14 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     body = (
       <div className="text-muted-foreground/80 flex flex-wrap items-center gap-1.5 px-3 py-2 font-mono text-xs">
         <span className="truncate">{memoryRelPath(oldPath || path)}</span>
-        <ChevronRight className="text-muted-foreground/40 size-3 flex-shrink-0" />
+        <ChevronRight className="text-muted-foreground/40 size-3 shrink-0" />
         <span className="text-foreground/80 truncate">{memoryRelPath(newPath)}</span>
       </div>
     );
   } else if (command === 'delete') {
     body = (
       <div className="text-muted-foreground/70 flex items-center gap-1.5 px-3 py-2 text-xs">
-        <Trash2 className="size-3 flex-shrink-0" />
+        <Trash2 className="size-3 shrink-0" />
         <span className="truncate font-mono">{relPath}</span>
       </div>
     );
@@ -175,7 +175,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
 
   return (
     <BasicTool
-      icon={<Brain className="size-3.5 flex-shrink-0" />}
+      icon={<Brain className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Memory',
         // subtitle: command === 'rename' ? memoryRelPath(newPath) : relPath,

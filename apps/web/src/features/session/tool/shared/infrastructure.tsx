@@ -554,12 +554,12 @@ export function getAgentCardLabel(input: Record<string, unknown>): string {
 export function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
-      return <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />;
+      return <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />;
     case 'error':
-      return <CircleAlert className="text-muted-foreground size-3 flex-shrink-0" />;
+      return <CircleAlert className="text-muted-foreground size-3 shrink-0" />;
     case 'running':
     case 'pending':
-      return <Loading className="text-muted-foreground size-3 flex-shrink-0" />;
+      return <Loading className="text-muted-foreground size-3 shrink-0" />;
     default:
       return null;
   }
@@ -1141,7 +1141,7 @@ function ActivatableToolRow({
     >
       {header}
       <PanelRight
-        className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80"
+        className="text-muted-foreground/30 size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-80"
         mirrored
       />
     </div>
@@ -1431,9 +1431,9 @@ export function DiagnosticsDisplay({
             onClick={() => handleClick(d)}
           >
             {isError ? (
-              <CircleAlert className="mt-0.5 size-3 flex-shrink-0" />
+              <CircleAlert className="mt-0.5 size-3 shrink-0" />
             ) : (
-              <AlertTriangle className="mt-0.5 size-3 flex-shrink-0" />
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" />
             )}
             <span className="group-hover:underline">
               [{d.range.start.line + 1}:{d.range.start.character + 1}] {d.message}

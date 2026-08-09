@@ -25,7 +25,7 @@ export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      icon={<Cpu className="size-3.5 flex-shrink-0" />}
+      icon={<Cpu className="size-3.5 shrink-0" />}
       trigger={{ title: 'Video', subtitle: prompt?.slice(0, 60) }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}

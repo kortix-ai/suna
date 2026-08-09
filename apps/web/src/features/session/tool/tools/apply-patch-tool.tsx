@@ -100,7 +100,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      icon={<Icon className="size-3.5 flex-shrink-0" />}
+      icon={<Icon className="size-3.5 shrink-0" />}
       trigger={{
         title: triggerTitle,
         subtitle: triggerSubtitle,
@@ -139,17 +139,17 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   {hasDiff ? (
                     <ChevronRight
                       className={cn(
-                        'text-muted-foreground/60 size-3.5 flex-shrink-0 transition-transform',
+                        'text-muted-foreground/60 size-3.5 shrink-0 transition-transform',
                         isOpen && 'rotate-90',
                       )}
                     />
                   ) : (
-                    <span className="w-3.5 flex-shrink-0" />
+                    <span className="w-3.5 shrink-0" />
                   )}
                   {/* Sentence case, regular weight. An uppercase bold "ADD" is
 									    the same jargon register the title just lost — the badge is
 									    a label on a row, not a shout. */}
-                  <Badge variant={typeMeta.tone} size="sm" className="flex-shrink-0">
+                  <Badge variant={typeMeta.tone} size="sm" className="shrink-0">
                     {typeMeta.label}
                   </Badge>
                   <span
@@ -164,7 +164,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   </span>
                   {dir && (
                     <span
-                      className="text-muted-foreground max-w-[35%] flex-shrink-0 truncate font-mono text-sm"
+                      className="text-muted-foreground max-w-[35%] shrink-0 truncate font-mono text-sm"
                       title={dir}
                     >
                       {dir}
@@ -173,7 +173,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   <DiffStat
                     additions={file.additions}
                     deletions={file.deletions}
-                    className="flex-shrink-0 text-sm tabular-nums"
+                    className="shrink-0 text-sm tabular-nums"
                   />
                 </button>
 

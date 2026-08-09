@@ -42,7 +42,7 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<Layers className="size-3.5 flex-shrink-0" />}
+        icon={<Layers className="size-3.5 shrink-0" />}
         trigger={{ title: 'Agent status' }}
         badge={
           !isRunning && taskRows.length > 0 ? (
@@ -82,25 +82,25 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
                   )}
                 >
                   {isActive ? (
-                    <Loading className="text-muted-foreground size-3 flex-shrink-0" />
+                    <Loading className="text-muted-foreground size-3 shrink-0" />
                   ) : row.status === 'completed' ? (
-                    <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+                    <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (
-                    <Clock className={cn('size-3 flex-shrink-0', STATUS_TEXT.warning)} />
+                    <Clock className={cn('size-3 shrink-0', STATUS_TEXT.warning)} />
                   ) : row.status === 'cancelled' ? (
-                    <X className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <X className="text-muted-foreground/40 size-3 shrink-0" />
                   ) : (
-                    <Circle className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <Circle className="text-muted-foreground/40 size-3 shrink-0" />
                   )}
 
                   <span className="text-foreground/80 flex-1 truncate text-xs">{row.title}</span>
 
-                  <span className="text-muted-foreground/50 flex-shrink-0 font-mono text-xs">
+                  <span className="text-muted-foreground/50 shrink-0 font-mono text-xs">
                     {row.id.slice(-8)}
                   </span>
 
                   {hasSession && (
-                    <ChevronRight className="text-muted-foreground/20 size-3 flex-shrink-0" />
+                    <ChevronRight className="text-muted-foreground/20 size-3 shrink-0" />
                   )}
                 </div>
               );

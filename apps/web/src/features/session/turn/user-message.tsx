@@ -273,7 +273,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           !hasDetails && 'pointer-events-none',
         )}
       >
-        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
+        <Scissors className="text-muted-foreground/70 size-3.5 shrink-0" />
         <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
           {isPrune ? 'Context Pruned' : 'Context Compressed'}
         </span>

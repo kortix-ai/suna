@@ -36,7 +36,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
 
   return (
     <BasicTool
-      icon={<Brain className="size-3.5 flex-shrink-0" />}
+      icon={<Brain className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Recalled',
         subtitle: memoryId ? `#${memoryId}` : undefined,

@@ -78,7 +78,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span
@@ -88,7 +88,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             {triggerLabel}
           </span>
           {triggerBadge && (
-            <span className="text-muted-foreground/70 ml-auto flex-shrink-0 text-sm whitespace-nowrap">
+            <span className="text-muted-foreground/70 ml-auto shrink-0 text-sm whitespace-nowrap">
               {triggerBadge}
             </span>
           )}

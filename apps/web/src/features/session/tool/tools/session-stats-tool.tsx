@@ -21,7 +21,7 @@ export function SessionStatsTool({ part }: ToolProps) {
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
-    <BasicTool icon={<Layers className="size-3.5 flex-shrink-0" />} trigger={TRIGGER}>
+    <BasicTool icon={<Layers className="size-3.5 shrink-0" />} trigger={TRIGGER}>
       {outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_stats" />
       ) : output ? (

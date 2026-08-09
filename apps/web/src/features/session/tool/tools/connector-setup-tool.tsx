@@ -48,7 +48,7 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
           <div className="space-y-1">
             {data?.connectors.map((conn, i) => (
               <div key={i} className="flex items-center gap-2 py-1 text-xs">
-                <Plug className="text-muted-foreground size-3.5 flex-shrink-0" />
+                <Plug className="text-muted-foreground size-3.5 shrink-0" />
                 <span className="font-medium">{conn}</span>
               </div>
             ))}

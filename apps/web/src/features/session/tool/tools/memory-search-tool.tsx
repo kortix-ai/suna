@@ -32,7 +32,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
         title: triggerTitle,
         subtitle: query || undefined,

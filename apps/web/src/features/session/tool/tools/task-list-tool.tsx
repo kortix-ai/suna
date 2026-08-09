@@ -23,7 +23,7 @@ export function TaskListTool({ part }: ToolProps) {
   const isError = useMemo(() => isErrorOutput(output), [output]);
   return (
     <BasicTool
-      icon={<ListTodo className="size-3.5 flex-shrink-0" />}
+      icon={<ListTodo className="size-3.5 shrink-0" />}
       trigger={TASK_LIST_TRIGGER}
       defaultOpen={false}
     >

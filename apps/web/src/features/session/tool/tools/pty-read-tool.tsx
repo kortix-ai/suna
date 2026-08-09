@@ -63,7 +63,7 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
 
   return (
     <BasicTool
-      icon={<Terminal className="size-3.5 flex-shrink-0" />}
+      icon={<Terminal className="size-3.5 shrink-0" />}
       trigger={{
         title: tHardcodedUi.raw('componentsSessionToolRenderers.line2624JsxTextTerminalOutput'),
         subtitle: ptyId || undefined,

@@ -27,7 +27,7 @@ export function SubSessionModal({ open, onOpenChange, sessionId, title }: SubSes
       >
         {/* Header bar */}
         <div className="border-border/50 bg-muted/30 flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-          <SquareKanban className="text-muted-foreground size-3.5 flex-shrink-0" />
+          <SquareKanban className="text-muted-foreground size-3.5 shrink-0" />
           <DialogTitle className="flex-1 truncate text-sm font-medium">
             {title || 'Sub-session'}
           </DialogTitle>
