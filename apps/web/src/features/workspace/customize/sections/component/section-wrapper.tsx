@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
@@ -92,24 +93,25 @@ const CustomizeSectionWrapper = ({
 }: Props) => {
   const showToggle = useShowSectionSidebarToggle(showSidebarToggleButton);
 
+  // `docs` has no slot on `SettingsSectionHeader` (title/description/action/className
+  // only — fixed across every consumer), so the "Learn more." link rides in the
+  // same `action` slot as the real action, ahead of it.
+  const headerAction =
+    docs || action ? (
+      <>
+        {docs ? (
+          <Button variant="transparent" className="m-0 p-0" asChild>
+            <Link href={docs} target="_blank" rel="noopener noreferrer">
+              Learn more.
+            </Link>
+          </Button>
+        ) : null}
+        {action}
+      </>
+    ) : undefined;
+
   const heading = (
-    <div className="space-y-1">
-      <h2 className="text-foreground text-xl font-medium">{title}</h2>
-      {description || docs ? (
-        <span className="flex items-center gap-1">
-          {description ? (
-            <p className="text-muted-foreground text-sm text-balance">{description}</p>
-          ) : null}
-          {docs && (
-            <Button variant="transparent" className="m-0 p-0" asChild>
-              <Link href={docs} target="_blank" rel="noopener noreferrer">
-                Learn more.
-              </Link>
-            </Button>
-          )}
-        </span>
-      ) : null}
-    </div>
+    <SettingsSectionHeader title={title} description={description} action={headerAction} />
   );
 
   if (fill) {
@@ -118,13 +120,12 @@ const CustomizeSectionWrapper = ({
         {showSidebarToggleButton ? <SectionSidebarToggle /> : null}
         <header
           className={cn(
-            'border-border/60 flex shrink-0 flex-col gap-2 border-b px-4 py-2 sm:flex-row sm:items-center sm:justify-between',
+            'border-border/60 shrink-0 border-b px-4 py-2',
             // Clear the absolute toggle so the title does not sit under it.
             showToggle && 'pl-12',
           )}
         >
           {heading}
-          {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
         </header>
         <div
           ref={scrollContainerRef}
@@ -147,10 +148,7 @@ const CustomizeSectionWrapper = ({
             className,
           )}
         >
-          <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {heading}
-            {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
-          </header>
+          <header>{heading}</header>
 
           {children}
         </div>
