@@ -26,10 +26,36 @@ import { SelectionRow, StepShell } from '../step-shell';
 
 type PlanChoice = 'kortix' | 'byok' | 'later';
 
-export function PlanStep({ onContinue }: { onContinue: () => void }) {
+/**
+ * `projectId` is passed explicitly, never inferred. `useModelConnectionGate`
+ * falls back to the `[id]` route segment, and this step also renders on `/new`
+ * (`app/(app)/new`), which has none — an inferred project is `null` there, so
+ * `modal` is `null` and `openConnectProvider` opens nothing while
+ * `handleContinue` never reaches `onContinue()`. This step passes no `onSkip`
+ * to `StepShell`, so its primary button is the only control: an inferred id
+ * strands the user on step 5 of 6.
+ */
+export function PlanStep({
+  projectId,
+  onContinue,
+}: {
+  /**
+   * REQUIRED, deliberately — this is the guard on the defect above.
+   *
+   * `useModelConnectionGate` falls back to `useParams().id` when given no
+   * explicit id, and `/new` has no `[id]` segment, so an omitted prop here
+   * silently reproduces the dead-click bug in full. Optional, it was
+   * unguardable: dropping `projectId={projectId}` at the single call site
+   * passed the entire test suite AND `tsc`, because a missing optional prop is
+   * legal and no test can see one that was never there. Required, the same
+   * edit is a compile error. Do not relax this to `?:`.
+   */
+  projectId: string;
+  onContinue: () => void;
+}) {
   const { data: providers } = useRuntimeProviders();
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
-    useModelConnectionGate(flattenModels(providers));
+    useModelConnectionGate(flattenModels(providers), { projectId });
   const [choice, setChoice] = useState<PlanChoice | null>(null);
 
   // Nothing opens until Continue. This is the whole point of the step.

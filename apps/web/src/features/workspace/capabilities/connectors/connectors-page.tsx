@@ -1,6 +1,6 @@
 'use client';
 
-import { type AdminConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
+import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -40,6 +40,7 @@ import {
 } from './connector-identity';
 import { providerLabel } from './provider-label';
 
+import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -523,6 +524,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <EasyConnectAddFlow
         projectId={projectId}
         app={catalogTarget?.source === 'easy-connect' ? catalogTarget.app : null}
+        existingSlugs={existingSlugs}
+        canWrite={canWrite}
+        onClose={() => setCatalogTarget(null)}
+        onAdded={onCatalogAdded}
+      />
+      <ComputersAddFlow
+        projectId={projectId}
+        open={catalogTarget?.source === 'computer'}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
         onClose={() => setCatalogTarget(null)}

@@ -15,6 +15,7 @@ import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 
@@ -263,6 +264,7 @@ function AccessGateScreen({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const appHome = useAppHome();
   const { data: adminRole } = useAdminRole();
   const noteId = useId();
   const [message, setMessage] = useState('');
@@ -321,7 +323,10 @@ function AccessGateScreen({
   const copy = gateCopyKeys(state);
   const forbidden = isForbiddenState(state);
   const action = gateAction(state);
-  const goToProjects = () => router.push('/projects');
+  // "Back to projects" leaves THIS project (access denied, or the user just
+  // left it) — not a browse-the-list escape, so it goes to the latest
+  // project this user has open, never the removed `/projects` list.
+  const goToProjects = () => router.push(appHome);
   const showAdminBypass = forbidden && !!adminRole?.isAdmin;
 
   return (

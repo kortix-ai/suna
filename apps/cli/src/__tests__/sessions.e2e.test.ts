@@ -283,7 +283,7 @@ describe('sessions new CLI flow', () => {
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
         opencode_session_id: 'ses_test',
         name: 'Digest target',
-        agent_name: 'memory-reflector',
+        agent_name: 'harness-reflector',
         status: 'running',
         error: null,
         metadata: { opencode_sessions: [{ title: 'Digest target' }] },

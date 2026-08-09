@@ -1,55 +1,43 @@
 /**
- * Auto-materialize the `computer` connector from connected machines.
+ * Materialize platform-managed Computers connector profiles.
  *
- * Exactly like the Slack `channel` connector, `computer` is a REGULAR connector
- * with no `[[connectors]]` entry and no experimental opt-in — connecting a
- * machine over the Agent Computer Tunnel IS the registration. When a project's
- * account has at least one connected machine, we synthesize a SINGLE `computer`
- * ConnectorSpec here so the materializer treats it like any other connector (DB
- * rows, the fixed action catalog, policies, and the connector
- * surface). One connector fronts ALL the account's machines — the machine is a
- * call argument, resolved at call time. There is no credential: the live WS
- * relay is the credential, and per-machine auth/scope is the tunnel permission
- * layer.
+ * Pairing a tunnel only adds it to the account fleet. It does not grant a
+ * project access. A Computers connector profile is created explicitly through
+ * the connector API and stores one or more selected tunnel ids in its DB config.
+ * The normal connector row owns grants, policies, audit, and session exposure.
  *
- * NOT gated by the per-project `agent_tunnel` feature flag: a machine can
- * only exist when the platform tunnel service is on (the tunnel routes are
- * `config.TUNNEL_ENABLED`-gated), so machine-presence already implies platform
- * support. The `agent_tunnel` flag now only gates the dedicated Computers
- * management UI (device-auth / per-machine permissions), not the connector.
- * See docs/specs/computer-connector.md.
+ * Profiles never live in kortix.yaml because tunnel ids are account control-
+ * plane identities, not repository configuration. This synthesizer reads the
+ * stored profiles back into the normal materializer during connector sync.
  *
- * "Connected machine" means the tunnel has completed a real WS handshake at
- * least once (`last_heartbeat_at IS NOT NULL`) — NOT merely that a
- * `tunnel_connections` row exists. Approving a device-auth request creates the
- * row up front with `status: 'offline'` and no heartbeat, and the CLI then
- * dials in and flips it live within seconds; requiring a heartbeat costs that
- * flow nothing. What it excludes is a pairing that was approved (or seeded —
- * e.g. by a test) and then never actually connected: without this check that
- * row sits forever and silently materializes an "active" `computer` connector
- * across every project in the account, looking exactly like a real,
- * intentionally-added connector even though nothing is or ever was connected.
- * Once a machine has connected at least once, its connector correctly stays
- * materialized through later offline periods (closed laptop, etc.) — only a
- * connection that never came online even once is excluded.
+ * Compatibility: PR #6287 briefly created one `computer-<uuid>` row per
+ * machine. The next sync folds those generated rows into one `computer`
+ * profile. Explicit profiles carry `computer_profile=true` and are preserved.
  */
-import { and, eq, isNotNull } from 'drizzle-orm';
-import { projects, tunnelConnections } from '@kortix/db';
-import { db } from '../shared/db';
-import { COMPUTER_SLUG, computerLabel } from './computers';
+import { connectors, projects, tunnelConnections } from '@kortix/db';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+
 import type { ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
+import { db } from '../shared/db';
+import { COMPUTER_SLUG, computerLabel } from './computers';
 
-function computerSpec(): ConnectorSpec {
+export function computerProfileSpec(input: {
+  slug: string;
+  name: string;
+  tunnelIds: string[];
+  tunnelAccountIds: string[];
+  sensitive?: boolean;
+}): ConnectorSpec {
   return {
-    slug: COMPUTER_SLUG,
-    path: `${MANIFEST_FILENAME}#connectors.${COMPUTER_SLUG} (auto: tunnel)`,
-    name: computerLabel(),
+    slug: input.slug,
+    path: `${MANIFEST_FILENAME}#connectors.${input.slug} (platform: computers)`,
+    name: input.name,
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
     authorizationStrategy: 'project',
-    sensitive: false,
+    sensitive: input.sensitive === true,
     app: null,
     account: null,
     url: null,
@@ -58,33 +46,59 @@ function computerSpec(): ConnectorSpec {
     baseUrl: null,
     platform: null,
     spec: null,
-    auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
-    // Platform-called connector — the request isn't built by executeCall's
-    // HTTP builders, so a static header table would be inert. Always empty.
+    tunnelIds: [...new Set(input.tunnelIds)],
+    tunnelAccountIds: [...new Set(input.tunnelAccountIds)],
+    auth: {
+      type: 'none',
+      in: 'header',
+      name: null,
+      prefix: null,
+      secret: null,
+    },
     headers: {},
     policies: [],
   };
 }
 
-/** True if a `computer` connector (or anything on its slug) is already declared. */
-function alreadyDeclared(declared: ConnectorSpec[]): boolean {
-  return declared.some((s) => s.slug === COMPUTER_SLUG || s.provider === 'computer');
+function storedTunnelIds(configValue: unknown): string[] | null {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_ids)) {
+    return [
+      ...new Set(config.tunnel_ids.filter((value): value is string => typeof value === 'string')),
+    ];
+  }
+  if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
+  return null;
+}
+
+function storedTunnelAccountIds(configValue: unknown, fallbackAccountId: string): string[] {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_account_ids)) {
+    return [
+      ...new Set(
+        config.tunnel_account_ids.filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        ),
+      ),
+    ];
+  }
+  return [fallbackAccountId];
+}
+
+function isExplicitProfile(configValue: unknown): boolean {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  return config.computer_profile === true && Array.isArray(config.tunnel_ids);
 }
 
 /**
- * A single synthetic `computer` ConnectorSpec when this project's account has a
- * connected machine — never written to git, never shadowing an explicit
- * declaration. Returns `[]` otherwise. A machine that has connected at least
- * once is the only gate (no feature flag): it's a regular connector,
- * materialized like Slack. A tunnel row that has never completed a handshake
- * (never online, ever) does not count — see the module doc for why.
+ * Return every explicit DB-backed Computers profile for normal materialization.
+ * No tunnel row means no implicit connector. Project access begins only after a
+ * connector profile is created.
  */
 export async function synthesizeComputerConnectors(
   projectId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
-  if (alreadyDeclared(declared)) return [];
-
   const [proj] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
@@ -92,17 +106,54 @@ export async function synthesizeComputerConnectors(
     .limit(1);
   if (!proj) return [];
 
-  const [tunnel] = await db
+  const rows = await db
+    .select({
+      slug: connectors.slug,
+      name: connectors.name,
+      config: connectors.config,
+    })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  if (rows.length === 0) return [];
+
+  const declaredSlugs = new Set(declared.map((spec) => spec.slug));
+  const explicit = rows
+    .filter((row) => isExplicitProfile(row.config))
+    .map((row) =>
+      computerProfileSpec({
+        slug: row.slug,
+        name: row.name,
+        tunnelIds: storedTunnelIds(row.config) ?? [],
+        tunnelAccountIds: storedTunnelAccountIds(row.config, proj.accountId),
+        sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+      }),
+    )
+    .filter((spec) => !declaredSlugs.has(spec.slug));
+  if (explicit.length > 0) return explicit;
+
+  // Fold the short-lived per-machine model into one regular profile. Only
+  // account-owned machines that completed a handshake can enter the migration.
+  const legacyIds = [...new Set(rows.flatMap((row) => storedTunnelIds(row.config) ?? []))];
+  const accountTunnels = await db
     .select({ tunnelId: tunnelConnections.tunnelId })
     .from(tunnelConnections)
     .where(
       and(
         eq(tunnelConnections.accountId, proj.accountId),
         isNotNull(tunnelConnections.lastHeartbeatAt),
+        ...(legacyIds.length > 0 ? [inArray(tunnelConnections.tunnelId, legacyIds)] : []),
       ),
-    )
-    .limit(1);
-  if (!tunnel) return [];
-
-  return [computerSpec()];
+    );
+  const tunnelIds = accountTunnels.map((row) => row.tunnelId);
+  if (tunnelIds.length === 0 || declaredSlugs.has(COMPUTER_SLUG)) return [];
+  const aggregate = rows.find((row) => row.slug === COMPUTER_SLUG);
+  return [
+    computerProfileSpec({
+      slug: COMPUTER_SLUG,
+      name: aggregate?.name || computerLabel(),
+      tunnelIds,
+      tunnelAccountIds: [proj.accountId],
+      sensitive: (aggregate?.config as { sensitive?: unknown } | null)?.sensitive === true,
+    }),
+  ];
 }

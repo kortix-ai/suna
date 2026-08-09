@@ -854,7 +854,12 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
 export const SessionStartFailureSchema = z
   .object({
-    category: z.enum(['provider-capacity', 'git-auth', 'sandbox-provider']),
+    category: z.enum([
+      'provider-capacity',
+      'git-auth',
+      'unsupported-secret-delivery',
+      'sandbox-provider',
+    ]),
     message: z.string(),
     retryable: z.boolean(),
   })
@@ -1054,6 +1059,7 @@ export const SecretSchema = z.object({
   strategy: SecretDeliveryStrategySchema,
   consumer: SecretConsumerSchema.nullable(),
   delivery_status: SecretDeliveryStatusSchema,
+  network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),

@@ -15,7 +15,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, gt } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
 import { db } from '../../shared/db';
-import { generateDeviceCode, generateTunnelToken, hashSecretKey, verifySecretKey, randomAlphanumeric } from '../../shared/crypto';
+import {
+  generateDeviceCode,
+  generateTunnelToken,
+  hashSecretKey,
+  verifySecretKey,
+  randomAlphanumeric,
+} from '../../shared/crypto';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
@@ -32,14 +38,18 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
     { scope: 'files:write', operations: ['write'] },
     { scope: 'files:delete', operations: ['delete'] },
   ],
-  shell: [
-    { scope: 'shell:exec' },
-  ],
+  shell: [{ scope: 'shell:exec' }],
   desktop: [
     { scope: 'desktop:computer_use', features: ['computer_use'] },
     { scope: 'desktop:apps', features: ['apps', 'windows'] },
-    { scope: 'desktop:observe', features: ['screenshot', 'windows', 'accessibility'] },
-    { scope: 'desktop:input', features: ['mouse', 'keyboard', 'accessibility'] },
+    {
+      scope: 'desktop:observe',
+      features: ['screenshot', 'windows', 'accessibility'],
+    },
+    {
+      scope: 'desktop:input',
+      features: ['mouse', 'keyboard', 'accessibility'],
+    },
   ],
 };
 
@@ -126,13 +136,16 @@ export function createDeviceAuthPublicRouter() {
 
       const appUrl = config.FRONTEND_URL || 'http://localhost:3000';
 
-      return c.json({
-        deviceCode,
-        deviceSecret,
-        verificationUrl: `${appUrl}/tunnel/authorize/${deviceCode}`,
-        expiresAt: expiresAt.toISOString(),
-        pollIntervalMs: 2000,
-      }, 201);
+      return c.json(
+        {
+          deviceCode,
+          deviceSecret,
+          verificationUrl: `${appUrl}/tunnel/authorize/${deviceCode}`,
+          expiresAt: expiresAt.toISOString(),
+          pollIntervalMs: 2000,
+        },
+        201,
+      );
     },
   );
 
@@ -159,9 +172,7 @@ export function createDeviceAuthPublicRouter() {
     async (c: any) => {
       const code = c.req.param('code');
       const authHeader = c.req.header('Authorization');
-      const bearerSecret = authHeader?.startsWith('Bearer ')
-        ? authHeader.slice(7)
-        : undefined;
+      const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
       const querySecret = c.req.query('secret');
       const secret = bearerSecret || querySecret;
 
@@ -374,7 +385,8 @@ export function createDeviceAuthRouter() {
         })
         .where(eq(tunnelDeviceAuthRequests.id, row.id));
 
-      // Materialize the account's `computer` connector (first machine).
+      // The WS handshake materializes this machine profile after it proves a
+      // real connection. This reconcile also repairs previously-connected rows.
       void reconcileComputerConnectors(accountId);
 
       return c.json({ success: true, tunnelId: connection.tunnelId });

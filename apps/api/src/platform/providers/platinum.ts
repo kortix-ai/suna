@@ -37,8 +37,12 @@ import {
 } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
+import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 const AGENT_PORT = 8000;
+const START_CONFLICT_GRACE_MS = 30_000;
+const START_CONFLICT_POLL_MS = 250;
 
 interface PlatinumSandbox {
   id: string;
@@ -102,6 +106,16 @@ export class PlatinumProvider implements SandboxProvider {
 
   async getProvisioningStatus(): Promise<ProvisioningStatus | null> {
     return null;
+  }
+
+  syncNetworkBoundary(
+    externalId: string,
+    bindings: NetworkBoundarySecretBinding[],
+  ): Promise<{ state: 'armed'; attached: number }> {
+    return syncPlatinumNetworkBoundary(externalId, bindings, {
+      environment: config.INTERNAL_KORTIX_ENV,
+      rootSecret: config.API_KEY_SECRET,
+    });
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
@@ -296,17 +310,36 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async start(externalId: string): Promise<void> {
-    try {
-      await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
-    } catch (error) {
-      // A retry can race the previous start response. Platinum answers 409 when
-      // the sandbox is already running. Confirm the provider state before
-      // treating that response as an idempotent success.
-      const message = error instanceof Error ? error.message : String(error ?? '');
-      if (!/ -> 409\b/.test(message)) throw error;
-      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
-      if (String(sandbox.state ?? '').toLowerCase() === 'running') return;
-      throw error;
+    const deadline = Date.now() + START_CONFLICT_GRACE_MS;
+    let firstConflict: unknown = null;
+
+    for (;;) {
+      try {
+        await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+        return;
+      } catch (error) {
+        // Platinum acknowledges stop before the VM always reaches `stopped`.
+        // An immediate user reopen can therefore race `stopping` and receive
+        // 409. Keep the provider call inside this adapter until the accepted
+        // stop settles, then retry start. The control plane remains stopped and
+        // unbilled until its separate provider-running confirmation succeeds.
+        const message = error instanceof Error ? error.message : String(error ?? '');
+        if (!/ -> 409\b/.test(message)) throw error;
+        firstConflict ??= error;
+      }
+
+      for (;;) {
+        const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+        const state = String(sandbox.state ?? '').toLowerCase();
+        if (state === 'running') return;
+        if (state === 'stopped' || state.includes('archiv')) break;
+        if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
+          throw firstConflict;
+        }
+        await Bun.sleep(START_CONFLICT_POLL_MS);
+      }
+
+      if (Date.now() >= deadline) throw firstConflict;
     }
   }
 
@@ -315,6 +348,15 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async remove(externalId: string): Promise<void> {
+    await syncPlatinumNetworkBoundary(externalId, [], {
+      environment: config.INTERNAL_KORTIX_ENV,
+      rootSecret: config.API_KEY_SECRET,
+    }).catch((error) => {
+      console.warn(
+        `[platinum] failed to erase network-boundary replicas for ${externalId}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }
 
@@ -422,7 +464,7 @@ export class PlatinumProvider implements SandboxProvider {
     const headers: Record<string, string> = { ...ingress.headers, 'Content-Type': 'application/json' };
     try {
       const serviceKey = await serviceKeyForExternalId(externalId);
-      if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
+      if (serviceKey) headers.Authorization = `Bearer ${serviceKey}`;
     } catch (err) {
       console.warn(`[PLATINUM] Failed to look up service key for ${externalId}:`, err);
     }

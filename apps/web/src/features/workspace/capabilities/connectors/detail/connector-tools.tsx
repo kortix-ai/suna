@@ -52,6 +52,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
+import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
 import {
   draftToRules,
   type PatternDraftRow,
@@ -301,7 +302,7 @@ export function ConnectorTools({
     );
   }
 
-  const providerBadge = connector.provider.toUpperCase();
+  const providerBadge = providerLabel(connector.provider);
 
   return (
     <div className="space-y-5">
@@ -422,7 +423,7 @@ export function ConnectorTools({
                     <div className="min-w-0 flex-1 basis-48 space-y-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="text-foreground text-sm font-medium">{row.title}</span>
-                        <Badge variant="secondary" size="xs" className="font-mono uppercase">
+                        <Badge variant="secondary" size="xs">
                           {providerBadge}
                         </Badge>
                       </div>

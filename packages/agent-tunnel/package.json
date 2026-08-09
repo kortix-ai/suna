@@ -20,7 +20,8 @@
   },
   "files": [
     "src/",
-    "dist/"
+    "dist/",
+    "README.md"
   ],
   "scripts": {
     "build": "bun build src/agent/cli.ts --target=node --outfile=dist/agent-cli.js --banner='#!/usr/bin/env node' && bun build src/client/cli.ts --target=node --outfile=dist/client-cli.js --banner='#!/usr/bin/env node' && node -e \"const fs=require('node:fs'); fs.chmodSync('dist/agent-cli.js', 0o755); fs.chmodSync('dist/client-cli.js', 0o755);\"",
@@ -29,10 +30,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "hono": "^4.4.0"
+    "hono": "^4.4.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
+    "@types/ws": "^8.5.13",
     "typescript": "^5.4.0"
   },
   "keywords": [
@@ -46,6 +49,15 @@
   ],
   "license": "MIT",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "bin": {
+      "agent-tunnel": "dist/agent-cli.js",
+      "agent-tunnel-cli": "dist/client-cli.js"
+    },
+    "files": [
+      "src/",
+      "dist/",
+      "README.md"
+    ]
   }
 }

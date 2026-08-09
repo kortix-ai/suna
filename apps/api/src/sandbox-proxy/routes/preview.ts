@@ -29,6 +29,8 @@ import {
   isTurnStartRequest,
   observeTurnStart,
   previewGrantMs,
+  turnDeliveryGraceMs,
+  turnGrantMs,
 } from '../../projects/sandbox-deadline';
 import {
   extractPromptInfo,
@@ -300,7 +302,10 @@ function portUnreachableResponse(opts: {
     return new Response(portUnreachableHtml(port), { status, headers });
   }
   headers.set('Content-Type', 'application/json');
-  return new Response(JSON.stringify({ error: reason, port, status }), { status, headers });
+  return new Response(JSON.stringify({ error: reason, port, status }), {
+    status,
+    headers,
+  });
 }
 
 // Response for a blocking session-turn (`POST /session/:id/message`) that
@@ -315,7 +320,10 @@ function portUnreachableResponse(opts: {
 // SSE stream instead (what the web UI already does). No-store: a retry should
 // always re-evaluate the upstream, never replay a cached verdict.
 export function longTurnTimeoutResponse(origin: string): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+  });
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'true');
@@ -377,7 +385,11 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
 // duplicate it. Used to gate the one safe prompt-delivery retry in the catch.
 function isConnectionRefusedError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: unknown; cause?: { code?: unknown }; message?: unknown };
+  const e = err as {
+    code?: unknown;
+    cause?: { code?: unknown };
+    message?: unknown;
+  };
   const codes = [e.code, e.cause?.code].filter((c): c is string => typeof c === 'string');
   if (codes.some((c) => c === 'ECONNREFUSED')) return true;
   const message = typeof e.message === 'string' ? e.message : '';
@@ -392,7 +404,9 @@ function requestedPromptAgent(
   const contentType = incomingHeaders.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      agent?: unknown;
+    };
     return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
   } catch {
     return null;
@@ -492,7 +506,12 @@ async function agentSwitchRefusal(
  * card that says "a connector is missing" without naming which.
  */
 async function connectorGateRefusal(
-  record: { accountId: string; projectId: string; sessionId: string; agentName?: string | null },
+  record: {
+    accountId: string;
+    projectId: string;
+    sessionId: string;
+    agentName?: string | null;
+  },
   requestedAgent: string | null,
   origin?: string,
 ): Promise<Response | null> {
@@ -651,7 +670,9 @@ function bodyWithoutPromptAgent(
   const contentType = incomingHeaders.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return body;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      agent?: unknown;
+    };
     if (!('agent' in parsed)) return body;
     parsed.agent = undefined;
     return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
@@ -818,7 +839,11 @@ export async function forwardToSandbox(
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
-  const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
+  const ingressRequest = {
+    port,
+    path: remainingPath,
+    transport: 'http' as const,
+  };
   const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
   // Did the BOX author this request? It holds two credentials that authenticate
   // perfectly well, and every deadline decision below — the turn-start
@@ -842,7 +867,9 @@ export async function forwardToSandbox(
       callerSessionId: callerSessionId ?? null,
     }))
   ) {
-    throw new HTTPException(403, { message: 'Not authorized to access this session' });
+    throw new HTTPException(403, {
+      message: 'Not authorized to access this session',
+    });
   }
   // /kortix/env is a platform-only control endpoint that writes the sandbox's
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
@@ -953,7 +980,7 @@ export async function forwardToSandbox(
   // still bounded by the DB CHECK, and refusing a prompt on uncertainty is far
   // worse than granting one turn too many.
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const observed = await observeTurnStart({ externalId: sandboxId });
+    const observed = await observeTurnStart({ externalId: sandboxId }, turnDeliveryGraceMs());
     if (observed === 'at_cap') {
       const capped = {
         sandboxId: record.sandboxId,
@@ -1089,6 +1116,7 @@ export async function forwardToSandbox(
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,
             sessionId: record.sessionId,
+            externalId: record.externalId,
             serviceKey,
             previewUrl,
             providerHeaders: ingress.headers,
@@ -1219,7 +1247,10 @@ export async function forwardToSandbox(
           attemptController.abort(
             new DOMException('proxy attempt connect timeout', 'TimeoutError'),
           ),
-        proxyAttemptTimeoutMs(budgetRemainingMs, { method, path: remainingPath }),
+        proxyAttemptTimeoutMs(budgetRemainingMs, {
+          method,
+          path: remainingPath,
+        }),
       );
       let upstream: Response;
       try {
@@ -1359,6 +1390,22 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
+      // A successful OpenCode response proves the prompt reached the agent
+      // runtime. Upgrade the short delivery grace to the full active-turn
+      // window only now. A failed env sync, connect attempt, or upstream 5xx
+      // never receives the four-hour grant.
+      if (
+        upstream.ok &&
+        !sandboxAuthored &&
+        isTurnStartRequest(upstreamPort, method, remainingPath)
+      ) {
+        void extendSandboxDeadline({ externalId: sandboxId }, turnGrantMs()).catch((err) =>
+          console.warn(
+            `[deadline] accepted-turn extend failed for sandbox ${sandboxId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
       // control-plane-observed signal: an authenticated account member driving
@@ -1526,7 +1573,11 @@ export async function resolvePreviewWsUpstream(opts: {
       callerSessionId: callerSessionId ?? null,
     }))
   ) {
-    return { ok: false, status: 403, message: 'not authorized for this session' };
+    return {
+      ok: false,
+      status: 403,
+      message: 'not authorized for this session',
+    };
   }
   if (record.status !== 'active') {
     return { ok: false, status: 503, message: 'sandbox not ready' };

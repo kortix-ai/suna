@@ -82,6 +82,28 @@ export function formatOpenCodeRuntimeError(error: unknown): {
   }
 
   const raw = rawErrorMessage(error);
+
+  // A parked box is not a crash. The proxy answers `sandbox not ready
+  // (status: stopped)` for a sandbox the control plane stopped ON PURPOSE to
+  // save compute, and the conversation is intact behind it. Reserve "OpenCode
+  // failed to load" for a runtime that genuinely broke.
+  //
+  // Matched against `raw`, not a `parseOpenCodeErrorPayload` field: `unwrap()`
+  // (react/use-opencode-sessions/shared.ts) is what actually produces the
+  // error this function receives for the session-list poll that drives the
+  // page's runtime-error card, and it throws `new Error(body.error)` — just
+  // the bare phrase, with the JSON wrapper already stripped off. There is no
+  // payload left to parse by the time it gets here. The regex is exact enough
+  // (`(status: stopped)` and all) that matching it against the raw string
+  // cannot false-positive on an unrelated error that merely mentions "stopped".
+  if (/sandbox not ready \(status: stopped\)/.test(raw)) {
+    return {
+      title: 'Session is waking up',
+      message:
+        'This session slept to save compute. Your conversation is safe — sending a message wakes it back up.',
+    };
+  }
+
   return {
     title: 'OpenCode failed to load',
     message: raw || 'The sandbox is running, but OpenCode returned an error.',

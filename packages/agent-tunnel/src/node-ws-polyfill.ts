@@ -5,9 +5,9 @@
  */
 if (typeof globalThis.WebSocket === 'undefined') {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const ws = require('ws');
-    globalThis.WebSocket = ws.default || ws;
+    const ws = await import('ws');
+    const WebSocketImpl = ws.WebSocket ?? ws.default;
+    globalThis.WebSocket = WebSocketImpl as unknown as typeof WebSocket;
   } catch {
     console.error(
       '[agent-tunnel] WebSocket is not available. Install the "ws" package or use Node.js 22+.',
@@ -15,3 +15,5 @@ if (typeof globalThis.WebSocket === 'undefined') {
     process.exit(1);
   }
 }
+
+export {};

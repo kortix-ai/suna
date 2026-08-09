@@ -318,25 +318,28 @@ jobs:
             artifacts/kortix-linux-arm64
           if-no-files-found: error
 
-  # ── Publish the public SDKs to npm ──────────────────────────────────────────
-  # Three packages ship to npm on this version release, in lockstep with the
+  # ── Publish the public npm packages ─────────────────────────────────────────
+  # Three packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
-  #   @kortix/executor-sdk  — one final deprecated adapter over @kortix/sdk
+  #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
-  # Each package declares its published (dist-pointing) layout in its own
+  # @kortix/executor-sdk had one final deprecated publication at 0.12.5.
+  #
+  # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
   # (scripts/stage-npm-publish.mjs: promote publishConfig, pin workspace deps to
-  # the release version, verify every entrypoint exists in dist/) and publishes
+  # the release version, verify every entrypoint and binary exists) and publishes
   # idempotently.
   #
   # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
   # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org). With neither, the publish step skips cleanly so a release is never
-  # blocked. Once Trusted Publishing is verified per package on npmjs.com (package
+  # org). Production sets REQUIRE_NPM_AUTH=1: missing auth fails the release
+  # instead of silently omitting a package. Once Trusted Publishing is verified
+  # per package on npmjs.com (package
   # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
   # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
   # stored secret.
@@ -374,6 +377,7 @@ jobs:
         working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -409,8 +413,43 @@ jobs:
         working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash ../../scripts/publish-npm-package.sh
+
+  publish-agent-tunnel:
+    name: Publish @kortix/agent-tunnel to npm
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+        working-directory: packages/agent-tunnel
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
@@ -445,6 +484,7 @@ jobs:
         working-directory: packages/executor-sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           bash ../../scripts/publish-npm-package.sh
@@ -576,8 +616,9 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # HARD-GATED on the ECS backend deploy (deploy-ecs) AND on verify-live-version proving the public
-  # endpoints serve exactly X.Y.Z. The vX.Y.Z tag + Release are the public
+  # HARD-GATED on the required npm publications, ECS backend deploy (deploy-ecs),
+  # and verify-live-version proving the public endpoints serve exactly X.Y.Z.
+  # The vX.Y.Z tag + Release are the public
   # announcement — they must never exist for a version prod isn't running
   # (v0.10.0/v0.10.1 shipped Releases while deploy-ecs failed on IAM and
   # api.kortix.com kept serving the old build; that is now impossible).
@@ -587,7 +628,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
+    needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

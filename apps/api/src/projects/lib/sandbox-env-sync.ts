@@ -6,7 +6,11 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import type { ProviderName } from '../../platform/providers';
+import {
+  getProvider,
+  shouldSyncProviderNetworkBoundary,
+  type ProviderName,
+} from '../../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
@@ -26,6 +30,8 @@ import {
   workspaceModeAllowsFullRepository,
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
+import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -35,6 +41,21 @@ export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): strin
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
 const ENV_PUSH_TIMEOUT_MS = 15_000;
+
+async function syncProviderNetworkBoundary(
+  providerName: ProviderName,
+  externalId: string,
+  bindings: NetworkBoundarySecretBinding[],
+): Promise<void> {
+  if (!shouldSyncProviderNetworkBoundary(providerName, bindings.length)) return;
+  const provider = getProvider(providerName);
+  if (!provider.syncNetworkBoundary) {
+    throw new Error(
+      `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
+    );
+  }
+  await provider.syncNetworkBoundary(externalId, bindings);
+}
 
 export interface SandboxEnvSnapshot {
   env: Record<string, string>;
@@ -305,6 +326,7 @@ async function postEnvToDaemon(args: {
 export async function syncSandboxEnvForPrompt(args: {
   projectId: string;
   sessionId: string;
+  externalId: string;
   serviceKey: string | null;
   previewUrl: string;
   providerHeaders: Record<string, string>;
@@ -326,6 +348,12 @@ export async function syncSandboxEnvForPrompt(args: {
     args.requestedAgent,
   );
   if (!snapshot) return;
+  const networkBoundary = await resolveSessionNetworkBoundary(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
+  await syncProviderNetworkBoundary(args.providerName, args.externalId, networkBoundary);
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
@@ -375,6 +403,7 @@ export async function propagateProjectSecretsToActiveSandboxes(
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
+        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
       })
       .from(sessionSandboxes)
@@ -428,6 +457,9 @@ export async function propagateProjectSecretsToActiveSandboxes(
       try {
         snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) throw new Error('session env snapshot is unavailable');
+        const providerName = row.provider as ProviderName;
+        const networkBoundary = await resolveSessionNetworkBoundary(projectId, row.sessionId);
+        await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({
           previewUrl: url,

@@ -1,6 +1,6 @@
 'use client';
 
-import { m, type MotionProps } from 'motion/react';
+import { m, type MotionProps, useReducedMotion } from 'motion/react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -37,9 +37,20 @@ export function KortixHyperLogo({
   const [isAnimating, setIsAnimating] = useState(false);
   const [cycle, setCycle] = useState(0);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  /**
+   * The reveal is a dissolve — 72 cells popping in on a random ramp — and
+   * `loop` replays it forever with no pause control, which is exactly what
+   * `prefers-reduced-motion: reduce` is for. Reduced motion never sets
+   * `isAnimating`, so `progress` stays at its initial `1` and the solid mark
+   * renders at rest: the logo is still there, it just does not dissolve.
+   *
+   * `useReducedMotion()` is `null` on the server, so the server render is
+   * byte-identical either way and nothing can mismatch on hydration.
+   */
+  const reduceMotion = useReducedMotion();
 
   const handleAnimationTrigger = () => {
-    if (animateOnHover && !isAnimating) {
+    if (animateOnHover && !isAnimating && !reduceMotion) {
       setCells(buildCells(true));
       setIsAnimating(true);
     }
@@ -52,6 +63,8 @@ export function KortixHyperLogo({
   }, []);
 
   useEffect(() => {
+    if (reduceMotion) return;
+
     if (!startOnView) {
       const startTimeout = setTimeout(() => setIsAnimating(true), delay);
       return () => clearTimeout(startTimeout);
@@ -72,7 +85,7 @@ export function KortixHyperLogo({
     }
 
     return () => observer.disconnect();
-  }, [delay, startOnView]);
+  }, [delay, reduceMotion, startOnView]);
 
   useEffect(() => {
     let animationFrameId: number | null = null;

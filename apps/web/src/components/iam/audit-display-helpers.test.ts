@@ -374,6 +374,11 @@ describe('humanizeAuditAction — fallbacks', () => {
       detail: 'shell.exec',
       kind: 'update',
     });
+    expect(humanizeAuditAction('connector.computer.shell.exec')).toEqual({
+      title: 'Ran connector call',
+      detail: 'computer.shell.exec',
+      kind: 'update',
+    });
   });
 
   test('unknown HTTP route collapses long UUIDs to "/…"', () => {

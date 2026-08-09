@@ -18,6 +18,8 @@ import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-
 import { createRoute, z } from '@hono/zod-openapi';
 import { SecretConsumerSchema, UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
+import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
+import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 import {
   connectors,
   projectSecrets,
@@ -582,9 +584,9 @@ projectsApp.openapi(
   const requestedStrategy = body.strategy;
   if (
     requestedStrategy !== undefined &&
-    !['runtime', 'broker', 'denied'].includes(String(requestedStrategy))
+    !['runtime', 'broker', 'egress', 'denied'].includes(String(requestedStrategy))
   ) {
-    return c.json({ error: 'secret creation supports runtime, broker, or denied delivery' }, 400);
+    return c.json({ error: 'secret creation supports runtime, broker, egress, or denied delivery' }, 400);
   }
   if (
     requestedStrategy === 'broker' &&
@@ -600,6 +602,13 @@ projectsApp.openapi(
     requestedConsumerData !== 'sandbox'
   ) {
     return c.json({ error: 'runtime creation requires the sandbox consumer' }, 400);
+  }
+  if (
+    requestedStrategy === 'egress' &&
+    requestedConsumer !== undefined &&
+    requestedConsumerData !== 'network'
+  ) {
+    return c.json({ error: 'egress creation requires the network consumer' }, 400);
   }
   if (
     requestedStrategy === 'denied' &&
@@ -618,6 +627,7 @@ projectsApp.openapi(
   const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
     | 'runtime'
     | 'broker'
+    | 'egress'
     | 'denied'
     | undefined;
   const explicitConsumer =
@@ -626,15 +636,38 @@ projectsApp.openapi(
         ? 'llm_gateway'
         : requestedStrategy === 'runtime'
           ? 'sandbox'
+          : requestedStrategy === 'egress'
+            ? 'network'
           : requestedStrategy === 'denied'
             ? null
             : undefined
       : requestedConsumerData;
   let explicitPolicy = null;
-  if (explicitConsumer === 'http_broker') {
+  if (explicitConsumer === 'http_broker' || explicitConsumer === 'network') {
     const policy = parseEgressPolicy(body.egress_policy);
-    if (!policy.ok || policy.policy.backend !== 'kortix_fetch') {
-      return c.json({ error: policy.ok ? 'HTTP broker requires the kortix_fetch backend' : policy.error }, 400);
+    if (!policy.ok) {
+      return c.json({ error: policy.error, code: 'secret_delivery_policy_invalid' }, 400);
+    }
+    if (explicitConsumer === 'http_broker' && policy.policy.backend !== 'kortix_fetch') {
+      return c.json({ error: 'HTTP broker requires the kortix_fetch backend' }, 400);
+    }
+    if (explicitConsumer === 'network') {
+      const boundaryError = networkBoundaryPolicyError(policy.policy);
+      if (boundaryError) {
+        return c.json(
+          { error: boundaryError, code: 'secret_delivery_policy_invalid' },
+          400,
+        );
+      }
+      if (!networkBoundaryDeliveryAvailable()) {
+        return c.json(
+          {
+            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            code: 'secret_delivery_unavailable',
+          },
+          409,
+        );
+      }
     }
     explicitPolicy = policy.policy;
   } else if (body.egress_policy !== undefined) {
@@ -871,17 +904,28 @@ projectsApp.openapi(
         );
       }
       nextPolicy = policy.policy;
+      if (parsed.data.strategy === 'egress') {
+        const boundaryError = networkBoundaryPolicyError(policy.policy);
+        if (boundaryError) {
+          return c.json(
+            { error: boundaryError, code: 'secret_delivery_policy_invalid' },
+            400,
+          );
+        }
+      }
     } else if (parsed.data.egress_policy) {
       return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
     }
     if (parsed.data.strategy === 'egress') {
-      return c.json(
-        {
-          error: 'egress delivery is unavailable until its adapter is enabled',
-          code: 'secret_delivery_unavailable',
-        },
-        409,
-      );
+      if (!networkBoundaryDeliveryAvailable()) {
+        return c.json(
+          {
+            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            code: 'secret_delivery_unavailable',
+          },
+          409,
+        );
+      }
     }
     if (
       parsed.data.strategy === 'broker' &&

@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
   isAndroidWebViewNativeBridgePostMessageNoise,
+  isCaptchaInterceptorNoise,
   isCanvasImageDataOOMNoise,
   isClientRequestTimeoutMessage,
   isConnectionClosedNoise,
@@ -1739,6 +1740,313 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
       },
     }),
     true,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// CAPTCHA / anti-bot browser-extension interceptor `widgetId` noise
+// ---------------------------------------------------------------------------
+//
+// A bot-detection service extension (DataDome, Cloudflare, or similar) injects
+// `app:///content/captcha/mt_captcha/interceptor.js` whose internal `widgetId`
+// configuration race throws
+// `TypeError: Cannot read properties of undefined (reading 'widgetId')` from a
+// minified extension function `d`. The throw is in the extension's OWN injected
+// interceptor, never first-party code. Two sibling fingerprints from the SAME
+// extension, SAME type/message/call-site, different hash:
+//   - `cfd5f828fe374568ec3fb9163e035c73690fc8d768e75751df44badaea3a0283`
+//   - `4a01a1690345a3763a2865e134a42635215f76b8a71939275f1bf81b4edc3ef3`
+
+const CAPTCHA_INTERCEPTOR_FRAME_SOURCE = 'app:///content/captcha/mt_captcha/interceptor.js'
+const CAPTCHA_INTERCEPTOR_FRAME = { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd' }
+const CAPTCHA_INTERCEPTOR_FRAME_CHAIN = [
+  { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+  { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd', lineno: 1, colno: 84147 },
+]
+
+const CAPTCHA_INTERCEPTOR_MESSAGES = [
+  // The exact raw exception value from the production events (V8/Chrome).
+  "Cannot read properties of undefined (reading 'widgetId')",
+  // `TypeError:` prefixed (window.onerror / onunhandledrejection paths).
+  "TypeError: Cannot read properties of undefined (reading 'widgetId')",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: Cannot read properties of undefined (reading 'widgetId')",
+  // Old JSC (Safari) wording.
+  "Cannot read property 'widgetId' of undefined",
+  "TypeError: Cannot read property 'widgetId' of undefined",
+]
+
+test('classifies every CAPTCHA interceptor widgetId variant as noise when sourced from the interceptor', () => {
+  for (const message of CAPTCHA_INTERCEPTOR_MESSAGES) {
+    assert.equal(
+      isCaptchaInterceptorNoise({ message, filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE }),
+      true,
+      `expected "${message}" from the CAPTCHA interceptor to be noise`,
+    )
+    assert.equal(
+      isCaptchaInterceptorNoise({ message, frames: [CAPTCHA_INTERCEPTOR_FRAME] }),
+      true,
+      `expected "${message}" with an interceptor frame to be noise`,
+    )
+  }
+})
+
+test('classifies the widgetId variant from the full production frame chain', () => {
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: CAPTCHA_INTERCEPTOR_FRAME_CHAIN,
+    }),
+    true,
+  )
+})
+
+test('classifies CAPTCHA interceptor widgetId noise from another injected-app source', () => {
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [{ filename: 'app:///scripts/inpage.js' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT classify widgetId as noise when NO injected source is present', () => {
+  for (const message of CAPTCHA_INTERCEPTOR_MESSAGES) {
+    assert.equal(
+      isCaptchaInterceptorNoise({ message, filename: 'https://kortix.com/app.js' }),
+      false,
+      `expected "${message}" from a non-injected source to keep reporting`,
+    )
+    assert.equal(
+      isCaptchaInterceptorNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" with no frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT classify widgetId as noise when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code deref'd a `widgetId`
+  // property on an `undefined` value → actionable; the negative guard MUST
+  // preserve it.
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME, CAPTCHA_INTERCEPTOR_FRAME],
+    }),
+    false,
+    'expected first-party widgetId to keep reporting despite the interceptor frame',
+  )
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [FIRST_PARTY_APPS_SRC_FRAME],
+    }),
+    false,
+    'expected first-party widgetId without interceptor frame to keep reporting',
+  )
+})
+
+test('does NOT classify a non-widgetId message from the CAPTCHA interceptor as noise', () => {
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [CAPTCHA_INTERCEPTOR_FRAME],
+    }),
+    false,
+    'expected non-widgetId message from the CAPTCHA interceptor to keep reporting',
+  )
+})
+
+test('suppresses the CAPTCHA interceptor widgetId Sentry event via the beforeSend gate', () => {
+  for (const value of CAPTCHA_INTERCEPTOR_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: CAPTCHA_INTERCEPTOR_FRAME_CHAIN },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the CAPTCHA interceptor widgetId runtime event via the runtime gate', () => {
+  for (const value of CAPTCHA_INTERCEPTOR_MESSAGES) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message: value,
+        filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE,
+      }),
+      true,
+      `expected runtime event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party widgetId that throws from an apps/web/src frame', () => {
+  // Our own code throws `widgetId` on an undefined value → actionable
+  // regression; the negative guard MUST preserve it so the call site can be fixed.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'widgetId')",
+            stacktrace: {
+              frames: [
+                { filename: 'apps/web/src/features/captcha/widget.ts', function: 'readWidgetId' },
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js', function: 'u' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected first-party widgetId Sentry event to keep reporting',
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      filename: 'apps/web/src/features/captcha/widget.ts',
+    }),
+    false,
+    'expected first-party widgetId runtime event to keep reporting',
+  )
+})
+
+test('pins the production Better Stack pattern cfd5f828…', () => {
+  // The exact production event from Better Stack:
+  //   type: TypeError
+  //   message: "Cannot read properties of undefined (reading 'widgetId')"
+  //   call_site_function: d
+  //   call_site_file: app:///content/captcha/mt_captcha/interceptor.js
+  //   first_seen: 2026-08-08 17:03:49 UTC
+  //   better-stack pattern:
+  //   cfd5f828fe374568ec3fb9163e035c73690fc8d768e75751df44badaea3a0283
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+        { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd' },
+      ],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'widgetId')",
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy' },
+                { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('pins the production Better Stack pattern 4a01a169… (sibling fingerprint)', () => {
+  // Sibling fingerprint from the SAME extension interceptor, SAME
+  // type/message/call-site, different hash:
+  //   type: TypeError
+  //   message: "Cannot read properties of undefined (reading 'widgetId')"
+  //   call_site_function: d
+  //   call_site_file: app:///content/captcha/mt_captcha/interceptor.js
+  //   first_seen: 2026-08-08 16:44:10 UTC
+  //   better-stack pattern:
+  //   4a01a1690345a3763a2865e134a42635215f76b8a71939275f1bf81b4edc3ef3
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [
+        { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno' },
+        { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd' },
+      ],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'widgetId')",
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno' },
+                { filename: CAPTCHA_INTERCEPTOR_FRAME_SOURCE, function: 'd' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('cross-matcher isolation: the CAPTCHA interceptor matcher does NOT match the injectedScript sendMessage message', () => {
+  // The `sendMessage` matcher (`isInjectedScriptSendMessageNoise`) anchors on
+  // `sendMessage`; the CAPTCHA interceptor matcher (`isCaptchaInterceptorNoise`)
+  // anchors on `widgetId`. They must NOT overlap.
+  assert.equal(
+    isCaptchaInterceptorNoise({
+      message: "Cannot read properties of undefined (reading 'sendMessage')",
+      frames: [INJECTED_SCRIPT_BUNDLE_FRAME],
+    }),
+    false,
+    'expected sendMessage message to NOT be matched by the CAPTCHA interceptor matcher',
+  )
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [CAPTCHA_INTERCEPTOR_FRAME],
+    }),
+    false,
+    'expected widgetId message to NOT be matched by the sendMessage matcher',
+  )
+})
+
+test('cross-matcher isolation: the CAPTCHA interceptor source is recognized by isInjectedAppSource', () => {
+  // The new `app:///content/captcha/mt_captcha/interceptor.js` source pattern
+  // added to `INJECTED_APP_SOURCE_PATTERNS` must be flagged as third-party
+  // injected noise, distinct from a first-party `app:///_next/…` bundle frame.
+  assert.equal(isInjectedAppSource(CAPTCHA_INTERCEPTOR_FRAME_SOURCE), true)
+  assert.equal(isInjectedAppSource('app:///_next/static/chunks/main.js'), false)
+})
+
+test('cross-matcher isolation: the existing sendMessage matcher does NOT match the widgetId message from the CAPTCHA interceptor', () => {
+  // A `widgetId` throw from the CAPTCHA interceptor must NOT be swallowed by
+  // the `sendMessage` matcher (which anchors on `sendMessage`); it must reach
+  // the CAPTCHA interceptor matcher instead.
+  assert.equal(
+    isInjectedScriptSendMessageNoise({
+      message: "Cannot read properties of undefined (reading 'widgetId')",
+      frames: [CAPTCHA_INTERCEPTOR_FRAME],
+    }),
+    false,
+    'expected widgetId message from the CAPTCHA interceptor to NOT be matched by the sendMessage matcher',
   )
 })
 

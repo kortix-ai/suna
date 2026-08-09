@@ -9,6 +9,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
@@ -134,15 +135,26 @@ export function useCatalog(
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(() => {
+    const native = computersCatalogEntry();
+    const includeComputers =
+      !activeQuery ||
+      `${native.name} ${native.description ?? ''}`
+        .toLowerCase()
+        .includes(activeQuery.toLowerCase());
+    const nativeEntries = includeComputers ? [native] : [];
     if (source === 'discover') {
-      return (discoverQuery.data?.pages ?? [])
-        .flatMap((page) => page.items)
-        .map(catalogEntryFromDiscover);
+      return nativeEntries.concat(
+        (discoverQuery.data?.pages ?? [])
+          .flatMap((page) => page.items)
+          .map(catalogEntryFromDiscover),
+      );
     }
-    return (easyConnectQuery.data?.pages ?? [])
-      .flatMap((page) => page.apps)
-      .map(catalogEntryFromEasyConnect);
-  }, [source, discoverQuery.data, easyConnectQuery.data]);
+    return nativeEntries.concat(
+      (easyConnectQuery.data?.pages ?? [])
+        .flatMap((page) => page.apps)
+        .map(catalogEntryFromEasyConnect),
+    );
+  }, [activeQuery, source, discoverQuery.data, easyConnectQuery.data]);
 
   const {
     fetchNextPage,
@@ -173,7 +185,8 @@ export function useCatalog(
         hasNextPage,
         isFetchingNextPage,
         isPlaceholderData,
-        focus: focusCategory === null ? null : { loaded: focusLoaded, target: CATALOG_FOCUS_TARGET },
+        focus:
+          focusCategory === null ? null : { loaded: focusLoaded, target: CATALOG_FOCUS_TARGET },
         initialPages: CATALOG_INITIAL_PAGES,
         maxPages: CATALOG_AUTOLOAD_MAX_PAGES,
       })
@@ -210,7 +223,8 @@ export function useCatalog(
     source === 'discover'
       ? discoverQuery.data?.pages[0]?.total
       : easyConnectQuery.data?.pages[0]?.total;
-  const total = typeof reportedTotal === 'number' ? reportedTotal : entries.length;
+  const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
+  const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
 
   return {
     entries,

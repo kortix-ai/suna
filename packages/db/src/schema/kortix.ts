@@ -4411,11 +4411,11 @@ export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   // catalog is a fixed per-platform action set; the credential is the platform's
   // existing install token (resolved server-side, no connector_credential row).
   'channel',
-  // Connected machines reached over the Agent Computer Tunnel. ONE auto-
-  // materialized connector fronts all the account's machines (machine = a call
-  // arg); its catalog is the tunnel RPC method set, and it has no credential —
-  // the live WS relay IS the credential, with per-machine auth/scope enforced by
-  // the tunnel permission layer. See docs/specs/computer-connector.md.
+  // Connected machines reached over the Agent Computer Tunnel. Each machine is
+  // one auto-materialized connector bound to its tunnel id. Its catalog is the
+  // tunnel RPC method set, and it has no credential — the live WS relay IS the
+  // credential, with per-machine auth/scope enforced by the tunnel permission
+  // layer. See docs/specs/computer-connector.md.
   'computer',
 ]);
 

@@ -1,6 +1,5 @@
 'use client';
 
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -12,7 +11,6 @@ import {
   LockIcon as Lock,
   type Icon as LucideIcon,
   EnvelopeIcon as Mail,
-  MonitorIcon as Monitor,
   PencilSimpleIcon,
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -1140,15 +1138,14 @@ export function ConnectorDetail({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
-  // Computer (Agent Computer Tunnel) connectors, like channels, are managed from
-  // a dedicated tab (Computers): no generic credential / connect / remove UI.
+  // A computer profile has no generic credential or connection form. Its
+  // project-scoped tool policy remains editable here like every other connector.
   const isComputer = connector.provider === 'computer';
   const isManaged = isComputer;
   const authorizationStrategyEditable = connectorAuthorizationStrategyIsEditable(
     connector.provider,
   );
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  const setSection = useCustomizeStore((s) => s.setSection);
   const connected = usesProjectAuthorization && connector.secretSet;
   // The connection's connection_id — the reference a backend (Kortix as a Backend)
   // passes in `connector_bindings` to run a session AS this connection. It isn't
@@ -1434,30 +1431,6 @@ export function ConnectorDetail({
             />
           </div>
         </section>
-        {/* Computer connectors are connected + permissioned in the Computers tab
-            (device pairing, per-capability grants, audit) — point management
-            there instead of the generic credential / connection / remove UI. */}
-        {isComputer && (
-          <InfoBanner
-            tone="info"
-            icon={Monitor}
-            title={`${displayName} is managed in Computers`}
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => setSection('computers')}
-              >
-                <Monitor className="h-4 w-4" />
-                Open Computers
-              </Button>
-            }
-          >
-            Connect a machine, and grant or revoke per-capability access, in the Computers tab. Here
-            you control who can use it and review its tools.
-          </InfoBanner>
-        )}
         {/* Project-owned connectors accept only project-managed connections. */}
         {connector.authSecret && !connected && !isChannel && usesProjectAuthorization && (
           <InfoBanner
@@ -1515,9 +1488,7 @@ export function ConnectorDetail({
             other trigger — Connection — is hidden for Pipedream connectors. */}
         {detailTabCount > 0 && (
           <Tabs value={detailTab} onValueChange={setDetailTab} className="gap-3">
-            {/* A single trigger is not a choice — it reads as a broken tab bar.
-              Computer connectors are managed in Computers, so Permissions is
-              all they have left here. */}
+            {/* A single trigger is not a choice — it reads as a broken tab bar. */}
             <TabsList
               type="underline"
               className={cn(

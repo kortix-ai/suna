@@ -159,6 +159,10 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
   },
 }));
 
+mock.module('../secrets/network-boundary-availability', () => ({
+  networkBoundaryDeliveryAvailable: () => true,
+}));
+
 mock.module('../shared/audit', () => ({
   inferAuditSource: (_context: unknown, actorType: string) =>
     actorType === 'service_account' ? 'automation' : 'api',
@@ -403,7 +407,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(updates).toHaveLength(0);
   });
 
-  test('rejects transparent egress until its adapter is available', async () => {
+  test('stores an enforceable network-boundary policy', async () => {
     const response = await buildApp().request(
       `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
@@ -412,18 +416,47 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
         body: JSON.stringify({
           strategy: 'egress',
           egress_policy: {
-            backend: 'llm_gateway',
             rules: [{ host: 'api.example.com' }],
+            inject: {
+              kind: 'header',
+              name: 'authorization',
+              template: 'Bearer {{secret}}',
+            },
+            on_no_match: 'deny',
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+    });
+    expect(updates).toHaveLength(1);
+    expect(audits).toHaveLength(1);
+  });
+
+  test('rejects a network policy whose method restriction cannot be enforced', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            rules: [{ host: 'api.example.com', methods: ['POST'] }],
             inject: { kind: 'header', name: 'authorization' },
           },
         }),
       },
     );
 
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'secret_delivery_unavailable' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'secret_delivery_policy_invalid' });
     expect(updates).toHaveLength(0);
-    expect(audits).toHaveLength(0);
   });
 
   test('attributes a service-account strategy change to automation', async () => {
@@ -611,6 +644,35 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
       consumer: null,
     });
     expect(row).toMatchObject({ strategy: 'denied', consumer: null });
+  });
+
+  test('creates an enforceable network-boundary secret', async () => {
+    const policy = {
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    };
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'egress',
+        consumer: 'network',
+        egress_policy: policy,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+      egress_policy: policy,
+    });
+    expect(row).toMatchObject({ strategy: 'egress', consumer: 'network', egressPolicy: policy });
   });
 
   test('rejects a creation consumer without a strategy', async () => {

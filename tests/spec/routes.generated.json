@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 563,
+  "count": 564,
   "routes": [
     {
       "method": "GET",
@@ -1989,6 +1989,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/provision"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/provision-stream"
     },
     {
       "method": "GET",

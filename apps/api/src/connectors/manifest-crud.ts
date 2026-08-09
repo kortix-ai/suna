@@ -509,6 +509,8 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
+  /** Platform-managed Computers profiles only. Manifest connectors omit it. */
+  tunnelIds?: string[];
   auth: {
     type:
       | 'none'

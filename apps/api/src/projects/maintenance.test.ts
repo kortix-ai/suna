@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSandboxReaper from './sandbox-reaper';
 import * as realAttachments from '../connectors/attachments';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // maintenance.ts pulls in the real config module (which validates the real,
 // dotenvx-encrypted process.env and calls process.exit on a bare `bun test`
@@ -9,7 +10,7 @@ import * as realAttachments from '../connectors/attachments';
 // wide fan of DB/provider modules. `shouldForceResetStaleLock` is a pure
 // function with none of that runtime surface, so everything below is purely
 // to let the module load in isolation.
-mock.module('../config', () => ({ config: {} }));
+mock.module('../config', () => mockConfigModule());
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
 mock.module('../connectors/attachments', () => ({
   ...realAttachments,
@@ -74,6 +75,10 @@ let reapAndReconcileSandboxesImpl = async () => ({
 // the sandbox reaper — maintenance.ts is simply the tick that calls both.
 mock.module('./session-lifecycle/undelivered-prompts', () => ({
   reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
+}));
+
+mock.module('./session-lifecycle/runtime-wake-maintenance', () => ({
+  reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, errors: 0 }),
 }));
 
 mock.module('./sandbox-reaper', () => ({

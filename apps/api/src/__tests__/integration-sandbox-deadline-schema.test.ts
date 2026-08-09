@@ -24,7 +24,12 @@ const created: string[] = [];
  *  CODE and the CONSTRAINT NAME — not a message substring — is what makes these
  *  tests about the constraint itself rather than about Postgres's wording. */
 function pgError(err: unknown): { code?: string; constraint?: string } {
-  type PgLike = { code?: string; constraint?: string; constraint_name?: string; cause?: unknown };
+  type PgLike = {
+    code?: string;
+    constraint?: string;
+    constraint_name?: string;
+    cause?: unknown;
+  };
   for (let e = err as PgLike, depth = 0; e && depth < 5; e = e.cause as PgLike, depth++) {
     if (e.code) return { code: e.code, constraint: e.constraint_name ?? e.constraint };
   }
@@ -67,10 +72,10 @@ describe('the anchor trigger', () => {
   // A row is normally born `provisioning` and flipped to `active` when the
   // provider returns. A floor applied only to active inserts would leave every
   // in-flight provision expired from birth.
-  test('a bare INSERT is anchored and gets the 20-minute boot floor', async () => {
+  test('a bare INSERT is anchored and gets the 15-minute boot floor', async () => {
     const row = await read(await seed('provisioning'));
 
-    expect(Number(row.span_s)).toBeCloseTo(20 * 60, 0);
+    expect(Number(row.span_s)).toBeCloseTo(15 * 60, 0);
     expect(Number(row.age_s)).toBeLessThan(30);
   });
 
@@ -91,7 +96,7 @@ describe('the anchor trigger', () => {
     const row = await read(id);
 
     expect(Number(row.age_s)).toBeLessThan(30);
-    expect(Number(row.span_s)).toBeCloseTo(20 * 60, 0);
+    expect(Number(row.span_s)).toBeCloseTo(15 * 60, 0);
   });
 
   // I1 — the load-bearing immutability. Carried forward silently rather than
@@ -115,10 +120,12 @@ describe('the 24h cap — unbypassable by application code', () => {
     const id = await seed('active');
 
     const err = await db
-      .execute(sql`
+      .execute(
+        sql`
         UPDATE kortix.session_sandboxes
            SET deadline_at = active_since + interval '25 hours'
-         WHERE sandbox_id = ${id}::uuid`)
+         WHERE sandbox_id = ${id}::uuid`,
+      )
       .then(() => null)
       .catch((e) => e);
 
@@ -133,11 +140,13 @@ describe('the 24h cap — unbypassable by application code', () => {
     const id = await seed('active');
 
     const err = await db
-      .execute(sql`
+      .execute(
+        sql`
         UPDATE kortix.session_sandboxes
            SET active_since = now() + interval '10 hours',
                deadline_at  = now() + interval '30 hours'
-         WHERE sandbox_id = ${id}::uuid`)
+         WHERE sandbox_id = ${id}::uuid`,
+      )
       .then(() => null)
       .catch((e) => e);
 

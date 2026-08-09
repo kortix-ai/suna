@@ -408,10 +408,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     );
     await dismissOnboarding(page);
     await expect(
-      page.getByRole("link", { name: "Project home" }).first(),
-    ).toHaveAttribute("href", `/projects/${project.project_id}`);
-    await expect(
-      page.getByRole("button", { name: "Switch project" }),
+      page.getByRole("button", { name: "Switch workspace" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "New session" }).first(),
@@ -422,8 +419,6 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(
       page.getByRole("button", { name: "Settings" }).first(),
     ).toBeVisible();
-    if (!ownerSession.user.email) throw new Error("owner session has no email");
-    await expect(page.getByText(ownerSession.user.email)).toBeVisible();
     await expect(
       page.locator(
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
@@ -446,10 +441,12 @@ test.describe("08 — Accounts, invites, and project access", () => {
 
     await selectAccountForUi(page, account.account_id);
     await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.project_id}$`),
+    );
     await expect(
-      page.getByRole("heading", { name: "Projects", exact: true }),
+      page.getByText(`${initialProjectName} Admin`).first(),
     ).toBeVisible();
-    await expect(page.getByText(accountName).first()).toBeVisible();
 
     await installBrowserSessionDirect(
       page,
@@ -548,14 +545,21 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await selectAccountForUi(page, account.account_id);
     await page.goto("/projects", { waitUntil: "domcontentloaded" });
     await dismissOnboarding(page);
-    await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.project_id}$`),
+    );
+    await expect(
+      page.getByText(`${initialProjectName} Admin`).first(),
+    ).toBeVisible();
 
     await api<{ ok: true }>(
       ownerSession.access_token,
       "DELETE",
       `/projects/${project.project_id}/access/${member.id}`,
     );
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/projects\/start/);
+    await expect(page.getByText("No workspace yet")).toBeVisible();
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
@@ -580,7 +584,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       await page.getByRole("button", { name: "Accept" }).click();
       expect((await acceptAccountInviteResponse).status()).toBe(200);
     }
-    await expect(page).toHaveURL(/\/projects(?:\/start)?$/);
+    await expect(page).toHaveURL(/\/projects\/start$/);
     await page.goto(`/accounts/${account.account_id}`, {
       waitUntil: "domcontentloaded",
     });

@@ -157,6 +157,12 @@ function connectorResponseMessage(body: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export async function uploadConnectorAttachment(
   projectId: string | undefined,
   content: Uint8Array | ArrayBuffer | Blob,
@@ -176,7 +182,7 @@ export async function uploadConnectorAttachment(
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
   }
 
-  const backendUrl = platformConfig().backendUrl.replace(/\/+$/, '');
+  const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
   const endpoint = connectorGatewayPath(projectId, 'attachments');
   const response = await authenticatedFetch(
     `${backendUrl}${endpoint}`,
@@ -814,6 +820,8 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
+  /** Machine ids assigned to a Computers connector profile. */
+  tunnelIds?: string[];
   auth: {
     type: ConnectorRequestAuthType;
     in: 'header' | 'query' | 'cookie';
@@ -869,6 +877,8 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
+  /** Account-owned machine ids assigned to a Computers connector profile. */
+  tunnel_ids?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */
   credential?: 'shared';

@@ -105,7 +105,6 @@ const QUICK_FILTERS: Array<{
   { label: 'Agents', actorType: 'agent' },
   { label: 'Sessions', resourceType: 'project_session' },
   { label: 'Connectors', action: 'connector.' },
-  { label: 'Computer', action: 'computer.' },
   { label: 'Failures', outcome: 'failure' },
 ];
 
@@ -115,7 +114,7 @@ const RESOURCE_TYPES = [
   { label: 'Session', value: 'project_session' },
   { label: 'Connector action', value: 'connector_action' },
   { label: 'Connector approval', value: 'connector_approval' },
-  { label: 'Computer', value: 'computer_tunnel' },
+  { label: 'Computer connection', value: 'computer_tunnel' },
   { label: 'Secret', value: 'project_secret' },
   { label: 'Group', value: 'group' },
   { label: 'Account', value: 'account' },
@@ -132,6 +131,7 @@ const SOURCES = [
   { label: 'LLM gateway', value: 'llm_gateway' },
   { label: 'Provider', value: 'provider' },
   { label: 'Automation', value: 'automation' },
+  { label: 'Connector', value: 'connector' },
   { label: 'Voice', value: 'voice' },
   { label: 'Tunnel', value: 'tunnel' },
   { label: 'API', value: 'api' },
@@ -347,8 +347,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         <div className="space-y-1">
           <p className="text-foreground text-sm font-medium">Audit log</p>
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-            Reconstruct activity across people, agents, sessions, API requests, connectors, and
-            computers.
+            Reconstruct activity across people, agents, sessions, API requests, and connectors.
           </p>
         </div>
         <DropdownMenu>

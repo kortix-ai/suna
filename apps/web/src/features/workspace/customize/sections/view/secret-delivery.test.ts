@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   brokerConsumerForSecret,
   buildBrokerPolicy,
+  buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
@@ -70,23 +71,23 @@ describe('secretDeliveryPresentation', () => {
 });
 
 describe('secretDeliveryOptions', () => {
-  test('offers the HTTPS broker and keeps transparent egress unavailable', () => {
-    const options = secretDeliveryOptions('runtime', 'available');
+  test('offers the HTTPS broker and enables network delivery when the deployment supports it', () => {
+    const options = secretDeliveryOptions('runtime', 'available', true);
     expect(options.map(({ strategy, disabled }) => ({ strategy, disabled }))).toEqual([
       { strategy: 'runtime', disabled: false },
       { strategy: 'broker', disabled: false },
-      { strategy: 'egress', disabled: true },
+      { strategy: 'egress', disabled: false },
       { strategy: 'denied', disabled: false },
     ]);
   });
 
-  test('keeps the broker available and transparent egress disabled', () => {
-    expect(secretDeliveryOptions('broker', 'available')[1]?.disabled).toBe(false);
-    expect(secretDeliveryOptions('egress', 'available')[2]?.disabled).toBe(true);
+  test('keeps network delivery disabled when Platinum is unavailable', () => {
+    expect(secretDeliveryOptions('broker', 'available', false)[1]?.disabled).toBe(false);
+    expect(secretDeliveryOptions('egress', 'available', false)[2]?.disabled).toBe(true);
   });
 
   test('disables a selected non-runtime policy when the server marks it unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'unavailable')[1]?.disabled).toBe(true);
+    expect(secretDeliveryOptions('broker', 'unavailable', true)[1]?.disabled).toBe(true);
   });
 });
 
@@ -200,6 +201,22 @@ describe('canSaveSecretDelivery', () => {
       }),
     ).toBe(false);
   });
+
+  test('requires a valid network-boundary policy for egress delivery', () => {
+    const input = {
+      isEdit: true,
+      key: 'API_KEY',
+      value: '',
+      requiresValue: false,
+      requiresRotation: false,
+      currentStrategy: 'runtime' as const,
+      nextStrategy: 'egress' as const,
+      nextConsumer: 'network' as const,
+      brokerPolicyValid: false,
+    };
+    expect(canSaveSecretDelivery(input)).toBe(false);
+    expect(canSaveSecretDelivery({ ...input, networkBoundaryPolicyValid: true })).toBe(true);
+  });
 });
 
 describe('connector secret bindings', () => {
@@ -308,5 +325,34 @@ describe('buildBrokerPolicy', () => {
     expect(buildBrokerPolicy({ ...base, hosts: '' })).toBeNull();
     expect(buildBrokerPolicy({ ...base, methods: 'TRACE' })).toBeNull();
     expect(buildBrokerPolicy({ ...base, injectionTarget: '' })).toBeNull();
+  });
+});
+
+describe('buildNetworkBoundaryPolicy', () => {
+  test('builds an exact-host header transform without a sandbox handle', () => {
+    expect(
+      buildNetworkBoundaryPolicy({
+        hosts: 'api.anthropic.com\napi.openai.com',
+        injectionTarget: 'Authorization',
+        template: 'Bearer {{secret}}',
+      }),
+    ).toEqual({
+      rules: [{ host: 'api.anthropic.com' }, { host: 'api.openai.com' }],
+      inject: { kind: 'header', name: 'Authorization', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    });
+  });
+
+  test('rejects wildcard hosts, URLs, invalid headers, and templates without the secret slot', () => {
+    const base = {
+      hosts: 'api.example.com',
+      injectionTarget: 'x-api-key',
+      template: '{{secret}}',
+    };
+    expect(buildNetworkBoundaryPolicy({ ...base, hosts: '*.example.com' })).toBeNull();
+    expect(buildNetworkBoundaryPolicy({ ...base, hosts: 'https://api.example.com' })).toBeNull();
+    expect(buildNetworkBoundaryPolicy({ ...base, injectionTarget: 'bad header' })).toBeNull();
+    expect(buildNetworkBoundaryPolicy({ ...base, template: 'Bearer token' })).toBeNull();
   });
 });

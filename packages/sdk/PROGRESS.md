@@ -12,6 +12,96 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-09 — session `computers-connector-grouping` claim
+
+No **Now** task claimed. This is the user-directed Computers connector profile refactor.
+
+Claimed SDK scope:
+
+- Add an optional machine-id allowlist to the existing connector draft and config types.
+- Preserve every existing published name and wire route.
+- Add failing REST client coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Connector draft and config types rejected `tunnel_ids` / `tunnelIds` before implementation.
+
+GREEN:
+
+- Focused connector REST client suite: `38 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1807 pass`, `2 skip`, `0 fail`, `7001 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `release-codeql-connector-url` claim
+
+No **Now** task claimed. This is a narrow production-release security gate fix.
+
+Claimed SDK scope:
+
+- Replace the polynomial trailing-slash regular expression in connector attachment uploads.
+- Preserve the existing URL contract and every published export name.
+- Add a failing regression test before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- The slash-heavy URL regression took `492.09 ms` and failed its `< 200 ms` bound.
+
+GREEN:
+
+- Focused connector gateway suite: `12 pass`, `0 fail`; regression case `0.19 ms`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1807 pass`, `0 fail`, `7004 expect()` calls.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-08 — session `sandbox-agent-lifecycle` claim
+
+No **Now** task claimed. This is the user-directed sandbox lifecycle and billing
+correctness refactor.
+
+Claimed SDK scope:
+
+- Stop automatic `/start` polling after a bounded terminal wake failure.
+- Preserve the existing published session APIs and all exported names.
+- Keep runtime identity session-scoped and provider-agnostic.
+- Add failing SDK tests before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk test`: `1806 pass`, `0 fail` after merging current `origin/main`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- SDK wake polling stops on the server's bounded `retriable: false` response.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-08 — session `feature-flags-web`
 
 Backlog **B48** — canonical feature-flag naming plus one gating primitive, so the
@@ -72,6 +162,42 @@ copy is now inconsistent with the platform's naming.
 **Status:** COMPLETE.
 
 **SDK package shippable to production: YES.**
+
+### 2026-08-08 — session `workspace-switcher-final-fix-wave` completion
+
+No **Now** task claimed. This is the SDK slice of the workspace-switcher
+branch's final whole-branch-review fix wave (`.superpowers/sdd/2026-08-06-
+workspace-switcher/final-fix-wave-report.md`) — one finding, additive only.
+
+Scope: `provisionProjectStream` (`core/rest/projects-client/projects.ts`)
+threw a bare `Error` for every failure — no `.status`, no `.code` — even
+though `ProvisionStreamEvent` already declared `code?: string` and the server
+sends it. `apps/web`'s `messageFor`/`isRetryableError` classify every create
+failure by reading exactly those two fields, so on the default streaming path
+they always saw `undefined` for both: a 400 offered an unwinnable retry, and a
+409 leaked the literal string `idempotency_key` to the user.
+
+RED: `projects.test.ts` — 3 new tests asserting the thrown error is
+`instanceof ApiError` with `.status`/`.code` set, for both the in-band `error`
+frame and the pre-stream denial. Failed for the right reason: the thrown
+value was a plain `Error`, not `ApiError`.
+
+GREEN: `provisionProjectStream` now throws `new ApiError(message, { status,
+code })` at both throw sites; `ProvisionStreamEvent`'s `error` variant gained
+an optional `status?: number` field to carry it. `1589 pass, 0 fail` (was
+1586 — the 3 new tests), `6408 expect()` calls across 122 files. `typecheck`
+clean. `smoke:install` green (pack → install → import).
+
+Public surface: **purely additive**. `ApiError` was already exported and
+already public; only an EXISTING type gained a new OPTIONAL field
+(`ProvisionStreamEvent['error'].status`), which the snapshot tests don't
+capture at the field level (verified: `public-surface.snapshot.json` and
+`public-type-surface.snapshot.json` show zero diff). No export added,
+renamed, or removed.
+
+**Status:** COMPLETE. **SDK package shippable to production: YES.**
+
+---
 
 ### 2026-08-08 — session `apps-retired-provider-scanner`
 
@@ -7725,6 +7851,75 @@ GREEN:
 passes `wasTranscriptEvicted` into `shouldHydrateFromCache`. The SDK test runner
 has no DOM, so that effect cannot be driven; both halves of the decision it
 composes are tested directly.
+
+**Status:** COMPLETE.
+
+---
+
+### 2026-08-07 — session `workspace-switcher` Task 18: `provisionProjectStream`
+
+No SDK **Now** task claimed (`Now` tracks the unrelated OpenCode ACP canary
+plan). Task 18 of `.superpowers/sdd/2026-08-06-workspace-switcher/` — expose
+`POST /projects/provision-stream` (built server-side in an earlier task of the
+same plan) through the SDK, so `apps/web`'s create-project flow can show phase
+progress instead of a single opaque wait.
+
+Added:
+
+- `provisionProjectStream(input, onEvent, options?)` in
+  `core/rest/projects-client/projects.ts` — POSTs to `/projects/provision-stream`,
+  parses the data-only SSE body **line by line** (not `frame.startsWith('data: ')`
+  on the whole frame), calls `onEvent` per phase/done/error frame, and resolves
+  with the project on `done`. Rejects on a terminal `error` frame, on a pre-stream
+  non-2xx response (the route's "Owner or admin role required" 403 denial, which
+  arrives as plain JSON before any stream opens), and on a stream that closes
+  with no terminal frame at all — the last case matters because resolving with
+  `undefined` would route a caller to `/projects/undefined`.
+- `ProvisionPhase` and `ProvisionStreamEvent` — the phase union is pinned by a
+  compile-time exhaustiveness test against the literal 4-member list, so a
+  rename on either side of the two independent declarations (this one and
+  `PROVISION_PHASES` in `apps/api/src/projects/provision-core.ts`) fails loudly
+  instead of the UI silently stopping mid-progress.
+- `ApiClientOptions.fetch` — an explicit `fetch` injection point (narrower than
+  `typeof fetch`, no `preconnect`, so a plain stub function satisfies it) and
+  `backendApi.postStream`, a new POST variant that returns the raw `Response`
+  instead of consuming its body, so a caller can read `response.body`
+  incrementally. Chosen over `globalThis.fetch = mock(...)` (the rest of this
+  file's convention) because the task required a real injection seam, not just
+  a way to make this one test pass.
+- `default_branch?: string` on `ProvisionProjectInput` (carried-Minor cleanup):
+  `apps/web` was sending it and the server was reading it
+  (`apps/api/src/projects/routes/r1.ts:546`) with no field to type it, forcing
+  a `payload as unknown as ProvisionProjectInput` double-cast at the web call
+  site. Additive only — no existing field touched.
+
+Doc comment states the streaming target matrix and says plainly that **React
+Native is not supported** (RN's `fetch` has no `response.body`; Hermes has no
+`TextDecoderStream`) — matches this file's existing streaming guidance.
+
+RED (watched fail, for the right reason):
+
+```
+SyntaxError: Export named 'provisionProjectStream' not found in module
+'.../packages/sdk/src/core/rest/projects-client/projects.ts'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1579 pass`, `2 skip`, `0 fail`,
+  `6381 expect()` calls across `122` files (baseline going in was `1569`/`122`
+  — the 10-test delta is exactly the tests this task added).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0` — tarball packed,
+  installed into a throwaway project, imported successfully.
+
+Public surface changed additively only, verified by reading the diff before
+re-recording: `provisionProjectStream`, `ProvisionPhase`, `ProvisionStreamEvent`
+added to both the root and `projects-client` entries in both
+`public-surface.snapshot.json` (runtime) and `public-type-surface.snapshot.json`
+(type-level). Nothing removed, nothing renamed. `default_branch` is a new field
+on an existing interface, so it does not appear in either name-list snapshot.
+`package.json`'s `version` was not touched.
 
 **Status:** COMPLETE.
 

@@ -499,6 +499,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|link-repository",
   "GET|v1|projects|managed-git|status",
   "POST|v1|projects|provision",
+  "POST|v1|projects|provision-stream",
   "GET|v1|projects|suna-migration|eligibility",
   "POST|v1|projects|suna-migration|start",
   "GET|v1|projects|suna-migration|status",
