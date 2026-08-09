@@ -97,27 +97,16 @@ module "web" {
 
 module "dns" {
   source  = "../../modules/cloudflare-dns"
-  count   = var.manage_origin_dns || var.manage_canonical_dns ? 1 : 0
+  count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
-  records = merge(
-    var.manage_origin_dns ? {
-      dev-web-ecs-fargate = {
-        name    = "dev-web-ecs-fargate"
-        type    = "CNAME"
-        value   = module.web.alb_dns_name
-        proxied = true
-        ttl     = 1
-      }
-    } : {},
-    var.manage_canonical_dns ? {
-      dev = {
-        name    = "dev"
-        type    = "CNAME"
-        value   = module.web.alb_dns_name
-        proxied = true
-        ttl     = 1
-      }
-    } : {},
-  )
+  records = {
+    dev-fe-ecs = {
+      name    = "dev-fe-ecs"
+      type    = "CNAME"
+      value   = module.web.alb_dns_name
+      proxied = true
+      ttl     = 1
+    }
+  }
 }

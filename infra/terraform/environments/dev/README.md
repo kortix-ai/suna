@@ -3,7 +3,8 @@
 | Surface | Where it runs | Managed by |
 |---|---|---|
 | `dev-api.kortix.com` | Cloudflare (proxied) → ALB → **ECS Fargate** (autoscaled, private subnets, NAT egress) | **this Terraform** |
-| `dev.kortix.com` (frontend) | Cloudflare (proxied) → ALB → **ECS Fargate** | `../dev-web` Terraform |
+| `dev.kortix.com` (frontend) | Vercel | Vercel Git integration |
+| `dev-fe-ecs.kortix.com` (parallel frontend) | Cloudflare (proxied) → ALB → **ECS Fargate** | `../dev-web` Terraform |
 
 The **same module set prod uses** (`../prod`) — dev just runs smaller numbers
 and Fargate Spot. App code still ships via CI (`deploy-dev.yml`); Terraform owns

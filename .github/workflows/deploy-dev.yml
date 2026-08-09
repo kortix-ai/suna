@@ -11,7 +11,8 @@ name: Deploy Dev
 #                   is a Cloudflare Worker routing to the ECS service
 #                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
-#                   the dedicated kortix-dev-web ECS Fargate service.
+#                   the dedicated kortix-dev-web ECS Fargate service at
+#                   dev-fe-ecs.kortix.com. dev.kortix.com stays on Vercel.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api).
 #
@@ -90,7 +91,6 @@ jobs:
               - 'apps/web/**'
               - 'packages/**'
               - 'infra/scripts/ecs-deploy.sh'
-              - 'infra/scripts/detach-vercel-web-domain.mjs'
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
               - 'infra/scripts/sync-web-dns.mjs'
@@ -650,70 +650,8 @@ jobs:
             --service web \
             --version "${{ needs.dev-version.outputs.version }}"
 
-  verify-web-dev:
-    name: Verify frontend Dev ECS and public behavior
-    needs: [detect-changes, dev-version, cutover-web-dev-dns]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    env:
-      EXPECTED_COMMIT: ${{ github.sha }}
-      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
-      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
-    steps:
-      - name: Require ECS origin and public frontend parity
-        run: |
-          set -euo pipefail
-          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
-            echo "::error::WEB_PROTECTION_PASSWORD is not configured."
-            exit 1
-          }
-          endpoints=(
-            "origin|https://dev-web-ecs-fargate.kortix.com"
-            "public|https://dev.kortix.com"
-          )
-          consecutive_matches=0
-          for attempt in $(seq 1 40); do
-            all_match=true
-            canonical_cname="$(dig +short @conrad.ns.cloudflare.com CNAME dev.kortix.com | tr '[:upper:]' '[:lower:]')"
-            if grep -q 'vercel' <<<"$canonical_cname"; then
-              echo "(${attempt}/40) canonical DNS still targets Vercel: $canonical_cname"
-              all_match=false
-            fi
-            for item in "${endpoints[@]}"; do
-              name="${item%%|*}"
-              base="${item#*|}"
-              body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
-              commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
-              version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
-              headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
-              vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
-              anonymous_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
-              protected_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
-              echo "(${attempt}/40) ${name}: commit=${commit:-?} version=${version:-?} anonymous=${anonymous_status:-?} protected=${protected_status:-?} vercel_headers=${vercel_headers}"
-              if [ "$commit" != "$EXPECTED_COMMIT" ] \
-                || [ "$version" != "$EXPECTED_VERSION" ] \
-                || [ "$anonymous_status" != "401" ] \
-                || [ "$vercel_headers" != "0" ] \
-                || { [ "$protected_status" != "200" ] && [ "$protected_status" != "307" ] && [ "$protected_status" != "308" ]; }; then
-                all_match=false
-              fi
-            done
-            if [ "$all_match" = true ]; then
-              consecutive_matches=$((consecutive_matches + 1))
-              if [ "$consecutive_matches" -ge 4 ]; then
-                echo "Dev ECS origin and dev.kortix.com served ${EXPECTED_COMMIT} for four consecutive checks."
-                exit 0
-              fi
-            else
-              consecutive_matches=0
-            fi
-            sleep 20
-          done
-          echo "::error::Frontend Dev parity failed for ${EXPECTED_COMMIT}."
-          exit 1
-
-  publish-web-origin-dns:
-    name: Publish Dev web ECS origin DNS
+  publish-web-ecs-dns:
+    name: Publish Dev FE-ECS DNS
     needs: [detect-changes, deploy-web-ecs]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -731,18 +669,18 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Point the temporary origin hostname at the web ALB
+      - name: Point only the isolated FE-ECS hostname at the web ALB
         run: |
           set -euo pipefail
           alb="$(aws elbv2 describe-load-balancers \
             --names kortix-dev-web-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)"
-          node infra/scripts/sync-web-dns.mjs dev origin "$alb"
+          node infra/scripts/sync-web-dns.mjs dev "$alb"
 
-  verify-web-origin:
-    name: Verify Dev web ECS origin
-    needs: [detect-changes, dev-version, publish-web-origin-dns]
+  verify-web-dev:
+    name: Verify Dev FE-ECS and Vercel isolation
+    needs: [detect-changes, dev-version, publish-web-ecs-dns]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     env:
@@ -750,10 +688,16 @@ jobs:
       EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
       WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
-      - name: Verify health, protection, and runtime configuration
+      - name: Verify ECS health, protection, runtime configuration, and Vercel isolation
         run: |
           set -euo pipefail
-          base=https://dev-web-ecs-fargate.kortix.com
+          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
+            echo "::error::WEB_PROTECTION_PASSWORD is not configured."
+            exit 1
+          }
+          base=https://dev-fe-ecs.kortix.com
+          canonical=https://dev.kortix.com
+          consecutive_matches=0
           for attempt in $(seq 1 40); do
             body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
             commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
@@ -761,61 +705,31 @@ jobs:
             anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
             protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
             runtime="$(curl -fsS --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/api/runtime-config" || true)"
-            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} protected=${protected:-?}"
+            ecs_headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
+            canonical_headers="$(curl -sS -D - -o /dev/null --max-time 15 "$canonical/" || true)"
+            ecs_vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$ecs_headers")"
+            canonical_vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$canonical_headers")"
+            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} protected=${protected:-?} ecs_vercel_headers=${ecs_vercel_headers} canonical_vercel_headers=${canonical_vercel_headers}"
             if [ "$commit" = "$EXPECTED_COMMIT" ] \
               && [ "$version" = "$EXPECTED_VERSION" ] \
               && [ "$anonymous" = 401 ] \
               && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
               && grep -q 'dev-api.kortix.com' <<<"$runtime" \
-              && grep -q 'dev.kortix.com' <<<"$runtime"; then
-              exit 0
+              && grep -q 'dev-fe-ecs.kortix.com' <<<"$runtime" \
+              && [ "$ecs_vercel_headers" = 0 ] \
+              && [ "$canonical_vercel_headers" -gt 0 ]; then
+              consecutive_matches=$((consecutive_matches + 1))
+              if [ "$consecutive_matches" -ge 4 ]; then
+                echo "Dev FE-ECS served ${EXPECTED_COMMIT} for four consecutive checks. dev.kortix.com remained on Vercel."
+                exit 0
+              fi
+            else
+              consecutive_matches=0
             fi
-            sleep 15
+            sleep 20
           done
-          echo "::error::Dev web ECS origin verification failed."
+          echo "::error::Dev FE-ECS verification or Vercel isolation failed for ${EXPECTED_COMMIT}."
           exit 1
-
-  cutover-web-dev-dns:
-    name: Cut dev.kortix.com to ECS
-    needs: [detect-changes, detach-web-dev-vercel-domain]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    env:
-      AWS_REGION: us-west-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Point the canonical Dev hostname at the verified web ALB
-        run: |
-          set -euo pipefail
-          alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-dev-web-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)"
-          node infra/scripts/sync-web-dns.mjs dev canonical "$alb"
-
-  detach-web-dev-vercel-domain:
-    name: Detach Dev frontend from Vercel
-    needs: [detect-changes, verify-web-origin]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Remove the Dev hostname from the Vercel project
-        run: node infra/scripts/detach-vercel-web-domain.mjs dev
 
   # ── Move the self-host `:dev` channel tag onto the image that just built ────
   promote-dev-channel-frontend:

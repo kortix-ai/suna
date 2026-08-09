@@ -2,17 +2,20 @@ import { pathToFileURL } from 'node:url';
 
 const ENVIRONMENTS = {
   dev: {
-    host: 'dev.kortix.com',
+    canonicalHost: 'dev.kortix.com',
+    ecsHost: 'dev-fe-ecs.kortix.com',
     apiHost: 'dev-api.kortix.com',
     protected: true,
   },
   staging: {
-    host: 'staging.kortix.com',
+    canonicalHost: 'staging.kortix.com',
+    ecsHost: 'staging-fe-ecs.kortix.com',
     apiHost: 'staging-api.kortix.com',
     protected: true,
   },
   prod: {
-    host: 'kortix.com',
+    canonicalHost: 'kortix.com',
+    ecsHost: 'prod-fe-ecs.kortix.com',
     apiHost: 'api.kortix.com',
     protected: false,
   },
@@ -59,11 +62,12 @@ export function renderWebEnvironment(name, environment = process.env) {
   const config = ENVIRONMENTS[name];
   if (!config) throw new Error(`unknown environment: ${name}`);
 
-  const appUrl = requireUrl(
+  requireUrl(
     required(environment, 'NEXT_PUBLIC_APP_URL'),
-    config.host,
+    config.canonicalHost,
     'NEXT_PUBLIC_APP_URL',
   );
+  const appUrl = `https://${config.ecsHost}`;
   const backendUrl = requireUrl(
     required(environment, 'NEXT_PUBLIC_BACKEND_URL'),
     config.apiHost,

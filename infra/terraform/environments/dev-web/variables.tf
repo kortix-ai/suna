@@ -10,7 +10,7 @@ variable "web_image" {
 }
 
 variable "web_certificate_arn" {
-  description = "ACM wildcard certificate covering dev.kortix.com and dev-web-ecs-fargate.kortix.com."
+  description = "ACM wildcard certificate covering dev-fe-ecs.kortix.com."
   type        = string
   default     = "arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755"
 }
@@ -26,14 +26,8 @@ variable "cloudflare_api_token" {
   sensitive = true
 }
 
-variable "manage_origin_dns" {
-  description = "Create the temporary Dev ECS origin hostname."
+variable "manage_dns" {
+  description = "Create only dev-fe-ecs.kortix.com. This stack never manages dev.kortix.com."
   type        = bool
   default     = true
-}
-
-variable "manage_canonical_dns" {
-  description = "Point dev.kortix.com at ECS. Keep false until origin verification passes."
-  type        = bool
-  default     = false
 }
