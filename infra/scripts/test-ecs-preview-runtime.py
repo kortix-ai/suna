@@ -89,8 +89,14 @@ class PreviewRuntimeContract(unittest.TestCase):
     def test_database_egress_and_bootstrap_are_bounded(self):
         self.assertIn('cidr_blocks = var.postgres_egress_cidrs', TERRAFORM)
         self.assertIn('!contains(var.postgres_egress_cidrs, "0.0.0.0/0")', VARIABLES)
-        for heading in ("## Existing-resource import", "## Cutover", "## Reconciliation and rollback"):
+        for heading in (
+            "### Bootstrap gate",
+            "## Existing-resource import",
+            "## Cutover",
+            "## Reconciliation and rollback",
+        ):
             self.assertIn(heading, README)
+        self.assertIn("no non-circular self-bootstrap path", README)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,24 @@ terraform plan -var='postgres_egress_cidrs=["<verified-db-cidr>"]' -out=preview.
 terraform apply preview.tfplan
 ```
 
+### Bootstrap gate
+
+There is no non-circular self-bootstrap path that also satisfies the mandatory
+live-preview-before-merge gate:
+
+1. Credentialed lifecycle code must come from `deploy-preview.yml` on `main`.
+2. The OIDC role trusts only that workflow at `refs/heads/main`.
+3. Neither the trusted workflow nor the OIDC role exists before this change
+   reaches `main` and this root is applied.
+4. Therefore this PR cannot deploy its own backend before merge.
+
+Do not weaken the OIDC trust, run PR-controlled lifecycle code, use a temporary
+branch trust, bypass the live-preview gate, or merge this PR to bootstrap it.
+The safe resolution requires an explicit human-approved exception process that
+first lands the reviewed trusted bootstrap subset on `main`, then applies this
+non-production root, and finally validates this full PR on a live preview. If no
+such exception is approved, keep this PR open and unmerged.
+
 The plan creates 29 shared non-production resources in account `935064898258`,
 region `us-west-2`. It reads the existing dev VPC, `kortix-preview-env` secret,
 GitHub OIDC provider, and ACM certificate. It must not target a production VPC,
