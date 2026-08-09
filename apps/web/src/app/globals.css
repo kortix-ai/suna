@@ -2013,3 +2013,30 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 .dark .border-overlay {
   outline-color: rgba(255, 255, 255, 0.1);
 }
+
+/* ─── Composer editor (Task 12) ────────────────────────────────────────── */
+/* Coarse-pointer (touch) targets inside the composer toolbar — added once
+   here at the shell rather than per-button, since every toolbar button is a
+   plain <button> with no shared class today. */
+@media (pointer: coarse) {
+  .kortix-composer-toolbar button {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+}
+
+/* TipTap's Placeholder extension (composer/editor/extensions.ts) marks the
+   empty paragraph with `.is-editor-empty` + a `data-placeholder` attribute
+   and otherwise renders nothing — the `::before` content + color is always
+   the consumer's job. Nothing under composer/editor/ is stylesheet-owning
+   (it is pure TipTap wiring), so this is the shell's responsibility: without
+   it the placeholder text passed to `ComposerEditor` is present in the DOM
+   but invisible. Scoped to `.kortix-composer-editor` (the wrapper class
+   `ComposerEditor`'s `EditorContent` already renders). */
+.kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}

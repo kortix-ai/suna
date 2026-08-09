@@ -68,6 +68,18 @@ export interface ComposerToolbarProps {
 
   toolbarSlot?: React.ReactNode;
 
+  /**
+   * Wraps `TokenProgress` in a div with this className, e.g. `'hidden
+   * sm:flex'`. Undefined (every call site except the new shell,
+   * `composer/composer.tsx`) renders `TokenProgress` with no wrapper at
+   * all — byte-identical to before this prop existed. `token-progress.tsx`'s
+   * own doc comment records the deliberate decision to keep it always
+   * visible in THIS (old) toolbar; the new shell built in Task 12 is where
+   * the responsive collapse belongs, so it opts in here instead of this
+   * component hard-coding a breakpoint for every consumer.
+   */
+  tokenProgressWrapperClassName?: string;
+
   onTranscription: (text: string) => void;
   voiceDisabled: boolean;
 
@@ -107,6 +119,7 @@ export function ComposerToolbar({
   messages,
   onContextClick,
   toolbarSlot,
+  tokenProgressWrapperClassName,
   onTranscription,
   voiceDisabled,
   isSending,
@@ -130,7 +143,7 @@ export function ComposerToolbar({
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
-    <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
+    <div className="kortix-composer-toolbar mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
       {/* LEFT */}
       <div className="flex min-w-0 items-center gap-0 overflow-visible">
         <Tooltip>
@@ -187,12 +200,23 @@ export function ComposerToolbar({
 
       {/* RIGHT: ambient token progress, any slot content, voice, send/stop. */}
       <div className="flex shrink-0 items-center gap-0">
-        <TokenProgress
-          messages={messages}
-          models={models}
-          selectedModel={selectedModel}
-          onContextClick={onContextClick}
-        />
+        {tokenProgressWrapperClassName ? (
+          <div className={tokenProgressWrapperClassName}>
+            <TokenProgress
+              messages={messages}
+              models={models}
+              selectedModel={selectedModel}
+              onContextClick={onContextClick}
+            />
+          </div>
+        ) : (
+          <TokenProgress
+            messages={messages}
+            models={models}
+            selectedModel={selectedModel}
+            onContextClick={onContextClick}
+          />
+        )}
 
         {toolbarSlot}
 
