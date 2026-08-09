@@ -22,15 +22,17 @@ export type AttachedFile =
       isImage: boolean;
     };
 
+export type MentionKind = 'file' | 'agent' | 'session';
+
 export interface MentionItem {
-  kind: 'file' | 'agent' | 'session';
+  kind: MentionKind;
   label: string;
   value?: string;
   description?: string;
 }
 
 export interface TrackedMention {
-  kind: 'file' | 'agent' | 'session';
+  kind: MentionKind;
   label: string;
   value?: string; // session ID for session mentions
 }
