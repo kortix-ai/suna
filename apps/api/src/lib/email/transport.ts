@@ -113,10 +113,10 @@ async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
   const securityTokenHeader = credentials.sessionToken
     ? `x-amz-security-token:${credentials.sessionToken}\n`
     : '';
-  const canonicalHeaders = `content-type:application/json\nhost:${host}\n${securityTokenHeader}x-amz-date:${amzDate}\n`;
+  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n${securityTokenHeader}`;
   const signedHeaders = credentials.sessionToken
-    ? 'content-type;host;x-amz-security-token;x-amz-date'
-    : 'content-type;host;x-amz-date';
+    ? 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token'
+    : 'content-type;host;x-amz-content-sha256;x-amz-date';
   const canonicalRequest = `POST\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
   const scope = `${dateStamp}/${region}/ses/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256Hex(canonicalRequest)}`;
@@ -130,6 +130,7 @@ async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-Amz-Content-Sha256': payloadHash,
       'X-Amz-Date': amzDate,
       ...(credentials.sessionToken ? { 'X-Amz-Security-Token': credentials.sessionToken } : {}),
       Authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,

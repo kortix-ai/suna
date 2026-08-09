@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { Sha256 } from '@aws-crypto/sha256-js';
+import { SignatureV4 } from '@smithy/signature-v4';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 const mockConfig = {
   EMAIL_PROVIDER_ORDER: 'ses,resend,mailtrap',
@@ -56,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSystemTime();
   globalThis.fetch = originalFetch;
   if (originalContainerCredentialsRelativeUri === undefined) {
     delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
@@ -120,7 +123,7 @@ describe('sendEmail', () => {
     expect(calls[0].url).toBe('https://email.us-east-2.amazonaws.com/v2/email/outbound-emails');
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers.Authorization).toMatch(
-      /^AWS4-HMAC-SHA256 Credential=AKIATEST\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=[0-9a-f]{64}$/,
+      /^AWS4-HMAC-SHA256 Credential=AKIATEST\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/,
     );
     expect(headers['X-Amz-Date']).toMatch(/^\d{8}T\d{6}Z$/);
     const payload = JSON.parse(String(calls[0].init.body));
@@ -130,6 +133,8 @@ describe('sendEmail', () => {
   });
 
   test('ses leg uses temporary ECS credentials and signs the session token', async () => {
+    const signingDate = new Date('2026-08-09T12:34:56.000Z');
+    setSystemTime(signingDate);
     process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI = 'http://127.0.0.1/ecs-credentials';
     providerCredentials = {
       accessKeyId: 'ASIATASKROLE',
@@ -144,8 +149,38 @@ describe('sendEmail', () => {
     ]);
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers['X-Amz-Security-Token']).toBe('task-session-token');
-    expect(headers.Authorization).toMatch(
-      /^AWS4-HMAC-SHA256 Credential=ASIATASKROLE\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-security-token;x-amz-date, Signature=[0-9a-f]{64}$/,
+    expect(headers.Authorization).toContain(
+      'SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token',
+    );
+
+    const body = String(calls[0].init.body);
+    const signer = new SignatureV4({
+      credentials: providerCredentials,
+      region: 'us-east-2',
+      service: 'ses',
+      sha256: Sha256,
+    });
+    const independentlySigned = await signer.sign(
+      {
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'email.us-east-2.amazonaws.com',
+        path: '/v2/email/outbound-emails',
+        headers: {
+          'content-type': 'application/json',
+          host: 'email.us-east-2.amazonaws.com',
+        },
+        body,
+      },
+      { signingDate },
+    );
+    expect(headers.Authorization).toBe(independentlySigned.headers.authorization);
+    expect(headers['X-Amz-Date']).toBe(independentlySigned.headers['x-amz-date']);
+    expect(headers['X-Amz-Content-Sha256']).toBe(
+      independentlySigned.headers['x-amz-content-sha256'],
+    );
+    expect(headers['X-Amz-Security-Token']).toBe(
+      independentlySigned.headers['x-amz-security-token'],
     );
   });
 

@@ -76,9 +76,10 @@ module "api" {
   environment = {
     KORTIX_VERSION = "0.10.14"
   }
-  secrets          = local.secrets
-  secrets_blob_arn = var.secret_arn
-  enable_ses_send  = true
+  secrets                 = local.secrets
+  secrets_blob_arn        = var.secret_arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 

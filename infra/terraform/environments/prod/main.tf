@@ -101,14 +101,15 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image             = var.api_image
-  container_port    = var.container_port
-  certificate_arn   = module.acm.certificate_arn
-  health_check_path = "/health/ready"
-  environment       = var.api_environment
-  secrets           = var.api_secrets
-  secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
-  enable_ses_send   = true
+  image                   = var.api_image
+  container_port          = var.container_port
+  certificate_arn         = module.acm.certificate_arn
+  health_check_path       = "/health/ready"
+  environment             = var.api_environment
+  secrets                 = var.api_secrets
+  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
