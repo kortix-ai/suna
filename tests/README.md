@@ -49,9 +49,11 @@ GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
 tests. Full mode starts three warm workers in parallel. The workers run
 `pnpm test`, `pnpm test -- --browser-only`, and
 `pnpm test -- --packages-only`. Set `provider` to `auto`, `platinum`, or
-`daytona`. Auto tries Platinum first. It falls back to Daytona only when
-Platinum infrastructure throws. A non-zero test exit returns directly and does
-not trigger fallback. Each lane has a unique sandbox run ID and artifact.
+`daytona`. Required PR QA uses Daytona directly to avoid Platinum restore
+latency. Manual runs can select either provider or `auto`. Auto tries Platinum
+first. It falls back to Daytona only when Platinum infrastructure throws. A
+non-zero test exit returns directly and does not trigger fallback. Each lane
+has a unique sandbox run ID and artifact.
 Platinum warm restore readiness is capped at 2 minutes. A missing marker or
 unreachable guest after that cap is an infrastructure error and triggers auto
 fallback. Cold template builds keep their separate 45-minute creation budget.

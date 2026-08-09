@@ -74,10 +74,12 @@ Each root run writes a benchmark to
 
 Keep the test commands unchanged. GitHub Actions starts three warm workers in
 parallel. They run `pnpm test`, `pnpm test -- --browser-only`, and
-`pnpm test -- --packages-only` at the exact requested SHA. Select `auto`,
+`pnpm test -- --packages-only` at the exact requested SHA. PR QA selects
+Daytona to avoid Platinum restore latency. Manual runs can select `auto`,
 `platinum`, or `daytona` with `TEST_SANDBOX_PROVIDER`.
 
-- Use `auto` by default. Try Platinum first when its key exists.
+- Use Daytona for the required PR gate. Use `auto` for manual provider fallback.
+- In `auto`, try Platinum first when its key exists.
 - Fall back to Daytona only when the Platinum runner throws an infrastructure
   error. Return a non-zero test exit without fallback.
 - Cap Platinum warm restore readiness at 2 minutes. Treat a missing marker or

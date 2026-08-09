@@ -510,6 +510,11 @@ test.describe("08 — Accounts, invites, and project access", () => {
       "members",
       /Project members/i,
     );
+    // Wait for the initial access inventory before submitting a mutation.
+    // Otherwise a slow pre-mutation response can overwrite the invalidated query.
+    await expect(
+      membersDialog.locator("li").filter({ hasText: ownerEmail }).first(),
+    ).toBeVisible();
     await membersDialog.getByRole("tab", { name: /^Invite/i }).click();
     await membersDialog.getByLabel("Emails").fill(memberEmail);
     await membersDialog.locator("#invite-role").click();
