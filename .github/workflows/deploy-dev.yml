@@ -48,9 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       api: ${{ steps.outputs.outputs.api }}
-      gateway: ${{ steps.filter.outputs.gateway }}
+      gateway: ${{ steps.outputs.outputs.gateway }}
       frontend: ${{ steps.outputs.outputs.frontend }}
-      cli: ${{ steps.filter.outputs.cli }}
+      cli: ${{ steps.outputs.outputs.cli }}
       apps_router: ${{ steps.outputs.outputs.apps_router }}
     steps:
       - name: Checkout
@@ -117,12 +117,16 @@ jobs:
         run: |
           api="${{ steps.filter.outputs.api }}"
           apps_router="${{ steps.filter.outputs.apps_router }}"
+          gateway="${{ steps.filter.outputs.gateway }}"
           frontend="${{ steps.filter.outputs.frontend }}"
+          cli="${{ steps.filter.outputs.cli }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.surface }}" = "frontend" ]; then
               api=false
               apps_router=false
+              gateway=false
               frontend=true
+              cli=false
             else
               api=true
               apps_router=true
@@ -132,16 +136,18 @@ jobs:
           {
             echo "api=$api"
             echo "apps_router=$apps_router"
+            echo "gateway=$gateway"
             echo "frontend=$frontend"
+            echo "cli=$cli"
           } >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
           {
             echo "### Changes detected"
             echo "- API: ${{ steps.outputs.outputs.api }}"
-            echo "- Gateway: ${{ steps.filter.outputs.gateway }}"
+            echo "- Gateway: ${{ steps.outputs.outputs.gateway }}"
             echo "- Frontend: ${{ steps.outputs.outputs.frontend }}"
-            echo "- CLI: ${{ steps.filter.outputs.cli }}"
+            echo "- CLI: ${{ steps.outputs.outputs.cli }}"
             echo "- Apps router: ${{ steps.outputs.outputs.apps_router }}"
           } >> "$GITHUB_STEP_SUMMARY"
 

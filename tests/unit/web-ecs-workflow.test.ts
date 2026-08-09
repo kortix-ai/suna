@@ -47,6 +47,10 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('  verify-web-origin:');
     expect(workflow).toContain('  cutover-web-dev-dns:');
     expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev canonical "$alb"');
+    expect(workflow).toContain('gateway: ${{ steps.outputs.outputs.gateway }}');
+    expect(workflow).toContain('cli: ${{ steps.outputs.outputs.cli }}');
+    expect(workflow).toContain('gateway=false');
+    expect(workflow).toContain('cli=false');
     expect(workflow).not.toContain('Vercel auto-deploys');
   });
 
