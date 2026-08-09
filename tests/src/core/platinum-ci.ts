@@ -12,6 +12,7 @@ export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
 const WARM_PREPARE_TIMEOUT_MS = 45 * 60_000;
+const SANDBOX_START_TIMEOUT_MS = 15 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
 const API_MAX_ATTEMPTS = 6;
@@ -113,12 +114,13 @@ export function selectReusablePlatinumTemplate(
   ) ?? null;
 }
 
-interface PlatinumSandbox {
+export interface PlatinumSandbox {
   id: string;
   name?: string;
   state?: string;
   via?: 'restore' | 'cold-boot';
   metadata?: Record<string, unknown>;
+  errorMessage?: string | null;
 }
 
 interface PlatinumSandboxPage {
@@ -628,6 +630,66 @@ async function ensureWarmTemplate(
   return waitForTemplate(api, derived);
 }
 
+export async function observePlatinumSandboxStart(input: {
+  sandbox: PlatinumSandbox;
+  startedAt: number;
+  readSandbox: () => Promise<PlatinumSandbox>;
+  timeoutMs?: number;
+  pollMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  write?: (state: string, sandbox: PlatinumSandbox) => void;
+}): Promise<PlatinumSandbox> {
+  const now = input.now ?? Date.now;
+  const sleep = input.sleep ?? Bun.sleep;
+  const deadline = input.startedAt + (input.timeoutMs ?? SANDBOX_START_TIMEOUT_MS);
+  const pollMs = input.pollMs ?? POLL_MS;
+  const write = input.write ?? ((state: string, sandbox: PlatinumSandbox) => {
+    console.log(`[platinum-ci] sandbox=${sandbox.id} state=${state} via=${sandbox.via ?? 'unknown'}`);
+  });
+  const terminalStates = new Set(['archived', 'deleted', 'error', 'failed', 'stopped']);
+  let current = input.sandbox;
+  let lastState = '';
+  let observationFailures = 0;
+
+  while (now() < deadline) {
+    const state = String(current.state ?? '').toLowerCase();
+    if (state !== lastState) {
+      write(state, current);
+      lastState = state;
+    }
+    if (state === 'running') return current;
+    if (terminalStates.has(state)) {
+      throw new Error(
+        `Platinum worker ${current.id} entered state=${state}: ${current.errorMessage ?? ''}`,
+      );
+    }
+
+    await sleep(pollMs);
+    try {
+      const observed = await input.readSandbox();
+      current = { ...current, ...observed, via: observed.via ?? current.via };
+      if (observationFailures > 0) {
+        console.warn(`[platinum-ci] sandbox polling recovered after ${observationFailures} failure(s)`);
+        observationFailures = 0;
+      }
+    } catch (error) {
+      const isEventualNotFound = error instanceof PlatinumHttpError && error.status === 404;
+      if (!isEventualNotFound && !isRetryablePlatinumError(error)) throw error;
+      observationFailures += 1;
+      if (shouldReportObservationFailure(observationFailures)) {
+        console.warn(
+          `[platinum-ci] sandbox status unavailable failures=${observationFailures} error=${String(error)}`,
+        );
+      }
+    }
+  }
+
+  throw new Error(
+    `Platinum worker ${current.id} did not become running within ${input.timeoutMs ?? SANDBOX_START_TIMEOUT_MS}ms`,
+  );
+}
+
 async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
   const deadline = Date.now() + WARM_PREPARE_TIMEOUT_MS;
   let observationFailures = 0;
@@ -890,7 +952,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
 
   try {
     const createStartedAt = Date.now();
-    const sandbox = await api.json<PlatinumSandbox>(
+    const created = await api.json<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
@@ -914,13 +976,14 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
         }),
       },
     );
-    sandboxId = sandbox.id;
+    sandboxId = created.id;
+    const sandbox = await observePlatinumSandboxStart({
+      sandbox: created,
+      startedAt: createStartedAt,
+      readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
+    });
     sandboxVia = sandbox.via ?? 'unknown';
     sandboxCreateDurationMs = Date.now() - createStartedAt;
-    if (String(sandbox.state).toLowerCase() !== 'running') {
-      throw new Error(`Platinum worker ${sandbox.id} returned state=${sandbox.state}`);
-    }
-    console.log(`[platinum-ci] sandbox=${sandboxId} state=running via=${sandboxVia}`);
 
     const warmStartedAt = Date.now();
     await waitForWarmSandbox(api, sandboxId);

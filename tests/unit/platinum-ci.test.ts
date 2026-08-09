@@ -10,6 +10,7 @@ import {
   cleanupPlatinumCiSandboxes,
   selectOutstandingPlatinumSandboxIds,
   isRetryablePlatinumError,
+  observePlatinumSandboxStart,
   observePlatinumWorker,
   platinumBaseTemplateName,
   platinumWorkerLaunchCommand,
@@ -251,6 +252,31 @@ describe('Platinum CI worker plan', () => {
     expect(output.join('')).toBe('done');
     expect(warnings).toContainEqual(expect.stringContaining('incremental log unavailable'));
     expect(warnings).toContainEqual(expect.stringContaining('incremental log streaming recovered'));
+  });
+
+  test('polls a provisioned worker until Platinum reports it running', async () => {
+    let now = 0;
+    let checks = 0;
+    const states: string[] = [];
+    const sandbox = await observePlatinumSandboxStart({
+      sandbox: { id: 'worker', state: 'provisioning' },
+      startedAt: 0,
+      timeoutMs: 100,
+      pollMs: 10,
+      now: () => now,
+      sleep: async (delay) => { now += delay; },
+      readSandbox: async () => {
+        checks += 1;
+        return checks === 1
+          ? { id: 'worker', state: 'starting' }
+          : { id: 'worker', state: 'running', via: 'restore' };
+      },
+      write: (state) => { states.push(state); },
+    });
+
+    expect(sandbox).toMatchObject({ id: 'worker', state: 'running', via: 'restore' });
+    expect(checks).toBe(2);
+    expect(states).toEqual(['provisioning', 'starting', 'running']);
   });
 
   test('rejects values that could alter the Git fetch command', () => {
