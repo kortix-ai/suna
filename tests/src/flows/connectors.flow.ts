@@ -286,13 +286,27 @@ flow(
 
 flow(
   'CONN-9',
-  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:projectId/pipedream/apps'] },
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/connectors/projects/:projectId/pipedream/apps',
+      'GET /v1/connectors/projects/:projectId/pipedream/sections',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('pipedream catalog → 200 or 501', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/connectors/projects/:projectId/pipedream/apps', { params: { projectId: p.id } });
+      r.status([200, 501]);
+    });
+    await ctx.step('pipedream catalogue sections → 200 or 501', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/pipedream/sections', {
+          params: { projectId: p.id },
+        });
       r.status([200, 501]);
     });
   },
