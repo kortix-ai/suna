@@ -222,6 +222,7 @@ jobs:
       PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
       ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
+      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_ENABLED
       BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Require Vercel credentials
@@ -239,11 +240,16 @@ jobs:
           auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
           api="https://api.vercel.com"
           backend="https://pr-${NUM}.preview-api.kortix.com/v1"
-          for key in $ENV_KEYS; do
+          for key_value in \
+            "NEXT_PUBLIC_BACKEND_URL|${backend}" \
+            "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
+            "${PREVIEW_FLAG_KEY}|1"; do
+            key="${key_value%%|*}"
+            value="${key_value#*|}"
             code="$(curl -sS -o "/tmp/env-${key}.json" -w '%{http_code}' -X POST \
               "${api}/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}&upsert=true" \
               "${auth[@]}" -H 'Content-Type: application/json' \
-              -d "$(jq -n --arg v "$backend" --arg b "$BRANCH" --arg k "$key" \
+              -d "$(jq -n --arg v "$value" --arg b "$BRANCH" --arg k "$key" \
                 '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")"
             [ "$code" = 200 ] || [ "$code" = 201 ] || { jq . "/tmp/env-${key}.json"; exit 1; }
           done
@@ -263,7 +269,7 @@ jobs:
             "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
             "${auth[@]}" -H 'Content-Type: application/json' \
             -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" \
-              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b},projectSettings:{commandForIgnoringBuildStep:"exit 1"}}')")"
+              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b}}')")"
           if [ "$deployment_code" != 200 ] && [ "$deployment_code" != 201 ]; then
             jq '{error}' /tmp/vercel-deployment.json
             echo "::error::Vercel deployment creation returned HTTP ${deployment_code}."
@@ -290,11 +296,16 @@ jobs:
           done
           [ "$ready" = true ] || { echo "::error::Vercel deployment was not READY for exact SHA ${COMMIT}."; exit 1; }
           deployed_envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
-          for key in $ENV_KEYS; do
-            count="$(printf '%s' "$deployed_envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$backend" \
+          for key_value in \
+            "NEXT_PUBLIC_BACKEND_URL|${backend}" \
+            "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
+            "${PREVIEW_FLAG_KEY}|1"; do
+            key="${key_value%%|*}"
+            value="${key_value#*|}"
+            count="$(printf '%s' "$deployed_envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$value" \
               '[.envs[] | select(.key==$k and .gitBranch==$b and .value==$v)] | length')"
             [ "$count" = 1 ] || {
-              echo "::error::${key} does not uniquely target ${backend} for branch ${BRANCH}."
+              echo "::error::${key} does not have the expected branch-scoped value for ${BRANCH}."
               exit 1
             }
           done
@@ -332,6 +343,7 @@ jobs:
       PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
       ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
+      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_ENABLED
       BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -352,10 +364,12 @@ jobs:
           auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
           api="https://api.vercel.com"
           envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
-          expected="https://pr-${NUM}.preview-api.kortix.com/v1"
+          backend="https://pr-${NUM}.preview-api.kortix.com/v1"
           deleted=0
           conflicts=0
-          for key in $ENV_KEYS; do
+          for key in $ENV_KEYS $PREVIEW_FLAG_KEY; do
+            expected="$backend"
+            [ "$key" != "$PREVIEW_FLAG_KEY" ] || expected=1
             ids="$(printf '%s' "$envs" | jq -r --arg k "$key" --arg b "$BRANCH" \
               --arg v "$expected" '.envs[] | select(.key==$k and .gitBranch==$b and .value==$v) | .id')"
             conflicts="$((conflicts + $(printf '%s' "$envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$expected" \
