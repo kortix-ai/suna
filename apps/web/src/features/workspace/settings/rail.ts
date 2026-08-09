@@ -27,7 +27,29 @@ import {
   UserIcon as User,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
+import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
+
+/**
+ * The old Customize overlay's `llm-*` `CustomizeSection` ids. `SettingsTab`
+ * doesn't carry them — `settings-tabs.ts`'s `RENAMED_TABS` folds every one of
+ * these into `'models'` inside `legacySectionRedirect`, which returns a full
+ * new URL, so the sub-id itself is discarded at the redirect and never
+ * becomes panel state. `parseSettingsTab` filters strictly against
+ * `SETTINGS_TABS` and can never yield one either. They are a bounded, known,
+ * seven-member legacy set (not live tabs — do not add them to
+ * `SETTINGS_TABS`), kept here only so `isRailItemActive` can still recognize
+ * a stale/raw deep link and light up the right rail row before the redirect
+ * runs.
+ */
+type LegacyLlmSubTab =
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api';
 
 /**
  * Whether a rail item is the active one for the current settings tab.
@@ -35,14 +57,12 @@ import type { RailGroup, RailItem } from './type';
  * `models` stands in for every `llm-*` sub-page so a deep-link into an LLM
  * sub-page (`llm-logs`, `llm-budgets`, ...) still lights up the single
  * Models rail entry, exactly like the old rail's `llm-management` stand-in
- * (see `customize/rail.ts`). `SettingsTab` itself no longer carries those
- * sub-ids — they collapse into `'models'` at the redirect layer
- * (`settings-tabs.ts`'s `RENAMED_TABS`) — so this takes a plain `string`
- * rather than `SettingsTab`, to stay defensive if a raw, not-yet-redirected
- * URL segment ever reaches this check. Every other item matches its own tab
- * 1:1.
+ * (see `customize/rail.ts`). Every other item matches its own tab 1:1.
  */
-export function isRailItemActive(item: RailItem, tab: string): boolean {
+export function isRailItemActive(
+  item: RailItem,
+  tab: SettingsTab | LegacyLlmSubTab,
+): boolean {
   if (item.tab === 'models') return tab === 'models' || tab.startsWith('llm-');
   return item.tab === tab;
 }
