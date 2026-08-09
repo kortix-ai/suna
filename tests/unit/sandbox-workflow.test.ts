@@ -34,7 +34,8 @@ describe('sandbox test workflow', () => {
 
     const qaPr = readFileSync(resolve(root, '.github/workflows/qa-pr.yml'), 'utf8');
     expect(qaPr).toContain('type: choice');
-    expect(qaPr).toContain("provider: ${{ inputs.provider || 'auto' }}");
+    expect(qaPr).toContain('default: daytona');
+    expect(qaPr).toContain("provider: ${{ inputs.provider || 'daytona' }}");
     expect(qaPr).toContain('- platinum');
     expect(qaPr).toContain('- daytona');
   });
