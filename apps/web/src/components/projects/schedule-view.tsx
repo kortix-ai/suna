@@ -76,6 +76,7 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  getProject,
   listProjectSessions,
   listProjectTriggers,
   setProjectTriggersActivation,
@@ -541,45 +542,28 @@ function FilterRowsEditor({
 }
 
 /**
- * Project-wide "pause all triggers" switch — moved verbatim (cut, not
- * copied) from `settings-view.tsx`'s `TriggersActivationCard`, which used to
- * live on the (now-unreachable) General tab. Rehomed onto the Schedules tab
- * only (`ScheduleView` renders it when `type === 'cron'`, not on Webhooks —
- * see that call site) since it needs exactly one home, not two.
- *
- * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
- * key `ScheduleView` itself queries below. This is the invariant the old
- * comment on that query key described ("both must share this key, or a
- * pause/resume in one goes unseen in the other"); it still holds here
- * because `qk.project.triggers` is one shared cache entry — React Query
- * dedupes both `useQuery` calls into a single network request and a single
- * cache write, so `ScheduleView`'s own `triggersPaused` banner and this
- * switch can never disagree or double-fetch.
+ * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
+ * only; returns `null` for anyone else. Split out from `TriggersActivationCard`
+ * (its data-fetching container, below) purely so this gate is testable under
+ * `renderToStaticMarkup` — apps/web has no DOM testing library (no jsdom, no
+ * `@testing-library/react`), so a pure component taking `canManage` as a
+ * prop is the only way `schedule-view.test.tsx` can pin "an editor doesn't
+ * see this" without a live QueryClient. See `TriggersActivationCard`'s
+ * header comment for why `canManage` here is deliberately NOT
+ * `ScheduleView`'s own `canWrite`.
  */
-function TriggersActivationCard({
-  projectId,
+export function TriggerPauseSwitch({
   canManage,
+  paused,
+  isPending,
+  onToggle,
 }: {
-  projectId: string;
   canManage: boolean;
+  paused: boolean;
+  isPending: boolean;
+  onToggle: (next: boolean) => void;
 }) {
-  const queryClient = useQueryClient();
-  const queryKey = qk.project.triggers(projectId);
-  const triggersQuery = useQuery({
-    queryKey,
-    queryFn: () => listProjectTriggers(projectId),
-    ...contract('config'),
-  });
-  const paused = triggersQuery.data?.triggers_paused ?? false;
-
-  const mutation = useMutation({
-    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
-    onSuccess: (data, next) => {
-      queryClient.setQueryData(queryKey, data);
-      successToast(next ? 'All triggers paused for this project' : 'Triggers resumed');
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update trigger activation'),
-  });
+  if (!canManage) return null;
 
   return (
     <Field orientation="horizontal" className="bg-popover rounded-md border px-4 py-3">
@@ -596,11 +580,79 @@ function TriggersActivationCard({
       </FieldContent>
       <Switch
         checked={paused}
-        disabled={!canManage || mutation.isPending || triggersQuery.isLoading}
-        onCheckedChange={(v) => mutation.mutate(v)}
+        disabled={isPending}
+        onCheckedChange={onToggle}
         aria-label="Pause all triggers for this project"
       />
     </Field>
+  );
+}
+
+/**
+ * Project-wide "pause all triggers" switch — moved (cut, not copied) from
+ * `settings-view.tsx`'s `TriggersActivationCard`, which used to live on the
+ * (now-unreachable) General tab. Rehomed onto the Schedules tab only
+ * (`ScheduleView` renders it when `type === 'cron'`, not on Webhooks — see
+ * that call site) since it needs exactly one home, not two.
+ *
+ * **Access gate — deliberately NOT `canWrite`, on purpose, do not merge
+ * them.** `ScheduleView` below already computes a `canWrite` from
+ * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create-trigger
+ * button — reusing that here would be a real access-control WIDENING, not a
+ * refactor: `PROJECT_TRIGGER_CREATE` sits in `EDITOR_EXTRAS`
+ * (`apps/api/src/iam/role-perms.ts`), so an editor would gain visibility and
+ * control of the project-wide pause kill-switch, which the deleted
+ * `settings-view.tsx` gated on raw `effective_project_role === 'manager'`
+ * alone — manager-only, strictly narrower than `canWrite`, and for a custom
+ * IAM role the two aren't even equivalent in principle (independently
+ * grantable). This component restores that exact original gate with its own
+ * `getProject` probe, independent of `ScheduleView`'s `canWrite` — see
+ * `schedule-view.test.tsx` for the pin (manager sees it, editor doesn't).
+ *
+ * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
+ * key `ScheduleView` itself queries below. This is the invariant the old
+ * comment on that query key described ("both must share this key, or a
+ * pause/resume in one goes unseen in the other"); it still holds here
+ * because `qk.project.triggers` is one shared cache entry — React Query
+ * dedupes both `useQuery` calls into a single network request and a single
+ * cache write, so `ScheduleView`'s own `triggersPaused` banner and this
+ * switch can never disagree or double-fetch.
+ */
+function TriggersActivationCard({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.project.triggers(projectId);
+  const triggersQuery = useQuery({
+    queryKey,
+    queryFn: () => listProjectTriggers(projectId),
+    ...contract('config'),
+  });
+  const paused = triggersQuery.data?.triggers_paused ?? false;
+
+  // Raw manager-only gate — see this component's header comment for why
+  // this is its OWN probe rather than `ScheduleView`'s `canWrite`.
+  const projectQuery = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
+    ...contract('config'),
+  });
+  const canManage = projectQuery.data?.effective_project_role === 'manager';
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    onSuccess: (data, next) => {
+      queryClient.setQueryData(queryKey, data);
+      successToast(next ? 'All triggers paused for this project' : 'Triggers resumed');
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to update trigger activation'),
+  });
+
+  return (
+    <TriggerPauseSwitch
+      canManage={canManage}
+      paused={paused}
+      isPending={mutation.isPending || triggersQuery.isLoading}
+      onToggle={(v) => mutation.mutate(v)}
+    />
   );
 }
 
@@ -689,11 +741,10 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
       >
         <div className="space-y-4">
           {/* Project-wide, not per-type — rendered on the Schedules tab only
-              (not Webhooks) so it has exactly one home. See
-              `TriggersActivationCard`'s own header comment. */}
-          {type === 'cron' && showContent && canWrite ? (
-            <TriggersActivationCard projectId={projectId} canManage={canWrite} />
-          ) : null}
+              (not Webhooks) so it has exactly one home. Visibility is its
+              OWN manager-only probe, not this view's `canWrite` — see
+              `TriggersActivationCard`'s header comment for why. */}
+          {type === 'cron' && showContent ? <TriggersActivationCard projectId={projectId} /> : null}
 
           {triggersPaused && showContent && (
             <InfoBanner tone="warning" icon={AlertTriangle}>
