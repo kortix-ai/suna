@@ -48,7 +48,10 @@
  * `tabs/profile-tab.tsx`) — the first of the ten still-new, account-scoped
  * surfaces to get real content. It renders with no `projectId` dependency
  * (see `SettingsTabPane` below), unlike every project-scoped case above it.
- * The remaining nine (`preferences`, `connected`, `billing`, `usage`,
+ *
+ * **Task 8 update.** `preferences` is wired to the real `PreferencesTab`
+ * (see `tabs/preferences-tab.tsx`) — same account-scoped, no-`projectId`
+ * shape as `profile`. The remaining eight (`connected`, `billing`, `usage`,
  * `groups`, `roles`, `identity`, `audit`, `api-keys`, `experimental`) stay
  * placeholders — phases 2-4 build them.
  *
@@ -110,6 +113,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import type { RailGroup, RailItem } from './type';
 
@@ -577,14 +581,15 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * `profile` is handled above the switch (account-scoped, no `projectId`
- * needed). The switch below is the Task 5b2 mapping of the legacy panel's
- * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
- * new tab ids. A tab NOT listed here or above — `preferences`, `connected`,
- * `snapshots`, `billing`, `usage`, `groups`, `roles`, `identity`, `audit`,
- * `api-keys`, `experimental` — is a genuinely new surface with no legacy
- * source to port; it keeps the placeholder header until a later phase builds
- * it. `snapshots` in particular is HALF of the legacy `sandbox` case
+ * `profile` and `preferences` are handled above the switch (account-scoped,
+ * no `projectId` needed). The switch below is the Task 5b2 mapping of the
+ * legacy panel's `SectionContent` (14 `case` labels + the `llm-*` prefix
+ * branch) onto the new tab ids. A tab NOT listed here or above —
+ * `connected`, `snapshots`, `billing`, `usage`, `groups`, `roles`,
+ * `identity`, `audit`, `api-keys`, `experimental` — is a genuinely new
+ * surface with no legacy source to port; it keeps the placeholder header
+ * until a later phase builds it. `snapshots` in particular is HALF of the
+ * legacy `sandbox` case
  * (`SandboxView` renders templates and the build log together); splitting
  * them is a later task, so `sandbox` alone gets the full unsplit view for
  * now and `snapshots` stays a placeholder — do not fold `SandboxView` onto
@@ -607,6 +612,9 @@ function SettingsTabPane({
   // it works even while no project is selected (unlike every case below).
   if (item.tab === 'profile') {
     return <ProfileTab />;
+  }
+  if (item.tab === 'preferences') {
+    return <PreferencesTab />;
   }
 
   if (projectId) {

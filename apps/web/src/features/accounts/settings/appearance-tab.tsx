@@ -16,7 +16,11 @@ import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 
-function WallpaperCard({
+/** Exported so `features/workspace/settings/tabs/preferences-tab.tsx` can reuse
+ *  this card instead of re-implementing the wallpaper picker — see that
+ *  file's header for why this tab still imports pieces of this one rather
+ *  than duplicating them. */
+export function WallpaperCard({
   wallpaper,
   thumbSrc,
   isActive,

@@ -154,7 +154,8 @@ describe('SettingsPanelShell — pane wiring', () => {
  * `REAL_VIEW_TABS` rather than folded into that array — it is account-scoped,
  * so `SettingsTabPane` mounts it whether or not `projectId` is set, unlike
  * every entry in `REAL_VIEW_TABS`, which all fall back to the placeholder
- * header without one.
+ * header without one. Task 8 adds a seventeenth the same way: `preferences`
+ * (`PreferencesTab`).
  *
  * That gives a mechanical, unfakeable signal for "this component's render
  * function was invoked" — stronger than a markup-string match, since it fires
@@ -209,10 +210,10 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        // `preferences` is still a genuinely unbuilt placeholder — `profile`
-        // moved into `REAL_VIEW_TABS`-equivalent coverage below once Task 7
-        // wired it to the real `ProfileTab`.
-        tab: 'preferences',
+        // `connected` is still a genuinely unbuilt placeholder — `profile`
+        // and `preferences` moved into `REAL_VIEW_TABS`-equivalent coverage
+        // below once Task 7 and Task 8 wired them to their real views.
+        tab: 'connected',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,
@@ -235,6 +236,22 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('profile mounts its real view even with no project id — it is account-scoped, not project-scoped, unlike every REAL_VIEW_TABS entry below', () => {
     expect(() => render({ tab: 'profile', projectId: undefined })).toThrow();
+  });
+
+  test('activating preferences mounts its real view — it calls a client-only store outside a browser, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'preferences',
+        projectId: 'p1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('preferences mounts its real view even with no project id — it is account-scoped, not project-scoped, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'preferences', projectId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {

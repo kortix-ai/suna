@@ -1,0 +1,634 @@
+'use client';
+
+/**
+ * The Preferences tab — six sections, appearance leading because the product
+ * owner specified a full light/dark system as the centrepiece: theme,
+ * wallpaper, sounds, notifications, keyboard shortcuts, language.
+ *
+ * Theme values come from `THEME_OPTIONS` in `features/layout/user-menu.tsx`
+ * (imported, not re-declared) so this panel's theme control and the user
+ * menu's theme submenu can never drift apart — see that file's comment next
+ * to the export. `user-menu.tsx` itself is untouched by this task.
+ *
+ * Ported from five `features/accounts/settings/*.tsx` files, which still
+ * back the legacy `SidePanelUserSettings` surface until a later task retires
+ * it:
+ * - `appearance-tab.tsx` — theme + wallpaper. `WallpaperCard` is exported
+ *   from there and reused directly here (only the `export` keyword changed
+ *   on that file); this tab does NOT carry the Session-panel or Layout
+ *   sections from that file — those belong to the session-panel experience,
+ *   not user preferences, and have no home in this task's six-section list.
+ * - `sounds-tab.tsx`, `notifications-tab.tsx`, `keyboard-shortcuts-tab.tsx`,
+ *   `language-switcher.tsx` — no exported pieces worth reusing (each is a
+ *   single self-contained component with no sub-parts split out), so their
+ *   JSX bodies are re-implemented here against `SettingsSectionHeader`
+ *   instead of the old bare `<label>` headers. This task's report documents
+ *   this as the precise duplication: the markup shape of these four
+ *   sections, not any shared logic (every store call is a live import, not a
+ *   copy).
+ *
+ * None of the five source files call `useTranslations` results into this
+ * tab — like `ProfileTab` (Task 7), copy here is plain English, matching the
+ * newer settings-panel surfaces rather than the legacy modal's translation
+ * scaffolding.
+ *
+ * `PreferencesTabView` is the pure, props-only half — every prop is optional
+ * with a safe default, so it renders under `renderToStaticMarkup` with no
+ * `next-themes` provider, Zustand store, or auth context (see
+ * `preferences-tab.test.tsx`). `PreferencesTab` is the container: every hook
+ * only runs once this component actually mounts, which `SettingsTabPane`
+ * guarantees happens only while this tab is the active one.
+ */
+
+import { useEffect, useState } from 'react';
+import {
+  BellIcon as BellSolid,
+  CheckCircleIcon as CheckCircleSolid,
+  WarningIcon as DangerTriangleSolid,
+  EyeSlashIcon as EyeOffSolid,
+  QuestionIcon as QuestionCircleSolid,
+  ShieldCheckIcon as ShieldCheckSolid,
+  SpeakerHighIcon as Volume2,
+  type Icon as PhosphorIcon,
+} from '@phosphor-icons/react';
+import { useTheme } from 'next-themes';
+
+import { Button } from '@/components/ui/button';
+import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
+import Hint from '@/components/ui/hint';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
+import { THEME_OPTIONS } from '@/features/layout/user-menu';
+import { useLanguage } from '@/hooks/use-language';
+import { locales, type Locale } from '@/i18n/config';
+import { previewSound } from '@/lib/sounds';
+import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
+import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
+import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
+import {
+  useWebNotificationStore,
+  type WebNotificationPermission,
+  type WebNotificationPreferences,
+} from '@/stores/web-notification-store';
+
+const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
+  { id: 'off', label: 'Off', description: 'All sounds disabled' },
+  { id: 'opencode', label: 'Default', description: 'Default sound pack' },
+  { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin' },
+];
+
+const SOUND_EVENTS: { id: SoundEvent; label: string; description: string }[] = [
+  { id: 'completion', label: 'Task Completion', description: 'When AI finishes a task' },
+  { id: 'error', label: 'Error', description: 'When a session encounters an error' },
+  { id: 'notification', label: 'Notification', description: 'Questions and permission requests' },
+  { id: 'send', label: 'Message Sent', description: 'When you send a message' },
+];
+
+type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
+
+const NOTIFICATION_TYPE_TOGGLES: {
+  key: NotificationPrefKey;
+  icon: PhosphorIcon;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: 'onCompletion',
+    icon: CheckCircleSolid,
+    label: 'Task completions',
+    description: 'When a session finishes its task',
+  },
+  {
+    key: 'onError',
+    icon: DangerTriangleSolid,
+    label: 'Errors',
+    description: 'When a session encounters an error',
+  },
+  {
+    key: 'onQuestion',
+    icon: QuestionCircleSolid,
+    label: 'Questions',
+    description: 'When Kortix needs your input to continue',
+  },
+  {
+    key: 'onPermission',
+    icon: ShieldCheckSolid,
+    label: 'Permission requests',
+    description: 'When Kortix needs permission to use a tool',
+  },
+];
+
+const NOTIFICATION_BEHAVIOR_TOGGLES: {
+  key: NotificationPrefKey;
+  icon: PhosphorIcon;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: 'onlyWhenHidden',
+    icon: EyeOffSolid,
+    label: 'Only when tab is hidden',
+    description: "Only notify when you're on another tab",
+  },
+  {
+    key: 'playSound',
+    icon: Volume2,
+    label: 'Notification sound',
+    description: 'Play a sound when a notification is sent',
+  },
+];
+
+const LANGUAGE_NAMES: Record<Locale, string> = {
+  en: 'English',
+  de: 'Deutsch',
+  it: 'Italiano',
+  zh: '中文',
+  ja: '日本語',
+  pt: 'Português',
+  fr: 'Français',
+  es: 'Español',
+};
+
+const MODIFIER_OPTIONS: { value: TabSwitchModifier; label: string }[] = [
+  { value: 'meta', label: 'Cmd' },
+  { value: 'ctrl', label: 'Ctrl' },
+];
+
+function shortcutList(modLabel: string): { label: string; keys: string }[] {
+  return [
+    { label: 'New tab', keys: `${modLabel}+T` },
+    { label: 'Close active tab', keys: 'Ctrl+W' },
+    { label: 'Reopen closed tab', keys: `${modLabel}+Shift+T` },
+    { label: 'Next tab', keys: `${modLabel}+Shift+]` },
+    { label: 'Previous tab', keys: `${modLabel}+Shift+[` },
+    { label: 'Next tab (alt)', keys: `${modLabel}+Alt+→` },
+    { label: 'Previous tab (alt)', keys: `${modLabel}+Alt+←` },
+    { label: 'Switch to tab 1-8', keys: `${modLabel}+1 ... ${modLabel}+8` },
+    { label: 'Switch to last tab', keys: `${modLabel}+9` },
+    { label: 'New session', keys: 'Ctrl+J' },
+    { label: 'Command palette', keys: 'Ctrl+K' },
+    { label: 'Toggle left sidebar', keys: 'Ctrl+B' },
+    { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
+    { label: 'Toggle session action panel', keys: `${modLabel}+I` },
+  ];
+}
+
+function NotificationToggle({
+  icon: Icon,
+  label,
+  description,
+  enabled,
+  onToggle,
+  disabled,
+}: {
+  icon: PhosphorIcon;
+  label: string;
+  description: string;
+  enabled: boolean;
+  onToggle: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-4 py-3">
+      <div className="flex flex-1 items-start gap-3">
+        <Icon className="text-muted-foreground mt-1 size-4" />
+        <div className="flex-1 space-y-0.5">
+          <Label htmlFor={`pref-notif-${label}`} className="cursor-pointer text-sm font-medium">
+            {label}
+          </Label>
+          <p className="text-muted-foreground text-xs">{description}</p>
+        </div>
+      </div>
+      <Switch
+        id={`pref-notif-${label}`}
+        checked={enabled}
+        onCheckedChange={onToggle}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
+
+export interface PreferencesTabViewProps {
+  // Theme
+  theme?: string;
+  onThemeChange?: (value: string) => void;
+
+  // Wallpaper
+  wallpaperId?: string;
+  isLightTheme?: boolean;
+  onWallpaperSelect?: (id: Wallpaper['id']) => void;
+
+  // Sounds
+  soundPack?: SoundPack;
+  onSoundPackChange?: (pack: SoundPack) => void;
+  soundVolume?: number;
+  onSoundVolumeChange?: (volume: number) => void;
+  soundEvents?: Partial<Record<SoundEvent, boolean>>;
+  onSoundEventToggle?: (event: SoundEvent, enabled: boolean) => void;
+  onSoundPreview?: (event: SoundEvent) => void;
+
+  // Notifications
+  notificationsSupported?: boolean;
+  notificationPermission?: WebNotificationPermission;
+  notificationPreferences?: WebNotificationPreferences;
+  onToggleNotificationsEnabled?: () => void;
+  onNotificationPreferenceChange?: <K extends NotificationPrefKey>(
+    key: K,
+    value: WebNotificationPreferences[K],
+  ) => void;
+  onSendTestNotification?: () => void;
+
+  // Keyboard shortcuts
+  keyboardModifier?: TabSwitchModifier;
+  onKeyboardModifierChange?: (value: TabSwitchModifier) => void;
+  modifierLabel?: string;
+
+  // Language
+  locale?: Locale;
+  availableLocales?: readonly Locale[];
+  onLocaleChange?: (locale: Locale) => void;
+}
+
+const DEFAULT_NOTIFICATION_PREFERENCES: WebNotificationPreferences = {
+  enabled: false,
+  onCompletion: true,
+  onError: true,
+  onQuestion: true,
+  onPermission: true,
+  onlyWhenHidden: true,
+  playSound: false,
+};
+
+/** Presentational only — no hooks, no data fetching, no store or Supabase
+ *  read. Kept separate from `PreferencesTab` so this renders under
+ *  `renderToStaticMarkup` without `next-themes`, a Zustand store, or an auth
+ *  session — see `ProfileTabView` for the same split. Every prop is optional
+ *  with a safe default so the bare `<PreferencesTabView />` the test file
+ *  renders shows every section fully formed. */
+export function PreferencesTabView({
+  theme = 'system',
+  onThemeChange = () => {},
+  wallpaperId = DEFAULT_WALLPAPER_ID,
+  isLightTheme = false,
+  onWallpaperSelect = () => {},
+  soundPack = 'off',
+  onSoundPackChange = () => {},
+  soundVolume = 0.5,
+  onSoundVolumeChange = () => {},
+  soundEvents = {},
+  onSoundEventToggle = () => {},
+  onSoundPreview = () => {},
+  notificationsSupported = true,
+  notificationPermission = 'default',
+  notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
+  onToggleNotificationsEnabled = () => {},
+  onNotificationPreferenceChange = () => {},
+  onSendTestNotification = () => {},
+  keyboardModifier = 'ctrl',
+  onKeyboardModifierChange = () => {},
+  modifierLabel = 'Ctrl',
+  locale = 'en',
+  availableLocales = locales,
+  onLocaleChange = () => {},
+}: PreferencesTabViewProps) {
+  const shortcuts = shortcutList(modifierLabel);
+
+  return (
+    <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
+      {/* 1. Theme */}
+      <section className="space-y-3">
+        <SettingsSectionHeader title="Theme" description="Choose how Kortix looks on this device." />
+        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
+          {THEME_OPTIONS.map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              type="button"
+              aria-label={label}
+              aria-pressed={theme === value}
+              className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out [&>svg]:size-4"
+              style={{ backgroundColor: theme === value ? 'var(--background)' : 'transparent' }}
+              onClick={() => onThemeChange(value)}
+            >
+              <Icon />
+              <span className="text-sm font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* 2. Wallpaper */}
+      <section className="space-y-3">
+        <SettingsSectionHeader title="Wallpaper" description="The background behind your workspace." />
+        <div className="grid w-full grid-cols-3 gap-2">
+          {WALLPAPERS.map((wp) => (
+            <WallpaperCard
+              key={wp.id}
+              wallpaper={wp}
+              thumbSrc={wp.thumbs ? (isLightTheme ? wp.thumbs.light : wp.thumbs.dark) : undefined}
+              isActive={wallpaperId === wp.id}
+              onSelect={() => onWallpaperSelect(wp.id)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* 3. Sounds */}
+      <section className="space-y-3">
+        <SettingsSectionHeader title="Sounds" description="Sound pack played for session events." />
+        <RadioGroup
+          value={soundPack}
+          onValueChange={(value) => onSoundPackChange(value as SoundPack)}
+          className="space-y-2"
+        >
+          {SOUND_PACKS.map((pack) => (
+            <RadioGroupItem
+              size="lg"
+              variant="outline"
+              key={pack.id}
+              value={pack.id}
+              id={`pref-sound-pack-${pack.id}`}
+              label={pack.label}
+              description={pack.description}
+            />
+          ))}
+        </RadioGroup>
+
+        {soundPack !== 'off' && (
+          <>
+            <div className="flex items-center gap-3 px-1">
+              <Volume2 className="text-muted-foreground size-4 shrink-0" />
+              <Slider
+                min={0}
+                max={100}
+                value={[Math.round(soundVolume * 100)]}
+                thumbLabel="Volume"
+                formatValue={(value) => `${value}%`}
+                onValueChange={(value) => onSoundVolumeChange(value[0] / 100)}
+              />
+              <span className="text-muted-foreground w-8 text-right text-xs tabular-nums">
+                {Math.round(soundVolume * 100)}%
+              </span>
+            </div>
+
+            <div className="divide-y rounded-lg border">
+              {SOUND_EVENTS.map((event) => {
+                const enabled = soundEvents[event.id] !== false;
+                return (
+                  <Field key={event.id} orientation="horizontal" className="group px-3.5 py-2.5">
+                    <FieldContent className="gap-0">
+                      <FieldTitle>
+                        <label htmlFor={`pref-sound-event-${event.id}`}>{event.label}</label>
+                      </FieldTitle>
+                      <FieldDescription>{event.description}</FieldDescription>
+                    </FieldContent>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Hint label="Preview">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                          onClick={() => onSoundPreview(event.id)}
+                        >
+                          <Volume2 />
+                        </Button>
+                      </Hint>
+                      <Switch
+                        id={`pref-sound-event-${event.id}`}
+                        checked={enabled}
+                        onCheckedChange={(v) => onSoundEventToggle(event.id, v)}
+                      />
+                    </div>
+                  </Field>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* 4. Notifications */}
+      <section className="space-y-3">
+        <SettingsSectionHeader
+          title="Notifications"
+          description="Browser notifications for what happens in your sessions."
+        />
+        {!notificationsSupported ? (
+          <div className="rounded-lg border p-4">
+            <p className="text-muted-foreground text-sm">
+              Your browser does not support notifications.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="rounded-lg border">
+              <NotificationToggle
+                icon={BellSolid}
+                label="Enable notifications"
+                description={
+                  notificationPermission === 'granted'
+                    ? 'Browser permission granted'
+                    : notificationPermission === 'denied'
+                      ? 'Blocked by browser — update in browser site settings'
+                      : 'Will request browser permission when enabled'
+                }
+                enabled={notificationPreferences.enabled}
+                onToggle={onToggleNotificationsEnabled}
+              />
+            </div>
+
+            {notificationPreferences.enabled && (
+              <>
+                <div className="flex flex-col space-y-3">
+                  <label className="text-muted-foreground text-sm font-medium">
+                    Notification types
+                  </label>
+                  <div className="divide-y rounded-lg border">
+                    {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
+                      <NotificationToggle
+                        key={toggle.key}
+                        icon={toggle.icon}
+                        label={toggle.label}
+                        description={toggle.description}
+                        enabled={notificationPreferences[toggle.key] as boolean}
+                        onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-col space-y-3">
+                  <label className="text-muted-foreground text-sm font-medium">Behavior</label>
+                  <div className="divide-y rounded-lg border">
+                    {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
+                      <NotificationToggle
+                        key={toggle.key}
+                        icon={toggle.icon}
+                        label={toggle.label}
+                        description={toggle.description}
+                        enabled={notificationPreferences[toggle.key] as boolean}
+                        onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <Button onClick={onSendTestNotification} variant="outline" size="sm">
+                  Send test notification
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* 5. Keyboard shortcuts */}
+      <section className="space-y-3">
+        <SettingsSectionHeader
+          title="Keyboard shortcuts"
+          description="The modifier key used for tab switching, and every shortcut in the app."
+        />
+        <div className="space-y-2">
+          <Label className="text-xs">Modifier key</Label>
+          <RadioGroup
+            value={keyboardModifier}
+            onValueChange={(value) => onKeyboardModifierChange(value as TabSwitchModifier)}
+            className="grid w-fit grid-cols-2 items-center gap-2"
+          >
+            {MODIFIER_OPTIONS.map((mod) => (
+              <RadioGroupItem key={mod.value} value={mod.value} id={`pref-mod-${mod.value}`} label={mod.label} />
+            ))}
+          </RadioGroup>
+        </div>
+
+        <div className="divide-y rounded-lg border">
+          {shortcuts.map((s) => (
+            <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
+              <span className="text-foreground text-sm">{s.label}</span>
+              <kbd className="bg-muted text-muted-foreground inline-flex h-6 items-center rounded border px-2 font-mono text-xs whitespace-nowrap">
+                {s.keys}
+              </kbd>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 6. Language */}
+      <section className="space-y-3">
+        <SettingsSectionHeader title="Language" description="The language Kortix displays." />
+        <Select value={locale} onValueChange={(value) => onLocaleChange(value as Locale)}>
+          <SelectTrigger id="preferences-language" className="!h-11 w-full max-w-xs">
+            <SelectValue>{LANGUAGE_NAMES[locale] ?? locale}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {availableLocales.map((l) => (
+              <SelectItem key={l} value={l}>
+                {LANGUAGE_NAMES[l]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </section>
+    </div>
+  );
+}
+
+/** Container: owns every hook (next-themes, Zustand stores, auth) and renders
+ *  `PreferencesTabView` with real data + handlers. Only ever mounted while
+ *  this tab is active (`SettingsTabPane` in `settings-panel.tsx` returns
+ *  `null` otherwise), so nothing here fetches or reads storage on panel
+ *  open unless the user actually lands on this tab. */
+export function PreferencesTab() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
+  const wallpaperId = useUserPreferencesStore((s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID);
+  const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
+  const keyboardModifier = useUserPreferencesStore((s) => s.preferences.keyboard.tabSwitchModifier);
+  const setKeyboardPreferences = useUserPreferencesStore((s) => s.setKeyboardPreferences);
+  const modifierLabel = useUserPreferencesStore((s) => s.getModifierLabel());
+
+  // Users may have a wallpaper persisted that no longer exists — reset it.
+  // Mirrors the identical effect in `appearance-tab.tsx`; both surfaces read
+  // and write the same store key, so this is a genuine, small duplication
+  // (~4 lines) rather than a divergent implementation — see this file's
+  // header comment.
+  useEffect(() => {
+    if (!WALLPAPERS.some((w) => w.id === wallpaperId)) {
+      setWallpaperId(DEFAULT_WALLPAPER_ID);
+    }
+  }, [wallpaperId, setWallpaperId]);
+
+  const soundPreferences = useSoundStore((s) => s.preferences);
+  const setSoundPack = useSoundStore((s) => s.setPack);
+  const setSoundVolume = useSoundStore((s) => s.setVolume);
+  const setSoundEventEnabled = useSoundStore((s) => s.setEventEnabled);
+
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
+  const notificationPreferences = useWebNotificationStore((s) => s.preferences);
+  const toggleNotificationsEnabled = useWebNotificationStore((s) => s.toggleEnabled);
+  const setNotificationPreference = useWebNotificationStore((s) => s.setPreference);
+  const syncNotificationPermission = useWebNotificationStore((s) => s.syncPermission);
+  useEffect(() => {
+    syncNotificationPermission();
+  }, [syncNotificationPermission]);
+
+  // `useLanguage` reads the signed-in user (via `useAuth`) for its persisted
+  // locale, so this container — like `ProfileTab` — only ever runs this read
+  // while mounted, i.e. while this tab is active.
+  const { locale, setLanguage, availableLanguages } = useLanguage();
+
+  const handleSendTestNotification = () => {
+    sendWebNotification(
+      {
+        type: 'completion',
+        title: 'Test Notification',
+        body: 'Notifications are working correctly!',
+        tag: 'test',
+      },
+      true,
+    );
+  };
+
+  return (
+    <PreferencesTabView
+      theme={theme ?? 'system'}
+      onThemeChange={setTheme}
+      wallpaperId={wallpaperId}
+      isLightTheme={resolvedTheme === 'light'}
+      onWallpaperSelect={setWallpaperId}
+      soundPack={soundPreferences.pack}
+      onSoundPackChange={setSoundPack}
+      soundVolume={soundPreferences.volume}
+      onSoundVolumeChange={setSoundVolume}
+      soundEvents={soundPreferences.events}
+      onSoundEventToggle={setSoundEventEnabled}
+      onSoundPreview={previewSound}
+      notificationsSupported={isNotificationSupported()}
+      notificationPermission={notificationPermission}
+      notificationPreferences={notificationPreferences}
+      onToggleNotificationsEnabled={() => void toggleNotificationsEnabled()}
+      onNotificationPreferenceChange={setNotificationPreference}
+      onSendTestNotification={handleSendTestNotification}
+      keyboardModifier={keyboardModifier}
+      onKeyboardModifierChange={(modifier) =>
+        setKeyboardPreferences({ tabSwitchModifier: modifier, closeTabModifier: modifier })
+      }
+      modifierLabel={modifierLabel}
+      locale={locale}
+      availableLocales={availableLanguages}
+      onLocaleChange={(next) => void setLanguage(next)}
+    />
+  );
+}
