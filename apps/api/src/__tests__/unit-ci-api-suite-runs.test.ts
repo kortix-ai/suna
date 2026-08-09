@@ -47,6 +47,10 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     expect(testScript).toContain('exit 1');
   });
 
+  test('the package timeout preserves declared 15-second load budgets', () => {
+    expect(testScript).toContain('KORTIX_TEST_TIMEOUT_MS:-15000');
+  });
+
   test('the committed fixture carries no ciphertext and no live-looking credential', () => {
     const values = envTest
       .split('\n')

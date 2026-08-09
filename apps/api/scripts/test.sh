@@ -25,7 +25,7 @@ case "$mode" in
     if [ "${COVERAGE:-}" = "1" ]; then
       cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
     fi
-    test_timeout="${KORTIX_TEST_TIMEOUT_MS:-5000}"
+    test_timeout="${KORTIX_TEST_TIMEOUT_MS:-15000}"
     api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"
     case "$api_test_workers" in
       ''|*[!0-9]*|0)
@@ -52,7 +52,8 @@ case "$mode" in
     # Four parallel worker processes cut the 570-file suite from 113.65s to
     # 31.68s on the local reference machine. Eight workers reduced it to 27.92s
     # but caused the archive contract to exceed its 15s timeout. Keep the safe
-    # default bounded and allow explicit tuning through the environment.
+    # worker count bounded. The 15s default preserves explicit 15s test budgets
+    # under load without increasing the duration of passing tests.
     exec bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
     ;;
   *)
