@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb');
     expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
@@ -59,7 +59,7 @@ describe('Platinum CI worker plan', () => {
       name: platinumTemplateName(lockHash),
       capture_condition: {
         cmd: 'test -s /workspace/.kortix-ci-warm-ready',
-        timeoutSec: 1_200,
+        timeoutSec: 2_700,
       },
       default_cpu: 8,
       default_ram_mb: 16_384,

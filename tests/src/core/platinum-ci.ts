@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v10';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v11';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -10,7 +11,7 @@ export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
-const WARM_PREPARE_TIMEOUT_MS = 20 * 60_000;
+const WARM_PREPARE_TIMEOUT_MS = 45 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
 const API_MAX_ATTEMPTS = 6;
@@ -197,7 +198,8 @@ export function platinumTemplateName(lockHash: string): string {
 }
 
 export function platinumBaseTemplateName(lockHash: string): string {
-  return `${platinumTemplateName(lockHash)}-base`;
+  if (!/^[a-f0-9]{64}$/i.test(lockHash)) throw new Error(`invalid lockfile hash: ${lockHash}`);
+  return `kortix-ci-${PLATINUM_CI_BASE_TEMPLATE_VERSION}-${lockHash.slice(0, 16)}-base`;
 }
 
 function platinumWarmEntrypoint(): string {
