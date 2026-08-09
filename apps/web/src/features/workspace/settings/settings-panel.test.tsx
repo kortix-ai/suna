@@ -9,7 +9,7 @@ import {
   type SettingsPanelShellProps,
 } from './settings-panel';
 import { UPGRADE_ITEM, railGroups } from './rail';
-import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
+import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import type { RailItem } from './type';
 
 /**
@@ -45,11 +45,13 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     onTabChange: () => {},
     isMobile: false,
     project: undefined,
+    projectId: undefined,
     groups: allGroups,
     allItems,
     upgradeAllowed: true,
     upgradeAttention: false,
     reviewNeedsYou: 0,
+    llmGatewayEnabled: false,
     ...overrides,
   };
 }
@@ -134,6 +136,113 @@ describe('SettingsPanelShell — pane wiring', () => {
   test('the mounted pane renders the active tab label as its heading', () => {
     const html = render({ tab: 'secrets' });
     expect(html).toContain('>Secrets<');
+  });
+});
+
+/**
+ * Task 5b2 — proof that real tab-pane content is gated on the ACTIVE tab.
+ *
+ * Every one of the fifteen views wired onto a tab this task ports from
+ * `customize-panel.tsx`'s `SectionContent` switch calls `useQuery` /
+ * `useProjectCan` (react-query) synchronously in its own function body —
+ * confirmed by grepping each file (see the task report's table). None of the
+ * `render(...)` calls below provide a `QueryClientProvider`, so react-query
+ * throws its own `No QueryClient set, use QueryClientProvider to set one`
+ * error the INSTANT a real view's function actually runs.
+ *
+ * That gives a mechanical, unfakeable signal for "this component's render
+ * function was invoked" — stronger than a markup-string match, since it fires
+ * exactly where a network request would otherwise start. A tab that mounts
+ * throws; a tab that does not mount (because it isn't the active one) cannot
+ * throw, no matter how many query-backed views exist as its inactive
+ * siblings in the very same rail.
+ *
+ * This does not depend on Radix's own `present && children` behaviour inside
+ * `TabsContent` (verified separately, see this file's header) — `SettingsTabPane`
+ * in `settings-panel.tsx` gates independently with its own `active` check, so
+ * the proof holds even if a future Radix upgrade changes that internal.
+ */
+const REAL_VIEW_TABS: readonly SettingsTab[] = [
+  'general',
+  'members',
+  'secrets',
+  'channels',
+  'repositories',
+  'schedules',
+  'webhooks',
+  'computers',
+  'models',
+  'instructions',
+  'marketplace',
+  'review',
+  'voice',
+  'sandbox',
+  'upgrades',
+];
+
+/** `computers`, `marketplace`, `review`, and `voice` are flag-gated rail
+ *  items (see `rail.ts`) — with every flag off (this file's module-level
+ *  `flags`/`allGroups`/`allItems`) they don't exist in the rail at all, so
+ *  there is no `TabsContent` for them to mount into. Every flag on puts all
+ *  fifteen real-view tabs in the rail at once, which is what this describe
+ *  block's "every real-view tab exists as a sibling" claim requires to be
+ *  literally true. */
+const allFlagsOnGroups = railGroups({
+  tunnelEnabled: true,
+  marketplaceEnabled: true,
+  llmGatewayAvailable: true,
+  voiceEnabled: true,
+  reviewEnabled: true,
+});
+const allFlagsOnItems: readonly RailItem[] = [
+  ...allFlagsOnGroups.flatMap((g) => g.items),
+  UPGRADE_ITEM,
+];
+
+describe('SettingsPanelShell — real tab content gating', () => {
+  test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
+    expect(() =>
+      render({
+        tab: 'profile',
+        projectId: 'p1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).not.toThrow();
+  });
+
+  for (const tab of REAL_VIEW_TABS) {
+    test(`activating ${tab} mounts its real view — it calls react-query with no provider present, so it throws`, () => {
+      expect(() =>
+        render({
+          tab,
+          projectId: 'p1',
+          llmGatewayEnabled: true,
+          groups: allFlagsOnGroups,
+          allItems: allFlagsOnItems,
+        }),
+      ).toThrow();
+    });
+  }
+
+  test('models renders nothing while the llm gateway is disabled for the project, mirroring the legacy `llm-*` guard', () => {
+    // `SectionContent` in customize-panel.tsx returns null outright for an
+    // `llm-*` section when `!llmGatewayEnabled` — it does not fall back to a
+    // placeholder header. Since the view is never invoked here, this must
+    // not throw, and the active pane must render no heading at all.
+    const html = render({ tab: 'models', projectId: 'p1', llmGatewayEnabled: false });
+    expect(html).not.toContain('>Models</h2>');
+  });
+
+  test('models mounts its real view once the llm gateway is enabled for the project', () => {
+    expect(() => render({ tab: 'models', projectId: 'p1', llmGatewayEnabled: true })).toThrow();
+  });
+
+  test('with no project id, every mapped tab falls back to its placeholder header instead of attempting a fetch', () => {
+    for (const tab of REAL_VIEW_TABS) {
+      expect(() => render({ tab, projectId: undefined })).not.toThrow();
+    }
   });
 });
 

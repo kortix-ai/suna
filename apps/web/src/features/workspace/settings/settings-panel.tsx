@@ -26,11 +26,39 @@
  * That blocker is gone: all five now read `useSettingsNav()` (see
  * `features/workspace/shared/settings-nav-context.tsx`) instead of a store
  * directly, and THIS panel already provides it below (`buildSettingsPanel-
- * SettingsNav` / `<SettingsNavProvider>`), even though nothing here consumes
- * it yet. Reusing them as real tab-pane content is still a later task — this
- * file was only cleared to mount them, not told to.
+ * SettingsNav` / `<SettingsNavProvider>`).
+ *
+ * **Task 5b2 update.** Fifteen of `customize-panel.tsx`'s `SectionContent`
+ * cases (fourteen `case` labels plus the `llm-*` prefix branch) are now
+ * wired onto their mapped tab via `SettingsTabPane` below: `commands`,
+ * `marketplace`, `secrets`, `channels`, `voice`, `computers`, `schedules`,
+ * `webhooks`, `git`, `review`, `sandbox`, `members`, `settings`, `upgrade`,
+ * and `llm-*` become `instructions`, `marketplace`, `secrets`, `channels`,
+ * `voice`, `computers`, `schedules`, `webhooks`, `repositories`, `review`,
+ * `sandbox`, `members`, `general`, `upgrades`, and `models`. `sandbox` here
+ * still renders the UNSPLIT `SandboxView` (templates + build log together);
+ * splitting off `snapshots` (build log only) is a later task, so `snapshots`
+ * stays a placeholder. The eleven other still-new surfaces (`profile`,
+ * `preferences`, `connected`, `billing`, `usage`, `groups`, `roles`,
+ * `identity`, `audit`, `api-keys`, `experimental`) also stay placeholders —
+ * phases 2-4 build them.
+ *
+ * **Every pane must not fetch unless its tab is active** (see this file's
+ * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
+ * block for the proof): `SettingsTabPane` renders `null` for every tab that
+ * isn't the active one, so an inactive tab's real view is never even
+ * instantiated as a React element — its hooks never run, so it can't fetch.
+ * This is deliberate defense-in-depth: Radix's own `TabsContent` already
+ * excludes an inactive pane's children from what it hands its wrapper div
+ * (`present && children` in `@radix-ui/react-tabs`'s `TabsContent`, verified
+ * directly against this repo's installed version — an inactive pane's
+ * `<div role="tabpanel" hidden>` renders with NO children at all, not just
+ * CSS-hidden ones), but gating explicitly in OUR OWN code means correctness
+ * here never depends on a third-party internal staying the way it happens to
+ * work today.
  */
 
+import { ScheduleView } from '@/components/projects/schedule-view';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
@@ -38,13 +66,26 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Close } from '@/features/icon/icons/close';
+import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { RelatedProjectsSwitcher } from '@/features/workspace/customize/related-projects-switcher';
+import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
+import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
+import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
+import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
+import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
+import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
+import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
+import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
+import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
 import type { CustomizeSection } from '@/lib/customize-sections';
-import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
+import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -183,6 +224,12 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   const tunnelEnabled = project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = project?.experimental?.marketplace ?? false;
   const llmGatewayAvailable = isLlmGatewayAvailable(project);
+  // Distinct from `llmGatewayAvailable` above (which only affects rail
+  // visibility, per `rail.ts`'s comment — the Models row always shows).
+  // `llmGatewayEnabled` gates the Models tab's actual CONTENT, mirroring
+  // `customize-panel.tsx`'s `if (section.startsWith('llm-') &&
+  // !llmGatewayEnabled) return null;` exactly.
+  const llmGatewayEnabled = isLlmGatewayEnabled(project);
   const voiceEnabled = project?.experimental?.voice ?? false;
   const reviewEnabled = project?.experimental?.review_center ?? false;
   // Pin Upgrades' attention dot only once the manifest read resolved to v1 —
@@ -249,11 +296,13 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         onOpenChange={(next) => (next ? undefined : close())}
         isMobile={isMobile}
         project={project}
+        projectId={projectId}
         groups={groups}
         allItems={allItems}
         upgradeAllowed={upgradeAllowed}
         upgradeAttention={upgradeAttention}
         reviewNeedsYou={reviewNeedsYou}
+        llmGatewayEnabled={llmGatewayEnabled}
       />
     </SettingsNavProvider>
   );
@@ -266,11 +315,19 @@ export interface SettingsPanelViewProps {
   onOpenChange: (open: boolean) => void;
   isMobile: boolean;
   project: KortixProject | undefined;
+  /** Threaded independently of `project` (the detail query's RESULT) so a
+   *  tab's real view gets a stable id from the first render — it doesn't need
+   *  to wait on `project` to resolve, since every real view does its own
+   *  loading/skeleton handling once mounted. */
+  projectId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
   upgradeAllowed: boolean;
   upgradeAttention: boolean;
   reviewNeedsYou: number;
+  /** Gates the Models tab's CONTENT (not its rail visibility — see
+   *  `SettingsPanel`'s comment next to where this is computed). */
+  llmGatewayEnabled: boolean;
 }
 
 /** Presentational only — no hooks, no data fetching, no store read. Kept
@@ -291,11 +348,13 @@ export function SettingsPanelView({
   onOpenChange,
   isMobile,
   project,
+  projectId,
   groups,
   allItems,
   upgradeAllowed,
   upgradeAttention,
   reviewNeedsYou,
+  llmGatewayEnabled,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -322,11 +381,13 @@ export function SettingsPanelView({
           onTabChange={onTabChange}
           isMobile={isMobile}
           project={project}
+          projectId={projectId}
           groups={groups}
           allItems={allItems}
           upgradeAllowed={upgradeAllowed}
           upgradeAttention={upgradeAttention}
           reviewNeedsYou={reviewNeedsYou}
+          llmGatewayEnabled={llmGatewayEnabled}
         />
       </ModalContent>
     </Modal>
@@ -348,11 +409,13 @@ export function SettingsPanelShell({
   onTabChange,
   isMobile,
   project,
+  projectId,
   groups,
   allItems,
   upgradeAllowed,
   upgradeAttention,
   reviewNeedsYou,
+  llmGatewayEnabled,
 }: SettingsPanelShellProps) {
   return (
     <>
@@ -480,14 +543,98 @@ export function SettingsPanelShell({
               value={item.tab}
               className="flex min-h-0 flex-1 flex-col overflow-y-auto"
             >
-              <div className="p-6">
-                <SettingsSectionHeader title={item.label} />
-              </div>
+              <SettingsTabPane
+                item={item}
+                active={item.tab === tab}
+                projectId={projectId}
+                llmGatewayEnabled={llmGatewayEnabled}
+              />
             </TabsContent>
           ))}
         </main>
       </Tabs>
     </>
+  );
+}
+
+/**
+ * Real view for one tab, gated on `active` so its hooks (and any fetch they
+ * start) only ever run for the tab currently selected — see this file's
+ * header comment and `settings-panel.test.tsx`'s "real tab content gating"
+ * describe block for why this is explicit rather than left to Radix's own
+ * `TabsContent` behaviour.
+ *
+ * The switch below is the Task 5b2 mapping of `customize-panel.tsx`'s
+ * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
+ * new tab ids. A tab NOT listed here — `profile`, `preferences`, `connected`,
+ * `snapshots`, `billing`, `usage`, `groups`, `roles`, `identity`, `audit`,
+ * `api-keys`, `experimental` — is a genuinely new surface with no legacy
+ * source to port; it keeps the placeholder header until a later phase builds
+ * it. `snapshots` in particular is HALF of the legacy `sandbox` case
+ * (`SandboxView` renders templates and the build log together); splitting
+ * them is a later task, so `sandbox` alone gets the full unsplit view for
+ * now and `snapshots` stays a placeholder — do not fold `SandboxView` onto
+ * both tabs, that would render the build log twice.
+ */
+function SettingsTabPane({
+  item,
+  active,
+  projectId,
+  llmGatewayEnabled,
+}: {
+  item: RailItem;
+  active: boolean;
+  projectId: string | undefined;
+  llmGatewayEnabled: boolean;
+}) {
+  if (!active) return null;
+
+  if (projectId) {
+    switch (item.tab) {
+      case 'general':
+        return <SettingsView projectId={projectId} />;
+      case 'members':
+        return <MembersView projectId={projectId} />;
+      case 'secrets':
+        return <SecretsView projectId={projectId} />;
+      case 'channels':
+        return <ChannelsView projectId={projectId} />;
+      case 'repositories':
+        return <GitView projectId={projectId} />;
+      case 'schedules':
+        return <ScheduleView projectId={projectId} type="cron" />;
+      case 'webhooks':
+        return <ScheduleView projectId={projectId} type="webhook" />;
+      case 'computers':
+        return <ComputersView projectId={projectId} />;
+      case 'models':
+        // Mirrors `customize-panel.tsx`'s
+        // `if (section.startsWith('llm-') && !llmGatewayEnabled) return null;`
+        // — renders nothing (not the placeholder) while disabled.
+        return llmGatewayEnabled ? <LlmManagementView projectId={projectId} /> : null;
+      case 'instructions':
+        return <CommandsView projectId={projectId} />;
+      case 'marketplace':
+        return <MarketplaceView projectId={projectId} />;
+      case 'review':
+        return <ReviewView projectId={projectId} />;
+      case 'voice':
+        return <VoiceView projectId={projectId} />;
+      case 'sandbox':
+        return <SandboxView projectId={projectId} />;
+      case 'upgrades':
+        return <UpgradesView projectId={projectId} />;
+      default:
+        break;
+    }
+  }
+
+  // No project id (an account-scoped open with no workspace selected yet) or
+  // a tab with no real view wired up yet — same placeholder either way.
+  return (
+    <div className="p-6">
+      <SettingsSectionHeader title={item.label} />
+    </div>
   );
 }
 
