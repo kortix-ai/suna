@@ -3,13 +3,19 @@ import { describe, expect, test } from 'bun:test';
 import { type BurstStep, flattenThought, mergeBurstSteps } from './merge-steps';
 import { stepLabel, type StepTier } from './step-label';
 
+const SHOWN = { type: 'image', path: '/workspace/logo.png' };
+
 function tool(id: string, name = 'read'): Part {
   return {
     id,
     type: 'tool',
     tool: name,
     callID: `call_${id}`,
-    state: { status: 'completed' },
+    // `show` is the one tool whose input decides whether it renders at all: a
+    // call carrying no path/url/content/items draws an empty card and is
+    // dropped (`isEmptyShowPart`). These tests are about grouping, so every
+    // show here is given a real artifact.
+    state: { status: 'completed', input: name.startsWith('show') ? SHOWN : {} },
   } as unknown as Part;
 }
 

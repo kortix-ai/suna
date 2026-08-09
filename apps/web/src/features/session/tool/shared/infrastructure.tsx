@@ -10,6 +10,7 @@ import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
@@ -823,7 +824,11 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
 
 export function shouldShowToolPartInActionsPanel(part: Pick<ToolPart, 'tool' | 'state'>): boolean {
   if (MEMORY_LOOKUP_TOOL_NAMES.has(part.tool)) return false;
-  // The skill tool opens its content in a side sheet, not the Actions panel.
+  // A `show` that handed nothing over renders an empty card, so its stepper row
+  // would open onto blank space. Same verdict the chat transcript reaches.
+  if (isEmptyShowPart(part)) return false;
+  // A skill row opens its SKILL.md in the detail panel, so it has no Actions
+  // row of its own. (It used to raise a side sheet; that sheet is gone.)
   if (part.tool === 'skill') return false;
   // File reads stay out of the Actions panel.
   if (part.tool === 'read') return false;
@@ -927,7 +932,7 @@ function InlineTriggerTitle({
             <>
               {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
               <span
-                className="text-muted-foreground/40 min-w-0 truncate  text-sm"
+                className="text-muted-foreground/40 min-w-0 truncate text-sm"
                 title={args.join(' · ')}
               >
                 {args.join(' · ')}

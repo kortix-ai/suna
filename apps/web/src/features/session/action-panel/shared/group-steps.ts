@@ -9,7 +9,7 @@
  */
 
 import type { ToolPart } from '@/ui';
-import { isNoGroupActivityTool } from '../../session-activity-groups';
+import { isEmptyShowPart, isNoGroupActivityTool } from '../../session-activity-groups';
 import { type StepFamily, familyForTool, narrateFailedStep, narrateStep } from './narration';
 
 export interface Step {
@@ -78,6 +78,11 @@ export function groupSteps(parts: ToolPart[]): Step[] {
   for (const part of parts) {
     const f = familyForTool(part.tool);
     if (f === 'hidden') continue; // dropped, and must not split a run
+
+    // A `show` that handed nothing over is hidden for the same reason: its own
+    // step would narrate "Showed you the result" and open onto an empty card.
+    // Dropped here, before the standalone branch, so it also cannot split a run.
+    if (isEmptyShowPart(part)) continue;
 
     // show / show_user each stand alone.
     if (isNoGroupActivityTool(part.tool)) {
