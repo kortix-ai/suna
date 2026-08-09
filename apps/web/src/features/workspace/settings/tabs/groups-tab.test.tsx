@@ -48,3 +48,52 @@ describe('GroupsTabView', () => {
     expect(out).toContain('Groups are an Enterprise feature');
   });
 });
+
+/**
+ * Fix round 1 — the terminal "no account ever resolves" state, distinct
+ * from the transient loading window. See this file's header comment
+ * ("Fix round 1 — the terminal no-account state") for the full trace
+ * proving `resolvedAccountId` staying `undefined` forever is reachable only
+ * via an `['accounts']` fetch failure, never via a genuinely empty account
+ * list (the API always bootstraps one — `apps/api/src/accounts/core/
+ * accounts.ts:76-100`).
+ */
+describe('GroupsTabView — terminal no-account state', () => {
+  test('accountResolutionFailed renders an honest terminal state, not an indefinite skeleton', () => {
+    const out = renderToStaticMarkup(<GroupsTabView accountResolutionFailed isLoading />);
+    expect(out).not.toContain('animate-pulse');
+    expect(out).toContain("determine your account");
+  });
+
+  test('accountResolutionFailed takes precedence over isLoading and rbacEnabled', () => {
+    const out = renderToStaticMarkup(
+      <GroupsTabView
+        accountResolutionFailed
+        isLoading
+        rbacEnabled
+        groupsSlot={<div>real-groups-content</div>}
+      />,
+    );
+    expect(out).not.toContain('real-groups-content');
+    expect(out).not.toContain('animate-pulse');
+    expect(out).toContain("determine your account");
+  });
+
+  test('the terminal state renders a Retry action when a retry handler is supplied', () => {
+    const out = renderToStaticMarkup(
+      <GroupsTabView accountResolutionFailed onRetryAccountResolution={() => {}} />,
+    );
+    expect(out).toContain('Retry');
+  });
+
+  test('the terminal state renders no action when no retry handler is supplied', () => {
+    const out = renderToStaticMarkup(<GroupsTabView accountResolutionFailed />);
+    expect(out).not.toContain('Retry');
+  });
+
+  test('accountResolutionFailed defaults to false — ordinary loading is unaffected', () => {
+    const out = renderToStaticMarkup(<GroupsTabView isLoading />);
+    expect(out).toContain('animate-pulse');
+    expect(out).not.toContain("determine your account");
+  });
+});
