@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import type { TurnCostInfo } from '@/ui';
 import { sessionTurnMetaRows } from './session-turn-meta-rows';
 
@@ -73,12 +74,12 @@ export function SessionTurnMeta({
         <Button
           type="button"
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label="Turn details"
           data-testid="session-turn-meta-trigger"
-          className={className}
+          className={cn(className)}
         >
-          <DotsThreeOutlineIcon weight="fill" className="size-4 shrink-0" />
+          <DotsThreeOutlineIcon weight="fill" className="text-foreground/70 size-[1.05rem]" />
         </Button>
       </PopoverTrigger>
       <PopoverContent

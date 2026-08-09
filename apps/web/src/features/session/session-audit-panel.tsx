@@ -83,7 +83,7 @@ export function SessionAuditPanel({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <header className="border-border flex-shrink-0 border-b px-6 py-3">
+      <header className="border-border shrink-0 border-b px-6 py-3">
         <h2 className="text-foreground text-sm font-medium">Audit</h2>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
           Reconstruct every session event in order and review governed actions.

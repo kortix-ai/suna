@@ -3,24 +3,27 @@
 /** One row inside a burst: icon, verb, object, and the tool's own result. */
 
 import {
-  FileTextIcon,
+  FilesIcon,
   FolderOpenIcon,
   GlobeIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
+  ReadCvLogoIcon,
   StackIcon,
   TerminalWindowIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
 
+import { partOutcome } from '@/features/session/tool/shared/tool-outcome';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { cn } from '@/lib/utils';
 import { isToolPart, type Part } from '@/ui';
+import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { stepLabel } from './step-label';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  read: FileTextIcon,
+  read: ReadCvLogoIcon,
   write: PencilSimpleIcon,
   edit: PencilSimpleIcon,
   apply_patch: PencilSimpleIcon,
@@ -35,6 +38,11 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   scrape: GlobeIcon,
   scrape_webpage: GlobeIcon,
   task: UsersThreeIcon,
+  // Without an entry here `skill` fell through to the generic `StackIcon`
+  // fallback — the same mark every unrecognised tool gets, so a skills row said
+  // nothing more than "some tool ran". `Files` is stacked pages: several of a
+  // thing, which is exactly what a grouped skills row is.
+  skill: FilesIcon,
 };
 
 /** Exported so a group row can lead with the same glyph its members carry. */
@@ -43,24 +51,48 @@ export function iconFor(part: Part) {
   return ICONS[normalizeActivityToolName(part.tool)] ?? StackIcon;
 }
 
-export function ActivityStep({
+function ActivityStepImpl({
   part,
   sessionId,
   running,
   disableNavigation,
+  bare,
 }: {
   part: Part;
   sessionId: string;
   running: boolean;
   disableNavigation?: boolean;
+  /**
+   * This row is the WHOLE burst — no summary line above it, no siblings, no
+   * chain rail. See `ActivityBurst`.
+   */
+  bare?: boolean;
 }) {
   const label = stepLabel(part);
   const Icon = iconFor(part);
   const verb = running ? label.running : label.verb;
 
+  /**
+   * A bare row drops its leading glyph.
+   *
+   * The family icon is not a label — it is the rail's anchor. `ChainOfThought`
+   * runs its connector down the centre of that 16px gutter (`left-2`), so the
+   * icons are what make a chain read as one thread rather than as loose lines.
+   * A single row has no rail and no thread, so the glyph is left holding a
+   * column that no longer exists, and it pushes the only words on the row 28px
+   * off the margin every other line of the turn starts at.
+   *
+   * The OUTCOME mark is not dropped, and that is the whole subtlety: on a bare
+   * row it is the only failure signal left — the summary line that said
+   * "1 step failed" and the chain's closing step are both gone. `partOutcome`
+   * decides, not `state.status`, so a call that RETURNED its error keeps its
+   * mark too.
+   */
+  const hideIcon = Boolean(bare) && (!isToolPart(part) || partOutcome(part) === 'ok');
+
   const header = (
     <div className="flex min-w-0 items-center gap-3">
-      <Icon className="text-muted-foreground size-4 flex-none" />
+      {!hideIcon && <Icon className="text-muted-foreground size-4 flex-none" />}
       <span className="text-foreground/80 flex-none text-sm leading-[1.5]">{verb}</span>
       {label.object && (
         <span
@@ -112,9 +144,33 @@ export function ActivityStep({
         "[&_[data-component='tool-trigger']_span]:!leading-[1.5]",
         "[&_[data-component='tool-trigger']_[data-slot='favicon-avatar']]:!size-4",
         "[&_[data-component='tool-trigger']_[data-slot='favicon-avatar']_svg]:!size-2.5",
+        // The tool's leading glyph lives in the trigger's first span
+        // (`ToolHeaderRow`'s `leading`). Scoped to the trigger, so the expanded
+        // content — and the Action Panel rendering the same component — keep
+        // theirs. `hideIcon` has already spared the outcome mark.
+        hideIcon && "[&_[data-component='tool-trigger']>span:first-child]:hidden",
+        // The gap above moves the trigger's TEXT column; this moves the card
+        // under it to the same place. `TOOL_INDENT` derives 22px from the row's
+        // native `gap-1.5`, so overriding the gap and not the indent is what
+        // left an expanded command's block 6px left of every other row's
+        // content in the same chain. One override is half an override.
+        //
+        // 1.75rem = the 16px icon + the 12px `gap-3` above. A bare row hides the
+        // icon but keeps this: the chain rail still runs at `left-2`, so a card
+        // at the margin would have the hairline cutting through it.
+        '[--tool-indent:1.75rem]',
       )}
     >
       <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />
     </div>
   );
 }
+
+/**
+ * Every prop here is a scalar or the part itself, and a part keeps its identity
+ * until it changes — so the default shallow compare is exactly right, and this
+ * is the boundary that stops a settled tool row (and its shiki-highlighted
+ * card) from re-rendering on every frame of the turn it sits in.
+ */
+export const ActivityStep = memo(ActivityStepImpl);
+ActivityStep.displayName = 'ActivityStep';

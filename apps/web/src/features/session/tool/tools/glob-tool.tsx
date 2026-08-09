@@ -18,7 +18,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 /**
  * Patterns that match everything, so naming them in the row adds nothing the
@@ -44,6 +44,12 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
+  const handleFileClick = useCallback(
+    (fp: string) => {
+      if (filePaths) openFileWithList(fp, filePaths);
+    },
+    [filePaths, openFileWithList],
+  );
   const isNoResults = !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
 
   // Same trigger shape as web search: what was searched for, then how much came
@@ -72,7 +78,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span
@@ -82,7 +88,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             {triggerLabel}
           </span>
           {triggerBadge && (
-            <span className="text-muted-foreground/70 ml-auto flex-shrink-0 text-sm whitespace-nowrap">
+            <span className="text-muted-foreground/70 ml-auto shrink-0 text-sm whitespace-nowrap">
               {triggerBadge}
             </span>
           )}
@@ -96,7 +102,7 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <ToolResultCard>
           <InlineFileList
             paths={filePaths}
-            onFileClick={(fp) => openFileWithList(fp, filePaths)}
+            onFileClick={handleFileClick}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />

@@ -15,6 +15,8 @@ import {
 } from '../tunnel/routes/auth';
 import { createConnectionsRouter } from '../tunnel/routes/connections';
 import { effectiveRegisteredCapabilities } from '../tunnel';
+import { tunnelRelay } from '../tunnel/core/relay';
+import { heartbeatManager } from '../tunnel/core/heartbeat';
 
 /** Minimal stand-in for a Hono context: only `c.get(key)` is used here. */
 function fakeCtx(values: Record<string, unknown>) {
@@ -169,5 +171,25 @@ describe('tunnel agent capability registration', () => {
       effectiveRegisteredCapabilities(['filesystem', 'filesystem'], ['filesystem']),
     ).toBeNull();
     expect(effectiveRegisteredCapabilities(['filesystem', 'camera'], ['filesystem'])).toBeNull();
+  });
+});
+
+describe('tunnel heartbeat wiring', () => {
+  test('records each signed agent pong in the heartbeat manager', () => {
+    const originalRecordPong = heartbeatManager.recordPong;
+    const recorded: string[] = [];
+    heartbeatManager.recordPong = (tunnelId: string) => {
+      recorded.push(tunnelId);
+    };
+
+    try {
+      tunnelRelay.emitEvent('message:pong', {
+        tunnelId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        params: {},
+      });
+      expect(recorded).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']);
+    } finally {
+      heartbeatManager.recordPong = originalRecordPong;
+    }
   });
 });

@@ -10,8 +10,6 @@ import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
   ImageBrokenIcon as ImageOff,
-  ArrowsOutSimpleIcon as Maximize2,
-  ArrowsInSimpleIcon as Minimize2,
   ArrowClockwiseIcon as RotateCw,
   MagnifyingGlassPlusIcon as ZoomIn,
   MagnifyingGlassMinusIcon as ZoomOut,
@@ -101,7 +99,6 @@ export function ImageRenderer({
   const [isPanning, setIsPanning] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [startPanPosition, setStartPanPosition] = useState({ x: 0, y: 0 });
-  const [isFitToScreen, setIsFitToScreen] = useState(true);
   const [backdrop, setBackdrop] = useState<ImageBackdrop>('transparent');
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -116,7 +113,6 @@ export function ImageRenderer({
   const [imgSrc, setImgSrc] = useState(url);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
   // Check if the url is an SVG. The file name is checked FIRST because a caller
@@ -159,12 +155,13 @@ export function ImageRenderer({
     };
   }, []);
 
-  // Reset position when zoom changes
+  // Once the image is back to 1x or smaller it fits its container again, so any
+  // pan offset is stale — drop it.
   useEffect(() => {
-    if (isFitToScreen) {
+    if (zoom <= 1) {
       setPosition({ x: 0, y: 0 });
     }
-  }, [zoom, isFitToScreen]);
+  }, [zoom]);
 
   // Handle image load success
   const handleImageLoad = useCallback(() => {
@@ -236,15 +233,12 @@ export function ImageRenderer({
 
   const handleZoomIn = () => {
     setZoom((prev) => Math.min(prev + getZoomStep(prev), MAX_ZOOM));
-    setIsFitToScreen(false);
   };
 
   const handleZoomOut = () => {
     setZoom((prev) => {
       const step = getZoomStep(prev - 0.01); // step based on where we're going
-      const newZoom = Math.max(prev - step, MIN_ZOOM);
-      if (newZoom <= 0.5) setIsFitToScreen(true);
-      return newZoom;
+      return Math.max(prev - step, MIN_ZOOM);
     });
   };
 
@@ -253,55 +247,26 @@ export function ImageRenderer({
     setZoom(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
-    setIsFitToScreen(true);
   };
 
-  // Scroll wheel zoom. Must be a *native* non-passive listener: React's
-  // delegated `onWheel` is passive, so `preventDefault()` is a no-op and the
-  // parent (chat / outputs list) scrolls while zoom still runs. Same pattern
-  // as mermaid-renderer.tsx and file-preview-modal.tsx.
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const delta = e.deltaY > 0 ? -1 : 1;
-    setZoom((prev) => {
-      const step = getZoomStep(prev) * 0.5;
-      const next = Math.max(MIN_ZOOM, Math.min(prev + delta * step, MAX_ZOOM));
-      if (next <= 0.5) setIsFitToScreen(true);
-      else setIsFitToScreen(false);
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-    };
-  }, [handleWheel]);
+  // Deliberately no wheel/trackpad zoom. Zoom changes only from the shelf
+  // buttons (and the reset readout), so scrolling over an image scrolls the
+  // surrounding list instead of silently rescaling the artwork.
 
   // Function for rotation
   const handleRotate = () => {
     setRotation((prev) => (prev + 90) % 360);
   };
 
-  // Toggle fit to screen
-  const toggleFitToScreen = () => {
-    if (isFitToScreen) {
-      setZoom(1);
-      setIsFitToScreen(false);
-    } else {
-      setZoom(1);
-      setPosition({ x: 0, y: 0 });
-      setIsFitToScreen(true);
-    }
-  };
+  // Panning is only meaningful once the image is bigger than its container —
+  // that is exactly `zoom > 1`, since the img is `object-contain` and already
+  // fits at 1x. Derived from `zoom` rather than tracked as its own flag, so the
+  // two can never disagree.
+  const canPan = zoom > 1;
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isFitToScreen) {
+    if (canPan) {
       setIsPanning(true);
       setStartPanPosition({
         x: e.clientX - position.x,
@@ -311,7 +276,7 @@ export function ImageRenderer({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && !isFitToScreen) {
+    if (isPanning && canPan) {
       setPosition({
         x: e.clientX - startPanPosition.x,
         y: e.clientY - startPanPosition.y,
@@ -345,7 +310,6 @@ export function ImageRenderer({
   const infoLabel = tHardcodedUi.raw(
     'componentsFileRenderersImageRenderer.line287JsxAttrTitleImageInformation',
   );
-  const fitLabel = isFitToScreen ? 'Actual size' : 'Fit to screen';
   const alwaysOn = controls === 'always';
 
   return (
@@ -360,9 +324,9 @@ export function ImageRenderer({
           className={cn(
             'absolute left-1/2 z-10 -translate-x-1/2',
             alwaysOn
-              ? 'bottom-3'
+              ? 'bottom-1'
               : [
-                  'top-3 opacity-0 transition-opacity duration-200 ease-out',
+                  'top-1 opacity-0 transition-opacity duration-200 ease-out',
                   'group-hover:opacity-100 focus-within:opacity-100',
                   showInfo && 'opacity-100',
                 ],
@@ -415,21 +379,6 @@ export function ImageRenderer({
                 <RotateCw className="size-4" />
               </Button>
             </Hint>
-            <Hint label={fitLabel} side="bottom">
-              <Button
-                variant="accent"
-                size="icon"
-                className="text-foreground"
-                onClick={toggleFitToScreen}
-                aria-label={fitLabel}
-              >
-                {isFitToScreen ? (
-                  <Maximize2 className="size-4" />
-                ) : (
-                  <Minimize2 className="size-4" />
-                )}
-              </Button>
-            </Hint>
             {/* Backdrop swatches join the SAME group behind a separator rather
                 than floating as a second shelf — one row of chrome over the
                 canvas, not two competing ones. The glyph IS the colour: a
@@ -476,7 +425,6 @@ export function ImageRenderer({
 
       {/* Image container - Clean background */}
       <div
-        ref={containerRef}
         className={cn(
           'relative h-full w-full overflow-hidden select-none',
           // `bg-white`/`bg-black` are the one place raw colours are correct:
@@ -492,9 +440,8 @@ export function ImageRenderer({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        onDoubleClick={imgError ? undefined : toggleFitToScreen}
         style={{
-          cursor: isPanning ? 'grabbing' : !isFitToScreen ? 'grab' : 'default',
+          cursor: isPanning ? 'grabbing' : canPan ? 'grab' : 'default',
           ...(showBackdrop && backdrop === 'transparent' ? CANVAS_CHECKER : null),
         }}
       >
@@ -530,7 +477,7 @@ export function ImageRenderer({
             <div
               className="absolute inset-0 flex items-center justify-center p-8"
               style={{
-                transform: isFitToScreen ? 'none' : translateTransform,
+                transform: canPan ? translateTransform : 'none',
                 transition: isPanning ? 'none' : 'transform 0.1s ease-out',
               }}
             >

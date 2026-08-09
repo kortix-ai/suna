@@ -21,7 +21,7 @@ import {
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SystemNotificationCard,
@@ -32,6 +32,7 @@ import type { QueueDrainGates } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
+import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 import { useMessageQueueDrain } from './use-message-queue-drain';
@@ -143,7 +144,6 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isLastUserMessage,
   isReasoningPart,
   isTextPart,
   isToolPart,
@@ -507,7 +507,18 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
 interface SessionTurnProps {
   turn: Turn;
-  allMessages: MessageWithParts[];
+  /**
+   * Both were derived HERE from `allMessages`, once per turn, on every render.
+   *
+   * `ownsPlan` was the worst thing in the chat: `planAnchorMessageId` walks
+   * every message and calls `parts.some(...)` on each, so a fifty-turn session
+   * ran an O(total-parts) scan fifty times per frame. Hoisting it to the parent
+   * makes it one scan for the whole transcript. `isLast` is cheap by comparison,
+   * but it took `allMessages` — a new array every frame — which alone would have
+   * defeated `React.memo` on this component.
+   */
+  isLast: boolean;
+  ownsPlan: boolean;
   sessionId: string;
   sessionStatus: import('@/ui').SessionStatus | undefined;
   permissions: PermissionRequest[];
@@ -597,9 +608,10 @@ export function SessionReportCard({
   );
 }
 
-function SessionTurn({
+function SessionTurnImpl({
   turn,
-  allMessages,
+  isLast,
+  ownsPlan,
   sessionId,
   sessionStatus,
   permissions,
@@ -641,16 +653,6 @@ function SessionTurn({
   const hasReasoning = useMemo(
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
-  );
-  const isLast = useMemo(
-    () => isLastUserMessage(turn.userMessage.info.id, allMessages),
-    [turn.userMessage.info.id, allMessages],
-  );
-  // The plan belongs to the turn that WROTE it, not to whichever turn happens
-  // to be last — see turn/plan-anchor.ts.
-  const ownsPlan = useMemo(
-    () => planAnchorMessageId(allMessages) === turn.userMessage.info.id,
-    [turn.userMessage.info.id, allMessages],
   );
   // A turn is "working" when:
   // 1. The session status says busy/retry (via getWorkingState), OR
@@ -1109,6 +1111,40 @@ function SessionTurn({
     return ids;
   }, [permissions, answeredQuestionParts, sessionId]);
 
+  /**
+   * The turn's parts, cut into bursts / standalone tools / text.
+   *
+   * This ran INLINE in the JSX below, which meant a `map`, a `filter` and the
+   * whole of `segmentTurn` on every render of this turn — and, worse, a brand
+   * new `segment.parts` array for every burst every time. `ActivityBurst` keys
+   * its `useMemo`s on `parts`, so a fresh array identity per render made every
+   * one of them a guaranteed miss: `mergeBurstSteps`, `burstSummary` and
+   * `stepLabel` recomputed for every burst in the turn on every frame, and no
+   * `React.memo` below could ever hold. A turn re-renders for reasons that have
+   * nothing to do with its parts — a hover, a permission arriving, the parent's
+   * state — and each of those paid the full price.
+   *
+   * Memoised, the arrays keep their identity until the parts actually change,
+   * which is what makes the memo boundaries downstream able to bite.
+   */
+  const segments = useMemo(
+    () =>
+      segmentTurn(
+        allParts
+          .map(({ part }) => part)
+          .filter((part) => {
+            if (isToolPart(part) && part.tool === 'todowrite') return false;
+            if (isToolPart(part) && part.tool === 'question') {
+              // Keep only answered questions, and only if not rendering inline
+              return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
+            }
+            return true;
+          }),
+        { standaloneCallIds },
+      ),
+    [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
+  );
+
   // ============================================================================
   // Shell mode — short-circuit rendering
   // ============================================================================
@@ -1182,7 +1218,7 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="group/turn space-y-2.5">
+    <div className="group/turn text-factor-[2] space-y-2.5">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
@@ -1237,20 +1273,8 @@ function SessionTurn({
 			      answered questions are dropped when rendering inline content
 			      (below), since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
-        <div className="space-y-2">
-          {segmentTurn(
-            allParts
-              .map(({ part }) => part)
-              .filter((part) => {
-                if (isToolPart(part) && part.tool === 'todowrite') return false;
-                if (isToolPart(part) && part.tool === 'question') {
-                  // Keep only answered questions, and only if not rendering inline
-                  return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
-                }
-                return true;
-              }),
-            { standaloneCallIds },
-          ).map((segment, index, segments) => {
+        <div className="space-y-3">
+          {segments.map((segment, index) => {
             if (segment.kind === 'burst') {
               return (
                 <ActivityBurst
@@ -1424,11 +1448,11 @@ function SessionTurn({
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : 'Copy response'}
           >
-            <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+            <span className="relative inline-flex shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
                 <m.span
                   key={copied ? 'check' : 'copy'}
@@ -1439,9 +1463,9 @@ function SessionTurn({
                   className="absolute inset-0 inline-flex items-center justify-center"
                 >
                   {copied ? (
-                    <CheckIcon className="text-foreground size-4" />
+                    <CheckIcon className="text-foreground/70 size-[1.05rem]" />
                   ) : (
-                    <Copy className="size-4" />
+                    <Copy className="text-foreground/70 size-[1.05rem]" />
                   )}
                 </m.span>
               </AnimatePresence>
@@ -1464,6 +1488,27 @@ function SessionTurn({
     </div>
   );
 }
+
+/**
+ * The boundary that stops the transcript re-rendering with the stream.
+ *
+ * `messages` is rebuilt on every SSE frame, so this component used to re-render
+ * for every turn in the session ~60 times a second — and each of those renders
+ * re-ran ~28 `useMemo`s (all keyed on `turn`), a `planAnchorMessageId` scan of
+ * the whole transcript, `segmentTurn`, and every tool renderer beneath it.
+ * `content-visibility: auto` on the wrapper hid the layout cost of that, not the
+ * JavaScript.
+ *
+ * The default shallow compare is correct here ONLY because three things were
+ * fixed first, and each is load-bearing: `turn` keeps its identity when its
+ * messages have not changed (`stabilizeTurns`), the `allMessages` array prop is
+ * gone (replaced by the `isLast` / `ownsPlan` booleans derived once above), and
+ * `onRewind` is a `useCallback` rather than an inline arrow. Any one of the
+ * three reverting silently turns this memo back into a no-op — it would still
+ * compile, still pass tests, and simply never bail out.
+ */
+const SessionTurn = memo(SessionTurnImpl);
+SessionTurn.displayName = 'SessionTurn';
 
 // ============================================================================
 // Main SessionChat Component
@@ -2514,7 +2559,44 @@ export function SessionChat({
       }
     };
   }, []);
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  const rawTurns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  /**
+   * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
+   * `messages` is rebuilt on every SSE frame — so a fifty-turn session handed
+   * React fifty new `turn` objects ~60 times a second, of which at most one had
+   * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
+   * one fact invalidated all of them, for every turn, every frame.
+   *
+   * Writing the ref during render is deliberate and safe: `stabilizeTurns` is
+   * idempotent, so StrictMode's double invocation lands on the same objects.
+   */
+  const stableTurnsRef = useRef<Turn[]>([]);
+  const turns = useMemo(() => {
+    const stable = stabilizeTurns(rawTurns, stableTurnsRef.current);
+    stableTurnsRef.current = stable;
+    return stable;
+  }, [rawTurns]);
+
+  /**
+   * One scan of the transcript, not one per turn.
+   *
+   * `planAnchorMessageId` inspects every part of every message. It used to run
+   * inside each turn, which made it O(turns x total-parts) — on the order of
+   * 100k part inspections per frame for a long session.
+   */
+  const planAnchorId = useMemo(() => (messages ? planAnchorMessageId(messages) : null), [messages]);
+  const lastUserMessageId = useMemo(() => {
+    if (!messages) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'user') return messages[i].info.id;
+    }
+    return null;
+  }, [messages]);
+  /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself. */
+  const handleRewind = useCallback(
+    (messageId: string, text: string) => setRewindTarget({ messageId, text }),
+    [],
+  );
   const hasAnyMessages = turns.length > 0;
   const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
@@ -3717,7 +3799,7 @@ export function SessionChat({
                           <img
                             src="/kortix-logomark-white.svg"
                             alt="Kortix"
-                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                            className="h-[14px] w-auto shrink-0 invert dark:invert-0"
                           />
                           <div className="text-muted-foreground text-sm">
                             {tHardcodedUi.raw(
@@ -3795,7 +3877,8 @@ export function SessionChat({
                             )}
                             <SessionTurn
                               turn={turn}
-                              allMessages={messages!}
+                              isLast={turn.userMessage.info.id === lastUserMessageId}
+                              ownsPlan={turn.userMessage.info.id === planAnchorId}
                               sessionId={sessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}
@@ -3809,7 +3892,7 @@ export function SessionChat({
                               commands={commands}
                               disableToolNavigation={disableToolNavigation}
                               onPermissionReply={handlePermissionReply}
-                              onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                              onRewind={handleRewind}
                               rewindDisabled={
                                 !!readOnly || !sessionState || isBusy || sessionState.rewindPending
                               }

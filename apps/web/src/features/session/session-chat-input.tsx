@@ -1146,7 +1146,7 @@ function SessionChatInputImpl({
               />
               {replyTo && (
                 <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
+                  <Reply className="text-primary/60 size-3 shrink-0" />
                   <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                     {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
                   </span>
@@ -1154,7 +1154,7 @@ function SessionChatInputImpl({
                     <button
                       type="button"
                       onClick={onClearReply}
-                      className="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors"
+                      className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
                       aria-label={tHardcodedUi.raw(
                         'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
                       )}
@@ -1171,7 +1171,7 @@ function SessionChatInputImpl({
                     'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                   )}
                 >
-                  <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
+                  <ArrowUpLeft className="text-muted-foreground size-3.5 shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
                     {'Sub-session of'}{' '}
                     <span className="text-foreground/80 font-medium">

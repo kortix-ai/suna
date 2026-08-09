@@ -106,7 +106,7 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
 
     expect(html).toContain('sticky');
     expect(html).toContain('text-sm font-medium');
-    expect(html).toContain('Get Mem');
+    expect(html).toContain('Recalled');
 
     expect(html).toContain('User prefers dark mode');
     expect(html).toContain('The user explicitly asked for dark mode');

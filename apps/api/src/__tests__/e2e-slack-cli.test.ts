@@ -286,7 +286,12 @@ describe('slack CLI', () => {
         args: c.expectedArgs,
       });
     }
-  });
+    // 10 cases, and `runSlack` spawns a real `bun` process for each one. That
+    // is ~1.7s on a developer laptop and comfortably past bun's default 5000ms
+    // on a CI runner executing 584 test files with --isolate: the timeout kills
+    // the child mid-flight and the failure surfaces as `exitCode 143` (SIGTERM)
+    // rather than as anything wrong with the CLI. Budget for the spawns.
+  }, 30_000);
 
   test('covers non-Connector commands: help, typing, turn stream, file upload/download, manifest', async () => {
     expect(String(await runSlack(['help']))).toContain('slack — Slack Web API adapter');
@@ -372,7 +377,8 @@ describe('slack CLI', () => {
       manifest: { display_information: { name: 'Test Slack App' } },
     });
     expect(world.manifests).toEqual(['Test Slack App']);
-  });
+    // Same reason as above: this one spawns the CLI seven times.
+  }, 30_000);
 
   test('manifest reports one /v1 mount when KORTIX_API_URL already includes /v1', async () => {
     const origin = apiUrl;

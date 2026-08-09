@@ -340,8 +340,8 @@ function MessagesPage({
           value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
           onSelect={() => onSelect(item.id)}
         >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-muted-foreground/50 w-6 flex-shrink-0 text-right text-xs tabular-nums">
+          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
+          <span className="text-muted-foreground/50 w-6 shrink-0 text-right text-xs tabular-nums">
             #{index + 1}
           </span>
           <span className="flex-1 truncate text-sm">
@@ -1505,9 +1505,9 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
-                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
-                            <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
+                            <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
                               )}
@@ -1532,10 +1532,10 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProject(project)}
                           >
-                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <FolderGit2 className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{project.name}</span>
                             {(project.last_opened_at || project.updated_at) && (
-                              <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
+                              <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
                                   new Date(project.last_opened_at || project.updated_at).getTime(),
                                 )}
@@ -1637,12 +1637,12 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
-                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
                             {session.session_id === params?.sessionId && (
-                              <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
+                              <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
-                            <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                            <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
                               )}
@@ -1662,10 +1662,10 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProject(project)}
                           >
-                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <FolderGit2 className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{project.name}</span>
                             {(project.last_opened_at || project.updated_at) && (
-                              <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                              <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
                                   new Date(project.last_opened_at || project.updated_at).getTime(),
                                 )}
@@ -1789,7 +1789,7 @@ export function CommandPalette() {
                               </span>
                             )}
                           </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
                         </CommandItem>
                       );
                     })}
@@ -1832,7 +1832,7 @@ export function CommandPalette() {
                               </span>
                             )}
                           </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
                         </CommandItem>
                       );
                     })}
@@ -1883,7 +1883,7 @@ export function CommandPalette() {
                               {model.modelID}
                             </span>
                           </div>
-                          <div className="flex flex-shrink-0 items-center gap-1.5">
+                          <div className="flex shrink-0 items-center gap-1.5">
                             {model.capabilities?.reasoning && (
                               <Badge variant="kortix" size="sm">
                                 reasoning

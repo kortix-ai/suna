@@ -12,6 +12,56 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `stream-cache-throttle` claim
+
+No **Now** task claimed. This is a user-directed browser performance fix in the
+sync store's `sessionStorage` mirror of in-progress assistant text.
+
+Claimed SDK scope:
+
+- Coalesce `writeStreamCache` writes instead of writing on every stream delta.
+- Preserve the regression guard, the payload shape, and every published export.
+- Add failing coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The `tdd` skill was invoked and its RED → GREEN → REFACTOR sequence followed.
+
+RED:
+
+- `a burst of deltas writes to sessionStorage once, not once per delta` failed
+  with `Expected: 1, Received: 20` — 20 deltas produced 20 `setItem` calls, each
+  preceded by a `getItem` + `JSON.parse` and followed by a `JSON.stringify` of
+  the whole accumulated response. Cost was quadratic in response length.
+
+GREEN:
+
+- Leading-plus-trailing throttle at `STREAM_CACHE_FLUSH_MS = 500`, matching the
+  IndexedDB transcript layer. The first delta still lands immediately; the rest
+  of a window collapse into one trailing write. `JSON.stringify` is deferred to
+  flush time, which is where the size-dependent cost lives.
+- The read-back that guarded against regressions now happens once per session
+  key per page instead of once per delta, held in a `WeakMap` keyed by the
+  storage object — so tests get fresh state from their own stub and the package
+  ships no test-only export.
+- A part switch flushes synchronously; the cache holds one entry per session, so
+  a new part must not wait out a window opened by the part it replaced.
+- `packages/sdk/src/browser/stores/sync-store.test.ts`: `77 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1827 pass`, `2 skip`, `0 fail`, `7043 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name changed and the package version was not touched.
+
+One pre-existing test changed meaning and it is called out rather than buried:
+`message.part.delta accumulates text and writes the running total to
+sessionStorage` asserted the write was synchronous on every delta — which is the
+behaviour being fixed. Its assertion is unchanged (the running total reaches the
+cache); it now awaits the flush window. The only consumer reads this cache once
+after a refresh and already discards entries older than thirty minutes.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `connector-finalize-unify` claim
 
 No **Now** task claimed. User-directed fix: Pipedream connector credentials never
@@ -2014,6 +2064,8 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `4003a41b`               | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config                                                                                                                                                              | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252`         |
 | 2026-07-11 | `4003a41b`               | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack                                                                                                                                                                                                                                                                                          | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`)                                 |
 | 2026-07-11 | `4003a41b`               | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally                                                                                                                                                                                                                                                                                                       | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33`                                                 |
+| 2026-08-10 | `activity-burst`         | **A shell failure is invisible to every host.** `shellViewModel` read `<exit_code>` privately, and nothing exported it — so a host that renders bash rows off `ToolPart` (as `apps/web` does) could not tell a build that exited 1 from one that exited 0. `partOutcome`-style heuristics cannot recover it: a failing test run prints to stdout exactly like a passing one, and the `Error:`-prefix check bails above 500 chars. Fixed additively this session (`shellExitCode`, exported, snapshot re-recorded — 4 added lines, no removals). **Not fixed:** `apps/web` strips the same tags with its OWN regex in `partOutput` (`infrastructure.tsx:514-515`), a second copy of `stripInternalTagTail`'s job that will drift. | `packages/sdk/src/core/turns/view-model.ts:179-198`, `apps/web/src/features/session/tool/shared/infrastructure.tsx:514` |
+| 2026-08-10 | `activity-burst`         | **Two `apps/web` ShowTool tests are order-dependent and fail in isolation at clean HEAD** — `content-only inline show exposes/omits Preview…` assert on a `viewBox="0 0 38 64"` occurrence count that comes back `undefined` when the file runs alone. Not an SDK issue and not caused by this session; adding any new test file to `src/features/session/tool/tools/` reshuffles execution order and surfaces it. Consistent with the known global mock-registry leak in `apps/web`. | `apps/web/src/features/session/tool/tools/show-tool.test.tsx:110,126` |
 | 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/connectors/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 ---

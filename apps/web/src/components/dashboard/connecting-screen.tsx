@@ -603,7 +603,7 @@ function ReconnectPill({
   return (
     <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
       <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 flex-shrink-0">
+        <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
         </span>
@@ -634,7 +634,7 @@ function HealthPill({
   return (
     <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
       <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 flex-shrink-0">
+        <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
         </span>

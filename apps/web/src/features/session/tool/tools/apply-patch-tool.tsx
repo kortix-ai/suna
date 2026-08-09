@@ -18,8 +18,12 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getDirectory, getFilename } from '@/ui';
-import { CaretRightIcon as ChevronRight, FileCodeIcon as FileCode2 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import {
+  CaretRightIcon as ChevronRight,
+  FileMinusIcon,
+  FilePlusIcon,
+  PencilSimpleIcon,
+} from '@phosphor-icons/react';
 import { useContext, useMemo, useState } from 'react';
 
 import {
@@ -27,38 +31,61 @@ import {
   RawPatchDiffView,
   type PatchFileLite,
 } from '@/features/session/tool/shared/patch-helpers';
+import { patchVerb } from '@/features/session/tool/shared/patch-summary';
+
+const PATCH_ICON = {
+  create: FilePlusIcon,
+  delete: FileMinusIcon,
+  edit: PencilSimpleIcon,
+} as const;
 
 export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const metadata = partMetadata(part);
   const status = partStatus(part);
   const output = partOutput(part);
-  const isError = status === 'completed' && isErrorOutput(output);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it. Called from the render body it did that on every frame of the stream.
+  const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
   const running = useContext(ToolRunningContext);
-  const { openPreview } = useFilePreviewStore();
+  // Selector, not the bare store: destructuring the hook subscribes this row to
+  // EVERY field, so opening one file preview re-rendered every patch row on
+  // screen. `openPreview` is a stable action, so this row now never re-renders
+  // for the preview state at all.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   const files = useMemo(() => {
     const raw = metadata.files;
     return Array.isArray(raw) ? (raw as PatchFileLite[]) : [];
   }, [metadata.files]);
 
-  const totalAdds = files.reduce((s, f) => s + (f.additions ?? 0), 0);
-  const totalDels = files.reduce((s, f) => s + (f.deletions ?? 0), 0);
+  const totalAdds = useMemo(() => files.reduce((s, f) => s + (f.additions ?? 0), 0), [files]);
+  const totalDels = useMemo(() => files.reduce((s, f) => s + (f.deletions ?? 0), 0), [files]);
 
   const [expanded, setExpanded] = useState<number | null>(files.length === 1 ? 0 : null);
 
   const isStreaming = (status === 'pending' || status === 'running') && running;
 
+  /**
+   * "Apply Patch" named the mechanism; this names the outcome.
+   *
+   * The verb comes from what the patch holds, so four new files read
+   * `Created 4 files` rather than `Apply Patch 4 files`. See `patch-summary.ts`.
+   */
+  const verb = useMemo(() => patchVerb(files.map((f) => f.type)), [files]);
+  const triggerTitle = isStreaming ? verb.running : verb.verb;
+  const Icon = PATCH_ICON[verb.icon];
+
   const triggerSubtitle = useMemo(() => {
-    if (files.length === 0) {
-      return isStreaming ? 'preparing patch…' : undefined;
-    }
+    // Nothing has arrived yet, so the verb alone carries the row — a subtitle
+    // here would be a count of files we have not been told about.
+    if (files.length === 0) return undefined;
+    // One file names itself, the same grammar the chain's file rows use.
     if (files.length === 1) {
       const f = files[0];
       return getFilename(f.relativePath || f.filePath || '') || undefined;
     }
     return `${files.length} files`;
-  }, [files, isStreaming]);
+  }, [files]);
 
   const triggerArgs = useMemo(() => {
     const parts: string[] = [];
@@ -73,11 +100,10 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 
   return (
     <BasicTool
-      icon={<FileCode2 className="size-3.5 flex-shrink-0" />}
+      icon={<Icon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Apply Patch',
+        title: triggerTitle,
         subtitle: triggerSubtitle,
-        args: triggerArgs,
       }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
@@ -112,18 +138,17 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   {hasDiff ? (
                     <ChevronRight
                       className={cn(
-                        'text-muted-foreground/60 size-3.5 flex-shrink-0 transition-transform',
+                        'text-muted-foreground/60 size-3.5 shrink-0 transition-transform',
                         isOpen && 'rotate-90',
                       )}
                     />
                   ) : (
-                    <span className="w-3.5 flex-shrink-0" />
+                    <span className="w-3.5 shrink-0" />
                   )}
-                  <Badge
-                    variant={typeMeta.tone}
-                    size="sm"
-                    className="flex-shrink-0 font-semibold uppercase"
-                  >
+                  {/* Sentence case, regular weight. An uppercase bold "ADD" is
+									    the same jargon register the title just lost — the badge is
+									    a label on a row, not a shout. */}
+                  <Badge variant={typeMeta.tone} size="sm" className="shrink-0">
                     {typeMeta.label}
                   </Badge>
                   <span
@@ -138,7 +163,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   </span>
                   {dir && (
                     <span
-                      className="text-muted-foreground max-w-[35%] flex-shrink-0 truncate font-mono text-sm"
+                      className="text-muted-foreground max-w-[35%] shrink-0 truncate font-mono text-sm"
                       title={dir}
                     >
                       {dir}
@@ -147,7 +172,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   <DiffStat
                     additions={file.additions}
                     deletions={file.deletions}
-                    className="flex-shrink-0 text-sm tabular-nums"
+                    className="shrink-0 text-sm tabular-nums"
                   />
                 </button>
 
@@ -173,8 +198,12 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
         </ToolResultCard>
       ) : isStreaming ? (
         <div className="px-3 py-2 text-xs">
-          <TextShimmer duration={1} spread={2} className="text-xs italic">
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line3044JsxTextApplyingPatch')}
+          {/* "Applying patch…" was the last of the jargon on this row. Nothing
+					    has arrived yet at this point — not even the file list — so the
+					    line can only say that something is coming, and it should say it
+					    in the same words the title now uses. */}
+          <TextShimmer duration={1} spread={2} className="text-xs">
+            Preparing changes…
           </TextShimmer>
         </div>
       ) : null}

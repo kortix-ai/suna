@@ -12,9 +12,10 @@
  * like the things you can move to. No account name, no email, no avatar — you
  * already know who you are; what a sidebar has to tell you is where you are.
  *
- * There is deliberately NO account-settings row. This menu answers "where am I
- * and where can I go"; the account lives in the header menu and on
- * `/accounts/:id`, and a second door to it here made the menu about two things.
+ * Account settings lives here too: from a project sidebar the account is the
+ * parent of the workspace you are in, so `/accounts/:id` (via the project's
+ * `account_id`) is one hop away. The same destination exists in the header
+ * `UserMenu` / account switcher.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`
@@ -53,6 +54,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
+  GearSixIcon as CogOne,
   DownloadSimple,
   SignOutIcon as LogOut,
   PlusIcon,
@@ -154,6 +156,18 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </DropdownMenuPortal>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
+
+              {project?.account_id ? (
+                <DropdownMenuItem
+                  onSelect={() =>
+                    deferAfterClose(() => router.push(`/accounts/${project.account_id}`))
+                  }
+                  size="sm"
+                >
+                  <CogOne />
+                  Account Settings
+                </DropdownMenuItem>
+              ) : null}
 
               <DropdownMenuItem
                 onSelect={() => deferAfterClose(() => router.push('/download'))}

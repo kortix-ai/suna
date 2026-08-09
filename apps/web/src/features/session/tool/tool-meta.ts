@@ -8,6 +8,7 @@
 
 import type { ToolPart } from '@/ui';
 import { truncate as sharedTruncate } from '@/lib/utils/string';
+import { humanizeSearchQuery } from './shared/search-query';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
@@ -108,7 +109,12 @@ export function getToolPrimaryArg(part: ToolPart): string {
   ];
   for (const k of fallbackKeys) {
     const v = input[k];
-    if (typeof v === 'string' && v.length > 0) return truncate(v, 60);
+    if (typeof v === 'string' && v.length > 0) {
+      // A query reaches the screen as prose, so it drops its engine operators
+      // first — `site:daytona.io foo` is an instruction, not a subject. See
+      // `humanizeSearchQuery`.
+      return truncate(k === 'query' ? humanizeSearchQuery(v) || v : v, 60);
+    }
   }
   return '';
 }
