@@ -134,6 +134,27 @@
  * account-scoped tab this panel builds is now wired; no placeholder remains
  * among them.
  *
+ * **Task 18 update.** `general` is rewired from `SettingsView`
+ * (`customize/sections/view/settings-view.tsx`, now deleted) to the real
+ * `GeneralTab` (see `tabs/general-tab.tsx`) — workspace name, icon, the
+ * sandbox-provider pin, and a Delete-workspace danger zone. `experimental`
+ * is wired for the first time to the real `ExperimentalTab` (see
+ * `tabs/experimental-tab.tsx`) — one row per `experimental_features` catalog
+ * entry. Both are project-scoped (`projectId`, no `ACCOUNT_TAB_PERMISSION`
+ * entry — that map is for account-permission tabs only). `SettingsView` had
+ * no other caller (`grep -rn "<SettingsView" src` matched only this file
+ * before this change) and also held two capabilities the General/Experimental
+ * split doesn't cover: `RepositoryCard` (default branch, manifest path,
+ * GitHub collaborator invite) and `TriggersActivationCard` (the project-wide
+ * "pause all triggers" switch). Rather than leave those two unreachable,
+ * they moved (cut, not copied) to where a user would actually look for them:
+ * `RepositoryCard` into `GitView` (`customize/sections/view/git-view.tsx`,
+ * mounted at `case 'repositories'` below), `TriggersActivationCard` into
+ * `ScheduleView` (`components/projects/schedule-view.tsx`, mounted at
+ * `case 'schedules'`/`'webhooks'` below, rendered only on the Schedules
+ * tab). With every piece of `SettingsView` rehomed, the file itself is
+ * deleted. `snapshots` remains the only true placeholder tab.
+ *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
  * block for the proof): `SettingsTabPane` renders `null` for every tab that
@@ -172,7 +193,6 @@ import { MembersView } from '@/features/workspace/customize/sections/view/member
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
-import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
@@ -200,6 +220,8 @@ import { ApiKeysTab } from './tabs/api-keys-tab';
 import { AuditTab } from './tabs/audit-tab';
 import { BillingTab } from './tabs/billing-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
+import { ExperimentalTab } from './tabs/experimental-tab';
+import { GeneralTab } from './tabs/general-tab';
 import { GroupsTab } from './tabs/groups-tab';
 import { IdentityTab } from './tabs/identity-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
@@ -888,15 +910,15 @@ export function SettingsPanelShell({
  * `audit` (Task 15), and `api-keys` (Task 16) are handled above the switch
  * (account-scoped, no `projectId` needed). The switch below is the Task 5b2
  * mapping of the legacy panel's `SectionContent` (14 `case` labels + the
- * `llm-*` prefix branch) onto the new tab ids. A tab NOT listed here or
- * above — `snapshots`, `experimental` — is a genuinely new surface with no
- * legacy source to port; it keeps the placeholder header until a later
- * phase builds it. `snapshots` in
- * particular is HALF of the legacy `sandbox` case
- * (`SandboxView` renders templates and the build log together); splitting
- * them is a later task, so `sandbox` alone gets the full unsplit view for
- * now and `snapshots` stays a placeholder — do not fold `SandboxView` onto
- * both tabs, that would render the build log twice.
+ * `llm-*` prefix branch) onto the new tab ids, PLUS `general` (rewired, Task
+ * 18) and `experimental` (newly wired, Task 18) — see this file's header
+ * comment. A tab NOT listed here or above — `snapshots` — is a genuinely new
+ * surface with no legacy source to port; it keeps the placeholder header
+ * until a later phase builds it. `snapshots` is HALF of the legacy `sandbox`
+ * case (`SandboxView` renders templates and the build log together);
+ * splitting them is a later task, so `sandbox` alone gets the full unsplit
+ * view for now and `snapshots` stays a placeholder — do not fold
+ * `SandboxView` onto both tabs, that would render the build log twice.
  */
 function SettingsTabPane({
   item,
@@ -981,7 +1003,9 @@ function SettingsTabPane({
   if (projectId) {
     switch (item.tab) {
       case 'general':
-        return <SettingsView projectId={projectId} />;
+        return <GeneralTab projectId={projectId} />;
+      case 'experimental':
+        return <ExperimentalTab projectId={projectId} />;
       case 'members':
         return <MembersView projectId={projectId} />;
       case 'secrets':

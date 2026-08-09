@@ -159,7 +159,9 @@ describe('SettingsPanelShell — pane wiring', () => {
  * so `SettingsTabPane` mounts it whether or not `projectId` is set, unlike
  * every entry in `REAL_VIEW_TABS`, which all fall back to the placeholder
  * header without one. Task 8 adds a seventeenth the same way: `preferences`
- * (`PreferencesTab`).
+ * (`PreferencesTab`). Task 18 adds `experimental` (`ExperimentalTab`) to
+ * `REAL_VIEW_TABS` itself — it's project-scoped like every other entry in
+ * that array, unlike `profile`/`preferences`.
  *
  * That gives a mechanical, unfakeable signal for "this component's render
  * function was invoked" — stronger than a markup-string match, since it fires
@@ -188,6 +190,7 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
   'review',
   'voice',
   'sandbox',
+  'experimental',
   'upgrades',
 ];
 
@@ -214,17 +217,14 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        // `experimental` is still a genuinely unbuilt placeholder — `profile`,
-        // `preferences`, `connected`, (Task 11) `billing`, (Task 12) `usage`,
-        // and (Task 13) `groups`/`roles` moved into their own real-view
-        // coverage below once each was wired to its real view. This example
-        // previously used `usage`; Task 12 wired that tab to `UsageTab`, so
-        // this moved to `experimental`. Task 13 wires `groups`/`roles`, not
-        // `experimental` — confirmed by grep: `grep -n "'groups'\|'roles'\|
-        // 'experimental'" settings-panel.test.tsx` before this change showed
-        // `experimental` used only here, so it remains a valid still-a-
-        // placeholder example and does not need to move again.
-        tab: 'experimental',
+        // `snapshots` is the last genuinely unbuilt placeholder — every
+        // other tab this describe block once used as its "still a
+        // placeholder" example (`usage`, then `experimental`) has since been
+        // wired to a real view (Task 12, Task 18). `snapshots` stays a
+        // placeholder on purpose: it's HALF of the legacy `sandbox` case
+        // (build log only), and splitting it out of `SandboxView` is a later
+        // task — see `settings-panel.tsx`'s `SettingsTabPane` header comment.
+        tab: 'snapshots',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,

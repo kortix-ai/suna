@@ -105,8 +105,8 @@ export const EditProjectModal = ({
     // this modal used to cause was not a missing invalidation — it was that
     // the sidebar and the project home title read two different caches, and
     // only one of them (the list) ever got invalidated. `renameOnMutate` /
-    // `renameOnError` / `renameOnSettled` are shared with `settings-view.tsx`
-    // so the two rename paths cannot drift.
+    // `renameOnError` / `renameOnSettled` are shared with `features/workspace/
+    // settings/tabs/general-tab.tsx` so the two rename paths cannot drift.
     onMutate: (patch) => renameOnMutate(queryClient, projectId, patch.name),
     // `patch` is the mutation's own variables, not the component's current
     // state: the message has to describe what was SENT, and by the time this

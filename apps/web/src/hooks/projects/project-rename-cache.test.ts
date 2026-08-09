@@ -9,9 +9,10 @@ const ID = 'proj_1';
 
 /**
  * These are the EXACT functions `edit-project-modal.tsx` and
- * `settings-view.tsx` wire into `useMutation({ onMutate, onError, onSettled })`
- * — see the source-scan assertions in `edit-project-modal.rename.test.tsx`
- * and `settings-view.rename.test.tsx` that pin the wiring itself. This file
+ * `features/workspace/settings/tabs/general-tab.tsx` wire into
+ * `useMutation({ onMutate, onError, onSettled })` — see the source-scan
+ * assertions in `edit-project-modal.rename.test.tsx` and
+ * `general-tab.rename.test.tsx` that pin the wiring itself. This file
  * covers what the functions those two components call actually DO, against a
  * real QueryClient — no react-query mocking (mocking `@tanstack/react-query`
  * here would be process-wide across `bun test`'s non---isolate run in

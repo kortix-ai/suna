@@ -8,8 +8,9 @@ import {
 
 /**
  * The `onMutate`/`onError`/`onSettled` trio both project-rename mutations
- * (`edit-project-modal.tsx`'s `EditProjectModal`, `settings-view.tsx`'s
- * `GeneralProjectCard`) wire into their own `useMutation`. Shared so the two
+ * (`edit-project-modal.tsx`'s `EditProjectModal`, `features/workspace/
+ * settings/tabs/general-tab.tsx`'s `GeneralWorkspaceCard`) wire into their
+ * own `useMutation`. Shared so the two
  * call sites cannot drift the way the old per-project-connectors query
  * builder once drifted from its six siblings — one copy of the
  * cache-consistency logic, two mutations that each supply only their own

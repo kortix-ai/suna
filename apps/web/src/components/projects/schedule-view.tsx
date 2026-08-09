@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +78,7 @@ import {
   fireProjectTrigger,
   listProjectSessions,
   listProjectTriggers,
+  setProjectTriggersActivation,
   updateProjectTrigger,
   upsertProjectSecret,
 } from '@kortix/sdk';
@@ -538,6 +540,70 @@ function FilterRowsEditor({
   );
 }
 
+/**
+ * Project-wide "pause all triggers" switch — moved verbatim (cut, not
+ * copied) from `settings-view.tsx`'s `TriggersActivationCard`, which used to
+ * live on the (now-unreachable) General tab. Rehomed onto the Schedules tab
+ * only (`ScheduleView` renders it when `type === 'cron'`, not on Webhooks —
+ * see that call site) since it needs exactly one home, not two.
+ *
+ * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
+ * key `ScheduleView` itself queries below. This is the invariant the old
+ * comment on that query key described ("both must share this key, or a
+ * pause/resume in one goes unseen in the other"); it still holds here
+ * because `qk.project.triggers` is one shared cache entry — React Query
+ * dedupes both `useQuery` calls into a single network request and a single
+ * cache write, so `ScheduleView`'s own `triggersPaused` banner and this
+ * switch can never disagree or double-fetch.
+ */
+function TriggersActivationCard({
+  projectId,
+  canManage,
+}: {
+  projectId: string;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.project.triggers(projectId);
+  const triggersQuery = useQuery({
+    queryKey,
+    queryFn: () => listProjectTriggers(projectId),
+    ...contract('config'),
+  });
+  const paused = triggersQuery.data?.triggers_paused ?? false;
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    onSuccess: (data, next) => {
+      queryClient.setQueryData(queryKey, data);
+      successToast(next ? 'All triggers paused for this project' : 'Triggers resumed');
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to update trigger activation'),
+  });
+
+  return (
+    <Field orientation="horizontal" className="bg-popover rounded-md border px-4 py-3">
+      <FieldContent>
+        <FieldTitle>
+          Pause all triggers
+          {paused && <span className="text-muted-foreground font-normal"> · paused</span>}
+        </FieldTitle>
+        <FieldDescription>
+          Dev kill-switch — stop the platform auto-running this project&apos;s schedules &amp;
+          webhooks (manual test-fires still work). Use it when another environment owns the
+          triggers.
+        </FieldDescription>
+      </FieldContent>
+      <Switch
+        checked={paused}
+        disabled={!canManage || mutation.isPending || triggersQuery.isLoading}
+        onCheckedChange={(v) => mutation.mutate(v)}
+        aria-label="Pause all triggers for this project"
+      />
+    </Field>
+  );
+}
+
 export function ScheduleView({ projectId, type }: { projectId: string; type: TriggerKind }) {
   const meta = TYPE_META[type];
 
@@ -545,10 +611,9 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
   const queryClient = useQueryClient();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
-  // Same entity/fetcher the Customize settings pause switch
-  // (settings-view.tsx's `TriggersActivationCard`) reads — both must share
-  // this key, via `qk.project.triggers`, or a pause/resume in one goes
-  // unseen in the other.
+  // Same entity/fetcher `TriggersActivationCard` above reads — both must
+  // share this key, via `qk.project.triggers`, or a pause/resume in one goes
+  // unseen in the other (see that component's own header comment).
   const queryKey = useMemo(() => qk.project.triggers(projectId), [projectId]);
 
   const triggersQuery = useQuery({
@@ -623,10 +688,18 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
         }
       >
         <div className="space-y-4">
+          {/* Project-wide, not per-type — rendered on the Schedules tab only
+              (not Webhooks) so it has exactly one home. See
+              `TriggersActivationCard`'s own header comment. */}
+          {type === 'cron' && showContent && canWrite ? (
+            <TriggersActivationCard projectId={projectId} canManage={canWrite} />
+          ) : null}
+
           {triggersPaused && showContent && (
             <InfoBanner tone="warning" icon={AlertTriangle}>
               Triggers are paused for this project — scheduled runs and incoming webhooks are
-              ignored (manual test-fires still work). Resume in Customize → Settings.
+              ignored (manual test-fires still work).{' '}
+              {type === 'cron' ? 'Resume above.' : 'Resume from the Schedules tab.'}
             </InfoBanner>
           )}
 
