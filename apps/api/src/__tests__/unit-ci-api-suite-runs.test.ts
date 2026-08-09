@@ -16,8 +16,12 @@ const packageJson = JSON.parse(read('apps/api/package.json')) as {
 const sandboxJob = workflow.slice(workflow.indexOf('\n  sandbox:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('the reusable workflow runs the root suite on an exact-SHA sandbox worker', () => {
-    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci.ts --full');
+  test('the reusable workflow runs every root lane on exact-SHA sandbox workers', () => {
+    expect(sandboxJob).toContain('matrix:');
+    expect(sandboxJob).toContain('lane: [core, browser, packages]');
+    expect(sandboxJob).toContain('core) bun tests/bin/sandbox-ci.ts ;;');
+    expect(sandboxJob).toContain('browser) bun tests/bin/sandbox-ci.ts --browser-only ;;');
+    expect(sandboxJob).toContain('packages) bun tests/bin/sandbox-ci.ts --packages-only ;;');
     expect(sandboxJob).toContain('SANDBOX_TEST_SHA:');
     expect(sandboxJob).toContain('SANDBOX_TEST_REF:');
     expect(sandboxJob).toContain('TEST_SANDBOX_PROVIDER:');
@@ -33,9 +37,9 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('full mode reaches every package and app test through package-quality', () => {
-    expect(packageQuality).toContain('"./packages/**"');
-    expect(packageQuality).toContain('"./apps/**"');
-    expect(packageQuality).toContain('KORTIX_TEST_TIMEOUT_MS: "15000"');
+    expect(packageQuality).toContain("'./packages/**'");
+    expect(packageQuality).toContain("'./apps/**'");
+    expect(packageQuality).toContain("KORTIX_TEST_TIMEOUT_MS: '15000'");
   });
 
   test('the unit suite runs off the committed fake env, not dotenvx', () => {
