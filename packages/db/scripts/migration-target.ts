@@ -12,3 +12,7 @@ export function migrationCheckOrder(command: string, databaseUrl: string): boole
   }
   return false;
 }
+
+export function migrationBootstrapsPrerequisites(command: string): boolean {
+  return command === 'bootstrap' || command === 'local-up';
+}

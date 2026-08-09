@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { migrationCheckOrder } from './migration-target';
+import { migrationCheckOrder, migrationBootstrapsPrerequisites } from './migration-target';
 
 describe('migration target mode', () => {
   test('keeps migration ordering strict for normal commands', () => {
@@ -19,5 +19,12 @@ describe('migration target mode', () => {
     expect(() => migrationCheckOrder('local-up', 'not-a-url')).toThrow(
       'local-up requires a valid loopback DATABASE_URL',
     );
+  });
+
+  test('bootstraps platform prerequisites for fresh local and self-host databases', () => {
+    expect(migrationBootstrapsPrerequisites('local-up')).toBe(true);
+    expect(migrationBootstrapsPrerequisites('bootstrap')).toBe(true);
+    expect(migrationBootstrapsPrerequisites('up')).toBe(false);
+    expect(migrationBootstrapsPrerequisites('status')).toBe(false);
   });
 });

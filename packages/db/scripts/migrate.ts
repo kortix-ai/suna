@@ -32,7 +32,7 @@ import {
 import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
-import { migrationCheckOrder } from './migration-target';
+import { migrationBootstrapsPrerequisites, migrationCheckOrder } from './migration-target';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -250,6 +250,9 @@ async function main() {
   );
 
   try {
+    if (migrationBootstrapsPrerequisites(cmd)) {
+      await selfHostBootstrapIfFresh(databaseUrl);
+    }
     switch (cmd) {
       case 'up':
         await autoBaselineIfNeeded(base, databaseUrl);
@@ -279,7 +282,6 @@ async function main() {
       }
       case 'bootstrap':
         // Fresh-DB convenience for self-host: prereqs → then `up`.
-        await selfHostBootstrapIfFresh(databaseUrl);
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
         await applyPendingMigrations();
