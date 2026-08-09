@@ -5,21 +5,41 @@
  * `components/iam/audit-tab.tsx`'s `AuditTab` export UNMODIFIED, through a
  * slot (`RealAuditTab` below, aliased to dodge the name collision with THIS
  * file's own `AuditTab`) — see `auditSlot` on `AuditTabViewProps`. That
- * component is the account page's Audit pane
- * (`app/(app)/accounts/[id]/page.tsx:561-577`); it calls
- * `useQuery`/`useInfiniteQuery` internally (events, members, projects,
- * sessions), so it can't render under `renderToStaticMarkup` — same reason
- * `roles-tab.tsx`/`identity-tab.tsx` thread their own real components
- * through a slot (see those files' header comments). This tab does NOT
- * reimplement it, and does NOT modify it — it still backs the live
- * `/accounts` page.
+ * component, and `components/iam/audit-webhooks-card.tsx`'s
+ * `AuditWebhooksCard` (see below), are the account page's Audit pane
+ * (`app/(app)/accounts/[id]/page.tsx:561-577`); both call
+ * `useQuery`/`useMutation`/`useInfiniteQuery` internally, so neither can
+ * render under `renderToStaticMarkup` — same reason `roles-tab.tsx`/
+ * `identity-tab.tsx` thread their own real components through a slot (see
+ * those files' header comments). This tab does NOT reimplement either, and
+ * does NOT modify either — they still back the live `/accounts` page until
+ * JAY-505 deletes `app/(app)/accounts/**`.
  *
- * **Out of scope, deliberately.** `page.tsx:570-575` also renders
- * `AuditWebhooksCard` on this same section (entitled + `account.write`
- * only). The task brief's "Source" is `components/iam/audit-tab.tsx`
- * alone — `AuditWebhooksCard` is a separate component with its own gate and
- * isn't named there. Left for a later task to fold in explicitly rather than
- * assumed.
+ * **`AuditWebhooksCard` is folded in, matching the live composition
+ * exactly** (`page.tsx:561-577`):
+ *
+ * ```
+ * :561   <div className="space-y-10">        ← wrapper gap between blocks
+ * :573   {!entitlementsLoading && auditEnabled && canWriteAccount ? (
+ * :574     <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
+ * :575   ) : null}
+ * ```
+ *
+ * Its gate is STRICTER than the tab's: the tab is visible on `audit.read`
+ * alone, but the card additionally needs `account.write` — it is all
+ * mutations (create/rotate/delete webhook). A user with `audit.read` but not
+ * `account.write` sees the log and no card. It also sits inside the SAME
+ * `auditEnabled` entitlement gate as the log: non-entitled renders
+ * `EnterpriseUpsell` and no card, entitled-but-loading renders neither.
+ * `canWriteAccount` is resolved the same way `billing-tab.tsx`/
+ * `usage-tab.tsx`/`identity-tab.tsx` resolve their own whole-tab
+ * `account.write` probe (`usePermission(resolvedAccountId,
+ * 'account.write')`) — not a second/invented mechanism, and not the same
+ * probe as `canReadAudit` below (a `role.create`-style narrower leaf can
+ * hold `audit.read` without `account.write`, so these two must stay
+ * independent probes, exactly as `page.tsx`'s `canReadAudit` and
+ * `canWriteAccount` are two independent entries in
+ * `ACCOUNT_PERMISSION_PROBES`, not derived from one another).
  *
  * **The gate — matches the source exactly, not inferred from the tab name.**
  * `app/(app)/accounts/[id]/page.tsx`:
@@ -39,8 +59,8 @@
  *   account entitled to exactly `auditAccess`.
  * - `:310 entitlementsLoading = !entitlements && accountStateQuery.isLoading`
  *   — while the account-state query is in flight, `:563-564` renders a
- *   `Skeleton` — NEITHER the real log nor the upsell. Same
- *   `!resolvedAccountId` fold-in as `groups-tab.tsx`/`roles-tab.tsx`/
+ *   `Skeleton` — NEITHER the real log, the upsell, nor the webhooks card.
+ *   Same `!resolvedAccountId` fold-in as `groups-tab.tsx`/`roles-tab.tsx`/
  *   `identity-tab.tsx` — see those files' header comments for why.
  *
  * `canReadAudit` is sourced from `usePermission(resolvedAccountId,
@@ -69,6 +89,7 @@
 import type { ReactNode } from 'react';
 
 import { AuditTab as RealAuditTab } from '@/components/iam/audit-tab';
+import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -82,17 +103,28 @@ import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface AuditTabViewProps {
   /** Account-state query still in flight, or the accountId not yet
-   *  resolved — see this file's header comment. Neither the real log nor
-   *  the upsell render while true; a skeleton does instead. */
+   *  resolved — see this file's header comment. Neither the real log, the
+   *  upsell, nor the webhooks card render while true; a skeleton does
+   *  instead. */
   isLoading?: boolean;
   /** `!!entitlements?.auditAccess` — gates the real slot vs
    *  `EnterpriseUpsell`. Its own leaf, NOT `rbac` and NOT `sso || scim` —
    *  see this file's header comment. */
   auditEnabled?: boolean;
+  /** `account.write` — the webhooks card's OWN, stricter gate on top of
+   *  `auditEnabled`. Also the value forwarded to `AuditWebhooksCard`'s own
+   *  `canManage` prop — see this file's header comment ("`AuditWebhooksCard`
+   *  is folded in"). Does NOT affect `auditSlot`'s visibility — a read-only
+   *  `audit.read` holder still sees the log, just not this card. */
+  canWriteAccount?: boolean;
   /** `RealAuditTab`, built by the container once an accountId is known —
    *  see this file's header comment for why it can't render under
    *  `renderToStaticMarkup`. */
   auditSlot?: ReactNode;
+  /** `AuditWebhooksCard`, built by the container once an accountId is known
+   *  — see this file's header comment. Rendered only when NOT loading, AND
+   *  `auditEnabled`, AND `canWriteAccount` — matching `page.tsx:573` exactly. */
+  webhooksSlot?: ReactNode;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -101,22 +133,34 @@ export interface AuditTabViewProps {
  *  `RolesTabView`/`IdentityTabView` for the same split. Does NOT encode the
  *  `audit.read` whole-tab gate — that lives in `AuditTabInner`, see this
  *  file's header comment. */
-export function AuditTabView({ isLoading = false, auditEnabled = false, auditSlot }: AuditTabViewProps) {
+export function AuditTabView({
+  isLoading = false,
+  auditEnabled = false,
+  canWriteAccount = false,
+  auditSlot,
+  webhooksSlot,
+}: AuditTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
-      {isLoading ? (
-        <div className="space-y-4">
-          <SettingsSectionHeader
-            title="Audit log"
-            description="Reconstruct activity across people, agents, sessions, and connectors."
-          />
-          <Skeleton className="h-64 w-full rounded-md" />
-        </div>
-      ) : auditEnabled ? (
-        auditSlot
-      ) : (
-        <EnterpriseUpsell feature="audit" />
-      )}
+      {/* `space-y-10` wrapper — matches `page.tsx:561`'s gap between the log
+          block and the webhooks card exactly. Always rendered, independent
+          of which branch below fires. */}
+      <div className="space-y-10">
+        {isLoading ? (
+          <div className="space-y-4">
+            <SettingsSectionHeader
+              title="Audit log"
+              description="Reconstruct activity across people, agents, sessions, and connectors."
+            />
+            <Skeleton className="h-64 w-full rounded-md" />
+          </div>
+        ) : auditEnabled ? (
+          auditSlot
+        ) : (
+          <EnterpriseUpsell feature="audit" />
+        )}
+        {!isLoading && auditEnabled && canWriteAccount ? webhooksSlot : null}
+      </div>
     </div>
   );
 }
@@ -135,6 +179,10 @@ function AuditTabInner({ accountId: resolvedAccountId }: { accountId: string | u
   // audit.read — the whole-tab gate (see this file's header comment), NOT
   // account.write like billing/usage/identity.
   const { allowed: canReadAudit } = usePermission(resolvedAccountId, 'audit.read');
+  // account.write — the webhooks card's OWN, stricter gate. Independent
+  // probe from canReadAudit above, same as page.tsx's two separate entries
+  // in ACCOUNT_PERMISSION_PROBES — see this file's header comment.
+  const { allowed: canWriteAccount } = usePermission(resolvedAccountId, 'account.write');
 
   const { data: accountState, isLoading: isLoadingAccountState } = useQuery<AccountState>({
     queryKey: accountStateKeys.state(resolvedAccountId),
@@ -164,7 +212,13 @@ function AuditTabInner({ accountId: resolvedAccountId }: { accountId: string | u
     <AuditTabView
       isLoading={entitlementsLoading}
       auditEnabled={auditEnabled}
+      canWriteAccount={canWriteAccount}
       auditSlot={resolvedAccountId ? <RealAuditTab accountId={resolvedAccountId} /> : undefined}
+      webhooksSlot={
+        resolvedAccountId ? (
+          <AuditWebhooksCard accountId={resolvedAccountId} canManage={canWriteAccount} />
+        ) : undefined
+      }
     />
   );
 }

@@ -50,3 +50,76 @@ describe('AuditTabView', () => {
     expect(out).toContain('Audit logs are an Enterprise feature');
   });
 });
+
+/**
+ * Pins the webhooks card's OWN, stricter gate — `page.tsx:573
+ * !entitlementsLoading && auditEnabled && canWriteAccount` — folded in per
+ * the coordinator's follow-up. The card sits INSIDE `auditEnabled`, same as
+ * the log, but additionally needs `canWriteAccount`: entitled + writable
+ * shows the log AND the card, entitled + read-only shows the log WITHOUT
+ * the card. Neither entitlement state ever shows the card without the log.
+ */
+describe('AuditTabView — webhooks card gate', () => {
+  test('entitled + writable renders both the audit log slot and the webhooks card', () => {
+    const out = renderToStaticMarkup(
+      <AuditTabView
+        auditEnabled
+        canWriteAccount
+        auditSlot={<div>real-audit-content</div>}
+        webhooksSlot={<div>real-webhooks-card</div>}
+      />,
+    );
+    expect(out).toContain('real-audit-content');
+    expect(out).toContain('real-webhooks-card');
+  });
+
+  test('entitled + read-only renders the log but NOT the webhooks card', () => {
+    const out = renderToStaticMarkup(
+      <AuditTabView
+        auditEnabled
+        canWriteAccount={false}
+        auditSlot={<div>real-audit-content</div>}
+        webhooksSlot={<div>real-webhooks-card</div>}
+      />,
+    );
+    expect(out).toContain('real-audit-content');
+    expect(out).not.toContain('real-webhooks-card');
+  });
+
+  test('non-entitled + writable renders neither the log nor the webhooks card — just the upsell', () => {
+    const out = renderToStaticMarkup(
+      <AuditTabView
+        auditEnabled={false}
+        canWriteAccount
+        auditSlot={<div>real-audit-content</div>}
+        webhooksSlot={<div>real-webhooks-card</div>}
+      />,
+    );
+    expect(out).toContain('Audit logs are an Enterprise feature');
+    expect(out).not.toContain('real-audit-content');
+    expect(out).not.toContain('real-webhooks-card');
+  });
+
+  test('loading + writable renders neither the log, the upsell, nor the webhooks card — a skeleton only', () => {
+    const out = renderToStaticMarkup(
+      <AuditTabView
+        isLoading
+        auditEnabled
+        canWriteAccount
+        auditSlot={<div>real-audit-content</div>}
+        webhooksSlot={<div>real-webhooks-card</div>}
+      />,
+    );
+    expect(out).not.toContain('real-audit-content');
+    expect(out).not.toContain('real-webhooks-card');
+    expect(out).not.toContain('Enterprise feature');
+    expect(out).toContain('animate-pulse');
+  });
+
+  test('defaults (no props) render neither slot — canWriteAccount defaults to false', () => {
+    const out = renderToStaticMarkup(
+      <AuditTabView auditEnabled webhooksSlot={<div>real-webhooks-card</div>} />,
+    );
+    expect(out).not.toContain('real-webhooks-card');
+  });
+});
