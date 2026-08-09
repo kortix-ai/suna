@@ -2,10 +2,11 @@
 
 set -euo pipefail
 
-ACTION="${1:?usage: ecs-preview.sh deploy|teardown <pr-number> [api-image] [gateway-image] [commit]}"
+ACTION="${1:?usage: ecs-preview.sh deploy|teardown|reconcile <pr-number|0> [api-image] [gateway-image] [commit]}"
 PR="${2:?PR number required}"
 
-if ! [[ "$PR" =~ ^[1-9][0-9]*$ ]] || [ "$PR" -gt 40000 ]; then
+if { [ "$ACTION" = "reconcile" ] && [ "$PR" != "0" ]; } \
+  || { [ "$ACTION" != "reconcile" ] && { ! [[ "$PR" =~ ^[1-9][0-9]*$ ]] || [ "$PR" -gt 40000 ]; }; }; then
   echo "invalid PR number: $PR" >&2
   exit 2
 fi
@@ -20,6 +21,11 @@ SECRET_NAME="kortix-preview-env"
 EXECUTION_ROLE="arn:aws:iam::935064898258:role/kortix-preview-exec"
 TASK_ROLE="arn:aws:iam::935064898258:role/kortix-preview-task"
 LOG_GROUP="/ecs/kortix-preview"
+MAX_ACTIVE_PREVIEWS="${MAX_ACTIVE_PREVIEWS:-20}"
+SERVICE_WAS_ACTIVE=false
+PREVIOUS_TASK_DEFINITION=""
+TASK_DEFINITION=""
+TASK_FILE=""
 
 aws_text() {
   local value
@@ -114,8 +120,63 @@ teardown() {
   echo "preview $PR torn down"
 }
 
+reconcile() {
+  local cutoff service_arn service_name created_at pr_number state labels
+  cutoff="$(date -u -d "${PREVIEW_MAX_AGE_HOURS:-72} hours ago" +%s)"
+  for service_arn in $(aws ecs list-services --region "$REGION" --cluster "$CLUSTER" \
+    --query 'serviceArns[]' --output text); do
+    service_name="${service_arn##*/}"
+    [[ "$service_name" =~ ^kortix-pr-([1-9][0-9]*)$ ]] || continue
+    pr_number="${BASH_REMATCH[1]}"
+    created_at="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$service_name" \
+      --query 'services[0].createdAt' --output text)"
+    [ "$(date -u -d "$created_at" +%s)" -lt "$cutoff" ] || continue
+    if ! state="$(gh api "repos/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}/pulls/${pr_number}" \
+      --jq '.state')"; then
+      echo "could not read PR $pr_number; preserving its preview" >&2
+      continue
+    fi
+    if ! labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr_number}/labels" \
+      --jq 'map(.name) | join(" ")')"; then
+      echo "could not read labels for PR $pr_number; preserving its preview" >&2
+      continue
+    fi
+    if [ "$state" != "open" ] || [[ " $labels " != *" preview "* ]]; then
+      "$0" teardown "$pr_number"
+    fi
+  done
+}
+
+rollback_deploy() {
+  local exit_code=$?
+  trap - EXIT
+  rm -f "$TASK_FILE"
+  if [ "$exit_code" -ne 0 ]; then
+    if [ "$SERVICE_WAS_ACTIVE" = true ] && [ -n "$PREVIOUS_TASK_DEFINITION" ]; then
+      echo "preview $PR update failed; restoring $PREVIOUS_TASK_DEFINITION" >&2
+      aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
+        --task-definition "$PREVIOUS_TASK_DEFINITION" --desired-count 1 --force-new-deployment >/dev/null \
+        || echo "preview $PR service rollback also failed" >&2
+      if [ -n "$TASK_DEFINITION" ] && [ "$TASK_DEFINITION" != "$PREVIOUS_TASK_DEFINITION" ]; then
+        aws ecs deregister-task-definition --region "$REGION" --task-definition "$TASK_DEFINITION" >/dev/null \
+          || echo "preview $PR task-definition rollback also failed" >&2
+      fi
+    else
+      echo "preview $PR deploy failed; removing partial per-PR resources" >&2
+      teardown || echo "preview $PR rollback teardown also failed" >&2
+    fi
+  fi
+  exit "$exit_code"
+}
+
 if [ "$ACTION" = "teardown" ]; then
   teardown
+  exit 0
+fi
+
+if [ "$ACTION" = "reconcile" ]; then
+  require_runtime
+  reconcile
   exit 0
 fi
 
@@ -128,6 +189,30 @@ API_IMAGE="${3:?API image required}"
 GATEWAY_IMAGE="${4:?gateway image required}"
 COMMIT="${5:?commit required}"
 require_runtime
+
+service_status="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+  --query 'services[0].status' --output text 2>/dev/null || true)"
+if [ "$service_status" = "ACTIVE" ]; then
+  SERVICE_WAS_ACTIVE=true
+  PREVIOUS_TASK_DEFINITION="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+    --query 'services[0].taskDefinition' --output text)"
+fi
+
+active_services="$(aws ecs list-services --region "$REGION" --cluster "$CLUSTER" \
+  --query 'serviceArns[]' --output text)"
+active_count=0
+for service_arn in $active_services; do
+  case "${service_arn##*/}" in
+    kortix-pr-*) active_count=$((active_count + 1)) ;;
+  esac
+done
+if [ "$active_count" -ge "$MAX_ACTIVE_PREVIEWS" ]; then
+  [ "$SERVICE_WAS_ACTIVE" = true ] || {
+    echo "preview quota reached: $active_count active services, limit $MAX_ACTIVE_PREVIEWS" >&2
+    exit 1
+  }
+fi
+trap rollback_deploy EXIT
 
 VPC_ID="$(aws ec2 describe-subnets --region "$REGION" --filters Name=tag:Name,Values=kortix-dev-private-* \
   --query 'Subnets[0].VpcId' --output text)"
@@ -171,7 +256,6 @@ else
 fi
 
 TASK_FILE="$(mktemp -t preview-task-XXXX.json)"
-trap 'rm -f "$TASK_FILE"' EXIT
 python3 - "$TASK_FILE" "$FAMILY" "$API_IMAGE" "$GATEWAY_IMAGE" "$COMMIT" "$SECRET_ARN" \
   "$EXECUTION_ROLE" "$TASK_ROLE" "$LOG_GROUP" "$REGION" <<'PY'
 import json
@@ -265,3 +349,5 @@ for task_definition in $task_definitions; do
   fi
 done
 echo "preview $PR deployed: $TASK_DEFINITION"
+trap - EXIT
+rm -f "$TASK_FILE"

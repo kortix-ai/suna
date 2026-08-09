@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/deploy-preview.yml").read_text()
 SCRIPT = (ROOT / "infra/scripts/ecs-preview.sh").read_text()
 TERRAFORM = (ROOT / "infra/terraform/environments/preview/main.tf").read_text()
+VARIABLES = (ROOT / "infra/terraform/environments/preview/variables.tf").read_text()
+README = (ROOT / "infra/terraform/environments/preview/README.md").read_text()
 
 
 class PreviewRuntimeContract(unittest.TestCase):
@@ -16,18 +18,28 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn("needs: deploy", WORKFLOW)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", WORKFLOW)
         self.assertIn("pull_request_target:", WORKFLOW)
+        self.assertIn("branches: [main]", WORKFLOW)
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", WORKFLOW)
         self.assertIn('[ "$environment" = "preview" ]', WORKFLOW)
         self.assertIn('[ "$commit" = "$COMMIT" ]', WORKFLOW)
         self.assertIn("KORTIX_PUBLIC_BACKEND_URL", WORKFLOW)
         self.assertIn("NEXT_PUBLIC_BACKEND_URL", WORKFLOW)
+        self.assertIn('deployed_sha="$(printf', WORKFLOW)
+        self.assertIn('[ "$state" = "READY" ]', WORKFLOW)
+        self.assertIn('[ "$deployed_sha" = "$COMMIT" ]', WORKFLOW)
+        self.assertIn('.value==$v', WORKFLOW)
         self.assertNotIn("Argo CD", WORKFLOW)
+        self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
 
     def test_close_and_unlabel_run_complete_base_branch_teardown(self):
         self.assertIn("github.event.action == 'closed'", WORKFLOW)
         self.assertIn("github.event.label.name == 'preview'", WORKFLOW)
-        self.assertNotIn("bash infra/scripts/ecs-preview.sh", WORKFLOW.split("ref: ${{ github.event.pull_request.head.sha }}")[1].split("deploy:")[0])
+        privileged = WORKFLOW.split("deploy:", 1)[1]
+        for section in privileged.split("- uses: aws-actions/configure-aws-credentials")[1:]:
+            before_script = section.split("ecs-preview.sh", 1)[0]
+            self.assertNotIn("github.event.pull_request.head.sha", before_script)
         self.assertIn("ecs-preview.sh teardown", WORKFLOW)
+        self.assertIn('--arg v "$expected"', WORKFLOW)
         for command in (
             "aws ecs delete-service",
             "aws elbv2 delete-rule",
@@ -45,6 +57,13 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn('{"name": "KORTIX_SKIP_ENSURE_SCHEMA", "value": "1"}', SCRIPT)
         self.assertIn('"LLM_GATEWAY_PROXY_TARGET", "value": "http://127.0.0.1:8090"', SCRIPT)
         self.assertNotIn("kortix-prod-env", SCRIPT)
+        self.assertIn("rollback_deploy", SCRIPT)
+        self.assertIn("PREVIOUS_TASK_DEFINITION", SCRIPT)
+        self.assertIn('MAX_ACTIVE_PREVIEWS="${MAX_ACTIVE_PREVIEWS:-20}"', SCRIPT)
+        self.assertIn('PREVIEW_MAX_AGE_HOURS:-72', SCRIPT)
+        self.assertIn("ecs-preview.sh reconcile 0", WORKFLOW)
+        self.assertIn("preserving its preview", SCRIPT)
+        self.assertNotIn("|| printf closed", SCRIPT)
 
     def test_shared_edge_has_tls_waf_logs_and_preview_only_oidc_role(self):
         for fragment in (
@@ -56,12 +75,21 @@ class PreviewRuntimeContract(unittest.TestCase):
             'name    = "*.preview-api"',
             "proxied = false",
             'name = "kortix-gha-preview-deploy"',
-            '"token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:pull_request"',
-            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/*"',
+            '"repo:kortix-ai/suna:pull_request"',
+            '"repo:kortix-ai/suna:ref:refs/heads/main"',
+            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/main"',
             'description = "DNS over UDP"',
             'resource "aws_iam_role_policy" "execution_logs_kms"',
+            'resource "aws_wafv2_web_acl" "preview"',
+            'name        = "AWSManagedRulesKnownBadInputsRuleSet"',
         ):
             self.assertIn(fragment, TERRAFORM)
+
+    def test_database_egress_and_bootstrap_are_bounded(self):
+        self.assertIn('cidr_blocks = var.postgres_egress_cidrs', TERRAFORM)
+        self.assertIn('!contains(var.postgres_egress_cidrs, "0.0.0.0/0")', VARIABLES)
+        for heading in ("## Existing-resource import", "## Cutover", "## Reconciliation and rollback"):
+            self.assertIn(heading, README)
 
 
 if __name__ == "__main__":
