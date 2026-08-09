@@ -261,6 +261,7 @@ export interface ConnectorRouterDeps {
     projectId: string,
     accountId: string,
     draft: Record<string, unknown>,
+    actorUserId?: string,
   ): Promise<CrudOutcome>;
   discoverConnectorAuth?(
     projectId: string,
@@ -1116,7 +1117,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         }
       }
       try {
-        const result = await deps.createConnector(projectId, admin.accountId, body);
+        const result = await deps.createConnector(projectId, admin.accountId, body, admin.userId);
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
           : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);

@@ -47,7 +47,8 @@ export function computersCatalogEntry(): CatalogEntry {
     key: 'computer:computers',
     slug: 'computers',
     name: 'Computers',
-    description: 'Use selected local machines through the secure Kortix tunnel.',
+    description:
+      'Connect Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel, then choose which machines agents can access.',
     icon: null,
     categories: ['developer-tools'],
     popularity: null,

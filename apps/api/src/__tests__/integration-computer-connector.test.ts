@@ -33,6 +33,7 @@ let studioTunnelId = '';
 let travelTunnelId = '';
 let unassignedTunnelId = '';
 let crossAccountTunnelId = '';
+let personalTunnelId = '';
 const LEGACY_CONNECTOR_ID = crypto.randomUUID();
 const LEGACY_CONNECTION_ID = crypto.randomUUID();
 const LEGACY_SESSION_ID = crypto.randomUUID();
@@ -101,6 +102,13 @@ beforeAll(async () => {
         status: 'offline',
         lastHeartbeatAt: new Date(),
       },
+      {
+        accountId: LEGACY_USER_ID,
+        name: 'Personal Mac',
+        capabilities: ['filesystem', 'desktop'],
+        status: 'offline',
+        lastHeartbeatAt: new Date(),
+      },
     ])
     .returning({
       tunnelId: tunnelConnections.tunnelId,
@@ -110,6 +118,7 @@ beforeAll(async () => {
   travelTunnelId = inserted.find((row) => row.name === 'Travel Mac')!.tunnelId;
   unassignedTunnelId = inserted.find((row) => row.name === 'Unassigned Mac')!.tunnelId;
   crossAccountTunnelId = inserted.find((row) => row.name === 'Other Account Mac')!.tunnelId;
+  personalTunnelId = inserted.find((row) => row.name === 'Personal Mac')!.tunnelId;
 
   const created = await dbConnectorRouterDeps.createConnector!(projectId, accountId, {
     slug: GROUP_SLUG,
@@ -178,6 +187,7 @@ afterAll(async () => {
     travelTunnelId,
     unassignedTunnelId,
     crossAccountTunnelId,
+    personalTunnelId,
   ].filter(Boolean);
   if (tunnelIds.length) {
     await db.delete(tunnelConnections).where(inArray(tunnelConnections.tunnelId, tunnelIds));
@@ -187,6 +197,76 @@ afterAll(async () => {
 });
 
 describe('grouped Computers connector profiles — real DB', () => {
+  test('a project admin can explicitly grant their personal computer to an organization project', async () => {
+    const created = await dbConnectorRouterDeps.createConnector!(
+      projectId,
+      accountId,
+      {
+        slug: 'personal-computer',
+        name: 'Personal computer',
+        provider: 'computer',
+        tunnel_ids: [personalTunnelId],
+        create_only: true,
+      },
+      LEGACY_USER_ID,
+    );
+    expect(created.ok).toBe(true);
+
+    const [row] = await db
+      .select({ config: connectors.config })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'personal-computer')));
+    expect(row?.config).toMatchObject({
+      tunnel_ids: [personalTunnelId],
+      tunnel_account_ids: [LEGACY_USER_ID],
+    });
+
+    const result = await executeComputerCall({
+      accountId,
+      projectId,
+      allowedTunnelIds: [personalTunnelId],
+      allowedTunnelAccountIds: [LEGACY_USER_ID],
+      selector: null,
+      method: 'list_computers',
+      args: {},
+    });
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        computers: [
+          expect.objectContaining({
+            id: personalTunnelId,
+            name: 'Personal Mac',
+          }),
+        ],
+      },
+    });
+
+    const deleted = await dbConnectorRouterDeps.deleteConnector!(projectId, 'personal-computer');
+    expect(deleted.ok).toBe(true);
+  });
+
+  test('a project admin cannot grant a computer owned by another account', async () => {
+    const created = await dbConnectorRouterDeps.createConnector!(
+      projectId,
+      accountId,
+      {
+        slug: 'forged-computer',
+        name: 'Forged computer',
+        provider: 'computer',
+        tunnel_ids: [crossAccountTunnelId],
+        create_only: true,
+      },
+      LEGACY_USER_ID,
+    );
+    expect(created).toEqual({
+      ok: false,
+      error:
+        'One or more selected computers are no longer available. Refresh the list or pair the computer again.',
+      status: 400,
+    });
+  });
+
   test('stores one regular connector with two assigned machine ids and the full catalog', async () => {
     const [row] = await db
       .select()

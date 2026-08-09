@@ -624,6 +624,7 @@ export function sessionStartFailureFromSandbox(
   const storedCategory =
     rawCategory === 'provider-capacity' ||
     rawCategory === 'git-auth' ||
+    rawCategory === 'unsupported-secret-delivery' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
@@ -646,7 +647,7 @@ export function sessionStartFailureFromSandbox(
     (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
       ? metadata.errorMessage
       : 'The sandbox provider could not start this session. Try again.');
-  return { category, message, retryable: true };
+  return { category, message, retryable: category !== 'unsupported-secret-delivery' };
 }
 
 async function preserveEstablishedRuntimeOnOpen(

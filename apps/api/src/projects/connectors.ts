@@ -198,8 +198,10 @@ export interface ConnectorSpec {
   platform: ChannelPlatform | null;
   /** computer: legacy single-machine binding. */
   tunnelId?: string | null;
-  /** computer: account-scoped machine allowlist for this profile. */
+  /** computer: profile-scoped machine allowlist. */
   tunnelIds?: string[] | null;
+  /** computer: verified owner accounts for the selected machine allowlist. */
+  tunnelAccountIds?: string[] | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──

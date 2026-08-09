@@ -22,6 +22,33 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'c
 }
 
 /**
+ * Which project this gate acts on. An explicitly passed id wins; the `[id]`
+ * route segment is the fallback.
+ *
+ * The fallback is what every original caller relies on — they all render under
+ * `/projects/[id]`. The explicit id exists because the onboarding wizard's plan
+ * step now also runs on `/new` (`app/(app)/new`), which has NO `[id]` segment:
+ * there the route yields `null`, `modal` is therefore `null`, and
+ * `openConnectProvider` renders nothing while the step's only control never
+ * advances the wizard.
+ *
+ * `!== undefined`, never `??`: a caller that deliberately passes `null` means
+ * "act on no project", and must not silently inherit whatever route it happens
+ * to be rendered under.
+ *
+ * Exported so this rule is provable — the hook itself cannot be rendered in
+ * `apps/web`'s test harness (no jsdom, and `mock.module` is process-wide across
+ * a non---isolate `bun test` run).
+ */
+export function resolveGateProjectId(
+  explicitId: string | null | undefined,
+  routeId: unknown,
+): string | null {
+  if (explicitId !== undefined) return explicitId;
+  return typeof routeId === 'string' ? routeId : null;
+}
+
+/**
  * Shared "connect a model" routing. Project actions open the project-scoped
  * provider modal in place. Non-project actions use the global provider modal.
  * Extracted from `ModelSelector` so the picker, chat gate, and onboarding use
@@ -31,13 +58,20 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'c
  * (default `[]` for callers that only need the routing actions). This is
  * deliberately NOT `models.length > 0`: the raw provider catalog can carry
  * models the project does not offer. See `isModelOffered` for the check.
+ *
+ * `options.projectId` names the project explicitly, for callers that render
+ * outside `/projects/[id]`. Omitting it keeps the original route-inferred
+ * behaviour verbatim — see `resolveGateProjectId`.
  */
-export function useModelConnectionGate(models: FlatModel[] = []) {
+export function useModelConnectionGate(
+  models: FlatModel[] = [],
+  options?: { projectId?: string | null },
+) {
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = resolveGateProjectId(options?.projectId, params?.id);
 
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId ?? ''),
@@ -146,10 +180,15 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
-  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
-  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
-  // "Upgrade" button would be a dead click. Callers should hide it and only
-  // offer "bring your own key" when this is false.
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
+  // (every host mounts it behind the same flag — `app-providers.tsx`'s
+  // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on
+  // `/new`) — an "Upgrade" button would be a dead click. Callers should hide it
+  // and only offer "bring your own key" when this is false.
+  //
+  // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
+  // enables billing without mounting one still yields a dead click — which is
+  // exactly why `/new` had to mount its own.
   const showUpgradeOption = isBillingEnabled();
 
   return {

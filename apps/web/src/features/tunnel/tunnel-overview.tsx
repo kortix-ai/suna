@@ -3,8 +3,6 @@
 import { formatRelative } from '@kortix/shared';
 import {
   PlugsConnectedIcon as Cable,
-  CheckIcon as Check,
-  CopyIcon as Copy,
   MonitorIcon as Monitor,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -21,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import {
   Empty,
   EmptyContent,
@@ -54,63 +52,10 @@ import {
   type TunnelConnection,
 } from '@/hooks/tunnel/use-tunnel';
 import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
-import { useCopy } from '@/hooks/use-copy';
-import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
-import { buildTunnelConnectCommand } from './tunnel-connect-command';
+import { ConnectCommandPanel } from './tunnel-connect-panel';
 import { TunnelPermissionRequestDialog } from './tunnel-permission-request-dialog';
 import { TunnelSettingsDialog } from './tunnel-settings-dialog';
-
-function ConnectSteps() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  return (
-    <InlineMeta className="justify-center text-pretty">
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line203JsxTextText1RunTheCommand')}
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line205JsxTextText2ApproveInBrowser')}
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line207JsxTextText3Connected')}
-    </InlineMeta>
-  );
-}
-
-function ConnectCommandPanel() {
-  const command = getConnectCommand();
-  const { copied, copy } = useCopy({
-    successMessage: 'Command copied',
-    errorMessage: 'Copy failed',
-    duration: 2000,
-  });
-
-  return (
-    <div className="w-full space-y-4">
-      <div className="bg-popover overflow-hidden rounded-md border">
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-          <span className="text-muted-foreground text-xs">Install command</span>
-        </div>
-        <div className="bg-secondary relative rounded-t-md">
-          <Button
-            type="button"
-            variant="accent"
-            size="xs"
-            onClick={() => copy(command)}
-            className="absolute top-2 right-2 shrink-0"
-          >
-            {copied ? (
-              <Check className="text-muted-foreground size-3.5" />
-            ) : (
-              <Copy className="text-muted-foreground size-3.5" />
-            )}
-          </Button>
-
-          <pre className="text-foreground/90 overflow-x-auto px-4 py-3 text-left font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
-            {command}
-          </pre>
-        </div>
-      </div>
-      <ConnectSteps />
-    </div>
-  );
-}
 
 function LoadingSkeleton() {
   return (
@@ -168,7 +113,7 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
     <>
       <CustomizeSectionWrapper
         title="Computers"
-        description="Connect local machines and grant agents permissioned access over a reverse tunnel."
+        description="Connect Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel, then control agent permissions for each machine."
       >
         {hasConnections && canWrite && (
           <div className="flex items-center justify-between gap-3">
@@ -316,13 +261,6 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
       <TunnelPermissionRequestDialog />
     </>
   );
-}
-
-function getConnectCommand(): string {
-  return buildTunnelConnectCommand({
-    backendUrl: getEnv().BACKEND_URL || '',
-    origin: typeof window !== 'undefined' ? window.location.origin : '',
-  });
 }
 
 function DeleteConnectionDialog({

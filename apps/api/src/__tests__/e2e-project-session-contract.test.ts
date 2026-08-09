@@ -2309,6 +2309,60 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('dashboard start exposes an actionable non-retryable protected-delivery failure', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'daytona',
+      error:
+        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'unsupported-secret-delivery',
+          errorMessage:
+            'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+          lastProvisioningError:
+            'Sandbox provider daytona does not support network-boundary secret delivery',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'unsupported-secret-delivery',
+        message:
+          'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+        retryable: false,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
     const app = createApp();
     sessionRow = {

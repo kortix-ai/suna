@@ -46,6 +46,7 @@ interface World {
   upstreamStatus: number;
   upstreamBody: string;
   connectorDrafts: Record<string, unknown>[];
+  connectorCreateActors: Array<string | undefined>;
   connectorCreateError: { error: string; status: number } | null;
   credentialInputs: unknown[];
   secretBindingInputs: Array<{ slug: string; secretIdentifier: string | null }>;
@@ -91,6 +92,7 @@ function freshWorld(): World {
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
     connectorDrafts: [],
+    connectorCreateActors: [],
     connectorCreateError: null,
     credentialInputs: [],
     secretBindingInputs: [],
@@ -250,8 +252,9 @@ const deps: ConnectorRouterDeps = {
   getDiscoverConnector: async (id) => ({ item: { id }, variants: [] }),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
   discoverConnectorAuth: async () => detectedBearer,
-  createConnector: async (_projectId, _accountId, draft) => {
+  createConnector: async (_projectId, _accountId, draft, actorUserId) => {
     world.connectorDrafts.push(draft);
+    world.connectorCreateActors.push(actorUserId);
     if (world.connectorCreateError) {
       return { ok: false, ...world.connectorCreateError };
     }
@@ -560,6 +563,7 @@ describe('admin routes', () => {
     });
     expect(res.status).toBe(200);
     expect(world.connectorDrafts[0]).toMatchObject({ auth: detectedBearer.recommended });
+    expect(world.connectorCreateActors).toEqual([ALICE]);
     expect((await res.json()).authDiscovery).toEqual(detectedBearer);
   });
 

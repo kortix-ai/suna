@@ -2,6 +2,7 @@ import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { E2BProvider } from './e2b';
 import { PlatinumProvider } from './platinum';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -14,6 +15,19 @@ import { PlatinumProvider } from './platinum';
  *   - e2b — E2B Cloud
  */
 export type ProviderName = 'daytona' | 'platinum' | 'e2b';
+
+const NETWORK_BOUNDARY_SYNC_MODE: Record<ProviderName, 'on-demand' | 'authoritative'> = {
+  daytona: 'on-demand',
+  platinum: 'authoritative',
+  e2b: 'on-demand',
+};
+
+export function shouldSyncProviderNetworkBoundary(
+  name: ProviderName,
+  bindingCount: number,
+): boolean {
+  return bindingCount > 0 || NETWORK_BOUNDARY_SYNC_MODE[name] === 'authoritative';
+}
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -205,6 +219,11 @@ export interface SandboxProvider {
   resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
+  /** Apply the exact server-owned network credentials for one sandbox. */
+  syncNetworkBoundary?(
+    externalId: string,
+    bindings: NetworkBoundarySecretBinding[],
+  ): Promise<{ state: 'armed'; attached: number }>;
   /**
    * List the running boxes this deployment owns, for the orphan-box reaper
    * (boxes still running on the provider with no live DB row). OPTIONAL: a

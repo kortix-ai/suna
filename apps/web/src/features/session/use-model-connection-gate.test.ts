@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { projectProviderModalTab } from './use-model-connection-gate';
+import { projectProviderModalTab, resolveGateProjectId } from './use-model-connection-gate';
 
 const gateSource = readFileSync(join(import.meta.dir, 'use-model-connection-gate.tsx'), 'utf8');
 const selectorSource = readFileSync(join(import.meta.dir, 'model-selector.tsx'), 'utf8');
+const chatInputSource = readFileSync(join(import.meta.dir, 'session-chat-input.tsx'), 'utf8');
+const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate.tsx'), 'utf8');
 
 describe('model management entry-point routing', () => {
   test('maps each precise action to the matching project modal tab', () => {
@@ -49,5 +51,81 @@ describe('model management entry-point routing', () => {
     expect(selectorSource).toContain('modelsLoading || entitlementsPending');
     expect(selectorSource).toContain('aria-label="Loading models"');
     expect(selectorSource).toContain('<Loading');
+  });
+});
+
+/**
+ * THE `/new` dead-click fix. The gate used to derive its project purely from
+ * `useParams<{ id?: string }>()`. Every original caller lives under
+ * `/projects/[id]`, so that was invisible — until the onboarding wizard's plan
+ * step started rendering on `/new` (`app/(app)/new`), a route with NO `[id]`
+ * segment. There `params.id` is `undefined`, `projectId` resolved to `null`,
+ * `modal` was therefore `null`, and picking "Bring your own API key" rendered
+ * nothing AND never called `onContinue()` — the wizard could not advance past
+ * a step whose primary button is its only control.
+ */
+describe('resolveGateProjectId: which project the gate acts on', () => {
+  test('an explicitly passed id wins over the route', () => {
+    expect(resolveGateProjectId('proj_explicit', 'proj_from_route')).toBe('proj_explicit');
+  });
+
+  test('falls back to the route id when the caller passes none', () => {
+    expect(resolveGateProjectId(undefined, 'proj_from_route')).toBe('proj_from_route');
+  });
+
+  test('THE /new case: no explicit id and no [id] segment resolves to null', () => {
+    expect(resolveGateProjectId(undefined, undefined)).toBeNull();
+  });
+
+  /**
+   * `!== undefined`, never `??`. Under `??` a caller that deliberately says
+   * "act on NO project" would silently inherit whatever route it happens to be
+   * rendered under — the opposite of what it asked for, and undetectable from
+   * the call site.
+   */
+  test('an explicit null is honoured — it does NOT fall through to the route', () => {
+    expect(resolveGateProjectId(null, 'proj_from_route')).toBeNull();
+  });
+
+  test('a non-string route param (a catch-all segment) is not treated as an id', () => {
+    expect(resolveGateProjectId(undefined, ['a', 'b'])).toBeNull();
+    expect(resolveGateProjectId(undefined, null)).toBeNull();
+  });
+});
+
+describe('useModelConnectionGate: the options argument is backward compatible', () => {
+  test('the scan found the hook', () => {
+    expect(gateSource.length).toBeGreaterThan(0);
+    expect(gateSource).toContain('export function useModelConnectionGate');
+  });
+
+  test('models stays the FIRST parameter and options is optional', () => {
+    expect(gateSource).toContain('models: FlatModel[] = []');
+    expect(gateSource).toContain('options?: { projectId?: string | null }');
+  });
+
+  test('the hook resolves through resolveGateProjectId, not a raw params read', () => {
+    expect(gateSource).toContain('resolveGateProjectId(options?.projectId, params?.id)');
+    expect(gateSource).not.toContain('const projectId = typeof params?.id');
+  });
+
+  /**
+   * The four callers that predate the options argument must keep behaving
+   * EXACTLY as they did: none passes options, so the route stays their single
+   * source of truth. If one of them ever starts passing an id, that is a
+   * behaviour change on `/projects/[id]` that somebody has to decide on.
+   */
+  test('session-chat-input calls the hook with models only', () => {
+    expect(chatInputSource).toContain('useModelConnectionGate(models)');
+    expect(chatInputSource).not.toContain('useModelConnectionGate(models,');
+  });
+
+  test('model-selector calls the hook with models only', () => {
+    expect(selectorSource).toContain('useModelConnectionGate(models)');
+    expect(selectorSource).not.toContain('useModelConnectionGate(models,');
+  });
+
+  test('both model-connection-gate call sites still pass nothing at all', () => {
+    expect(chatGateSource.match(/useModelConnectionGate\(\)/g)?.length).toBe(2);
   });
 });

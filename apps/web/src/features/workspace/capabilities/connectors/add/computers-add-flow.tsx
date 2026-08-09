@@ -1,11 +1,13 @@
 'use client';
 
 import { createConnector } from '@kortix/sdk';
-import { MonitorIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, MonitorIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
@@ -19,6 +21,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ConnectCommandPanel } from '@/features/tunnel/tunnel-connect-panel';
 import { ComputerMachineSelector } from '@/features/workspace/capabilities/connectors/detail/computer-connector-account';
 import {
   isConnectorConnectionSlugAvailable,
@@ -67,6 +70,7 @@ function ComputersAddFlowContent({
   const [name, setName] = useState('Computers');
   const [slug, setSlug] = useState(initialSlug);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   const add = useMutation({
     mutationFn: () =>
@@ -100,7 +104,8 @@ function ComputersAddFlowContent({
             <div className="min-w-0 space-y-1">
               <ModalTitle>Add Computers</ModalTitle>
               <ModalDescription>
-                Select the paired machines this connector profile can access.
+                Computers connects Macs, Windows PCs, and Linux machines through the secure Kortix
+                Agent Tunnel. Select which machines agents can access.
               </ModalDescription>
             </div>
           </div>
@@ -141,11 +146,16 @@ function ComputersAddFlowContent({
             </FieldGroup>
 
             <section className="space-y-2">
-              <div className="space-y-1">
-                <FieldLabel>Computers</FieldLabel>
-                <p className="text-muted-foreground text-xs text-pretty">
-                  You can select one machine or create a shared profile for several machines.
-                </p>
+              <div className="flex items-end justify-between gap-3">
+                <div className="space-y-1">
+                  <FieldLabel>Computers</FieldLabel>
+                  <p className="text-muted-foreground text-xs text-pretty">
+                    Select one machine or create a shared profile for several machines.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm" className="shrink-0">
+                  <Link href={`/projects/${projectId}/customize/computers`}>Manage computers</Link>
+                </Button>
               </div>
               <ComputerMachineSelector
                 selectedIds={selectedIds}
@@ -153,6 +163,29 @@ function ComputersAddFlowContent({
                 disabled={add.isPending}
               />
             </section>
+
+            <Disclosure
+              variant="outline"
+              className="overflow-hidden"
+              open={pairingOpen}
+              onOpenChange={setPairingOpen}
+            >
+              <DisclosureTrigger variant="outline">
+                <Button
+                  type="button"
+                  variant="popover"
+                  className="flex w-full items-center justify-between rounded-none px-4"
+                >
+                  <span className="text-sm font-medium">Pair another computer</span>
+                  <CaretDownIcon className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                </Button>
+              </DisclosureTrigger>
+              <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                <div className="px-4 py-5">
+                  <ConnectCommandPanel />
+                </div>
+              </DisclosureContent>
+            </Disclosure>
           </ModalBody>
           <ModalFooter>
             <Button

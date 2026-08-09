@@ -61,6 +61,7 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -532,6 +533,12 @@ export async function provisionSessionSandbox(opts: {
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
+      const networkBoundary = await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      if (networkBoundary.length > 0 && !provider.syncNetworkBoundary) {
+        throw new Error(
+          `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
+        );
+      }
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we
@@ -641,6 +648,16 @@ export async function provisionSessionSandbox(opts: {
         throw createErr;
       }
       bgExternalId = result.externalId;
+      if (networkBoundary.length > 0) {
+        try {
+          await provider.syncNetworkBoundary!(result.externalId, networkBoundary);
+          tl.mark(`network-secrets:${networkBoundary.length}`);
+        } catch (error) {
+          await provider.remove(result.externalId).catch(() => {});
+          bgExternalId = null;
+          throw error;
+        }
+      }
       tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
 

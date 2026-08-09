@@ -50,6 +50,8 @@ export interface GatewayConnector {
   platform?: string | null;
   /** Server-side machine allowlist for a Computers connector profile. */
   tunnelIds?: string[] | null;
+  /** Verified machine-owner accounts paired with the Computers allowlist. */
+  tunnelAccountIds?: string[] | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -192,8 +194,8 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Verifies the selected machine belongs to both `accountId` and
-   * the connector profile allowlist, then relays through the tunnel core.
+   * connectors. Verifies the selected machine belongs to the connector's
+   * stored id + owner-account grant, then relays through the tunnel core.
    */
   executeComputerCall?(input: {
     accountId: string;
@@ -201,6 +203,7 @@ export interface GatewayDeps {
     sessionId: string | null;
     actorUserId: string;
     allowedTunnelIds: string[] | null;
+    allowedTunnelAccountIds: string[] | null;
     selector: string | null;
     method: string;
     args: Record<string, unknown>;
@@ -649,6 +652,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         sessionId: input.sessionId ?? null,
         actorUserId: input.subject.userId,
         allowedTunnelIds: connector.tunnelIds ?? null,
+        allowedTunnelAccountIds: connector.tunnelAccountIds ?? null,
         selector,
         method: action.binding.method,
         args: callArgs,

@@ -1116,6 +1116,7 @@ export async function forwardToSandbox(
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,
             sessionId: record.sessionId,
+            externalId: record.externalId,
             serviceKey,
             previewUrl,
             providerHeaders: ingress.headers,

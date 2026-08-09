@@ -153,6 +153,24 @@ function computerTunnelIds(configValue: unknown, slug: string): string[] | null 
   return slug === COMPUTER_SLUG ? null : [];
 }
 
+function computerTunnelAccountIds(
+  configValue: unknown,
+  projectAccountId: string,
+  slug: string,
+): string[] | null {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_account_ids)) {
+    return [
+      ...new Set(
+        config.tunnel_account_ids.filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        ),
+      ),
+    ];
+  }
+  return slug === COMPUTER_SLUG && !Array.isArray(config.tunnel_ids) ? null : [projectAccountId];
+}
+
 function isLegacyComputerAggregate(row: {
   providerType: string;
   slug: string;
@@ -432,6 +450,10 @@ function toGatewayConnector(
     platform: channelPlatform(row.config),
     tunnelIds:
       row.providerType === 'computer' ? computerTunnelIds(row.config, row.slug) : undefined,
+    tunnelAccountIds:
+      row.providerType === 'computer'
+        ? computerTunnelAccountIds(row.config, row.accountId, row.slug)
+        : undefined,
     baseUrl: baseUrlOf(row),
     auth,
     headers: headersOf(row),
@@ -608,6 +630,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       sessionId,
       actorUserId,
       allowedTunnelIds,
+      allowedTunnelAccountIds,
       selector,
       method,
       args,
@@ -618,6 +641,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         sessionId,
         actorUserId,
         allowedTunnelIds,
+        allowedTunnelAccountIds,
         selector,
         method,
         args,
@@ -1519,6 +1543,7 @@ async function upsertComputerConnectorProfile(
   projectId: string,
   accountId: string,
   draft: Record<string, unknown>,
+  actorUserId?: string,
 ): Promise<ConnectorCrudResult | null> {
   if (draft.provider !== 'computer') return null;
   const slug = typeof draft.slug === 'string' ? draft.slug.trim() : '';
@@ -1549,12 +1574,16 @@ async function upsertComputerConnectorProfile(
       status: 400,
     };
   }
+  const eligibleAccountIds = [...new Set([accountId, actorUserId].filter(Boolean) as string[])];
   const owned = await db
-    .select({ tunnelId: tunnelConnections.tunnelId })
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      accountId: tunnelConnections.accountId,
+    })
     .from(tunnelConnections)
     .where(
       and(
-        eq(tunnelConnections.accountId, accountId),
+        inArray(tunnelConnections.accountId, eligibleAccountIds),
         inArray(tunnelConnections.tunnelId, tunnelIds),
         isNotNull(tunnelConnections.lastHeartbeatAt),
       ),
@@ -1562,10 +1591,12 @@ async function upsertComputerConnectorProfile(
   if (owned.length !== tunnelIds.length) {
     return {
       ok: false,
-      error: 'every selected computer must belong to this account and have connected before',
+      error:
+        'One or more selected computers are no longer available. Refresh the list or pair the computer again.',
       status: 400,
     };
   }
+  const tunnelAccountIds = [...new Set(owned.map((row) => row.accountId))];
 
   const [existing] = await db
     .select({
@@ -1602,6 +1633,7 @@ async function upsertComputerConnectorProfile(
       slug,
       name,
       tunnelIds,
+      tunnelAccountIds,
       sensitive: (existing?.config as { sensitive?: unknown } | null)?.sensitive === true,
     }),
   });
@@ -1667,8 +1699,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     invalidateProjectMirror(projectId);
     return syncProjectConnectors(projectId, accountId, { force: true });
   },
-  createConnector: async (projectId, accountId, draft) =>
-    (await upsertComputerConnectorProfile(projectId, accountId, draft)) ??
+  createConnector: async (projectId, accountId, draft, actorUserId) =>
+    (await upsertComputerConnectorProfile(projectId, accountId, draft, actorUserId)) ??
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: async (projectId, slug) =>
     (await deleteComputerConnectorProfile(projectId, slug)) ??
