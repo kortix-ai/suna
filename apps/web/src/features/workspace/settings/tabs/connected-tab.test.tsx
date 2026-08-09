@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ConnectedAccountsTabView, resolveConnectedAccountsId } from './connected-tab';
+import { ConnectedAccountsTabView } from './connected-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
@@ -76,17 +76,8 @@ describe('ConnectedAccountsTabView', () => {
   });
 });
 
-describe('resolveConnectedAccountsId', () => {
-  test('prefers the project account id when present, even with a different selected account', () => {
-    expect(resolveConnectedAccountsId('proj-acct', 'store-acct')).toBe('proj-acct');
-  });
-
-  test('falls back to the store-selected account id with no project open', () => {
-    expect(resolveConnectedAccountsId(undefined, 'store-acct')).toBe('store-acct');
-  });
-
-  test('resolves to undefined when neither source has a value', () => {
-    expect(resolveConnectedAccountsId(undefined, null)).toBeUndefined();
-    expect(resolveConnectedAccountsId(undefined, undefined)).toBeUndefined();
-  });
-});
+// The `resolveConnectedAccountsId` resolver tests that used to live here
+// moved to `resolveSettingsAccountId` in `../use-settings-account-id.test.tsx`
+// (Task 11) — the resolver itself moved to `../use-settings-account-id.ts`
+// before Phase 3's six new account-scoped tabs each needed the identical
+// fallback. See that file's header comment.

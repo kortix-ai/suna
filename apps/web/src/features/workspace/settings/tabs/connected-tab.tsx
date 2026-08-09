@@ -87,23 +87,16 @@
  *    'account.write')` never ran and the GitHub row silently vanished —
  *    even for a user who genuinely holds the permission. `profile` and
  *    `preferences` (the same "You" group) don't have this problem because
- *    neither needs an account id at all. Fixed by `resolveConnectedAccountsId`
- *    below: the project's account wins when a project is open (most
- *    specific signal), and falls back to `useCurrentAccountStore`'s
- *    `selectedAccountId` — the app-wide "currently active account", set by
- *    the account switcher / project switcher and persisted across sessions
- *    (`stores/current-account-store.ts`), independent of any project.
- *    Two alternatives considered and rejected: `useAuth()` exposes only a
- *    Supabase `user`/`session`, no account concept at all (read the file —
- *    there is nothing to read here). `useBillingAccountId()` looked
- *    promising, but `project-shell.tsx` already wraps this exact mount
- *    point (`<SettingsPanel projectId={projectId} />`) in a
- *    `BillingAccountProvider` fed the SAME `project?.account_id` — so
- *    reading it here would just re-derive the identical project-scoped
- *    value, not an independent one. `useCurrentAccountStore` is a bare
- *    Zustand store (no Provider needed) and is the one piece of state in
- *    this codebase that means "the account the user is currently working
- *    in" without requiring a project.
+ *    neither needs an account id at all. Fixed by `useSettingsAccountId`
+ *    (Task 11 lifted this from a local `resolveConnectedAccountsId` export
+ *    into `../use-settings-account-id.ts` before Phase 3's six new
+ *    account-scoped tabs each needed the identical fallback — see that
+ *    file's header comment for the full writeup): the project's account
+ *    wins when a project is open (most specific signal), and falls back to
+ *    `useCurrentAccountStore`'s `selectedAccountId` — the app-wide
+ *    "currently active account", set by the account switcher / project
+ *    switcher and persisted across sessions (`stores/current-account-
+ *    store.ts`), independent of any project.
  * 2. `installations[0]` was the only installation this row could see or
  *    disconnect — a second App installation on the same account had no
  *    path to disconnect from this tab. Fixed by keeping the one-row/
@@ -134,7 +127,7 @@ import {
   rememberGitHubSetupReturn,
 } from '@/lib/github-installations';
 import { usePermission } from '@/lib/use-permission';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useSettingsAccountId } from '../use-settings-account-id';
 import {
   deleteGitHubInstallation,
   deleteProjectProviderOAuth,
@@ -147,22 +140,6 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 export type ProviderRowStatus = 'loading' | 'connected' | 'disconnected' | 'error' | 'unavailable';
-
-/**
- * Which account the GitHub row should probe/act against. `projectAccountId`
- * (this project's owning account, when a project is open) wins when present
- * — it's the most specific signal. `selectedAccountId` (`useCurrentAccountStore`,
- * project-independent) is the fallback, so the row still resolves correctly
- * with no project open. Pure and exported so this resolution is unit-testable
- * without a QueryClientProvider, router, or auth session — see this file's
- * header comment ("Fix round 1", finding 1) and `connected-tab.test.tsx`.
- */
-export function resolveConnectedAccountsId(
-  projectAccountId: string | undefined,
-  selectedAccountId: string | null | undefined,
-): string | undefined {
-  return projectAccountId ?? selectedAccountId ?? undefined;
-}
 
 export interface ConnectedAccountsTabViewProps {
   /** Whether the current user holds `account.write` on this project's
@@ -353,12 +330,12 @@ export function ConnectedAccountsTab({
 
   // --- GitHub (account-scoped) ------------------------------------------
   // `accountId` (the project's owning account, when a project is open) wins;
-  // `selectedAccountId` (project-independent, see `resolveConnectedAccountsId`'s
-  // doc comment) is the fallback so this row still resolves with no project
-  // open — same account-scoped shape `profile`/`preferences` already have,
-  // now also true for the row that actually needs an account id.
-  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const resolvedAccountId = resolveConnectedAccountsId(accountId, selectedAccountId);
+  // the store-selected account (project-independent, see
+  // `useSettingsAccountId`'s doc comment) is the fallback so this row still
+  // resolves with no project open — same account-scoped shape
+  // `profile`/`preferences` already have, now also true for the row that
+  // actually needs an account id.
+  const resolvedAccountId = useSettingsAccountId(accountId);
   const { allowed: canManageAccount } = usePermission(resolvedAccountId, 'account.write');
 
   const installationsQuery = useQuery({
