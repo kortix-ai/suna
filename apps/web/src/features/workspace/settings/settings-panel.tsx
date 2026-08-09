@@ -51,7 +51,15 @@
  *
  * **Task 8 update.** `preferences` is wired to the real `PreferencesTab`
  * (see `tabs/preferences-tab.tsx`) — same account-scoped, no-`projectId`
- * shape as `profile`. The remaining eight (`connected`, `billing`, `usage`,
+ * shape as `profile`.
+ *
+ * **Task 9 update.** `connected` is wired to the real `ConnectedAccountsTab`
+ * (see `tabs/connected-tab.tsx`) — same account-scoped, no-`projectId`-
+ * required shape as `profile`/`preferences` above, but it ALSO reads
+ * `project?.account_id` (threaded down as `accountId`, computed here from the
+ * same project-detail query the IAM caps probe already uses) because one of
+ * its three rows (GitHub) is account-scoped, not project- or user-scoped —
+ * see that file's header comment. The remaining seven (`billing`, `usage`,
  * `groups`, `roles`, `identity`, `audit`, `api-keys`, `experimental`) stay
  * placeholders — phases 2-4 build them.
  *
@@ -113,6 +121,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import type { RailGroup, RailItem } from './type';
@@ -314,6 +323,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         isMobile={isMobile}
         project={project}
         projectId={projectId}
+        accountId={project?.account_id}
         groups={groups}
         allItems={allItems}
         upgradeAllowed={upgradeAllowed}
@@ -337,6 +347,11 @@ export interface SettingsPanelViewProps {
    *  to wait on `project` to resolve, since every real view does its own
    *  loading/skeleton handling once mounted. */
   projectId: string | undefined;
+  /** The project's owning account — threaded the same way as `projectId`
+   *  (independently of `project` resolving) for the one tab that needs it:
+   *  `connected`'s GitHub row is account-scoped, not project-scoped (see
+   *  `tabs/connected-tab.tsx`). */
+  accountId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
   upgradeAllowed: boolean;
@@ -366,6 +381,7 @@ export function SettingsPanelView({
   isMobile,
   project,
   projectId,
+  accountId,
   groups,
   allItems,
   upgradeAllowed,
@@ -399,6 +415,7 @@ export function SettingsPanelView({
           isMobile={isMobile}
           project={project}
           projectId={projectId}
+          accountId={accountId}
           groups={groups}
           allItems={allItems}
           upgradeAllowed={upgradeAllowed}
@@ -427,6 +444,7 @@ export function SettingsPanelShell({
   isMobile,
   project,
   projectId,
+  accountId,
   groups,
   allItems,
   upgradeAllowed,
@@ -564,6 +582,7 @@ export function SettingsPanelShell({
                 item={item}
                 active={item.tab === tab}
                 projectId={projectId}
+                accountId={accountId}
                 llmGatewayEnabled={llmGatewayEnabled}
               />
             </TabsContent>
@@ -581,11 +600,11 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * `profile` and `preferences` are handled above the switch (account-scoped,
- * no `projectId` needed). The switch below is the Task 5b2 mapping of the
- * legacy panel's `SectionContent` (14 `case` labels + the `llm-*` prefix
- * branch) onto the new tab ids. A tab NOT listed here or above —
- * `connected`, `snapshots`, `billing`, `usage`, `groups`, `roles`,
+ * `profile`, `preferences`, and (as of Task 9) `connected` are handled above
+ * the switch (account-scoped, no `projectId` needed). The switch below is
+ * the Task 5b2 mapping of the legacy panel's `SectionContent` (14 `case`
+ * labels + the `llm-*` prefix branch) onto the new tab ids. A tab NOT listed
+ * here or above — `snapshots`, `billing`, `usage`, `groups`, `roles`,
  * `identity`, `audit`, `api-keys`, `experimental` — is a genuinely new
  * surface with no legacy source to port; it keeps the placeholder header
  * until a later phase builds it. `snapshots` in particular is HALF of the
@@ -599,11 +618,13 @@ function SettingsTabPane({
   item,
   active,
   projectId,
+  accountId,
   llmGatewayEnabled,
 }: {
   item: RailItem;
   active: boolean;
   projectId: string | undefined;
+  accountId: string | undefined;
   llmGatewayEnabled: boolean;
 }) {
   if (!active) return null;
@@ -615,6 +636,12 @@ function SettingsTabPane({
   }
   if (item.tab === 'preferences') {
     return <PreferencesTab />;
+  }
+  // Same no-`projectId`-required shape as `profile`/`preferences`, but it
+  // ALSO reads `accountId` — its GitHub row is account-scoped, not
+  // project-scoped (see `tabs/connected-tab.tsx`'s header comment).
+  if (item.tab === 'connected') {
+    return <ConnectedAccountsTab projectId={projectId} accountId={accountId} />;
   }
 
   if (projectId) {

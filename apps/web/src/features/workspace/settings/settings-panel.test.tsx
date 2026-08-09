@@ -46,6 +46,7 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     isMobile: false,
     project: undefined,
     projectId: undefined,
+    accountId: undefined,
     groups: allGroups,
     allItems,
     upgradeAllowed: true,
@@ -210,10 +211,14 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        // `connected` is still a genuinely unbuilt placeholder — `profile`
-        // and `preferences` moved into `REAL_VIEW_TABS`-equivalent coverage
-        // below once Task 7 and Task 8 wired them to their real views.
-        tab: 'connected',
+        // `billing` is still a genuinely unbuilt placeholder — `profile`,
+        // `preferences`, and `connected` moved into `REAL_VIEW_TABS`-
+        // equivalent coverage below once Task 7, Task 8, and Task 9 wired
+        // them to their real views. Confirmed by grep: `grep -n "'connected'"
+        // settings-panel.test.tsx` before this change showed only this one
+        // reference — `connected` was never exercised anywhere else in this
+        // file, so moving the placeholder example doesn't drop coverage.
+        tab: 'billing',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,
@@ -252,6 +257,23 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('preferences mounts its real view even with no project id — it is account-scoped, not project-scoped, unlike every REAL_VIEW_TABS entry below', () => {
     expect(() => render({ tab: 'preferences', projectId: undefined })).toThrow();
+  });
+
+  test('activating connected mounts its real view — it probes account.write with no auth context present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'connected',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('connected mounts its real view even with no project id — it is account-scoped like profile/preferences, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'connected', projectId: undefined, accountId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {
