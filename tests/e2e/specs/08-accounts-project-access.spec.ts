@@ -534,16 +534,19 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
     await expect(memberAccessRow.getByRole("combobox")).toContainText("Member");
 
-    // Persist the organization before the member session opens /projects.
-    // Otherwise the empty personal account can win the first render and start
-    // the real first-project auto-create flow before this test switches it.
-    await selectAccountForUi(page, account.account_id);
+    // Initialize member auth before persisting the organization. Otherwise the
+    // auth reset clears the selection and the personal account wins /projects.
     await installBrowserSessionDirect(
       page,
       memberSession,
-      "/projects",
+      `/accounts/${account.account_id}`,
       authOptions,
     );
+    await expect(
+      page.getByRole("heading", { name: "Members", exact: true }),
+    ).toBeVisible();
+    await selectAccountForUi(page, account.account_id);
+    await page.goto("/projects", { waitUntil: "domcontentloaded" });
     await dismissOnboarding(page);
     await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
 

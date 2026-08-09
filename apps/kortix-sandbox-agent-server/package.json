@@ -15,7 +15,7 @@
     "build": "bash scripts/build.sh",
     "start": "./dist/kortix-agent",
     "typecheck": "bun tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --parallel=4"
   },
   "dependencies": {
     "hono": "^4.12.25",

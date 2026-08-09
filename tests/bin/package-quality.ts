@@ -46,7 +46,10 @@ async function rejectFocusedTests(): Promise<void> {
   throw new Error("focused test (.only) committed");
 }
 
-async function verifyPublishablePackage(directory: string): Promise<void> {
+async function verifyPublishablePackage(
+  directory: string,
+  build = true,
+): Promise<void> {
   const packageDirectory = resolve(root, "packages", directory);
   const packagePath = resolve(packageDirectory, "package.json");
   const original = await readFile(packagePath, "utf8");
@@ -54,9 +57,12 @@ async function verifyPublishablePackage(directory: string): Promise<void> {
     name: string;
     scripts?: Record<string, string>;
   };
-  const build = parsed.scripts?.["build:bundles"] ? "build:bundles" : "build";
+  const buildScript = parsed.scripts?.["build:bundles"]
+    ? "build:bundles"
+    : "build";
 
-  await run(["pnpm", "--filter", parsed.name, "run", build]);
+  if (build)
+    await run(["pnpm", "--filter", parsed.name, "run", buildScript]);
   try {
     await run(["node", "../../scripts/stage-npm-publish.mjs"], {
       cwd: packageDirectory,
@@ -68,21 +74,58 @@ async function verifyPublishablePackage(directory: string): Promise<void> {
   }
 }
 
+async function runWorkspaceTests(
+  filters: string[],
+  workspaceConcurrency: number,
+  env: Record<string, string> = {},
+): Promise<void> {
+  await run(
+    [
+      "pnpm",
+      `--workspace-concurrency=${workspaceConcurrency}`,
+      "--no-sort",
+      ...filters.flatMap((filter) => ["--filter", filter]),
+      "--if-present",
+      "test",
+    ],
+    {
+      env: {
+        ...process.env,
+        KORTIX_TEST_TIMEOUT_MS: "15000",
+        ...env,
+      },
+    },
+  );
+}
+
 await run(["node", "scripts/stage-npm-publish.test.mjs"]);
 await rejectFocusedTests();
-for (const directory of ["llm-catalog", "sdk", "executor-sdk"]) {
-  await verifyPublishablePackage(directory);
-}
 await run(["pnpm", "--filter", "@kortix/sdk", "run", "smoke:install"]);
-await run(
+for (const directory of ["llm-catalog", "sdk", "executor-sdk"]) {
+  await verifyPublishablePackage(directory, false);
+}
+
+// Keep process-heavy suites in explicit load classes. A generic workspace fan-out
+// makes their internal worker pools compete and breaks the repository's 5-second
+// performance contracts. The lanes still parallelize within each package.
+await runWorkspaceTests(["kortix-api"], 1, {
+  // Full mode runs beside the local product stack. Three isolated workers keep
+  // process-heavy Git tests inside their fixed 15-second performance contract.
+  KORTIX_API_TEST_WORKERS: "3",
+});
+await runWorkspaceTests(
+  ["@kortix/cli", "@kortix/sandbox-agent-server"],
+  2,
+);
+await runWorkspaceTests(["@kortix/db"], 1);
+await runWorkspaceTests(
   [
-    "pnpm",
-    "--filter",
     "./packages/**",
-    "--filter",
     "./apps/**",
-    "--if-present",
-    "test",
+    "!kortix-api",
+    "!@kortix/cli",
+    "!@kortix/sandbox-agent-server",
+    "!@kortix/db",
   ],
-  { env: { ...process.env, KORTIX_TEST_TIMEOUT_MS: "15000" } },
+  2,
 );

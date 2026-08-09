@@ -26,6 +26,13 @@ case "$mode" in
       cov="--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir=coverage"
     fi
     test_timeout="${KORTIX_TEST_TIMEOUT_MS:-5000}"
+    api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"
+    case "$api_test_workers" in
+      ''|*[!0-9]*|0)
+        echo "error: KORTIX_API_TEST_WORKERS must be a positive integer" >&2
+        exit 2
+        ;;
+    esac
     # --env-file=scripts/test.env, NOT dotenvx: the unit suite is hermetic. It runs
     # off a committed plaintext file of fake values, so it behaves identically
     # on a laptop with no decryption key and on a CI runner that must never be
@@ -35,13 +42,18 @@ case "$mode" in
     # part of this gate.
     #
     # --isolate: bunfig.toml's `[test] isolation = true` documents the intent
-    # (each test file in its own process, so mock.module() in one billing/
+    # (each test file gets a fresh global object, so mock.module() in one billing/
     # sandbox-proxy/etc. unit test can't leak into another's real, unmocked
     # module) but that config key isn't honored by this bun version's CLI —
     # the flag is required explicitly. Without it, cross-file mock.module()
     # collisions are order-dependent and can silently pass or fail depending
     # on which files happen to run adjacently.
-    exec bun test --isolate --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
+    #
+    # Four parallel worker processes cut the 570-file suite from 113.65s to
+    # 31.68s on the local reference machine. Eight workers reduced it to 27.92s
+    # but caused the archive contract to exceed its 15s timeout. Keep the safe
+    # default bounded and allow explicit tuning through the environment.
+    exec bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" $cov $files
     ;;
   *)
     echo "usage: test.sh [default|integration|live]" >&2

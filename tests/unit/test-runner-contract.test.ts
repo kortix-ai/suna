@@ -28,4 +28,42 @@ describe('local test runner contract', () => {
     expect(fixtureSnapshot).toBeGreaterThan(-1);
     expect(teardown).toBeGreaterThan(fixtureSnapshot);
   });
+
+  it('builds publishable artifacts once and schedules package tests by load class', () => {
+    const source = readFileSync(resolve(root, 'tests/bin/package-quality.ts'), 'utf8');
+    const smoke = source.indexOf('"smoke:install"');
+    const dryPack = source.indexOf('verifyPublishablePackage(directory, false)');
+
+    expect(smoke).toBeGreaterThan(-1);
+    expect(dryPack).toBeGreaterThan(smoke);
+    expect(source).toContain('"--no-sort"');
+    expect(source).toContain('KORTIX_API_TEST_WORKERS: "3"');
+    expect(source).toContain('["@kortix/cli", "@kortix/sandbox-agent-server"]');
+    expect(source).toContain('await runWorkspaceTests(["@kortix/db"], 1)');
+    expect(source).toContain('"!kortix-api"');
+    expect(source).toContain('"!@kortix/db"');
+  });
+
+  it('runs isolated API test files through a bounded parallel worker pool', () => {
+    const source = readFileSync(resolve(root, 'apps/api/scripts/test.sh'), 'utf8');
+
+    expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-4}"');
+    expect(source).toContain('--parallel="$api_test_workers"');
+  });
+
+  it('runs process-heavy CLI and sandbox-agent test files in parallel', () => {
+    const cliPackage = JSON.parse(
+      readFileSync(resolve(root, 'apps/cli/package.json'), 'utf8'),
+    );
+    const agentPackage = JSON.parse(
+      readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/package.json'), 'utf8'),
+    );
+    const dbPackage = JSON.parse(
+      readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'),
+    );
+
+    expect(cliPackage.scripts.test).toContain('bun test --isolate --parallel=4');
+    expect(agentPackage.scripts.test).toBe('bun test --parallel=4');
+    expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
+  });
 });
