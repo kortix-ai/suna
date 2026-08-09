@@ -23,7 +23,24 @@ const render = (p: ToolPart, open = false) =>
     </QueryClientProvider>,
   );
 
+const DIR = '/workspace/.opencode/skill/webapp';
+
+/** What the runtime actually sends: the base directory lives in the OUTPUT. */
 const OUTPUT = [
+  '<skill_content>',
+  '# Webapp',
+  'Build a web app.',
+  '',
+  `Base directory: ${DIR}`,
+  '<skill_files>',
+  '<file>reference.md</file>',
+  '<file>templates/page.tsx</file>',
+  '</skill_files>',
+  '</skill_content>',
+].join('\n');
+
+/** The same call with no base directory anywhere. */
+const OUTPUT_NO_DIR = [
   '<skill_content>',
   '# Webapp',
   'Build a web app.',
@@ -34,9 +51,15 @@ const OUTPUT = [
   '</skill_content>',
 ].join('\n');
 
-const DIR = '/workspace/.opencode/skill/webapp';
-
 describe('SkillTool', () => {
+  test('a call with NO input.dir still opens — the directory is in the output', () => {
+    // This is what made the first attempt do nothing on click: the row keyed
+    // off `input.dir`, which the OpenCode runtime need not send at all.
+    const markup = render(part({ name: 'webapp' }, OUTPUT));
+    expect(markup).toContain('role="button"');
+    expect(markup).not.toContain('Build a web app.');
+  });
+
   test('a skill with a directory is a plain row that opens the detail panel', () => {
     // It used to raise a second right-hand `Sheet` — its own header, its own
     // scroll, its own copy of the markdown — on top of the panel that already
@@ -53,10 +76,10 @@ describe('SkillTool', () => {
     expect(markup).not.toContain('Build a web app.');
   });
 
-  test('a skill with NO directory has nothing to open, so it falls back to expanding', () => {
-    // There is no path to hand the panel, and `${''}/SKILL.md` would be a lie.
-    // The inline body is the fallback, and it still carries the whole document.
-    const markup = render(part({ name: 'webapp' }, OUTPUT), true);
+  test('a skill with NO directory anywhere falls back to expanding in place', () => {
+    // There is no path to hand the panel, and `/SKILL.md` would be a lie. The
+    // inline body is the fallback, and it still carries the whole document.
+    const markup = render(part({ name: 'webapp' }, OUTPUT_NO_DIR), true);
     expect(markup).toContain('Build a web app.');
     expect(markup).toContain('reference.md');
     expect(markup).toContain('templates/page.tsx');

@@ -15,20 +15,13 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   extractSkillContent,
   extractSkillFiles,
+  skillDocumentPath,
 } from '@/features/session/tool/shared/skill-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { FileDashedIcon, FileTextIcon as FileText } from '@phosphor-icons/react';
 import { useCallback, useMemo } from 'react';
-
-/**
- * A skill's own page. Every skill in this product is a directory holding one —
- * `.opencode/skill/<name>/SKILL.md`, `.kortix/opencode/skills/<name>/SKILL.md`.
- */
-function skillDocPath(dir: string): string {
-  return `${dir.replace(/\/+$/, '')}/SKILL.md`;
-}
 
 export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -59,10 +52,18 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
    * project like any other, so it goes to the same place.
    */
   const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const openSkillDoc = useCallback(
-    () => openPreview(skillDocPath(skillDir)),
-    [openPreview, skillDir],
-  );
+  /**
+   * The document behind the row, or null when the call did not say where it is.
+   *
+   * Resolved from the OUTPUT as well as the input: `input.dir` is not
+   * dependable — the skill tool lives in the OpenCode runtime, not here, and a
+   * call can arrive with only a name. Keying the click off `dir` alone left the
+   * row silently doing nothing. See `skillDocumentPath`.
+   */
+  const docPath = useMemo(() => skillDocumentPath(output, skillDir), [output, skillDir]);
+  const openSkillDoc = useCallback(() => {
+    if (docPath) openPreview(docPath);
+  }, [openPreview, docPath]);
 
   const isCompleted = status === 'completed';
   const failure = useMemo(
@@ -79,7 +80,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
-      onClick={skillDir ? openSkillDoc : undefined}
+      onClick={docPath ? openSkillDoc : undefined}
       badge={isCompleted && skillFiles.length > 0 ? `${skillFiles.length} files` : undefined}
     >
       {failure ? (
