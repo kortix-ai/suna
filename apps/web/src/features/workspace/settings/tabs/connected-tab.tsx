@@ -79,6 +79,41 @@
  * everything the pure view can prove statically: row order, scope wording,
  * the account.write gate, and "one button per row" — they do not, and
  * cannot, click a button and observe a network call.
+ *
+ * **Fix round 1 — two Important findings, both addressed here:**
+ *
+ * 1. `accountId` used to come ONLY from `project?.account_id`, so opening
+ *    this tab with no project selected meant `usePermission(undefined,
+ *    'account.write')` never ran and the GitHub row silently vanished —
+ *    even for a user who genuinely holds the permission. `profile` and
+ *    `preferences` (the same "You" group) don't have this problem because
+ *    neither needs an account id at all. Fixed by `resolveConnectedAccountsId`
+ *    below: the project's account wins when a project is open (most
+ *    specific signal), and falls back to `useCurrentAccountStore`'s
+ *    `selectedAccountId` — the app-wide "currently active account", set by
+ *    the account switcher / project switcher and persisted across sessions
+ *    (`stores/current-account-store.ts`), independent of any project.
+ *    Two alternatives considered and rejected: `useAuth()` exposes only a
+ *    Supabase `user`/`session`, no account concept at all (read the file —
+ *    there is nothing to read here). `useBillingAccountId()` looked
+ *    promising, but `project-shell.tsx` already wraps this exact mount
+ *    point (`<SettingsPanel projectId={projectId} />`) in a
+ *    `BillingAccountProvider` fed the SAME `project?.account_id` — so
+ *    reading it here would just re-derive the identical project-scoped
+ *    value, not an independent one. `useCurrentAccountStore` is a bare
+ *    Zustand store (no Provider needed) and is the one piece of state in
+ *    this codebase that means "the account the user is currently working
+ *    in" without requiring a project.
+ * 2. `installations[0]` was the only installation this row could see or
+ *    disconnect — a second App installation on the same account had no
+ *    path to disconnect from this tab. Fixed by keeping the one-row/
+ *    one-button contract (a second button would break "each row carries
+ *    exactly one action button") and adding a plain link — not a button —
+ *    to the account's full GitHub connections list
+ *    (`/accounts/{accountId}?tab=git`, the still-live
+ *    `GitHubConnectionCard` surface) whenever `installations.length > 1`.
+ *    The row's Disconnect button still only ever targets the primary
+ *    (first) installation; the link is how a user reaches the rest.
  */
 
 import {
@@ -99,6 +134,7 @@ import {
   rememberGitHubSetupReturn,
 } from '@/lib/github-installations';
 import { usePermission } from '@/lib/use-permission';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   deleteGitHubInstallation,
   deleteProjectProviderOAuth,
@@ -111,6 +147,22 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 export type ProviderRowStatus = 'loading' | 'connected' | 'disconnected' | 'error' | 'unavailable';
+
+/**
+ * Which account the GitHub row should probe/act against. `projectAccountId`
+ * (this project's owning account, when a project is open) wins when present
+ * — it's the most specific signal. `selectedAccountId` (`useCurrentAccountStore`,
+ * project-independent) is the fallback, so the row still resolves correctly
+ * with no project open. Pure and exported so this resolution is unit-testable
+ * without a QueryClientProvider, router, or auth session — see this file's
+ * header comment ("Fix round 1", finding 1) and `connected-tab.test.tsx`.
+ */
+export function resolveConnectedAccountsId(
+  projectAccountId: string | undefined,
+  selectedAccountId: string | null | undefined,
+): string | undefined {
+  return projectAccountId ?? selectedAccountId ?? undefined;
+}
 
 export interface ConnectedAccountsTabViewProps {
   /** Whether the current user holds `account.write` on this project's
@@ -125,6 +177,18 @@ export interface ConnectedAccountsTabViewProps {
   onConnectGitHub?: () => void;
   onDisconnectGitHub?: () => void;
   isGitHubActionPending?: boolean;
+  /** Count of App installations on this account beyond the one this row
+   *  shows (`installations.length - 1`), or `0`/`undefined` when there's at
+   *  most one. This row's Disconnect only ever targets the primary
+   *  installation — when this is > 0, a link to the account's full GitHub
+   *  connections list is rendered so the rest are still reachable (not a
+   *  second button — see this file's header comment, finding 2). */
+  githubOtherInstallationsCount?: number;
+  /** Where that link points — the account settings page's GitHub
+   *  connections section (`GitHubConnectionCard`), which still lists every
+   *  installation. Required to render the link; the link is omitted
+   *  without it even if the count is > 0. */
+  githubManageAllHref?: string;
 
   // ChatGPT — project-scoped.
   chatgptStatus?: ProviderRowStatus;
@@ -153,6 +217,8 @@ export function ConnectedAccountsTabView({
   onConnectGitHub = () => {},
   onDisconnectGitHub = () => {},
   isGitHubActionPending = false,
+  githubOtherInstallationsCount = 0,
+  githubManageAllHref,
   chatgptStatus = 'disconnected',
   chatgptConnectSlot,
   onConnectChatGpt = () => {},
@@ -227,6 +293,15 @@ export function ConnectedAccountsTabView({
           {githubStatus === 'error' && githubError ? (
             <InfoBanner tone="warning">{githubError}</InfoBanner>
           ) : null}
+          {githubStatus === 'connected' && githubOtherInstallationsCount > 0 && githubManageAllHref ? (
+            <a
+              href={githubManageAllHref}
+              className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+            >
+              +{githubOtherInstallationsCount} more installation
+              {githubOtherInstallationsCount === 1 ? '' : 's'} on this account — manage all
+            </a>
+          ) : null}
         </section>
       ) : null}
 
@@ -277,12 +352,19 @@ export function ConnectedAccountsTab({
   const queryClient = useQueryClient();
 
   // --- GitHub (account-scoped) ------------------------------------------
-  const { allowed: canManageAccount } = usePermission(accountId, 'account.write');
+  // `accountId` (the project's owning account, when a project is open) wins;
+  // `selectedAccountId` (project-independent, see `resolveConnectedAccountsId`'s
+  // doc comment) is the fallback so this row still resolves with no project
+  // open — same account-scoped shape `profile`/`preferences` already have,
+  // now also true for the row that actually needs an account id.
+  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const resolvedAccountId = resolveConnectedAccountsId(accountId, selectedAccountId);
+  const { allowed: canManageAccount } = usePermission(resolvedAccountId, 'account.write');
 
   const installationsQuery = useQuery({
-    queryKey: ['github-installations', accountId],
-    queryFn: () => listGitHubInstallations(accountId!),
-    enabled: canManageAccount && !!accountId,
+    queryKey: ['github-installations', resolvedAccountId],
+    queryFn: () => listGitHubInstallations(resolvedAccountId!),
+    enabled: canManageAccount && !!resolvedAccountId,
     staleTime: 0,
   });
 
@@ -290,6 +372,7 @@ export function ConnectedAccountsTab({
     isGitHubAppInstallationId(installation.installation_id),
   );
   const primaryInstallation = installations[0];
+  const otherInstallationsCount = Math.max(0, installations.length - 1);
 
   const githubStatus: ProviderRowStatus = installationsQuery.isLoading
     ? 'loading'
@@ -300,21 +383,21 @@ export function ConnectedAccountsTab({
         : 'disconnected';
 
   const disconnectGitHubMutation = useMutation({
-    mutationFn: (installationId: string) => deleteGitHubInstallation(accountId!, installationId),
+    mutationFn: (installationId: string) => deleteGitHubInstallation(resolvedAccountId!, installationId),
     onSuccess: () => {
       successToast('GitHub disconnected');
-      queryClient.invalidateQueries({ queryKey: ['github-installations', accountId] });
-      queryClient.invalidateQueries({ queryKey: ['github-repositories', accountId] });
+      queryClient.invalidateQueries({ queryKey: ['github-installations', resolvedAccountId] });
+      queryClient.invalidateQueries({ queryKey: ['github-repositories', resolvedAccountId] });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
   });
 
   const handleConnectGitHub = () => {
-    if (!accountId) return;
+    if (!resolvedAccountId) return;
     rememberGitHubSetupReturn(
       typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/projects',
     );
-    router.push(`/github/setup?account_id=${encodeURIComponent(accountId)}`);
+    router.push(`/github/setup?account_id=${encodeURIComponent(resolvedAccountId)}`);
   };
 
   const handleDisconnectGitHub = () => {
@@ -366,6 +449,8 @@ export function ConnectedAccountsTab({
       onConnectGitHub={handleConnectGitHub}
       onDisconnectGitHub={handleDisconnectGitHub}
       isGitHubActionPending={disconnectGitHubMutation.isPending}
+      githubOtherInstallationsCount={otherInstallationsCount}
+      githubManageAllHref={resolvedAccountId ? `/accounts/${resolvedAccountId}?tab=git` : undefined}
       chatgptStatus={chatgptStatus}
       chatgptConnectSlot={
         projectId ? <ChatGptSubscriptionConnect projectId={projectId} /> : undefined
