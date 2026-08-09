@@ -108,3 +108,53 @@ describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () 
     expect(code).not.toMatch(/const skip = useCallback\(\(\) => onboarding\.complete\(\)/);
   });
 });
+
+/**
+ * The chrome bar used to centre `StepProgress` with `absolute inset-x-0` at a
+ * fixed 200px. On a 375px screen that ran x≈87→287 while "Skip for now" started
+ * at x≈264 — ~23px of overlap, ~51px at 320px. Because the overlay carried
+ * `pointer-events-none` the button still worked, so it failed silently as a
+ * visual collision that no functional test could see. These pin the flow layout
+ * that makes the overlap unrepresentable.
+ */
+describe('wizard chrome: the skip control is mobile-safe', () => {
+  const chromeStart = code.indexOf('grid h-14');
+  const chrome = chromeStart < 0 ? '' : code.slice(chromeStart, code.indexOf('</div>', chromeStart));
+
+  test('the scan found the chrome bar', () => {
+    // Guard the guard: an empty slice passes every `.not.toContain` below.
+    expect(chromeStart).toBeGreaterThan(-1);
+    expect(chrome.length).toBeGreaterThan(0);
+  });
+
+  test('the bar is a grid, and the progress is NOT an absolute overlay', () => {
+    expect(chrome).toContain('grid-cols-[1fr_auto_1fr]');
+    // The exact pre-fix construct. If it returns, so does the overlap.
+    expect(code).not.toContain('pointer-events-none absolute inset-x-0');
+    expect(code).not.toContain('ml-auto');
+  });
+
+  test('the skip control uses the responsive size, not the desktop-only one', () => {
+    const skipBlock = code.slice(code.indexOf('{onSkip && ('));
+    expect(skipBlock.length).toBeGreaterThan(0);
+    // `magic-sm` is h-9 on touch, h-8 from `sm`. Plain `sm` would give a 32px
+    // tap target on a phone.
+    expect(skipBlock).toContain('size="magic-sm"');
+    expect(skipBlock).not.toContain('size="sm"');
+  });
+
+  test('the label shortens on mobile but assistive tech keeps the full phrase', () => {
+    const skipBlock = code.slice(code.indexOf('{onSkip && ('));
+    expect(skipBlock).toContain('aria-label="Skip for now"');
+    expect(skipBlock).toContain('<span className="sm:hidden">Skip</span>');
+    expect(skipBlock).toContain('<span className="hidden sm:inline">Skip for now</span>');
+  });
+
+  test('the progress bar itself narrows on mobile', () => {
+    const shell = readFileSync(join(import.meta.dir, 'onboarding/step-shell.tsx'), 'utf8');
+    expect(shell).toContain('w-[7.5rem]');
+    expect(shell).toContain('sm:w-[200px]');
+    // The fixed width that could not shrink out of the side tracks' way.
+    expect(shell).not.toContain('flex w-[200px] items-center');
+  });
+});

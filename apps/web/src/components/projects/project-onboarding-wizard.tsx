@@ -236,38 +236,58 @@ export function ProjectOnboardingWizard({
           }}
         >
           <div className="flex h-full flex-col overflow-hidden">
-            {/* The entire chrome: a back control on the left, progress centred.
-              No mark, no title. Nothing here competes with the question. */}
-            <div className="relative flex h-14 shrink-0 items-center px-4 ">
-              {index > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Back"
-                  className="text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:active:scale-100"
-                  onClick={back}
-                >
-                  <ArrowLeft className="size-4" />
-                </Button>
-              )}
-              {/* `ml-auto` rather than a spacer: the back control is conditional and the
-                  progress indicator is absolutely positioned (out of flow), so auto-margin
-                  is the only thing that pins this right in BOTH chrome states. Muted at
-                  rest — it is an escape hatch, never a call to action competing with the
-                  step's own primary button. */}
-              {onSkip && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground ml-auto"
-                  onClick={skip}
-                >
-                  Skip for now
-                </Button>
-              )}
-              <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-                <StepProgress total={steps.length} current={index} />
+            {/* The entire chrome: a back control on the left, progress centred,
+              the skip escape hatch on the right. No mark, no title. Nothing here
+              competes with the question.
+
+              THREE COLUMNS IN FLOW, not a centred overlay. The progress used to be
+              `absolute inset-x-0` at a fixed 200px, so on a 375px screen it ran
+              x≈87→287 while "Skip for now" started at x≈264 — ~23px of overlap,
+              ~51px at 320px. `pointer-events-none` meant clicks still landed, so it
+              failed silently as a visual collision rather than a broken control.
+              Grid tracks cannot overlap: `1fr auto 1fr` keeps the progress optically
+              centred (both side tracks are equal) while each control reserves its
+              own space at every width. Do not go back to absolute centring. */}
+            <div className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-4">
+              <div className="flex justify-start">
+                {index > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Back"
+                    className="text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:active:scale-100"
+                    onClick={back}
+                  >
+                    <ArrowLeft className="size-4" />
+                  </Button>
+                )}
+              </div>
+
+              <StepProgress total={steps.length} current={index} />
+
+              <div className="flex justify-end">
+                {/* Muted at rest — an escape hatch, never a call to action competing
+                    with the step's own primary button.
+
+                    `magic-sm` is the design system's responsive size (h-9 on touch,
+                    h-8 from `sm`), so the tap target does not shrink to the desktop
+                    height on a phone. The label shortens too: at 320px each side
+                    track gets ~80px, and "Skip for now" needs ~110px with padding
+                    while "Skip" needs ~58px. `aria-label` carries the full phrase at
+                    every width, so the short label never reaches assistive tech. */}
+                {onSkip && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="magic-sm"
+                    aria-label="Skip for now"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={skip}
+                  >
+                    <span className="sm:hidden">Skip</span>
+                    <span className="hidden sm:inline">Skip for now</span>
+                  </Button>
+                )}
               </div>
             </div>
 
